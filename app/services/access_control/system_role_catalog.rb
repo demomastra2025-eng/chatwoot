@@ -6,6 +6,7 @@ class AccessControl::SystemRoleCatalog
     'commercial_director' => 'Commercial Director',
     'observer' => 'Observer'
   }.freeze
+  EMPLOYEE_ALL_VIEW_RESOURCES = %w[contacts conversations].freeze
 
   class << self
     def grants_for(system_key)
@@ -32,6 +33,8 @@ class AccessControl::SystemRoleCatalog
         except: %w[view_configuration configure export view_reports override_schedule],
         scope: 'own'
       ).map do |grant|
+        next grant.merge(access_scope: 'all') if grant[:capability] == 'view' &&
+                                                 EMPLOYEE_ALL_VIEW_RESOURCES.include?(grant[:resource])
         next grant unless grant[:resource] == 'conversations' && grant[:capability] == 'take'
 
         grant.merge(access_scope: 'team')

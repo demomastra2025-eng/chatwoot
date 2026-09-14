@@ -69,5 +69,43 @@ RSpec.describe ConversationPolicy, type: :policy do
         expect(subject).not_to permit(agent_context, conversation)
       end
     end
+
+    context 'when communication thread access roles are enforced' do
+      let(:other_agent) { create(:user, account: account, role: :agent) }
+      let(:conversation) { create(:conversation, account: account, assignee: other_agent) }
+
+      before do
+        account.enable_features!('communication_threads')
+        AccessControl::SystemRoleBootstrapper.call(account: account)
+        restricted_role = create(:access_role, account: account)
+        create(
+          :access_role_grant,
+          account: account,
+          access_role: restricted_role,
+          resource: 'conversations',
+          capability: 'view',
+          access_scope: 'own'
+        )
+        agent.account_users.find_by!(account: account).update!(access_role: restricted_role)
+        account.authorize_access_control_mode_transition do
+          account.update!(access_control_mode: :enforced)
+        end
+      end
+
+      it 'denies the direct conversation API outside canonical thread scope' do
+        expect(subject).not_to permit(agent_context, conversation)
+      end
+
+      it 'allows the direct conversation API for a canonical participant' do
+        create(
+          :communication_thread_participant,
+          account: account,
+          communication_thread: conversation.reload.communication_thread,
+          user: agent
+        )
+
+        expect(subject).to permit(agent_context, conversation)
+      end
+    end
   end
 end

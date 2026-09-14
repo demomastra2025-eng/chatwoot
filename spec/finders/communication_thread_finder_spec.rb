@@ -152,6 +152,12 @@ RSpec.describe CommunicationThreadFinder do
       other_user = create(:user, account: account)
       mine_thread.update!(assignee: user)
       assigned_read_thread.update!(assignee: other_user)
+      create(
+        :communication_thread_participant,
+        account: account,
+        communication_thread: assigned_read_thread,
+        user: user
+      )
       expect(Crm::DealDialogUnreadCountService).not_to receive(:new)
       expect(Scheduling::AppointmentDialogCountService).not_to receive(:new)
 
@@ -171,6 +177,7 @@ RSpec.describe CommunicationThreadFinder do
         assigned_unread_count: 1,
         unassigned_unread_count: 1,
         all_unread_count: 2,
+        participating_count: 1,
         unread_counts: {},
         context_counts: {}
       )

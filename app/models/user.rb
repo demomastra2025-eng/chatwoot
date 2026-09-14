@@ -101,6 +101,10 @@ class User < ApplicationRecord
                                             dependent: :nullify, inverse_of: :review_notes_updated_by
   has_many :conversation_participants, dependent: :destroy_async
   has_many :participating_conversations, through: :conversation_participants, source: :conversation
+  has_many :communication_thread_participants, dependent: :destroy_async
+  has_many :participating_communication_threads,
+           through: :communication_thread_participants,
+           source: :communication_thread
 
   has_many :inbox_members, dependent: :destroy_async
   has_many :inboxes, through: :inbox_members, source: :inbox

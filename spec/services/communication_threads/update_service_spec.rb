@@ -82,6 +82,67 @@ RSpec.describe CommunicationThreads::UpdateService do
       expect(thread).to be_resolved
     end
 
+    it 'preserves the team when the assignee is removed without a team change' do
+      team = create(:team, account: account)
+      assignee = create(:user, account: account)
+      create(:team_member, team: team, user: assignee)
+      conversation = create(:conversation, account: account, assignee: assignee, team: team)
+      thread = conversation.reload.communication_thread
+
+      described_class.new(
+        communication_thread: thread,
+        params: ActionController::Parameters.new(assignee_id: nil).permit!,
+        accessible_links: thread.communication_thread_conversations
+      ).perform
+
+      expect(conversation.reload).to have_attributes(assignee_id: nil, team_id: team.id)
+      expect(thread.reload).to have_attributes(assignee_id: nil, team_id: team.id)
+    end
+
+    it 'retains only participants eligible for the new team during a cross-team transfer' do
+      old_team = create(:team, account: account)
+      new_team = create(:team, account: account)
+      old_owner = create(:user, account: account)
+      new_owner = create(:user, account: account)
+      old_team_participant = create(:user, account: account)
+      new_team_participant = create(:user, account: account)
+      create(:team_member, team: old_team, user: old_owner)
+      create(:team_member, team: old_team, user: old_team_participant)
+      create(:team_member, team: new_team, user: new_owner)
+      create(:team_member, team: new_team, user: new_team_participant)
+      conversation = create(:conversation, account: account, assignee: old_owner, team: old_team)
+      thread = conversation.reload.communication_thread
+      create(:communication_thread_participant, account: account, communication_thread: thread, user: old_team_participant)
+      create(:communication_thread_participant, account: account, communication_thread: thread, user: new_team_participant)
+
+      described_class.new(
+        communication_thread: thread,
+        params: ActionController::Parameters.new(assignee_id: new_owner.id).permit!,
+        accessible_links: thread.communication_thread_conversations
+      ).perform
+
+      expect(thread.reload.communication_thread_participants.pluck(:user_id)).to eq([new_team_participant.id])
+      participation_event = conversation.messages.activity.order(:id).last.content_attributes
+      expect(participation_event.dig('communication_thread_participation', 'reason')).to eq('cross_team_transfer')
+    end
+
+    it 'clears participants with an explicit reason when the thread is resolved' do
+      conversation = create(:conversation, account: account, status: :open)
+      thread = conversation.reload.communication_thread
+      participant = create(:user, account: account)
+      create(:communication_thread_participant, account: account, communication_thread: thread, user: participant)
+
+      described_class.new(
+        communication_thread: thread,
+        params: ActionController::Parameters.new(status: 'resolved').permit!,
+        accessible_links: thread.communication_thread_conversations
+      ).perform
+
+      expect(thread.reload.communication_thread_participants).to be_empty
+      participation_event = conversation.messages.activity.order(:id).last.content_attributes
+      expect(participation_event.dig('communication_thread_participation', 'reason')).to eq('thread_resolved')
+    end
+
     it 'rolls back conversation changes when the thread refresh fails' do
       conversation = create(:conversation, account: account, priority: :low)
       link = conversation.communication_thread_conversation

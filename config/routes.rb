@@ -318,6 +318,9 @@ Rails.application.routes.draw do
               post :update_last_seen
               post :unread
             end
+            scope module: :communication_threads do
+              resource :participants, only: [:show, :create, :destroy]
+            end
           end
 
           resources :conversations, only: [:index, :create, :show, :update, :destroy] do

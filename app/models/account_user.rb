@@ -41,6 +41,7 @@ class AccountUser < ApplicationRecord
 
   before_validation :lock_account_for_access_control, if: :access_control_assignment_changed?
   before_validation :synchronize_access_role, if: :access_role_identity_changed?
+  before_destroy :remove_communication_thread_participations
   after_create_commit :notify_creation, :create_notification_setting
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
@@ -78,6 +79,15 @@ class AccountUser < ApplicationRecord
   end
 
   private
+
+  def remove_communication_thread_participations
+    CommunicationThreadParticipant.where(account_id: account_id, user_id: user_id).includes(:communication_thread).find_each do |membership|
+      CommunicationThreads::ParticipationService.new(
+        communication_thread: membership.communication_thread,
+        actor: Current.executed_by || Current.user
+      ).remove!(user_id: user_id, reason: 'workspace_membership_removed')
+    end
+  end
 
   def synchronize_access_role
     return if account.blank?

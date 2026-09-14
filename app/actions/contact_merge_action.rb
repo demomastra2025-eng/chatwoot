@@ -53,6 +53,7 @@ class ContactMergeAction
     end
 
     source_threads.each do |source_thread|
+      merge_thread_participants!(source_thread, target_thread)
       source_thread.communication_thread_conversations.find_each do |link|
         link.update!(communication_thread: target_thread)
       end
@@ -61,6 +62,19 @@ class ContactMergeAction
 
     attach_conversations_to_thread!
     sync_merged_thread_routing!(target_thread)
+  end
+
+  def merge_thread_participants!(source_thread, target_thread)
+    participation_service = CommunicationThreads::ParticipationService.new(
+      communication_thread: target_thread,
+      actor: Current.user
+    )
+    source_thread.communication_thread_participants.find_each do |membership|
+      participation_service.add!(user_id: membership.user_id, reason: 'contact_merge') \
+        if membership.user_id != target_thread.assignee_id
+      membership.audit_comment = 'contact_merge'
+      membership.destroy!
+    end
   end
 
   def merge_owner

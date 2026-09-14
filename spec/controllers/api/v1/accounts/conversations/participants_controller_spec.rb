@@ -139,4 +139,28 @@ RSpec.describe 'Conversation Participants API', type: :request do
       end
     end
   end
+
+  context 'when communication threads are enabled' do
+    before { account.enable_features!('communication_threads') }
+
+    it 'retires the legacy channel-level read endpoint' do
+      get api_v1_account_conversation_participants_url(account_id: account.id, conversation_id: conversation.display_id),
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:gone)
+    end
+
+    it 'rejects legacy channel-level participant writes' do
+      participant = create(:user, account: account, role: :agent)
+
+      post api_v1_account_conversation_participants_url(account_id: account.id, conversation_id: conversation.display_id),
+           params: { user_ids: [participant.id] },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:gone)
+      expect(conversation.conversation_participants).to be_empty
+    end
+  end
 end

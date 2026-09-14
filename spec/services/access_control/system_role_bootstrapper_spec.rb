@@ -39,7 +39,16 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
         selected = capabilities.select do |capability|
           %w[view create update_fields assign transition take complete_cancel delete_archive].include?(capability)
         end
-        selected.map { |capability| [resource, capability, resource == 'conversations' && capability == 'take' ? 'team' : 'own'] }
+        selected.map do |capability|
+          scope = if capability == 'view' && %w[contacts conversations].include?(resource)
+                    'all'
+                  elsif resource == 'conversations' && capability == 'take'
+                    'team'
+                  else
+                    'own'
+                  end
+          [resource, capability, scope]
+        end
       end
       expect(employee.grants.pluck(:resource, :capability, :access_scope)).to match_array(expected_employee_grants)
     end
@@ -71,7 +80,7 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
 
       expect(second_result.created_roles).to eq(0)
       expect(second_result.created_grants).to eq(0)
-      expect(existing_grant.reload.access_scope).to eq('own')
+      expect(existing_grant.reload.access_scope).to eq('all')
       expect(AccessRoleGrant.where(id: extra_grant.id)).not_to exist
     end
   end

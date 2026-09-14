@@ -137,6 +137,13 @@ RSpec.describe AccountUser do
   describe 'destroy call agent::destroy service' do
     it 'gets created with the right default settings' do
       create(:conversation, account: account_user.account, assignee: account_user.user, inbox: inbox)
+      communication_thread = create(:communication_thread, account: account_user.account)
+      membership = create(
+        :communication_thread_participant,
+        account: account_user.account,
+        communication_thread: communication_thread,
+        user: account_user.user
+      )
       user = account_user.user
 
       expect(user.assigned_conversations.count).to eq(1)
@@ -146,6 +153,7 @@ RSpec.describe AccountUser do
       end
 
       expect(user.assigned_conversations.count).to eq(0)
+      expect(CommunicationThreadParticipant.where(id: membership.id)).not_to exist
     end
   end
 end

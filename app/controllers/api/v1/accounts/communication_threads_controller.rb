@@ -29,6 +29,10 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_thread_operationally_accessible!, only: OPERATIONAL_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
+  before_action :authorize_thread_update!, only: [:update]
+  before_action :authorize_thread_reply!, only: [:create_message]
+  before_action :authorize_thread_fields!, only: [:update_labels]
+  before_action :authorize_thread_destroy!, only: [:destroy_conversations]
   before_action :validate_update_params!, only: [:update]
   around_action :with_list_presence_cache, only: [:index, :filter]
 
@@ -182,6 +186,27 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   private
+
+  def authorize_thread_update!
+    assignment_keys = %i[assignee_id assignee_type team_id]
+    transition_keys = %i[status status_reason snoozed_until]
+    authorize @communication_thread, :assign? if assignment_keys.any? { |key| params.key?(key) }
+    authorize @communication_thread, :transition? if transition_keys.any? { |key| params.key?(key) }
+    field_keys = %i[priority custom_attributes destroy_custom_attributes]
+    authorize @communication_thread, :update? if field_keys.any? { |key| params.key?(key) }
+  end
+
+  def authorize_thread_reply!
+    authorize @communication_thread, :reply?
+  end
+
+  def authorize_thread_fields!
+    authorize @communication_thread, :update?
+  end
+
+  def authorize_thread_destroy!
+    authorize @communication_thread, :destroy?
+  end
 
   def communication_thread
     @communication_thread = CommunicationThread.find_by!(account_id: Current.account.id, display_id: params[:id])
@@ -629,11 +654,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def accessible_conversations
-    @accessible_conversations ||= Conversations::PermissionFilterService.new(
-      Current.account.conversations,
-      Current.user,
-      Current.account
-    ).perform
+    @accessible_conversations ||= begin
+      legacy_scope = Conversations::PermissionFilterService.new(
+        Current.account.conversations,
+        Current.user,
+        Current.account
+      ).perform
+      combine_conversation_scopes(legacy_scope, conversations_for_thread_ids(additional_thread_ids_for('view')))
+    end
   end
 
   def operational_links_for(thread)
@@ -648,11 +676,60 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def operational_conversations
-    @operational_conversations ||= Conversations::PermissionFilterService.new(
-      Current.account.conversations,
-      Current.user,
-      Current.account
-    ).perform_operational
+    @operational_conversations ||= begin
+      legacy_scope = Conversations::PermissionFilterService.new(
+        Current.account.conversations,
+        Current.user,
+        Current.account
+      ).perform_operational
+      combine_conversation_scopes(legacy_scope, conversations_for_thread_ids(additional_thread_ids_for('view')))
+    end
+  end
+
+  def combine_conversation_scopes(first_scope, second_scope)
+    base_scope = Current.account.conversations
+    base_scope.where(id: first_scope.select(:id)).or(base_scope.where(id: second_scope.select(:id)))
+  end
+
+  def additional_thread_ids_for(capability)
+    participant_ids = CommunicationThreadParticipant
+                      .where(account_id: Current.account.id, user_id: Current.user.id)
+                      .select(:communication_thread_id)
+    return participant_ids unless access_role_enforced_for?(capability)
+
+    role_scope = CommunicationThreadPolicy::Scope.apply(
+      CommunicationThread.where(account_id: Current.account.id),
+      access_scope: access_role_scope_for(capability),
+      user: Current.user,
+      account: Current.account
+    )
+    CommunicationThread.where(id: participant_ids).or(role_scope).select(:id)
+  end
+
+  def conversations_for_thread_ids(thread_ids)
+    Current.account.conversations.where(
+      id: CommunicationThreadConversation.where(
+        account_id: Current.account.id,
+        communication_thread_id: thread_ids
+      ).select(:conversation_id)
+    )
+  end
+
+  def access_role_enforced_for?(capability)
+    access_role_mode_resolution(capability).authoritative_source == 'access_role'
+  end
+
+  def access_role_scope_for(capability)
+    access_role_mode_resolution(capability).access_role_resolution&.scope || 'none'
+  end
+
+  def access_role_mode_resolution(capability)
+    @access_role_mode_resolutions ||= {}
+    @access_role_mode_resolutions[capability] ||= AccessControl::ModeResolver.call(
+      account_user: Current.account_user,
+      resource: 'conversations',
+      capability: capability
+    )
   end
 
   def accessible_inboxes

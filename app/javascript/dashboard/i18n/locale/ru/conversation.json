@@ -593,7 +593,7 @@
     "EXPAND": "Развернуть email"
   },
   "CONVERSATION_PARTICIPANTS": {
-    "SIDEBAR_MENU_TITLE": "Участвующие",
+    "SIDEBAR_MENU_TITLE": "Участвую",
     "SIDEBAR_TITLE": "Участники диалога",
     "NO_RECORDS_FOUND": "Результаты не найдены",
     "ADD_PARTICIPANTS": "Выберите участников",
@@ -603,6 +603,7 @@
     "TOTAL_PARTICIPANT_TEXT": "{count} человек участвуют.",
     "NO_PARTICIPANTS_TEXT": "Никто не участвует!.",
     "WATCH_CONVERSATION": "Присоединиться к диалогу",
+    "LEAVE_CONVERSATION": "Выйти из участников",
     "YOU_ARE_WATCHING": "Вы участвуете",
     "API": {
       "ERROR_MESSAGE": "Не удалось обновить, попробуйте снова!",

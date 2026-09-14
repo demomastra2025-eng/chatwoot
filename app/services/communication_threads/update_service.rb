@@ -14,8 +14,11 @@ class CommunicationThreads::UpdateService
   def perform
     source_conversation = linked_links.first&.conversation
     updated_thread = CommunicationThread.transaction do
+      validate_routing!
       sync_contact_owner!
+      sync_participants_for_routing!
       sync_linked_conversations!
+      clear_participants_if_resolved!
       refresh_communication_thread!
       communication_thread.reload
     end
@@ -84,9 +87,9 @@ class CommunicationThreads::UpdateService
   end
 
   def assign_team!(conversation)
-    return unless params.key?(:team_id)
+    return unless params.key?(:team_id) || params.key?(:assignee_id)
 
-    conversation.team = current_account.teams.find_by(id: params[:team_id])
+    conversation.team = effective_team
   end
 
   def assign_custom_attributes!(conversation)
@@ -113,6 +116,70 @@ class CommunicationThreads::UpdateService
     return if params[:assignee_id].blank?
 
     current_account.account_users.find_by(user_id: params[:assignee_id])&.user
+  end
+
+  def effective_team
+    return owner_team if human_assignee.present?
+    return communication_thread.team unless params.key?(:team_id)
+
+    current_account.teams.find_by(id: params[:team_id])
+  end
+
+  def owner_team
+    @owner_team ||= begin
+      teams = Team.joins(:team_members)
+                  .where(account_id: current_account.id, team_members: { user_id: human_assignee.id })
+                  .order(:id)
+                  .limit(2)
+                  .to_a
+      raise ArgumentError, 'communication thread assignee belongs to multiple teams' if teams.many?
+
+      teams.first
+    end
+  end
+
+  def validate_routing!
+    return unless params.key?(:team_id) && communication_thread.assignee_id.present? && !params.key?(:assignee_id)
+    return if params[:team_id].to_i == team_for_user_id(communication_thread.assignee_id)&.id
+
+    raise ArgumentError, 'communication thread team must match its assignee team'
+  end
+
+  def team_for_user_id(user_id)
+    Team.joins(:team_members)
+        .where(account_id: current_account.id, team_members: { user_id: user_id })
+        .order(:id)
+        .first
+  end
+
+  def sync_participants_for_routing!
+    return unless params.key?(:assignee_id) && human_assignee.present?
+
+    if communication_thread.team_id.present? && communication_thread.team_id != owner_team&.id
+      participation_service.retain!(user_ids: new_team_participant_ids, reason: 'cross_team_transfer')
+    end
+    return unless communication_thread.communication_thread_participants.exists?(user_id: human_assignee.id)
+
+    participation_service.remove!(user_id: human_assignee.id, reason: 'promoted_to_owner')
+  end
+
+  def clear_participants_if_resolved!
+    return unless params[:status].to_s == 'resolved'
+
+    participation_service.clear!(reason: 'thread_resolved')
+  end
+
+  def participation_service
+    @participation_service ||= CommunicationThreads::ParticipationService.new(
+      communication_thread: communication_thread,
+      actor: actor
+    )
+  end
+
+  def new_team_participant_ids
+    return [] if owner_team.blank?
+
+    TeamMember.where(team_id: owner_team.id).pluck(:user_id)
   end
 
   def status_transition_params

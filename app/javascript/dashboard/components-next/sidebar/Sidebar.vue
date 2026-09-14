@@ -701,6 +701,30 @@ const conversationAssigneeStatusItems = computed(() =>
   })
 );
 
+const participatingConversationItems = computed(() => {
+  const count = Number(conversationStats.value?.participatingCount || 0);
+  if (!hasCommunicationThreads.value || count === 0) return [];
+
+  return [
+    {
+      name: 'Participating',
+      visibilityKey: 'Conversation:Participating',
+      label: t('CONVERSATION.CONVERSATION_PARTICIPANTS.SIDEBAR_MENU_TITLE'),
+      icon: 'i-lucide-user-round-plus',
+      count,
+      activeOn: [
+        'conversation_participating',
+        'conversation_through_participating',
+      ],
+      to: accountScopedRoute(
+        'conversation_participating',
+        {},
+        { status: currentConversationStatus.value }
+      ),
+    },
+  ];
+});
+
 const whatsappWebInboxes = computed(() => {
   return sortedInboxes.value.filter(
     inbox => isWhatsappWebInbox(inbox) && !isInboxPendingDeletion(inbox)
@@ -1363,6 +1387,7 @@ const menuItems = computed(() => {
         actionItems: conversationSidebarActionItems.value,
         children: [
           ...conversationAssigneeStatusItems.value,
+          ...participatingConversationItems.value,
           ...crmPipelineSidebarItems.value,
           ...appointmentStatusSidebarItems.value,
           {

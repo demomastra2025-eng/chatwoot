@@ -19,6 +19,7 @@ const props = defineProps({
   phoneNumber: { type: String, default: '' },
   thumbnail: { type: String, default: '' },
   availabilityStatus: { type: String, default: null },
+  isParticipating: { type: Boolean, default: false },
   isExpanded: { type: Boolean, default: false },
   isUpdating: { type: Boolean, default: false },
   selectable: { type: Boolean, default: false },
@@ -151,6 +152,14 @@ const handleAvatarHover = isHovered => {
           <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span class="text-base font-medium truncate text-n-slate-12">
               {{ name }}
+            </span>
+            <span
+              v-if="isParticipating"
+              class="px-2 py-0.5 text-xs font-medium rounded-md bg-n-alpha-2 text-n-slate-11"
+            >
+              {{
+                t('CONVERSATION.CONVERSATION_PARTICIPANTS.SIDEBAR_MENU_TITLE')
+              }}
             </span>
             <span class="inline-flex items-center gap-1">
               <span

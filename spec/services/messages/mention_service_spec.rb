@@ -117,6 +117,30 @@ describe Messages::MentionService do
 
         expect(conversation.conversation_participants.map(&:user_id)).to include(first_agent.id)
       end
+
+      it 'keeps canonical participation owner-managed while still delivering the mention' do
+        account.enable_features!('communication_threads')
+        communication_thread = Conversations::CommunicationThreadResolver.new(conversation: conversation).perform
+        message = build(
+          :message,
+          conversation: conversation,
+          account: account,
+          content: "hi (mention://user/#{first_agent.id}/#{first_agent.name})",
+          private: true
+        )
+
+        described_class.new(message: message).perform
+
+        expect(conversation.conversation_participants.where(user: first_agent)).not_to exist
+        expect(communication_thread.communication_thread_participants.where(user: first_agent)).not_to exist
+        expect(NotificationBuilder).to have_received(:new).with(
+          notification_type: 'conversation_mention',
+          user: first_agent,
+          account: account,
+          primary_actor: conversation,
+          secondary_actor: message
+        )
+      end
     end
 
     context 'when message contains multiple user mentions' do

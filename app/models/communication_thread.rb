@@ -44,15 +44,29 @@ class CommunicationThread < ApplicationRecord
 
   has_many :communication_thread_conversations, dependent: :destroy
   has_many :conversations, through: :communication_thread_conversations
+  has_many :communication_thread_participants, dependent: :destroy
+  has_many :participants, through: :communication_thread_participants, source: :user
   has_many :meta_ad_referrals, dependent: :nullify
 
   before_validation :ensure_display_id, on: :create
+  after_update :clear_participants_on_resolution, if: :resolved_transition?
 
   validates :account_id, presence: true
   validates :contact_id, presence: true
   validates :display_id, presence: true, uniqueness: { scope: :account_id }
 
   private
+
+  def clear_participants_on_resolution
+    CommunicationThreads::ParticipationService.new(
+      communication_thread: self,
+      actor: Current.executed_by || Current.user
+    ).clear!
+  end
+
+  def resolved_transition?
+    saved_change_to_status? && resolved?
+  end
 
   def ensure_display_id
     return if display_id.present? || account.blank?

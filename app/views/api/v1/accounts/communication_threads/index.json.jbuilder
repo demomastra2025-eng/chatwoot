@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/BlockLength
 json.data do
   json.meta do
     if @communication_threads_count.present?
@@ -9,6 +10,7 @@ json.data do
       json.assigned_unread_count @communication_threads_count[:assigned_unread_count]
       json.unassigned_unread_count @communication_threads_count[:unassigned_unread_count]
       json.all_unread_count @communication_threads_count[:all_unread_count]
+      json.participating_count @communication_threads_count[:participating_count]
       json.assignee_counts @communication_threads_count[:assignee_counts]
       json.unread_counts @communication_threads_count[:unread_counts]
       json.context_counts @communication_threads_count[:context_counts]
@@ -30,3 +32,4 @@ json.data do
     end
   end
 end
+# rubocop:enable Metrics/BlockLength

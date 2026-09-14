@@ -112,4 +112,35 @@ describe Messages::NewMessageNotificationService do
       end
     end
   end
+
+  context 'with canonical communication thread participants' do
+    let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
+    let(:participant) { create(:user, account: account) }
+    let(:legacy_participant) { create(:user, account: account) }
+    let(:conversation) { create(:conversation, account: account) }
+
+    before do
+      create(:inbox_member, inbox: conversation.inbox, user: legacy_participant)
+      create(:communication_thread_participant, communication_thread: conversation.communication_thread,
+                                                user: participant, account: account)
+      create(:conversation_participant, conversation: conversation, user: legacy_participant)
+    end
+
+    it 'notifies canonical participants, not legacy participants, for an incoming message' do
+      message = create(:message, conversation: conversation, account: account, message_type: :incoming)
+
+      described_class.new(message: message).perform
+
+      expect(participant.notifications.where(notification_type: 'participating_conversation_new_message')).to exist
+      expect(legacy_participant.notifications.where(notification_type: 'participating_conversation_new_message')).not_to exist
+    end
+
+    it 'does not notify canonical participants about an outgoing message' do
+      message = create(:message, conversation: conversation, account: account, message_type: :outgoing)
+
+      described_class.new(message: message).perform
+
+      expect(participant.notifications.where(notification_type: 'participating_conversation_new_message')).not_to exist
+    end
+  end
 end

@@ -61,6 +61,8 @@ class Messages::MentionService
   end
 
   def add_mentioned_users_as_participants(validated_mentioned_ids)
+    return if message.account.feature_enabled?('communication_threads')
+
     validated_mentioned_ids.each do |user_id|
       ConversationParticipant.find_or_create_for!(conversation: message.conversation, user_id: user_id)
     end

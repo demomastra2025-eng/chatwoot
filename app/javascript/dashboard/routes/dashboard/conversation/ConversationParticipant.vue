@@ -3,6 +3,7 @@ import Spinner from 'shared/components/Spinner.vue';
 import { useAlert } from 'dashboard/composables';
 import { mapGetters } from 'vuex';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 
 import ThumbnailGroup from 'dashboard/components/widgets/ThumbnailGroup.vue';
 import MultiselectDropdownItems from 'shared/components/ui/MultiselectDropdownItems.vue';
@@ -31,16 +32,50 @@ export default {
     return {
       selectedWatchers: [],
       showDropDown: false,
+      participantFetchSequence: 0,
+      isParticipantsLoading: false,
     };
   },
   computed: {
     ...mapGetters({
       watchersUiFlas: 'conversationWatchers/getUIFlags',
       currentUser: 'getCurrentUser',
+      currentChat: 'getSelectedChat',
     }),
+    canManageParticipants() {
+      return this.communicationThreadMode
+        ? Boolean(this.currentChat?.can_manage_participants)
+        : true;
+    },
+    canLeaveParticipation() {
+      return (
+        this.communicationThreadMode &&
+        Boolean(this.currentChat?.can_leave_participation)
+      );
+    },
+    communicationThreadMode() {
+      return isCommunicationThread(this.currentChat);
+    },
+    participantContextKey() {
+      return `${this.communicationThreadMode}:${this.conversationId}`;
+    },
+    canToggleOwnParticipation() {
+      return this.communicationThreadMode
+        ? this.canLeaveParticipation
+        : !this.isUserWatching;
+    },
+    participantControlsDisabled() {
+      return this.isParticipantsLoading || this.watchersUiFlas.isUpdating;
+    },
+    ownParticipationActionLabel() {
+      return this.communicationThreadMode
+        ? this.$t('CONVERSATION_PARTICIPANTS.LEAVE_CONVERSATION')
+        : this.$t('CONVERSATION_PARTICIPANTS.WATCH_CONVERSATION');
+    },
     watchersFromStore() {
       return this.$store.getters['conversationWatchers/getByConversationId'](
-        this.conversationId
+        this.conversationId,
+        this.communicationThreadMode
       );
     },
     watchersList: {
@@ -90,7 +125,9 @@ export default {
     },
   },
   watch: {
-    conversationId() {
+    participantContextKey() {
+      this.selectedWatchers = [...(this.watchersFromStore || [])];
+      this.showDropDown = false;
       this.fetchParticipants();
     },
     watchersFromStore(participants = []) {
@@ -102,9 +139,26 @@ export default {
     this.$store.dispatch('agents/get');
   },
   methods: {
-    fetchParticipants() {
+    async fetchParticipants() {
       const conversationId = this.conversationId;
-      this.$store.dispatch('conversationWatchers/show', { conversationId });
+      this.participantFetchSequence += 1;
+      const requestSequence = this.participantFetchSequence;
+      this.isParticipantsLoading = true;
+      try {
+        await this.$store.dispatch('conversationWatchers/show', {
+          conversationId,
+          communicationThreadMode: this.communicationThreadMode,
+        });
+      } catch (error) {
+        useAlert(
+          error?.message ||
+            this.$t('CONVERSATION_PARTICIPANTS.API.ERROR_MESSAGE')
+        );
+      } finally {
+        if (requestSequence === this.participantFetchSequence) {
+          this.isParticipantsLoading = false;
+        }
+      }
     },
     async updateParticipant(userIds) {
       const conversationId = this.conversationId;
@@ -116,6 +170,7 @@ export default {
         await this.$store.dispatch('conversationWatchers/update', {
           conversationId,
           userIds,
+          communicationThreadMode: this.communicationThreadMode,
         });
       } catch (error) {
         alertMessage =
@@ -127,12 +182,16 @@ export default {
       this.fetchParticipants();
     },
     onOpenDropdown() {
+      if (this.participantControlsDisabled) return;
+
       this.showDropDown = true;
     },
     onCloseDropdown() {
       this.showDropDown = false;
     },
     onClickItem(agent) {
+      if (this.participantControlsDisabled) return;
+
       const isAgentSelected = this.watchersList.some(
         participant => participant.id === agent.id
       );
@@ -147,8 +206,24 @@ export default {
         this.watchersList = [...this.watchersList, agent];
       }
     },
+    onLeave() {
+      if (this.participantControlsDisabled) return;
+
+      this.watchersList = this.selectedWatchers.filter(
+        participant => participant.id !== this.currentUser.id
+      );
+    },
     onSelfAssign() {
+      if (this.participantControlsDisabled) return;
+
       this.watchersList = [...this.selectedWatchers, this.currentUser];
+    },
+    onToggleOwnParticipation() {
+      if (this.communicationThreadMode) {
+        this.onLeave();
+      } else {
+        this.onSelfAssign();
+      }
     },
   },
 };
@@ -160,7 +235,7 @@ export default {
       <div class="flex justify-between w-full mb-1">
         <div>
           <p v-if="watchersList.length" class="m-0 text-sm total-watchers">
-            <Spinner v-if="watchersUiFlas.isFetching" size="tiny" />
+            <Spinner v-if="isParticipantsLoading" size="tiny" />
             {{ totalWatchersText }}
           </p>
           <p v-else class="m-0 text-sm text-n-slate-10">
@@ -168,12 +243,14 @@ export default {
           </p>
         </div>
         <NextButton
+          v-if="canManageParticipants"
           v-tooltip.left="$t('CONVERSATION_PARTICIPANTS.ADD_PARTICIPANTS')"
           slate
           ghost
           sm
           icon="i-lucide-settings"
           class="relative -top-1"
+          :disabled="participantControlsDisabled"
           :title="$t('CONVERSATION_PARTICIPANTS.ADD_PARTICIPANTS')"
           @click="onOpenDropdown"
         />
@@ -189,16 +266,18 @@ export default {
         {{ $t('CONVERSATION_PARTICIPANTS.YOU_ARE_WATCHING') }}
       </p>
       <NextButton
-        v-else
+        v-if="canToggleOwnParticipation"
         link
         xs
         icon="i-lucide-arrow-right"
         class="!gap-1"
-        :label="$t('CONVERSATION_PARTICIPANTS.WATCH_CONVERSATION')"
-        @click="onSelfAssign"
+        :disabled="participantControlsDisabled"
+        :label="ownParticipationActionLabel"
+        @click="onToggleOwnParticipation"
       />
     </div>
     <div
+      v-if="canManageParticipants"
       v-on-clickaway="
         () => {
           onCloseDropdown();

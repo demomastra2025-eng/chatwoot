@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_11_180000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1145,6 +1145,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_11_180000) do
     t.index ["inbox_id"], name: "index_communication_thread_conversations_on_inbox_id"
   end
 
+  create_table "communication_thread_participants", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "added_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id", "communication_thread_id"], name: "idx_thread_participants_account_user_thread"
+    t.index ["account_id"], name: "index_communication_thread_participants_on_account_id"
+    t.index ["added_by_id"], name: "index_communication_thread_participants_on_added_by_id"
+    t.index ["communication_thread_id", "user_id"], name: "idx_thread_participants_thread_user", unique: true
+    t.index ["user_id"], name: "index_communication_thread_participants_on_user_id"
+  end
+
   create_table "communication_threads", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "contact_id", null: false
@@ -1161,6 +1175,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_11_180000) do
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "contact_id"], name: "idx_communication_threads_one_per_contact", unique: true
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
+    t.index ["account_id", "id"], name: "idx_communication_threads_account_id", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
     t.index ["account_id"], name: "index_communication_threads_on_account_id"
     t.index ["assignee_id"], name: "index_communication_threads_on_assignee_id"
@@ -3750,6 +3765,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_11_180000) do
   add_foreign_key "communication_thread_conversations", "contact_inboxes"
   add_foreign_key "communication_thread_conversations", "conversations"
   add_foreign_key "communication_thread_conversations", "inboxes"
+  add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "added_by_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_added_by_account"
+  add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "user_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_user_account"
+  add_foreign_key "communication_thread_participants", "accounts"
+  add_foreign_key "communication_thread_participants", "communication_threads"
+  add_foreign_key "communication_thread_participants", "communication_threads", column: ["account_id", "communication_thread_id"], primary_key: ["account_id", "id"], name: "fk_thread_participants_thread_account"
+  add_foreign_key "communication_thread_participants", "users"
+  add_foreign_key "communication_thread_participants", "users", column: "added_by_id"
   add_foreign_key "communication_threads", "accounts"
   add_foreign_key "communication_threads", "contacts"
   add_foreign_key "communication_threads", "teams"

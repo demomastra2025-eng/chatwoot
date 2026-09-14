@@ -1166,6 +1166,17 @@ const actions = {
     if (payload?.source_event === 'conversation.contact_changed') {
       dispatch('fetchCommunicationThreads');
     }
+    if (payload?.source_event === 'communication_thread.participants_changed') {
+      dispatch(
+        'conversationWatchers/show',
+        {
+          conversationId: communicationThread.id,
+          communicationThreadMode: true,
+        },
+        { root: true }
+      );
+      dispatch('fetchCommunicationThreads');
+    }
   },
 
   updateConversationLastActivity(

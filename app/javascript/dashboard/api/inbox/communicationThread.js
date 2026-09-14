@@ -165,6 +165,20 @@ class CommunicationThreadApi extends ApiClient {
     return axios.post(`${this.url}/${id}/labels`, { labels });
   }
 
+  fetchParticipants(id) {
+    return axios.get(`${this.url}/${id}/participants`);
+  }
+
+  addParticipant(id, userId) {
+    return axios.post(`${this.url}/${id}/participants`, { user_id: userId });
+  }
+
+  removeParticipant(id, userId) {
+    return axios.delete(`${this.url}/${id}/participants`, {
+      data: { user_id: userId },
+    });
+  }
+
   deleteConversations(id, conversationIds) {
     return axios.delete(`${this.url}/${id}/conversations`, {
       data: { conversation_ids: conversationIds },

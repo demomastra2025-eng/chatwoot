@@ -323,21 +323,10 @@ class ActionCableListener < BaseListener
   end
 
   def conversation_dashboard_tokens(account, conversation)
-    participant_user_ids = conversation.conversation_participants.pluck(:user_id)
-    permitted_agents = account.account_users
-                              .where(role: :agent)
-                              .includes(:user, :custom_role)
-                              .filter_map do |account_user|
-      user = account_user.user
-      context = {
-        user: user,
-        account: account,
-        account_user: account_user,
-        participant_user_ids: participant_user_ids
-      }
-      user if ConversationPolicy.new(context, conversation).show?
-    end
-
+    permitted_agents = CommunicationThreads::DashboardRecipientResolver.new(
+      account: account,
+      conversation: conversation
+    ).perform
     user_tokens(account, permitted_agents)
   end
 

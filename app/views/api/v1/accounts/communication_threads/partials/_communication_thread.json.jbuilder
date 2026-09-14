@@ -6,24 +6,32 @@ conversation_unread_counts = local_assigns[:conversation_unread_counts]
 message_push_data = lambda do |message|
   next if message.blank?
 
-  options = {}
-  if conversation_unread_counts
-    options[:conversation_unread_count] = conversation_unread_counts.fetch(message.conversation_id, 0)
-  end
+  options = if conversation_unread_counts
+              { conversation_unread_count: conversation_unread_counts.fetch(message.conversation_id, 0) }
+            else
+              {}
+            end
   message.push_event_data(**options)
 end
 linked_conversations = links.filter_map(&:conversation)
 agent_last_seen_values = linked_conversations.map(&:agent_last_seen_at)
 assignee_last_seen_values = linked_conversations.map(&:assignee_last_seen_at)
-thread_agent_last_seen_at =
-  agent_last_seen_values.min.to_i if agent_last_seen_values.present? && agent_last_seen_values.all?(&:present?)
-thread_assignee_last_seen_at =
-  assignee_last_seen_values.min.to_i if assignee_last_seen_values.present? && assignee_last_seen_values.all?(&:present?)
+earliest_complete_timestamp = lambda do |values|
+  next unless values.present? && values.all?(&:present?)
+
+  values.min.to_i
+end
+thread_agent_last_seen_at = earliest_complete_timestamp.call(agent_last_seen_values)
+thread_assignee_last_seen_at = earliest_complete_timestamp.call(assignee_last_seen_values)
 thread_pinned = linked_conversations.any? do |conversation|
   ActiveModel::Type::Boolean.new.cast(conversation.custom_attributes&.dig('pinned'))
 end
 meta_ad_referral = (@meta_ad_referrals_by_communication_thread_id || {})[communication_thread.id]
 directional_message_timestamps = (@last_message_activity_by_thread_id || {}).fetch(communication_thread.id, {})
+thread_policy = CommunicationThreadPolicy.new(
+  { user: Current.user, account: Current.account, account_user: Current.account_user },
+  communication_thread
+)
 
 json.meta do
   json.sender do
@@ -82,3 +90,8 @@ json.unread_count communication_thread.unread_count
 json.priority communication_thread.priority
 json.assignee_id communication_thread.assignee_id
 json.team_id communication_thread.team_id
+json.current_user_participant(
+  communication_thread.communication_thread_participants.any? { |participant| participant.user_id == Current.user.id }
+)
+json.can_manage_participants thread_policy.manage_participants?
+json.can_leave_participation thread_policy.leave?

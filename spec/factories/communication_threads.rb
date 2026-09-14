@@ -34,4 +34,12 @@ FactoryBot.define do
       end
     end
   end
+
+  factory :communication_thread_participant do
+    after(:build) do |participant|
+      participant.communication_thread ||= create(:communication_thread)
+      participant.account ||= participant.communication_thread.account
+      participant.user ||= create(:user, account: participant.account)
+    end
+  end
 end

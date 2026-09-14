@@ -12,7 +12,28 @@ describe('#mutations', () => {
         data: [],
         conversationId: 1,
       });
-      expect(state.records).toEqual({ 1: [] });
+      expect(state.records).toEqual({ 'conversation:1': [] });
+    });
+
+    it('isolates legacy conversation and communication thread records with the same display id', () => {
+      let state = {
+        records: {},
+      };
+
+      mutations[types.SET_CONVERSATION_PARTICIPANTS](state, {
+        data: [{ id: 1 }],
+        conversationId: 1,
+      });
+      mutations[types.SET_CONVERSATION_PARTICIPANTS](state, {
+        data: [{ id: 2 }],
+        conversationId: 1,
+        communicationThreadMode: true,
+      });
+
+      expect(state.records).toEqual({
+        'conversation:1': [{ id: 1 }],
+        'thread:1': [{ id: 2 }],
+      });
     });
   });
 

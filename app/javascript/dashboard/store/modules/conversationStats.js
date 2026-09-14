@@ -7,6 +7,7 @@ const state = {
   mineCount: 0,
   unAssignedCount: 0,
   allCount: 0,
+  participatingCount: 0,
   assigneeCounts: {
     mine: 0,
     assigned: 0,
@@ -96,6 +97,7 @@ export const mutations = {
       mine_count: mineCount,
       unassigned_count: unAssignedCount,
       all_count: allCount,
+      participating_count: participatingCount,
       assigned_count: assignedCount,
       mine_unread_count: mineUnreadCount,
       unassigned_unread_count: unAssignedUnreadCount,
@@ -106,6 +108,7 @@ export const mutations = {
   ) {
     $state.mineCount = toNumber(mineCount);
     $state.allCount = toNumber(allCount);
+    $state.participatingCount = toNumber(participatingCount);
     $state.unAssignedCount = toNumber(unAssignedCount);
     $state.assigneeCounts = normalizeAssigneeCounts(assigneeCounts, {
       mine: mineCount,

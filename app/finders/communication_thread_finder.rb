@@ -166,11 +166,22 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def find_accessible_threads
-    @communication_threads = CommunicationThread
-                             .where(account_id: current_account.id)
-                             .joins(:communication_thread_conversations)
-                             .where(communication_thread_conversations: { conversation_id: accessible_conversations.select(:id) })
-                             .distinct
+    account_threads = CommunicationThread.where(account_id: current_account.id)
+    @communication_threads = if access_role_enforced?
+                               visible_thread_scope
+                             else
+                               linked_thread_ids = CommunicationThreadConversation
+                                                   .where(
+                                                     account_id: current_account.id,
+                                                     conversation_id: accessible_conversations.select(:id)
+                                                   )
+                                                   .select(:communication_thread_id)
+                               account_threads.where(id: linked_thread_ids).or(
+                                 account_threads.where(id: participating_thread_ids)
+                               )
+                             end
+    @communication_threads = @communication_threads.where(id: participating_thread_ids) if params[:conversation_type] == 'participating'
+    @communication_threads = @communication_threads.left_joins(:communication_thread_conversations).distinct
   end
 
   def filter_by_status
@@ -258,15 +269,24 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       assigned_unread_count: all_unread_count - unassigned_unread_count,
       unassigned_unread_count: unassigned_unread_count,
       all_unread_count: all_unread_count,
-      assignee_counts: {
-        mine_count: mine_count,
-        assigned_count: all_count - unassigned_count,
-        unassigned_count: unassigned_count,
-        all_count: all_count
-      },
+      participating_count: participating_count,
+      assignee_counts: assignee_counts(mine_count, unassigned_count, all_count),
       unread_counts: include_context_counts? ? unread_counts : {},
       context_counts: include_context_counts? ? context_counts : {}
     }
+  end
+
+  def assignee_counts(mine_count, unassigned_count, all_count)
+    {
+      mine_count: mine_count,
+      assigned_count: all_count - unassigned_count,
+      unassigned_count: unassigned_count,
+      all_count: all_count
+    }
+  end
+
+  def participating_count
+    CommunicationThreadParticipant.where(account_id: current_account.id, user_id: current_user.id).count
   end
 
   def context_counts
@@ -604,6 +624,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
         ]
       },
       { assignee: [:account_users, { avatar_attachment: :blob }] },
+      :communication_thread_participants,
       :team
     ]
   end
@@ -616,18 +637,73 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
         current_account
       )
       scope = @operational ? permission_service.perform_operational : permission_service.perform
-
-      case params[:conversation_type]
-      when 'mention'
-        scope.where(id: current_account.mentions.where(user: current_user).select(:conversation_id))
-      when 'participating'
-        scope.where(id: current_user.participating_conversations.where(account_id: current_account.id).select(:id))
-      when 'unattended'
-        scope.unattended
-      else
-        scope
-      end
+      scope = merge_additional_conversation_access(scope)
+      filter_conversations_by_type(scope)
     end
+  end
+
+  def merge_additional_conversation_access(scope)
+    base_scope = current_account.conversations
+    base_scope.where(id: scope.select(:id)).or(base_scope.where(id: additional_conversation_scope.select(:id)))
+  end
+
+  def additional_conversation_scope
+    thread_ids = access_role_enforced? ? visible_thread_scope.select(:id) : participating_thread_ids
+    current_account.conversations.where(
+      id: CommunicationThreadConversation.where(
+        account_id: current_account.id,
+        communication_thread_id: thread_ids
+      ).select(:conversation_id)
+    )
+  end
+
+  def filter_conversations_by_type(scope)
+    case params[:conversation_type]
+    when 'mention'
+      scope.where(id: current_account.mentions.where(user: current_user).select(:conversation_id))
+    when 'participating'
+      scope.where(id: participating_conversation_ids)
+    when 'unattended'
+      scope.unattended
+    else
+      scope
+    end
+  end
+
+  def participating_conversation_ids
+    CommunicationThreadConversation.where(
+      account_id: current_account.id,
+      communication_thread_id: participating_thread_ids
+    ).select(:conversation_id)
+  end
+
+  def participating_thread_ids
+    @participating_thread_ids ||= CommunicationThreadParticipant
+                                  .where(account_id: current_account.id, user_id: current_user.id)
+                                  .select(:communication_thread_id)
+  end
+
+  def visible_thread_scope
+    @visible_thread_scope ||= CommunicationThreadPolicy::Scope.new(
+      policy_user_context,
+      CommunicationThread.where(account_id: current_account.id)
+    ).resolve
+  end
+
+  def access_role_enforced?
+    @access_role_enforced ||= AccessControl::ModeResolver.call(
+      account_user: policy_user_context[:account_user],
+      resource: 'conversations',
+      capability: 'view'
+    ).authoritative_source == 'access_role'
+  end
+
+  def policy_user_context
+    @policy_user_context ||= {
+      user: current_user,
+      account: current_account,
+      account_user: current_account.account_users.find_by(user_id: current_user.id)
+    }
   end
 
   def crm_pipeline_id

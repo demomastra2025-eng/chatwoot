@@ -2,7 +2,8 @@ class ParticipationListener < BaseListener
   include Events::Types
 
   def assignee_changed(event)
-    conversation, _account = extract_conversation_and_account(event)
+    conversation, account = extract_conversation_and_account(event)
+    return if account.feature_enabled?('communication_threads')
     return if conversation.assignee_id.blank?
 
     ConversationParticipant.find_or_create_for!(conversation: conversation, user_id: conversation.assignee_id)

@@ -39,24 +39,43 @@ class Contacts::OwnerSyncService
   def sync_conversations!
     conversations_requiring_owner_sync.find_each do |conversation|
       conversation.assignee_id = owner_id
+      conversation.team_id = owner_team_id if owner_id.present?
       conversation.save! if conversation.changed?
     end
   end
 
   def conversations_requiring_owner_sync
     scope = contact.conversations.where(account_id: contact.account_id)
-    records_with_owner_mismatch(scope, :assignee_id)
+    records_with_routing_mismatch(scope, :assignee_id)
   end
 
   def sync_communication_threads!
     threads_requiring_owner_sync.find_each do |thread|
-      thread.update!(assignee_id: owner_id)
+      reconcile_thread_participants!(thread)
+      attributes = { assignee_id: owner_id }
+      attributes[:team_id] = owner_team_id if owner_id.present?
+      thread.update!(attributes)
     end
+  end
+
+  def reconcile_thread_participants!(thread)
+    return if owner_id.blank?
+
+    participation_service = CommunicationThreads::ParticipationService.new(
+      communication_thread: thread,
+      actor: Current.executed_by || Current.user
+    )
+    if thread.team_id.present? && thread.team_id != owner_team_id
+      participation_service.retain!(user_ids: owner_team_user_ids, reason: 'cross_team_transfer')
+    end
+    return unless thread.communication_thread_participants.exists?(user_id: owner_id)
+
+    participation_service.remove!(user_id: owner_id, reason: 'promoted_to_owner')
   end
 
   def threads_requiring_owner_sync
     scope = CommunicationThread.where(account_id: contact.account_id, contact_id: contact.id)
-    records_with_owner_mismatch(scope, :assignee_id)
+    records_with_routing_mismatch(scope, :assignee_id)
   end
 
   def sync_scheduling_appointments!
@@ -98,5 +117,32 @@ class Contacts::OwnerSyncService
     return scope.where.not(column => nil) if owner_id.blank?
 
     scope.where(column => nil).or(scope.where.not(column => owner_id))
+  end
+
+  def records_with_routing_mismatch(scope, owner_column)
+    owner_mismatch = records_with_owner_mismatch(scope, owner_column)
+    return owner_mismatch if owner_id.blank?
+
+    owner_mismatch.or(scope.where.not(team_id: owner_team_id)).or(scope.where(team_id: nil))
+  end
+
+  def owner_team_id
+    return @owner_team_id if defined?(@owner_team_id)
+    return @owner_team_id = nil if owner_id.blank?
+
+    team_ids = TeamMember.joins(:team)
+                         .where(user_id: owner_id, teams: { account_id: contact.account_id })
+                         .order(:team_id)
+                         .limit(2)
+                         .pluck(:team_id)
+    raise ArgumentError, 'contact owner belongs to multiple teams' if team_ids.many?
+
+    @owner_team_id = team_ids.first
+  end
+
+  def owner_team_user_ids
+    return [] if owner_team_id.blank?
+
+    TeamMember.where(team_id: owner_team_id).pluck(:user_id)
   end
 end

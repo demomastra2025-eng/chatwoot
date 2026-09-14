@@ -481,8 +481,14 @@ RSpec.describe 'Communication Threads API', type: :request do
     it 'returns unread tab counts from meta independent of the current assignee tab page' do
       other_agent = create(:user, account: account, role: :agent)
       create_unread_thread_conversation(assignee: agent)
-      create_unread_thread_conversation(assignee: other_agent)
+      participating_conversation = create_unread_thread_conversation(assignee: other_agent)
       create_unread_thread_conversation
+      create(
+        :communication_thread_participant,
+        account: account,
+        communication_thread: participating_conversation.communication_thread,
+        user: agent
+      )
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
           params: { status: 'open', assignee_type: 'me' },
@@ -499,7 +505,8 @@ RSpec.describe 'Communication Threads API', type: :request do
         mine_unread_count: 1,
         assigned_unread_count: 2,
         unassigned_unread_count: 1,
-        all_unread_count: 3
+        all_unread_count: 3,
+        participating_count: 1
       )
       payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
       expect(payload.size).to eq(1)
@@ -513,7 +520,8 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response.parsed_body['meta']).to include(
         'mine_unread_count' => 1,
         'unassigned_unread_count' => 1,
-        'all_unread_count' => 3
+        'all_unread_count' => 3,
+        'participating_count' => 1
       )
     end
 
@@ -789,6 +797,53 @@ RSpec.describe 'Communication Threads API', type: :request do
         all_count: 1,
         unassigned_count: 1
       )
+    end
+
+    it 'includes canonical participant threads in participating filters without legacy inbox access' do
+      participant_conversation = create(:conversation, account: account, status: :open)
+      thread = participant_conversation.reload.communication_thread
+      create(:communication_thread_participant, account: account, communication_thread: thread, user: agent)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter?conversation_type=participating",
+           params: {
+             payload: [advanced_filter_payload.first.merge(query_operator: nil)]
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'payload').pluck('id')).to contain_exactly(thread.display_id)
+    end
+
+    it 'does not restore legacy inbox visibility outside the enforced thread scope' do
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      restricted_role = create(:access_role, account: account)
+      create(
+        :access_role_grant,
+        account: account,
+        access_role: restricted_role,
+        resource: 'conversations',
+        capability: 'view',
+        access_scope: 'own'
+      )
+      account.account_users.find_by!(user: agent).update!(access_role: restricted_role)
+      account.authorize_access_control_mode_transition do
+        account.update!(access_control_mode: :enforced)
+      end
+
+      other_agent = create(:user, account: account, role: :agent)
+      restricted_conversation = create(:conversation, account: account, status: :open, assignee: other_agent)
+      create(:inbox_member, user: agent, inbox: restricted_conversation.inbox)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter",
+           params: {
+             payload: [advanced_filter_payload.first.merge(query_operator: nil)]
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'payload')).to be_empty
     end
 
     it 'returns exact filtered counts without list payload in meta-only mode' do

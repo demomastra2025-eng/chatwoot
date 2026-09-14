@@ -12,9 +12,10 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   RESULTS_PER_PAGE = 15
 
-  before_action :check_authorization
   before_action :set_current_page, only: [:index, :active, :search, :filter]
   before_action :fetch_contact, only: [:show, :update, :destroy, :avatar, :contactable_inboxes, :destroy_custom_attributes]
+  before_action :authorize_contact!
+  before_action :authorize_contact_assignment!, only: [:create, :update]
   before_action :set_include_contact_inboxes, only: [:index, :active, :search, :filter, :show, :update]
   around_action :with_contact_actor, only: [:create, :update, :destroy_custom_attributes]
 
@@ -27,7 +28,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_content if params[:q].blank? && return
 
     search_query = params[:q].to_s.strip
-    contacts = Current.account.contacts.where(
+    contacts = policy_scope(Current.account.contacts).where(
       [
         'name ILIKE :search',
         'email ILIKE :search',
@@ -64,7 +65,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   # returns online contacts
   def active
-    contacts = Current.account.contacts.where(id: ::OnlineStatusTracker
+    contacts = policy_scope(Current.account.contacts).where(id: ::OnlineStatusTracker
                   .get_available_contact_ids(Current.account.id))
     @contacts = fetch_contacts(contacts)
     @contacts_count = @contacts.total_count
@@ -74,8 +75,8 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def filter
     result = ::Contacts::FilterService.new(Current.account, Current.user, params.permit!).perform
-    contacts = result[:contacts]
-    @contacts_count = result[:count]
+    contacts = policy_scope(result[:contacts])
+    @contacts_count = contacts.count
     @contacts = fetch_contacts(contacts)
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
@@ -138,6 +139,16 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   private
 
+  def authorize_contact!
+    authorize(@contact || Contact)
+  end
+
+  def authorize_contact_assignment!
+    return unless params.key?(:owner_id)
+
+    authorize(@contact || Contact, :assign?)
+  end
+
   def with_contact_actor
     previous_actor = Current.executed_by
     Current.executed_by = Current.user if Current.user.present?
@@ -150,7 +161,8 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   def resolved_contacts
     return @resolved_contacts if @resolved_contacts
 
-    @resolved_contacts = Current.account.contacts.resolved_contacts(use_crm_v2: Current.account.feature_enabled?('crm_v2'))
+    @resolved_contacts = policy_scope(Current.account.contacts)
+                         .resolved_contacts(use_crm_v2: Current.account.feature_enabled?('crm_v2'))
 
     @resolved_contacts = @resolved_contacts.tagged_with(params[:labels], any: true) if params[:labels].present?
     @resolved_contacts
@@ -261,7 +273,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def fetch_contact
-    contact_scope = Current.account.contacts
+    contact_scope = policy_scope(Current.account.contacts)
     contact_scope = contact_scope.includes(*contact_includes) if @include_contact_inboxes
     @contact = contact_scope.find(params[:id])
   end

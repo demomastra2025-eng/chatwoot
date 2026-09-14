@@ -38,12 +38,13 @@ class CommunicationThreads::FilterService < FilterService
       @account
     )
     scope = @operational ? permission_service.perform_operational : permission_service.perform
+    scope = merge_canonical_thread_access(scope) if canonical_participation?
 
     case @params[:conversation_type]
     when 'mention'
       scope.where(id: @account.mentions.where(user: @user).select(:conversation_id))
     when 'participating'
-      scope.where(id: @user.participating_conversations.where(account_id: @account.id).select(:id))
+      scope.where(id: participating_conversation_ids)
     when 'unattended'
       scope.unattended
     else
@@ -100,6 +101,62 @@ class CommunicationThreads::FilterService < FilterService
       .joins(:communication_thread_conversations)
       .where(communication_thread_conversations: { conversation_id: conversation_scope.select(:id) })
       .distinct
+  end
+
+  def merge_canonical_thread_access(scope)
+    base_scope = @account.conversations
+    return base_scope.where(id: canonical_conversation_ids) if access_role_enforced?
+
+    base_scope.where(id: scope.select(:id)).or(base_scope.where(id: canonical_conversation_ids))
+  end
+
+  def canonical_conversation_ids
+    CommunicationThreadConversation.where(
+      account_id: @account.id,
+      communication_thread_id: canonical_visible_thread_ids
+    ).select(:conversation_id)
+  end
+
+  def canonical_visible_thread_ids
+    return participating_thread_ids unless access_role_enforced?
+
+    CommunicationThreadPolicy::Scope.new(
+      policy_user_context,
+      CommunicationThread.where(account_id: @account.id)
+    ).resolve.select(:id)
+  end
+
+  def participating_conversation_ids
+    return @user.participating_conversations.where(account_id: @account.id).select(:id) unless canonical_participation?
+
+    CommunicationThreadConversation.where(
+      account_id: @account.id,
+      communication_thread_id: participating_thread_ids
+    ).select(:conversation_id)
+  end
+
+  def participating_thread_ids
+    CommunicationThreadParticipant.where(account_id: @account.id, user_id: @user.id).select(:communication_thread_id)
+  end
+
+  def canonical_participation?
+    @account.feature_enabled?('communication_threads')
+  end
+
+  def access_role_enforced?
+    AccessControl::ModeResolver.call(
+      account_user: policy_user_context[:account_user],
+      resource: 'conversations',
+      capability: 'view'
+    ).authoritative_source == 'access_role'
+  end
+
+  def policy_user_context
+    @policy_user_context ||= {
+      user: @user,
+      account: @account,
+      account_user: @account.account_users.find_by(user_id: @user.id)
+    }
   end
 
   def apply_crm_deal_context(scope)
@@ -198,6 +255,7 @@ class CommunicationThreads::FilterService < FilterService
         ]
       },
       { assignee: [:account_users, { avatar_attachment: :blob }] },
+      :communication_thread_participants,
       :team
     ]
   end
@@ -214,6 +272,7 @@ class CommunicationThreads::FilterService < FilterService
       assigned_unread_count: counts[:assigned_unread_count],
       unassigned_unread_count: counts[:unassigned_unread_count],
       all_unread_count: counts[:all_unread_count],
+      participating_count: CommunicationThreadParticipant.where(account_id: @account.id, user_id: @user.id).count,
       assignee_counts: assignee_counts,
       unread_counts: include_context_counts? ? unread_counts : {},
       context_counts: include_context_counts? ? context_counts : {}

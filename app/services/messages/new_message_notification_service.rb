@@ -27,7 +27,10 @@ class Messages::NewMessageNotificationService
   end
 
   def notify_participating_users
-    participating_users = conversation.conversation_participants.map(&:user)
+    participating_users = canonical_participating_users
+    return if participating_users.blank?
+    return unless message.incoming? || !canonical_participation?
+
     participating_users -= [sender] if sender.is_a?(User)
 
     participating_users.uniq.each do |participant|
@@ -41,6 +44,16 @@ class Messages::NewMessageNotificationService
         secondary_actor: message
       ).perform
     end
+  end
+
+  def canonical_participating_users
+    return conversation.conversation_participants.map(&:user) unless canonical_participation?
+
+    conversation.communication_thread.communication_thread_participants.includes(:user).map(&:user)
+  end
+
+  def canonical_participation?
+    account.feature_enabled?('communication_threads') && conversation.communication_thread.present?
   end
 
   # The user could already have been notified via a mention or via assignment
