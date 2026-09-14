@@ -94,6 +94,23 @@ RSpec.describe Llm::UsageLedger do
       expect(usage.estimated_cost.to_f).to eq(0.002)
     end
 
+    it 'does not report the requested OpenRouter model as actual without response evidence' do
+      event = create(
+        :llm_event,
+        account: account,
+        provider: 'openrouter',
+        model: 'openai/gpt-5.6-luna',
+        payload: { 'requested_model' => 'openai/gpt-5.6-luna' }
+      )
+
+      described_class.record_event!(event)
+
+      expect(LlmUsageEvent.last).to have_attributes(
+        requested_model: 'openai/gpt-5.6-luna',
+        actual_model: nil
+      )
+    end
+
     it 'does not create usage rows for non-provider RCA/tool events' do
       event = create(:llm_event, event_name: 'llm.tool.complete', provider: nil, estimated_cost: nil)
 

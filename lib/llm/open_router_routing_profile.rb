@@ -20,6 +20,7 @@ class Llm::OpenRouterRoutingProfile
   ].freeze
   ROUTING_STRATEGY_KEYS = %w[openrouter_routing_strategy routing_strategy].freeze
   PROVIDER_ORDER_KEYS = %w[openrouter_provider_order provider_order].freeze
+  MODEL_FALLBACK_RUNTIME_KEY = 'openrouter_allow_model_fallbacks'
   PROVIDER_RUNTIME_PREFERENCE_KEYS = {
     'openrouter_provider_only' => :only,
     'provider_only' => :only,
@@ -114,6 +115,13 @@ class Llm::OpenRouterRoutingProfile
     native_endpoint.blank?
   end
 
+  def model_fallbacks_allowed?
+    value = model_fallback_runtime_preference
+    return true if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
   def to_h
     {
       models: models.presence,
@@ -142,8 +150,18 @@ class Llm::OpenRouterRoutingProfile
 
   private
 
+  def model_fallback_runtime_preference
+    return runtime_preferences[MODEL_FALLBACK_RUNTIME_KEY] if runtime_preferences.key?(MODEL_FALLBACK_RUNTIME_KEY)
+    return unless account.respond_to?(:captain_preferences)
+
+    account.captain_preferences[:runtime].to_h.with_indifferent_access[MODEL_FALLBACK_RUNTIME_KEY]
+  rescue StandardError
+    nil
+  end
+
   def build_models
-    ([model] + FALLBACK_MODELS.fetch(feature_key, [])).compact_blank.uniq
+    fallback_models = model_fallbacks_allowed? ? FALLBACK_MODELS.fetch(feature_key, []) : []
+    ([model] + fallback_models).compact_blank.uniq
   end
 
   def build_provider_preferences

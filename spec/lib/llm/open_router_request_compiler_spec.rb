@@ -110,6 +110,22 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.metadata[:fallback_models]).to include('openai/gpt-5.4-mini')
   end
 
+  it 'compiles a strict selected-model route without cross-model fallbacks' do
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'openai/gpt-5.6-luna',
+      runtime_preferences: { openrouter_allow_model_fallbacks: false }
+    )
+
+    expect(compiled.models).to eq(['openai/gpt-5.6-luna'])
+    expect(compiled.params[:models]).to eq(['openai/gpt-5.6-luna'])
+    expect(compiled.params[:provider]).to include(allow_fallbacks: true)
+    expect(compiled.metadata).to include(
+      fallback_models: [],
+      openrouter_allow_model_fallbacks: false
+    )
+  end
+
   it 'does not add response healing for streaming structured output requests' do
     compiled = compile(
       feature: :captain_agent,

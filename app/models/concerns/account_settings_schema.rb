@@ -97,6 +97,7 @@ module AccountSettingsSchema
             'copilot_thinking_effort': { 'type': %w[string null], 'enum': ['none', 'low', 'medium', 'high', nil] },
             'assistant_moderation': { 'type': %w[boolean null] },
             'copilot_moderation': { 'type': %w[boolean null] },
+            'openrouter_allow_model_fallbacks': { 'type': %w[boolean null] },
             'moderation_failure_mode': { 'type': %w[string null], 'enum': ['fail_open', 'fail_closed', nil] },
             'prompt_injection_guardrail': {
               'type': %w[string boolean null],

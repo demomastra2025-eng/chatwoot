@@ -342,6 +342,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_provider_sort: provider_sort(provider_params),
       openrouter_preferred_max_latency: provider_params[:preferred_max_latency],
       openrouter_preferred_min_throughput: provider_params[:preferred_min_throughput],
+      openrouter_allow_model_fallbacks: profile.model_fallbacks_allowed?,
       openrouter_allow_fallbacks: provider_params[:allow_fallbacks],
       openrouter_require_parameters: provider_params[:require_parameters],
       openrouter_data_collection: provider_params[:data_collection],

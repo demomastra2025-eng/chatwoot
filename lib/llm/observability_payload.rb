@@ -4,7 +4,7 @@ class Llm::ObservabilityPayload
   OPENROUTER_METADATA_KEYS = %i[
     requested_model actual_model endpoint_provider routing_profile runtime_profile
     models fallback_models openrouter_provider_order openrouter_provider_sort
-    openrouter_allow_fallbacks openrouter_require_parameters openrouter_data_collection
+    openrouter_allow_model_fallbacks openrouter_allow_fallbacks openrouter_require_parameters openrouter_data_collection
     openrouter_zdr openrouter_plugins openrouter_server_tools openrouter_service_tier
     openrouter_native_endpoint openrouter_privacy_profile openrouter_guardrail_profile
     openrouter_cache_policy openrouter_plugin_policy openrouter_transform_policy
@@ -191,8 +191,21 @@ class Llm::ObservabilityPayload
         'tool_call' => response_tool_call(response),
         'output_type' => response_output_type(response),
         'output_size' => response_output_size(response),
+        'actual_model' => response_model(response),
         'openrouter_generation_id' => openrouter_generation_id(response, provider: provider)
       }
+    end
+
+    def response_model(response)
+      %i[model_id model].each do |method_name|
+        next unless response.respond_to?(method_name)
+
+        value = response.public_send(method_name).to_s.strip
+        return value if value.present?
+      end
+      nil
+    rescue StandardError
+      nil
     end
 
     def response_tool_call(response)
@@ -234,15 +247,22 @@ class Llm::ObservabilityPayload
     end
 
     def response_generation_id_from_metadata(response)
-      %i[headers response_headers metadata raw to_h].each do |method_name|
-        next unless response.respond_to?(method_name)
-
-        value = nested_generation_id(response.public_send(method_name))
+      response_metadata_sources(response).each do |source|
+        value = nested_generation_id(source)
         return value if value.present?
       end
       nil
     rescue StandardError, SystemStackError
       nil
+    end
+
+    def response_metadata_sources(response)
+      sources = %i[headers response_headers metadata raw to_h].filter_map do |method_name|
+        response.public_send(method_name) if response.respond_to?(method_name)
+      end
+      raw_response = response.raw if response.respond_to?(:raw)
+      sources << raw_response.body if raw_response.respond_to?(:body)
+      sources
     end
 
     def nested_generation_id(value)

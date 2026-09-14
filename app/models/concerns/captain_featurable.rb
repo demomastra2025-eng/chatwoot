@@ -8,6 +8,7 @@ module CaptainFeaturable
     'copilot_thinking_effort' => 'none',
     'assistant_moderation' => false,
     'copilot_moderation' => false,
+    'openrouter_allow_model_fallbacks' => true,
     'moderation_failure_mode' => 'fail_open',
     'assistant_prompt_injection_guardrail' => 'block',
     'copilot_prompt_injection_guardrail' => 'block',

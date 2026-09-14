@@ -18,6 +18,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   RUNTIME_BOOLEAN_KEYS = %w[
     assistant_moderation
     copilot_moderation
+    openrouter_allow_model_fallbacks
     trace_input_capture
     trace_output_capture
     web_search_enabled
@@ -158,6 +159,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       :copilot_thinking_effort,
       :assistant_moderation,
       :copilot_moderation,
+      :openrouter_allow_model_fallbacks,
       :moderation_failure_mode,
       :prompt_injection_guardrail,
       :sensitive_info_guardrail,

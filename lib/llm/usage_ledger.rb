@@ -64,7 +64,7 @@ class Llm::UsageLedger
         provider: event.provider,
         actual_provider: payload[:endpoint_provider].presence || generation[:provider_name],
         requested_model: payload[:requested_model].presence || payload[:model].presence || event.model,
-        actual_model: generation[:model].presence || payload[:actual_model].presence || event.model,
+        actual_model: actual_model_for(event, payload, generation),
         routing_profile: payload[:routing_profile].presence || payload[:runtime_profile].presence,
         status: event.status,
         error_code: event.error_code,
@@ -95,6 +95,14 @@ class Llm::UsageLedger
         openrouter_generation: generation.presence,
         budget_decision: payload[:budget_decision]
       }.compact
+    end
+
+    def actual_model_for(event, payload, generation)
+      observed_model = generation[:model].presence || payload[:actual_model].presence
+      return observed_model if observed_model.present?
+      return if event.provider.to_s == 'openrouter'
+
+      event.model
     end
 
     def usage_error_count(scope)
