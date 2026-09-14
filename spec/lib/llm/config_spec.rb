@@ -192,7 +192,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
     end
 
     it 'uses the OpenRouter default even when a direct provider key is configured alongside OpenRouter' do
@@ -206,7 +206,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
     end
 
     it 'maps legacy account-selected direct model ids to OpenRouter equivalents for normal Captain features' do
