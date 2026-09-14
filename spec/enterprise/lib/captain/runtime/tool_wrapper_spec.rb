@@ -2,6 +2,8 @@
 
 require 'rails_helper'
 
+# Test tool constants intentionally live with the examples that exercise them.
+# rubocop:disable Lint/ConstantDefinitionInBlock
 RSpec.describe Captain::Runtime::ToolWrapper do
   class ToolWrapperSpecTool < Captain::Runtime::Tool
     param :result, type: :string, required: false
@@ -118,7 +120,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
-  class ToolWrapperSpecSchedulingTool < Captain::Runtime::Tool # rubocop:disable Lint/ConstantDefinitionInBlock
+  class ToolWrapperSpecSchedulingTool < Captain::Runtime::Tool
     param :service_id, type: :integer, required: false
     param :resource_ids, type: :array, required: false
 
@@ -147,7 +149,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       @calls += 1
       @result || params.fetch(:result, 'slots')
     end
-  end # rubocop:enable Lint/ConstantDefinitionInBlock
+  end
 
   let(:events) { [] }
   let(:requested_calls) { [] }
@@ -874,3 +876,4 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(payload).to include('error' => message, 'retryable' => retryable)
   end
 end
+# rubocop:enable Lint/ConstantDefinitionInBlock

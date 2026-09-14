@@ -92,7 +92,10 @@ RSpec.describe Captain::Conversation::ControlService do
 
   def cleanup_race_records(records)
     account = records.fetch(:account)
-    ConversationStatusTransition.where(account_id: account.id).delete_all
+    conversation_id = records.fetch(:conversation).id
+    ConversationStatusTransition.where(conversation_id: conversation_id).delete_all
+    Message.where(conversation_id: conversation_id).delete_all
+    Conversation.where(id: conversation_id).delete_all
     account.destroy!
   end
 end
