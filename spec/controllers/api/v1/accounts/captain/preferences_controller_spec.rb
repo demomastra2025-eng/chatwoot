@@ -203,7 +203,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
       end
 
       it 'reports visible provider credential statuses only' do
-        create(:integrations_hook, account: account, app_id: 'anthropic', access_token: 'account-anthropic-key', settings: {})
+        create(:integrations_hook, account: account, app_id: 'openai', settings: { api_key: 'account-openai-key' })
 
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
@@ -211,8 +211,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:provider_credentials].keys).to contain_exactly(:openrouter)
-        expect(json_response[:provider_credentials]).not_to have_key(:anthropic)
-        expect(response.body).not_to include('account-anthropic-key')
+        expect(json_response[:provider_credentials]).not_to have_key(:openai)
+        expect(response.body).not_to include('account-openai-key')
       end
     end
   end
