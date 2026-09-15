@@ -1,9 +1,12 @@
 class Api::V1::Accounts::Scheduling::PaymentsController < Api::V1::Accounts::Scheduling::BaseController
   before_action :ensure_finance_enabled!
-  before_action :check_admin_authorization?
+  before_action :authorize_finance_view!
 
   def index
-    payments = Current.account.scheduling_payments.includes(:appointment).ordered
+    payments = Current.account.scheduling_payments
+                      .where(appointment_id: appointment_scope.select(:id))
+                      .includes(:appointment)
+                      .ordered
     payments = payments.where(payment_kind: parse_csv_ids(params[:payment_kinds])) if params[:payment_kinds].present?
     payments = payments.where(payment_method: parse_csv_ids(params[:payment_methods])) if params[:payment_methods].present?
 
@@ -17,5 +20,19 @@ class Api::V1::Accounts::Scheduling::PaymentsController < Api::V1::Accounts::Sch
     end
 
     render_payload(payments.map { |payment| Scheduling::PayloadBuilder.payment(payment) }, meta: { count: payments.size })
+  end
+
+  private
+
+  def appointment_scope
+    Scheduling::AppointmentPolicy::Scope.new(
+      pundit_user,
+      Current.account.scheduling_appointments,
+      capability: 'view_finance'
+    ).resolve
+  end
+
+  def authorize_finance_view!
+    authorize Scheduling::Appointment, :view_finance?
   end
 end

@@ -25,6 +25,41 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     )
   end
 
+  it 'preserves historical compensation on an ordinary update after resource compensation changes' do
+    account.enable_features!('scheduling_finance')
+    appointment.update!(
+      compensation_type_snapshot: 'fixed',
+      compensation_value_snapshot: 1_000,
+      compensation_percent_snapshot: 0,
+      service_amount: 10_000,
+      settlement_amount: 10_000,
+      settlement_payment_method: 'cash',
+      payment_status: 'paid'
+    )
+    create(
+      :scheduling_expense,
+      account: account,
+      appointment: appointment,
+      resource: resource,
+      amount: 1_000
+    )
+    resource.update!(
+      compensation_type: 'fixed',
+      compensation_value: 5_000,
+      compensation_percent: 0
+    )
+
+    perform(client_comment: 'Non-finance change')
+
+    expect(appointment.reload).to have_attributes(
+      client_comment: 'Non-finance change',
+      compensation_type_snapshot: 'fixed',
+      compensation_value_snapshot: 1_000,
+      compensation_percent_snapshot: 0
+    )
+    expect(Scheduling::Expense.find_by!(appointment: appointment)).to have_attributes(amount: 1_000)
+  end
+
   it 'locks the target resource before checking and persisting availability' do
     resources = account.scheduling_resources
     locked_resources = resources.lock
@@ -67,6 +102,26 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(error.code).to eq('VALIDATION_ERROR')
     end
     expect(appointment.reload.custom_attributes).not_to have_key('medelement_reception_code')
+  end
+
+  it 'does not let assign own transfer an owned contact through owner_id' do
+    agent = create(:user, account: account, role: :agent)
+    other_user = create(:user, account: account, role: :agent)
+    contact = appointment.contact
+    contact.update!(owner: agent)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    expect do
+      described_class.new(
+        account: account,
+        actor: agent,
+        appointment: appointment,
+        params: { owner_id: other_user.id }
+      ).perform
+    end.to raise_error(Pundit::NotAuthorizedError)
+    expect(contact.reload.owner).to eq(agent)
   end
 
   it 'rejects the provider source mode while preserving unrelated custom attributes' do
@@ -130,6 +185,35 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       ).perform
     end
 
+    def perform_new_override(actor:, contact:, **override_params)
+      described_class.new(
+        account: account,
+        actor: actor,
+        appointment: account.scheduling_appointments.new,
+        params: {
+          contact_id: contact.id,
+          resource_id: resource.id,
+          starts_at: booking_day.iso8601,
+          duration_min: 30,
+          client_name: contact.name
+        }.merge(override_params)
+      ).perform
+    end
+
+    def enforce_override_scope(scope, assign_scope: nil)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      access_role = account.account_users.find_by!(user: agent).access_role
+      override_grant = access_role.grants.find_or_initialize_by(
+        account: account,
+        resource: 'appointments',
+        capability: 'override_schedule'
+      )
+      override_grant.update!(access_scope: scope)
+      access_role.grants.find_by!(resource: 'appointments', capability: 'assign').update!(access_scope: assign_scope) if assign_scope
+      account.authorize_access_control_mode_transition { account.update!(access_control_mode: 'enforced') }
+    end
+
     it 'records an authorized break override with its reason and audit comment' do
       resource.break_rules.create!(weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60, active: true)
 
@@ -156,6 +240,65 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('OVERRIDE_FORBIDDEN') }
     end
 
+    it 'accepts an enforced override_schedule grant' do
+      resource.break_rules.create!(weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60, active: true)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      account.account_users.find_by!(user: agent).access_role.grants.create!(
+        account: account,
+        resource: 'appointments',
+        capability: 'override_schedule',
+        access_scope: 'all'
+      )
+      account.authorize_access_control_mode_transition do
+        account.update!(access_control_mode: 'enforced')
+      end
+
+      perform_override(actor: agent, confirm_break_conflict: true, override_reason: 'Assigned override')
+
+      expect(appointment.reload.custom_attributes.fetch('availability_overrides').last).to include(
+        'actor_id' => agent.id,
+        'codes' => ['BLOCKED_BY_BREAK'],
+        'reason' => 'Assigned override'
+      )
+    end
+
+    it 'accepts an all-scoped override_schedule grant for a new appointment' do
+      resource.break_rules.create!(weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60, active: true)
+      contact = create(:contact, account: account, owner: agent, name: 'Owned patient')
+      enforce_override_scope('all')
+
+      created = perform_new_override(
+        actor: agent,
+        contact: contact,
+        confirm_break_conflict: true,
+        override_reason: 'New appointment override'
+      )
+
+      expect(created).to be_persisted
+      expect(created.custom_attributes.fetch('availability_overrides').last).to include(
+        'actor_id' => agent.id,
+        'codes' => ['BLOCKED_BY_BREAK']
+      )
+    end
+
+    %w[own team].each do |scope|
+      it "rejects a #{scope} override scope when a new appointment target is outside the scope" do
+        resource.break_rules.create!(weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60, active: true)
+        contact = create(:contact, account: account, name: 'Unowned patient')
+        enforce_override_scope(scope, assign_scope: 'all')
+
+        expect do
+          perform_new_override(
+            actor: agent,
+            contact: contact,
+            confirm_break_conflict: true,
+            override_reason: "#{scope} override"
+          )
+        end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('OVERRIDE_FORBIDDEN') }
+      end
+    end
+
     it 'does not allow personal time off to be bypassed' do
       create(
         :scheduling_time_off,
@@ -180,9 +323,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
 
   context 'when the selected resource belongs to Medelement' do
     def perform(params)
-      if params.key?(:client_first_name) && !params.key?(:client_middle_name)
-        params = { client_middle_name: 'Ерлановна' }.merge(params)
-      end
+      params = { client_middle_name: 'Ерлановна' }.merge(params) if params.key?(:client_first_name) && !params.key?(:client_middle_name)
       described_class.new(account: account, appointment: appointment, params: params).perform
     end
 

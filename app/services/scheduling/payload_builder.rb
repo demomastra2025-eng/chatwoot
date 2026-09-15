@@ -1,17 +1,23 @@
 module Scheduling::PayloadBuilder
+  APPOINTMENT_FINANCE_KEYS = %i[
+    service_amount compensation_type_snapshot compensation_value_snapshot compensation_percent_snapshot
+    prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method payment_status payments expense
+  ].freeze
+
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil)
+  def appointment(appointment, payments: nil, expense_record: nil, include_finance: true)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
     legacy_chat_conversation = conversation || appointment_chat_conversation(appointment)
     legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation)
 
-    {
+    payload = {
       id: appointment.id,
       account_id: appointment.account_id,
       resource_id: appointment.resource_id,
       resource_name: appointment.resource&.name,
+      team_id: appointment.team_id,
       contact_id: appointment.contact_id,
       service_id: appointment.service_id,
       service_ids: appointment.custom_attributes['service_ids'].presence || Array(appointment.service_id).compact,
@@ -71,6 +77,8 @@ module Scheduling::PayloadBuilder
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
     }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment))
+
+    include_finance ? payload : payload.except(*APPOINTMENT_FINANCE_KEYS)
   end
 
   def available_conversation(conversation)
@@ -126,21 +134,47 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def calendar(payload)
+  def calendar(payload, include_finance: true, finance_appointment_ids: nil, finance_resource_ids: nil)
+    finance_visibility = finance_visibility_map(finance_appointment_ids)
+    resource_finance_visibility = finance_visibility_map(finance_resource_ids)
     {
       view: payload[:view],
       range: payload[:range],
-      resources: payload[:resources].map { |item| resource(item) },
+      resources: payload[:resources].map do |item|
+        resource(item, include_finance: finance_visible?(item.id, include_finance, resource_finance_visibility))
+      end,
       work_rules: payload[:work_rules].map { |item| work_rule(item) },
       break_rules: payload[:break_rules].map { |item| break_rule(item) },
       holidays: payload[:holidays].map { |item| holiday(item) },
       workday_overrides: payload[:workday_overrides].map { |item| workday_override(item) },
       time_offs: payload[:time_offs].map { |item| time_off(item) },
-      appointments: payload[:appointments].map { |item| appointment(item) },
-      payments: payload[:payments].map { |item| payment(item) },
-      expenses: payload[:expenses].map { |item| expense(item) },
+      appointments: calendar_appointments(payload[:appointments], include_finance, finance_visibility),
+      payments: calendar_finance_records(payload[:payments], include_finance, finance_visibility, :payment),
+      expenses: calendar_finance_records(payload[:expenses], include_finance, finance_visibility, :expense),
       slots: payload[:slots]
     }
+  end
+
+  def calendar_appointments(appointments, include_finance, finance_visibility)
+    appointments.map do |item|
+      appointment(item, include_finance: finance_visible?(item.id, include_finance, finance_visibility))
+    end
+  end
+
+  def calendar_finance_records(records, include_finance, finance_visibility, serializer)
+    records.filter_map do |item|
+      public_send(serializer, item) if finance_visible?(item.appointment_id, include_finance, finance_visibility)
+    end
+  end
+
+  def finance_visibility_map(appointment_ids)
+    return if appointment_ids.nil?
+
+    Array(appointment_ids).index_with(true)
+  end
+
+  def finance_visible?(appointment_id, include_finance, finance_visibility)
+    finance_visibility.nil? ? include_finance : finance_visibility.key?(appointment_id)
   end
 
   def contact(contact)
@@ -206,37 +240,43 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def resource(resource)
+  def resource(resource, include_finance: false)
     {
       id: resource.id,
       account_id: resource.account_id,
       user_id: resource.user_id,
+      team_id: resource.team_id,
       name: resource.name,
       specialty: resource.specialty,
       photo_url: resource.photo_url,
       description: resource.description,
       color: resource.color
-    }.merge(resource_capacity(resource))
+    }.merge(resource_capacity(resource, include_finance: include_finance))
   end
 
-  def resource_capacity(resource)
-    {
+  def resource_capacity(resource, include_finance: false)
+    payload = {
       timezone: resource.timezone,
       slot_duration_min: resource.slot_duration_min,
       schedule_update_supported: true,
       availability_override_supported: true,
       inherit_working_hours_from_account: resource.inherit_working_hours_from_account,
-      compensation_type: resource.compensation_type,
-      compensation_value: resource.compensation_value,
-      compensation_percent: resource.compensation_percent,
       active: resource.active,
       custom_attributes: resource.custom_attributes,
       created_at: resource.created_at&.iso8601,
       updated_at: resource.updated_at&.iso8601
     }
+    return payload unless include_finance
+
+    payload.merge(
+      compensation_type: resource.compensation_type,
+      compensation_value: resource.compensation_value,
+      compensation_percent: resource.compensation_percent
+    )
   end
 
-  def service(service)
+  def service(service, finance_resource_ids: [])
+    finance_visibility = finance_visibility_map(finance_resource_ids)
     {
       id: service.id,
       account_id: service.account_id,
@@ -249,26 +289,32 @@ module Scheduling::PayloadBuilder
       description: service.description,
       active: service.active,
       custom_attributes: service.custom_attributes,
-      prices: Array(service.try(:prices)).map { |item| service_price(item) },
+      prices: Array(service.try(:prices)).map do |item|
+        service_price(item, include_finance: finance_visible?(item.resource_id, false, finance_visibility))
+      end,
       created_at: service.created_at&.iso8601,
       updated_at: service.updated_at&.iso8601
     }
   end
 
-  def service_price(price)
-    {
+  def service_price(price, include_finance: false)
+    payload = {
       id: price.id,
       account_id: price.account_id,
       service_id: price.service_id,
       resource_id: price.resource_id,
       price: price.price,
-      compensation_type: price.compensation_type,
-      compensation_value: price.compensation_value,
-      compensation_percent: price.compensation_percent,
       active: price.active,
       created_at: price.created_at&.iso8601,
       updated_at: price.updated_at&.iso8601
     }
+    return payload unless include_finance
+
+    payload.merge(
+      compensation_type: price.compensation_type,
+      compensation_value: price.compensation_value,
+      compensation_percent: price.compensation_percent
+    )
   end
 
   def time_off(time_off)

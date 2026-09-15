@@ -29,7 +29,7 @@ class AccessControl::ModeTransition
 
   def call
     validate_target!
-    account.with_lock do
+    result = account.with_lock do
       from = account.access_control_mode
       if from == target_mode
         Result.new(account_id: account.id, from: from, to: target_mode, changed: false, readiness: nil)
@@ -37,6 +37,8 @@ class AccessControl::ModeTransition
         transition(from)
       end
     end
+    Scheduling::ScopeInvalidation.dispatch(account) if result.changed
+    result
   end
 
   private

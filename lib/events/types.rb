@@ -57,6 +57,7 @@ module Events::Types
   APPOINTMENT_UPDATED = 'appointment.updated'
   APPOINTMENT_CANCELLED = 'appointment.cancelled'
   APPOINTMENT_COMPLETED = 'appointment.completed'
+  SCHEDULING_SCOPE_INVALIDATED = 'scheduling.scope_invalidated'
 
   # CRM deal events
   CRM_DEAL_CREATED = 'crm.deal.created'
@@ -83,5 +84,4 @@ module Events::Types
   # agent events
   AGENT_ADDED = 'agent.added'
   AGENT_REMOVED = 'agent.removed'
-
 end

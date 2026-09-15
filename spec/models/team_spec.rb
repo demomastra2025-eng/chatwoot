@@ -5,6 +5,7 @@ RSpec.describe Team do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to have_many(:conversations) }
     it { is_expected.to have_many(:team_members) }
+    it { is_expected.to have_many(:scheduling_appointments).dependent(:restrict_with_error) }
   end
 
   describe '#add_members' do

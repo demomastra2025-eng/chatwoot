@@ -98,6 +98,75 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(response.parsed_body.fetch('payload').pluck('id')).to eq([own_command.id])
   end
 
+  it 'does not list or expose a command for an appointment outside the enforced scope' do
+    other_user = create(:user, account: account, role: :agent)
+    other_contact = create(:contact, account: account, owner: other_user)
+    appointment = create(:scheduling_appointment, account: account, contact: other_contact)
+    command = create_command(account: account, hook: hook, contact: other_contact, appointment: appointment)
+    enforce_own_appointment_scope!
+
+    get path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to be_empty
+
+    get "#{path}/#{command.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it 'requires transition scope to create or confirm remove_reception commands' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    access_role = account.account_users.find_by!(user: agent).access_role
+    access_role.grants.find_by!(resource: 'appointments', capability: 'update_fields').update!(access_scope: 'all')
+    access_role.grants.find_by!(resource: 'appointments', capability: 'transition').update!(access_scope: 'none')
+    account.authorize_access_control_mode_transition { account.update!(access_control_mode: 'enforced') }
+
+    expect do
+      post path,
+           params: {
+             hook_id: hook.id,
+             appointment_id: appointment.id,
+             operation: 'remove_reception',
+             idempotency_key: 'forbidden-remove-reception'
+           },
+           headers: headers,
+           as: :json
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+    expect(response).to have_http_status(:not_found)
+
+    command = create_command(
+      account: account,
+      hook: hook,
+      contact: contact,
+      appointment: appointment,
+      operation: 'remove_reception',
+      status: 'awaiting_confirmation'
+    )
+    expect do
+      post "#{path}/#{command.id}/confirm", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandConfirmationJob)
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it 'rejects an unknown appointment provider operation as invalid input' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact)
+
+    post path,
+         params: {
+           hook_id: hook.id,
+           appointment_id: appointment.id,
+           operation: 'unknown_operation',
+           idempotency_key: 'unknown-provider-operation'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.fetch('error')).to include('operation must be one of')
+  end
+
   it 'confirms an awaiting command as the authenticated user' do
     command = Integrations::Medelement::ProviderCommands::CreateService.new(
       account: account,
@@ -333,6 +402,16 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
 
   private
 
+  def enforce_own_appointment_scope!
+    agent
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account.account_users.find_by!(user: agent).access_role.grants
+           .find_by!(resource: 'appointments', capability: 'view')
+           .update!(access_scope: 'own')
+  end
+
   def build_patient_action_command(status:, patient_action:)
     command = Integrations::Medelement::ProviderCommands::CreateService.new(
       account: account,
@@ -349,14 +428,15 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     command
   end
 
-  def create_command(account:, hook:, contact:, status: 'failed', execution_state: {})
+  def create_command(account:, hook:, contact:, **attributes)
     Integrations::Medelement::ProviderCommand.create!(
       account: account,
       hook: hook,
       contact: contact,
-      operation: 'create_patient',
-      status: status,
-      execution_state: execution_state,
+      appointment: attributes[:appointment],
+      operation: attributes.fetch(:operation, 'create_patient'),
+      status: attributes.fetch(:status, 'failed'),
+      execution_state: attributes.fetch(:execution_state, {}),
       idempotency_key: SecureRandom.uuid
     )
   end

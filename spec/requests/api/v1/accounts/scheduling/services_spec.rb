@@ -16,6 +16,37 @@ RSpec.describe 'Scheduling Services API', type: :request do
     response.parsed_body
   end
 
+  it 'scopes specialist price compensation by finance access while retaining public prices' do
+    employee = create(:user, account: account, role: :agent)
+    teammate = create(:user, account: account, role: :agent)
+    outsider = create(:user, account: account, role: :agent)
+    team = create(:team, account: account)
+    other_team = create(:team, account: account)
+    create(:team_member, team: team, user: employee)
+    create(:team_member, team: team, user: teammate)
+    team_resource = create(:scheduling_resource, account: account, user: teammate, team: team)
+    other_resource = create(:scheduling_resource, account: account, user: outsider, team: other_team)
+    create(:scheduling_service_price, account: account, service: service, resource: team_resource,
+                                      price: 20_000, compensation_type: 'fixed', compensation_value: 1_000)
+    create(:scheduling_service_price, account: account, service: service, resource: other_resource,
+                                      price: 30_000, compensation_type: 'fixed', compensation_value: 2_000)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    account.account_users.find_by!(user: employee).update!(
+      access_role: account.access_roles.find_by!(system_key: 'department_lead')
+    )
+    account.authorize_access_control_mode_transition { account.update!(access_control_mode: 'enforced') }
+
+    get path, headers: employee.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    prices = response_body.dig('payload', 'prices').index_by { |item| item.fetch('resource_id') }
+    expect(prices.fetch(team_resource.id)).to include('price' => 20_000, 'compensation_value' => 1_000)
+    expect(prices.fetch(other_resource.id)).to include('price' => 30_000)
+    expect(prices.fetch(other_resource.id)).not_to include(
+      'compensation_type', 'compensation_value', 'compensation_percent'
+    )
+  end
+
   it 'defaults an active specialist price to the service base price when the price is blank' do
     put path,
         params: {

@@ -176,4 +176,15 @@ RSpec.describe Scheduling::Appointment do
       expect(captured_events.map(&:first)).to include(Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_COMPLETED)
     end
   end
+
+  describe 'scheduling scope invalidation' do
+    it 'invalidates the account scope after destroy' do
+      appointment = create(:scheduling_appointment)
+      allow(Scheduling::ScopeInvalidation).to receive(:dispatch)
+
+      appointment.destroy!
+
+      expect(Scheduling::ScopeInvalidation).to have_received(:dispatch).with(appointment.account)
+    end
+  end
 end

@@ -33,7 +33,13 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
       client_comment: client_comment,
       custom_attributes: custom_attributes
     )
-    formatted_payload(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'update_appointment', appointment: appointment))
+    formatted_payload(
+      ::Scheduling::ToolPayloadBuilder.appointment_payload(
+        action: 'update_appointment',
+        appointment: appointment,
+        include_finance: appointment_finance_visible?(appointment)
+      )
+    )
   rescue StandardError => e
     tool_failure(e)
   end

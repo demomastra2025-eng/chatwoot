@@ -1,10 +1,22 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
+  OPERATION_CAPABILITIES = {
+    'create_patient' => 'update_fields',
+    'update_patient' => 'update_fields',
+    'create_reception' => 'update_fields',
+    'move_reception' => 'update_fields',
+    'remove_reception' => 'transition'
+  }.freeze
+
   before_action :set_provider_adapter
   before_action :set_command,
                 only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation, :retry]
 
   def index
+    authorize Scheduling::Appointment, :index?
     commands = provider_adapter.command_scope
+    commands = commands.where(appointment_id: nil, contact_id: contact_scope.select(:id)).or(
+      commands.where(appointment_id: appointment_scope('view').select(:id))
+    )
     commands = commands.where(appointment_id: command_params[:appointment_id]) if command_params[:appointment_id].present?
     commands = commands.unfinished if ActiveModel::Type::Boolean.new.cast(command_params[:active_only])
     commands = commands.order(created_at: :desc).limit(index_limit)
@@ -12,10 +24,13 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def show
+    authorize @command.appointment, :show? if @command.appointment.present?
+    authorize Scheduling::Appointment, :index? if @command.appointment.blank?
     render_payload(provider_adapter.serialize(@command))
   end
 
   def create
+    authorize_provider_command_mutation!
     command = provider_adapter.create_command(
       appointment: appointment,
       contact: contact,
@@ -31,6 +46,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def confirm
+    authorize_provider_command_mutation!(@command.appointment)
     confirmation_request = @command.confirmation_request
     if confirmation_request.blank?
       raise Scheduling::Error.new(
@@ -46,6 +62,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def cancel
+    authorize_provider_command_mutation!(@command.appointment)
     command = provider_adapter.cancel_command(
       command: @command,
       actor: Current.user
@@ -55,11 +72,13 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def patient_candidates
+    authorize_provider_command_mutation!(@command.appointment)
     candidates = provider_adapter.patient_candidates(command: @command, actor: Current.user)
     render_payload({ candidates: candidates, count: candidates.size })
   end
 
   def select_patient
+    authorize_provider_command_mutation!(@command.appointment)
     command = provider_adapter.select_patient(
       command: @command,
       actor: Current.user,
@@ -69,11 +88,13 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def confirm_patient_creation
+    authorize_provider_command_mutation!(@command.appointment)
     command = provider_adapter.confirm_patient_creation(command: @command, actor: Current.user)
     render_payload(provider_adapter.serialize(command))
   end
 
   def retry
+    authorize_provider_command_mutation!(@command.appointment)
     command = provider_adapter.retry_phone_mismatch(command: @command, actor: Current.user)
     render_payload(provider_adapter.serialize(command))
   end
@@ -93,19 +114,26 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
 
   def set_command
     @command = provider_adapter.command_scope.find(params[:id])
+    if @command.appointment_id.present?
+      capability = action_name == 'show' ? 'view' : provider_command_capability(@command.operation)
+      appointment_scope(capability).find(@command.appointment_id)
+    else
+      contact_scope.find(@command.contact_id)
+    end
   end
 
   def appointment
     return @appointment if defined?(@appointment)
+    return if command_params[:appointment_id].blank?
 
-    @appointment = Current.account.scheduling_appointments.find(command_params[:appointment_id]) if command_params[:appointment_id].present?
+    @appointment = appointment_scope(provider_command_capability(command_params[:operation])).find(command_params[:appointment_id])
   end
 
   def contact
     return @contact if defined?(@contact)
 
     @contact = if command_params[:contact_id].present?
-                 Current.account.contacts.find(command_params[:contact_id])
+                 contact_scope.find(command_params[:contact_id])
                else
                  appointment&.contact
                end
@@ -127,6 +155,37 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
 
   def desired_ends_at
     parse_datetime_param!(command_params[:desired_ends_at], field_name: 'desired_ends_at', required: false)
+  end
+
+  def appointment_scope(capability)
+    Scheduling::AppointmentPolicy::Scope.new(
+      pundit_user,
+      Current.account.scheduling_appointments,
+      capability: capability
+    ).resolve
+  end
+
+  def contact_scope
+    ContactPolicy::Scope.new(pundit_user, Current.account.contacts).resolve
+  end
+
+  def authorize_provider_command_mutation!(target_appointment = appointment)
+    if target_appointment.present?
+      policy_action = provider_command_capability(provider_command_operation) == 'transition' ? :transition? : :update?
+      return authorize target_appointment, policy_action
+    end
+
+    authorize Scheduling::Appointment, :create?
+  end
+
+  def provider_command_operation
+    @command&.operation || command_params[:operation]
+  end
+
+  def provider_command_capability(operation)
+    OPERATION_CAPABILITIES.fetch(operation.to_s) do
+      raise ArgumentError, "operation must be one of: #{OPERATION_CAPABILITIES.keys.join(', ')}"
+    end
   end
 
   def index_limit

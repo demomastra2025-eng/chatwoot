@@ -1,10 +1,14 @@
 class Api::V1::Accounts::Scheduling::ExpensesController < Api::V1::Accounts::Scheduling::BaseController
   before_action :ensure_finance_enabled!
-  before_action :check_admin_authorization?
+  before_action :authorize_finance_view!, only: [:index]
+  before_action :authorize_finance_manage!, only: [:pay, :pay_all]
   before_action :set_expense, only: [:pay]
 
   def index
-    expenses = Current.account.scheduling_expenses.includes(:appointment).ordered
+    expenses = Current.account.scheduling_expenses
+                      .where(appointment_id: appointment_scope('view_finance').select(:id))
+                      .includes(:appointment)
+                      .ordered
     expenses = expenses.where(status: parse_csv_ids(params[:status])) if params[:status].present?
 
     expenses = expenses.where(resource_id: parse_csv_ids(params[:resource_ids])) if params[:resource_ids].present?
@@ -49,7 +53,11 @@ class Api::V1::Accounts::Scheduling::ExpensesController < Api::V1::Accounts::Sch
   private
 
   def filtered_unpaid_expenses
-    expenses = Current.account.scheduling_expenses.includes(:appointment).where(status: 'unpaid').ordered
+    expenses = Current.account.scheduling_expenses
+                      .where(appointment_id: appointment_scope('manage_finance').select(:id))
+                      .includes(:appointment)
+                      .where(status: 'unpaid')
+                      .ordered
     expenses = expenses.where(resource_id: parse_csv_ids(params[:resource_ids])) if params[:resource_ids].present?
 
     from = parse_datetime_param!(params[:from], field_name: 'from', required: false)
@@ -63,6 +71,24 @@ class Api::V1::Accounts::Scheduling::ExpensesController < Api::V1::Accounts::Sch
   end
 
   def set_expense
-    @expense = Current.account.scheduling_expenses.find(params[:id])
+    @expense = Current.account.scheduling_expenses
+                      .where(appointment_id: appointment_scope('manage_finance').select(:id))
+                      .find(params[:id])
+  end
+
+  def appointment_scope(capability)
+    Scheduling::AppointmentPolicy::Scope.new(
+      pundit_user,
+      Current.account.scheduling_appointments,
+      capability: capability
+    ).resolve
+  end
+
+  def authorize_finance_view!
+    authorize Scheduling::Appointment, :view_finance?
+  end
+
+  def authorize_finance_manage!
+    authorize Scheduling::Appointment, :manage_finance?
   end
 end

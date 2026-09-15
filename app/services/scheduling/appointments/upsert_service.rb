@@ -12,11 +12,12 @@ class Scheduling::Appointments::UpsertService
     confirm_slot_conflict: 'SLOT_CONFLICT'
   }.freeze
 
-  def initialize(account:, params:, appointment: nil, actor: nil)
+  def initialize(account:, params:, appointment: nil, actor: nil, required_capabilities: [])
     @account = account
     @params = params.to_h.deep_symbolize_keys
     @appointment = appointment || account.scheduling_appointments.new
     @actor = actor
+    @required_capabilities = required_capabilities
   end
 
   def perform
@@ -43,13 +44,14 @@ class Scheduling::Appointments::UpsertService
 
   private
 
-  attr_reader :account, :actor, :appointment, :params
+  attr_reader :account, :actor, :appointment, :params, :required_capabilities
 
   def lock_resource_for_availability!
     account.scheduling_resources.lock.find(appointment.resource_id)
   end
 
   def apply_attributes!
+    previous_resource_id = appointment.resource_id
     resource = resolve_resource!
     contact = resolve_optional_record(:contact_id, account.contacts, current: appointment.contact)
     ensure_contact_present!(contact)
@@ -60,6 +62,7 @@ class Scheduling::Appointments::UpsertService
     ensure_conversation_belongs_to_contact!(conversation, contact)
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
     owner = resolve_owner(contact: contact, resource: resource)
+    team = appointment.new_record? || previous_resource_id != resource.id ? resource.team : appointment.team
 
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
     duration_min = resolve_duration_min(
@@ -70,7 +73,11 @@ class Scheduling::Appointments::UpsertService
     )
     ends_at = resolve_ends_at(starts_at: starts_at, duration_min: duration_min, current: appointment.ends_at)
 
-    service_snapshot = resolve_service_snapshot(resource: resource, services: services)
+    service_snapshot = preserve_compensation_snapshot(
+      resolve_service_snapshot(resource: resource, services: services),
+      resource: resource,
+      services: services
+    )
     service_amount = resolve_service_amount(
       resource: resource,
       services: services,
@@ -94,6 +101,7 @@ class Scheduling::Appointments::UpsertService
       conversation: conversation,
       created_by: created_by,
       owner: owner,
+      team: team,
       starts_at: starts_at,
       ends_at: ends_at,
       duration_min: duration_min,
@@ -130,6 +138,22 @@ class Scheduling::Appointments::UpsertService
         requested_status: requested_payment_status
       ),
       custom_attributes: resolve_custom_attributes(resource: resource, services: services)
+    )
+
+    authorize_assignment! if appointment.new_record? || params.keys.intersect?(%i[resource_id contact_id owner_id])
+    required_capabilities.each { |capability| authorize_target_scope!(capability) }
+  end
+
+  def authorize_assignment!
+    authorize_target_scope!('assign')
+  end
+
+  def authorize_target_scope!(capability)
+    Scheduling::Appointments::AssignmentAuthorizer.call(
+      account: account,
+      actor: actor,
+      appointment: appointment,
+      capability: capability
     )
   end
 
@@ -803,6 +827,16 @@ class Scheduling::Appointments::UpsertService
     }
   end
 
+  def preserve_compensation_snapshot(service_snapshot, resource:, services:)
+    return service_snapshot if pricing_link_changed?(resource: resource, services: services)
+
+    service_snapshot.merge(
+      compensation_type_snapshot: appointment.compensation_type_snapshot,
+      compensation_value_snapshot: appointment.compensation_value_snapshot,
+      compensation_percent_snapshot: appointment.compensation_percent_snapshot
+    )
+  end
+
   def resolve_single_service_snapshot(resource:, service:)
     price = service.prices.find_by(resource_id: resource.id)
     resolved_price = if price&.active? && price.price.to_i.positive?
@@ -975,9 +1009,30 @@ class Scheduling::Appointments::UpsertService
     end
 
     account_user = actor.is_a?(User) ? account.account_users.find_by(user_id: actor.id) : nil
-    return if account_user&.administrator?
-    return if account_user&.permissions&.include?('scheduling_override')
+    if appointment.new_record? && access_role_authoritative?(account_user)
+      authorize_target_scope!('override_schedule')
+      return
+    end
 
+    user_context = { user: actor, account: account, account_user: account_user }
+    return if Scheduling::AppointmentPolicy.new(user_context, appointment).override_schedule?
+
+    deny_availability_override!
+  rescue Pundit::NotAuthorizedError
+    deny_availability_override!
+  end
+
+  def access_role_authoritative?(account_user)
+    return false if account_user.blank?
+
+    AccessControl::ModeResolver.call(
+      account_user: account_user,
+      resource: 'appointments',
+      capability: 'override_schedule'
+    ).authoritative_source == 'access_role'
+  end
+
+  def deny_availability_override!
     raise Scheduling::Error.new(code: 'OVERRIDE_FORBIDDEN', message: 'Scheduling override permission is required', status: :forbidden)
   end
 

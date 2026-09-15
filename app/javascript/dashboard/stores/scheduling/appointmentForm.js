@@ -110,6 +110,53 @@ const normalizePrepaymentForm = form => ({
       : '',
 });
 
+const hasExplicitValue = value =>
+  value !== '' && value !== null && value !== undefined;
+
+const pruneCapabilitySensitiveFields = ({
+  payload,
+  form,
+  mode,
+  selectedAppointment,
+}) => {
+  if (mode === 'create') {
+    const usesCatalogService =
+      hasExplicitValue(payload.service_id) || payload.service_ids?.length;
+    if (usesCatalogService || !hasExplicitValue(form.serviceAmount)) {
+      delete payload.service_amount;
+    }
+    if (!hasExplicitValue(form.prepaidAmount)) {
+      delete payload.prepaid_amount;
+      delete payload.prepaid_payment_method;
+    }
+    if (form.status === 'scheduled') delete payload.status;
+    return payload;
+  }
+
+  if (form.status === selectedAppointment?.status) delete payload.status;
+
+  const financeVisible = hasExplicitValue(selectedAppointment?.serviceAmount);
+  const serviceAmountChanged =
+    financeVisible &&
+    Number(form.serviceAmount) !== Number(selectedAppointment.serviceAmount);
+  if (!serviceAmountChanged) delete payload.service_amount;
+
+  const prepaidAmountChanged =
+    financeVisible &&
+    Number(form.prepaidAmount || 0) !==
+      Number(selectedAppointment.prepaidAmount || 0);
+  const prepaidMethodChanged =
+    financeVisible &&
+    (form.prepaidPaymentMethod || '') !==
+      (selectedAppointment.prepaidPaymentMethod || '');
+  if (!prepaidAmountChanged) delete payload.prepaid_amount;
+  if (!prepaidAmountChanged && !prepaidMethodChanged) {
+    delete payload.prepaid_payment_method;
+  }
+
+  return payload;
+};
+
 export const isKazakhstanE164Phone = value => {
   let digits = String(value || '').replace(/\D/g, '');
   digits = digits.length === 10 ? `7${digits}` : digits;
@@ -588,6 +635,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
           payload.client_middle_name =
             normalizedForm.clientMiddleName?.trim() || null;
         }
+
+        pruneCapabilitySensitiveFields({
+          payload,
+          form: normalizedForm,
+          mode: this.mode,
+          selectedAppointment: this.selectedAppointment,
+        });
 
         const selectedAppointmentContactId = Number(
           this.selectedAppointment?.contactId || 0

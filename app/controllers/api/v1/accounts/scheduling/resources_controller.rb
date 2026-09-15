@@ -13,13 +13,13 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
     resources = resources.active unless parse_boolean(params[:include_inactive])
 
     render_payload(
-      resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
+      resources.map { |resource| resource_payload(resource) },
       meta: { count: resources.size }
     )
   end
 
   def show
-    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
+    render_payload(resource_payload(@scheduling_resource))
   end
 
   def create
@@ -29,7 +29,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       created_resource.apply_workspace_working_hours! if created_resource.inherit_working_hours_from_account?
       created_resource
     end
-    render_payload(Scheduling::PayloadBuilder.resource(resource), status: :created)
+    render_payload(resource_payload(resource), status: :created)
   end
 
   def update
@@ -38,7 +38,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
       @scheduling_resource.update!(resource_params)
       @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
     end
-    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
+    render_payload(resource_payload(@scheduling_resource))
   end
 
   def destroy
@@ -48,6 +48,17 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   private
+
+  def resource_payload(resource)
+    Scheduling::PayloadBuilder.resource(resource, include_finance: resource_finance_ids.include?(resource.id))
+  end
+
+  def resource_finance_ids
+    @resource_finance_ids ||= Scheduling::ResourceFinanceScope.new(
+      pundit_user,
+      Current.account.scheduling_resources
+    ).resolve.pluck(:id).to_set
+  end
 
   def resource_params
     normalize_integer_numeric_params!(
@@ -64,6 +75,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :inherit_working_hours_from_account,
         :active,
         :user_id,
+        :team_id,
         custom_attributes: {}
       ),
       :slot_duration_min,

@@ -15,7 +15,13 @@ class Captain::Tools::Copilot::AddAppointmentPaymentService < Captain::Tools::Co
 
     appointment = appointment_operations.add_payment_to_current_appointment(amount: amount, payment_method: payment_method)
 
-    formatted_payload(::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'add_appointment_payment', appointment: appointment))
+    formatted_payload(
+      ::Scheduling::ToolPayloadBuilder.appointment_payload(
+        action: 'add_appointment_payment',
+        appointment: appointment,
+        include_finance: appointment_finance_visible?(appointment)
+      )
+    )
   rescue StandardError => e
     tool_failure(e)
   end

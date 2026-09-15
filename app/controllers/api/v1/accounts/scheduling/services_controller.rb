@@ -9,13 +9,13 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
     services = services.active unless parse_boolean(params[:include_inactive])
 
     render_payload(
-      services.map { |service| Scheduling::PayloadBuilder.service(service) },
+      services.map { |service| service_payload(service) },
       meta: { count: services.size }
     )
   end
 
   def show
-    render_payload(Scheduling::PayloadBuilder.service(@service))
+    render_payload(service_payload(@service))
   end
 
   def create
@@ -26,7 +26,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
       sync_prices!(service)
     end
 
-    render_payload(Scheduling::PayloadBuilder.service(service.reload), status: :created)
+    render_payload(service_payload(service.reload), status: :created)
   end
 
   def update
@@ -35,7 +35,7 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
       sync_prices!(@service)
     end
 
-    render_payload(Scheduling::PayloadBuilder.service(@service.reload))
+    render_payload(service_payload(@service.reload))
   end
 
   def destroy
@@ -44,6 +44,17 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
   end
 
   private
+
+  def service_payload(service)
+    Scheduling::PayloadBuilder.service(service, finance_resource_ids: resource_finance_ids)
+  end
+
+  def resource_finance_ids
+    @resource_finance_ids ||= Scheduling::ResourceFinanceScope.new(
+      pundit_user,
+      Current.account.scheduling_resources
+    ).resolve.pluck(:id)
+  end
 
   def normalize_price_payload(item, service:)
     payload = item.to_h.symbolize_keys

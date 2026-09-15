@@ -163,6 +163,25 @@ class ActionCableConnector extends BaseActionCableConnector {
       'whatsapp_call.permission_granted': this.onWhatsappCallPermissionGranted,
       'whatsapp_call.agent_offer': this.onWhatsappCallAgentOffer,
       'whatsapp_call.agent_disconnected': this.onWhatsappCallAgentDisconnected,
+      'appointment.created': data =>
+        this.onSchedulingAppointmentRealtimeEvent('appointment.created', data),
+      'appointment.updated': data =>
+        this.onSchedulingAppointmentRealtimeEvent('appointment.updated', data),
+      'appointment.cancelled': data =>
+        this.onSchedulingAppointmentRealtimeEvent(
+          'appointment.cancelled',
+          data
+        ),
+      'appointment.completed': data =>
+        this.onSchedulingAppointmentRealtimeEvent(
+          'appointment.completed',
+          data
+        ),
+      'scheduling.scope_invalidated': data =>
+        this.onSchedulingAppointmentRealtimeEvent(
+          'scheduling.scope_invalidated',
+          data
+        ),
       'crm.deal.created': data =>
         this.onCrmDealRealtimeEvent('crm.deal.created', data),
       'crm.deal.updated': data =>
@@ -226,6 +245,14 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onCrmTaskRealtimeEvent = (event, data) => {
     emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, { event, ...data });
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onSchedulingAppointmentRealtimeEvent = (event, data) => {
+    emitter.emit(BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT, {
+      event,
+      ...data,
+    });
   };
 
   onMessageUpdated = data => {

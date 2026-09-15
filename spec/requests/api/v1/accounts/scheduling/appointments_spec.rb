@@ -48,6 +48,39 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 
+  it 'derives catalog pricing when an employee creates an appointment without finance management' do
+    contact.update!(owner: agent)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    access_role = account.account_users.find_by!(user: agent).access_role
+    finance_grant = access_role.grants.find_by(resource: 'appointments', capability: 'manage_finance')
+    expect(finance_grant&.access_scope || 'none').to eq('none')
+    account.authorize_access_control_mode_transition { account.update!(access_control_mode: 'enforced') }
+
+    post path, params: base_params.except(:service_amount), headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(Scheduling::Appointment.order(:id).last).to have_attributes(service: service, service_amount: 20_000)
+  end
+
+  it 'materializes the resource team and preserves the historical snapshot on later edits' do
+    original_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    resource.update!(team: original_team)
+
+    post path, params: base_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    appointment = Scheduling::Appointment.find(response_body.dig('payload', 'id'))
+    expect(appointment.team).to eq(original_team)
+    expect(response_body.dig('payload', 'team_id')).to eq(original_team.id)
+
+    resource.update!(team: new_team)
+    put "#{path}/#{appointment.id}", params: { notes: 'Historical team stays fixed' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.team).to eq(original_team)
+  end
+
   it 'rejects a Medelement appointment without a patient last name before persistence' do
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     params = base_params.merge(
@@ -1487,6 +1520,32 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'appointments', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
+  it 'accepts exactly 92 calendar days and rejects any wider range' do
+    from = booking_day.beginning_of_day
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'list',
+          from: from.iso8601,
+          to: (from + 92.days).iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'list',
+          from: from.iso8601,
+          to: (from + 92.days + 1.second).iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('CALENDAR_RANGE_TOO_LARGE')
+  end
+
   it 'filters the calendar payload by managed appointment custom fields' do
     create(
       :crm_field_definition,
@@ -1629,6 +1688,261 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
         'ends_at' => blocking_appointment.ends_at.iso8601
       )
     )
+  end
+
+  it 'hides inaccessible appointment details while preserving their blocked slots' do
+    contact.update!(owner: agent)
+    visible_appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    hidden_appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: create(:contact, account: account),
+      starts_at: booking_day + 1.hour,
+      ends_at: booking_day + 90.minutes
+    )
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account.account_users.find_by!(user: agent).access_role.grants
+           .find_by!(resource: 'appointments', capability: 'view')
+           .update!(access_scope: 'own')
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          include_slots: true
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'appointments').pluck('id')).to eq([visible_appointment.id])
+    expect(response_body.dig('payload', 'slots')).not_to include(
+      a_hash_including(
+        'resource_id' => resource.id,
+        'starts_at' => hidden_appointment.starts_at.iso8601,
+        'ends_at' => hidden_appointment.ends_at.iso8601
+      )
+    )
+  end
+
+  it 'hides appointment finance fields without the finance view capability' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service_amount: 20_000,
+      settlement_amount: 20_000,
+      settlement_payment_method: 'cash',
+      payment_status: 'paid',
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    create(:scheduling_payment, appointment: appointment, account: account, amount: 20_000)
+    create(:scheduling_expense, appointment: appointment, account: account, resource: resource, amount: 8_000)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload').keys).not_to include(
+      'service_amount', 'settlement_amount', 'payment_status', 'payments', 'expense'
+    )
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'appointments', 0).keys).not_to include('service_amount', 'payment_status')
+    expect(response_body.dig('payload', 'payments')).to eq([])
+    expect(response_body.dig('payload', 'expenses')).to eq([])
+  end
+
+  it 'applies finance view scope per appointment in list, detail, and calendar payloads' do
+    contact.update!(owner: agent)
+    own_appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    other_appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: create(:contact, account: account),
+      service_amount: 30_000,
+      starts_at: booking_day + 1.hour,
+      ends_at: booking_day + 90.minutes
+    )
+    own_payment = create(:scheduling_payment, appointment: own_appointment, account: account, amount: 20_000)
+    create(:scheduling_payment, appointment: other_appointment, account: account, amount: 30_000)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account_user = account.account_users.find_by!(user: agent)
+    account_user.access_role.grants.create!(
+      account: account,
+      resource: 'appointments',
+      capability: 'view_finance',
+      access_scope: 'own'
+    )
+
+    get path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    payloads = response_body.fetch('payload').index_by { |item| item.fetch('id') }
+    expect(payloads.fetch(own_appointment.id)).to include('service_amount' => 20_000)
+    expect(payloads.fetch(other_appointment.id).keys).not_to include('service_amount', 'payments', 'expense')
+
+    get path, params: { payment_status: other_appointment.payment_status }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload').pluck('id')).to eq([own_appointment.id])
+
+    get "#{path}/#{other_appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload').keys).not_to include('service_amount', 'payments', 'expense')
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: { view: 'week', from: booking_day.beginning_of_day.iso8601, to: (booking_day + 7.days).end_of_day.iso8601 },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    calendar_appointments = response_body.dig('payload', 'appointments').index_by { |item| item.fetch('id') }
+    expect(calendar_appointments.fetch(own_appointment.id)).to include('service_amount' => 20_000)
+    expect(calendar_appointments.fetch(other_appointment.id).keys).not_to include('service_amount')
+    expect(response_body.dig('payload', 'payments').pluck('id')).to eq([own_payment.id])
+  end
+
+  it 'requires finance management capability for direct payment field updates' do
+    contact.update!(owner: agent)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      service_amount: 100,
+      payment_status: 'awaiting_payment'
+    )
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    expect do
+      post path,
+           params: base_params.merge(contact_id: contact.id, service_amount: 200, idempotency_key: 'finance-denied'),
+           headers: headers,
+           as: :json
+    end.not_to change(Scheduling::Appointment, :count)
+    expect(response).to have_http_status(:unauthorized)
+
+    put "#{path}/#{appointment.id}", params: { service_amount: 200 }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(appointment.reload.service_amount).to eq(100)
+    expect(appointment.reload.payment_status).to eq('awaiting_payment')
+
+    account_user = account.account_users.find_by!(user: agent)
+    account_user.access_role.grants.create!(
+      account: account,
+      resource: 'appointments',
+      capability: 'manage_finance',
+      access_scope: 'own'
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { payment_status: 'paid', settlement_amount: 100, settlement_payment_method: 'cash' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.payment_status).to eq('paid')
+  end
+
+  it 'loads mutation targets through their independent capability scopes' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: create(:contact, account: account),
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      status: 'scheduled'
+    )
+    replacement_contact = create(:contact, account: account)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    grants = account.account_users.find_by!(user: agent).access_role.grants.where(resource: 'appointments')
+    grants.find_by!(capability: 'view').update!(access_scope: 'own')
+    grants.where(capability: %w[transition assign delete_archive]).update_all(access_scope: 'all')
+
+    put "#{path}/#{appointment.id}", params: { status: 'confirmed' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.status).to eq('confirmed')
+
+    put "#{path}/#{appointment.id}", params: { contact_id: replacement_contact.id }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.contact_id).to eq(replacement_contact.id)
+
+    appointment.update!(status: 'cancelled')
+    delete "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(Scheduling::Appointment.exists?(appointment.id)).to be(false)
+  end
+
+  it 'requires transition scope when creating directly in a non-default status' do
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    role = account.account_users.find_by!(user: agent).access_role
+    role.grants.find_by!(resource: 'appointments', capability: 'transition').update!(access_scope: 'none')
+    contact.update!(owner: agent)
+    create_params = base_params.except(:service_amount).merge(
+      starts_at: booking_day + 7.days,
+      ends_at: booking_day + 7.days + 30.minutes,
+      status: 'confirmed'
+    )
+
+    post path, params: create_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+
+    role.grants.find_by!(resource: 'appointments', capability: 'transition').update!(access_scope: 'own')
+    post path, params: create_params, headers: headers, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('confirmed')
   end
 
   it 'filters appointments index by conversation display id for dialog panels' do

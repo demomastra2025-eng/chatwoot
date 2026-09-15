@@ -14,6 +14,7 @@ RSpec.describe Captain::Tools::Copilot::CancelAppointmentService do
   end
 
   it 'returns normalized cancelled appointment payload wrapper' do
+    allow(service).to receive(:appointment_finance_visible?).and_return(false)
     resource = create(:scheduling_resource, account: account)
     scheduling_service = create(:scheduling_service, account: account)
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: scheduling_service,
@@ -35,6 +36,7 @@ RSpec.describe Captain::Tools::Copilot::CancelAppointmentService do
       'id' => appointment.id,
       'status' => 'cancelled'
     )
+    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
   end
 
   def execute_confirmed(**arguments)

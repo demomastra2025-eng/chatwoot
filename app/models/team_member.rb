@@ -18,6 +18,14 @@ class TeamMember < ApplicationRecord
   belongs_to :user
   belongs_to :team
   validates :user_id, uniqueness: { scope: :team_id }
+
+  after_commit :dispatch_scheduling_scope_invalidation, on: %i[create destroy]
+
+  private
+
+  def dispatch_scheduling_scope_invalidation
+    Scheduling::ScopeInvalidation.dispatch(team.account)
+  end
 end
 
 TeamMember.include_mod_with('Audit::TeamMember')

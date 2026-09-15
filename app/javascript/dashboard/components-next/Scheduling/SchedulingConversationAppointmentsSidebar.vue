@@ -1,5 +1,13 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
@@ -36,6 +44,8 @@ import {
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const props = defineProps({
   currentChat: {
@@ -78,6 +88,8 @@ const ui = reactive({
   isLoading: false,
   error: null,
 });
+let appointmentsRequestId = 0;
+let sidebarDisposed = false;
 
 const headerButtons = computed(() =>
   isCreating.value
@@ -486,8 +498,11 @@ const isAppointmentFormInvalid = form =>
   !form?.endsAt ||
   !appointmentFormEndsAfterStart(form);
 
-const buildAppointmentPayload = form =>
-  appendServicePayload(
+const hasExplicitValue = value =>
+  value !== '' && value !== null && value !== undefined;
+
+const buildAppointmentPayload = (form, appointment) => {
+  const payload = appendServicePayload(
     {
       appointment_type: form.appointmentType || 'primary',
       ...(form.clientNameStructured
@@ -520,8 +535,19 @@ const buildAppointmentPayload = form =>
     }
   );
 
-const buildCreatePayload = () =>
-  appendServicePayload(
+  if (form.status === appointment.status) delete payload.status;
+
+  const financeVisible = hasExplicitValue(appointment.serviceAmount);
+  const serviceAmountChanged =
+    financeVisible &&
+    Number(form.serviceAmount) !== Number(appointment.serviceAmount);
+  if (!serviceAmountChanged) delete payload.service_amount;
+
+  return payload;
+};
+
+const buildCreatePayload = () => {
+  const payload = appendServicePayload(
     {
       appointment_type: 'primary',
       ...(createForm.clientNameStructured
@@ -549,6 +575,17 @@ const buildCreatePayload = () =>
     }
   );
 
+  if (
+    hasExplicitValue(createForm.serviceId) ||
+    !hasExplicitValue(createForm.serviceAmount)
+  ) {
+    delete payload.service_amount;
+  }
+  if (createForm.status === 'scheduled') delete payload.status;
+
+  return payload;
+};
+
 const upsertAppointment = appointment => {
   appointments.value = mergeUniqueAppointments(
     [appointment],
@@ -570,10 +607,19 @@ const fetchAppointmentsByParams = async params => {
 };
 
 const loadAppointments = async () => {
-  if (!lookupParams.value.length) {
+  appointmentsRequestId += 1;
+  const requestId = appointmentsRequestId;
+  const requestedLookupParams = lookupParams.value.map(params => ({
+    ...params,
+  }));
+  if (!requestedLookupParams.length) {
+    if (sidebarDisposed || requestId !== appointmentsRequestId) {
+      return { committed: false, requestId };
+    }
+
     appointments.value = [];
     setAppointmentForms();
-    return;
+    return { committed: true, requestId };
   }
 
   ui.isLoading = true;
@@ -581,17 +627,29 @@ const loadAppointments = async () => {
 
   try {
     const results = await Promise.all(
-      lookupParams.value.map(params => fetchAppointmentsByParams(params))
+      requestedLookupParams.map(params => fetchAppointmentsByParams(params))
     );
+    if (sidebarDisposed || requestId !== appointmentsRequestId) {
+      return { committed: false, requestId };
+    }
+
     appointments.value = mergeUniqueAppointments(...results);
     setAppointmentForms();
     openAppointmentKeys.value = appointments.value[0]
       ? [appointmentKey(appointments.value[0])]
       : [];
+    return { committed: true, requestId };
   } catch (error) {
+    if (sidebarDisposed || requestId !== appointmentsRequestId) {
+      return { committed: false, requestId };
+    }
+
     ui.error = error;
+    return { committed: false, requestId };
   } finally {
-    ui.isLoading = false;
+    if (!sidebarDisposed && requestId === appointmentsRequestId) {
+      ui.isLoading = false;
+    }
   }
 };
 
@@ -726,7 +784,7 @@ const saveAppointment = async appointment => {
   try {
     const response = await SchedulingAppointmentsAPI.update(
       appointment.id,
-      buildAppointmentPayload(form)
+      buildAppointmentPayload(form, appointment)
     );
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
@@ -804,14 +862,37 @@ const initializeSidebar = async () => {
     // Keep the appointments list usable even if optional references fail.
   }
 
-  await loadAppointments();
-  if (!appointments.value.length) {
+  const result = await loadAppointments();
+  if (
+    result.committed &&
+    result.requestId === appointmentsRequestId &&
+    !sidebarDisposed &&
+    !appointments.value.length
+  ) {
     await startCreateAppointment({ scroll: false });
   }
 };
 
+const handleAppointmentRealtimeEvent = () => {
+  loadAppointments();
+};
+
 onMounted(() => {
+  sidebarDisposed = false;
+  emitter.on(
+    BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+    handleAppointmentRealtimeEvent
+  );
   initializeSidebar();
+});
+
+onBeforeUnmount(() => {
+  sidebarDisposed = true;
+  appointmentsRequestId += 1;
+  emitter.off(
+    BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+    handleAppointmentRealtimeEvent
+  );
 });
 
 watch(
@@ -822,8 +903,13 @@ watch(
   ],
   async () => {
     isCreating.value = false;
-    await loadAppointments();
-    if (!appointments.value.length) {
+    const result = await loadAppointments();
+    if (
+      result.committed &&
+      result.requestId === appointmentsRequestId &&
+      !sidebarDisposed &&
+      !appointments.value.length
+    ) {
       await startCreateAppointment({ scroll: false });
     }
   }

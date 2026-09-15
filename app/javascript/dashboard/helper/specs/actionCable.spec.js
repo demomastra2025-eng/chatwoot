@@ -995,6 +995,42 @@ describe('ActionCableConnector - Copilot Tests', () => {
       );
     });
 
+    it('should emit dashboard bus events for scheduling appointment events', () => {
+      const appointmentPayload = {
+        account_id: 1,
+        appointment_id: 91,
+        meta: { changes: { team_id: [3, 4] } },
+      };
+
+      actionCable.onReceived({
+        event: 'appointment.updated',
+        data: appointmentPayload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+        {
+          event: 'appointment.updated',
+          ...appointmentPayload,
+        }
+      );
+    });
+
+    it('should emit a calendar refresh for scheduling scope invalidation', () => {
+      actionCable.onReceived({
+        event: 'scheduling.scope_invalidated',
+        data: { account_id: 1 },
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+        {
+          event: 'scheduling.scope_invalidated',
+          account_id: 1,
+        }
+      );
+    });
+
     it('should refresh dialog CRM counters after CRM deal ActionCable events', async () => {
       vi.useFakeTimers();
       const crmReferencesStore = useCrmReferencesStore();

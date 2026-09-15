@@ -25,6 +25,8 @@ class Team < ApplicationRecord
   has_many :communication_threads, dependent: :nullify
   has_many :crm_deals, class_name: 'Crm::Deal', dependent: :nullify, inverse_of: :team
   has_many :crm_tasks, class_name: 'Crm::Task', dependent: :nullify, inverse_of: :team
+  has_many :scheduling_resources, class_name: 'Scheduling::Resource', dependent: :nullify, inverse_of: :team
+  has_many :scheduling_appointments, class_name: 'Scheduling::Appointment', dependent: :restrict_with_error, inverse_of: :team
 
   validates :name,
             presence: { message: I18n.t('errors.validations.presence') },

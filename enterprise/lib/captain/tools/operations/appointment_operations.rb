@@ -3,6 +3,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
 
+    authorize_appointment!(current_appointment, :transition?)
+
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: {
@@ -17,6 +19,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def create_appointment(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
                          custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
+    authorize_appointment!(::Scheduling::Appointment, :create?)
 
     create_params = {
       resource_id: resource_id,
@@ -37,7 +40,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       ::Scheduling::Appointments::UpsertService.new(
         account: account,
         params: create_params,
-        actor: actor
+        actor: actor,
+        required_capabilities: ['create']
       ).perform
     end
   end
@@ -57,11 +61,14 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     params[:client_comment] = client_comment unless client_comment.nil?
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
+    authorize_appointment_update!(current_appointment, params)
+
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: params,
       appointment: current_appointment,
-      actor: actor
+      actor: actor,
+      required_capabilities: appointment_update_capabilities(params)
     ).perform
   end
 
@@ -71,6 +78,8 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
     raise ArgumentError, 'payment_method is required' if payment_method.blank?
 
+    authorize_appointment!(current_appointment, :manage_finance_legacy?)
+
     ::Scheduling::Appointments::FinanceSyncService.new(
       appointment: current_appointment,
       actor: actor
@@ -78,5 +87,33 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       amount: amount,
       payment_method: payment_method
     )
+  end
+
+  private
+
+  def authorize_appointment_update!(appointment, params)
+    authorize_appointment!(appointment, :assign?) if params.key?(:resource_id)
+    authorize_appointment!(appointment, :update?) if appointment_update_fields?(params)
+  end
+
+  def appointment_update_capabilities(params)
+    appointment_update_fields?(params) ? ['update_fields'] : []
+  end
+
+  def appointment_update_fields?(params)
+    (params.keys - [:resource_id]).any?
+  end
+
+  def authorize_appointment!(appointment, query)
+    return if actor.blank? || customer_agent_execution?
+
+    user_context = {
+      user: actor,
+      account: account,
+      account_user: account.account_users.find_by(user_id: actor&.id)
+    }
+    return if ::Scheduling::AppointmentPolicy.new(user_context, appointment).public_send(query)
+
+    raise Pundit::NotAuthorizedError, 'You are not authorized to access this appointment'
   end
 end

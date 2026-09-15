@@ -26,7 +26,10 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
       department_lead = roles.fetch('department_lead')
       expected_lead_grants = AccessRoleGrant::RESOURCES.flat_map do |resource|
         capabilities = AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource)
-        allowed = capabilities.reject { |capability| %w[configure override_schedule].include?(capability) }
+        allowed = capabilities.reject do |capability|
+          %w[configure override_schedule].include?(capability) ||
+            (resource == 'appointments' && capability == 'manage_finance')
+        end
         allowed.map { |capability| [resource, capability, 'team'] }
       end
       expect(department_lead.grants.pluck(:resource, :capability, :access_scope)).to match_array(expected_lead_grants)
@@ -40,7 +43,7 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
           %w[view create update_fields assign transition take complete_cancel delete_archive].include?(capability)
         end
         selected.map do |capability|
-          scope = if capability == 'view' && %w[contacts conversations].include?(resource)
+          scope = if capability == 'view' && %w[contacts conversations appointments].include?(resource)
                     'all'
                   elsif resource == 'conversations' && capability == 'take'
                     'team'

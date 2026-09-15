@@ -45,6 +45,13 @@ class ActionCableListener < BaseListener
               })
   end
 
+  def scheduling_scope_invalidated(event)
+    account = event.data[:account]
+    tokens = user_tokens(account, account.agents)
+
+    broadcast(account, tokens, SCHEDULING_SCOPE_INVALIDATED, {})
+  end
+
   def message_created(event)
     message, account = extract_message_and_account(event)
     ensure_communication_thread_for_message_broadcast(message)
@@ -192,6 +199,22 @@ class ActionCableListener < BaseListener
     return if account.blank?
 
     broadcast(account, [account_token(account)], CONTACT_DELETED, contact_data)
+  end
+
+  def appointment_created(event)
+    broadcast_appointment_event(event, APPOINTMENT_CREATED)
+  end
+
+  def appointment_updated(event)
+    broadcast_appointment_event(event, APPOINTMENT_UPDATED)
+  end
+
+  def appointment_cancelled(event)
+    broadcast_appointment_event(event, APPOINTMENT_CANCELLED)
+  end
+
+  def appointment_completed(event)
+    broadcast_appointment_event(event, APPOINTMENT_COMPLETED)
   end
 
   def crm_deal_created(event)
@@ -371,6 +394,27 @@ class ActionCableListener < BaseListener
         deal_id: deal.id,
         meta: event_meta.slice(:event_type, :contacts_changed, :task_id)
       }
+    )
+  end
+
+  def broadcast_appointment_event(event, event_name)
+    appointment = event.data[:appointment]
+    account = appointment&.account
+    return if account.blank? || appointment.blank?
+
+    changes = event.data[:changed_attributes].to_h
+    tokens = ::Scheduling::Appointments::RealtimeRecipients.new(
+      account: account,
+      appointment: appointment,
+      changes: changes
+    ).tokens
+    return if tokens.blank?
+
+    broadcast(
+      account,
+      tokens,
+      event_name,
+      { appointment_id: appointment.id }
     )
   end
 

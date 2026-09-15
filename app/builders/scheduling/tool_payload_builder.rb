@@ -1,8 +1,8 @@
 module Scheduling::ToolPayloadBuilder
   module_function
 
-  def appointment_payload(action:, appointment:)
-    appointment_data = Scheduling::PayloadBuilder.appointment(appointment)
+  def appointment_payload(action:, appointment:, include_finance:)
+    appointment_data = Scheduling::PayloadBuilder.appointment(appointment, include_finance: include_finance)
 
     {
       action: action,

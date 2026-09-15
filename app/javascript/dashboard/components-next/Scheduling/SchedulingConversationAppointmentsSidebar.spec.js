@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SchedulingConversationAppointmentsSidebar from './SchedulingConversationAppointmentsSidebar.vue';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
 
 const existingAppointment = {
   id: 501,
@@ -22,6 +23,8 @@ const existingAppointment = {
 const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   dispatch: vi.fn(),
+  emitterOff: vi.fn(),
+  emitterOn: vi.fn(),
   loadResources: vi.fn(() => Promise.resolve()),
   loadServices: vi.fn(() => Promise.resolve()),
   resources: [
@@ -89,6 +92,13 @@ vi.mock('dashboard/stores/scheduling/references', () => ({
   }),
 }));
 
+vi.mock('shared/helpers/mitt', () => ({
+  emitter: {
+    off: mocks.emitterOff,
+    on: mocks.emitterOn,
+  },
+}));
+
 const defaultCurrentChat = () => ({
   id: 123,
   meta: {
@@ -138,6 +148,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
     mocks.alert.mockClear();
     mocks.dispatch.mockClear();
+    mocks.emitterOff.mockClear();
+    mocks.emitterOn.mockClear();
     mocks.loadResources.mockClear();
     mocks.loadServices.mockClear();
     SchedulingAppointmentsAPI.create.mockClear();
@@ -146,6 +158,117 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
     });
+  });
+
+  it.each([
+    [
+      'appointment.updated',
+      [{ ...existingAppointment, clientName: 'Обновлено' }],
+    ],
+    ['appointment.cancelled', []],
+    ['scheduling.scope_invalidated', []],
+  ])('reloads the lookup on %s realtime events', async (event, payload) => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const realtimeHandler = mocks.emitterOn.mock.calls.find(
+      ([name]) => name === BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT
+    )[1];
+    const initialCallCount = SchedulingAppointmentsAPI.get.mock.calls.length;
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload } });
+
+    realtimeHandler({ event });
+    await flushPromises();
+
+    expect(SchedulingAppointmentsAPI.get.mock.calls.length).toBeGreaterThan(
+      initialCallCount
+    );
+    expect(wrapper.vm.appointments).toEqual(payload);
+  });
+
+  it('does not restore revoked appointments from an older request', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const realtimeHandler = mocks.emitterOn.mock.calls.find(
+      ([name]) => name === BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT
+    )[1];
+    let resolveOlderRequest;
+    const olderRequest = new Promise(resolve => {
+      resolveOlderRequest = resolve;
+    });
+    SchedulingAppointmentsAPI.get.mockReturnValue(olderRequest);
+
+    realtimeHandler({ event: 'appointment.updated' });
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    realtimeHandler({ event: 'scheduling.scope_invalidated' });
+    await flushPromises();
+    expect(wrapper.vm.appointments).toEqual([]);
+
+    resolveOlderRequest({ data: { payload: [existingAppointment] } });
+    await flushPromises();
+    expect(wrapper.vm.appointments).toEqual([]);
+  });
+
+  it('does not auto-create from a stale lookup after switching dialogs', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    let resolveFirstLookup;
+    let resolveSecondLookup;
+    const firstLookup = new Promise(resolve => {
+      resolveFirstLookup = resolve;
+    });
+    const secondLookup = new Promise(resolve => {
+      resolveSecondLookup = resolve;
+    });
+    let currentLookup = firstLookup;
+    SchedulingAppointmentsAPI.get.mockImplementation(() => currentLookup);
+
+    await wrapper.setProps({
+      currentChat: { ...defaultCurrentChat(), id: 124 },
+    });
+    currentLookup = secondLookup;
+    await wrapper.setProps({
+      currentChat: { ...defaultCurrentChat(), id: 125 },
+    });
+
+    resolveSecondLookup({ data: { payload: [existingAppointment] } });
+    await flushPromises();
+    expect(wrapper.vm.isCreating).toBe(false);
+    expect(wrapper.vm.openAppointmentKeys).toEqual(['appointment-501']);
+
+    resolveFirstLookup({ data: { payload: [] } });
+    await flushPromises();
+    expect(wrapper.vm.isCreating).toBe(false);
+    expect(wrapper.vm.openAppointmentKeys).toEqual(['appointment-501']);
+  });
+
+  it('removes the realtime listener when unmounted', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const realtimeHandler = mocks.emitterOn.mock.calls.find(
+      ([name]) => name === BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT
+    )[1];
+    let resolveRequest;
+    SchedulingAppointmentsAPI.get.mockReturnValue(
+      new Promise(resolve => {
+        resolveRequest = resolve;
+      })
+    );
+    realtimeHandler({ event: 'appointment.updated' });
+
+    wrapper.unmount();
+    resolveRequest({
+      data: {
+        payload: [{ ...existingAppointment, clientName: 'После unmount' }],
+      },
+    });
+    await flushPromises();
+
+    expect(mocks.emitterOff).toHaveBeenCalledWith(
+      BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+      realtimeHandler
+    );
+    expect(wrapper.vm.appointments).toEqual([existingAppointment]);
   });
 
   it('opens the new appointment form inline from the header plus button', async () => {
@@ -311,6 +434,34 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
+  it('omits unchanged capability-sensitive fields from an update', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.saveAppointment(existingAppointment);
+
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload).not.toHaveProperty('service_amount');
+    expect(payload).not.toHaveProperty('status');
+  });
+
+  it('omits hidden finance fields from an update', async () => {
+    const financeHiddenAppointment = {
+      ...existingAppointment,
+      serviceAmount: undefined,
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [financeHiddenAppointment] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.vm.saveAppointment(financeHiddenAppointment);
+
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload).not.toHaveProperty('service_amount');
+  });
+
   it('updates an existing appointment without stale service ids when no active services exist', async () => {
     mocks.services.splice(0, mocks.services.length, {
       active: false,
@@ -416,7 +567,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_display_id: 123,
       ends_at: new Date('2026-06-27T10:30').toISOString(),
       resource_id: 7,
-      service_amount: 5000,
       service_id: 9,
       service_ids: [9],
       source: 'conversation',
@@ -427,6 +577,30 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'
     );
+  });
+
+  it('omits default status and a blank finance field from create', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .findComponent({ name: 'SidebarActionsHeader' })
+      .vm.$emit('click', 'new_appointment');
+
+    Object.assign(wrapper.vm.createForm, {
+      clientFirstName: 'Айша',
+      clientPhone: 'test-phone-4567',
+      endsAt: '2026-06-27T10:30',
+      resourceId: 7,
+      serviceAmount: '',
+      startsAt: '2026-06-27T10:00',
+    });
+
+    await wrapper.vm.saveCreateAppointment();
+
+    const payload = SchedulingAppointmentsAPI.create.mock.calls.at(-1)[0];
+    expect(payload).not.toHaveProperty('service_amount');
+    expect(payload).not.toHaveProperty('status');
   });
 
   it('requires MedElement patient identity but allows an appointment without a service', async () => {
@@ -577,7 +751,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       service_name_snapshot: 'Осмотр',
       source: 'conversation',
       starts_at: new Date('2026-06-27T10:00').toISOString(),
-      status: 'scheduled',
     });
   });
 });

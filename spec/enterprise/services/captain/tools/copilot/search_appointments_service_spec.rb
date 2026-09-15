@@ -25,7 +25,8 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
           appointment.association(:conversation).loaded? &&
             appointment.conversation.association(:inbox).loaded? &&
             appointment.conversation.association(:communication_thread).loaded?
-        end
+        end,
+        include_finance: true
       ).and_call_original
 
       payload = JSON.parse(service.execute(client_name: 'Aruzhan', resource_id: resource.id, limit: 1))
@@ -64,6 +65,49 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
       expect(payload['appointments']).to all(satisfy do |appointment|
         appointment.keys.grep(/^client_/).empty?
       end)
+    end
+
+    it 'omits appointments outside the user appointment scope' do
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+      account.account_users.find_by!(user: user).access_role.grants
+             .find_by!(resource: 'appointments', capability: 'view')
+             .update!(access_scope: 'own')
+      appointment1.contact.update!(owner: user)
+
+      payload = JSON.parse(service.execute(limit: 10))
+
+      expect(payload['appointments'].pluck('id')).to eq([appointment1.id])
+      expect(payload['total_count']).to eq(1)
+    end
+
+    it 'applies the finance scope separately to each visible appointment' do
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+      appointment1.contact.update!(owner: user)
+      appointment1.update!(service_amount: 20_000)
+      appointment2.update!(service_amount: 30_000)
+      account_user = account.account_users.find_by!(user: user)
+      account_user.access_role.grants.create!(
+        account: account,
+        resource: 'appointments',
+        capability: 'view_finance',
+        access_scope: 'own'
+      )
+
+      payload = JSON.parse(service.execute(limit: 10))
+      appointments = payload.fetch('appointments').index_by { |appointment| appointment.fetch('id') }
+
+      expect(appointments.fetch(appointment1.id)).to include('service_amount' => 20_000)
+      expect(appointments.fetch(appointment2.id).keys).not_to include('service_amount', 'payment_status', 'payments', 'expense')
+
+      filtered_payload = JSON.parse(service.execute(payment_status: appointment2.payment_status, limit: 10))
+      expect(filtered_payload.fetch('appointments')).to eq([])
+      expect(filtered_payload.fetch('total_count')).to eq(0)
     end
   end
 end

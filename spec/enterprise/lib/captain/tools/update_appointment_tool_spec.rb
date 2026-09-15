@@ -40,6 +40,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     )
     expect(payload['appointment']).to include('id' => appointment.id, 'resource_id' => new_resource.id, 'service_id' => new_service.id)
     expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
+    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
   end
 
   it 'exposes custom_attributes as an object parameter' do

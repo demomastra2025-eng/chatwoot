@@ -113,6 +113,8 @@ describe('useSchedulingAppointmentFormStore', () => {
     ]);
 
     expect(store.form.serviceAmount).toBe(30000);
+    expect(store.buildPayload()).toMatchObject({ service_id: 5 });
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
   });
 
   it('updates the draft price when the edited appointment changes service/resource', () => {
@@ -803,6 +805,56 @@ describe('useSchedulingAppointmentFormStore', () => {
       prepaid_amount: 0,
     });
     expect(store.buildPayload()).not.toHaveProperty('prepaid_payment_method');
+  });
+
+  it('omits default transition and finance fields from create payloads', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate({}, { resourceId: 3 });
+
+    expect(store.buildPayload()).not.toHaveProperty('status');
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_payment_method');
+  });
+
+  it('omits unchanged transition and unavailable finance fields from edit payloads', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    });
+    store.updateField('clientComment', 'Обычная правка');
+
+    expect(store.buildPayload()).not.toHaveProperty('status');
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
+  });
+
+  it('includes transition and finance fields only when their visible values change', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      prepaidAmount: 1000,
+      resourceId: 3,
+      serviceAmount: 20000,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    });
+    store.updateField('serviceAmount', 22000);
+    store.updateField('status', 'confirmed');
+
+    expect(store.buildPayload()).toMatchObject({
+      service_amount: 22000,
+      status: 'confirmed',
+    });
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
   });
 
   it('deletes a cancelled appointment and resets the form state', async () => {

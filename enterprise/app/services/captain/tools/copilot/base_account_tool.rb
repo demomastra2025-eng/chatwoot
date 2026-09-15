@@ -159,6 +159,24 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     Conversations::PermissionFilterService.new(account.conversations, @user, account).perform
   end
 
+  def permissible_appointments(capability: 'view')
+    account_user = account.account_users.find_by(user_id: @user&.id)
+    user_context = { user: @user, account: account, account_user: account_user }
+
+    ::Scheduling::AppointmentPolicy::Scope.new(
+      user_context,
+      account.scheduling_appointments,
+      capability: capability
+    ).resolve
+  end
+
+  def appointment_finance_visible?(appointment)
+    account_user = account.account_users.find_by(user_id: @user&.id)
+    user_context = { user: @user, account: account, account_user: account_user }
+
+    ::Scheduling::AppointmentPolicy.new(user_context, appointment).view_finance_legacy?
+  end
+
   def find_permissible_conversation(conversation_id)
     return nil if conversation_id.blank?
 

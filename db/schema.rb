@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -35,8 +35,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.index ["account_id", "resource", "capability", "access_scope"], name: "index_access_role_grants_on_account_lookup"
     t.index ["account_id"], name: "index_access_role_grants_on_account_id"
     t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying::text, 'own'::character varying::text, 'team'::character varying::text, 'all'::character varying::text])", name: "access_role_grants_supported_scope"
-    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'override_schedule'::character varying::text, 'complete_cancel'::character varying::text])", name: "access_role_grants_supported_capability"
-    t.check_constraint "resource::text = 'contacts'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'conversations'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'override_schedule'::character varying::text])) OR resource::text = 'deals'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'tasks'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'complete_cancel'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text]))", name: "access_role_grants_supported_resource_capability"
+    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'transition'::character varying, 'take'::character varying, 'override_schedule'::character varying, 'complete_cancel'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying]::text[])", name: "access_role_grants_supported_capability"
+    t.check_constraint "resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'override_schedule'::character varying]::text[])) OR resource::text <> 'appointments'::text AND (resource::text = 'contacts'::text AND capability::text = 'view'::text OR resource::text = 'contacts'::text AND capability::text = 'create'::text OR resource::text = 'contacts'::text AND capability::text = 'update_fields'::text OR resource::text = 'contacts'::text AND capability::text = 'assign'::text OR resource::text = 'contacts'::text AND capability::text = 'delete_archive'::text OR resource::text = 'contacts'::text AND capability::text = 'view_configuration'::text OR resource::text = 'contacts'::text AND capability::text = 'configure'::text OR resource::text = 'contacts'::text AND capability::text = 'export'::text OR resource::text = 'contacts'::text AND capability::text = 'view_reports'::text OR resource::text = 'conversations'::text AND capability::text = 'view'::text OR resource::text = 'conversations'::text AND capability::text = 'create'::text OR resource::text = 'conversations'::text AND capability::text = 'update_fields'::text OR resource::text = 'conversations'::text AND capability::text = 'assign'::text OR resource::text = 'conversations'::text AND capability::text = 'transition'::text OR resource::text = 'conversations'::text AND capability::text = 'take'::text OR resource::text = 'conversations'::text AND capability::text = 'delete_archive'::text OR resource::text = 'conversations'::text AND capability::text = 'view_configuration'::text OR resource::text = 'conversations'::text AND capability::text = 'configure'::text OR resource::text = 'conversations'::text AND capability::text = 'export'::text OR resource::text = 'conversations'::text AND capability::text = 'view_reports'::text OR resource::text = 'deals'::text AND capability::text = 'view'::text OR resource::text = 'deals'::text AND capability::text = 'create'::text OR resource::text = 'deals'::text AND capability::text = 'update_fields'::text OR resource::text = 'deals'::text AND capability::text = 'assign'::text OR resource::text = 'deals'::text AND capability::text = 'transition'::text OR resource::text = 'deals'::text AND capability::text = 'delete_archive'::text OR resource::text = 'deals'::text AND capability::text = 'view_configuration'::text OR resource::text = 'deals'::text AND capability::text = 'configure'::text OR resource::text = 'deals'::text AND capability::text = 'export'::text OR resource::text = 'deals'::text AND capability::text = 'view_reports'::text OR resource::text = 'tasks'::text AND capability::text = 'view'::text OR resource::text = 'tasks'::text AND capability::text = 'create'::text OR resource::text = 'tasks'::text AND capability::text = 'update_fields'::text OR resource::text = 'tasks'::text AND capability::text = 'assign'::text OR resource::text = 'tasks'::text AND capability::text = 'transition'::text OR resource::text = 'tasks'::text AND capability::text = 'complete_cancel'::text OR resource::text = 'tasks'::text AND capability::text = 'delete_archive'::text OR resource::text = 'tasks'::text AND capability::text = 'view_configuration'::text OR resource::text = 'tasks'::text AND capability::text = 'configure'::text OR resource::text = 'tasks'::text AND capability::text = 'export'::text OR resource::text = 'tasks'::text AND capability::text = 'view_reports'::text)", name: "access_role_grants_supported_resource_capability"
     t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying::text, 'conversations'::character varying::text, 'appointments'::character varying::text, 'deals'::character varying::text, 'tasks'::character varying::text])", name: "access_role_grants_supported_resource"
   end
 
@@ -2853,10 +2853,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.string "client_last_name"
     t.string "client_middle_name"
     t.string "title"
+    t.bigint "team_id"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
     t.index ["account_id", "starts_at"], name: "idx_scheduling_appointments_on_account_starts_at"
+    t.index ["account_id", "team_id"], name: "idx_scheduling_appointments_account_team"
     t.index ["account_id"], name: "index_scheduling_appointments_on_account_id"
     t.index ["company_id"], name: "index_scheduling_appointments_on_company_id"
     t.index ["contact_id"], name: "index_scheduling_appointments_on_contact_id"
@@ -2948,8 +2950,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent", default: 0, null: false
     t.boolean "inherit_working_hours_from_account", default: false, null: false
+    t.bigint "team_id"
     t.index "account_id, ((custom_attributes ->> 'medelement_specialist_code'::text))", name: "idx_scheduling_resources_account_medelement_specialist_code", unique: true, where: "((custom_attributes ->> 'medelement_specialist_code'::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_resources_on_account_active_name"
+    t.index ["account_id", "team_id"], name: "idx_scheduling_resources_account_team"
     t.index ["account_id"], name: "index_scheduling_resources_on_account_id"
     t.index ["user_id"], name: "index_scheduling_resources_on_user_id"
   end
@@ -3896,6 +3900,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
   add_foreign_key "scheduling_appointments", "conversations"
   add_foreign_key "scheduling_appointments", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_appointments", "scheduling_services", column: "service_id"
+  add_foreign_key "scheduling_appointments", "teams"
   add_foreign_key "scheduling_appointments", "users", column: "created_by_id"
   add_foreign_key "scheduling_appointments", "users", column: "owner_id"
   add_foreign_key "scheduling_break_rules", "accounts"
@@ -3909,6 +3914,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
   add_foreign_key "scheduling_payments", "scheduling_appointments", column: "appointment_id"
   add_foreign_key "scheduling_payments", "users", column: "recorded_by_id"
   add_foreign_key "scheduling_resources", "accounts"
+  add_foreign_key "scheduling_resources", "teams"
   add_foreign_key "scheduling_resources", "users"
   add_foreign_key "scheduling_service_prices", "accounts"
   add_foreign_key "scheduling_service_prices", "scheduling_resources", column: "resource_id"

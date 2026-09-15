@@ -85,6 +85,7 @@ class Scheduling::Appointment < ApplicationRecord
   belongs_to :owner, class_name: 'User', optional: true
   belongs_to :resource, class_name: 'Scheduling::Resource', inverse_of: :appointments
   belongs_to :service, class_name: 'Scheduling::Service', optional: true, inverse_of: :appointments
+  belongs_to :team, optional: true
 
   has_one :expense, class_name: 'Scheduling::Expense', dependent: :destroy_async, inverse_of: :appointment
   has_many :payments, -> { order(:created_at, :id) }, class_name: 'Scheduling::Payment', dependent: :destroy_async, inverse_of: :appointment
@@ -100,6 +101,7 @@ class Scheduling::Appointment < ApplicationRecord
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
   after_update_commit :sync_deferred_touch_enrollments
+  after_destroy_commit :invalidate_scheduling_scope
   after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
 
   validates :client_name, :starts_at, :ends_at, :source, presence: true
@@ -177,6 +179,10 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   private
+
+  def invalidate_scheduling_scope
+    Scheduling::ScopeInvalidation.dispatch(account)
+  end
 
   def mark_local_medelement_cancellation
     return unless source != 'medelement' && status == 'cancelled' && will_save_change_to_status?
@@ -288,7 +294,8 @@ class Scheduling::Appointment < ApplicationRecord
       conversation: conversation,
       created_by: created_by,
       owner: owner,
-      service: service
+      service: service,
+      team: team
     }.each do |name, record|
       next if record.blank?
       next if record_belongs_to_account?(record)

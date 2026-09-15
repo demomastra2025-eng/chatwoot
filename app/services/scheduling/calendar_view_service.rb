@@ -1,6 +1,7 @@
 class Scheduling::CalendarViewService
   def initialize(account:, **options)
     @account = account
+    @appointment_scope = options.fetch(:appointment_scope, account.scheduling_appointments)
     @view = options.fetch(:view)
     @from = options.fetch(:from)
     @to = options.fetch(:to)
@@ -130,16 +131,19 @@ class Scheduling::CalendarViewService
   end
 
   def base_appointments_scope
-    @base_appointments_scope ||= account.scheduling_appointments
-                                        .includes(:expense, :payments, :contact, :resource,
-                                                  conversation: [:communication_thread, :inbox])
-                                        .where(resource_id: resource_ids)
-                                        .where('starts_at < ? AND ends_at > ?', @to, @from)
-                                        .ordered
+    @base_appointments_scope ||= @appointment_scope
+                                 .includes(:expense, :payments, :contact, :resource,
+                                           conversation: [:communication_thread, :inbox])
+                                 .where(resource_id: resource_ids)
+                                 .where('starts_at < ? AND ends_at > ?', @to, @from)
+                                 .ordered
   end
 
   def blocking_appointments
-    @blocking_appointments ||= base_appointments_scope.to_a
+    @blocking_appointments ||= account.scheduling_appointments
+                                      .where(resource_id: resource_ids)
+                                      .where('starts_at < ? AND ends_at > ?', @to, @from)
+                                      .to_a
   end
 
   def appointment_custom_field_filter_set

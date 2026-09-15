@@ -59,7 +59,7 @@ describe ActionCableListener do
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       voice_member = create(:user, account: account, role: :agent)
       restricted_member = create(:user, account: account, role: :agent)
-      unassigned_agent = create(:user, account: account, role: :agent)
+      create(:user, account: account, role: :agent)
       create(:inbox_member, inbox: voice_inbox, user: voice_member)
       create(:inbox_member, inbox: voice_inbox, user: restricted_member)
       restricted_role = create(:custom_role, account: account, permissions: [])
@@ -821,6 +821,43 @@ describe ActionCableListener do
 
       listener.crm_task_updated(event)
       expect(outsider.pubsub_token).not_to eq(agent.pubsub_token)
+    end
+  end
+
+  describe '#appointment_updated' do
+    it 'broadcasts only an opaque refresh when finance fields change' do
+      appointment = create(:scheduling_appointment, account: account)
+      event = Events::Base.new(
+        :'appointment.updated',
+        Time.zone.now,
+        appointment: appointment,
+        changed_attributes: {
+          'service_amount' => [10_000, 20_000],
+          'compensation_value_snapshot' => [3_000, 6_000]
+        }
+      )
+
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        ["account_#{account.id}"],
+        'appointment.updated',
+        { account_id: account.id, appointment_id: appointment.id }
+      )
+
+      listener.appointment_updated(event)
+    end
+  end
+
+  describe '#scheduling_scope_invalidated' do
+    it 'broadcasts an opaque refresh to every workspace user' do
+      event = Events::Base.new(:'scheduling.scope_invalidated', Time.zone.now, account: account)
+
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        'scheduling.scope_invalidated',
+        { account_id: account.id }
+      )
+
+      listener.scheduling_scope_invalidated(event)
     end
   end
 

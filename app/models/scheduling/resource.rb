@@ -39,6 +39,7 @@ class Scheduling::Resource < ApplicationRecord
 
   belongs_to :account
   belongs_to :user, optional: true
+  belongs_to :team, optional: true
 
   has_many :appointments, class_name: 'Scheduling::Appointment', dependent: :destroy_async, inverse_of: :resource
   has_many :break_rules, class_name: 'Scheduling::BreakRule', dependent: :destroy_async, inverse_of: :resource
@@ -48,6 +49,7 @@ class Scheduling::Resource < ApplicationRecord
   has_many :workday_overrides, class_name: 'Scheduling::WorkdayOverride', dependent: :destroy_async, inverse_of: :resource
 
   before_validation :sync_timezone_from_account
+  after_update_commit :invalidate_appointment_scope, if: :saved_change_to_scope_owner?
 
   validates :name, :timezone, presence: true
   validates :slot_duration_min, inclusion: { in: 5..720 }
@@ -58,6 +60,7 @@ class Scheduling::Resource < ApplicationRecord
   validate :compensation_percent_within_range
   validate :combined_compensation_percent_within_range
   validate :user_belongs_to_account
+  validate :team_belongs_to_account
 
   scope :ordered, -> { order(:name, :id) }
   scope :active, -> { where(active: true) }
@@ -116,6 +119,14 @@ class Scheduling::Resource < ApplicationRecord
   end
 
   private
+
+  def saved_change_to_scope_owner?
+    saved_change_to_user_id? || saved_change_to_team_id?
+  end
+
+  def invalidate_appointment_scope
+    Scheduling::ScopeInvalidation.dispatch(account)
+  end
 
   def replace_with_personal_schedule!(work_rules, break_rules)
     self.work_rules.destroy_all
@@ -199,5 +210,12 @@ class Scheduling::Resource < ApplicationRecord
     return if account.users.exists?(id: user_id)
 
     errors.add(:user_id, 'must belong to the current account')
+  end
+
+  def team_belongs_to_account
+    return if team_id.blank? || account.blank?
+    return if team&.account_id == account_id
+
+    errors.add(:team_id, 'must belong to the current account')
   end
 end

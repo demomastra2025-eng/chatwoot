@@ -17,7 +17,8 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
-    appointments = account.scheduling_appointments.includes(
+    appointments = appointments_for_payment_filter(permissible_appointments, payment_status)
+    appointments = appointments.includes(
       :resource,
       :service,
       :company,
@@ -61,14 +62,35 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   private
 
+  def appointments_for_payment_filter(appointments, payment_status)
+    return appointments if payment_status.blank?
+
+    appointments.where(id: permissible_appointments(capability: 'view_finance').select(:id))
+  end
+
   def appointment_records(appointments, limit:, include_client_name:)
-    appointments.order(starts_at: :desc, id: :desc).limit(limit).map do |appointment|
-      appointment_payload(appointment, include_client_name: include_client_name)
+    records = appointments.order(starts_at: :desc, id: :desc).limit(limit).to_a
+    finance_visibility = permissible_appointments(capability: 'view_finance')
+                         .where(id: records.map(&:id))
+                         .pluck(:id)
+                         .index_with(true)
+    records.map do |appointment|
+      appointment_payload(
+        appointment,
+        include_client_name: include_client_name,
+        include_finance: finance_visibility.key?(appointment.id)
+      )
     end
   end
 
-  def appointment_payload(appointment, include_client_name:)
-    payload = Scheduling::PayloadBuilder.appointment(appointment).except(
+  def appointment_payload(appointment, include_client_name:, include_finance:)
+    payload = Scheduling::PayloadBuilder.appointment(
+      appointment,
+      include_finance: include_finance
+    ).except(
+      :client_first_name,
+      :client_last_name,
+      :client_middle_name,
       :client_phone,
       :client_identifier,
       :client_birth_date,

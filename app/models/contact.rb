@@ -537,16 +537,18 @@ class Contact < ApplicationRecord
   end
 
   def dispatch_update_event
-    return if runtime_events_suppressed?
+    unless runtime_events_suppressed?
+      Rails.configuration.dispatcher.dispatch(
+        CONTACT_UPDATED,
+        Time.zone.now,
+        contact: self,
+        changed_attributes: previous_changes,
+        performed_by: Current.executed_by,
+        medelement_outbound_snapshot: medelement_outbound_snapshot
+      )
+    end
 
-    Rails.configuration.dispatcher.dispatch(
-      CONTACT_UPDATED,
-      Time.zone.now,
-      contact: self,
-      changed_attributes: previous_changes,
-      performed_by: Current.executed_by,
-      medelement_outbound_snapshot: medelement_outbound_snapshot
-    )
+    Scheduling::ScopeInvalidation.dispatch(account) if previous_changes.key?('owner_id')
   end
 
   def dispatch_destroy_event

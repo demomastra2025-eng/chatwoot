@@ -20,7 +20,7 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
     end
 
     total_count = services.count
-    records = services.ordered.limit(parse_limit(limit)).map { |service| Scheduling::PayloadBuilder.service(service) }
+    records = services.ordered.limit(parse_limit(limit)).map { |service| service_payload(service) }
 
     formatted_payload(
       filters: {
@@ -34,5 +34,11 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
 
   def active?
     @user.present? && assistant.account.feature_enabled?('scheduling')
+  end
+
+  private
+
+  def service_payload(service)
+    Scheduling::PayloadBuilder.service(service, finance_resource_ids: [])
   end
 end

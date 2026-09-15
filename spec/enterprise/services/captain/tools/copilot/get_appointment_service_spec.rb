@@ -36,7 +36,8 @@ RSpec.describe Captain::Tools::Copilot::GetAppointmentService do
         record.association(:conversation).loaded? &&
           record.conversation.association(:inbox).loaded? &&
           record.conversation.association(:communication_thread).loaded?
-      end
+      end,
+      include_finance: true
     ).and_call_original
 
     payload = JSON.parse(service.execute(appointment_id: appointment.id))
@@ -48,5 +49,38 @@ RSpec.describe Captain::Tools::Copilot::GetAppointmentService do
       'service_id' => scheduling_service.id,
       'duration_min' => appointment.duration_min
     )
+  end
+
+  it 'does not return an appointment outside the user appointment scope' do
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account.account_users.find_by!(user: user).access_role.grants
+           .find_by!(resource: 'appointments', capability: 'view')
+           .update!(access_scope: 'own')
+    appointment = create(:scheduling_appointment, account: account)
+
+    expect(service.execute(appointment_id: appointment.id)).to eq('ERROR: Appointment not found')
+  end
+
+  it 'hides finance for an appointment outside the finance scope' do
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account_user = account.account_users.find_by!(user: user)
+    account_user.access_role.grants.create!(
+      account: account,
+      resource: 'appointments',
+      capability: 'view_finance',
+      access_scope: 'own'
+    )
+    appointment = create(:scheduling_appointment, account: account, service_amount: 25_000)
+
+    payload = JSON.parse(service.execute(appointment_id: appointment.id)).fetch('appointment')
+
+    expect(payload.fetch('id')).to eq(appointment.id)
+    expect(payload.keys).not_to include('service_amount', 'payment_status', 'payments', 'expense')
   end
 end

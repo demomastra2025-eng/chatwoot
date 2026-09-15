@@ -5,7 +5,8 @@ class AccessRoleGrant < ApplicationRecord
     'contacts' => %w[view create update_fields assign delete_archive view_configuration configure export view_reports],
     'conversations' => %w[view create update_fields assign transition take delete_archive view_configuration configure export view_reports],
     'appointments' => %w[
-      view create update_fields assign transition delete_archive view_configuration configure export view_reports override_schedule
+      view create update_fields assign transition delete_archive view_finance manage_finance view_configuration configure export
+      view_reports override_schedule
     ],
     'deals' => %w[view create update_fields assign transition delete_archive view_configuration configure export view_reports],
     'tasks' => %w[view create update_fields assign transition complete_cancel delete_archive view_configuration configure export view_reports]
@@ -29,8 +30,17 @@ class AccessRoleGrant < ApplicationRecord
   before_validation :normalize_attributes
   before_validation :lock_account_for_access_control
   before_destroy :lock_account_for_access_control
+  after_commit :invalidate_appointment_scope, if: :appointment_grant?
 
   private
+
+  def appointment_grant?
+    resource == 'appointments'
+  end
+
+  def invalidate_appointment_scope
+    Scheduling::ScopeInvalidation.dispatch(account)
+  end
 
   def normalize_attributes
     self.resource = resource.to_s.strip

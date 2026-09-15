@@ -86,6 +86,8 @@ import {
   useSchedulingProviderCommandsStore,
 } from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 import {
   buildContactableInboxesList,
   fetchContactableInboxes,
@@ -136,6 +138,7 @@ const appointmentContactableInboxesByContactId = ref({});
 const appointmentConversationContactCreateRequested = ref(false);
 let appointmentConversationCreateRequestId = 0;
 let appointmentConversationDisposed = false;
+let appointmentRealtimeRefreshTimer = null;
 
 const inlineContactForm = reactive({
   birthDate: '',
@@ -2015,13 +2018,29 @@ watch(
   { immediate: true }
 );
 
+const handleAppointmentRealtimeEvent = () => {
+  window.clearTimeout(appointmentRealtimeRefreshTimer);
+  appointmentRealtimeRefreshTimer = window.setTimeout(() => {
+    calendarStore.refresh();
+  }, 100);
+};
+
 onBeforeUnmount(() => {
+  emitter.off(
+    BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+    handleAppointmentRealtimeEvent
+  );
+  window.clearTimeout(appointmentRealtimeRefreshTimer);
   appointmentConversationDisposed = true;
   appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationCreateRequestId += 1;
 });
 
 onMounted(async () => {
+  emitter.on(
+    BUS_EVENTS.SCHEDULING_APPOINTMENT_REALTIME_EVENT,
+    handleAppointmentRealtimeEvent
+  );
   calendarStore.hydratePreferences();
   currentPresentation.value = 'calendar';
   await loadPage();

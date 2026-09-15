@@ -31,6 +31,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
       'ends_at' => payload.dig('appointment', 'ends_at')
     )
     expect(payload['appointment']).to include('id' => appointment.id, 'status' => 'cancelled')
+    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
   end
 
   it 'does not cancel an imported Medelement appointment' do

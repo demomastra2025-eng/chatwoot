@@ -45,6 +45,7 @@ class AccountUser < ApplicationRecord
   after_create_commit :notify_creation, :create_notification_setting
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
+  after_update_commit :invalidate_appointment_scope, if: :saved_change_to_access_role_id?
 
   validates :user_id, uniqueness: { scope: :account_id }
   validate :access_role_belongs_to_account
@@ -79,6 +80,10 @@ class AccountUser < ApplicationRecord
   end
 
   private
+
+  def invalidate_appointment_scope
+    Scheduling::ScopeInvalidation.dispatch(account)
+  end
 
   def remove_communication_thread_participations
     CommunicationThreadParticipant.where(account_id: account_id, user_id: user_id).includes(:communication_thread).find_each do |membership|
