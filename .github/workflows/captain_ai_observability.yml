@@ -84,7 +84,6 @@ concurrency:
 jobs:
   frontend-lint:
     runs-on: ubuntu-22.04
-    if: ${{ hashFiles('enterprise/**/*') != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -112,7 +111,6 @@ jobs:
 
   backend-pack:
     runs-on: ubuntu-22.04
-    if: ${{ hashFiles('enterprise/**/*') != '' }}
 
     services:
       postgres:
