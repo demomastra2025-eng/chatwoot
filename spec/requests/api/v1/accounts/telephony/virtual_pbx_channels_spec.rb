@@ -408,7 +408,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
         host: 'cloudpbx.beeline.kz',
         port: 5060,
         transport: 'udp',
-        sip_domain: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+        sip_domain: 'vpbx-company-1399.CLOUDPBX.BEELINE.KZ',
         outbound_proxy: '46.227.186.231:6050',
         codec: 'pcma'
       },
@@ -439,7 +439,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       transport: 'udp'
     )
     expect(connection.metadata).to include(
-      'sip_domain' => 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+      'sip_domain' => 'vpbx-company-1399.CLOUDPBX.BEELINE.KZ',
       'outbound_proxy' => '46.227.186.231:6050',
       'codec' => 'pcma'
     )
