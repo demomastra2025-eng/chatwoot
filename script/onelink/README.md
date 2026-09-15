@@ -55,7 +55,8 @@ git switch -c feature/<короткое-название>
 - `.github/workflows/onelink_release.yml` — проверки каждого push в `onelink-dev`,
   быстрый DEV deploy и сборка подписанного production image.
 - `.github/workflows/onelink_nightly.yml` — полный Ruby/Vue/security suite: по расписанию,
-  вручную или для точного SHA по запросу production promotion.
+  вручную или для точного SHA по запросу production promotion. Ручной запуск с feature-ветки
+  проверяет exact HEAD, но не публикует `nightly` proof, пригодный для promotion.
 - `.github/workflows/onelink_promote_production.yml` — ручное продвижение проверенного
   DEV SHA в PROD.
 

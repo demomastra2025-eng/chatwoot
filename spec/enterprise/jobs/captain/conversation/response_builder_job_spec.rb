@@ -233,6 +233,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     it 'does not publish an AI response when a human replies during generation' do
       agent = create(:user, account: account, role: :agent)
       expected_generation = conversation.captain_control_generation
+      allow(Llm::EventBus).to receive(:publish)
       allow(agent_runner_service).to receive(:generate_response) do
         create(:message, conversation: conversation, message_type: :outgoing, sender: agent, account: account, inbox: inbox)
         { 'response' => 'Late AI response' }
@@ -242,6 +243,28 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect(conversation.reload.captain_control_state).to eq('human')
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+      expect(Llm::EventBus).to have_received(:publish).with(
+        'captain.run.fenced',
+        hash_including(reason: 'human_response_committed', stage: 'response_processing')
+      )
+    end
+
+    it 'publishes a response-processing fence when the conversation is resolved during generation' do
+      allow(Llm::EventBus).to receive(:publish)
+      allow(agent_runner_service).to receive(:generate_response) do
+        conversation.update!(status: :resolved)
+        { 'response' => 'Late AI response' }
+      end
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.not_to(change { conversation.messages.outgoing.where(sender: assistant).count })
+
+      expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+      expect(Llm::EventBus).to have_received(:publish).with(
+        'captain.run.fenced',
+        hash_including(reason: 'status_changed', stage: 'response_processing')
+      )
     end
 
     it 'does not publish after a human reply commits while its ownership callback is waiting' do
@@ -719,6 +742,64 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.status).to eq('open')
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
       expect(conversation.waiting_since).to be_present
+    end
+
+    it 'does not consume usage when a handoff loses the control fence' do
+      allow(Llm::EventBus).to receive(:publish)
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => '',
+          'handoff_tool_called' => true,
+          'usage' => { 'total_tokens' => 42 }
+        }
+      )
+      job = described_class.new
+      control_changed = false
+      allow(job).to receive(:handoff_requested?).and_wrap_original do |method|
+        unless control_changed
+          conversation.activate_captain_human_control!(source: 'test_handoff_race')
+          control_changed = true
+        end
+        method.call
+      end
+      expect do
+        job.perform(conversation, assistant)
+      end.not_to(change { account.reload.usage_limits[:captain][:responses][:consumed] })
+
+      expect(conversation.reload.captain_handoff_applied_at).to be_nil
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+    end
+
+    it 'does not reopen a conversation resolved after response processing starts' do
+      allow(Llm::EventBus).to receive(:publish)
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => '',
+          'handoff_tool_called' => true,
+          'usage' => { 'total_tokens' => 42 }
+        }
+      )
+      job = described_class.new
+      status_changed = false
+      allow(job).to receive(:handoff_requested?).and_wrap_original do |method|
+        unless status_changed
+          conversation.update!(status: :resolved)
+          status_changed = true
+        end
+        method.call
+      end
+
+      expect do
+        job.perform(conversation, assistant)
+      end.not_to(change { account.reload.usage_limits[:captain][:responses][:consumed] })
+
+      expect(conversation.reload).to be_resolved
+      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+      expect(Llm::EventBus).to have_received(:publish).with(
+        'captain.handoff.skipped_stale',
+        hash_including(conversation_id: conversation.id)
+      )
     end
 
     # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
