@@ -1391,7 +1391,7 @@ RSpec.describe Conversation do
       expect(conversation.waiting_since).to be_within(1.second).of(conversation_start_time)
 
       # Agent replies - this should create first response event
-      agent_reply1_time = 4.hours.ago
+      agent_reply1_time = conversation_start_time + 1.hour
       create_agent_message(conversation, created_at: agent_reply1_time)
 
       first_response_events = account.reporting_events.where(name: 'first_response', conversation_id: conversation.id)

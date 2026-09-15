@@ -11,10 +11,11 @@ class Captain::Conversation::RunFenceService
     buffer_state_changed: :buffer_state_changed?
   }.freeze
 
-  def initialize(assistant:, state:)
+  def initialize(assistant:, state:, stage: 'tool_execution')
     @assistant = assistant
     @state = state.to_h.with_indifferent_access
     @fence = @state[:captain_response_fence].to_h.with_indifferent_access
+    @stage = stage
   end
 
   def ensure_current!
@@ -29,7 +30,7 @@ class Captain::Conversation::RunFenceService
 
   private
 
-  attr_reader :assistant, :state, :fence
+  attr_reader :assistant, :state, :fence, :stage
 
   def stale_reason
     STALE_CHECKS.find { |_reason, predicate| send(predicate) }&.first&.to_s&.presence
@@ -128,7 +129,7 @@ class Captain::Conversation::RunFenceService
       expected_last_message_id: fence[:last_message_id],
       expected_buffer_token: fence[:buffer_token],
       reason: reason,
-      stage: 'tool_execution'
+      stage: stage
     )
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][RunFence] Failed to publish fence event: #{e.class}: #{e.message}")

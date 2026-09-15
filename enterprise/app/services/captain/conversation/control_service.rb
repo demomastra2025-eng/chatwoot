@@ -110,9 +110,17 @@ class Captain::Conversation::ControlService
   def handoff_stale?(fence)
     expected = fence.to_h.with_indifferent_access
     return false if expected.blank?
+    return true unless conversation_allows_captain_response?
     return true if expected[:control_generation].present? && conversation.captain_control_generation.to_i != expected[:control_generation].to_i
 
     self.class.human_response_after?(conversation, expected[:last_message_id])
+  end
+
+  def conversation_allows_captain_response?
+    return true if conversation.pending?
+    return false unless conversation.open?
+
+    conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
   end
 
   def handoff_event_name(result)

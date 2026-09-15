@@ -46,6 +46,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil)
     initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
 
+    ensure_response_fence_current!(stage: 'job_start')
     return unless current_buffer_state_valid? && conversation_allows_captain_response?
 
     Current.executed_by = @assistant
@@ -89,11 +90,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       assistant: @assistant,
       conversation: @conversation,
       callbacks: callbacks,
-      response_fence: {
-        control_generation: @expected_control_generation,
-        buffer_token: @buffer_token,
-        last_message_id: @expected_last_message_id
-      }.compact
+      response_fence: response_fence
     ).generate_response(
       message_history: collect_previous_messages
     )
@@ -102,6 +99,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_response
+    ensure_response_fence_current!(stage: 'response_processing')
     return unless current_buffer_state_valid?
     return process_cancelled_response if response_cancelled?
 
@@ -109,9 +107,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     processed_response =
       if handoff_requested?
-        process_action(handoff_action_name)
-        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
-        true
+        handoff_applied = process_action(handoff_action_name)
+        account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
+        handoff_applied
       elsif conversation_allows_captain_response?
         process_pending_response
       else
@@ -128,6 +126,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
     @conversation.with_lock do
+      ensure_response_fence_current!(stage: 'response_persistence')
       return process_cancelled_response unless current_buffer_state_valid?
       return process_cancelled_response if response_cancelled?
 
@@ -139,6 +138,27 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       end
     end
     true
+  end
+
+  def ensure_response_fence_current!(stage:)
+    Captain::Conversation::RunFenceService.new(
+      assistant: @assistant,
+      state: {
+        account_id: account.id,
+        assistant_id: @assistant.id,
+        conversation: { id: @conversation.id },
+        captain_response_fence: response_fence
+      },
+      stage: stage
+    ).ensure_current!
+  end
+
+  def response_fence
+    {
+      control_generation: @expected_control_generation,
+      buffer_token: @buffer_token,
+      last_message_id: @expected_last_message_id
+    }.compact
   end
 
   def collect_previous_messages
