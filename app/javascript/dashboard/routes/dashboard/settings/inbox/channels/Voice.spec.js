@@ -217,7 +217,7 @@ describe('Voice channel setup', () => {
     });
   });
 
-  it('creates a Beeline Cloud PBX channel with provider SIP routing defaults', async () => {
+  it('creates a Beeline Cloud PBX channel without changing SIP domain letter case', async () => {
     routeMock.query = { provider: 'beeline' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 7001 }, errors: [] },
@@ -228,7 +228,7 @@ describe('Voice channel setup', () => {
       channelName: 'Beeline Cloud PBX',
       phoneNumber: '+7 700 000 1001',
       connectionHost: 'cloudpbx.beeline.kz',
-      connectionSipDomain: 'vpbx-company-test.cloudpbx.beeline.kz',
+      connectionSipDomain: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
       connectionOutboundProxy: '46.227.186.231:6050',
     });
     await wrapper.find('form').trigger('submit');
@@ -243,7 +243,7 @@ describe('Voice channel setup', () => {
         host: 'cloudpbx.beeline.kz',
         port: '5060',
         transport: 'udp',
-        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        sip_domain: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
         outbound_proxy: '46.227.186.231:6050',
         codec: 'pcma',
       },

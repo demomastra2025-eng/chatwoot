@@ -627,7 +627,7 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def normalize_sip_domain(value)
-    value.to_s.strip.downcase.presence
+    value.to_s.strip.presence
   end
 
   def normalize_profiles(source)

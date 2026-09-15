@@ -397,7 +397,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('provisioning_plan', 'items')).to all(include('status' => 'ready'))
   end
 
-  it 'creates Beeline Cloud PBX channels with a normalized provider domain, proxy, UDP, and PCMA settings' do
+  it 'creates Beeline Cloud PBX channels while preserving provider domain letter case' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'beeline',
       channel_name: 'Beeline Cloud PBX',
@@ -439,7 +439,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       transport: 'udp'
     )
     expect(connection.metadata).to include(
-      'sip_domain' => 'vpbx-company-test.cloudpbx.beeline.kz',
+      'sip_domain' => 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
       'outbound_proxy' => '46.227.186.231:6050',
       'codec' => 'pcma'
     )
