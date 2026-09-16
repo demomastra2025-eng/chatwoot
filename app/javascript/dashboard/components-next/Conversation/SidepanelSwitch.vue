@@ -2,85 +2,16 @@
 import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useAccount } from 'dashboard/composables/useAccount';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { computed } from 'vue';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
-import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  SCHEDULING_ACCESS_PERMISSIONS,
-} from 'dashboard/constants/permissions';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
-import {
-  buildEffectiveSidebarVisibilitySettings,
-  buildSidebarVisibilityState,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const { uiSettings, updateUISettings } = useUISettings();
-const { currentAccount: activeAccount } = useAccount();
-
-const currentAccountId = useMapGetter('getCurrentAccountId');
-const currentUser = useMapGetter('getCurrentUser');
-const isFeatureEnabledonAccount = useMapGetter(
-  'accounts/isFeatureEnabledonAccount'
-);
-
-const currentAccountPermissions = computed(() => {
-  const currentAccount = currentUser.value?.accounts?.find(
-    account => Number(account.id) === Number(currentAccountId.value)
-  );
-
-  return currentAccount?.permissions || [];
-});
-const effectiveSidebarVisibilitySettings = computed(() =>
-  buildEffectiveSidebarVisibilitySettings({
-    accountId: currentAccountId.value,
-    accountSettings: activeAccount.value?.settings || {},
-    uiSettings: uiSettings.value,
-  })
-);
-const conversationVisibility = computed(() =>
-  buildSidebarVisibilityState(effectiveSidebarVisibilitySettings.value)
-);
-const isDealPanelVisible = computed(
-  () => conversationVisibility.value[CONVERSATION_PIPELINES_VISIBILITY_KEY]
-);
-const isAppointmentPanelVisible = computed(
-  () =>
-    conversationVisibility.value[
-      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY
-    ]
-);
-const showDealAction = computed(
-  () =>
-    isDealPanelVisible.value &&
-    isFeatureEnabledonAccount.value(
-      currentAccountId.value,
-      FEATURE_FLAGS.CRM_DEALS
-    ) &&
-    hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
-);
-const showTouchAction = computed(() =>
-  isFeatureEnabledonAccount.value(
-    currentAccountId.value,
-    FEATURE_FLAGS.CAMPAIGNS
-  )
-);
-const showAppointmentAction = computed(
-  () =>
-    isAppointmentPanelVisible.value &&
-    isFeatureEnabledonAccount.value(
-      currentAccountId.value,
-      FEATURE_FLAGS.SCHEDULING
-    ) &&
-    hasPermissions(
-      SCHEDULING_ACCESS_PERMISSIONS,
-      currentAccountPermissions.value
-    )
-);
+const {
+  dealsAvailable: showDealAction,
+  touchAvailable: showTouchAction,
+  appointmentsAvailable: showAppointmentAction,
+} = useConversationSidepanelAvailability();
 
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open

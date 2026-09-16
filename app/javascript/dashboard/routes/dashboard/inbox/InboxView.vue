@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useTrack } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useAccount } from 'dashboard/composables/useAccount';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { emitter } from 'shared/helpers/mitt';
@@ -16,18 +16,12 @@ import ConversationBox from 'dashboard/components/widgets/conversation/Conversat
 import InboxEmptyState from './InboxEmptyState.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import ConversationSidebar from 'dashboard/components/widgets/conversation/ConversationSidebar.vue';
-import {
-  buildEffectiveSidebarVisibilitySettings,
-  buildSidebarVisibilityState,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const route = useRoute();
 const router = useRouter();
 const store = useStore();
 const { uiSettings } = useUISettings();
-const { accountId, currentAccount } = useAccount();
+const { activePanel } = useConversationSidepanelAvailability();
 
 const isConversationLoading = ref(false);
 
@@ -45,14 +39,6 @@ const activeSortOrder = computed(() => {
   const { sort_by: sortBy } = filterBy;
   return sortBy || 'desc';
 });
-
-const effectiveSidebarVisibilitySettings = computed(() =>
-  buildEffectiveSidebarVisibilitySettings({
-    accountId: accountId.value,
-    accountSettings: currentAccount.value?.settings || {},
-    uiSettings: uiSettings.value,
-  })
-);
 
 const notifications = computed(() => {
   return notification.value({
@@ -84,27 +70,7 @@ const activeNotificationIndex = computed(() => {
 });
 
 const isConversationSidebarOpen = computed(() => {
-  if (currentChat.value.id) {
-    const {
-      is_contact_sidebar_open: isContactSidebarOpen,
-      is_crm_deal_panel_open: isDealsSidebarOpen,
-      is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
-      is_touch_sidebar_open: isTouchSidebarOpen,
-    } = uiSettings.value;
-    const visibility = buildSidebarVisibilityState(
-      effectiveSidebarVisibilitySettings.value
-    );
-
-    return (
-      isContactSidebarOpen ||
-      (isDealsSidebarOpen &&
-        visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) ||
-      (isAppointmentsSidebarOpen &&
-        visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]) ||
-      isTouchSidebarOpen
-    );
-  }
-  return false;
+  return Boolean(currentChat.value.id && activePanel.value);
 });
 
 const findConversation = () => {

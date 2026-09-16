@@ -1,16 +1,10 @@
 <script setup>
 import { computed, defineAsyncComponent } from 'vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useAccount } from 'dashboard/composables/useAccount';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { useWindowSize } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
 import wootConstants from 'dashboard/constants/globals';
-import {
-  buildEffectiveSidebarVisibilitySettings,
-  buildSidebarVisibilityState,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const props = defineProps({
   currentChat: {
@@ -35,9 +29,8 @@ const ScheduledMessagesPanel = defineAsyncComponent(
     import('dashboard/components-next/Conversation/ScheduledMessagesPanel.vue')
 );
 
-const { accountId, currentAccount } = useAccount();
-
 const { uiSettings, updateUISettings } = useUISettings();
+const { activePanel: activeTab } = useConversationSidepanelAvailability();
 const { width: windowWidth } = useWindowSize();
 const clickOutsideOptions = {
   ignore: [
@@ -49,40 +42,6 @@ const clickOutsideOptions = {
   ],
 };
 
-const effectiveSidebarVisibilitySettings = computed(() =>
-  buildEffectiveSidebarVisibilitySettings({
-    accountId: accountId.value,
-    accountSettings: currentAccount.value?.settings || {},
-    uiSettings: uiSettings.value,
-  })
-);
-
-const activeTab = computed(() => {
-  const visibility = buildSidebarVisibilityState(
-    effectiveSidebarVisibilitySettings.value
-  );
-  const {
-    is_contact_sidebar_open: isContactSidebarOpen,
-    is_crm_deal_panel_open: isDealsSidebarOpen,
-    is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
-    is_touch_sidebar_open: isTouchSidebarOpen,
-  } = uiSettings.value;
-
-  if (isContactSidebarOpen) {
-    return 'contact';
-  }
-  if (isDealsSidebarOpen && visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) {
-    return 'deals';
-  }
-  if (
-    isAppointmentsSidebarOpen &&
-    visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]
-  ) {
-    return 'appointments';
-  }
-  if (isTouchSidebarOpen) return 'touch';
-  return null;
-});
 const sidebarSizeClass =
   'max-w-sm md:w-[320px] md:min-w-[320px] 2xl:min-w-[360px] 2xl:w-[360px]';
 const isCommunicationThread = computed(() =>

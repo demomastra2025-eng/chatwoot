@@ -2,7 +2,7 @@
 import { defineAsyncComponent } from 'vue';
 import { mapGetters } from 'vuex';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useAccount } from 'dashboard/composables/useAccount';
+import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import ChatList from '../../../components/ChatList.vue';
 import ConversationBox from '../../../components/widgets/conversation/ConversationBox.vue';
 import wootConstants from 'dashboard/constants/globals';
@@ -11,12 +11,6 @@ import CmdBarConversationSnooze from 'dashboard/routes/dashboard/commands/CmdBar
 import { emitter } from 'shared/helpers/mitt';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
-import {
-  buildEffectiveSidebarVisibilitySettings,
-  buildSidebarVisibilityState,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const ConversationSidebar = defineAsyncComponent(
   () =>
@@ -71,13 +65,12 @@ export default {
   },
   setup() {
     const { uiSettings, updateUISettings } = useUISettings();
-    const { accountId, currentAccount } = useAccount();
+    const { activePanel } = useConversationSidepanelAvailability();
 
     return {
       uiSettings,
       updateUISettings,
-      accountId,
-      currentAccount,
+      activePanel,
     };
   },
   data() {
@@ -105,37 +98,12 @@ export default {
       return conversationDisplayType !== CONDENSED;
     },
 
-    effectiveSidebarVisibilitySettings() {
-      return buildEffectiveSidebarVisibilitySettings({
-        accountId: this.accountId,
-        accountSettings: this.currentAccount?.settings || {},
-        uiSettings: this.uiSettings,
-      });
-    },
-
     shouldShowSidebar() {
       if (!this.currentChat.id) {
         return false;
       }
 
-      const {
-        is_contact_sidebar_open: isContactSidebarOpen,
-        is_crm_deal_panel_open: isDealsSidebarOpen,
-        is_scheduling_appointments_panel_open: isAppointmentsSidebarOpen,
-        is_touch_sidebar_open: isTouchSidebarOpen,
-      } = this.uiSettings;
-      const visibility = buildSidebarVisibilityState(
-        this.effectiveSidebarVisibilitySettings
-      );
-
-      return (
-        isContactSidebarOpen ||
-        (isDealsSidebarOpen &&
-          visibility[CONVERSATION_PIPELINES_VISIBILITY_KEY]) ||
-        (isAppointmentsSidebarOpen &&
-          visibility[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY]) ||
-        isTouchSidebarOpen
-      );
+      return Boolean(this.activePanel);
     },
   },
   watch: {

@@ -35,4 +35,27 @@ describe('ConversationView', () => {
       });
     });
   });
+
+  describe('#shouldShowSidebar', () => {
+    it.each([
+      ['is_crm_deal_panel_open', 'deals'],
+      ['is_scheduling_appointments_panel_open', 'appointments'],
+    ])('opens the route sidebar for available %s', (setting, activePanel) => {
+      const context = {
+        currentChat: { id: 42 },
+        activePanel,
+        uiSettings: {
+          is_contact_sidebar_open: false,
+          is_crm_deal_panel_open: false,
+          is_scheduling_appointments_panel_open: false,
+          is_touch_sidebar_open: false,
+          [setting]: true,
+        },
+      };
+
+      expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
+        true
+      );
+    });
+  });
 });
