@@ -42,7 +42,31 @@ const vueOptions = {
   },
 };
 
-let plugins = [ruby(), vue(vueOptions)];
+const suppressLocaleJsonHmr = {
+  name: 'suppress-locale-json-hmr',
+  apply: 'serve',
+  handleHotUpdate({ file, modules, server, timestamp }) {
+    const normalizedFile = file.replaceAll('\\', '/');
+    if (
+      normalizedFile.includes('/app/javascript/dashboard/i18n/locale/') &&
+      normalizedFile.endsWith('.json')
+    ) {
+      const invalidatedModules = new Set();
+      modules.forEach(module => {
+        server.moduleGraph.invalidateModule(
+          module,
+          invalidatedModules,
+          timestamp,
+          true
+        );
+      });
+      return [];
+    }
+    return undefined;
+  },
+};
+
+let plugins = [ruby(), vue(vueOptions), suppressLocaleJsonHmr];
 
 if (isLibraryMode) {
   plugins = [];
@@ -56,6 +80,20 @@ export default defineConfig({
     host: devServerBindHost,
     port: devServerPort,
     strictPort: true,
+    fs: {
+      deny: [
+        '**/.git/**',
+        '**/.env',
+        '**/.env.*',
+        '**/*.{crt,pem,key,pfx,p12}',
+        '**/.npmrc',
+        '**/.netrc',
+        '**/.yarnrc*',
+        '**/config/secrets*.yml',
+        '**/config/credentials*.yml.enc',
+        '**/config/credentials/**',
+      ],
+    },
     watch: {
       // Test-only edits are consumed by Vitest and must not reload an active
       // DEV browser session.
