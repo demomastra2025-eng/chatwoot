@@ -85,6 +85,21 @@ class Reminder < ApplicationRecord
   PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
   DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
   DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
+  DELIVERY_STAGE_KEY = 'delivery_stage'.freeze
+  DELIVERY_STAGE_UPDATED_AT_KEY = 'delivery_stage_updated_at'.freeze
+  DELIVERY_FAILURE_CATEGORY_KEY = 'delivery_failure_category'.freeze
+  DELIVERY_STAGES = %w[materialized provider_accepted provider_unknown retry_scheduled delivered read failed template_rejected].freeze
+  DELIVERY_STAGE_RANKS = {
+    'materialized' => 0,
+    'provider_unknown' => 1,
+    'retry_scheduled' => 1,
+    'provider_accepted' => 2,
+    'delivered' => 3,
+    'read' => 4,
+    'failed' => 4,
+    'template_rejected' => 4
+  }.freeze
+  DELIVERY_TERMINAL_STAGES = %w[read failed template_rejected].freeze
   POST_DELIVERY_ACTION_MESSAGE_ID_KEY = 'post_delivery_action_message_id'.freeze
   POST_DELIVERY_ACTION_EXECUTED_AT_KEY = 'post_delivery_action_executed_at'.freeze
   POST_DELIVERY_ACTION_RESOLVE_CONVERSATION = 'resolve_conversation'.freeze
@@ -101,6 +116,9 @@ class Reminder < ApplicationRecord
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
     DELIVERY_DISPATCHED_MESSAGE_ID_KEY,
+    DELIVERY_STAGE_KEY,
+    DELIVERY_STAGE_UPDATED_AT_KEY,
+    DELIVERY_FAILURE_CATEGORY_KEY,
     POST_DELIVERY_ACTION_MESSAGE_ID_KEY,
     POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
@@ -317,20 +335,56 @@ class Reminder < ApplicationRecord
 
   def mark_delivery_materialized!(message_id)
     with_internal_metadata_write do
-      update!(metadata: metadata.to_h.merge(DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id))
+      update!(metadata: metadata.to_h.merge(
+        DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id,
+        DELIVERY_STAGE_KEY => 'materialized',
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+      ))
     end
+  end
+
+  def delivery_stage
+    metadata.to_h[DELIVERY_STAGE_KEY].presence
   end
 
   def delivery_dispatched_for?(message_id)
     metadata.to_h[DELIVERY_DISPATCHED_MESSAGE_ID_KEY].to_s == message_id.to_s
   end
 
-  def mark_delivery_dispatched!(message_id)
+  def mark_delivery_dispatched!(message_id, stage: 'provider_accepted')
+    raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
+
+    effective_stage = delivery_stage_transition_allowed?(delivery_stage, stage) ? stage : delivery_stage
     with_internal_metadata_write do
       update!(
         processing_started_at: nil,
-        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id)
+        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(
+          DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id,
+          DELIVERY_STAGE_KEY => effective_stage,
+          DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+        )
       )
+    end
+  end
+
+  def record_delivery_status!(message_id:, stage:, error: nil)
+    raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
+
+    with_lock do
+      reload
+      next unless delivery_materialized_for?(message_id)
+      next unless delivery_stage_transition_allowed?(delivery_stage, stage)
+
+      attributes = metadata.to_h.merge(
+        DELIVERY_STAGE_KEY => stage,
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+      )
+      attributes[DELIVERY_FAILURE_CATEGORY_KEY] = stage if stage.in?(%w[failed template_rejected])
+      update_attributes = { metadata: attributes }
+      if stage.in?(%w[failed template_rejected])
+        update_attributes.merge!(status: :failed, last_error: error.presence || 'Provider delivery failed')
+      end
+      with_internal_metadata_write { update!(update_attributes) }
     end
   end
 
@@ -356,12 +410,34 @@ class Reminder < ApplicationRecord
     )
   end
 
-  def fail!(message)
-    update!(
+  def fail!(message, delivery_stage: nil)
+    attributes = {
       status: :failed,
       last_error: message,
       attempts_count: attempts_count.to_i + 1
-    )
+    }
+    if delivery_stage.present?
+      raise ArgumentError, 'Invalid delivery stage' unless delivery_stage.in?(%w[failed template_rejected])
+      return false unless delivery_stage_transition_allowed?(self.delivery_stage, delivery_stage)
+
+      attributes[:metadata] = metadata.to_h.merge(
+        DELIVERY_STAGE_KEY => delivery_stage,
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601,
+        DELIVERY_FAILURE_CATEGORY_KEY => delivery_stage
+      )
+    end
+
+    return update!(attributes) if delivery_stage.blank?
+
+    with_internal_metadata_write { update!(attributes) }
+  end
+
+  def delivery_stage_transition_allowed?(current_stage, candidate_stage)
+    return true if current_stage.blank?
+    return false if current_stage.in?(DELIVERY_TERMINAL_STAGES)
+    return false if current_stage == 'delivered' && candidate_stage.in?(%w[failed template_rejected])
+
+    DELIVERY_STAGE_RANKS.fetch(candidate_stage) > DELIVERY_STAGE_RANKS.fetch(current_stage)
   end
 
   def update_if_editable!

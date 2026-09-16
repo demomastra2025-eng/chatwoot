@@ -895,6 +895,33 @@ RSpec.describe Reminder do
     end
   end
 
+  describe 'delivery lifecycle ordering' do
+    let(:reminder) { create(:reminder) }
+    let(:message_id) { 123_456 }
+
+    before { reminder.mark_delivery_materialized!(message_id) }
+
+    it 'does not let finalization downgrade a callback-confirmed delivery' do
+      reminder.record_delivery_status!(message_id: message_id, stage: 'delivered')
+
+      reminder.mark_delivery_dispatched!(message_id, stage: 'provider_accepted')
+
+      expect(reminder.reload.delivery_stage).to eq('delivered')
+      expect(reminder).to be_delivery_dispatched_for(message_id)
+    end
+
+    it 'ignores late lower and failure statuses after delivery or read' do
+      reminder.record_delivery_status!(message_id: message_id, stage: 'delivered')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'failed', error: 'late failure')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'read')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'provider_accepted')
+
+      expect(reminder.reload.delivery_stage).to eq('read')
+      expect(reminder).not_to be_failed
+      expect(reminder.last_error).to be_blank
+    end
+  end
+
   describe 'repeat validation' do
     it 'rejects recurring relative touches' do
       conversation = create(:conversation)

@@ -65,5 +65,19 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
         appointment.keys.grep(/^client_/).empty?
       end)
     end
+
+    it 'performs an account-scoped exact lookup by normalized IIN without echoing it in filters' do
+      appointment1.update!(client_identifier: '940720-300 129')
+      create(:scheduling_appointment, client_identifier: '940720300129')
+
+      payload = JSON.parse(service.execute(client_identifier: '940720300129', limit: 10))
+
+      expect(payload['appointments'].map { |appointment| appointment['id'] }).to eq([appointment1.id])
+      expect(payload['filters']).not_to have_key('client_identifier')
+    end
+
+    it 'rejects an invalid IIN before querying appointments' do
+      expect(service.execute(client_identifier: '123456789012')).to include('Invalid IIN')
+    end
   end
 end

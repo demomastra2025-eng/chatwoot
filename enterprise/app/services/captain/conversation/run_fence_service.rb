@@ -77,7 +77,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def control_generation_current?
-    conversation.captain_control_generation.to_i == fence[:control_generation].to_i
+    conversation.current_captain_control_generation.to_i == fence[:control_generation].to_i
   end
 
   def conversation_allows_captain_response?
@@ -94,7 +94,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def latest_incoming_message_id
-    conversation.messages.incoming.reorder(created_at: :desc, id: :desc).pick(:id)
+    Captain::Conversation::ControlService.messages_scope(conversation).incoming.reorder(created_at: :desc, id: :desc).pick(:id)
   end
 
   def buffer_state_current?
@@ -124,8 +124,9 @@ class Captain::Conversation::RunFenceService
       account_id: state[:account_id],
       assistant_id: state[:assistant_id],
       conversation_id: state.dig(:conversation, :id),
+      communication_thread_id: conversation&.communication_thread&.id,
       expected_control_generation: fence[:control_generation],
-      actual_control_generation: conversation&.captain_control_generation,
+      actual_control_generation: conversation&.current_captain_control_generation,
       expected_last_message_id: fence[:last_message_id],
       expected_buffer_token: fence[:buffer_token],
       reason: reason,

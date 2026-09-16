@@ -150,6 +150,39 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.status).to eq('completed')
   end
 
+  {
+    'неявка' => ['no_show', 'provider_explicit_no_show'],
+    'отменена' => ['cancelled', 'provider_explicit_cancelled'],
+    'завершена' => ['completed', 'provider_explicit_completed']
+  }.each do |provider_status, (expected_status, expected_reason)|
+    it "maps the explicit provider status #{provider_status} and records its source" do
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        status: 'scheduled',
+        source: 'medelement',
+        external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
+      )
+
+      service.upsert!(
+        resource: resource,
+        contact: nil,
+        reception: reception.merge('VISIT_STATUS_NAME' => provider_status),
+        import_context: import_context
+      )
+
+      expect(appointment.reload.status).to eq(expected_status)
+      expect(appointment.custom_attributes['provider_status_audit']).to include(
+        'source' => 'medelement_reception_sync',
+        'previous_status' => 'scheduled',
+        'status' => expected_status,
+        'reason' => expected_reason,
+        'raw_status' => provider_status
+      )
+    end
+  end
+
   it 'reimports a trusted outbound appointment without changing its local origin' do
     contact = create(:contact, account: account)
     appointment = create(

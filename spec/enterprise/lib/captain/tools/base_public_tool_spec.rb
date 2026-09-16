@@ -59,4 +59,22 @@ RSpec.describe Captain::Tools::BasePublicTool do
       tool.execute(tool_context, reason: 'Old generation')
     end.to raise_error(Captain::Conversation::ControlGenerationStaleError)
   end
+
+  it 'uses the communication thread generation for legacy tool contexts' do
+    contact = conversation.contact
+    thread = create(:communication_thread, account: account, contact: contact)
+    first_conversation = create(:conversation, account: account, contact: contact, status: :pending)
+    create(:communication_thread_conversation, communication_thread: thread, conversation: first_conversation)
+    create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+    [first_conversation, conversation].each do |linked_conversation|
+      linked_conversation.association(:communication_thread_conversation).reset
+      linked_conversation.association(:communication_thread).reset
+    end
+
+    first_conversation.activate_captain_human_control!(source: 'agent_reply')
+
+    expect do
+      tool.execute(tool_context, reason: 'Stale linked-conversation action')
+    end.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+  end
 end

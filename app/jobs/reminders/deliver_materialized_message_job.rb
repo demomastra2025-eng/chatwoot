@@ -59,16 +59,18 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
   def finalize_dispatch(reminder, message, processing_claim)
     message.reload
     return mark_failed_delivery(reminder, message, processing_claim) if message.failed?
-    return mark_dispatched(reminder, message.id, processing_claim) if delivery_handed_off?(message)
+
+    delivery_stage = delivery_handoff_stage(message)
+    return mark_dispatched(reminder, message.id, processing_claim, delivery_stage) if delivery_stage.present?
 
     message.update!(status: :failed, external_error: UNCONFIRMED_PROVIDER_DELIVERY)
     mark_failed_delivery(reminder, message, processing_claim)
   end
 
-  def mark_dispatched(reminder, message_id, processing_claim)
+  def mark_dispatched(reminder, message_id, processing_claim, delivery_stage)
     reminder.with_lock do
       reminder.reload
-      reminder.mark_delivery_dispatched!(message_id) if dispatchable?(reminder, message_id, processing_claim)
+      reminder.mark_delivery_dispatched!(message_id, stage: delivery_stage) if dispatchable?(reminder, message_id, processing_claim)
     end
   end
 
@@ -77,7 +79,9 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
       reminder.reload
       next unless dispatchable?(reminder, message.id, processing_claim)
 
-      reminder.fail!(message.external_error.presence || UNCONFIRMED_PROVIDER_DELIVERY)
+      error = message.external_error.presence || UNCONFIRMED_PROVIDER_DELIVERY
+      delivery_stage = error.match?(/template|шаблон/i) ? 'template_rejected' : 'failed'
+      reminder.fail!(error, delivery_stage: delivery_stage)
     end
   end
 
@@ -92,13 +96,13 @@ class Reminders::DeliverMaterializedMessageJob < MutexApplicationJob
     provider_guard.perform(verification: provider_verification) == Reminders::AppointmentProviderGuard::STOP
   end
 
-  def delivery_handed_off?(message)
-    return true unless WHATSAPP_CHANNEL_TYPES.include?(message.inbox.channel_type)
-    return true if message.source_id.present?
+  def delivery_handoff_stage(message)
+    return 'provider_accepted' unless WHATSAPP_CHANNEL_TYPES.include?(message.inbox.channel_type)
+    return 'provider_accepted' if message.source_id.present?
+    return 'retry_scheduled' if Whatsapp::Providers::WhatsappCloudService.transient_send_retry_scheduled?(message)
 
-    Whatsapp::Providers::WhatsappCloudService.transient_send_retry_scheduled?(message) ||
-      Whatsapp::Providers::WhatsappCloudService.delivery_outcome_unknown?(message) ||
-      Whatsapp::Providers::Whatsapp360DialogService.delivery_outcome_unknown?(message)
+    return 'provider_unknown' if Whatsapp::Providers::WhatsappCloudService.delivery_outcome_unknown?(message)
+    return 'provider_unknown' if Whatsapp::Providers::Whatsapp360DialogService.delivery_outcome_unknown?(message)
   end
 
   def materialized_message_id(reminder)
