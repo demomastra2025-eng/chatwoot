@@ -16,6 +16,34 @@ class Captain::Assistant::AgentRunnerService
   MAX_FINALIZATION_ONLY_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
   MAX_COMPLETED_TOOL_RESULT_RECORDS = 50
+  APPOINTMENT_MUTATION_TOOL_NAMES = %w[create_appointment update_appointment].freeze
+  APPOINTMENT_STATUS_TOOL_NAME = 'get_appointment_provider_status'.freeze
+  APPOINTMENT_EVIDENCE_REQUIRED_FIELDS = %i[appointment_id status service_id resource_id starts_at ends_at].freeze
+  APPOINTMENT_CREATE_CLAIM_PATTERN = %r{
+    (?:\bappointment\s+(?:(?:is|was|has\s+been|had\s+been)\s+)?(?:(?:successfully|now|already)\s+)*(?:booked|created|confirmed)\b|
+       \byou\s+(?:are|were|have\s+been|had\s+been)\s+(?:(?:successfully|now|already)\s+)*booked\b|
+       \b(?:we|i)\s+(?:(?:successfully|now|already)\s+)*booked\s+(?:you|your\s+appointment)\b|
+       запис(?:ан|ана|ано|ались|ал|ала|али)|
+       запись\s+(?:создана|подтверждена))
+  }ix
+  APPOINTMENT_UPDATE_CLAIM_PATTERN = %r{
+    (?:\bappointment\s+(?:(?:is|was|has\s+been|had\s+been)\s+)?(?:(?:successfully|now|already)\s+)*(?:rescheduled|updated)\b|
+       перен(?:ес(?:ен|ена|ено|ли|ла)?|ёс)|запись\s+перенесена)
+  }ix
+  APPOINTMENT_NEGATED_CLAIM_PATTERN = %r{
+    (?:\bno\s+appointment\s+(?:has\s+been\s+)?(?:successfully\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
+       \bappointment\s+has\s+yet\s+to\s+be\s+(?:successfully\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
+       \bappointment\s+(?:will|is\s+going\s+to)\s+be\s+(?:booked|created|confirmed|rescheduled|updated)\b|
+       \b(?:not|never)\s+(?:been\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
+       \b(?:hasn't|haven't|wasn't|isn't)\s+(?:been\s+)?(?:booked|created|confirmed|rescheduled|updated)\b|
+       \b(?:could|would|might|may|can)\s+be\s+(?:booked|created|confirmed|rescheduled|updated)\b|
+       \b(?:couldn't|wouldn't|can't|cannot|could\s+not|would\s+not|can\s+not)\s+
+         (?:book|create|confirm|reschedule|update|be\s+(?:booked|created|confirmed|rescheduled|updated))\b|
+       \bfailed\s+to\s+(?:book|create|confirm|reschedule|update)\b|
+       (?:не\s+(?:удалось\s+)?(?:записать|создать|подтвердить|перенести)|
+          (?:запись|прием|приём)\s+не\s+(?:создана|подтверждена|перенесена)|
+          не\s+запис(?:ан|ана|ано|ались)))
+  }ix
   MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
   TOOL_RESULT_FALLBACK_REASONING = [
     'Final assistant response failed after completed tool actions; ',
@@ -26,6 +54,7 @@ class Captain::Assistant::AgentRunnerService
   ZERO_COMPLETION_TOOL_RESULT_FALLBACK = 'tool_result_fallback'.freeze
 
   class BlankResponseError < StandardError; end
+  class AppointmentGroundingError < StandardError; end
 
   class SemanticOutputError < StandardError
     attr_reader :code
@@ -235,6 +264,10 @@ class Captain::Assistant::AgentRunnerService
     sanitize_response_artifact_ids!(response, result.context)
     semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
+
+    grounding_error = appointment_grounding_error(response, result.context)
+    return provider_error_response(grounding_error, handoff_tool_called: handoff_tool_called) if grounding_error
+    return suppressed_response(response) if response_suppressed?(response)
 
     if blank_public_response?(response)
       error = blank_response_error
@@ -523,12 +556,40 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def semantic_output_error(response)
+    return invalid_response_mode_error(response) unless response_mode_valid?(response)
     return invalid_public_response_error(response) if invalid_public_response?(response)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
     return invalid_handoff_output_error if invalid_handoff_output?(response)
 
     nil
+  end
+
+  def response_mode_valid?(response)
+    response_mode(response).in?(%w[reply suppress])
+  end
+
+  def invalid_response_mode_error(response)
+    SemanticOutputError.new(
+      'invalid_response_mode',
+      "Model output returned invalid response mode #{response['response_mode'].inspect}"
+    )
+  end
+
+  def response_suppressed?(response)
+    response_mode(response) == 'suppress'
+  end
+
+  def response_mode(response)
+    response['response_mode'].to_s.strip.presence || 'reply'
+  end
+
+  def suppressed_response(response)
+    response.merge(
+      'response' => '',
+      'response_mode' => 'suppress',
+      'response_suppressed' => true
+    )
   end
 
   def invalid_public_response?(response)
@@ -634,7 +695,8 @@ class Captain::Assistant::AgentRunnerService
       retryable: hash[:retryable],
       data_type: hash[:data_type],
       message_type: hash[:message_type],
-      error_type: hash[:error_type]
+      error_type: hash[:error_type],
+      appointment_evidence: hash[:appointment_evidence]
     }.compact
   end
 
@@ -919,8 +981,120 @@ class Captain::Assistant::AgentRunnerService
       retryable: normalized_result[:retryable],
       data_type: tool_payload_type(normalized_result[:data]),
       message_type: tool_payload_type(normalized_result[:message]),
-      error_type: tool_payload_type(normalized_result[:error])
+      error_type: tool_payload_type(normalized_result[:error]),
+      appointment_evidence: appointment_evidence(tool_name, normalized_result)
     }.compact
+  end
+
+  def appointment_evidence(tool_name, normalized_result)
+    canonical_name = APPOINTMENT_MUTATION_TOOL_NAMES.find do |name|
+      tool_name.to_s == name || tool_name.to_s.end_with?("__#{name}") || tool_name.to_s.end_with?(":#{name}")
+    end
+    payload = structured_tool_payload(normalized_result[:data]) || structured_tool_payload(normalized_result[:message])
+    return if payload.blank?
+    return appointment_status_evidence(payload) if appointment_status_tool?(tool_name)
+    return if canonical_name.blank?
+
+    appointment = payload[:appointment].to_h.with_indifferent_access
+    receipt = payload[:provider_command_receipt].to_h.with_indifferent_access
+    provider_command = receipt[:command].to_h.with_indifferent_access
+    provider_confirmation_required = if payload.key?(:provider_confirmation_required)
+                                       ActiveModel::Type::Boolean.new.cast(payload[:provider_confirmation_required])
+                                     end
+    {
+      action: payload[:action].presence || canonical_name,
+      appointment_id: payload[:appointment_id].presence || appointment[:id],
+      provider_confirmation_status: payload[:provider_confirmation_status].presence,
+      provider_confirmed: ActiveModel::Type::Boolean.new.cast(payload[:provider_confirmed]),
+      provider_confirmation_required: provider_confirmation_required,
+      provider_command_receipt_present: receipt.present?,
+      provider_command_id: provider_command[:id],
+      provider_command_operation: provider_command[:operation],
+      provider_command_idempotency_key: provider_command[:idempotency_key],
+      status: payload[:status].presence || appointment[:status],
+      service_id: payload[:service_id].presence || appointment[:service_id],
+      resource_id: payload[:resource_id].presence || appointment[:resource_id],
+      starts_at: payload[:starts_at].presence || appointment[:starts_at],
+      ends_at: payload[:ends_at].presence || appointment[:ends_at]
+    }.compact
+  end
+
+  def appointment_status_tool?(tool_name)
+    tool_name.to_s == APPOINTMENT_STATUS_TOOL_NAME || tool_name.to_s.end_with?("__#{APPOINTMENT_STATUS_TOOL_NAME}") ||
+      tool_name.to_s.end_with?(":#{APPOINTMENT_STATUS_TOOL_NAME}")
+  end
+
+  def appointment_status_evidence(payload)
+    receipt = payload[:provider_command_receipt].to_h.with_indifferent_access
+    command = receipt[:command].to_h.with_indifferent_access
+    operation = command[:operation].to_s
+    action = 'create_appointment' if operation.start_with?('create')
+    action ||= 'update_appointment' if operation.start_with?('update', 'move')
+    return if action.blank?
+
+    {
+      action: action,
+      appointment_id: receipt[:appointment_id].presence || command[:appointment_id],
+      provider_confirmation_status: command[:status],
+      provider_confirmed: command[:status] == 'succeeded',
+      provider_confirmation_required: true,
+      provider_command_receipt_present: receipt.present?,
+      provider_command_id: command[:id],
+      provider_command_operation: command[:operation],
+      provider_command_idempotency_key: command[:idempotency_key],
+      provider_status_lookup: true
+    }.compact
+  end
+
+  def structured_tool_payload(value)
+    return value.to_h.with_indifferent_access if value.respond_to?(:to_h)
+    return unless value.is_a?(String) && value.bytesize <= MAX_TOOL_ARTIFACT_SCAN_BYTES
+
+    parsed = JSON.parse(value)
+    parsed.with_indifferent_access if parsed.is_a?(Hash)
+  rescue JSON::ParserError
+    nil
+  end
+
+  def appointment_grounding_error(response, context)
+    required_action = appointment_claim_action(response['response'])
+    return if required_action.blank?
+
+    evidence = successful_non_handoff_tool_records(context).filter_map { |record| record[:appointment_evidence] }
+    mutation = evidence.reverse.find { |item| item[:action].to_s == required_action && !item[:provider_status_lookup] }
+    return AppointmentGroundingError.new('Appointment success claim has no completed appointment tool evidence') if mutation.blank?
+
+    lookup = evidence.reverse.find do |item|
+      item[:action].to_s == required_action && item[:provider_status_lookup] &&
+        item[:appointment_id].to_s == mutation[:appointment_id].to_s &&
+        provider_command_identity_matches?(mutation, item)
+    end
+    return if appointment_evidence_confirmed?(mutation, lookup)
+
+    AppointmentGroundingError.new('Appointment success claim is missing provider confirmation or read-back evidence')
+  end
+
+  def appointment_claim_action(content)
+    text = content.to_s.gsub(APPOINTMENT_NEGATED_CLAIM_PATTERN, ' ')
+
+    return 'create_appointment' if text.match?(APPOINTMENT_CREATE_CLAIM_PATTERN)
+    return 'update_appointment' if text.match?(APPOINTMENT_UPDATE_CLAIM_PATTERN)
+  end
+
+  def appointment_evidence_confirmed?(evidence, lookup = nil)
+    return false unless APPOINTMENT_EVIDENCE_REQUIRED_FIELDS.all? { |field| evidence[field].present? }
+    return true if evidence[:provider_confirmation_required] == false && evidence[:provider_confirmation_status].blank?
+    return false if evidence[:provider_confirmation_status].blank?
+
+    confirmation = lookup.presence || evidence
+    confirmation[:provider_confirmed] && confirmation[:provider_command_receipt_present]
+  end
+
+  def provider_command_identity_matches?(mutation, lookup)
+    return false if mutation[:provider_command_id].blank? || lookup[:provider_command_id].blank?
+
+    mutation[:provider_command_id].to_s == lookup[:provider_command_id].to_s &&
+      mutation[:provider_command_operation].to_s == lookup[:provider_command_operation].to_s
   end
 
   def tool_payload_type(value)

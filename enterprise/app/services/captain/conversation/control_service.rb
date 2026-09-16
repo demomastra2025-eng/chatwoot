@@ -5,9 +5,16 @@ class Captain::Conversation::ControlService
   def self.human_response_after?(conversation, message_id)
     return false if message_id.blank?
 
-    conversation.messages.outgoing.where(private: false).where('messages.id > ?', message_id).find_each.any? do |message|
+    messages_scope(conversation).outgoing.where(private: false).where('messages.id > ?', message_id).find_each.any? do |message|
       message.send(:captain_human_control_candidate?)
     end
+  end
+
+  def self.messages_scope(conversation)
+    thread = conversation.communication_thread
+    return conversation.messages unless thread
+
+    Message.where(conversation_id: thread.conversations.select(:id))
   end
 
   def initialize(conversation)
@@ -15,7 +22,7 @@ class Captain::Conversation::ControlService
   end
 
   def stamp_generation!(message)
-    generation = conversation.captain_control_generation.to_i
+    generation = control_owner.captain_control_generation.to_i
     message.with_lock do
       attributes = message.additional_attributes.to_h
       next if attributes.key?('captain_control_generation') && attributes['captain_control_generation'].to_i == generation
@@ -28,14 +35,14 @@ class Captain::Conversation::ControlService
 
   def activate_human!(source:, actor: nil)
     changed = false
-    conversation.save! if conversation.has_changes_to_save?
+    persist_control_owner!
 
-    conversation.with_lock do
+    control_owner.with_lock do
       next if human_active?
 
-      conversation.captain_control_state = HUMAN_CONTROL
-      conversation.captain_control_generation += 1
-      conversation.save!
+      control_owner.captain_control_state = HUMAN_CONTROL
+      control_owner.captain_control_generation += 1
+      control_owner.save!
       changed = true
     end
 
@@ -44,12 +51,23 @@ class Captain::Conversation::ControlService
   end
 
   def prepare_ai!
-    return false unless human_active?
+    changed = false
+    persist_control_owner!
+    control_owner.with_lock do
+      next unless human_active?
 
-    conversation.captain_control_state = AI_CONTROL
-    conversation.captain_control_generation += 1
-    conversation.captain_handoff_applied_at = nil
-    true
+      control_owner.captain_control_state = AI_CONTROL
+      control_owner.captain_control_generation += 1
+      control_owner.captain_handoff_applied_at = nil
+      control_owner.save!
+      changed = true
+    end
+    changed
+  end
+
+  def with_control_lock(&)
+    persist_control_owner!
+    control_owner.with_lock(&)
   end
 
   def handoff!(status_reason:, actor:, source:, fence: nil, &)
@@ -71,15 +89,23 @@ class Captain::Conversation::ControlService
 
   attr_reader :conversation
 
+  def control_owner
+    @control_owner ||= conversation.captain_control_owner
+  end
+
+  def persist_control_owner!
+    control_owner.save! if control_owner.new_record? || control_owner.has_changes_to_save?
+  end
+
   def human_active?
-    conversation.captain_control_state == HUMAN_CONTROL
+    control_owner.captain_control_state == HUMAN_CONTROL
   end
 
   def apply_handoff(status_reason:, actor:, source:, fence:, &)
     result = :already_applied
-    conversation.save! if conversation.has_changes_to_save?
+    persist_control_owner!
 
-    conversation.with_lock do
+    control_owner.with_lock do
       if handoff_stale?(fence)
         result = :stale
         next
@@ -96,9 +122,10 @@ class Captain::Conversation::ControlService
 
   def apply_handoff_transition!(status_reason:, actor:, source:)
     conversation.waiting_since ||= Time.current
-    conversation.captain_control_state = HUMAN_CONTROL
-    conversation.captain_control_generation += 1
-    conversation.captain_handoff_applied_at = Time.current
+    control_owner.captain_control_state = HUMAN_CONTROL
+    control_owner.captain_control_generation += 1
+    control_owner.captain_handoff_applied_at = Time.current
+    control_owner.save!
     Conversations::StatusTransitionService.new(
       conversation: conversation,
       params: { status: 'open', status_reason: status_reason },
@@ -111,7 +138,7 @@ class Captain::Conversation::ControlService
     expected = fence.to_h.with_indifferent_access
     return false if expected.blank?
     return true unless conversation_allows_captain_response?
-    return true if expected[:control_generation].present? && conversation.captain_control_generation.to_i != expected[:control_generation].to_i
+    return true if expected[:control_generation].present? && control_owner.captain_control_generation.to_i != expected[:control_generation].to_i
 
     self.class.human_response_after?(conversation, expected[:last_message_id])
   end
@@ -143,9 +170,9 @@ class Captain::Conversation::ControlService
   end
 
   def activate_human_for_existing_assignment!
-    conversation.captain_control_state = HUMAN_CONTROL
-    conversation.captain_control_generation += 1
-    conversation.save!
+    control_owner.captain_control_state = HUMAN_CONTROL
+    control_owner.captain_control_generation += 1
+    control_owner.save!
   end
 
   def publish(event_name, source:, actor: nil, error_class: nil)
@@ -155,11 +182,12 @@ class Captain::Conversation::ControlService
       runtime_mode: 'captain_runtime',
       account_id: conversation.account_id,
       conversation_id: conversation.id,
+      communication_thread_id: conversation.communication_thread&.id,
       source: source,
       actor_type: actor&.class&.name,
       actor_id: actor&.id,
-      control_state: conversation.captain_control_state,
-      control_generation: conversation.captain_control_generation,
+      control_state: control_owner.captain_control_state,
+      control_generation: control_owner.captain_control_generation,
       error_class: error_class
     )
   rescue StandardError => e

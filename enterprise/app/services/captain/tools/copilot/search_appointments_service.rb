@@ -3,8 +3,9 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     'search_appointments'
   end
 
-  description 'Search appointments by client, status, payment status, contact, or specialist'
+  description 'Search appointments by client, exact normalized IIN, status, payment status, contact, or specialist'
   param :client_name, type: :string, desc: 'Client name query', required: false
+  param :client_identifier, type: :string, desc: 'Exact client IIN; formatting characters are ignored', required: false
   param :status, type: :string, desc: 'Appointment status: scheduled, confirmed, completed, cancelled, or no_show', required: false
   param :payment_status, type: :string, desc: 'Payment status: awaiting_payment, prepaid, paid, or cancelled', required: false
   param :contact_id, type: :number, desc: 'Contact ID', required: false
@@ -13,7 +14,8 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
   param :to, type: :string, desc: 'End of range datetime', required: false
   param :limit, type: :number, desc: 'Maximum number of appointments to return', required: false
 
-  def execute(client_name: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil, limit: nil)
+  def execute(client_name: nil, client_identifier: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil,
+              limit: nil)
     contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
 
@@ -29,6 +31,7 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     appointments = appointments.where(status: status) if status.present?
     appointments = appointments.where(payment_status: payment_status) if payment_status.present?
     appointments = appointments.where('LOWER(client_name) ILIKE ?', "%#{client_name.to_s.downcase}%") if client_name.present?
+    appointments = appointments.where(normalized_identifier_condition(client_identifier)) if client_identifier.present?
 
     range_from = parse_datetime(from, field_name: 'from', required: false)
     range_to = parse_datetime(to, field_name: 'to', required: false)
@@ -41,6 +44,7 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     formatted_payload(
       filters: {
         client_name: client_name,
+        client_identifier_match: client_identifier.present? ? 'exact_normalized' : nil,
         status: status,
         payment_status: payment_status,
         contact_id: contact_id,
@@ -61,6 +65,17 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   private
 
+  def normalized_identifier_condition(client_identifier)
+    normalized = Scheduling::IinValidator.normalize(client_identifier)
+    unless normalized.present? && Scheduling::IinValidator.valid?(normalized)
+      raise Scheduling::Error.new(code: 'INVALID_IIN', message: 'Invalid IIN', status: :unprocessable_content)
+    end
+
+    Scheduling::Appointment.sanitize_sql_array(
+      ["regexp_replace(client_identifier, '[^0-9]', '', 'g') = ?", normalized]
+    )
+  end
+
   def appointment_records(appointments, limit:, include_client_name:)
     appointments.order(starts_at: :desc, id: :desc).limit(limit).map do |appointment|
       appointment_payload(appointment, include_client_name: include_client_name)
@@ -68,13 +83,10 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
   end
 
   def appointment_payload(appointment, include_client_name:)
-    payload = Scheduling::PayloadBuilder.appointment(appointment).except(
-      :client_phone,
-      :client_identifier,
-      :client_birth_date,
-      :client_gender,
-      :client_comment
-    )
-    include_client_name ? payload : payload.except(:client_name)
+    payload = Scheduling::PayloadBuilder.appointment(appointment)
+    client_keys = payload.keys.select { |key| key.to_s.start_with?('client_') }
+    payload = payload.except(*client_keys)
+    payload[:client_name] = appointment.client_name if include_client_name
+    payload
   end
 end

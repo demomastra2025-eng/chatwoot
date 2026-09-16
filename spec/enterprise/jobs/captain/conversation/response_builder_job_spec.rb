@@ -114,6 +114,37 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
     end
 
+    it 'passes linked-channel history from the communication thread' do
+      thread = create(:communication_thread, account: account, contact: conversation.contact)
+      sibling = create(:conversation, account: account, contact: conversation.contact, status: :pending)
+      create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+      create(:communication_thread_conversation, communication_thread: thread, conversation: sibling)
+      [conversation, sibling].each do |linked_conversation|
+        linked_conversation.association(:communication_thread_conversation).reset
+        linked_conversation.association(:communication_thread).reset
+      end
+      create(:message, conversation: sibling, content: 'Question from WhatsApp', message_type: :incoming, created_at: 2.minutes.ago)
+      create(
+        :message,
+        conversation: sibling,
+        content: 'Earlier Captain answer',
+        message_type: :outgoing,
+        sender: assistant,
+        created_at: 1.minute.ago
+      )
+      conversation.messages.incoming.last.update!(created_at: Time.current)
+
+      expect(agent_runner_service).to receive(:generate_response).with(
+        message_history: [
+          { content: 'Question from WhatsApp', role: 'user' },
+          { content: 'Earlier Captain answer', role: 'assistant' },
+          { content: 'Hello', role: 'user' }
+        ]
+      )
+
+      described_class.perform_now(conversation.reload, assistant)
+    end
+
     it 'infers scenario agent_name from captain trace when legacy messages are missing explicit attribution' do
       conversation.messages.destroy_all
       create(
@@ -281,8 +312,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
     end
 
-    it 'rechecks ownership while holding the conversation lock before publishing an AI response' do
-      expect(conversation).to receive(:with_lock).and_call_original
+    it 'locks thread ownership before the conversation and rechecks before publishing an AI response' do
+      expect(conversation).to receive(:with_captain_control_lock).ordered.and_call_original
+      expect(conversation).to receive(:with_lock).at_least(:once).ordered.and_call_original
 
       described_class.perform_now(conversation, assistant)
 
@@ -380,6 +412,25 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { conversation.messages.outgoing.count })
 
       expect(conversation.reload.status).to eq('pending')
+      expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+    end
+
+    it 'records an explicit suppressed outcome without public text, private error, or handoff' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => '',
+          'response_mode' => 'suppress',
+          'response_suppressed' => true,
+          'usage' => { 'total_tokens' => 42 }
+        }
+      )
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.not_to(change { conversation.messages.count })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.where(private: true)).to be_empty
       expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
     end
 
@@ -859,18 +910,23 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
       end
 
-      it 'does not create a public handoff message when handoff message is disabled' do
+      it 'creates the mandatory default public notice and one private note when handoff message is disabled' do
         assistant.update!(config: {
                             'handoff_message_enabled' => false,
                             'handoff_message_mode' => 'static',
                             'handoff_message' => ''
                           })
 
-        expect do
-          described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+        public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+        private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
+        expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)
 
         expect(conversation.reload.status).to eq('open')
+        expected_handoff = I18n.with_locale(account.locale) { I18n.t('conversations.captain.handoff') }
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(expected_handoff)
+        expect(conversation.messages.outgoing.where(private: true).last.content).to eq(
+          described_class::DEFAULT_HANDOFF_PRIVATE_NOTE
+        )
       end
 
       it 'uses localized default public text when static handoff message is blank' do
@@ -1052,12 +1108,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'opens the conversation without sending a public handoff message' do
+      it 'opens the conversation and sends a generic public handoff message' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+        end.to change { conversation.messages.outgoing.where(private: false).count }.by(1)
 
         expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(I18n.t('conversations.captain.handoff'))
       end
 
       it 'creates a private note for agents without leaking provider error details' do
@@ -1102,12 +1159,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'opens the conversation with a private fallback note instead of creating a blank public message' do
+      it 'opens the conversation with a private fallback note and a non-blank public handoff message' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+        end.to change { conversation.messages.outgoing.where(private: false).count }.by(1)
 
         expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(I18n.t('conversations.captain.handoff'))
         private_note = conversation.messages.where(private: true).last
         expect(private_note.content).to eq(
           'Automatic reply could not be generated. Handoff to human agent was triggered.'
@@ -1447,11 +1505,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'creates a private note instead of a public handoff message' do
+      it 'creates a private note and a generic public handoff message' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+        end.to change { conversation.messages.outgoing.where(private: false).count }.by(1)
 
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(I18n.t('conversations.captain.handoff'))
         private_note = conversation.reload.messages.where(private: true).last
         expect(private_note.content).to eq(
           'Automatic reply could not be generated. Handoff to human agent was triggered.'

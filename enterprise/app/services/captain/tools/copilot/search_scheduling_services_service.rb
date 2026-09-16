@@ -3,7 +3,7 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
     'search_scheduling_services'
   end
 
-  description 'Search scheduling services by name, category, or direction'
+  description 'Search and rank scheduling services by phrase, words, morphology, aliases, category, or direction'
   param :query, type: :string, desc: 'Service name, category, or direction query', required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive services', required: false
   param :limit, type: :number, desc: 'Maximum number of services to return', required: false
@@ -12,15 +12,14 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
     services = account.scheduling_services
     include_inactive = cast_boolean(include_inactive)
     services = services.active unless include_inactive
-    if query.present?
-      services = services.where(
-        'LOWER(name) ILIKE :query OR LOWER(category) ILIKE :query OR LOWER(direction) ILIKE :query',
-        query: "%#{query.to_s.downcase}%"
-      )
-    end
+    services = if query.present?
+                 Scheduling::ServiceSearch.new(scope: services, query: query).call
+               else
+                 services.ordered
+               end
 
     total_count = services.count
-    records = services.ordered.limit(parse_limit(limit)).map { |service| Scheduling::PayloadBuilder.service(service) }
+    records = services.limit(parse_limit(limit)).map { |service| Scheduling::PayloadBuilder.service(service) }
 
     formatted_payload(
       filters: {

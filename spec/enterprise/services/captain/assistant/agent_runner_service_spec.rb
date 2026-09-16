@@ -927,6 +927,262 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'returns an explicit suppressed outcome without converting it to a blank-response error' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'response_mode' => 'suppress', 'reasoning' => 'No reply is required.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => '',
+        'response_mode' => 'suppress',
+        'response_suppressed' => true,
+        'agent_name' => 'assistant_agent'
+      )
+      expect(result).not_to have_key('error_class')
+    end
+
+    it 'blocks appointment success claims without completed mutation evidence' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Запись создана и подтверждена.', 'reasoning' => 'Completed booking.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError',
+        'error_message' => 'Appointment success claim has no completed appointment tool evidence'
+      )
+    end
+
+    it 'blocks an English has-been-created claim without completed mutation evidence' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment has been created.', 'reasoning' => 'Completed booking.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError'
+      )
+    end
+
+    it 'does not treat negative, pending, or future booking statements as success claims' do
+      responses = [
+        "The appointment couldn't be booked.",
+        'No appointment has been successfully booked.',
+        'The appointment has yet to be booked.',
+        'The appointment will be booked tomorrow.'
+      ]
+
+      responses.each do |response|
+        allow(mock_runner).to receive(:run).and_return(
+          instance_double(
+            Captain::Runtime::Result,
+            output: { 'response' => response, 'reasoning' => 'No completed appointment yet.' },
+            context: { current_agent: 'assistant_agent' },
+            error: nil
+          )
+        )
+
+        result = service.generate_response(message_history: message_history)
+
+        expect(result).to include('response' => response)
+        expect(result).not_to have_key('error_class')
+      end
+    end
+
+    it 'blocks an adverbial English success claim without completed mutation evidence' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment has been successfully updated.', 'reasoning' => 'Completed move.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => described_class::PROVIDER_ERROR_RESPONSE,
+        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError'
+      )
+    end
+
+    it 'allows appointment success claims only with complete provider-confirmed evidence' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Запись создана и подтверждена.', 'reasoning' => 'Completed booking.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [
+              {
+                tool_name: 'create_appointment',
+                success: true,
+                appointment_evidence: {
+                  action: 'create_appointment',
+                  appointment_id: 42,
+                  provider_confirmation_status: 'succeeded',
+                  provider_confirmed: true,
+                  provider_command_receipt_present: true,
+                  status: 'confirmed',
+                  service_id: 7,
+                  resource_id: 9,
+                  starts_at: '2026-09-17T10:00:00Z',
+                  ends_at: '2026-09-17T10:30:00Z'
+                }
+              }
+            ]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'Запись создана и подтверждена.')
+      expect(result).not_to have_key('error_class')
+    end
+
+    it 'maps a successful move provider read-back to update evidence' do
+      payload = {
+        provider_command_receipt: {
+          appointment_id: 42,
+          command: {
+            id: 77, operation: 'move_reception', status: 'succeeded', appointment_id: 42,
+            idempotency_key: 'move-42-v2'
+          }
+        }
+      }.with_indifferent_access
+
+      evidence = service.send(:appointment_status_evidence, payload)
+
+      expect(evidence).to include(
+        action: 'update_appointment',
+        appointment_id: 42,
+        provider_command_id: 77,
+        provider_confirmed: true,
+        provider_status_lookup: true
+      )
+    end
+
+    it 'does not correlate a provider read-back from another command' do
+      mutation = { provider_command_id: 77, provider_command_operation: 'move_reception' }
+      stale_lookup = { provider_command_id: 76, provider_command_operation: 'move_reception' }
+      wrong_operation = { provider_command_id: 77, provider_command_operation: 'create_reception' }
+
+      expect(service.send(:provider_command_identity_matches?, mutation, stale_lookup)).to be(false)
+      expect(service.send(:provider_command_identity_matches?, mutation, wrong_operation)).to be(false)
+    end
+
+    it 'preserves provider command identity in mutation evidence' do
+      result = {
+        data: {
+          action: 'update_appointment', appointment_id: 42, provider_confirmation_status: 'pending_provider_confirmation',
+          provider_confirmed: false, status: 'confirmed', service_id: 7, resource_id: 9,
+          starts_at: '2026-09-17T11:00:00Z', ends_at: '2026-09-17T11:30:00Z',
+          provider_command_receipt: {
+            command: { id: 77, operation: 'move_reception', idempotency_key: 'move-42-v2' }
+          }
+        }
+      }.with_indifferent_access
+
+      evidence = service.send(:appointment_evidence, 'update_appointment', result)
+
+      expect(evidence).to include(
+        provider_command_id: 77,
+        provider_command_operation: 'move_reception',
+        provider_command_idempotency_key: 'move-42-v2'
+      )
+    end
+
+    it 'fails closed when provider confirmation metadata is omitted' do
+      evidence = {
+        appointment_id: 42,
+        status: 'confirmed',
+        service_id: 7,
+        resource_id: 9,
+        starts_at: '2026-09-17T11:00:00Z',
+        ends_at: '2026-09-17T11:30:00Z'
+      }.with_indifferent_access
+
+      expect(service.send(:appointment_evidence_confirmed?, evidence)).to be(false)
+    end
+
+    it 'accepts complete local appointment evidence when provider confirmation is explicitly not required' do
+      evidence = {
+        appointment_id: 42,
+        status: 'confirmed',
+        service_id: 7,
+        resource_id: 9,
+        starts_at: '2026-09-17T11:00:00Z',
+        ends_at: '2026-09-17T11:30:00Z',
+        provider_confirmation_required: false
+      }.with_indifferent_access
+
+      expect(service.send(:appointment_evidence_confirmed?, evidence)).to be(true)
+    end
+
+    it 'allows an update claim after a successful move provider read-back' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment has been updated.', 'reasoning' => 'Completed move.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [
+              {
+                tool_name: 'update_appointment',
+                success: true,
+                appointment_evidence: {
+                  action: 'update_appointment', appointment_id: 42,
+                  provider_confirmation_status: 'pending_provider_confirmation', provider_confirmed: false,
+                  provider_command_receipt_present: true, provider_command_id: 77,
+                  provider_command_operation: 'move_reception', status: 'confirmed', service_id: 7, resource_id: 9,
+                  starts_at: '2026-09-17T11:00:00Z', ends_at: '2026-09-17T11:30:00Z'
+                }
+              },
+              {
+                tool_name: 'get_appointment_provider_status',
+                success: true,
+                appointment_evidence: {
+                  action: 'update_appointment', appointment_id: 42, provider_confirmation_status: 'succeeded',
+                  provider_confirmed: true, provider_command_receipt_present: true, provider_command_id: 77,
+                  provider_command_operation: 'move_reception', provider_status_lookup: true
+                }
+              }
+            ]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'Your appointment has been updated.')
+      expect(result).not_to have_key('error_class')
+    end
+
     context 'when no scenarios are enabled' do
       before do
         scenarios_relation = instance_double(Captain::Scenario)
