@@ -6,6 +6,7 @@
 #  event_type     :string           not null
 #  eventable_type :string           not null
 #  meta           :jsonb            not null
+#  correlation_id :uuid             default("gen_random_uuid()"), not null
 #  created_at     :datetime         not null
 #  account_id     :bigint           not null
 #  actor_id       :bigint
@@ -47,6 +48,7 @@ class Crm::Event < ApplicationRecord
   validates :event_type, presence: true
 
   before_validation :prepare_meta
+  before_validation :prepare_correlation_id
   after_create_commit :dispatch_automation_event
 
   scope :ordered, -> { order(created_at: :desc, id: :desc) }
@@ -57,16 +59,18 @@ class Crm::Event < ApplicationRecord
     key = eventable_payload_key
     return if key.blank? || event_type.blank? || !event_type.in?(SUPPORTED_AUTOMATION_EVENT_TYPES)
 
+    event_data = {
+      account: account,
+      crm_event: self,
+      changed_attributes: meta.with_indifferent_access[:changes],
+      performed_by: performed_by
+    }
+    event_data[key] = eventable
+
     Rails.configuration.dispatcher.dispatch(
       event_type,
       created_at || Time.zone.now,
-      {
-        account: account,
-        crm_event: self,
-        key => eventable,
-        changed_attributes: meta.with_indifferent_access[:changes],
-        performed_by: performed_by
-      }
+      event_data
     )
   end
 
@@ -81,5 +85,11 @@ class Crm::Event < ApplicationRecord
 
   def prepare_meta
     self.meta = {} if meta.blank?
+  end
+
+  def prepare_correlation_id
+    return unless has_attribute?(:correlation_id)
+
+    self.correlation_id ||= SecureRandom.uuid
   end
 end
