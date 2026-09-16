@@ -966,14 +966,16 @@ test('Janus server runtime applies provider-specific Janus WebSocket URLs', () =
     { id: 2, provider: 'binotel' },
     { id: 3, provider: 'asterisk_analog' },
     { id: 4, provider: 'beeline' },
-    { id: 5, provider: 'custom' }
+    { id: 5, provider: 'wazo' },
+    { id: 6, provider: 'custom' }
   ], {
     janusServerWsUrl: 'ws://janus-default:8188',
     janusServerProviderWsUrls: {
       sipuni: 'ws://janus-sipuni:8188',
       binotel: 'ws://janus-binotel:8188',
       asterisk_analog: 'ws://janus-asterisk:8189',
-      beeline: 'ws://janus-beeline:8188'
+      beeline: 'ws://janus-beeline:8188',
+      wazo: 'ws://janus-wazo:8188'
     }
   });
 
@@ -981,5 +983,6 @@ test('Janus server runtime applies provider-specific Janus WebSocket URLs', () =
   assert.equal(profiles[1].janus_url, 'ws://janus-binotel:8188');
   assert.equal(profiles[2].janus_url, 'ws://janus-asterisk:8189');
   assert.equal(profiles[3].janus_url, 'ws://janus-beeline:8188');
-  assert.equal(profiles[4].janus_url, 'ws://janus-default:8188');
+  assert.equal(profiles[4].janus_url, 'ws://janus-wazo:8188');
+  assert.equal(profiles[5].janus_url, 'ws://janus-default:8188');
 });

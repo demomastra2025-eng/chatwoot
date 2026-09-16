@@ -33,7 +33,9 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.deepEqual(config.janusServerProfiles, []);
   assert.equal(config.janusServerProfilesPath, '/internal/voice/ai/janus-sip/profiles');
   assert.equal(config.janusServerProfileSyncIntervalMs, 15_000);
-  assert.deepEqual(config.janusServerProviderWsUrls, { sipuni: '', binotel: '', asterisk_analog: '', beeline: '' });
+  assert.deepEqual(config.janusServerProviderWsUrls, {
+    sipuni: '', binotel: '', asterisk_analog: '', beeline: '', wazo: ''
+  });
   assert.equal(config.janusMediaServerUrl, '');
   assert.equal(config.janusMediaServerToken, '');
   assert.equal(config.pipecatEnabled, false);
@@ -125,6 +127,7 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
     VOICE_AGENT_JANUS_SERVER_BINOTEL_WS_URL: 'ws://janus-binotel:8188',
     VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL: 'ws://janus-asterisk:8189',
     VOICE_AGENT_JANUS_SERVER_BEELINE_WS_URL: 'ws://janus-beeline:8188',
+    VOICE_AGENT_JANUS_SERVER_WAZO_WS_URL: 'ws://janus-wazo:8188',
     VOICE_AGENT_JANUS_MEDIA_SERVER_URL: 'http://media-server:4000/',
     VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN: 'media-token',
     VOICE_AGENT_PUBLIC_BASE_URL: 'wss://public.one-link.kz/',
@@ -196,7 +199,8 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
     sipuni: 'ws://janus-sipuni:8188',
     binotel: 'ws://janus-binotel:8188',
     asterisk_analog: 'ws://janus-asterisk:8189',
-    beeline: 'ws://janus-beeline:8188'
+    beeline: 'ws://janus-beeline:8188',
+    wazo: 'ws://janus-wazo:8188'
   });
   assert.equal(config.janusMediaServerUrl, 'http://media-server:4000');
   assert.equal(config.janusMediaServerToken, 'media-token');
