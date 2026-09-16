@@ -10,24 +10,39 @@ module Enterprise::Concerns::Inbox
     has_many :calls, dependent: :destroy_async
     has_one :telephony_number_binding, dependent: :destroy, class_name: '::Telephony::NumberBinding'
     has_many :telephony_sip_profiles, dependent: :destroy, class_name: '::Telephony::SipProfile'
-    validate :ensure_within_non_web_inbox_limit, on: :create
+    before_validation :lock_account_for_channel_limits, on: :create
+    validate :ensure_within_channel_limit, on: :create
   end
 
   private
 
-  def ensure_within_non_web_inbox_limit
+  def ensure_within_channel_limit
     return if account.blank?
-    return unless account.main_channels_count >= allowed_channel_limit
 
-    errors.add(:base, 'Account main channel limit exceeded')
+    if call_channel?
+      return if account.call_channels_count < allowed_channel_limit(:call_inboxes)
+
+      errors.add(:base, 'Account call channel limit exceeded')
+    else
+      errors.add(:base, 'Account channel limit exceeded') if account.text_channels_count >= allowed_channel_limit(:inboxes)
+      errors.add(:base, 'Account main channel limit exceeded') if main_channel_limit_exceeded?
+    end
   end
 
-  def allowed_channel_limit
-    allowed = account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
-    return ChatwootApp.max_limit.to_i if allowed >= ChatwootApp.max_limit.to_i
-    return ChatwootApp.max_limit.to_i unless main_channel?
+  def lock_account_for_channel_limits
+    account.lock! if account&.persisted?
+  end
 
-    allowed
+  def allowed_channel_limit(key)
+    account.usage_limits.fetch(key, ChatwootApp.max_limit).to_i
+  end
+
+  def call_channel?
+    channel_type == Enterprise::Account::PlanUsageAndLimits::CALL_CHANNEL_TYPE
+  end
+
+  def main_channel_limit_exceeded?
+    main_channel? && account.main_channels_count >= allowed_channel_limit(:non_web_inboxes)
   end
 
   def main_channel?

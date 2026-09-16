@@ -1,4 +1,6 @@
 module Api::V1::InboxesHelper
+  include Api::V1::InboxLimitValidation
+
   def inbox_name(channel)
     return channel.try(:bot_name) if channel.is_a?(Channel::Telegram)
     return channel.generated_inbox_name if channel.is_a?(Channel::WhatsappWeb)
@@ -99,21 +101,5 @@ module Api::V1::InboxesHelper
     context.verify_mode = openssl_verify_mode
     context.verify_hostname = false if openssl_verify_mode == OpenSSL::SSL::VERIFY_NONE && context.respond_to?(:verify_hostname=)
     context
-  end
-
-  def validate_limit
-    if Current.account.inboxes.count >= Current.account.usage_limits[:inboxes]
-      render_payment_required('Account limit exceeded. Upgrade to a higher plan')
-      return
-    end
-
-    return unless creating_main_channel_inbox?
-    return if Current.account.main_channels_count < Current.account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
-
-    render_payment_required('Account main channel limit exceeded. Upgrade to a higher plan')
-  end
-
-  def creating_main_channel_inbox?
-    %w[api whatsapp whatsapp_web telegram telegram_personal weixin vk_community].include?(permitted_params[:channel][:type])
   end
 end

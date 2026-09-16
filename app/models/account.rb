@@ -39,6 +39,7 @@ class Account < ApplicationRecord
   include CacheKeys
   include CaptainFeaturable
   include AccountEmailRateLimitable
+  include AccountUserLimitable
   include AccountWorkspaceWorkingHours
 
   include AccountSettingsSchema

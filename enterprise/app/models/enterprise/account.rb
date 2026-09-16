@@ -29,10 +29,11 @@ module Enterprise::Account
   end
 
   def countable_users_for_limits
-    excluded_ids = limit_counter_excluded_user_ids
-    return users unless excluded_ids.present?
+    super.where.not(id: limit_counter_excluded_user_ids)
+  end
 
-    users.where.not(id: excluded_ids)
+  def user_countable_for_limits?(user)
+    super && limit_counter_excluded_user_ids.exclude?(user.id)
   end
 
   def billing_limits_overview
@@ -41,8 +42,9 @@ module Enterprise::Account
     {
       agents: usage_overview[:agents],
       inboxes: usage_overview[:inboxes],
-      conversation: usage_overview[:conversations],
       non_web_inboxes: usage_overview[:non_web_inboxes],
+      conversation: usage_overview[:conversations],
+      call_inboxes: usage_overview[:call_inboxes],
       storage: usage_overview[:storage],
       captain: usage_overview[:captain]
     }.with_indifferent_access
@@ -51,9 +53,10 @@ module Enterprise::Account
   def account_usage_overview
     {
       agents: agent_usage_summary(consumed: countable_users_for_limits.count),
-      inboxes: usage_limit_summary(:inboxes, consumed: inboxes.count),
-      conversations: usage_limit_summary(:conversations, consumed: conversations_this_month_count),
+      inboxes: usage_limit_summary(:inboxes, consumed: text_channels_count),
       non_web_inboxes: usage_limit_summary(:non_web_inboxes, consumed: main_channels_count),
+      conversations: usage_limit_summary(:conversations, consumed: conversations_this_month_count),
+      call_inboxes: usage_limit_summary(:call_inboxes, consumed: call_channels_count),
       emails: email_usage_summary(consumed: emails_sent_today),
       storage: usage_limits[:storage],
       captain: usage_limits[:captain]

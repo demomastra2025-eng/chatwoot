@@ -52,6 +52,20 @@ RSpec.describe Account do
     end
   end
 
+  describe '#countable_users_for_limits' do
+    let(:account) { create(:account) }
+
+    it 'counts regular users but excludes STI super admins' do
+      regular_user = create(:user)
+      super_admin = create(:super_admin)
+      create(:account_user, account: account, user: regular_user)
+      create(:account_user, account: account, user: super_admin)
+
+      expect(account.countable_users_for_limits).to include(regular_user)
+      expect(account.countable_users_for_limits).not_to include(super_admin)
+    end
+  end
+
   describe 'inbound_email_domain' do
     let(:account) { create(:account) }
 

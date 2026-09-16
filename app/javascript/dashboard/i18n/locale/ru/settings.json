@@ -422,7 +422,7 @@
     "PROFILE_SETTINGS": "Настройки профиля",
     "ACCOUNT_SETTINGS": "Профиль компании",
     "VISIBILITY": "Навигация",
-    "CONVERSATION_SETTINGS": "Редактор сообщений",
+    "CONVERSATION_SETTINGS": "Диалоги",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Приложения",
     "LABELS": "Теги",
@@ -662,6 +662,7 @@
     "ACCOUNT_USAGE": {
       "TITLE": "Использование аккаунта",
       "DESCRIPTION": "Показывает, сколько квоты аккаунта уже израсходовано.",
+      "CALL_INBOXES": "Каналы звонков",
       "NON_WEB_INBOXES": "Подключенные каналы",
       "STORAGE": "Хранилище"
     },

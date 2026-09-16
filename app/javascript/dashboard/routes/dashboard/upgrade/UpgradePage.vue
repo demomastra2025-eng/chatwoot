@@ -50,6 +50,7 @@ const limitExceededMessage = computed(() => {
   const {
     conversation,
     inboxes,
+    call_inboxes: callInboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
@@ -59,6 +60,7 @@ const limitExceededMessage = computed(() => {
   if (isAccountLimitExceeded(conversation)) {
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.CONVERSATION');
   } else if (
+    isAccountLimitExceeded(callInboxes) ||
     isAccountLimitExceeded(nonWebInboxes) ||
     isAccountLimitExceeded(inboxes)
   ) {
@@ -80,6 +82,7 @@ const isLimitExceeded = computed(() => {
   const {
     conversation,
     inboxes,
+    call_inboxes: callInboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
@@ -87,6 +90,7 @@ const isLimitExceeded = computed(() => {
   return (
     isAccountLimitExceeded(conversation) ||
     isAccountLimitExceeded(inboxes) ||
+    isAccountLimitExceeded(callInboxes) ||
     isAccountLimitExceeded(nonWebInboxes) ||
     isAccountLimitExceeded(agents)
   );

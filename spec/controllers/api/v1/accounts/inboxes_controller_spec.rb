@@ -766,6 +766,20 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body['error']).to include('Account channel limit exceeded')
       end
 
+      %w[api whatsapp telegram_personal whatsapp_web].each do |channel_type|
+        it "preflights the legacy main-channel limit for #{channel_type}" do
+          account.update!(limits: { inboxes: 100, non_web_inboxes: 0 })
+
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: { name: 'Blocked main channel', channel: { type: channel_type } },
+               as: :json
+
+          expect(response).to have_http_status(:payment_required)
+          expect(response.parsed_body['error']).to include('Account main channel limit exceeded')
+        end
+      end
+
       it 'does not count call channels against the messaging channel limit' do
         account.update!(limits: { inboxes: 1, call_inboxes: 1 })
         create(:channel_voice, :sipuni, account: account)
@@ -789,6 +803,34 @@ RSpec.describe 'Inboxes API', type: :request do
 
         expect(response).to have_http_status(:payment_required)
         expect(response.parsed_body['error']).to include('Account call channel limit exceeded')
+      end
+
+      it 'does not create a voice inbox when the account-level call channel limit is zero' do
+        account.update!(limits: { call_inboxes: 0 })
+
+        post "/api/v1/accounts/#{account.id}/inboxes",
+             headers: admin.create_new_auth_token,
+             params: { name: 'Blocked Voice Inbox', channel: { type: 'voice' } },
+             as: :json
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to include('Account call channel limit exceeded')
+      end
+
+      it 'does not create a voice inbox when the global call channel limit is zero' do
+        account.update!(limits: {})
+        InstallationConfig.find_or_initialize_by(name: 'ACCOUNT_CALL_INBOXES_LIMIT').update!(value: 0, locked: false)
+        GlobalConfig.clear_cache
+
+        post "/api/v1/accounts/#{account.id}/inboxes",
+             headers: admin.create_new_auth_token,
+             params: { name: 'Globally Blocked Voice Inbox', channel: { type: 'voice' } },
+             as: :json
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to include('Account call channel limit exceeded')
+      ensure
+        GlobalConfig.clear_cache
       end
 
       it 'creates a whatsapp web inbox when administrator' do

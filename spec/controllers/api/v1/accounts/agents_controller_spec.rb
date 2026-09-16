@@ -177,6 +177,32 @@ RSpec.describe 'Agents API', type: :request do
         expect(response.parsed_body['email']).to eq(params[:email])
         expect(account.users.last.name).to eq('NewUser')
       end
+
+      it 'does not consume an agent license for a super admin workspace membership' do
+        account.update!(limits: { agents: 3 })
+        super_admin = create(:super_admin)
+        create(:account_user, account: account, user: super_admin, role: :administrator)
+
+        post "/api/v1/accounts/#{account.id}/agents",
+             params: params.merge(email: Faker::Internet.unique.email),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'allows adding a manually excluded user when the account is already over its agent limit' do
+        excluded_user = create(:user)
+        account.update!(limits: { agents: 1 }, limit_counter_excluded_user_ids: [excluded_user.id])
+
+        post "/api/v1/accounts/#{account.id}/agents",
+             params: params.merge(email: excluded_user.email),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.account_users.exists?(user_id: excluded_user.id)).to be(true)
+      end
     end
   end
 
@@ -210,6 +236,87 @@ RSpec.describe 'Agents API', type: :request do
         end.to change(User, :count).by(2)
 
         expect(response).to have_http_status(:ok)
+      end
+
+      it 'deduplicates new emails when checking the available agent count' do
+        account.update!(limits: { agents: 3 })
+        duplicated_email = 'duplicate@example.com'
+
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: [duplicated_email, duplicated_email] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:ok)
+        expect(account.users.where(email: duplicated_email).count).to eq(1)
+      end
+
+      it 'allows an excluded bulk candidate when the account is already over its agent limit' do
+        super_admin = create(:super_admin)
+        account.update!(limits: { agents: 1 })
+
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: [super_admin.email] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:ok)
+        expect(account.account_users.exists?(user_id: super_admin.id)).to be(true)
+      end
+
+      it 'normalizes whitespace and treats an existing membership as an idempotent success' do
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: ["  #{admin.email.upcase}  "] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:ok)
+        expect(account.account_users.where(user_id: admin.id).count).to eq(1)
+      end
+
+      it 'reports builder failures and leaves onboarding incomplete' do
+        account.update!(custom_attributes: { 'onboarding_step' => 'invite_team' })
+        invalid_membership = AccountUser.new
+        invalid_membership.errors.add(:base, 'Account user limit exceeded')
+        builder = instance_double(AgentBuilder)
+        allow(AgentBuilder).to receive(:new).and_return(builder)
+        allow(builder).to receive(:perform).and_raise(ActiveRecord::RecordInvalid.new(invalid_membership))
+
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: ['race@example.com'] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['errors']).to be_present
+        expect(account.reload.custom_attributes['onboarding_step']).to eq('invite_team')
+      end
+
+      it 'retries a concurrent user identity collision once' do
+        colliding_builder = instance_double(AgentBuilder, perform: nil)
+        successful_builder = instance_double(AgentBuilder, perform: nil)
+        allow(colliding_builder).to receive(:perform).and_raise(ActiveRecord::RecordNotUnique)
+        allow(AgentBuilder).to receive(:new).and_return(colliding_builder, successful_builder)
+
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: ['race@example.com'] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:ok)
+        expect(AgentBuilder).to have_received(:new).twice
+      end
+
+      it 'treats a concurrently created membership as an idempotent success' do
+        builder = instance_double(AgentBuilder)
+        allow(AgentBuilder).to receive(:new).and_return(builder)
+        allow(builder).to receive(:perform) do
+          user = create(:user, email: 'member-race@example.com')
+          create(:account_user, account: account, user: user)
+          raise ActiveRecord::RecordInvalid, AccountUser.new
+        end
+
+        post "/api/v1/accounts/#{account.id}/agents/bulk_create",
+             params: { emails: ['member-race@example.com'] },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:ok)
+        expect(account.reload.account_users.joins(:user).exists?(users: { email: 'member-race@example.com' })).to be(true)
       end
     end
   end

@@ -15,6 +15,7 @@
 #  index_installation_configs_on_name_and_created_at  (name,created_at) UNIQUE
 #
 class InstallationConfig < ApplicationRecord
+  NON_NEGATIVE_INTEGER_CONFIGS = %w[ACCOUNT_CALL_INBOXES_LIMIT].freeze
   # Legacy rows store YAML blobs inside a jsonb string value. A custom type keeps
   # those readable while letting new writes use native jsonb objects.
   SerializedValueType = Class.new(ActiveRecord::Type::Json) do
@@ -70,7 +71,9 @@ class InstallationConfig < ApplicationRecord
   attribute :serialized_value, SerializedValueType.new, default: -> { {}.with_indifferent_access }
 
   before_validation :set_lock
+  before_validation :normalize_non_negative_integer_value
   validates :name, presence: true
+  validate :validate_non_negative_integer_value
 
   # TODO: Get rid of default scope
   # https://stackoverflow.com/a/1834250/939299
@@ -90,6 +93,28 @@ class InstallationConfig < ApplicationRecord
   end
 
   private
+
+  def normalize_non_negative_integer_value
+    return unless NON_NEGATIVE_INTEGER_CONFIGS.include?(name)
+    return if value.nil? || value.is_a?(Integer)
+
+    return unless value.is_a?(String)
+
+    normalized = value.strip
+    if normalized.empty?
+      self.value = nil
+      return
+    end
+
+    self.value = normalized.to_i if normalized.match?(/\A\d+\z/)
+  end
+
+  def validate_non_negative_integer_value
+    return unless NON_NEGATIVE_INTEGER_CONFIGS.include?(name)
+    return if value.nil? || (value.is_a?(Integer) && value >= 0)
+
+    errors.add(:value, 'must be a non-negative integer')
+  end
 
   def set_lock
     self.locked = true if locked.nil?

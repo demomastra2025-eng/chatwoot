@@ -50,6 +50,7 @@ class AccountUser < ApplicationRecord
   validates :user_id, uniqueness: { scope: :account_id }
   validate :access_role_belongs_to_account
   validate :access_role_matches_enforced_identity, if: :access_control_assignment_changed?
+  validate :ensure_within_user_limit, on: :create
 
   def create_notification_setting
     setting = user.notification_settings.find_or_initialize_by(account_id: account.id)
@@ -80,6 +81,14 @@ class AccountUser < ApplicationRecord
   end
 
   private
+
+  def ensure_within_user_limit
+    return if account.blank? || user.blank?
+    return unless account.user_countable_for_limits?(user)
+    return if account.countable_users_for_limits.count < account.usage_limits.fetch(:agents, ChatwootApp.max_limit).to_i
+
+    errors.add(:base, 'Account limit exceeded. Please purchase more licenses')
+  end
 
   def invalidate_appointment_scope
     Scheduling::ScopeInvalidation.dispatch(account)

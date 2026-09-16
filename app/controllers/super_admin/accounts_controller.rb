@@ -73,17 +73,17 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def reset_captain_responses_usage
     if requested_resource.reset_response_usage
-      redirect_to_account(notice: 'Captain responses usage reset')
+      redirect_to_account(notice: 'AI Agent responses usage reset')
     else
-      redirect_to_account(alert: 'Unable to reset Captain responses usage')
+      redirect_to_account(alert: 'Unable to reset AI Agent responses usage')
     end
   end
 
   def reset_captain_tokens_usage
     if requested_resource.reset_token_usage
-      redirect_to_account(notice: 'Captain tokens usage reset')
+      redirect_to_account(notice: 'AI Agent tokens usage reset')
     else
-      redirect_to_account(alert: 'Unable to reset Captain tokens usage')
+      redirect_to_account(alert: 'Unable to reset AI Agent tokens usage')
     end
   end
 

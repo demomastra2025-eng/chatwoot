@@ -7,41 +7,66 @@ class AccountLimitsField < Administrate::Field::Base
   LIMIT_DEFINITIONS = {
     agents: {
       label: 'Users',
-      hint: 'Maximum users in this account.'
+      hint: 'Maximum users in this workspace.',
+      group: :workspace
     },
     inboxes: {
       label: 'Channels',
-      hint: 'Maximum total channels in this account.'
+      hint: 'Maximum messaging channels. Call channels are counted separately.',
+      group: :workspace
     },
     conversations: {
       label: 'Conversations',
-      hint: 'Maximum new conversations allowed during the current monthly window.'
+      hint: 'Maximum new conversations allowed during the current monthly window.',
+      group: :workspace
+    },
+    call_inboxes: {
+      label: 'Call channels',
+      hint: 'Maximum telephony channels (Voice inboxes) in this workspace.',
+      group: :workspace
     },
     non_web_inboxes: {
-      label: 'Main channels',
-      hint: 'Maximum main channels in this account. Counts WhatsApp Cloud, WhatsApp Web, Telegram Personal, and API channels.'
+      label: 'Legacy main channels',
+      hint: 'Legacy quota for WhatsApp Cloud, WhatsApp Web, Telegram Personal, and API channels.',
+      group: :workspace
     },
     storage_bytes: {
       label: 'Storage quota (GB)',
-      hint: 'Account-wide file storage quota in gigabytes. Decimals are allowed, for example 1.5.',
+      hint: 'Workspace file storage quota. Decimals are allowed, for example 1.5.',
+      group: :workspace,
       bytes: true,
       step: '0.1'
     },
     captain_responses: {
-      label: 'Captain responses',
-      hint: 'Allowed Captain response count in the current quota window.'
+      label: 'AI Agent responses',
+      hint: 'Allowed AI Agent response count in the current quota window.',
+      group: :ai_and_messaging
     },
     captain_documents: {
-      label: 'Captain documents',
-      hint: 'Maximum Captain documents allowed for this account.'
+      label: 'AI Agent documents',
+      hint: 'Maximum knowledge-base documents available to AI Agents.',
+      group: :ai_and_messaging
     },
     captain_tokens: {
-      label: 'Captain tokens',
-      hint: 'Allowed Captain token usage in the current quota window.'
+      label: 'AI Agent tokens',
+      hint: 'Allowed AI Agent token usage in the current quota window.',
+      group: :ai_and_messaging
     },
     emails: {
       label: 'Outbound emails per day',
-      hint: 'Daily outbound email quota for account emails such as transcripts, notifications, and automation emails.'
+      hint: 'Daily outbound email quota for transcripts, notifications, and automation emails.',
+      group: :ai_and_messaging
+    }
+  }.freeze
+
+  GROUPS = {
+    workspace: {
+      label: 'Workspace capacity',
+      hint: 'People, channels, conversations, and storage.'
+    },
+    ai_and_messaging: {
+      label: 'AI and messaging',
+      hint: 'AI Agent and outbound email usage quotas.'
     }
   }.freeze
 
@@ -52,15 +77,22 @@ class AccountLimitsField < Administrate::Field::Base
       meta.merge(
         key: key,
         input_id: "account_limits_#{key}",
-        value: normalize_value(key, overrides[key])
+        value: normalize_value(key, overrides[key]),
+        status: status_for(overrides[key])
       )
+    end
+  end
+
+  def groups
+    GROUPS.map do |key, meta|
+      meta.merge(key: key, rows: rows.select { |row| row[:group] == key })
     end
   end
 
   def to_s
     configured_rows.map do |row|
       value = row[:value]
-      next "#{row[:key]}: inherited" if value.nil?
+      next "#{row[:key]}: default" if value.nil?
 
       "#{row[:key]}: #{formatted_value(row)}"
     end.join(', ')
@@ -69,7 +101,7 @@ class AccountLimitsField < Administrate::Field::Base
   private
 
   def configured_rows
-    rows.select { |row| row[:value].present? || row[:value] == 0 }
+    rows.reject { |row| row[:value].nil? }
   end
 
   def normalized_overrides
@@ -82,6 +114,13 @@ class AccountLimitsField < Administrate::Field::Base
     return Integer(value, 10) if value.is_a?(String) && value.match?(/\A\d+\z/)
 
     value
+  end
+
+  def status_for(value)
+    return :default if value.blank?
+    return :blocked if value.to_s.match?(/\A0(?:\.0+)?\z/)
+
+    :custom
   end
 
   def formatted_value(row)

@@ -8,6 +8,36 @@ RSpec.describe AccountUser do
   let!(:account_user) { create(:account_user) }
   let!(:inbox) { create(:inbox, account: account_user.account) }
 
+  describe 'user limit enforcement' do
+    let(:limited_account) { create(:account, limits: { agents: 1 }) }
+
+    before do
+      create(:account_user, account: limited_account, user: create(:user))
+    end
+
+    it 'rejects a countable membership after the limit is reached' do
+      membership = build(:account_user, account: limited_account, user: create(:user))
+
+      expect(membership).not_to be_valid
+      expect(membership.errors[:base]).to include('Account limit exceeded. Please purchase more licenses')
+    end
+
+    it 'allows a super admin membership after the limit is reached' do
+      membership = build(:account_user, account: limited_account, user: create(:super_admin))
+
+      expect(membership).to be_valid
+    end
+
+    it 'allows a manually excluded user membership after the limit is reached' do
+      excluded_user = create(:user)
+      limited_account.update!(limit_counter_excluded_user_ids: [excluded_user.id])
+
+      membership = build(:account_user, account: limited_account, user: excluded_user)
+
+      expect(membership).to be_valid
+    end
+  end
+
   describe 'notification_settings' do
     it 'gets created with the right default settings' do
       expect(account_user.user.notification_settings).not_to be_nil

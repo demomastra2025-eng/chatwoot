@@ -1,6 +1,6 @@
 <%
   format_value = lambda do |row|
-    next 'Inherited' if row[:value].nil?
+    next 'Default' if row[:value].nil?
 
     if row[:bytes]
       "#{number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true)} GB"

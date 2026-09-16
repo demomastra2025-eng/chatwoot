@@ -104,6 +104,11 @@
   display_title: 'Account Non-Web Inbox Limit'
   description: 'Maximum number of non-web inboxes an account can create'
   locked: false
+- name: ACCOUNT_CALL_INBOXES_LIMIT
+  value:
+  display_title: 'Account Call Channel Limit'
+  description: 'Maximum number of Voice inboxes an account can create. Blank means unlimited.'
+  locked: false
 - name: ACCOUNT_STORAGE_BYTES_LIMIT
   value:
   display_title: 'Account Storage Limit (Bytes)'

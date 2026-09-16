@@ -405,7 +405,7 @@
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Компания профилі",
     "VISIBILITY": "Навигация",
-    "CONVERSATION_SETTINGS": "Хабарлама редакторы",
+    "CONVERSATION_SETTINGS": "Диалогтар",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -1013,6 +1013,7 @@
     "ACCOUNT_USAGE": {
       "TITLE": "Account usage",
       "DESCRIPTION": "Track how much of your account quota has already been consumed.",
+      "CALL_INBOXES": "Қоңырау арналары",
       "NON_WEB_INBOXES": "Main channels",
       "STORAGE": "Storage"
     },

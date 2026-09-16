@@ -182,21 +182,31 @@ RSpec.describe Account, type: :model do
       expect(account.usage_limits[:agents]).to eq(20)
     end
 
-    it 'excludes configured user ids from agent usage counters' do
+    it 'always excludes super admins from agent usage counters' do
       included_user = create(:user)
-      excluded_user = create(:user)
+      super_admin = create(:super_admin)
 
       create(:account_user, account: account, user: included_user, role: :agent)
-      create(:account_user, account: account, user: excluded_user, role: :administrator)
+      create(:account_user, account: account, user: super_admin, role: :administrator)
 
-      account.limit_counter_excluded_user_ids = [excluded_user.id, excluded_user.id]
-      account.save!
-
-      expect(account.limit_counter_excluded_user_ids).to eq([excluded_user.id])
       expect(account.account_usage_overview[:agents][:consumed]).to eq(1)
       expect(account.countable_users_for_limits.pluck(:id)).to contain_exactly(
         included_user.id
       )
+    end
+
+    it 'combines configured user exclusions with the super admin exclusion' do
+      included_user = create(:user)
+      excluded_user = create(:user)
+      super_admin = create(:super_admin)
+
+      create(:account_user, account: account, user: included_user, role: :agent)
+      create(:account_user, account: account, user: excluded_user, role: :administrator)
+      create(:account_user, account: account, user: super_admin, role: :administrator)
+      account.update!(limit_counter_excluded_user_ids: [excluded_user.id, excluded_user.id])
+
+      expect(account.limit_counter_excluded_user_ids).to eq([excluded_user.id])
+      expect(account.countable_users_for_limits.pluck(:id)).to contain_exactly(included_user.id)
     end
 
     it 'returns max limits from account when enterprise version' do
@@ -205,19 +215,20 @@ RSpec.describe Account, type: :model do
     end
 
     it 'builds a billing-friendly limits overview with summary payloads' do
-      create(:installation_config, name: 'ACCOUNT_INBOXES_LIMIT', value: 2)
+      create(:installation_config, name: 'ACCOUNT_INBOXES_LIMIT', value: 20)
       create(:installation_config, name: 'ACCOUNT_CONVERSATIONS_LIMIT', value: 500)
-      create(:installation_config, name: 'ACCOUNT_NON_WEB_INBOXES_LIMIT', value: 1)
+      create(:installation_config, name: 'ACCOUNT_CALL_INBOXES_LIMIT', value: 1)
       create(:conversation, account: account)
       create(:channel_api, account: account)
+      create(:channel_voice, :sipuni, account: account)
 
       limits_overview = account.billing_limits_overview
-      inboxes_count = account.inboxes.count
+      messaging_channels_count = account.text_channels_count
 
       expect(limits_overview[:inboxes]).to include(
-        total_count: 2,
-        current_available: [2 - inboxes_count, 0].max,
-        consumed: inboxes_count,
+        total_count: 20,
+        current_available: 20 - messaging_channels_count,
+        consumed: messaging_channels_count,
         unlimited: false
       )
       expect(limits_overview[:conversation]).to include(
@@ -226,7 +237,7 @@ RSpec.describe Account, type: :model do
         consumed: 1,
         unlimited: false
       )
-      expect(limits_overview[:non_web_inboxes]).to include(
+      expect(limits_overview[:call_inboxes]).to include(
         total_count: 1,
         current_available: 0,
         consumed: 1,
@@ -234,22 +245,15 @@ RSpec.describe Account, type: :model do
       )
     end
 
-    it 'counts only main channels in the main channels usage summary' do
+    it 'counts messaging and call channels separately' do
       create(:channel_api, account: account)
-      create(:channel_telegram_personal, account: account)
-      create(:channel_whatsapp, account: account)
-      create(:channel_whatsapp_web, account: account)
-      create(:channel_facebook_page, account: account)
-      create(:channel_tiktok, account: account)
       create(:channel_email, account: account)
-      create(:channel_telegram, account: account)
-      create(:channel_instagram, account: account)
-      create(:channel_twilio_sms, account: account)
-      create(:channel_sms, account: account)
+      create(:channel_voice, :sipuni, account: account)
 
-      expect(account.main_channels_count).to eq(4)
-      expect(account.account_usage_overview[:inboxes][:consumed]).to eq(account.inboxes.count)
-      expect(account.account_usage_overview[:non_web_inboxes][:consumed]).to eq(4)
+      expect(account.text_channels_count).to eq(2)
+      expect(account.call_channels_count).to eq(1)
+      expect(account.account_usage_overview[:inboxes][:consumed]).to eq(account.text_channels_count)
+      expect(account.account_usage_overview[:call_inboxes][:consumed]).to eq(1)
     end
 
     it 'returns limits based on subscription' do
@@ -271,6 +275,13 @@ RSpec.describe Account, type: :model do
 
     it 'rejects negative limit overrides' do
       account.limits = { 'agents' => -1 }
+
+      expect(account).not_to be_valid
+      expect(account.errors[:limits]).to include(': Invalid data')
+    end
+
+    it 'rejects fractional call inbox limit overrides' do
+      account.limits = { 'call_inboxes' => 0.5 }
 
       expect(account).not_to be_valid
       expect(account.errors[:limits]).to include(': Invalid data')

@@ -11,12 +11,27 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     Channel::Whatsapp
     Channel::WhatsappWeb
   ].freeze
+  CALL_CHANNEL_TYPE = 'Channel::Voice'.freeze
+  LIMIT_SCHEMA_PROPERTIES = {
+    'inboxes' => { 'type': 'number', 'minimum': 0 },
+    'agents' => { 'type': 'number', 'minimum': 0 },
+    'conversations' => { 'type': 'number', 'minimum': 0 },
+    'call_inboxes' => { 'type': 'integer', 'minimum': 0 },
+    # Retained so existing account payloads remain valid while this legacy limit is phased out.
+    'non_web_inboxes' => { 'type': 'number', 'minimum': 0 },
+    'storage_bytes' => { 'type': 'number', 'minimum': 0 },
+    'captain_responses' => { 'type': 'number', 'minimum': 0 },
+    'captain_documents' => { 'type': 'number', 'minimum': 0 },
+    'captain_tokens' => { 'type': 'number', 'minimum': 0 },
+    'emails' => { 'type': 'number', 'minimum': 0 }
+  }.freeze
 
   def usage_limits
     {
       agents: agent_limit_metadata[:value].to_i,
       inboxes: usage_limit_metadata(:inboxes)[:value].to_i,
       conversations: usage_limit_metadata(:conversations)[:value].to_i,
+      call_inboxes: usage_limit_metadata(:call_inboxes)[:value].to_i,
       non_web_inboxes: usage_limit_metadata(:non_web_inboxes)[:value].to_i,
       storage: AccountLimits::StorageUsageService.new(account: self).summary,
       captain: {
@@ -45,9 +60,9 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     account_value = self[:limits]&.[](limit_name.to_s)
     global_value = GlobalConfig.get(config_name)[config_name]
 
-    if account_value.present?
+    if configured_limit_value?(account_value)
       { value: account_value, unlimited: false }.with_indifferent_access
-    elsif global_value.present?
+    elsif configured_limit_value?(global_value)
       { value: global_value, unlimited: false }.with_indifferent_access
     else
       { value: ChatwootApp.max_limit, unlimited: true }.with_indifferent_access
@@ -94,6 +109,14 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     conversations.where('created_at > ?', 30.days.ago).count
   end
 
+  def text_channels_count
+    inboxes.where.not(channel_type: CALL_CHANNEL_TYPE).count
+  end
+
+  def call_channels_count
+    inboxes.where(channel_type: CALL_CHANNEL_TYPE).count
+  end
+
   def main_channels_count
     inboxes.where(channel_type: MAIN_CHANNEL_TYPES).count
   end
@@ -136,6 +159,10 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   end
 
   private
+
+  def configured_limit_value?(value)
+    value.present? || (value.respond_to?(:zero?) && value.zero?)
+  end
 
   def get_captain_limits(type)
     consumed = case type
@@ -229,17 +256,7 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
 
     limit_schema = {
       'type' => 'object',
-      'properties' => {
-        'inboxes' => { 'type': 'number', 'minimum': 0 },
-        'agents' => { 'type': 'number', 'minimum': 0 },
-        'conversations' => { 'type': 'number', 'minimum': 0 },
-        'non_web_inboxes' => { 'type': 'number', 'minimum': 0 },
-        'storage_bytes' => { 'type': 'number', 'minimum': 0 },
-        'captain_responses' => { 'type': 'number', 'minimum': 0 },
-        'captain_documents' => { 'type': 'number', 'minimum': 0 },
-        'captain_tokens' => { 'type': 'number', 'minimum': 0 },
-        'emails' => { 'type': 'number', 'minimum': 0 }
-      },
+      'properties' => LIMIT_SCHEMA_PROPERTIES,
       'required' => [],
       'additionalProperties' => false
     }

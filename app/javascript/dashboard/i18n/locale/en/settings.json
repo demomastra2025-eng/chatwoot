@@ -422,7 +422,7 @@
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Company profile",
     "VISIBILITY": "Navigation",
-    "CONVERSATION_SETTINGS": "Message editor",
+    "CONVERSATION_SETTINGS": "Conversations",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -1058,6 +1058,7 @@
     "ACCOUNT_USAGE": {
       "TITLE": "Account usage",
       "DESCRIPTION": "Track how much of your account quota has already been consumed.",
+      "CALL_INBOXES": "Call channels",
       "NON_WEB_INBOXES": "Main channels",
       "STORAGE": "Storage"
     },

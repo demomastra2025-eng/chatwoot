@@ -134,9 +134,10 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
         InstallationConfig.where(name: 'DEPLOYMENT_ENV').first_or_create(value: 'cloud')
         InstallationConfig.where(name: 'CHATWOOT_CLOUD_PLANS').first_or_create(value: [{ 'name': 'Hacker' }])
         InstallationConfig.where(name: 'ACCOUNT_AGENTS_LIMIT').first_or_create(value: 2)
-        InstallationConfig.where(name: 'ACCOUNT_INBOXES_LIMIT').first_or_create(value: 1)
+        InstallationConfig.where(name: 'ACCOUNT_INBOXES_LIMIT').first_or_create(value: 20)
+        InstallationConfig.where(name: 'ACCOUNT_NON_WEB_INBOXES_LIMIT').first_or_create(value: 10)
         InstallationConfig.where(name: 'ACCOUNT_CONVERSATIONS_LIMIT').first_or_create(value: 500)
-        InstallationConfig.where(name: 'ACCOUNT_NON_WEB_INBOXES_LIMIT').first_or_create(value: 1)
+        InstallationConfig.where(name: 'ACCOUNT_CALL_INBOXES_LIMIT').first_or_create(value: 1)
         InstallationConfig.where(name: 'ACCOUNT_CAPTAIN_TOKENS_LIMIT').first_or_create(value: 100_000)
       end
 
@@ -152,9 +153,10 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
           expect(json_response['limits']).to eq(
             {
               'agents' => usage_summary(2, 2),
-              'inboxes' => usage_summary(1, account.inboxes.count),
+              'inboxes' => usage_summary(20, account.inboxes.count),
+              'non_web_inboxes' => usage_summary(10, account.main_channels_count),
               'conversation' => usage_summary(500, 0),
-              'non_web_inboxes' => usage_summary(1, 0),
+              'call_inboxes' => usage_summary(1, 0),
               'captain' => {
                 'documents' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
                 'responses' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
@@ -184,9 +186,10 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
             'id' => account.id,
             'limits' => {
               'agents' => usage_summary(2, 2),
-              'inboxes' => usage_summary(1, account.inboxes.count),
+              'inboxes' => usage_summary(20, account.inboxes.count),
+              'non_web_inboxes' => usage_summary(10, account.main_channels_count),
               'conversation' => usage_summary(500, 1),
-              'non_web_inboxes' => usage_summary(1, 1),
+              'call_inboxes' => usage_summary(1, 0),
               'captain' => {
                 'documents' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
                 'responses' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
@@ -210,9 +213,10 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
             'id' => account.id,
             'limits' => {
               'agents' => usage_summary(account.usage_limits[:agents], account.users.count),
-              'inboxes' => usage_summary(1, account.inboxes.count),
+              'inboxes' => usage_summary(20, account.inboxes.count),
+              'non_web_inboxes' => usage_summary(10, account.main_channels_count),
               'conversation' => usage_summary(500, 1),
-              'non_web_inboxes' => usage_summary(1, 1),
+              'call_inboxes' => usage_summary(1, 0),
               'captain' => {
                 'documents' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
                 'responses' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
@@ -235,9 +239,10 @@ RSpec.describe 'Enterprise Billing APIs', type: :request do
             'id' => account.id,
             'limits' => {
               'agents' => usage_summary(2, 2),
-              'inboxes' => usage_summary(1, account.inboxes.count),
+              'inboxes' => usage_summary(20, account.inboxes.count),
+              'non_web_inboxes' => usage_summary(10, account.main_channels_count),
               'conversation' => usage_summary(500, 1),
-              'non_web_inboxes' => usage_summary(1, 1),
+              'call_inboxes' => usage_summary(1, 0),
               'captain' => {
                 'documents' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),
                 'responses' => usage_summary(ChatwootApp.max_limit, 0, unlimited: true),

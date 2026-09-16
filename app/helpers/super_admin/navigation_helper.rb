@@ -7,6 +7,7 @@ module SuperAdmin::NavigationHelper
     resource_name = resource.respond_to?(:resource) ? resource.resource.to_s : resource.to_s
 
     return 'Workspace' if resource_name == 'accounts'
+    return 'Billing Organization' if resource_name == 'billing_organizations'
 
     model_name = resource_name.singularize.classify.safe_constantize&.model_name
     return model_name.human(count: 2) if model_name.present?

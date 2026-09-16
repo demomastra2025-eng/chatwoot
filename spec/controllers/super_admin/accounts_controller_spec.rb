@@ -235,7 +235,7 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_responses_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain responses usage reset')
+        expect(flash[:notice]).to eq('AI Agent responses usage reset')
         expect(account.reload.custom_attributes['captain_responses_usage']).to eq(0)
       end
     end
@@ -250,7 +250,7 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_tokens_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain tokens usage reset')
+        expect(flash[:notice]).to eq('AI Agent tokens usage reset')
         expect(account.reload.custom_attributes['captain_tokens_usage']).to eq(0)
       end
     end

@@ -5,8 +5,65 @@ require 'rails_helper'
 RSpec.describe Inbox do
   let!(:inbox) { create(:inbox) }
 
+  def inbox_update_audits
+    Audited::Audit.where(auditable_type: 'Inbox', auditable_id: inbox.id, action: 'update')
+  end
+
   before do
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
+  end
+
+  describe 'workspace channel limits' do
+    let(:account) { create(:account, limits: { call_inboxes: 1 }) }
+
+    it 'applies the call-channel limit without counting messaging channels' do
+      create(:inbox, account: account)
+
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).to be_valid
+      create(:channel_voice, :sipuni, account: account)
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).not_to be_valid
+    end
+
+    it 'blocks call channels when the account-level call limit is zero' do
+      account.update!(limits: { call_inboxes: 0 })
+
+      limited_inbox = build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))
+
+      expect(limited_inbox).not_to be_valid
+      expect(limited_inbox.errors[:base]).to include('Account call channel limit exceeded')
+    end
+
+    it 'blocks call channels when the global call limit is zero' do
+      account.update!(limits: {})
+      InstallationConfig.find_or_initialize_by(name: 'ACCOUNT_CALL_INBOXES_LIMIT').update!(value: 0, locked: false)
+      GlobalConfig.clear_cache
+
+      limited_inbox = build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))
+
+      expect(limited_inbox).not_to be_valid
+      expect(limited_inbox.errors[:base]).to include('Account call channel limit exceeded')
+    ensure
+      GlobalConfig.clear_cache
+    end
+
+    it 'enforces the messaging-channel limit for direct model creation' do
+      account.update!(limits: { inboxes: 1, call_inboxes: 1 })
+      create(:inbox, account: account)
+
+      expect(build(:inbox, account: account)).not_to be_valid
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).to be_valid
+    end
+
+    it 'continues enforcing the legacy main-channel limit independently' do
+      account.update!(limits: { inboxes: 10, call_inboxes: 1, non_web_inboxes: 1 })
+      create(:inbox, account: account, channel: build(:channel_api, account: account))
+
+      limited_inbox = build(:inbox, account: account, channel: build(:channel_api, account: account))
+
+      expect(limited_inbox).not_to be_valid
+      expect(limited_inbox.errors[:base]).to include('Account main channel limit exceeded')
+      expect(build(:inbox, account: account)).to be_valid
+    end
   end
 
   describe 'member_ids_with_assignment_capacity' do
@@ -147,8 +204,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.update!(name: 'Updated Inbox') }.to change(inbox_update_audits, :count).by(1)
       end
     end
 
@@ -156,10 +212,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_color = inbox.channel.widget_color
         new_color = '#ff0000'
-        inbox.channel.update(widget_color: new_color)
-
-        # check if channel update creates an audit log against inbox
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.channel.update!(widget_color: new_color) }.to change(inbox_update_audits, :count).by(1)
         # Check for the specific widget_color update in the audit log
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update',
                                     audited_changes: { 'widget_color' => [previous_color, new_color] }).count).to eq(1)
@@ -179,8 +232,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.update!(name: 'Updated Inbox') }.to change(inbox_update_audits, :count).by(1)
       end
     end
 
@@ -188,10 +240,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_webhook = inbox.channel.webhook_url
         new_webhook = 'https://example2.com'
-        inbox.channel.update(webhook_url: new_webhook)
-
-        # check if channel update creates an audit log against inbox
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.channel.update!(webhook_url: new_webhook) }.to change(inbox_update_audits, :count).by(1)
         # Check for the specific webhook_update update in the audit log
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update',
                                     audited_changes: { 'webhook_url' => [previous_webhook, new_webhook] }).count).to eq(1)
@@ -216,8 +265,7 @@ RSpec.describe Inbox do
 
     context 'when inbox is updated' do
       it 'has associated audit log created' do
-        inbox.update(name: 'Updated Inbox')
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.update!(name: 'Updated Inbox') }.to change(inbox_update_audits, :count).by(1)
       end
     end
 
@@ -225,10 +273,7 @@ RSpec.describe Inbox do
       it 'has associated audit log created' do
         previous_phone_number = inbox.channel.phone_number
         new_phone_number = '1234567890'
-        inbox.channel.update(phone_number: new_phone_number)
-
-        # check if channel update creates an audit log against inbox
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(1)
+        expect { inbox.channel.update!(phone_number: new_phone_number) }.to change(inbox_update_audits, :count).by(1)
         # Check for the specific phone_number update in the audit log
         expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update',
                                     audited_changes: { 'phone_number' => [previous_phone_number, new_phone_number] }).count).to eq(1)
@@ -237,9 +282,7 @@ RSpec.describe Inbox do
 
     context 'when template sync runs' do
       it 'has no associated audit log created' do
-        channel.sync_templates
-        # check if template sync does not create an audit log
-        expect(Audited::Audit.where(auditable_type: 'Inbox', action: 'update').count).to eq(0)
+        expect { channel.sync_templates }.not_to(change(inbox_update_audits, :count))
       end
     end
   end
@@ -260,14 +303,14 @@ RSpec.describe Inbox do
 
     context 'when only technical runtime fields are updated' do
       it 'does not create an audit log entry' do
-        channel.update!(
-          last_synced_at: Time.current,
-          sync_state: channel.sync_state_payload.merge('last_incremental_sync_at' => Time.current.iso8601),
-          connection_state: 'open',
-          lifecycle_state: 'connected'
-        )
-
-        expect(Audited::Audit.where(auditable_type: 'Inbox', auditable_id: inbox.id, action: 'update').count).to eq(0)
+        expect do
+          channel.update!(
+            last_synced_at: Time.current,
+            sync_state: channel.sync_state_payload.merge('last_incremental_sync_at' => Time.current.iso8601),
+            connection_state: 'open',
+            lifecycle_state: 'connected'
+          )
+        end.not_to(change(inbox_update_audits, :count))
       end
     end
 

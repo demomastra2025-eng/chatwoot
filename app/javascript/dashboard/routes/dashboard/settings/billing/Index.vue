@@ -76,8 +76,9 @@ const accountUsageLimits = computed(() => {
   return {
     agents: decorateLimit(accountLimits.value.agents),
     inboxes: decorateLimit(accountLimits.value.inboxes),
-    conversations: decorateLimit(accountLimits.value.conversation),
     nonWebInboxes: decorateLimit(accountLimits.value.nonWebInboxes),
+    conversations: decorateLimit(accountLimits.value.conversation),
+    callInboxes: decorateLimit(accountLimits.value.callInboxes),
     storage: decorateLimit(accountLimits.value.storage, value =>
       formatBytes(value)
     ),
@@ -283,6 +284,12 @@ onMounted(handleBillingPageLogic);
             <BillingMeter
               :title="$t('SIDEBAR.CONVERSATIONS')"
               v-bind="accountUsageLimits.conversations"
+            />
+          </div>
+          <div v-if="accountUsageLimits.callInboxes" class="px-5">
+            <BillingMeter
+              :title="$t('BILLING_SETTINGS.ACCOUNT_USAGE.CALL_INBOXES')"
+              v-bind="accountUsageLimits.callInboxes"
             />
           </div>
           <div v-if="accountUsageLimits.nonWebInboxes" class="px-5">

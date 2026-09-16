@@ -13,6 +13,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS = %w[
     WHATSAPP_WEBHOOK_ROUTING_RULES WHATSAPP_WEBHOOK_FORWARD_TARGETS
   ].freeze
+  QUOTA_CONFIG_KEYS = %w[ACCOUNT_CALL_INBOXES_LIMIT].freeze
   APP_CONFIG_MAPPING = {
     'facebook' => %w[FB_APP_ID FB_VERIFY_TOKEN FB_APP_SECRET IG_VERIFY_TOKEN FACEBOOK_API_VERSION ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT],
     'shopify' => %w[SHOPIFY_CLIENT_ID SHOPIFY_CLIENT_SECRET],
@@ -35,7 +36,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   }.freeze
   DEFAULT_ALLOWED_CONFIGS = %w[
     ENABLE_ACCOUNT_SIGNUP FIREBASE_PROJECT_ID FIREBASE_CREDENTIALS WEBHOOK_TIMEOUT MAXIMUM_FILE_UPLOAD_SIZE
-    WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
+    WIDGET_TOKEN_EXPIRY ACCOUNT_CONVERSATIONS_LIMIT ACCOUNT_NON_WEB_INBOXES_LIMIT ACCOUNT_CALL_INBOXES_LIMIT ACCOUNT_STORAGE_BYTES_LIMIT
   ].freeze
 
   before_action :set_config
@@ -131,6 +132,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def normalize_app_config_value(key, value, errors)
     return normalize_json_object_config(key, value, errors) if WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS.include?(key)
+    return normalize_quota_config(key, value, errors) if QUOTA_CONFIG_KEYS.include?(key)
     return value unless key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
 
     parsed_value = value.present? ? JSON.parse(value) : []
@@ -146,6 +148,25 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   rescue JSON::ParserError
     errors << 'Captain system prompts must be valid JSON'
     :invalid
+  end
+
+  def normalize_quota_config(key, value, errors)
+    normalized = normalized_quota_value(value)
+    return normalized unless normalized == :invalid
+
+    errors << "#{key.titleize} must be blank or a non-negative integer"
+    :invalid
+  end
+
+  def normalized_quota_value(value)
+    return '' if value.nil?
+    return value >= 0 ? value : :invalid if value.is_a?(Integer)
+    return :invalid unless value.is_a?(String)
+
+    normalized = value.strip
+    return '' if normalized.empty?
+
+    normalized.match?(/\A\d+\z/) ? normalized.to_i : :invalid
   end
 
   def normalize_json_object_config(key, value, errors)
