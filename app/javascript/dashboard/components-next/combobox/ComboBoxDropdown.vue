@@ -37,6 +37,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  createOptionLabel: {
+    type: String,
+    default: '',
+  },
   multiple: {
     type: Boolean,
     default: false,
@@ -47,7 +51,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['select', 'search']);
+const emit = defineEmits(['create', 'select', 'search']);
 
 const { t } = useI18n();
 
@@ -69,6 +73,8 @@ const onInputSearch = event => {
   searchValue.value = event.target.value;
   emit('search', event.target.value);
 };
+
+const createOption = () => emit('create', searchValue.value.trim());
 
 defineExpose({
   focus: () => searchInput.value?.focus(),
@@ -169,7 +175,33 @@ defineExpose({
           />
         </li>
         <li
-          v-if="options.length === 0"
+          v-if="searchValue.trim() && createOptionLabel"
+          data-testid="combobox-create-option"
+          class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-n-slate-11 transition-colors duration-150 hover:bg-n-alpha-2 hover:text-n-slate-12"
+          role="option"
+          tabindex="0"
+          :aria-label="`${createOptionLabel} ${searchValue.trim()}`"
+          aria-selected="false"
+          @click="createOption"
+          @keydown.enter.prevent="createOption"
+          @keydown.space.prevent="createOption"
+        >
+          <span
+            class="i-lucide-plus-circle size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span class="flex min-w-0 flex-1 items-center gap-1 text-left">
+            <span class="shrink-0">{{ createOptionLabel }}</span>
+            <span
+              data-testid="combobox-create-option-value"
+              class="min-w-0 truncate font-medium text-n-blue-11"
+            >
+              {{ searchValue.trim() }}
+            </span>
+          </span>
+        </li>
+        <li
+          v-else-if="options.length === 0"
           class="px-3 py-3 text-sm text-n-slate-11"
         >
           {{ emptyState || t('COMBOBOX.EMPTY_STATE') }}

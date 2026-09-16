@@ -19,7 +19,6 @@ describe('sidebarVisibility', () => {
     const itemKeys = SIDEBAR_VISIBILITY_ITEMS.map(item => item.key);
 
     expect(itemKeys).toEqual([
-      'Inbox',
       'Conversation',
       'Campaigns:MassBroadcasts',
       'Captain',
@@ -48,6 +47,7 @@ describe('sidebarVisibility', () => {
       ])
     );
     expect(itemKeys).not.toContain('Campaigns');
+    expect(itemKeys).not.toContain('Inbox');
     expect(itemKeys).not.toContain('Campaigns:Touches');
     expect(itemKeys).not.toContain('Campaigns:Templates');
     expect(itemKeys).not.toContain('Settings:Macros');
@@ -70,7 +70,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState.Conversation).toBe(true);
     expect(visibilityState['Conversation:Pipelines']).toBe(false);
     expect(visibilityState.Reports).toBe(false);
-    expect(visibilityState.Inbox).toBe(true);
+    expect(visibilityState.Inbox).toBeUndefined();
     expect(visibilityState.Settings).toBeUndefined();
     expect(visibilityState['Conversation:Statuses']).toBeUndefined();
   });
@@ -121,7 +121,6 @@ describe('sidebarVisibility', () => {
     ).toEqual([
       'Contacts',
       'Conversation',
-      'Inbox',
       'Campaigns:MassBroadcasts',
       'Captain',
       'Companies',
@@ -139,6 +138,7 @@ describe('sidebarVisibility', () => {
 
   it('applies saved top-level order after filtering visibility', () => {
     const items = [
+      { name: 'Inbox' },
       { name: 'Conversation' },
       { name: 'Contacts' },
       { name: 'Reports' },
@@ -150,6 +150,7 @@ describe('sidebarVisibility', () => {
         [SIDEBAR_ORDER_UI_SETTINGS_KEY]: [
           'Settings',
           'Contacts',
+          'Inbox',
           'Conversation',
           'Reports',
         ],
@@ -157,7 +158,33 @@ describe('sidebarVisibility', () => {
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       }).map(item => item.name)
-    ).toEqual(['Settings', 'Contacts', 'Conversation']);
+    ).toEqual(['Inbox', 'Settings', 'Contacts', 'Conversation']);
+  });
+
+  it('keeps notifications visible even when legacy settings hide them', () => {
+    const settings = {
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Inbox'],
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 19,
+    };
+
+    expect(getSidebarHiddenItems(settings)).toEqual([]);
+    expect(filterSidebarMenuItems([{ name: 'Inbox' }], settings)).toEqual([
+      { name: 'Inbox' },
+    ]);
+  });
+
+  it('keeps duplicate notification entries in their original order', () => {
+    const items = [
+      { name: 'Conversation' },
+      { id: 'primary', name: 'Inbox' },
+      { id: 'secondary', name: 'Inbox' },
+    ];
+
+    expect(filterSidebarMenuItems(items, {}).map(item => item.id)).toEqual([
+      'primary',
+      'secondary',
+      undefined,
+    ]);
   });
 
   it('locks hidden primary lists to All while hiding their other filters', () => {

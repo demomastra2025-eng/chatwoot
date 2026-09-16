@@ -3,7 +3,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
 export const SIDEBAR_ORDER_UI_SETTINGS_KEY = 'dashboard_sidebar_item_order';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 19;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 20;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -111,7 +111,6 @@ export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
 ]);
 
 export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
-  item('Inbox', 'SIDEBAR.INBOX'),
   item(
     'Conversation',
     'SIDEBAR.CONVERSATIONS',
@@ -502,8 +501,16 @@ export const filterSidebarMenuItems = (menuItems, uiSettings) => {
   );
 
   return filterItems(menuItems).sort((firstItem, secondItem) => {
-    const firstPosition = itemOrder.get(getItemKey(firstItem));
-    const secondPosition = itemOrder.get(getItemKey(secondItem));
+    const firstKey = getItemKey(firstItem);
+    const secondKey = getItemKey(secondItem);
+
+    // Notifications have a product-defined position and are not configurable.
+    if (firstKey === secondKey) return 0;
+    if (firstKey === 'Inbox') return -1;
+    if (secondKey === 'Inbox') return 1;
+
+    const firstPosition = itemOrder.get(firstKey);
+    const secondPosition = itemOrder.get(secondKey);
 
     if (
       typeof firstPosition === 'undefined' &&
