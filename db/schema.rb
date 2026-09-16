@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_16_091000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1418,6 +1418,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_091000) do
     t.string "event_type", null: false
     t.jsonb "meta", default: {}, null: false
     t.datetime "created_at", null: false
+    t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
     t.index ["account_id", "eventable_type", "eventable_id", "created_at"], name: "index_crm_events_on_account_eventable_created_at"
     t.index ["account_id"], name: "index_crm_events_on_account_id"
     t.index ["actor_id"], name: "index_crm_events_on_actor_id"
