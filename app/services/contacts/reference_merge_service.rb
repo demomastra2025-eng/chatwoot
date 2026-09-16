@@ -5,6 +5,7 @@ class Contacts::ReferenceMergeService
     'assignment_client_ownerships' => 'contact_id',
     'assignment_quota_usages' => 'contact_id',
     'calls' => 'contact_id',
+    'campaign_audience_recipients' => 'contact_id',
     'campaign_deliveries' => 'contact_id',
     'communication_threads' => 'contact_id',
     'confirmation_requests' => 'contact_id',
