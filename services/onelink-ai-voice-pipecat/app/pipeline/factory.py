@@ -18,6 +18,7 @@ from pipecat.frames.frames import (
     InterruptionWorkerFrame,
     LLMMessagesAppendFrame,
     LLMRunFrame,
+    SpeechOutputAudioRawFrame,
     TTSAudioRawFrame,
     TTSSpeakFrame,
 )
@@ -52,6 +53,7 @@ from pipecat.services.openai.realtime.events import (
     SessionProperties,
 )
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+from pipecat.services.openai.responses.llm import OpenAIResponsesLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 from pipecat.services.tts_service import TextAggregationMode
 from pipecat.transcriptions.language import Language
@@ -85,6 +87,7 @@ from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
 from app.services.gemini_stt import OneLinkGeminiSTTService
+from app.services.openai_live import OneLinkOpenAILiveLLMService
 from app.sessions.state import SessionState
 
 logger = logging.getLogger(__name__)
@@ -237,6 +240,10 @@ class PipelineAssembly:
                             )
                         )
                     )
+                elif self.provider == "openai-live" and isinstance(
+                    llm, OneLinkOpenAILiveLLMService
+                ):
+                    await llm.send_commentary(message)
                 else:
                     frame_type = (
                         OneLinkInternalTextFrame
@@ -337,6 +344,8 @@ class PipelineAssembly:
                         )
                     )
                 )
+            elif self.provider == "openai-live" and isinstance(llm, OneLinkOpenAILiveLLMService):
+                await llm.send_commentary(instruction)
             elif self.provider == "gemini-live":
                 await self.worker.queue_frame(OneLinkInternalTextFrame(text=instruction))
             else:
@@ -367,7 +376,7 @@ def build_pipeline(
     tool_dialogue = ToolDialogueCoordinator(ai=context.ai, state=state, activity=activity)
     tools = _build_tools(context, tool_dialogue)
     end_call_definition = next((tool for tool in context.tools if tool.name == "end_call"), None)
-    initial_messages = [{"role": "user", "content": _initial_turn(context)}]
+    initial_messages = _initial_messages(context)
     vad = SileroVADAnalyzer(
         sample_rate=16_000,
         params=VADParams(
@@ -445,18 +454,14 @@ def build_pipeline(
                 ),
                 thinking=cast(
                     Any,
-                    ThinkingConfig(
-                        thinking_level=ThinkingLevel(context.ai.thinking_level.upper())
-                    )
+                    ThinkingConfig(thinking_level=ThinkingLevel(context.ai.thinking_level.upper()))
                     if context.ai.model in GEMINI_THINKING_LEVEL_MODELS
                     else None,
                 ),
                 enable_affective_dialog=affective_dialog_enabled,
                 proactivity=cast(
                     Any,
-                    ProactivityConfig(proactive_audio=True)
-                    if proactive_audio_enabled
-                    else None,
+                    ProactivityConfig(proactive_audio=True) if proactive_audio_enabled else None,
                 ),
             ),
             inference_on_context_initialization=True,
@@ -480,7 +485,7 @@ def build_pipeline(
             ]
         )
         start_on_connect = True
-    elif context.ai.provider == "openai-realtime":
+    elif context.ai.provider in {"openai-live", "openai-realtime"}:
         llm_context = LLMContext(messages=cast(Any, initial_messages), tools=tools)
         aggregators = _aggregators(
             llm_context,
@@ -488,32 +493,57 @@ def build_pipeline(
             activity,
             vad,
             ai=context.ai,
+            realtime_service_mode=context.ai.provider == "openai-realtime",
         )
-        llm = OpenAIRealtimeLLMService(
-            api_key=credentials["openai_api_key"],
-            settings=OpenAIRealtimeLLMService.Settings(
-                model=context.ai.model,
+        if context.ai.provider == "openai-live":
+            backend_settings = OpenAIResponsesLLMService.Settings(
+                model=context.ai.delegation_model,
                 system_instruction=_provider_system_prompt(context),
-                temperature=context.ai.temperature,
-                max_tokens=context.ai.max_output_tokens,
-                session_properties=SessionProperties(
-                    output_modalities=["audio"],
-                    max_output_tokens=context.ai.max_output_tokens,
-                    audio=AudioConfiguration(
-                        input=AudioInput(
-                            transcription=InputAudioTranscription(
-                                language=context.ai.language.split("-", 1)[0].lower()
+                max_completion_tokens=context.ai.max_output_tokens,
+                reasoning=OpenAIResponsesLLMService.ReasoningConfig(
+                    effort=context.ai.thinking_level
+                ),
+            )
+            llm = OneLinkOpenAILiveLLMService(
+                api_key=credentials["openai_api_key"],
+                settings=OneLinkOpenAILiveLLMService.Settings(
+                    model=context.ai.model,
+                    system_instruction=_provider_system_prompt(context),
+                    voice=context.ai.voice,
+                ),
+                delegation=OneLinkOpenAILiveLLMService.ResponsesDelegation(
+                    settings=backend_settings
+                ),
+            )
+        else:
+            llm = OpenAIRealtimeLLMService(
+                api_key=credentials["openai_api_key"],
+                settings=OpenAIRealtimeLLMService.Settings(
+                    model=context.ai.model,
+                    system_instruction=_provider_system_prompt(context),
+                    temperature=context.ai.temperature,
+                    max_tokens=context.ai.max_output_tokens,
+                    session_properties=SessionProperties(
+                        output_modalities=["audio"],
+                        max_output_tokens=context.ai.max_output_tokens,
+                        audio=AudioConfiguration(
+                            input=AudioInput(
+                                transcription=InputAudioTranscription(
+                                    language=context.ai.language.split("-", 1)[0].lower()
+                                ),
+                                turn_detection=False,
+                                noise_reduction=InputAudioNoiseReduction(type="near_field"),
                             ),
-                            turn_detection=False,
-                            noise_reduction=InputAudioNoiseReduction(type="near_field"),
+                            output=AudioOutput(voice=context.ai.voice),
                         ),
-                        output=AudioOutput(voice=context.ai.voice),
                     ),
                 ),
-            ),
-        )
+            )
         input_resampler = AudioResampleProcessor(InputAudioRawFrame, 24_000)
-        output_resampler = AudioResampleProcessor(TTSAudioRawFrame, 8_000)
+        output_frame_type = (
+            SpeechOutputAudioRawFrame if context.ai.provider == "openai-live" else TTSAudioRawFrame
+        )
+        output_resampler = AudioResampleProcessor(output_frame_type, 8_000)
         processors = [
             transport.input(),
             InputRecordingProcessor(recorder),
@@ -1005,6 +1035,14 @@ def _initial_turn(context: VoiceContext) -> str:
             f"без добавления нового содержания: {context.ai.first_message}"
         )
     return "Начни разговор с абонентом сейчас согласно системным инструкциям."
+
+
+def _initial_messages(context: VoiceContext) -> list[dict[str, str]]:
+    # OpenAI Live treats a trailing developer message as the instruction to
+    # open the session aloud. Other providers retain their existing synthetic
+    # user turn, which already drives their initial response.
+    role = "developer" if context.ai.provider == "openai-live" else "user"
+    return [{"role": role, "content": _initial_turn(context)}]
 
 
 def _provider_system_prompt(context: VoiceContext) -> str:

@@ -265,7 +265,7 @@ describe Messages::Instagram::Messenger::MessageBuilder do
       expect(instagram_messenger_inbox.conversations.last.id).to eq(existing_conversation.id)
     end
 
-    it 'creates a new conversation if last conversation is resolved' do
+    it 'reuses the persistent conversation if the legacy lock flag is disabled' do
       message = dm_params[:entry][0]['messaging'][0]
       sender_id = message['sender']['id']
       contact = create_instagram_contact_for_sender(sender_id, instagram_messenger_inbox)
@@ -284,8 +284,8 @@ describe Messages::Instagram::Messenger::MessageBuilder do
 
       instagram_messenger_inbox.reload
 
-      expect(instagram_messenger_inbox.conversations.last.id).not_to eq(existing_conversation.id)
-      expect(Conversation.count).to eq(inital_count + 1)
+      expect(instagram_messenger_inbox.conversations.last.id).to eq(existing_conversation.id)
+      expect(Conversation.count).to eq(inital_count)
     end
   end
 

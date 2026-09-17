@@ -58,6 +58,27 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response_body['payload'].pluck('id')).to eq([contact.id])
     end
+  it 'loads one account-scoped contact by id with structured name fields' do
+    target = create(
+      :contact,
+      account: account,
+      name: 'Ivan',
+      last_name: 'Ivanov',
+      middle_name: 'Ivanovich'
+    )
+    create(:contact, account: account, name: 'Other')
+
+    get path, params: { contact_id: target.id }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:success)
+    expect(response_body['payload']).to contain_exactly(
+      hash_including(
+        'id' => target.id,
+        'first_name' => 'Ivan',
+        'last_name' => 'Ivanov',
+        'middle_name' => 'Ivanovich'
+      )
+    )
   end
 
   it 'creates contacts with a valid IIN and stores it as identifier' do
@@ -311,4 +332,5 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     )
     expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
+end
 end

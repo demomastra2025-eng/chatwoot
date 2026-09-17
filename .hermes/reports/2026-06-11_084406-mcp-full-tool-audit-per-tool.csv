@@ -188,7 +188,6 @@ get_contact,captain,low,false,contact_id,1,yes,n/a,A,native/clear enough; runtim
 get_conversation,captain,low,false,conversation_id,1,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 get_deal,captain,low,false,deal_id,1,yes,n/a,A,short-description
 get_deal_timeline,captain,low,false,deal_id,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
-get_kaspi_pay_integration_status,captain,low,false,,0,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 get_recent_account_errors,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 get_scheduling_resource_availability,captain,low,false,resource_id;from;to,6,yes,n/a,A,raw Specialist not found for invalid/missing resource
 get_scheduling_resource_schedule,captain,low,false,resource_id;from;to,6,yes,n/a,A,raw Specialist not found for invalid/missing resource
@@ -230,10 +229,8 @@ search_linear_issues,captain,low,false,term,2,yes,n/a,C,exposed-but-inactive/not
 search_scheduling_resources,captain,low,false,,5,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 search_scheduling_services,captain,low,false,,3,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 search_tasks,captain,low,false,,7,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
-send_kaspi_pay_phone,captain,medium,true,process_id;phone_number;_confirm,3,yes,pass,A,no-confirm gate OK
 send_message_to_conversation,captain,high,true,_confirm,13,yes,pass,A,no-confirm gate OK
 send_notification,captain,medium,true,message;_confirm,8,yes,pass,A,no-confirm gate OK
-start_kaspi_pay_connection,captain,medium,true,_confirm,1,yes,pass,A,no-confirm gate OK
 trace_ai_response,captain,low,false,,8,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 trace_message_delivery,captain,low,false,conversation_id,2,yes,n/a,A,native/clear enough; runtime call passed or expected safe empty/not_found result
 transition_deal_stage,captain,high,false,_confirm,7,yes,pass,A,no-confirm gate OK
@@ -246,4 +243,3 @@ update_label,captain,medium,true,label_id;_confirm,6,yes,pass,A,no-confirm gate 
 update_priority,captain,medium,true,priority;_confirm,2,yes,pass,C,no-confirm gate OK; exposed-but-inactive/not-active
 update_task,captain,medium,true,_confirm,7,yes,pass,A,no-confirm gate OK
 update_webhook,captain,high,true,webhook_id;_confirm,6,yes,pass,A,no-confirm gate OK
-verify_kaspi_pay_otp,captain,high,true,process_id;otp;_confirm,7,yes,pass,A,no-confirm gate OK

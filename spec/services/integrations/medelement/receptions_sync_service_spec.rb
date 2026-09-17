@@ -34,7 +34,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       timezone: 'Asia/Almaty',
       custom_attributes: {
         'medelement_specialist_code' => '27492901726817790',
-        'medelement_cabinets' => [{ 'companyCabinetCode' => '37413011726129875' }]
+        'medelement_cabinets' => [{ 'company_cabinet_code' => '37413011726129875' }]
       }
     )
   end

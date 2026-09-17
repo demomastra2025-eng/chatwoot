@@ -12,7 +12,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
   before_action :render_pending_deletion_response,
-                only: [:update, :avatar, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
+                only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
                        :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
   before_action :render_pending_deletion_diagnostics,
                 only: [:whatsapp_web_diagnostics]
@@ -82,7 +82,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   rescue TelegramPersonal::GatewayClient::GatewayError => e
     render json: { error: e.message }, status: :unprocessable_content
   end
-
 
   def reset_secret
     return head :not_found unless @inbox.api?
@@ -497,8 +496,13 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     attrs = channel_params.to_h.with_indifferent_access
     return attrs if attrs[:provider_config].blank?
 
+    incoming_provider_config = attrs[:provider_config].to_h.deep_stringify_keys
     provider_config = @inbox.channel.provider_config.to_h.deep_stringify_keys
-    attrs[:provider_config] = provider_config.deep_merge(attrs[:provider_config].to_h.deep_stringify_keys)
+    if incoming_provider_config['binotel_events_webhook_token'].present?
+      incoming_provider_config.delete('binotel_webhook_token')
+      provider_config.delete('binotel_webhook_token')
+    end
+    attrs[:provider_config] = provider_config.deep_merge(incoming_provider_config)
     attrs
   end
 

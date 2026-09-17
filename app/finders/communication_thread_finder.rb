@@ -125,6 +125,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     { count: thread_counts }
   end
 
+  def perform_sidebar_unread_counts
+    validate_params!
+    unread_counts
+  end
+
   def perform_scope
     set_up
     filter_by_assignee_type
@@ -166,20 +171,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def find_accessible_threads
-    account_threads = CommunicationThread.where(account_id: current_account.id)
-    @communication_threads = if access_role_enforced?
-                               visible_thread_scope
-                             else
-                               linked_thread_ids = CommunicationThreadConversation
-                                                   .where(
-                                                     account_id: current_account.id,
-                                                     conversation_id: accessible_conversations.select(:id)
-                                                   )
-                                                   .select(:communication_thread_id)
-                               account_threads.where(id: linked_thread_ids).or(
-                                 account_threads.where(id: participating_thread_ids)
-                               )
-                             end
+    @communication_threads = base_thread_scope
     @communication_threads = @communication_threads.where(id: participating_thread_ids) if params[:conversation_type] == 'participating'
     @communication_threads = @communication_threads.left_joins(:communication_thread_conversations).distinct
   end
@@ -386,9 +378,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def status_unread_counts
     scope = scoped_thread_relation(include_status: false, include_assignee: true, include_unread: false)
 
-    STATUS_COUNT_KEYS.index_with do |status|
-      unread_thread_count(apply_status_filter(scope, status))
-    end
+    CommunicationThreads::UnreadStatusCountService.new(
+      account: current_account,
+      thread_scope: unread_thread_scope(scope),
+      conversation_scope: accessible_conversations
+    ).perform
   end
 
   def channel_unread_counts
@@ -453,9 +447,37 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_thread_scope(scope)
-    CommunicationThread
-      .where(id: scope.except(:order).select(:id))
-      .where('communication_threads.unread_count > 0')
+    unread_conversations = Conversations::UnreadScopeBuilder.new(
+      scope: accessible_conversations,
+      account: current_account,
+      user: current_user
+    ).perform.select(:id)
+    base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
+    base_scope.where(id: thread_ids_for_conversations(unread_conversations)).or(legacy_unread_thread_scope(base_scope))
+  end
+
+  def legacy_unread_thread_scope(scope)
+    user_states = ConversationUserReadState.where(
+      account_id: current_account.id,
+      user_id: current_user.id
+    ).select(:conversation_id)
+    legacy_scope = scope.where('communication_threads.unread_count > 0')
+                        .where.not(id: thread_ids_for_conversations(user_states))
+    return legacy_scope if policy_user_context[:account_user]&.administrator?
+
+    legacy_inbox_thread_ids = CommunicationThreadConversation
+                              .where(
+                                account_id: current_account.id,
+                                inbox_id: current_user.inboxes.where(account_id: current_account.id).select(:id)
+                              )
+                              .select(:communication_thread_id)
+    legacy_scope.where(id: legacy_inbox_thread_ids).or(legacy_scope.where(id: participating_thread_ids))
+  end
+
+  def thread_ids_for_conversations(conversations)
+    CommunicationThreadConversation
+      .where(account_id: current_account.id, conversation_id: conversations)
+      .select(:communication_thread_id)
   end
 
   def normalize_counts(counts)
@@ -484,9 +506,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def base_thread_scope
-    CommunicationThread
-      .where(account_id: current_account.id)
-      .where(id: linked_thread_ids)
+    return visible_thread_scope if access_role_enforced?
+
+    account_threads = CommunicationThread.where(account_id: current_account.id)
+    account_threads.where(id: linked_thread_ids).or(account_threads.where(id: participating_thread_ids))
   end
 
   def linked_thread_ids(conversation_ids: accessible_conversations.select(:id), inbox_id: nil)

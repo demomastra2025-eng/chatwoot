@@ -191,14 +191,14 @@ RSpec.describe Tiktok::MessageService do
     context 'when lock_to_single_conversation is disabled' do
       let(:current_content) { text_content.merge(message_id: 'tt-msg-lock-2') }
 
-      it 'creates a new conversation if the previous one is resolved' do
+      it 'reuses the persistent conversation if the legacy lock flag is disabled' do
         inbox.update!(lock_to_single_conversation: false)
-        create(:conversation, inbox: inbox, contact: contact, contact_inbox: contact_inbox, status: :resolved)
+        resolved_conversation = create(:conversation, inbox: inbox, contact: contact, contact_inbox: contact_inbox, status: :resolved)
 
         perform_text_message
 
-        expect(inbox.conversations.count).to eq(2)
-        expect(inbox.conversations.last.messages.last.content).to eq('Hello from TikTok')
+        expect(inbox.conversations.count).to eq(1)
+        expect(resolved_conversation.reload.messages.last.content).to eq('Hello from TikTok')
       end
     end
   end

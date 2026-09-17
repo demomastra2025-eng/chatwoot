@@ -150,6 +150,7 @@ const BROWSER_SIP_PROVIDERS = new Set([
   'sipuni',
   'binotel',
   'beeline',
+  'wazo',
 ]);
 
 const isBrowserSipInbox = inbox => BROWSER_SIP_PROVIDERS.has(inbox?.provider);

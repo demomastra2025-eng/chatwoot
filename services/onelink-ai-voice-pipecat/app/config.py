@@ -24,7 +24,7 @@ class Settings(BaseModel):
     fish_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
     callback_base_url: AnyHttpUrl | None = None
     realtime_provider: Literal[
-        "gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"
+        "gemini-live", "openai-live", "openai-realtime", "elevenlabs", "cartesia", "fish"
     ] = "gemini-live"
     elevenlabs_stt_model: str = "scribe_v2_realtime"
     gemini_stt_model: str = "gemini-3.5-transcribe-live"
@@ -85,7 +85,14 @@ class Settings(BaseModel):
             )
             or None,
             realtime_provider=cast(
-                Literal["gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"],
+                Literal[
+                    "gemini-live",
+                    "openai-live",
+                    "openai-realtime",
+                    "elevenlabs",
+                    "cartesia",
+                    "fish",
+                ],
                 os.getenv("ONELINK_AI_VOICE_PIPECAT_REALTIME_PROVIDER", "gemini-live"),
             ),
             elevenlabs_stt_model=os.getenv(
@@ -152,6 +159,7 @@ class Settings(BaseModel):
         """Return only the credentials required by the selected session provider."""
         credentials = {
             "gemini-live": {"gemini_api_key": self.gemini_api_key.get_secret_value().strip()},
+            "openai-live": {"openai_api_key": self.openai_api_key.get_secret_value().strip()},
             "openai-realtime": {"openai_api_key": self.openai_api_key.get_secret_value().strip()},
             "elevenlabs": {
                 "elevenlabs_api_key": self.elevenlabs_api_key.get_secret_value().strip(),
@@ -193,6 +201,22 @@ class Settings(BaseModel):
         if self.callback_base_url is None:
             errors.append("callback_base_url_required")
         return tuple(errors)
+
+    @property
+    def provider_readiness(self) -> dict[str, bool]:
+        """Expose credential availability per provider without leaking values."""
+
+        def configured(*credentials: SecretStr) -> bool:
+            return all(credential.get_secret_value().strip() for credential in credentials)
+
+        return {
+            "gemini-live": configured(self.gemini_api_key),
+            "openai-live": configured(self.openai_api_key),
+            "openai-realtime": configured(self.openai_api_key),
+            "elevenlabs": configured(self.elevenlabs_api_key, self.openrouter_api_key),
+            "cartesia": configured(self.cartesia_api_key, self.openrouter_api_key),
+            "fish": configured(self.fish_api_key, self.openrouter_api_key),
+        }
 
     @property
     def ready(self) -> bool:

@@ -1,6 +1,6 @@
 class Webhooks::WhatsappIngressDispatchJob < ApplicationJob
   queue_as :whatsapp_inbound
-  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 1.second, attempts: :unlimited
+  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: Whatsapp::WabaLock::RETRY_WAIT, attempts: :unlimited
 
   def self.perform_later!(*)
     job = perform_later(*)

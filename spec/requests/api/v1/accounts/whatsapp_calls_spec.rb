@@ -60,6 +60,28 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
     end
   end
 
+  describe 'POST /upload_recording' do
+    it 'does not enqueue transcription when workspace call transcription is disabled' do
+      call.update!(status: 'completed')
+      account.update!(call_transcriptions: false)
+      upload_file = Tempfile.new(['whatsapp-recording', '.ogg'])
+      upload_file.binmode
+      upload_file.write('recording')
+      upload_file.rewind
+      allow(Whatsapp::CallMessageBuilder).to receive(:update_recording_url!)
+      expect(Whatsapp::CallTranscriptionJob).not_to receive(:perform_later)
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/upload_recording",
+           params: { recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/ogg', true) },
+           headers: headers
+
+      expect(response).to have_http_status(:ok)
+    ensure
+      upload_file&.close
+      upload_file&.unlink
+    end
+  end
+
   describe 'core call endpoints' do
     let(:provider_service) { double('provider_service') }
 

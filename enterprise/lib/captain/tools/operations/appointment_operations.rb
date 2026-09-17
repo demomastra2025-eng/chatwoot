@@ -1,17 +1,12 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
-  def cancel_current_appointment
+  def cancel_current_appointment(appointment_id: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
+    appointment = target_appointment(appointment_id)
 
-    authorize_appointment!(current_appointment, :transition?)
+    authorize_appointment!(appointment, :transition?)
 
-    ::Scheduling::Appointments::UpsertService.new(
-      account: account,
-      params: {
-        status: 'cancelled',
-        payment_status: 'cancelled'
-      },
-      appointment: current_appointment,
+    ::Scheduling::Appointments::CancelService.new(
+      appointment: appointment,
       actor: actor
     ).perform
   end
@@ -32,11 +27,11 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       contact_id: current_contact&.id,
       company_id: current_company&.id,
       conversation_id: conversation&.id,
-      created_by_id: actor&.id,
+      created_by_id: (actor.id if actor.is_a?(User)),
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 
-    with_idempotent_creation('create_appointment', create_params) do
+    appointment = with_idempotent_creation('create_appointment', create_params) do
       ::Scheduling::Appointments::UpsertService.new(
         account: account,
         params: create_params,
@@ -44,12 +39,13 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
         required_capabilities: ['create']
       ).perform
     end
+    attach_provider_command_receipt(appointment)
   end
 
-  def update_current_appointment(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
-                                 client_comment: nil, custom_attributes: nil)
+  def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
+                                 appointment_type: nil, client_comment: nil, custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
+    appointment = target_appointment(appointment_id)
 
     params = {}
     params[:resource_id] = resource_id unless resource_id.nil?
@@ -61,12 +57,12 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     params[:client_comment] = client_comment unless client_comment.nil?
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
-    authorize_appointment_update!(current_appointment, params)
+    authorize_appointment_update!(appointment, params)
 
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: params,
-      appointment: current_appointment,
+      appointment: appointment,
       actor: actor,
       required_capabilities: appointment_update_capabilities(params)
     ).perform
@@ -90,6 +86,45 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def target_appointment(appointment_id)
+    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+
+    if appointment_id.nil? && current_appointment.present?
+      return current_appointment if current_appointment.account_id == account.id
+
+      raise ArgumentError, 'Current appointment is not available'
+    end
+
+    appointments = account.scheduling_appointments.where(conversation_id: conversation.id)
+    return explicit_target_appointment(appointments, appointment_id) unless appointment_id.nil?
+
+    compatible_appointments = appointments.limit(2).to_a
+    raise ArgumentError, 'Current appointment is not available' if compatible_appointments.empty?
+    raise ArgumentError, 'appointment_id is required when the conversation has multiple appointments' if compatible_appointments.many?
+
+    compatible_appointments.first
+  end
+
+  def explicit_target_appointment(appointments, appointment_id)
+    appointment_id = required_positive_id(appointment_id, field_name: 'appointment_id')
+    appointment = appointments.find_by(id: appointment_id)
+    raise ArgumentError, 'Appointment is not available for the current conversation' if appointment.blank?
+
+    appointment
+  end
+
+  def attach_provider_command_receipt(appointment)
+    return appointment if appointment.medelement_provider_command_receipt.present?
+    return appointment if appointment.resource&.custom_attributes.to_h['medelement_specialist_code'].blank?
+
+    Integrations::Medelement::AppointmentProviderCommandReceiptLookupService.new(
+      account: account,
+      appointment: appointment,
+      operation: 'create_reception'
+    ).perform
+    appointment
+  end
 
   def authorize_appointment_update!(appointment, params)
     authorize_appointment!(appointment, :assign?) if params.key?(:resource_id)

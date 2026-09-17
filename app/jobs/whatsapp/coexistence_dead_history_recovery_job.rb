@@ -9,7 +9,7 @@ class Whatsapp::CoexistenceDeadHistoryRecoveryJob < MutexApplicationJob
   RECOVERY_INTERVAL = 5.seconds
   RECOVERY_LOCK_TIMEOUT = 30.minutes
 
-  queue_as :whatsappweb_history
+  queue_as :whatsapp_coexistence_history
 
   class << self
     def start(channel_id)

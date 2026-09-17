@@ -38,25 +38,10 @@ class Inboxes::ConversationPolicyNormalizer
   def expected_value_sql
     @expected_value_sql ||= <<~SQL.squish
       CASE
-        WHEN channel_type IN (#{quoted_messenger_channel_types}) THEN TRUE
-        WHEN channel_type = 'Channel::TwilioSms'
-             AND EXISTS (
-               SELECT 1
-               FROM channel_twilio_sms
-               WHERE channel_twilio_sms.id = inboxes.channel_id
-                 AND channel_twilio_sms.medium = #{twilio_whatsapp_medium}
-             ) THEN TRUE
-        ELSE FALSE
+        WHEN channel_type = 'Channel::Email' THEN FALSE
+        ELSE TRUE
       END
     SQL
-  end
-
-  def quoted_messenger_channel_types
-    Inbox::DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES.map { |channel_type| connection.quote(channel_type) }.join(', ')
-  end
-
-  def twilio_whatsapp_medium
-    connection.quote(Channel::TwilioSms.defined_enums.fetch('medium').fetch('whatsapp'))
   end
 
   def connection

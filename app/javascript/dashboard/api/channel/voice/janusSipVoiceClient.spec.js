@@ -2218,6 +2218,36 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('applies the configured Kazakhstan trunk format to Wazo calls', async () => {
+    const nationalNumber = '1234567890';
+    await JanusSipVoiceClient.initializeDevice(
+      {
+        ...asteriskAnalogSession,
+        provider: 'wazo',
+        sip: {
+          ...asteriskAnalogSession.sip,
+          host: 'wazo.example.kz',
+          outboundDialFormat: 'kz_trunk',
+        },
+      },
+      { inboxId: 4771 }
+    );
+
+    await JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      toNumber: `+7${nationalNumber}`,
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'call',
+          uri: `sip:8${nationalNumber}@wazo.example.kz`,
+        }),
+      })
+    );
+  });
+
   it('supports E.164 dialing for Asterisk analog profiles', async () => {
     await JanusSipVoiceClient.initializeDevice(
       {

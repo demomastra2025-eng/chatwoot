@@ -60,6 +60,10 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     Array(value.to_s.split(',')).map(&:strip).reject(&:blank?)
   end
 
+  def parse_id_list_param!(value, field_name:)
+    Scheduling::IdListParamParser.parse(value, field_name: field_name)
+  end
+
   def parse_datetime_param!(value, field_name:, required: true)
     if value.blank?
       raise ArgumentError, "#{field_name} is required" if required

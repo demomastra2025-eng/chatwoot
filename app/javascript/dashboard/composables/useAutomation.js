@@ -260,6 +260,7 @@ export function useAutomation(startValue = null) {
     [
       'appointment_created',
       'appointment_updated',
+      'appointment_rescheduled',
       'appointment_cancelled',
       'appointment_completed',
     ].forEach(eventToUpdate => {

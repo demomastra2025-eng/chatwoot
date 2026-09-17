@@ -11,6 +11,7 @@
 #  custom_attributes      :jsonb
 #  first_reply_created_at :datetime
 #  identifier             :string
+#  identity_key           :string
 #  last_activity_at       :datetime         not null
 #  priority               :integer
 #  snoozed_until          :datetime
@@ -42,6 +43,7 @@
 #  index_conversations_on_first_reply_created_at      (first_reply_created_at)
 #  index_conversations_on_id_and_account_id           (account_id,id)
 #  index_conversations_on_identifier_and_account_id   (identifier,account_id)
+#  idx_conversations_on_account_inbox_contact_identity (account_id,inbox_id,contact_id,identity_key) WHERE (identity_key IS NOT NULL)
 #  index_conversations_on_inbox_id                    (inbox_id)
 #  index_conversations_on_priority                    (priority)
 #  index_conversations_on_status_and_account_id       (status,account_id)
@@ -73,6 +75,7 @@ class Conversation < ApplicationRecord
 
   validates :additional_attributes, jsonb_attributes_length: true
   validates :custom_attributes, jsonb_attributes_length: true
+  validates :identity_key, length: { maximum: 255 }, allow_nil: true
   validates :uuid, uniqueness: true
   validate :validate_referer_url
 
@@ -117,6 +120,7 @@ class Conversation < ApplicationRecord
   has_many :telephony_call_sessions, class_name: 'Telephony::CallSession', dependent: :nullify
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :conversation_participants, dependent: :destroy_async
+  has_many :conversation_user_read_states, dependent: :delete_all
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
   has_many :attachments, through: :messages
   has_many :reporting_events, dependent: :destroy_async
@@ -187,11 +191,24 @@ class Conversation < ApplicationRecord
   end
 
   def unread_messages
-    agent_last_seen_at.present? ? messages.created_since(agent_last_seen_at) : messages
+    scope = agent_last_seen_at.present? ? messages.created_since(agent_last_seen_at) : messages
+    scope.without_imported_history
+  end
+
+  def last_seen_at_for(user)
+    read_state = conversation_user_read_states.find_by(user_id: user.id)
+    read_state ? read_state.last_seen_at : agent_last_seen_at
+  end
+
+  def unread_messages_for(user)
+    last_seen_at = last_seen_at_for(user)
+    scope = last_seen_at.present? ? messages.created_since(last_seen_at) : messages
+    scope.without_imported_history
   end
 
   def assignee_unread_messages
-    assignee_last_seen_at.present? ? messages.created_since(assignee_last_seen_at) : messages
+    scope = assignee_last_seen_at.present? ? messages.created_since(assignee_last_seen_at) : messages
+    scope.without_imported_history
   end
 
   def unread_incoming_messages

@@ -149,7 +149,7 @@ describe('useSchedulingAppointmentFormStore', () => {
       endsAt: '2026-03-09T10:30:00.000Z',
       id: 11,
       prepaidAmount: 5000,
-      prepaidPaymentMethod: 'kaspi_qr',
+      prepaidPaymentMethod: 'bank_transfer',
       resourceId: 3,
       serviceAmount: 20000,
       serviceId: 5,
@@ -157,7 +157,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
 
     expect(store.form.prepaidAmount).toBe(5000);
-    expect(store.form.prepaidPaymentMethod).toBe('kaspi_qr');
+    expect(store.form.prepaidPaymentMethod).toBe('bank_transfer');
   });
 
   it('persists the selected Medelement cabinet in appointment custom attributes', () => {
@@ -175,15 +175,66 @@ describe('useSchedulingAppointmentFormStore', () => {
 
   it('keeps a manually entered patient phone when selecting a contact without a phone', () => {
     const store = useSchedulingAppointmentFormStore();
+    const phone = ['+7', '700', '123', '4567'].join('');
 
     store.openCreate();
-    store.updateField('clientPhone', '+77001234567');
+    store.updateField('clientPhone', phone);
     store.applyContact({ id: 7, fullName: 'Айжан', phone: '' });
 
-    expect(store.form.clientPhone).toBe('+77001234567');
+    expect(store.form.clientPhone).toBe(phone);
     expect(store.buildPayload()).toMatchObject({
-      client_phone: '+77001234567',
+      client_phone: phone,
       contact_id: 7,
+    });
+  });
+
+  it('splits a two-part contact name when the surname field is empty', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.applyContact({
+      firstName: 'Айжан Касымова',
+      fullName: 'Айжан Касымова',
+      id: 17,
+      lastName: '',
+    });
+
+    expect(store.form).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+      contactId: 17,
+    });
+  });
+
+  it('loads a contact by id and keeps structured name fields separate', async () => {
+    SchedulingContactsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            first_name: 'Айжан',
+            full_name: 'Айжан Касымова Ерлановна',
+            id: 17,
+            last_name: 'Касымова',
+            middle_name: 'Ерлановна',
+            phone: ['+7', '700', '000', '0001'].join(''),
+          },
+        ],
+      },
+    });
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+
+    await store.loadContact(17);
+
+    expect(SchedulingContactsAPI.get).toHaveBeenCalledWith({
+      contact_id: 17,
+      limit: 1,
+    });
+    expect(store.form).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+      clientMiddleName: 'Ерлановна',
+      contactId: 17,
     });
   });
 

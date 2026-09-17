@@ -400,18 +400,12 @@ class Whatsapp::IncomingCallService
     }.compact
   end
 
-  def find_or_create_conversation(contact, contact_inbox)
+  def find_or_create_conversation(_contact, contact_inbox)
     return unless contact_inbox
 
-    conversation = contact_inbox.conversations.where.not(status: :resolved).last
-    return conversation if conversation
-
-    ::Conversation.create!(
-      account_id: inbox.account_id,
-      inbox: inbox,
-      contact: contact,
+    Conversations::IdentityResolver.resolve_primary!(
       contact_inbox: contact_inbox,
-      additional_attributes: { channel: 'whatsapp' }
+      attributes: { additional_attributes: { channel: 'whatsapp' } }
     )
   end
 

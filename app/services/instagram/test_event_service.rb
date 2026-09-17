@@ -27,7 +27,10 @@ class Instagram::TestEventService
 
     @contact = create_test_contact
 
-    @conversation ||= create_test_conversation(conversation_params)
+    @conversation ||= Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: @contact_inbox,
+      attributes: conversation_params
+    )
 
     @message = @conversation.messages.create!(test_message_params)
   end
@@ -43,10 +46,6 @@ class Instagram::TestEventService
     @contact_inbox.contact
   end
 
-  def create_test_conversation(conversation_params)
-    Conversation.find_by(conversation_params) || build_conversation(conversation_params)
-  end
-
   def test_message_params
     {
       account_id: @conversation.account_id,
@@ -56,14 +55,6 @@ class Instagram::TestEventService
       content: @messaging[:message][:text],
       sender: @contact
     }
-  end
-
-  def build_conversation(conversation_params)
-    Conversation.create!(
-      conversation_params.merge(
-        contact_inbox_id: @contact_inbox.id
-      )
-    )
   end
 
   def conversation_params

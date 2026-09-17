@@ -1,7 +1,7 @@
 class Whatsapp::CoexistenceSyncReconciliationJob < ApplicationJob
   WAIT_INTERVAL = 15.minutes
 
-  queue_as :whatsappweb_history
+  queue_as :whatsapp_coexistence_history
 
   retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 1.second, attempts: 8
   discard_on ActiveRecord::RecordNotFound

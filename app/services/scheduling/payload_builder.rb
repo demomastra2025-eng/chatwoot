@@ -6,11 +6,11 @@ module Scheduling::PayloadBuilder
 
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil, include_finance: true)
+  def appointment(appointment, payments: nil, expense_record: nil, include_finance: true, dialog_context: nil)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
-    legacy_chat_conversation = conversation || appointment_chat_conversation(appointment)
-    legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation)
+    legacy_chat_conversation = conversation || appointment_chat_conversation(appointment, dialog_context)
+    legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation, dialog_context)
 
     payload = {
       id: appointment.id,
@@ -76,16 +76,28 @@ module Scheduling::PayloadBuilder
                end,
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
-    }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment))
+    }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).tap do |result|
+      receipt = Integrations::Medelement::ProviderCommandReceiptBuilder.build(
+        command: appointment.medelement_provider_command_receipt
+      )
+      result[:provider_command_receipt] = receipt if receipt.present?
+    end
 
     include_finance ? payload : payload.except(*APPOINTMENT_FINANCE_KEYS)
+  end
+
+  def appointments(records, include_finance: true)
+    dialog_context = Scheduling::AppointmentDialogContextLoader.new(records).perform
+    records.map { |record| appointment(record, include_finance: include_finance, dialog_context: dialog_context) }
   end
 
   def available_conversation(conversation)
     conversation if conversation&.inbox.present?
   end
 
-  def appointment_chat_conversation(appointment)
+  def appointment_chat_conversation(appointment, dialog_context = nil)
+    return dialog_context.dig(appointment.id, :chat_conversation) if dialog_context&.key?(appointment.id)
+
     thread = appointment_communication_thread(appointment, nil)
     return thread_primary_conversation(thread) if thread.present?
 
@@ -97,7 +109,9 @@ module Scheduling::PayloadBuilder
                .first
   end
 
-  def appointment_communication_thread(appointment, chat_conversation)
+  def appointment_communication_thread(appointment, chat_conversation, dialog_context = nil)
+    return dialog_context.dig(appointment.id, :communication_thread) if dialog_context&.key?(appointment.id)
+
     return appointment.conversation.communication_thread if appointment.conversation.present?
     return chat_conversation.communication_thread if chat_conversation&.communication_thread.present?
     return if chat_conversation.present?

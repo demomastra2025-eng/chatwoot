@@ -114,7 +114,12 @@ describe('useGoToCommandHotKeys', () => {
         cmd.id.includes('team_settings') ||
         cmd.id.includes('inbox_settings')
     );
+    const labelSettingsCommand = goToCommandHotKeys.value.find(cmd =>
+      cmd.id.includes('label_settings')
+    );
+
     expect(adminOnlyCommands.length).toBe(0);
+    expect(labelSettingsCommand).toBeDefined();
   });
 
   it('should include commands for both admin and agent roles when user is admin', () => {

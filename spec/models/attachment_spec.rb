@@ -339,13 +339,6 @@ RSpec.describe Attachment do
   end
 
   describe 'audio transcription enqueue' do
-    before do
-      allow(message.account).to receive(:feature_enabled?).and_call_original
-      allow(message.account).to receive(:feature_enabled?).with('captain_integration').and_return(captain_enabled)
-    end
-
-    let(:captain_enabled) { true }
-
     def build_audio_attachment
       message.attachments.create!(
         account_id: message.account_id,
@@ -354,27 +347,21 @@ RSpec.describe Attachment do
       )
     end
 
-    it 'enqueues transcription when captain and audio transcription feature are enabled' do
-      message.account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: false)
+    it 'enqueues transcription when workspace audio transcription is enabled' do
+      message.account.update!(audio_transcriptions: true)
 
       expect { build_audio_attachment }.to have_enqueued_job(Messages::AudioTranscriptionJob).on_queue('audio_transcription')
     end
 
-    it 'enqueues transcription for legacy audio_transcriptions setting when captain preference is missing' do
-      message.account.update!(captain_features: {}, audio_transcriptions: true)
+    it 'enqueues transcription without Captain being enabled' do
+      message.account.update!(audio_transcriptions: true)
+      message.account.disable_features!('captain_integration')
 
       expect { build_audio_attachment }.to have_enqueued_job(Messages::AudioTranscriptionJob).on_queue('audio_transcription')
     end
 
-    it 'does not enqueue transcription when captain audio transcription feature is disabled' do
-      message.account.update!(captain_features: { 'audio_transcription' => false }, audio_transcriptions: true)
-
-      expect { build_audio_attachment }.not_to have_enqueued_job(Messages::AudioTranscriptionJob)
-    end
-
-    it 'does not enqueue transcription when captain is disabled' do
-      message.account.update!(captain_features: { 'audio_transcription' => true })
-      allow(message.account).to receive(:feature_enabled?).with('captain_integration').and_return(false)
+    it 'does not enqueue transcription when workspace audio transcription is disabled' do
+      message.account.update!(audio_transcriptions: false)
 
       expect { build_audio_attachment }.not_to have_enqueued_job(Messages::AudioTranscriptionJob)
     end

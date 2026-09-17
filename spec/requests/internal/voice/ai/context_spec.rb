@@ -408,6 +408,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
   end
 
   [
+    ['openai-live', 'gpt-live-1', 'marin'],
     ['openai-realtime', 'gpt-realtime-2', 'alloy'],
     ['elevenlabs', 'openai/gpt-5.4-mini', 'Xb7hH8MSUJpSbSDYk0k2']
   ].each do |provider, model, voice|
@@ -433,7 +434,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       expect(response.parsed_body['ai']).to include(
         'provider' => provider,
         'model' => model,
-        'voice' => voice
+        'voice' => voice,
+        'delegation_model' => 'gpt-5.4-mini'
       )
     end
   end

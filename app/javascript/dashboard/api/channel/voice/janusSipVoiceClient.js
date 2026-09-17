@@ -41,6 +41,7 @@ const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'sipuni',
   'binotel',
   'beeline',
+  'wazo',
 ]);
 const WEBPHONE_RECORDING_MIME_TYPES = [
   'audio/webm;codecs=opus',
@@ -555,7 +556,11 @@ export class JanusSipVoiceClient extends EventTarget {
       sipUri: normalized.sip.uri,
       username: normalized.sip.username,
       host: normalized.sip.host,
+      port: normalized.sip.port,
+      transport: normalized.sip.transport,
       proxy: normalized.sip.proxy,
+      codec: normalized.sip.codec,
+      outboundDialFormat: normalized.sip.outboundDialFormat,
       inboxId: resolvedInboxId,
       sessionKey: normalized.sessionKey,
       sipProfileId: normalized.sipProfileId,

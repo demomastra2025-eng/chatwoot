@@ -55,21 +55,13 @@ class VkCommunity::IncomingMessageService
   end
 
   def set_conversation
-    @conversation = if inbox.lock_to_single_conversation
-                      @contact_inbox.conversations.last
-                    else
-                      @contact_inbox.conversations.where.not(status: :resolved).last
-                    end
-    return if @conversation.present?
-
-    @conversation = ::Conversation.create!(
-      account_id: inbox.account_id,
-      inbox_id: inbox.id,
-      contact_id: @contact.id,
-      contact_inbox_id: @contact_inbox.id,
-      additional_attributes: {
-        peer_id: peer_id,
-        from_id: from_id
+    @conversation = Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: @contact_inbox,
+      attributes: {
+        additional_attributes: {
+          peer_id: peer_id,
+          from_id: from_id
+        }
       }
     )
   end

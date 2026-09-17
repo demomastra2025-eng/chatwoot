@@ -2,12 +2,12 @@ require 'digest'
 require 'uri'
 
 class Telephony::WebphoneService
-  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
-  JANUS_SIP_WEBPHONE_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  JANUS_SIP_WEBPHONE_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS = %w[sipuni].freeze
-  JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
-  JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW = 2.minutes
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
 

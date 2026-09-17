@@ -260,18 +260,18 @@ RSpec.describe Voice::InboundCallBuilder do
       expect(existing_conversation.messages.voice_calls.where(source_id: "voice_call:#{call_sid}").count).to eq(1)
     end
 
-    it 'rejects a reusable conversation linked to a different contact inbox' do
+    it 'repairs a reusable conversation linked to a stale contact inbox' do
       foreign_contact = create(:contact, account: account)
       foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: inbox, source_id: '+155****8181')
       existing_conversation.update_column(:contact_inbox_id, foreign_contact_inbox.id) # rubocop:disable Rails/SkipsModelValidations
       original_message_count = existing_conversation.messages.count
 
-      expect { perform_builder }.to raise_error(ArgumentError, 'conversation does not match voice context')
-      expect(existing_conversation.reload.messages.count).to eq(original_message_count)
+      expect { perform_builder }.not_to raise_error
+      expect(existing_conversation.reload.contact_inbox).to eq(contact_inbox)
+      expect(existing_conversation.messages.count).to eq(original_message_count + 1)
     end
 
-    it 'creates a dedicated conversation when reuse is disabled for late recovery' do
-      original_attributes = existing_conversation.additional_attributes.deep_dup
+    it 'keeps late recovery in the persistent conversation when reuse is disabled' do
       recovered_conversation = nil
 
       expect do
@@ -282,13 +282,12 @@ RSpec.describe Voice::InboundCallBuilder do
           call_sid: call_sid,
           reuse_existing_conversation: false
         )
-      end.to change(account.conversations, :count).by(1)
+      end.not_to change(account.conversations, :count)
 
-      expect(recovered_conversation).not_to eq(existing_conversation)
-      expect(recovered_conversation.identifier).to eq(call_sid)
+      expect(recovered_conversation).to eq(existing_conversation)
       expect(recovered_conversation.contact).to eq(contact)
       expect(recovered_conversation.contact_inbox).to eq(contact_inbox)
-      expect(existing_conversation.reload.additional_attributes).to eq(original_attributes)
+      expect(recovered_conversation.messages.voice_calls.where(source_id: "voice_call:#{call_sid}").count).to eq(1)
     end
   end
 

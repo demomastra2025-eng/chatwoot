@@ -22,7 +22,11 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   let(:service) { create(:scheduling_service, account: account, base_price: 20_000) }
   let(:contact) { create(:contact, account: account, name: 'Test Patient', phone_number: '+77015554433') }
   let(:headers) { agent.create_new_auth_token }
-  let(:booking_day) { ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 9, 10, 0, 0) }
+  let(:booking_day) do
+    timezone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = timezone.today.next_occurring(:monday)
+    timezone.local(date.year, date.month, date.day, 10, 0, 0)
+  end
   let(:path) { "/api/v1/accounts/#{account.id}/scheduling/appointments" }
 
   before do
@@ -37,6 +41,12 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   def grant_scheduling_override_permission
     custom_role = create(:custom_role, account: account, permissions: ['scheduling_override'])
     account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+  def stub_medelement_availability
+    result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+    )
+    service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
   it 'creates an appointment inside a valid slot' do
@@ -116,6 +126,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment without a selected service' do
+    stub_medelement_availability
     resource.update!(
       custom_attributes: {
         'medelement_specialist_code' => 'specialist-1',
@@ -126,7 +137,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
       client_middle_name: 'Ерлановна',
-      client_phone: ['+7', '700', '000', '0001'].join,
+      client_phone: '+77000000001',
       custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
@@ -155,6 +166,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment with a mapped service' do
+    stub_medelement_availability
     resource.update!(
       custom_attributes: {
         'medelement_specialist_code' => 'specialist-1',
@@ -167,7 +179,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
       client_middle_name: 'Ерлановна',
-      client_phone: ['+7', '700', '000', '0001'].join,
+      client_phone: '+77000000001',
       custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
@@ -283,6 +295,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.conversation_id).not_to eq(other_conversation.id)
   end
 
+  # rubocop:disable RSpec/MultipleExpectations
   it 'atomically creates and links a conversation to an appointment' do
     inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
     create(:inbox_member, user: agent, inbox: inbox)
@@ -335,6 +348,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to eq(conversation.id)
     expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
   end
+  # rubocop:enable RSpec/MultipleExpectations
 
   it 'creates and links a conversation without making an imported Medelement appointment editable' do
     inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
@@ -566,6 +580,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to eq(unavailable_conversation.id)
   end
 
+  # rubocop:disable RSpec/MultipleExpectations
   it 'keeps an explicit appointment conversation ahead of a separate contact thread target' do
     explicit_conversation = create(:conversation, account: account, contact: contact)
     thread_conversation = create(:conversation, account: account, contact: contact)
@@ -602,6 +617,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'chat_conversation_id')).to eq(explicit_conversation.id)
     expect(response_body.dig('payload', 'chat_conversation_display_id')).to eq(explicit_conversation.display_id)
   end
+  # rubocop:enable RSpec/MultipleExpectations
 
   it 'creates a no-service appointment with a manual service name snapshot' do
     post path,
@@ -1233,6 +1249,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     post path, params: params, headers: headers, as: :json
     created_id = response_body.dig('payload', 'id')
 
+    lookup = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptLookupService, perform: nil)
+    expect(Integrations::Medelement::AppointmentProviderCommandReceiptLookupService).to receive(:new).with(
+      account: account,
+      appointment: have_attributes(id: created_id),
+      operation: 'create_reception'
+    ).and_return(lookup)
+
     post path, params: params, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
@@ -1431,7 +1454,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       contact: contact,
       service: service,
       prepaid_amount: 5_000,
-      prepaid_payment_method: 'kaspi_qr',
+      prepaid_payment_method: 'bank_transfer',
       payment_status: 'prepaid',
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes
@@ -1441,7 +1464,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       appointment: appointment,
       account: account,
       amount: 5_000,
-      payment_method: 'kaspi_qr',
+      payment_method: 'bank_transfer',
       payment_kind: 'prepaid'
     )
 
@@ -1479,6 +1502,32 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('APPOINTMENT_READ_ONLY')
+  end
+
+  it 'routes an imported appointment cancellation update through the provider-safe cancel service' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      source: 'medelement',
+      external_ref: 'medelement:reception:1'
+    )
+    cancel_service = instance_double(Scheduling::Appointments::CancelService, perform: appointment)
+    expect(Scheduling::Appointments::CancelService).to receive(:new).with(
+      appointment: appointment,
+      actor: agent
+    ).and_return(cancel_service)
+
+    put "#{path}/#{appointment.id}",
+        params: { status: 'cancelled', client_name: 'Ignored edit' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'source')).to eq('medelement')
+    expect(appointment.reload.client_name).not_to eq('Ignored edit')
   end
 
   it 'returns a stable calendar payload shape' do
@@ -1544,6 +1593,97 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('CALENDAR_RANGE_TOO_LARGE')
+  end
+
+  it 'accepts resource_ids as an array and filters the calendar payload' do
+    other_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: [resource.id]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'resources').pluck('id')).to eq([resource.id])
+    expect(response_body.dig('payload', 'resources').pluck('id')).not_to include(other_resource.id)
+  end
+
+  it 'normalizes CSV and array resource_ids to the same resources and slots' do
+    other_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    resource_ids = [resource.id, other_resource.id]
+    request_params = {
+      view: 'week',
+      from: booking_day.beginning_of_day.iso8601,
+      to: (booking_day + 7.days).end_of_day.iso8601,
+      include_slots: true
+    }
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: request_params.merge(resource_ids: resource_ids.join(',')), headers: headers, as: :json
+    string_result = response_body.fetch('payload')
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: request_params.merge(resource_ids: resource_ids), headers: headers, as: :json
+    array_result = response_body.fetch('payload')
+
+    expect(array_result.fetch('resources').pluck('id')).to eq(string_result.fetch('resources').pluck('id'))
+    expect(array_result.fetch('slots').size).to eq(string_result.fetch('slots').size)
+  end
+
+  it 'rejects malformed calendar resource_ids instead of returning empty availability' do
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: ['invalid']
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body).to include(
+      'code' => 'VALIDATION_ERROR',
+      'error' => 'resource_ids must contain positive integer IDs'
+    )
+  end
+
+  [{ unexpected: 42 }, [[42]], [true]].each do |malformed_resource_ids|
+    it "rejects malformed resource_ids #{malformed_resource_ids.inspect}" do
+      get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+          params: {
+            view: 'week',
+            from: booking_day.beginning_of_day.iso8601,
+            to: (booking_day + 7.days).end_of_day.iso8601,
+            resource_ids: malformed_resource_ids
+          },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response_body['code']).to eq('VALIDATION_ERROR')
+    end
+  end
+
+  it 'returns not found for an unknown calendar resource_id' do
+    unknown_id = Scheduling::Resource.maximum(:id).to_i + 10_000
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: unknown_id.to_s
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(response_body).to include('error' => 'Resource could not be found')
   end
 
   it 'filters the calendar payload by managed appointment custom fields' do
@@ -1977,6 +2117,32 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
+  it 'bulk resolves the specific chat for appointments listed in a dialog panel' do
+    chat_conversation = create(:conversation, account: account, contact: contact)
+    appointments = Array.new(2) do |index|
+      create(
+        :scheduling_appointment,
+        resource: resource,
+        account: account,
+        contact: contact,
+        service: service,
+        starts_at: booking_day + index.hours,
+        ends_at: booking_day + index.hours + 30.minutes
+      )
+    end
+
+    get path,
+        params: { contact_ids: contact.id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response_body['payload'].index_by { |item| item['id'] }
+    expect(payload.keys).to match_array(appointments.map(&:id))
+    expect(payload.values.pluck('chat_conversation_id')).to all(eq(chat_conversation.id))
+    expect(payload.values.pluck('chat_conversation_display_id')).to all(eq(chat_conversation.display_id))
+  end
+
   it 'filters appointments index by managed appointment custom fields' do
     create(
       :crm_field_definition,
@@ -2257,4 +2423,5 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('APPOINTMENT_DELETE_REQUIRES_CANCELLED')
     expect(Scheduling::Appointment.exists?(appointment.id)).to be(true)
   end
+end
 end

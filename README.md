@@ -97,13 +97,14 @@ The translation process for Chatwoot web and mobile app is managed at [https://o
 
 Onelink does not use the inherited Chatwoot `develop`/`master` branching model for active product work.
 
-- Primary working branch: `onelink-main`
-- Feature branches: `feature/...`, `fix/...`, `chore/...`
+- Primary working and DEV branch: `onelink-dev`
+- Default path: change locally, run scoped checks, commit, and push to `onelink-dev`; a green push deploys automatically to DEV
+- Optional branches: use `feature/...` or `fix/...` only for large, risky, or parallel work, then merge and delete them
+- Production path: manually promote the exact SHA already verified in DEV; never rebuild different source for production
+- `onelink-main` is only the upstream-sync baseline and is not deployed
 - Upstream sync branches: `sync/chatwoot-vX.Y.Z`
-- Default delivery path: branch from `onelink-main`, push to `origin` over SSH, merge back into `onelink-main`
-- If a change includes reusable base work plus an optional feature, use stacked branches so the base can merge separately from the optional feature
 
-See the [Development Guide](https://one-link.kz/docs/contributing-guide) and [Upstream Sync Strategy](https://one-link.kz/docs/development/upstream-sync) for the current workflow.
+See `script/onelink/README.md` for the automated delivery contract and operator setup.
 
 ## Deployment
 

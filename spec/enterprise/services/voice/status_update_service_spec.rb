@@ -77,4 +77,33 @@ RSpec.describe Voice::StatusUpdateService do
       described_class.new(account: account, call_sid: 'UNKNOWN', call_status: 'busy').perform
     end.not_to raise_error
   end
+
+  it 'routes a late status to its voice message without overwriting the current call summary' do
+    old_message = message
+    old_message.update!(source_id: "voice_call:#{call_sid}")
+    current_call_sid = 'CATESTSTATUS456'
+    current_message = conversation.messages.create!(
+      account_id: account.id,
+      inbox_id: inbox.id,
+      message_type: :incoming,
+      sender: contact,
+      content: 'Voice Call',
+      content_type: 'voice_call',
+      source_id: "voice_call:#{current_call_sid}",
+      content_attributes: { data: { call_sid: current_call_sid, status: 'ringing' } }
+    )
+    conversation.update!(
+      identifier: current_call_sid,
+      additional_attributes: {
+        'telephony_call_ref' => current_call_sid,
+        'call_status' => 'ringing'
+      }
+    )
+
+    described_class.new(account: account, call_sid: call_sid, call_status: 'completed').perform
+
+    expect(old_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+    expect(current_message.reload.content_attributes.dig('data', 'status')).to eq('ringing')
+    expect(conversation.reload.additional_attributes['call_status']).to eq('ringing')
+  end
 end

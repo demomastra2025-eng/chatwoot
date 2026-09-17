@@ -314,7 +314,7 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def snapshot_for_cabinet(cabinet, specialist_code)
-    company_cabinet_code = cabinet['companyCabinetCode']
+    company_cabinet_code = Integrations::Medelement::CabinetAttributes.code(cabinet)
     if specialist_code.blank? || company_cabinet_code.blank?
       @snapshot_complete = false
       return []
@@ -354,7 +354,7 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def skip_stale_provider_binding!(resource, specialist_code, cabinet)
     @skipped_pair_count = skipped_pair_count + 1
-    entity_key = [specialist_code, cabinet['companyCabinetCode']].join(':')
+    entity_key = [specialist_code, Integrations::Medelement::CabinetAttributes.code(cabinet)].join(':')
     conflict_tracker&.record!(
       phase: 'receptions',
       entity_type: 'specialist_cabinet',
@@ -374,7 +374,7 @@ class Integrations::Medelement::ReceptionsSyncService
       reason: 'Specialist/cabinet binding was not observed within the provider grace period',
       resource_id: resource.id,
       specialist_code: specialist_code,
-      company_cabinet_code: cabinet['companyCabinetCode'],
+      company_cabinet_code: Integrations::Medelement::CabinetAttributes.code(cabinet),
       provider_last_seen_at: resource.custom_attributes[PROVIDER_LAST_SEEN_AT_KEY]
     }
   end

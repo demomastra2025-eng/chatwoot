@@ -157,7 +157,9 @@ class Integrations::Medelement::ProviderCommands::Validator
 
   def require_provider_resource!
     attrs = appointment.resource.custom_attributes.to_h
-    cabinet_codes = Array(attrs['medelement_cabinets']).pluck('companyCabinetCode').map(&:to_s)
+    cabinet_codes = Array(attrs['medelement_cabinets']).filter_map do |cabinet|
+      Integrations::Medelement::CabinetAttributes.code(cabinet)
+    end
     return if attrs['medelement_specialist_code'].present? && company_cabinet_code.to_s.in?(cabinet_codes)
 
     raise ArgumentError, 'company_cabinet_code must belong to the appointment Medelement specialist'

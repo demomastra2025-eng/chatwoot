@@ -1,4 +1,6 @@
 class Reminders::ExecuteService
+  PROVIDER_GUARD_BLOCKED = Object.new.freeze
+
   attr_reader :reminder
 
   def initialize(reminder:, processing_claim: reminder.processing_claim_token)
@@ -10,6 +12,7 @@ class Reminders::ExecuteService
     reload_reminder
     return reminder if execution_ineligible?
     return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
+    return reminder if appointment_provider_blocked?(:materialization)
     return finish_execution if reminder.delivery_materialized?
 
     execute_action
@@ -45,6 +48,11 @@ class Reminders::ExecuteService
     end
   end
 
+  def appointment_provider_blocked?(phase)
+    Reminders::AppointmentProviderGuard.new(reminder: reminder, phase: phase).perform ==
+      Reminders::AppointmentProviderGuard::STOP
+  end
+
   def execute_send_message
     conversation = Reminders::ConversationResolver.new(reminder: reminder).perform
     return reminder if execution_blocked?(conversation)
@@ -52,6 +60,7 @@ class Reminders::ExecuteService
     payload = send_message_payload(conversation)
     delivery_policy = send_message_delivery_policy(conversation, template_params: payload[:template_params])
     message = finalize_send_message(conversation, payload, delivery_policy)
+    return reminder if message.equal?(PROVIDER_GUARD_BLOCKED)
 
     finish_execution(message)
   end
@@ -102,6 +111,10 @@ class Reminders::ExecuteService
   def update_resolved_targets!(conversation)
     updates = {}
     updates[:target_conversation] = conversation if reminder.target_conversation_id != conversation.id
+    if reminder.post_delivery_action.present? && reminder.remindable.is_a?(Conversation) && reminder.remindable_id != conversation.id
+      updates[:conversation] = conversation
+      updates[:remindable] = conversation
+    end
     updates[:target_contact_inbox] = conversation.contact_inbox if reminder.target_contact_inbox_id != conversation.contact_inbox_id
     reminder.update!(updates) if updates.present?
   end
@@ -114,6 +127,7 @@ class Reminders::ExecuteService
     delivery_policy = ensure_delivery_allowed!(conversation, content_kind: 'free_text', template_params: {}, attachments: [])
     generated_payload = generate_captain_message(conversation, mode: :wakeup)
     message = finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)
+    return reminder if message.equal?(PROVIDER_GUARD_BLOCKED)
 
     finish_execution(message)
   end
@@ -184,13 +198,18 @@ class Reminders::ExecuteService
   end
 
   def with_execution_lock(&)
-    return yield unless reminder.persisted?
+    guarded_execution = lambda do
+      next PROVIDER_GUARD_BLOCKED if appointment_provider_blocked?(:materialization)
+
+      yield
+    end
+    return guarded_execution.call unless reminder.persisted?
 
     Reminders::ExecutionLockService.new(
       reminder: reminder,
       processing_claim: @processing_claim,
       execution_updated_at: @execution_updated_at
-    ).perform(&)
+    ).perform(&guarded_execution)
   end
 
   def reload_reminder

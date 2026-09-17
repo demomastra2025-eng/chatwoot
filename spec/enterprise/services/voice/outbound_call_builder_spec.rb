@@ -82,7 +82,7 @@ RSpec.describe Voice::OutboundCallBuilder do
       result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
 
       aggregate_failures do
-        expect(lock_statements.one?).to be(true)
+        expect(lock_statements.size).to eq(2)
         expect(result[:conversation]).to have_attributes(
           contact_id: canonical_contact.id,
           contact_inbox_id: canonical_contact_inbox.id
@@ -231,15 +231,16 @@ RSpec.describe Voice::OutboundCallBuilder do
         end
       end
 
-      it 'rejects a reusable conversation linked to a different contact inbox before provider side effects' do
+      it 'repairs a reusable conversation linked to a stale contact inbox before provider side effects' do
         foreign_contact = create(:contact, account: account)
         foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: inbox, source_id: '+155****8282')
         existing_conversation.update_column(:contact_inbox_id, foreign_contact_inbox.id) # rubocop:disable Rails/SkipsModelValidations
 
-        expect do
-          described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
-        end.to raise_error(ArgumentError, 'conversation does not match voice context')
-        expect(calls_service).not_to have_received(:create_outbound!)
+        result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect(result[:conversation]).to eq(existing_conversation)
+        expect(existing_conversation.reload.contact_inbox).to eq(contact_inbox)
+        expect(calls_service).to have_received(:create_outbound!).once
       end
     end
   end

@@ -78,7 +78,7 @@ RSpec.describe Confirmations::ResolveService do
     expect(second).to be_confirmed
     expect(second.resolved_at.to_i).to eq(resolved_at.to_i)
     expect(second.resolution_source).to eq('manual')
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).twice
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).once
   end
 
   it 're-enqueues linked provider command resolution after an enqueue failure' do
@@ -119,6 +119,7 @@ RSpec.describe Confirmations::ResolveService do
     expect(request.resolution_source).to eq('system')
   end
 
+  # rubocop:disable RSpec/ExampleLength, RSpec/MultipleExpectations
   it 'treats confirmation buttons from multiple messages for the same appointment as one idempotent outcome' do
     cloud_account = create(:account, limits: { non_web_inboxes: 10 })
     channel = create(
@@ -244,4 +245,5 @@ RSpec.describe Confirmations::ResolveService do
     expect(fourth_request.reload).to be_expired
     expect(fourth_request.resolution_metadata).to include('reason' => 'subject_not_confirmable')
   end
+  # rubocop:enable RSpec/ExampleLength, RSpec/MultipleExpectations
 end

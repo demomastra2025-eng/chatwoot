@@ -4,6 +4,7 @@ class Whatsapp::WabaLock
   class LockAcquisitionError < StandardError; end
 
   THREAD_LOCKS_KEY = :whatsapp_waba_advisory_locks
+  RETRY_WAIT = ->(executions) { [executions * 2, 30].min.seconds }
 
   class << self
     def with_locks(waba_ids, &)

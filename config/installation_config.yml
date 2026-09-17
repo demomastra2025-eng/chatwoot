@@ -297,7 +297,6 @@
   description: 'Installation-wide system instructions appended to every customer-facing AI agent and scenario prompt.'
   locked: false
   type: code
-
 - name: CAPTAIN_SYSTEM_PROMPTS
   display_title: 'AI System Prompts'
   description: 'Installation-wide system prompts managed centrally. Agents can only enable or disable them in their own settings.'
@@ -573,6 +572,15 @@
   description: 'Show Google OAuth as a login option when credentials are configured'
   type: boolean
 ## ------ End of Configs added for Google OAuth ------ ##
+
+## ------ Configs added for SAML SSO ------ ##
+- name: ENABLE_SAML_SSO_LOGIN
+  display_title: 'Enable SAML SSO login'
+  value: true
+  locked: false
+  description: 'Show SAML SSO as a login option. Cannot be disabled if any users are using SAML authentication.'
+  type: boolean
+## ------ End of Configs added for SAML SSO ------ ##
 
 ## ------ Configs added for Cloudflare ------ ##
 - name: CLOUDFLARE_API_KEY

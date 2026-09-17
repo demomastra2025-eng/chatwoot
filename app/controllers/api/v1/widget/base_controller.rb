@@ -21,7 +21,16 @@ class Api::V1::Widget::BaseController < ApplicationController
   end
 
   def create_conversation
-    ::Conversation.create!(conversation_params)
+    attributes = conversation_params
+    conversation = Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: @contact_inbox,
+      attributes: attributes
+    )
+    conversation.update!(
+      additional_attributes: conversation.additional_attributes.merge(attributes[:additional_attributes]),
+      custom_attributes: conversation.custom_attributes.merge(attributes[:custom_attributes])
+    )
+    conversation
   end
 
   def inbox

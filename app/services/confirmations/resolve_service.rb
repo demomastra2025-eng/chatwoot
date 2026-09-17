@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Confirmations::ResolveService
+  PROVIDER_ENQUEUE_STATE_KEY = 'medelement_provider_resolution_enqueue_state'
   DECISION_ALIASES = {
     'confirm' => 'confirmed',
     'confirmed' => 'confirmed',
@@ -27,11 +28,14 @@ class Confirmations::ResolveService
   def perform
     validate_input!
 
-    resolved_request, expired = scoped_request.with_lock { resolve_locked_request }
+    resolved_request, expired, enqueue_claimed = scoped_request.with_lock do
+      resolved, request_expired = resolve_locked_request
+      [resolved, request_expired, claim_provider_command_enqueue!(resolved, request_expired)]
+    end
 
     raise Confirmations::ExpiredRequestError, 'confirmation request expired' if expired
 
-    enqueue_provider_command_resolution(resolved_request)
+    enqueue_provider_command_resolution(resolved_request) if enqueue_claimed
     resolved_request
   end
 
@@ -52,10 +56,31 @@ class Confirmations::ResolveService
     [scoped_request, false]
   end
 
-  def enqueue_provider_command_resolution(resolved_request)
-    return if resolved_request.metadata.to_h['medelement_provider_command_id'].blank?
+  def claim_provider_command_enqueue!(resolved_request, expired)
+    return false if expired
+    return false if resolved_request.metadata.to_h['medelement_provider_command_id'].blank?
+    return false if resolved_request.resolution_metadata.to_h[PROVIDER_ENQUEUE_STATE_KEY].present?
 
+    resolved_request.update!(
+      resolution_metadata: resolved_request.resolution_metadata.to_h.merge(PROVIDER_ENQUEUE_STATE_KEY => 'claimed')
+    )
+    true
+  end
+
+  def enqueue_provider_command_resolution(resolved_request)
     Integrations::Medelement::ProviderCommandConfirmationJob.perform_later(resolved_request.id)
+    persist_provider_enqueue_state!(resolved_request, 'enqueued')
+  rescue StandardError
+    persist_provider_enqueue_state!(resolved_request, nil)
+    raise
+  end
+
+  def persist_provider_enqueue_state!(resolved_request, state)
+    resolved_request.with_lock do
+      values = resolved_request.resolution_metadata.to_h
+      state.present? ? values[PROVIDER_ENQUEUE_STATE_KEY] = state : values.delete(PROVIDER_ENQUEUE_STATE_KEY)
+      resolved_request.update!(resolution_metadata: values)
+    end
   end
 
   def validate_input!

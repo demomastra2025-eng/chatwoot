@@ -33,25 +33,15 @@ class Weixin::IncomingMessageService
   end
 
   def conversation
-    @conversation ||= begin
-      existing = contact_inbox.conversations.last
-      if existing
-        update_conversation_context!(existing)
-        existing
-      else
-        Conversation.create!(
-          account: account,
-          inbox: inbox,
-          contact: contact,
-          contact_inbox: contact_inbox,
-          additional_attributes: conversation_attributes
-        )
-      end
-    end
+    @conversation ||= Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: contact_inbox,
+      attributes: { additional_attributes: conversation_attributes }
+    ).tap { |resolved_conversation| update_conversation_context!(resolved_conversation) }
   end
 
   def update_conversation_context!(conversation)
-    conversation.update!(additional_attributes: conversation.additional_attributes.merge(conversation_attributes))
+    attributes = conversation.additional_attributes.merge(conversation_attributes)
+    conversation.update!(additional_attributes: attributes) if attributes != conversation.additional_attributes
   end
 
   def conversation_attributes

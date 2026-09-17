@@ -411,7 +411,7 @@ describe Line::IncomingMessageService do
         line_channel.inbox.update(lock_to_single_conversation: false)
       end
 
-      it 'creates a new conversation when all previous conversations are resolved' do
+      it 'reuses the persistent conversation when the legacy lock flag is disabled' do
         line_bot = double
         line_user_profile = double
         allow(Line::Bot::Client).to receive(:new).and_return(line_bot)
@@ -438,9 +438,8 @@ describe Line::IncomingMessageService do
 
         described_class.new(inbox: line_channel.inbox, params: new_params).perform
 
-        # Should create a new conversation
-        expect(line_channel.inbox.conversations.count).to eq(2)
-        expect(line_channel.inbox.conversations.last.messages.first.content).to eq('Second message')
+        expect(line_channel.inbox.conversations.count).to eq(1)
+        expect(conversation.reload.messages.last.content).to eq('Second message')
       end
 
       it 'uses the existing conversation when there is an unresolved conversation' do

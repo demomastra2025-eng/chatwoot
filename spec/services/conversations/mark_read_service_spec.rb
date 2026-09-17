@@ -125,14 +125,29 @@ RSpec.describe Conversations::MarkReadService do
           created_at: 5.minutes.ago
         )
       end
+      let!(:imported_message) do
+        create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          source_id: 'wamid.cloud-history-1',
+          content_attributes: { imported_history: true, whatsapp_history_import: true },
+          created_at: 10.minutes.ago
+        )
+      end
 
       it 'passes provider ids and timestamps to the Cloud sync service' do
         sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
         projected_message = nil
+        projected_message_ids = nil
         expected_conversation = conversation
 
         expect(Whatsapp::MarkMessagesReadService).to receive(:new) do |conversation:, messages:|
           expect(conversation).to eq(expected_conversation)
+          projected_message_ids = messages.map(&:id)
           projected_message = messages.find { |message| message.id == incoming_message.id }
           sync_service
         end
@@ -144,6 +159,8 @@ RSpec.describe Conversations::MarkReadService do
           source_id: 'wamid.cloud-incoming-1',
           created_at: incoming_message.reload.created_at
         )
+        expect(projected_message_ids).to contain_exactly(incoming_message.id)
+        expect(projected_message_ids).not_to include(imported_message.id)
       end
     end
 
@@ -194,6 +211,29 @@ RSpec.describe Conversations::MarkReadService do
 
         expect(projected_message.content_attributes['telegram_message_ids']).to eq(%w[101 102])
         expect { projected_message.content }.to raise_error(ActiveModel::MissingAttributeError)
+      end
+    end
+
+    context 'with multiple account users' do
+      let(:channel) { create(:channel_api) }
+
+      it 'marks only the current user read and preserves the other user cursor' do
+        other_user = create(:user, account: channel.account, role: :agent)
+        create(:inbox_member, user: other_user, inbox: channel.inbox)
+        conversation = create(:conversation, account: channel.account, inbox: channel.inbox, agent_last_seen_at: nil)
+        incoming_message = create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          created_at: 5.minutes.ago
+        )
+
+        described_class.new(conversation: conversation, user: user).perform
+
+        expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
+        expect(conversation.unread_messages_for(other_user).incoming).to contain_exactly(incoming_message)
       end
     end
   end

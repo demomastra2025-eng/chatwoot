@@ -146,6 +146,26 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to conform_schema(200)
         expect(JSON.parse(response.body, symbolize_names: true)[:meta][:contact][:id]).to eq(conversation.contact_id)
       end
+
+      it 'uses the first genuine unread message for the initial cursor' do
+        conversation.update!(agent_last_seen_at: 1.day.ago)
+        imported_message = create(
+          :message,
+          account: account,
+          conversation: conversation,
+          content_attributes: { imported_history: true },
+          created_at: 10.minutes.ago
+        )
+        live_message = create(:message, account: account, conversation: conversation, created_at: 5.minutes.ago)
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(live_message.id)
+        expect(response.parsed_body.dig('meta', 'first_unread_message_id')).not_to eq(imported_message.id)
+      end
     end
   end
 
@@ -313,6 +333,8 @@ RSpec.describe 'Conversation Messages API', type: :request do
         source_id: '778',
         content: 'old text'
       )
+      # This endpoint must handle legacy rows that predate the required association.
+      telegram_conversation.update_column(:contact_inbox_id, nil) # rubocop:disable Rails/SkipsModelValidations
       create(:inbox_member, inbox: telegram_inbox, user: agent)
 
       patch "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
@@ -360,7 +382,14 @@ RSpec.describe 'Conversation Messages API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:conversation_id/messages/:id/retry' do
-    let(:message) { create(:message, account: account, status: :failed, content_attributes: { external_error: 'error' }) }
+    let(:message) do
+      create(
+        :message,
+        account: account,
+        status: :failed,
+        content_attributes: { external_error: 'error', template_params: { name: 'approved_template' } }
+      )
+    end
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -384,6 +413,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to have_http_status(:success)
         expect(message.reload.status).to eq('sent')
         expect(message.reload.content_attributes['external_error']).to be_nil
+        expect(message.reload.content_attributes['template_params']).to eq('name' => 'approved_template')
       end
     end
 
@@ -466,6 +496,16 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       context 'when agent edits a WhatsApp Web message' do
+        around do |example|
+          with_modified_env(
+            'EVOLUTION_API_URL' => 'https://evolution.example.com',
+            'EVOLUTION_API_KEY' => 'test-api-key',
+            'FRONTEND_URL' => 'https://app.example.com'
+          ) do
+            example.run
+          end
+        end
+
         let(:channel) { create(:channel_whatsapp_web, account: account) }
         let(:inbox) { create(:inbox, channel: channel, account: account) }
         let!(:conversation) { create(:conversation, inbox: inbox, account: account) }

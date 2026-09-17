@@ -53,20 +53,7 @@ class Conversations::SidebarUnreadCountService
   end
 
   def unread_message_scope
-    accessible_conversations.joins(:messages)
-                            .where(messages: unread_message_filters)
-                            .where(
-                              'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',
-                              Time.zone.at(0)
-                            )
-  end
-
-  def unread_message_filters
-    {
-      account_id: account.id,
-      message_type: Message.message_types[:incoming],
-      private: false
-    }
+    Conversations::UnreadScopeBuilder.new(scope: accessible_conversations, account: account, user: user).perform
   end
 
   def label_counts(scope)

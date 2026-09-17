@@ -22,7 +22,7 @@ const route = useRoute();
 const router = useRouter();
 
 const PROVIDER_TYPES = {
-  KAZAKHSTAN: 'kazakhstan',
+  WAZO: 'wazo',
   ASTERISK_ANALOG: 'asterisk_analog',
   SIPUNI: 'sipuni',
   BINOTEL: 'binotel',
@@ -30,8 +30,18 @@ const PROVIDER_TYPES = {
   TWILIO: 'twilio',
 };
 
+const normalizedRouteProvider = provider =>
+  provider === 'kazakhstan' ? PROVIDER_TYPES.WAZO : provider;
+
 const channelBadgePath = fileName =>
   `/integrations/channels/badges/${fileName}`;
+
+const initialConnectionHost = () => {
+  if (route.query.provider === PROVIDER_TYPES.BEELINE) {
+    return 'cloudpbx.beeline.kz';
+  }
+  return '';
+};
 
 const PROVIDER_BADGES = {
   [PROVIDER_TYPES.SIPUNI]: channelBadgePath('sipuni.png'),
@@ -43,13 +53,13 @@ const PROVIDER_BADGES = {
 const kazakhstanState = reactive({
   channelName: '',
   phoneNumber: '',
-  providerKind: '',
+  providerKind:
+    normalizedRouteProvider(route.query.provider) === PROVIDER_TYPES.WAZO
+      ? PROVIDER_TYPES.WAZO
+      : '',
   providerAccountNumber: '',
   ingressNumber: '',
-  connectionHost:
-    route.query.provider === PROVIDER_TYPES.BEELINE
-      ? 'cloudpbx.beeline.kz'
-      : '',
+  connectionHost: initialConnectionHost(),
   connectionPort: '5060',
   connectionTransport: 'udp',
   connectionSipDomain: '',
@@ -86,9 +96,8 @@ const isCreatingVirtualPbx = ref(false);
 const isVirtualPbxAdvancedVisible = ref(false);
 
 const selectedProvider = computed(() => {
-  return Object.values(PROVIDER_TYPES).includes(route.query.provider)
-    ? route.query.provider
-    : '';
+  const provider = normalizedRouteProvider(route.query.provider);
+  return Object.values(PROVIDER_TYPES).includes(provider) ? provider : '';
 });
 
 const isSipuniProvider = computed(
@@ -103,14 +112,19 @@ const isBeelineProvider = computed(
 const isAsteriskAnalogSelectedProvider = computed(
   () => selectedProvider.value === PROVIDER_TYPES.ASTERISK_ANALOG
 );
+const isWazoSelectedProvider = computed(
+  () => selectedProvider.value === PROVIDER_TYPES.WAZO
+);
 const isDirectProviderOwnedSipProvider = computed(
   () =>
     isSipuniProvider.value ||
     isBinotelProvider.value ||
     isBeelineProvider.value ||
-    isAsteriskAnalogSelectedProvider.value
+    isAsteriskAnalogSelectedProvider.value ||
+    isWazoSelectedProvider.value
 );
 const selectedVirtualPbxProviderKind = computed(() => {
+  if (isWazoSelectedProvider.value) return PROVIDER_TYPES.WAZO;
   if (isSipuniProvider.value) return 'sipuni';
   if (isBinotelProvider.value) return 'binotel';
   if (isBeelineProvider.value) return 'beeline';
@@ -121,13 +135,16 @@ const selectedVirtualPbxProviderKind = computed(() => {
 const isAsteriskAnalogProvider = computed(
   () => selectedVirtualPbxProviderKind.value === 'asterisk_analog'
 );
+const isWazoProvider = computed(
+  () => selectedVirtualPbxProviderKind.value === PROVIDER_TYPES.WAZO
+);
 const showProviderSelection = computed(() => !selectedProvider.value);
 
 const availableProviders = computed(() => [
   {
-    key: PROVIDER_TYPES.KAZAKHSTAN,
-    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KAZAKHSTAN'),
-    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.KAZAKHSTAN_DESC'),
+    key: PROVIDER_TYPES.WAZO,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.WAZO_DESC'),
     icon: 'i-ri-phone-fill channel-icon-voice',
   },
   {
@@ -215,6 +232,10 @@ const virtualPbxProviderOptions = computed(() => [
     value: 'beeline',
     label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.BEELINE'),
   },
+  {
+    value: PROVIDER_TYPES.WAZO,
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.WAZO'),
+  },
 ]);
 
 const transportOptions = ['udp', 'tcp', 'tls'];
@@ -282,6 +303,12 @@ const twilioFormErrors = computed(() => ({
 }));
 
 function selectProvider(provider) {
+  if (provider === PROVIDER_TYPES.WAZO) {
+    kazakhstanState.providerKind = PROVIDER_TYPES.WAZO;
+    kazakhstanState.connectionPort = '5060';
+    kazakhstanState.connectionTransport = 'udp';
+    kazakhstanState.connectionOutboundProxy = '';
+  }
   if (provider === PROVIDER_TYPES.SIPUNI) {
     kazakhstanState.providerKind = 'sipuni';
   }
@@ -330,7 +357,7 @@ function getVirtualPbxPayload() {
     operator_distribution_mode: 'broadcast',
   };
 
-  if (isAsteriskAnalogProvider.value) {
+  if (isAsteriskAnalogProvider.value || isWazoProvider.value) {
     connection.port = kazakhstanState.connectionPort.trim();
     connection.transport = kazakhstanState.connectionTransport;
   }
@@ -352,10 +379,11 @@ function getVirtualPbxPayload() {
     routing,
     metadata: {
       source: 'virtual_pbx_ui',
+      pbx_platform: isWazoProvider.value ? 'wazo' : undefined,
     },
   };
 
-  if (isAsteriskAnalogProvider.value) {
+  if (isAsteriskAnalogProvider.value || isWazoProvider.value) {
     payload.metadata.outbound_dial_format = kazakhstanState.outboundDialFormat;
   }
 
@@ -496,7 +524,7 @@ async function createTwilioChannel() {
 
       <form
         v-if="
-          selectedProvider === PROVIDER_TYPES.KAZAKHSTAN ||
+          selectedProvider === PROVIDER_TYPES.WAZO ||
           selectedProvider === PROVIDER_TYPES.SIPUNI ||
           selectedProvider === PROVIDER_TYPES.ASTERISK_ANALOG ||
           selectedProvider === PROVIDER_TYPES.BINOTEL ||
@@ -553,7 +581,7 @@ async function createTwilioChannel() {
         </div>
 
         <button
-          v-if="isAsteriskAnalogProvider"
+          v-if="isAsteriskAnalogProvider || isWazoProvider"
           type="button"
           class="text-sm font-medium text-n-brand hover:opacity-80 text-left"
           @click="isVirtualPbxAdvancedVisible = !isVirtualPbxAdvancedVisible"
@@ -609,7 +637,10 @@ async function createTwilioChannel() {
         </template>
 
         <div
-          v-if="isVirtualPbxAdvancedVisible && isAsteriskAnalogProvider"
+          v-if="
+            isVirtualPbxAdvancedVisible &&
+            (isAsteriskAnalogProvider || isWazoProvider)
+          "
           class="grid grid-cols-1 gap-4 md:grid-cols-3"
         >
           <Input

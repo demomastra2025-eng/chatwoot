@@ -3,11 +3,12 @@ require 'rails_helper'
 RSpec.describe Conversations::ListPreloader do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
+  let(:user) { create(:user, account: account) }
   let(:seen_at) { 1.day.ago.change(usec: 0) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, agent_last_seen_at: seen_at) }
 
   def load_list(records = [conversation])
-    described_class.new(account: account, conversations: Conversation.where(id: records.map(&:id))).perform
+    described_class.new(account: account, conversations: Conversation.where(id: records.map(&:id)), user: user).perform
   end
 
   def message_at(time, **attributes)
@@ -47,7 +48,8 @@ RSpec.describe Conversations::ListPreloader do
 
   it 'has no SQL work for an empty page' do
     account
-    expect(sql_count { described_class.new(account: account, conversations: []).perform }).to eq(0)
+    user
+    expect(sql_count { described_class.new(account: account, conversations: [], user: user).perform }).to eq(0)
   end
 
   it 'selects the higher message id on equal timestamps' do
@@ -66,7 +68,8 @@ RSpec.describe Conversations::ListPreloader do
 
   it 'rejects a conversation from another account' do
     other = create(:conversation)
-    expect { described_class.new(account: account, conversations: [other]) }.to raise_error(ArgumentError, 'Conversation account mismatch')
+    expect { described_class.new(account: account, conversations: [other], user: user) }
+      .to raise_error(ArgumentError, 'Conversation account mismatch')
   end
 
   it 'excludes a message with a mismatched account' do
@@ -83,6 +86,21 @@ RSpec.describe Conversations::ListPreloader do
     conversation.update_columns(inbox_id: create(:inbox, account: account).id) # rubocop:disable Rails/SkipsModelValidations -- historical inbox mismatch
     data = load_list
     expect(data.last_message(conversation).inbox).to eq(original_message.inbox)
+  end
+
+  it 'returns unread state for the current user' do
+    other_user = create(:user, account: account)
+    message_at(seen_at + 1.hour)
+    create(:conversation_user_read_state, account: account, conversation: conversation, user: user, last_seen_at: seen_at + 2.hours)
+    create(:conversation_user_read_state, account: account, conversation: conversation, user: other_user, last_seen_at: seen_at)
+
+    current_user_data = load_list
+    other_user_data = described_class.new(account: account, conversations: [conversation], user: other_user).perform
+
+    expect(current_user_data.unread_count(conversation)).to eq(0)
+    expect(current_user_data.last_seen_at(conversation)).to eq(seen_at + 2.hours)
+    expect(other_user_data.unread_count(conversation)).to eq(1)
+    expect(other_user_data.last_seen_at(conversation)).to eq(seen_at)
   end
 
   it 'serializes the same message once without changing its realtime unread behavior' do

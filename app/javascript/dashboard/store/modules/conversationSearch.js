@@ -1,19 +1,48 @@
 import SearchAPI from '../../api/search';
 import types from '../mutation-types';
+
+const searchRequestScopes = new WeakMap();
+
+const getSearchRequestScope = commit => {
+  if (!searchRequestScopes.has(commit)) {
+    searchRequestScopes.set(commit, { generation: 0, controller: undefined });
+  }
+  return searchRequestScopes.get(commit);
+};
+
+const abortActiveSearch = commit => {
+  const scope = getSearchRequestScope(commit);
+  scope.controller?.abort();
+  scope.controller = undefined;
+};
+
+const currentSearchRequest = commit => {
+  const scope = getSearchRequestScope(commit);
+  return {
+    generation: scope.generation,
+    signal: scope.controller?.signal,
+  };
+};
+
+const isCurrentSearchRequest = (commit, { generation, signal }) =>
+  generation === getSearchRequestScope(commit).generation && !signal?.aborted;
+
+const createUIFlags = () => ({
+  isFetching: false,
+  isSearchCompleted: false,
+  contact: { isFetching: false },
+  conversation: { isFetching: false },
+  message: { isFetching: false },
+  article: { isFetching: false },
+});
+
 export const initialState = {
   records: [],
   contactRecords: [],
   conversationRecords: [],
   messageRecords: [],
   articleRecords: [],
-  uiFlags: {
-    isFetching: false,
-    isSearchCompleted: false,
-    contact: { isFetching: false },
-    conversation: { isFetching: false },
-    message: { isFetching: false },
-    article: { isFetching: false },
-  },
+  uiFlags: createUIFlags(),
 };
 
 export const getters = {
@@ -39,29 +68,48 @@ export const getters = {
 
 export const actions = {
   async get({ commit }, { q }) {
+    const scope = getSearchRequestScope(commit);
+    abortActiveSearch(commit);
+    scope.generation += 1;
     commit(types.SEARCH_CONVERSATIONS_SET, []);
     if (!q) {
+      commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: false });
       return;
     }
+    scope.controller = new AbortController();
+    const request = currentSearchRequest(commit);
     commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: true });
     try {
       const {
         data: { payload },
-      } = await SearchAPI.get({ q });
+      } = await SearchAPI.get({ q, signal: request.signal });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.SEARCH_CONVERSATIONS_SET, payload);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, {
-        isFetching: false,
-      });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, {
+          isFetching: false,
+        });
+        scope.controller = undefined;
+      }
     }
   },
   async fullSearch({ commit, dispatch }, payload) {
     const { q, ...filters } = payload;
+    const scope = getSearchRequestScope(commit);
     if (!q && !Object.keys(filters).length) {
+      abortActiveSearch(commit);
+      scope.generation += 1;
       return;
     }
+
+    abortActiveSearch(commit);
+    scope.generation += 1;
+    scope.controller = new AbortController();
+    const request = currentSearchRequest(commit);
     commit(types.FULL_SEARCH_SET_UI_FLAG, {
       isFetching: true,
       isSearchCompleted: false,
@@ -76,61 +124,103 @@ export const actions = {
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.FULL_SEARCH_SET_UI_FLAG, {
-        isFetching: false,
-        isSearchCompleted: true,
-      });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.FULL_SEARCH_SET_UI_FLAG, {
+          isFetching: false,
+          isSearchCompleted: true,
+        });
+        scope.controller = undefined;
+      }
     }
   },
   async contactSearch({ commit }, payload) {
     const { page = 1, ...searchParams } = payload;
+    const request = currentSearchRequest(commit);
     commit(types.CONTACT_SEARCH_SET_UI_FLAG, { isFetching: true });
     try {
-      const { data } = await SearchAPI.contacts({ ...searchParams, page });
+      const { data } = await SearchAPI.contacts({
+        ...searchParams,
+        page,
+        signal: request.signal,
+      });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.CONTACT_SEARCH_SET, data.payload.contacts);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.CONTACT_SEARCH_SET_UI_FLAG, { isFetching: false });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.CONTACT_SEARCH_SET_UI_FLAG, { isFetching: false });
+      }
     }
   },
   async conversationSearch({ commit }, payload) {
     const { page = 1, ...searchParams } = payload;
+    const request = currentSearchRequest(commit);
     commit(types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: true });
     try {
-      const { data } = await SearchAPI.conversations({ ...searchParams, page });
+      const { data } = await SearchAPI.conversations({
+        ...searchParams,
+        page,
+        signal: request.signal,
+      });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.CONVERSATION_SEARCH_SET, data.payload.conversations);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: false });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: false });
+      }
     }
   },
   async messageSearch({ commit }, payload) {
     const { page = 1, ...searchParams } = payload;
+    const request = currentSearchRequest(commit);
     commit(types.MESSAGE_SEARCH_SET_UI_FLAG, { isFetching: true });
     try {
-      const { data } = await SearchAPI.messages({ ...searchParams, page });
+      const { data } = await SearchAPI.messages({
+        ...searchParams,
+        page,
+        signal: request.signal,
+      });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.MESSAGE_SEARCH_SET, data.payload.messages);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.MESSAGE_SEARCH_SET_UI_FLAG, { isFetching: false });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.MESSAGE_SEARCH_SET_UI_FLAG, { isFetching: false });
+      }
     }
   },
   async articleSearch({ commit }, payload) {
     const { page = 1, ...searchParams } = payload;
+    const request = currentSearchRequest(commit);
     commit(types.ARTICLE_SEARCH_SET_UI_FLAG, { isFetching: true });
     try {
-      const { data } = await SearchAPI.articles({ ...searchParams, page });
+      const { data } = await SearchAPI.articles({
+        ...searchParams,
+        page,
+        signal: request.signal,
+      });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.ARTICLE_SEARCH_SET, data.payload.articles);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.ARTICLE_SEARCH_SET_UI_FLAG, { isFetching: false });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.ARTICLE_SEARCH_SET_UI_FLAG, { isFetching: false });
+      }
     }
   },
-  async clearSearchResults({ commit }) {
+  clearSearchResults({ commit }) {
+    const scope = getSearchRequestScope(commit);
+    abortActiveSearch(commit);
+    scope.generation += 1;
     commit(types.CLEAR_SEARCH_RESULTS);
   },
 };
@@ -174,6 +264,7 @@ export const mutations = {
     state.conversationRecords = [];
     state.messageRecords = [];
     state.articleRecords = [];
+    state.uiFlags = createUIFlags();
   },
 };
 

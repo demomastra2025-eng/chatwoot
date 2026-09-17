@@ -578,14 +578,11 @@ export default {
           key: 'inbox-settings',
           name: this.$t('INBOX_MGMT.TABS.SETTINGS'),
         },
-      ];
-
-      if (this.isAVoiceChannel) {
-        visibleToAllChannelTabs.push({
+        {
           key: 'collaborators',
           name: this.$t('INBOX_MGMT.TABS.COLLABORATORS'),
-        });
-      }
+        },
+      ];
 
       if (!this.isAVoiceChannel) {
         visibleToAllChannelTabs = [
@@ -982,6 +979,7 @@ export default {
       },
       immediate: true,
     },
+
     weixinQrUrl: {
       handler() {
         this.renderWeixinQrCode();

@@ -54,6 +54,8 @@ describe('ReconnectService', () => {
     };
     window.addEventListener = vi.fn();
     window.removeEventListener = vi.fn();
+    window.setInterval = vi.fn(() => 123);
+    window.clearInterval = vi.fn();
     document.addEventListener = vi.fn();
     document.removeEventListener = vi.fn();
     Object.defineProperty(window, 'location', {
@@ -97,6 +99,10 @@ describe('ReconnectService', () => {
         BUS_EVENTS.WEBSOCKET_DISCONNECT,
         reconnectService.onDisconnect
       );
+      expect(window.setInterval).toHaveBeenCalledWith(
+        reconnectService.reconcileVisibleRoute,
+        30000
+      );
     });
   });
 
@@ -123,6 +129,7 @@ describe('ReconnectService', () => {
         BUS_EVENTS.WEBSOCKET_DISCONNECT,
         reconnectService.onDisconnect
       );
+      expect(window.clearInterval).toHaveBeenCalledWith(123);
     });
   });
 
@@ -339,6 +346,13 @@ describe('ReconnectService', () => {
         'syncActiveConversationMessages',
         { conversationId: 42 }
       );
+      expect(storeMock.dispatch).not.toHaveBeenCalledWith(
+        'fetchAllConversations'
+      );
+      expect(storeMock.dispatch).not.toHaveBeenCalledWith(
+        'updateChatListFilters',
+        expect.anything()
+      );
     });
 
     it('should sync active conversation messages on visibilitychange when tab becomes visible', async () => {
@@ -391,11 +405,12 @@ describe('ReconnectService', () => {
       await reconnectService.handleVisibilityChange();
       await reconnectService.handleWindowFocus();
 
-      expect(storeMock.dispatch).toHaveBeenCalledTimes(1);
-      expect(storeMock.dispatch).toHaveBeenCalledWith(
-        'syncActiveConversationMessages',
-        { conversationId: 42 }
+      const activeMessageSyncCalls = storeMock.dispatch.mock.calls.filter(
+        ([action]) => action === 'syncActiveConversationMessages'
       );
+      expect(activeMessageSyncCalls).toEqual([
+        ['syncActiveConversationMessages', { conversationId: 42 }],
+      ]);
     });
   });
 

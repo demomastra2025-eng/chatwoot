@@ -283,7 +283,7 @@ const addOperationalDetails = (details, inbox) => {
     return;
   }
 
-  if (type.includes('linkedin') || type.includes('weixin')) {
+  if (type.includes('weixin')) {
     addDetail(details, {
       icon: 'i-lucide-user-round',
       label: t('INBOX_MGMT.LIST.DETAILS.PROFILE'),

@@ -16,6 +16,7 @@ const assistantRecord = {
   usage_mode: 'external_agent',
   config: {
     feature_faq: true,
+    use_audio_transcriptions: true,
     handoff_message: 'old handoff',
     voice_settings: {
       provider: 'gemini-live',
@@ -199,6 +200,7 @@ describe('Captain assistant settings page', () => {
           feature_faq: false,
           handoff_enabled: false,
           tool_access: { custom_tools: false },
+          use_audio_transcriptions: false,
         },
       },
     });
@@ -259,6 +261,22 @@ describe('Captain assistant settings page', () => {
         }),
         temperature: 0.4,
         voice_settings: assistantRecord.config.voice_settings,
+      }),
+    });
+  });
+
+  it('persists disabling audio transcriptions for the assistant', async () => {
+    const wrapper = mountComponent();
+
+    await clickUpdate(wrapper);
+
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+      id: 57,
+      name: 'Voice assistant',
+      description: 'Updated description',
+      usage_mode: 'external_agent',
+      config: expect.objectContaining({
+        use_audio_transcriptions: false,
       }),
     });
   });

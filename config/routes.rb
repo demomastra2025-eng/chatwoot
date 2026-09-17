@@ -304,7 +304,9 @@ Rails.application.routes.draw do
           resources :communication_threads, only: [:index, :show, :update] do
             collection do
               get :meta
+              get :sidebar_unread_counts
               post :filter
+              post :filter_sidebar_unread_counts
             end
 
             member do
@@ -657,23 +659,6 @@ Rails.application.routes.draw do
                 delete :destroy
               end
             end
-            resource :kaspi_pay, controller: 'kaspi_pay', only: [:destroy] do
-              collection do
-                post 'auth/init', action: :init
-                post 'auth/send_phone', action: :send_phone
-                post 'auth/verify_otp', action: :verify_otp
-                post 'auth/refresh', action: :refresh
-              end
-            end
-          end
-          namespace :kaspi_pay do
-            resources :payments, only: [:create, :show] do
-              post :refund, on: :member
-              post :cancel, on: :member
-              post :history, on: :collection
-              post :history_details, on: :collection
-              post :invoice_history, on: :collection
-            end
           end
           resources :working_hours, only: [:update]
 
@@ -937,6 +922,7 @@ Rails.application.routes.draw do
   end
 
   match 'sipuni/events/:token', to: 'telephony/sipuni_events#create', via: %i[get post]
+  post 'binotel/events/:token', to: 'telephony/binotel_events#create'
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
   get 'internal/voice/janus-ws/authorize', to: 'internal/voice/janus_websocket_authorizations#show'

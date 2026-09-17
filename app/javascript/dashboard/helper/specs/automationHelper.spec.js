@@ -102,6 +102,7 @@ const CONVERSATION_EVENTS = [
 const APPOINTMENT_EVENTS = [
   'appointment_created',
   'appointment_updated',
+  'appointment_rescheduled',
   'appointment_cancelled',
   'appointment_completed',
 ];
@@ -110,6 +111,8 @@ const DEAL_EVENTS = [
   'deal_created',
   'deal_updated',
   'deal_stage_changed',
+  'deal_waiting_set',
+  'deal_waiting_cleared',
   'deal_archived',
   'deal_unarchived',
 ];
@@ -118,6 +121,12 @@ const TASK_EVENTS = [
   'task_created',
   'task_updated',
   'task_status_changed',
+  'task_assigned',
+  'task_rescheduled',
+  'task_completed',
+  'task_cancelled',
+  'task_reopened',
+  'task_waiting_changed',
   'task_archived',
   'task_unarchived',
 ];

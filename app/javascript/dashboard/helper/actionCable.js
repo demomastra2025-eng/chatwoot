@@ -44,6 +44,8 @@ const SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS = [
   'crmPipelineId',
   'crmStageId',
   'appointmentStatus',
+  'unread',
+  'queryData',
 ];
 const CRM_PIPELINES_REFRESH_DELAY = 500;
 
@@ -82,6 +84,15 @@ const notifyAudioOnNewMessage = data => {
       DashboardAudioNotificationHelper.onNewMessage(data);
     })
     .catch(() => {});
+};
+
+const withoutSharedReadState = data => {
+  const {
+    unread_count: _unreadCount,
+    agent_last_seen_at: _agentLastSeenAt,
+    ...payload
+  } = data;
+  return payload;
 };
 
 const { isImpersonating } = useImpersonation();
@@ -280,7 +291,10 @@ class ActionCableConnector extends BaseActionCableConnector {
   onAssigneeChanged = payload => {
     const { id } = payload;
     if (id) {
-      this.app.$store.dispatch('updateConversation', payload);
+      this.app.$store.dispatch(
+        'updateConversation',
+        withoutSharedReadState(payload)
+      );
     }
     this.fetchConversationStats();
   };
@@ -291,7 +305,12 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   onConversationRead = data => {
-    this.app.$store.dispatch('updateConversation', data);
+    const currentUserId = this.app.$store.getters.getCurrentUserID;
+    const payload =
+      data.performer?.id === currentUserId
+        ? data
+        : withoutSharedReadState(data);
+    this.app.$store.dispatch('updateConversation', payload);
     this.fetchSidebarUnreadCounts();
   };
 
@@ -316,12 +335,18 @@ class ActionCableConnector extends BaseActionCableConnector {
   onReload = () => window.location.reload();
 
   onStatusChange = data => {
-    this.app.$store.dispatch('updateConversation', data);
+    this.app.$store.dispatch(
+      'updateConversation',
+      withoutSharedReadState(data)
+    );
     this.fetchConversationStats();
   };
 
   onConversationUpdated = data => {
-    this.app.$store.dispatch('updateConversation', data);
+    this.app.$store.dispatch(
+      'updateConversation',
+      withoutSharedReadState(data)
+    );
     this.fetchConversationStats();
   };
 
@@ -609,7 +634,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         if (this.isDisconnected) return;
 
         const counts = await this.app.$store.dispatch(
-          'fetchSidebarUnreadCounts',
+          'fetchRealtimeSidebarUnreadCounts',
           filters
         );
         if (this.isDisconnected || (isLockOwned && !isLockOwned())) return;

@@ -122,7 +122,7 @@ describe('MessagesView', () => {
       expect(context.makeMessagesRead).toHaveBeenCalled();
     });
 
-    it('marks messages read after opening at the newest mounted message', () => {
+    it('marks messages read when a stale unread count has no mounted message', () => {
       const context = buildContext({
         isNearConversationBottom: vi.fn(() => true),
         scrollToBottom: vi.fn(() => false),
@@ -311,6 +311,7 @@ describe('MessagesView', () => {
         messageSentSinceOpened: true,
         resetReplyEditorHeight: vi.fn(),
         conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
       };
 
       MessagesView.watch.currentChat.call(
@@ -323,6 +324,55 @@ describe('MessagesView', () => {
       expect(context.messageSentSinceOpened).toBe(false);
       expect(context.resetReplyEditorHeight).toHaveBeenCalled();
       expect(context.conversationHistoryGeneration).toBe(1);
+      expect(context.hasUserScrolled).toBe(false);
+    });
+
+    it('preserves manual scroll state for updates to the active chat', () => {
+      const context = {
+        fetchAllAttachmentsFromCurrentChat: vi.fn(),
+        fetchSuggestions: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        { id: 987, is_communication_thread: true, unread_count: 1 },
+        { id: 987, is_communication_thread: true, unread_count: 0 }
+      );
+
+      expect(context.hasUserScrolled).toBe(true);
+      expect(context.fetchAllAttachmentsFromCurrentChat).not.toHaveBeenCalled();
+      expect(context.conversationHistoryGeneration).toBe(0);
+    });
+
+    it('establishes a fresh scroll position after switching chats', () => {
+      const context = {
+        $nextTick: callback => callback(),
+        fetchAllAttachmentsFromCurrentChat: vi.fn(),
+        fetchSuggestions: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        fetchPreviousMessages: vi.fn(),
+        isNearConversationBottom: vi.fn(() => false),
+        preserveOpenedUnreadMessages: vi.fn(),
+        scrollToBottom: vi.fn(),
+        makeMessagesRead: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        { id: 988, is_communication_thread: true },
+        { id: 987, is_communication_thread: true }
+      );
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.hasUserScrolled).toBe(false);
+      expect(context.preserveOpenedUnreadMessages).toHaveBeenCalledOnce();
+      expect(context.scrollToBottom).toHaveBeenCalledOnce();
+      expect(context.makeMessagesRead).toHaveBeenCalledOnce();
     });
   });
 
@@ -641,12 +691,20 @@ describe('MessagesView', () => {
     it('only treats public incoming direct-conversation messages as unread', () => {
       const context = {
         currentChat: { agent_last_seen_at: 100 },
+        isImportedHistoryMessage: MessagesView.methods.isImportedHistoryMessage,
         getMessages: [
           { id: 1, message_type: 2, private: false, created_at: 120 },
           { id: 2, message_type: 1, private: false, created_at: 120 },
           { id: 3, message_type: 0, private: true, created_at: 120 },
           { id: 4, message_type: 0, private: false, created_at: 90 },
           { id: 5, message_type: 0, private: false, created_at: 120 },
+          {
+            id: 6,
+            message_type: 0,
+            private: false,
+            created_at: 120,
+            content_attributes: { imported_history: true },
+          },
         ],
       };
 
@@ -686,8 +744,18 @@ describe('MessagesView', () => {
             private: false,
             created_at: 150,
           },
+          {
+            id: 4,
+            conversation_id: 12,
+            message_type: 0,
+            private: false,
+            created_at: 250,
+            content_attributes: { imported_history: true },
+          },
         ],
       };
+      context.isImportedHistoryMessage =
+        MessagesView.methods.isImportedHistoryMessage;
       context.communicationThreadLastSeenByConversationId =
         MessagesView.computed.communicationThreadLastSeenByConversationId.call(
           context

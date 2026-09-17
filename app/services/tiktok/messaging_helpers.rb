@@ -39,7 +39,10 @@ module Tiktok::MessagingHelpers
   end
 
   def create_conversation(channel, contact_inbox, tt_conversation_id)
-    ::Conversation.create!(conversation_params(channel, contact_inbox, tt_conversation_id))
+    Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: contact_inbox,
+      attributes: conversation_params(channel, contact_inbox, tt_conversation_id)
+    )
   end
 
   def conversation_params(channel, contact_inbox, tt_conversation_id)

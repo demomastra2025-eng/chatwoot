@@ -35,9 +35,15 @@ class AutomationRules::AppointmentDerivedConditionService
     appointment_ids = Array.wrap(stored_ids.presence || appointment.service_id).filter_map do |value|
       AutomationRules::AppointmentFieldCatalog.normalize_service_id(value)&.to_s
     end
-    matches = appointment_ids.intersect?(expected_ids)
+    intersects = appointment_ids.intersect?(expected_ids)
+    contains_only = appointment_ids.present? && (appointment_ids - expected_ids).empty?
 
-    operator == 'equal_to' ? matches : !matches
+    {
+      'equal_to' => intersects,
+      'not_equal_to' => !intersects,
+      'contains_only' => contains_only,
+      'not_contains_only' => !contains_only
+    }.fetch(operator, false)
   end
 
   def evaluate_time(condition, operator)

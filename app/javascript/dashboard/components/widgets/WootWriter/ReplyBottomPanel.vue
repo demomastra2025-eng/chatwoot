@@ -12,7 +12,6 @@ import { ALLOWED_FILE_TYPES } from 'shared/constants/messages';
 import { withBusinessCertificateFileTypes } from 'shared/helpers/FileHelper';
 import VideoCallButton from '../VideoCallButton.vue';
 import { useWhatsappCallInitiation } from 'dashboard/composables/useWhatsappCallInitiation';
-import PaymentActionButton from '../PaymentActionButton.vue';
 import {
   INBOX_TYPES,
   CHANNEL_ICON_NEUTRAL_CLASS,
@@ -36,7 +35,6 @@ export default {
   components: {
     NextButton,
     FileUpload,
-    PaymentActionButton,
     VideoCallButton,
     VoiceCallButton,
   },
@@ -190,8 +188,6 @@ export default {
     'selectReplyChannel',
     'selectDirectReplyAction',
     'toggleQuotedReply',
-    'replaceText',
-    'attachFile',
     'scheduleMessage',
   ],
   setup(props) {
@@ -550,13 +546,6 @@ export default {
 
       return Boolean(this.contactId && this.contactPhone);
     },
-    showPaymentActionButton() {
-      return (
-        !this.isOnPrivateNote &&
-        !this.isEditorDisabled &&
-        !this.isCallReplyAction
-      );
-    },
     showVideoCallButton() {
       return (
         (this.isAWebWidgetInbox || this.isAPIInbox) &&
@@ -653,9 +642,6 @@ export default {
     },
     toggleInsertArticle() {
       this.$emit('toggleInsertArticle');
-    },
-    replaceText(text) {
-      this.$emit('replaceText', text);
     },
     async toggleCaptainForConversation() {
       if (this.isTogglingCaptain) return;
@@ -816,12 +802,6 @@ export default {
         sm
         :aria-pressed="quotedReplyEnabled"
         @click="$emit('toggleQuotedReply')"
-      />
-      <PaymentActionButton
-        v-if="showPaymentActionButton"
-        :conversation-id="conversationId"
-        @replace-text="replaceText"
-        @attach-file="$emit('attachFile', $event)"
       />
       <NextButton
         v-if="enableWhatsAppTemplates"

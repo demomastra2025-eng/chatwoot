@@ -298,6 +298,49 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(payload.first.dig(:last_non_activity_message, :id)).to eq(account_wide_message.id)
     end
 
+    it 'reuses the latest public message when it is already non-activity' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      message = create(:message, account: account, conversation: conversation, message_type: :incoming)
+      message_preload_queries = []
+
+      callback = lambda do |_name, _started, _finished, _unique_id, payload|
+        sql = payload[:sql].to_s
+        message_preload_queries << sql if sql.include?('DISTINCT ON (messages.conversation_id)')
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      end
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+      expect(thread_payload.dig(:messages, 0, :id)).to eq(message.id)
+      expect(thread_payload.dig(:last_non_activity_message, :id)).to eq(message.id)
+      expect(message_preload_queries.size).to eq(1)
+    end
+
+    it 'loads an older non-activity message when the latest public message is activity' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      non_activity_message = create(:message, account: account, conversation: conversation, message_type: :incoming)
+      activity_message = create(:message, account: account, conversation: conversation, message_type: :activity)
+      message_preload_queries = []
+
+      callback = lambda do |_name, _started, _finished, _unique_id, payload|
+        sql = payload[:sql].to_s
+        message_preload_queries << sql if sql.include?('DISTINCT ON (messages.conversation_id)')
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      end
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+      expect(thread_payload.dig(:messages, 0, :id)).to eq(activity_message.id)
+      expect(thread_payload.dig(:last_non_activity_message, :id)).to eq(non_activity_message.id)
+      expect(message_preload_queries.size).to eq(2)
+    end
+
     it 'filters threads by child conversation labels' do
       matching_conversation = create(:conversation, account: account)
       other_conversation = create(:conversation, account: account)
@@ -736,6 +779,36 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/:account_id/communication_threads/sidebar_unread_counts' do
+    it 'returns unread facets scoped to the current user without full list metadata' do
+      accessible_conversation = create(:conversation, account: account, status: :pending)
+      create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      accessible_thread = accessible_conversation.reload.communication_thread
+      accessible_thread.update!(status: :pending, unread_count: 1)
+
+      inaccessible_conversation = create(:conversation, account: account, status: :open)
+      inaccessible_conversation.reload.communication_thread.update!(unread_count: 1)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts",
+          params: { status: 'all', assignee_type: 'all' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.fetch('counts')).to include(
+        'all' => 1,
+        'statuses' => include('pending' => 1),
+        'inboxes' => include(accessible_conversation.inbox_id.to_s => 1)
+      )
+    end
+
+    it 'returns unauthorized without auth' do
+      get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts", as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
   describe 'POST /api/v1/accounts/:account_id/communication_threads/filter' do
     let(:pipeline) { create(:crm_pipeline, account: account) }
     let(:matching_stage) { create(:crm_stage, account: account, pipeline: pipeline) }
@@ -860,6 +933,22 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body.dig(:data, :meta)).to include(
         all_count: 1,
         unassigned_count: 1
+      )
+    end
+
+    it 'returns only unread facets for lightweight advanced-filter refreshes' do
+      matching_conversation.reload.communication_thread.update!(unread_count: 1)
+      wrong_stage_conversation.reload.communication_thread.update!(unread_count: 1)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter_sidebar_unread_counts?crm_stage_id=#{matching_stage.id}",
+           params: { payload: [advanced_filter_payload.first.merge(query_operator: nil)] },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.fetch('counts')).to include(
+        'all' => 1,
+        'stages' => include(matching_stage.id.to_s => 1, other_stage.id.to_s => 1)
       )
     end
 
@@ -1094,6 +1183,15 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
       thread = conversation.reload.communication_thread
       thread.update!(session_started_at: 1.day.ago)
+      imported_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        content_attributes: { imported_history: true },
+        created_at: 2.hours.ago
+      )
       current_message = create(
         :message,
         account: account,
@@ -1108,6 +1206,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response).to have_http_status(:success)
       expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(current_message.id)
       expect(response.parsed_body['payload'].pluck('id')).to include(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).to include(imported_message.id)
       expect(response.parsed_body['payload'].pluck('id')).not_to include(historical_message.id)
     end
   end
@@ -1170,6 +1269,12 @@ RSpec.describe 'Communication Threads API', type: :request do
       create(:inbox_member, user: agent, inbox: first_conversation.inbox)
       create(:inbox_member, user: agent, inbox: second_inbox)
       thread = first_conversation.reload.communication_thread
+      other_agent = create(:user, account: account, role: :agent)
+      Conversations::RecordUserReadStateService.new(conversation: first_conversation, user: agent).perform
+      Conversations::RecordUserReadStateService.new(conversation: second_conversation, user: agent).perform
+      other_cursors = [first_conversation, second_conversation].to_h do |conversation|
+        [conversation.id, conversation.last_seen_at_for(other_agent)]
+      end
 
       expect(thread.reload.unread_count).to eq(0)
 
@@ -1182,6 +1287,10 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(1)
       expect(thread.reload.unread_count).to eq(2)
       expect(response.parsed_body['unread_count']).to eq(2)
+      expect(first_conversation.last_seen_at_for(agent)).to be < first_conversation.messages.incoming.last.created_at
+      expect(second_conversation.last_seen_at_for(agent)).to be < second_conversation.messages.incoming.last.created_at
+      expect(first_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[first_conversation.id])
+      expect(second_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[second_conversation.id])
     end
   end
 

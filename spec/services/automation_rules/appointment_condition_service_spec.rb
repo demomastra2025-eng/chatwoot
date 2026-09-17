@@ -127,6 +127,31 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(false)
   end
 
+  it 'distinguishes appointments containing only selected services from mixed appointments' do
+    addon_service = create(:scheduling_service, account: account)
+    mri_service = create(:scheduling_service, account: account)
+    appointment.update!(custom_attributes: { 'service_ids' => [addon_service.id, mri_service.id] })
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_updated',
+      conditions: [
+        { attribute_key: 'service_id', filter_operator: 'not_contains_only', values: [addon_service.id], query_operator: nil }
+      ],
+      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+    )
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+
+    appointment.update!(custom_attributes: { 'service_ids' => [addon_service.id] })
+    expect(described_class.new(rule, appointment).perform).to be(false)
+
+    rule.conditions = [
+      { attribute_key: 'service_id', filter_operator: 'contains_only', values: [addon_service.id], query_operator: nil }
+    ]
+    expect(described_class.new(rule, appointment).perform).to be(true)
+  end
+
   it 'returns false for unsupported operators' do
     rule = build(
       :automation_rule,

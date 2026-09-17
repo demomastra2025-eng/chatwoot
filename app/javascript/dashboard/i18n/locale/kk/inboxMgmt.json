@@ -406,8 +406,10 @@
           "CHANGE_ACTION": "Провайдерді өзгерту"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Virtual PBX",
-          "KAZAKHSTAN_DESC": "Қазақстан нөмірлері үшін OneLink Virtual PBX және Janus SIP қолданыңыз.",
+          "KAZAKHSTAN": "Wazo виртуалды АТС",
+          "KAZAKHSTAN_DESC": "Қазақстандық SIP желілерін Wazo және OneLink вебфоны арқылы қосыңыз.",
+          "WAZO": "Wazo виртуалды АТС",
+          "WAZO_DESC": "Wazo жүйесін OneLink вебфонына қосыңыз. Операторлардың SIP қолжетімділігі автоматты түрде жасалады.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Sipuni провайдерін браузердегі вебфон арқылы жеке SIP-провайдер ретінде қосыңыз.",
           "ASTERISK_ANALOG": "Asterisk аналогтық",
@@ -435,7 +437,8 @@
             "SIPUNI": "Sipuni / ішкі Asterisk",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog",
-            "BEELINE": "Beeline Cloud PBX"
+            "BEELINE": "Beeline Cloud PBX",
+            "WAZO": "Wazo"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Провайдердегі нөмір/аккаунт",
@@ -555,6 +558,7 @@
           "PLAN_BUTTON": "Синхрондау жоспарын көру",
           "RECONCILE_BUTTON": "Remote күйін тексеру",
           "PROVISION_BUTTON": "Телефониямен синхрондау",
+          "WAZO_APPLY_CONFIRM": "Бұл жоспарды Wazo жүйесінде қазір қолдану керек пе? Басқарылатын Wazo ресурстары жасалады, жаңартылады немесе жойылады.",
           "PROVISIONING_PLAN_READY": "Provisioning жоспары дайын",
           "PROVISION_BLOCKED": "Remote provisioning орындалмады",
           "PROVISION_SUCCESS": "Remote provisioning аяқталды",

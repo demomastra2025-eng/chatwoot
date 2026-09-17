@@ -33,7 +33,7 @@ FactoryBot.define do
       before(:create) do |channel_voice|
         config = channel_voice.provider_config.to_h.with_indifferent_access
         provider_kind = config[:provider_kind].presence || channel_voice.provider
-        next unless provider_kind.to_s.in?(%w[asterisk_analog sipuni binotel beeline])
+        next unless provider_kind.to_s.in?(%w[asterisk_analog sipuni binotel beeline wazo])
         next if config[:provider_connection_id].present?
 
         connection = create(

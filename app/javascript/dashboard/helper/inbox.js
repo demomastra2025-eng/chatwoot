@@ -9,6 +9,7 @@ export const INBOX_TYPES = {
   EMAIL: 'Channel::Email',
   TELEGRAM: 'Channel::Telegram',
   TELEGRAM_PERSONAL: 'Channel::TelegramPersonal',
+
   WEIXIN: 'Channel::Weixin',
   VK: 'Channel::VkCommunity',
   LINE: 'Channel::Line',

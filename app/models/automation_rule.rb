@@ -58,6 +58,7 @@ class AutomationRule < ApplicationRecord
   APPOINTMENT_EVENT_NAMES = %w[
     appointment_created
     appointment_updated
+    appointment_rescheduled
     appointment_cancelled
     appointment_completed
   ].freeze

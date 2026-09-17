@@ -10,15 +10,34 @@ class Reminders::ConversationResolver
     return reminder.conversation if reminder.conversation.present? && !reminder.conversation.resolved?
 
     contact_inbox = ensure_contact_inbox!
-    existing_conversation = contact_inbox.conversations.where.not(status: :resolved).order(created_at: :desc).first
-    return existing_conversation if existing_conversation.present?
+    return create_conversation!(contact_inbox) if contact_inbox.inbox.email?
 
-    create_conversation!(contact_inbox)
+    attributes = conversation_attributes(contact_inbox)
+    conversation = Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: contact_inbox,
+      attributes: attributes
+    )
+    conversation.update!(
+      status: :open,
+      waiting_since: nil,
+      additional_attributes: conversation.additional_attributes.merge(attributes[:additional_attributes])
+    )
+    conversation
   end
 
   private
 
+  def conversation_attributes(contact_inbox)
+    {
+      status: :open,
+      additional_attributes: base_additional_attributes(contact_inbox)
+    }
+  end
+
   def create_conversation!(contact_inbox)
+    existing_conversation = contact_inbox.conversations.where.not(status: :resolved).order(created_at: :desc).first
+    return existing_conversation if existing_conversation.present?
+
     conversation = Conversation.create!(
       account_id: reminder.account_id,
       inbox_id: contact_inbox.inbox_id,

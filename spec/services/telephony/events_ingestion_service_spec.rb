@@ -25,6 +25,11 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'classifies Wazo lifecycle events as native SIP events' do
+      expect(described_class::NATIVE_SIP_PROVIDERS).to include('wazo')
+      expect(service.send(:native_sip_provider?, 'wazo')).to be(true)
+    end
+
     it 'retries uniqueness conflicts outside the failed transaction and reuses the persisted call session' do
       expected_conversation_id = existing_call_session.conversation_id
       expected_contact_id = existing_call_session.contact_id
@@ -338,7 +343,7 @@ RSpec.describe Telephony::EventsIngestionService do
           event: 'recording_ready'
         )
       )
-      allow(lifecycle_service).to receive(:ensure_conversation!).and_raise(RuntimeError, 'recovery failed')
+      allow(lifecycle_service).to receive(:sync_voice_message!).and_raise(RuntimeError, 'recovery failed')
 
       result = lifecycle_service.perform
 
@@ -3376,8 +3381,7 @@ RSpec.describe Telephony::EventsIngestionService do
         content_attributes: { 'data' => { 'status' => 'completed' } }
       )
 
-      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: false)
-      account.enable_features!('captain_integration')
+      account.update!(call_transcriptions: true)
 
       result = nil
 
@@ -3590,8 +3594,7 @@ RSpec.describe Telephony::EventsIngestionService do
         source_id: 'voice_call:call-retry-1',
         content_attributes: { 'data' => { 'status' => 'no_answer' } }
       )
-      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: true)
-      account.enable_features!('captain_integration')
+      account.update!(call_transcriptions: true)
 
       result = nil
 
@@ -3721,13 +3724,11 @@ RSpec.describe Telephony::EventsIngestionService do
       result = service.perform
 
       expect(result).to eq(existing_call_session)
-      recovered_conversation = result.reload.conversation
-      expect(recovered_conversation).not_to eq(conversation)
-      expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
-      message = recovered_conversation.messages.voice_calls.find_by!(source_id: existing_call_session.voice_call_source_id)
+      expect(result.reload.conversation).to eq(conversation)
+      message = conversation.messages.voice_calls.find_by!(source_id: existing_call_session.voice_call_source_id)
       expect(message.content_attributes.dig('data', 'status')).to eq('completed')
       expect(Message.exists?(branch_message.id)).to be(false)
-      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to be_empty
+      expect(account.conversations.where(identifier: "voice-recovery:#{result.id}")).to be_empty
       expect(conversation.reload.additional_attributes).to include(
         'telephony_call_ref' => new_call_session.external_call_ref,
         'call_status' => 'ringing'
@@ -4131,28 +4132,26 @@ RSpec.describe Telephony::EventsIngestionService do
           duration: 1800
         )
       )
-      recovery_attempts = 0
-      allow(service).to receive(:move_native_sip_recovery_messages!).and_wrap_original do |original, messages, target_conversation|
-        recovery_attempts += 1
-        if recovery_attempts == 1
-          messages.first.update!(conversation: target_conversation, inbox: target_conversation.inbox)
+      reconciliation_attempts = 0
+      allow(service).to receive(:sync_voice_message!).and_wrap_original do |original, *args, **kwargs|
+        reconciliation_attempts += 1
+        if reconciliation_attempts == 1
           raise ActiveRecord::Deadlocked, 'retry stale recovery after partial move'
         end
 
-        original.call(messages, target_conversation)
+        original.call(*args, **kwargs)
       end
       result = service.perform
 
       attrs = conversation.reload.additional_attributes
-      recovered_conversation = result.reload.conversation
-      recovered_message = recovered_conversation.messages.voice_calls.find_by!(source_id: result.voice_call_source_id)
+      recovered_message = conversation.messages.voice_calls.find_by!(source_id: result.voice_call_source_id)
       recovered_message_data = recovered_message.content_attributes['data']
       aggregate_failures do
-        expect(recovery_attempts).to eq(2)
+        expect(reconciliation_attempts).to eq(2)
         expect(lock_transaction_states).to be_present.and all(be(true))
         expect(recovered_message.id).to eq(old_message.id)
-        expect(recovered_conversation).not_to eq(conversation)
-        expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
+        expect(result.reload.conversation).to eq(conversation)
+        expect(account.conversations.where(identifier: "voice-recovery:#{result.id}")).to be_empty
         expect(result.reload).to have_attributes(
           status: 'no_answer',
           ended_at: old_ended_at,
@@ -4168,7 +4167,7 @@ RSpec.describe Telephony::EventsIngestionService do
         )
         expect(attrs['recording_ref']).to be_blank
         expect(attrs['recording']).to be_blank
-        expect(conversation.messages.voice_calls.where(id: old_message.id)).to be_empty
+        expect(conversation.messages.voice_calls.where(id: old_message.id)).to exist
         expect(recovered_message_data).to include(
           'status' => 'no_answer',
           'duration' => 8,

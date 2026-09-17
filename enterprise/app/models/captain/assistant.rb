@@ -67,6 +67,8 @@ class Captain::Assistant < ApplicationRecord
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
   CRM_DEAL_WRITE_TOOL_IDS = %w[create_deal update_deal transition_deal_stage].freeze
+  APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS = %w[get_appointment_provider_status].freeze
+  APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS = %w[create_appointment update_appointment cancel_appointment].freeze
   CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY = {
     deal: 'list_deal_custom_fields',
     task: 'list_task_custom_fields',
@@ -368,7 +370,7 @@ class Captain::Assistant < ApplicationRecord
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
                  :auto_reply_on_last_incoming, :context_access, :tool_access,
-                 :model, :feature_image_understanding
+                 :model, :feature_image_understanding, :use_audio_transcriptions
 
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
@@ -742,6 +744,13 @@ class Captain::Assistant < ApplicationRecord
 
   def auto_reply_on_last_incoming_enabled?
     config['auto_reply_on_last_incoming'] == true
+  end
+
+  def use_audio_transcriptions?
+    value = config['use_audio_transcriptions']
+    return true if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def handoff_enabled?
@@ -1313,6 +1322,8 @@ class Captain::Assistant < ApplicationRecord
     end
 
     expanded_tool_ids.concat(DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS) if normalized_tool_ids.intersect?(DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS)
+    expanded_tool_ids.concat(APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS) if
+      normalized_tool_ids.intersect?(APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS)
 
     expanded_tool_ids.uniq
   end

@@ -110,6 +110,31 @@ RSpec.describe Integrations::Medelement::OutboundChangeJob do
     )
   end
 
+  it 'passes an actor descriptor from the versioned change envelope' do
+    service = instance_double(Integrations::Medelement::OutboundChangeService, perform: true)
+    expect(Integrations::Medelement::OutboundChangeService).to receive(:new).with(
+      entity_type: 'appointment',
+      entity_id: 11,
+      event_name: 'appointment_created',
+      change: {},
+      account_id: 7,
+      actor_id: nil,
+      actor_descriptor: { 'type' => 'Captain::Assistant', 'id' => 9 },
+      event_key: nil
+    ).and_return(service)
+
+    described_class.perform_now(
+      entity_type: 'appointment',
+      entity_id: 11,
+      event_name: 'appointment_created',
+      change: {
+        account_id: 7,
+        payload_version: described_class::PAYLOAD_VERSION,
+        actor_descriptor: { type: 'Captain::Assistant', id: 9 }
+      }
+    )
+  end
+
   it 'keeps its keyword shape compatible with the legacy worker' do
     expect(described_class.instance_method(:perform).parameters).to eq(
       [

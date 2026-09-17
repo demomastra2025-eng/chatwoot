@@ -1,6 +1,16 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Assistant, type: :model do
+  describe '#use_audio_transcriptions?' do
+    it 'defaults to enabled for existing assistants' do
+      expect(build(:captain_assistant, config: {}).use_audio_transcriptions?).to be(true)
+    end
+
+    it 'respects an explicit disabled capability' do
+      expect(build(:captain_assistant, config: { 'use_audio_transcriptions' => false }).use_audio_transcriptions?).to be(false)
+    end
+  end
+
   describe 'validations' do
     it { is_expected.to validate_length_of(:description).is_at_most(Captain::Assistant::DESCRIPTION_MAX_LENGTH) }
 
@@ -539,7 +549,8 @@ RSpec.describe Captain::Assistant, type: :model do
         'create_task',
         'list_task_custom_fields',
         'create_appointment',
-        'list_appointment_custom_fields'
+        'list_appointment_custom_fields',
+        'get_appointment_provider_status'
       )
     end
 

@@ -57,7 +57,13 @@ describe('#SearchAPI', () => {
       expect(axiosMock.get).toHaveBeenCalledWith(
         '/api/v1/search/conversations',
         {
-          params: { q: 'test', page: 1, since: undefined, until: undefined },
+          params: {
+            q: 'test',
+            page: 1,
+            since: undefined,
+            until: undefined,
+            compact: true,
+          },
         }
       );
     });
@@ -72,7 +78,31 @@ describe('#SearchAPI', () => {
       expect(axiosMock.get).toHaveBeenCalledWith(
         '/api/v1/search/conversations',
         {
-          params: { q: 'test', page: 1, since: 1700000000, until: 1732000000 },
+          params: {
+            q: 'test',
+            page: 1,
+            since: 1700000000,
+            until: 1732000000,
+            compact: true,
+          },
+        }
+      );
+    });
+
+    it('#conversations forwards an abort signal', () => {
+      const controller = new AbortController();
+      searchAPI.conversations({ q: 'test', signal: controller.signal });
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/search/conversations',
+        {
+          params: {
+            q: 'test',
+            page: 1,
+            since: undefined,
+            until: undefined,
+            compact: true,
+          },
+          signal: controller.signal,
         }
       );
     });

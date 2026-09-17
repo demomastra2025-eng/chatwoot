@@ -7,6 +7,7 @@ from pipecat.frames.frames import (
     InputTextRawFrame,
     InterruptionWorkerFrame,
     LLMRunFrame,
+    SpeechOutputAudioRawFrame,
     TTSSpeakFrame,
 )
 from pipecat.services.cartesia.stt import CartesiaSTTService
@@ -16,6 +17,7 @@ from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 from pipecat.services.openai.realtime.events import ResponseCreateEvent
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
+from pipecat.services.openai.responses.llm import OpenAIResponsesLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 from pipecat.transcriptions.language import Language
 
@@ -29,6 +31,7 @@ from app.pipeline.factory import (
     VOICE_LANGUAGE_INSTRUCTION,
     VOICE_LIST_RESULT_INSTRUCTION,
     _build_tools,
+    _initial_messages,
     _provider_system_prompt,
     _user_turn_strategies,
     build_pipeline,
@@ -39,6 +42,7 @@ from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTSer
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_stt import OneLinkGeminiSTTService
+from app.services.openai_live import OneLinkOpenAILiveLLMService
 
 
 def _settings(**overrides) -> Settings:
@@ -88,6 +92,14 @@ def _runtime_stream() -> RuntimeStream:
     )
 
 
+def test_openai_live_uses_developer_startup_instruction_without_changing_other_providers():
+    openai_live = _context("openai-live", model="gpt-live-1", voice="marin")
+    gemini_live = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+
+    assert _initial_messages(openai_live)[0]["role"] == "developer"
+    assert _initial_messages(gemini_live)[0]["role"] == "user"
+
+
 @pytest.mark.parametrize(
     ("provider", "model", "voice", "service_class", "start_on_connect"),
     [
@@ -98,6 +110,7 @@ def _runtime_stream() -> RuntimeStream:
             GeminiLiveLLMService,
             True,
         ),
+        ("openai-live", "gpt-live-1", "marin", OneLinkOpenAILiveLLMService, True),
         ("openai-realtime", "gpt-realtime-2", "alloy", OpenAIRealtimeLLMService, True),
         (
             "elevenlabs",
@@ -190,11 +203,7 @@ def test_builds_supported_provider_pipeline(
     else:
         assert assembly.stt is None
         assert assembly.tts is None
-    if provider == "openai-realtime":
-        llm = assembly.llm
-        assert isinstance(llm, OpenAIRealtimeLLMService)
-        assert llm._settings.session_properties.output_modalities == ["audio"]
-        assert llm._settings.session_properties.audio.input.transcription.language == "ru"
+    if provider in {"openai-live", "openai-realtime"}:
         assert assembly.input_resampler is not None
         assert assembly.input_resampler.target_sample_rate == 24_000
         assert assembly.output_resampler is not None
@@ -202,6 +211,23 @@ def test_builds_supported_provider_pipeline(
     else:
         assert assembly.input_resampler is None
         assert assembly.output_resampler is None
+    if provider == "openai-live":
+        llm = assembly.llm
+        assert isinstance(llm, OneLinkOpenAILiveLLMService)
+        assert llm._settings.model == "gpt-live-1"
+        assert llm._settings.voice == "marin"
+        assert isinstance(llm._delegation, OneLinkOpenAILiveLLMService.ResponsesDelegation)
+        assert llm._delegation.settings.model == "gpt-5.4-mini"
+        assert llm._delegation.settings.max_completion_tokens == 1_024
+        assert llm._delegation.settings.reasoning == OpenAIResponsesLLMService.ReasoningConfig(
+            effort="minimal"
+        )
+        assert assembly.output_resampler._frame_type is SpeechOutputAudioRawFrame
+    elif provider == "openai-realtime":
+        llm = assembly.llm
+        assert isinstance(llm, OpenAIRealtimeLLMService)
+        assert llm._settings.session_properties.output_modalities == ["audio"]
+        assert llm._settings.session_properties.audio.input.transcription.language == "ru"
     if provider == "gemini-live":
         llm = cast(GeminiLiveLLMService, assembly.llm)
         assert llm._client._api_client._http_options.api_version == "v1beta"
@@ -911,6 +937,44 @@ async def test_openai_exact_speech_uses_one_shot_audio_response_without_tools():
 
 
 @pytest.mark.asyncio
+async def test_openai_live_direct_speech_uses_commentary_without_delegation_id():
+    assembly = build_pipeline(
+        context=_context("openai-live", model="gpt-live-1", voice="marin"),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    llm = assembly.llm
+    assert isinstance(llm, OneLinkOpenAILiveLLMService)
+    llm._send_context_append = AsyncMock()
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=False)
+
+    await assembly.speak_exact("Секунду, проверю.")
+
+    llm._send_context_append.assert_awaited_once_with(None, "Секунду, проверю.", spoken=True)
+
+
+@pytest.mark.asyncio
+async def test_openai_live_runtime_instruction_uses_commentary_channel():
+    assembly = build_pipeline(
+        context=_context("openai-live", model="gpt-live-1", voice="marin"),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    llm = assembly.llm
+    assert isinstance(llm, OneLinkOpenAILiveLLMService)
+    llm._send_context_append = AsyncMock()
+
+    instruction = "Кратко сообщи результат инструмента. " * 100
+    assert await assembly.run_instruction(instruction) is True
+
+    llm._send_context_append.assert_awaited_once_with(None, instruction, spoken=True)
+
+
+@pytest.mark.asyncio
 async def test_elevenlabs_exact_speech_queues_tts_without_context_append():
     assembly = build_pipeline(
         context=_context(
@@ -966,9 +1030,7 @@ async def test_completed_cascaded_direct_speech_is_persisted_without_blocking_tt
         assembly.activity.turns_completed += 1
         return True
 
-    assembly.activity.wait_for_turn_completed_after = AsyncMock(
-        side_effect=complete_direct_turn
-    )
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(side_effect=complete_direct_turn)
 
     assert await assembly.speak_result("Акуна матата") is True
     await asyncio.gather(*background_tasks)
@@ -1066,9 +1128,7 @@ async def test_cascaded_provider_starts_with_exact_tts_greeting_without_llm():
         assembly.activity.turns_completed += 1
         return True
 
-    assembly.activity.wait_for_turn_completed_after = AsyncMock(
-        side_effect=complete_greeting_turn
-    )
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(side_effect=complete_greeting_turn)
 
     await assembly.start_conversation()
     while any(not task.done() for task in background_tasks):

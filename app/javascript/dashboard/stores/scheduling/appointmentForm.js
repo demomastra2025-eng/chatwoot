@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { PAYMENT_METHOD_VALUES } from 'dashboard/routes/dashboard/scheduling/constants';
+import { schedulingContactNameParts } from './contactName';
 import {
   compactPayload,
   extractSchedulingError,
@@ -409,16 +410,17 @@ export const useSchedulingAppointmentFormStore = defineStore(
         const previousContactPhone = this.selectedContact?.phone || '';
         const phoneCameFromPreviousContact =
           previousContactPhone && existingPhone === previousContactPhone;
+        const contactName = schedulingContactNameParts(contact);
 
         this.selectedContact = contact;
         this.form = {
           ...this.form,
           clientBirthDate: contact.birthDate || '',
-          clientFirstName: contact.firstName || contact.fullName || '',
+          clientFirstName: contactName.firstName,
           clientGender: contact.gender || '',
           clientIdentifier: contact.identifier || '',
-          clientLastName: contact.lastName || '',
-          clientMiddleName: contact.middleName || '',
+          clientLastName: contactName.lastName,
+          clientMiddleName: contactName.middleName,
           clientName: contact.fullName || '',
           clientNameStructured: true,
           clientPhone:
@@ -498,6 +500,31 @@ export const useSchedulingAppointmentFormStore = defineStore(
           if (requestId === this.ui.contactSearchRequestId) {
             this.ui.isLoadingContacts = false;
           }
+        }
+      },
+
+      async loadContact(contactId) {
+        this.ui.isLoadingContacts = true;
+
+        try {
+          const { data } = await SchedulingContactsAPI.get({
+            contact_id: contactId,
+            limit: 1,
+          });
+          const contact = normalizePayload(data)[0] || null;
+          if (!contact) return null;
+
+          this.contacts = [
+            contact,
+            ...this.contacts.filter(item => item.id !== contact.id),
+          ];
+          this.applyContact(contact);
+          return contact;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isLoadingContacts = false;
         }
       },
 

@@ -10,7 +10,7 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
   # rubocop:disable Metrics/ParameterLists
   def perform(entity_type:, entity_id:, event_name:, change: {}, actor_id: nil, event_key: nil)
     account_id = account_binding(change)
-    Integrations::Medelement::OutboundChangeService.new(
+    attributes = {
       entity_type: entity_type,
       entity_id: entity_id,
       event_name: event_name,
@@ -18,7 +18,10 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
       account_id: account_id,
       actor_id: actor_id,
       event_key: event_key
-    ).perform
+    }
+    actor_descriptor = change.to_h.with_indifferent_access[:actor_descriptor]
+    attributes[:actor_descriptor] = actor_descriptor if actor_descriptor.present?
+    Integrations::Medelement::OutboundChangeService.new(**attributes).perform
   rescue Scheduling::Error => e
     raise BusyError, e.message if e.code == 'MEDELEMENT_COMMAND_IN_PROGRESS'
 
@@ -36,7 +39,7 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
   end
 
   def service_change(change)
-    change.to_h.with_indifferent_access.except(:account_id, :payload_version)
+    change.to_h.with_indifferent_access.except(:account_id, :payload_version, :actor_descriptor)
   end
 
   def legacy_payload?(attributes)

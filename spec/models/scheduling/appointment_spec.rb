@@ -131,6 +131,10 @@ RSpec.describe Scheduling::Appointment do
       appointment.update!(status: 'cancelled')
 
       expect(captured_events.map(&:first)).to include(Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_CANCELLED)
+      source_versions = captured_events.filter_map do |event_name, data|
+        data[:medelement_source_updated_at] if event_name.in?([Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_CANCELLED])
+      end
+      expect(source_versions).to contain_exactly(appointment.updated_at.utc.iso8601(6), appointment.updated_at.utc.iso8601(6))
     end
 
     it 'captures provider reconciliation provenance on tombstone events' do

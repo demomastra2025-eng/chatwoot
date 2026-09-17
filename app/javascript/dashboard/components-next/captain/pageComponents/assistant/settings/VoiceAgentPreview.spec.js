@@ -104,4 +104,13 @@ describe('VoiceAgentPreview', () => {
     expect(muteButton.attributes('disabled')).toBeUndefined();
     expect(wrapper.text()).toContain('01:05');
   });
+
+  it('shows the GPT Live provider label', () => {
+    const wrapper = mount(VoiceAgentPreview, {
+      props: { assistantId: 57, configuredProvider: 'openai-live' },
+    });
+
+    expect(wrapper.text()).toContain('OpenAI GPT Live');
+    expect(wrapper.text()).not.toContain('openai-live');
+  });
 });

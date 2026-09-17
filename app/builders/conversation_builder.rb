@@ -2,21 +2,23 @@ class ConversationBuilder
   pattr_initialize [:params!, :contact_inbox!]
 
   def perform
-    look_up_exising_conversation || create_new_conversation
+    return create_new_conversation if @contact_inbox.inbox.email?
+
+    Conversations::IdentityResolver.resolve_primary!(contact_inbox: @contact_inbox, attributes: conversation_params) do |conversation|
+      sync_lead_form_submission(conversation)
+    end
   end
 
   private
 
-  def look_up_exising_conversation
-    return unless @contact_inbox.inbox.lock_to_single_conversation?
-
-    @contact_inbox.conversations.last
-  end
-
   def create_new_conversation
     conversation = ::Conversation.create!(conversation_params)
-    ::LeadForms::WidgetSubmissionSyncService.new(conversation: conversation, params: params).perform
+    sync_lead_form_submission(conversation)
     conversation
+  end
+
+  def sync_lead_form_submission(conversation)
+    ::LeadForms::WidgetSubmissionSyncService.new(conversation: conversation, params: params).perform
   end
 
   def conversation_params

@@ -135,6 +135,22 @@ def test_context_accepts_cartesia_cascade_provider():
     assert context.ai.provider == "cartesia"
 
 
+def test_context_accepts_openai_live_and_its_delegation_model():
+    raw = payload()
+    raw["ai"].update(
+        provider="openai-live",
+        model="gpt-live-1",
+        delegation_model="gpt-5.4-mini",
+        voice="marin",
+    )
+
+    context = VoiceContext.model_validate(raw)
+
+    assert context.ai.provider == "openai-live"
+    assert context.ai.model == "gpt-live-1"
+    assert context.ai.delegation_model == "gpt-5.4-mini"
+
+
 def test_context_accepts_zero_foreground_wait_from_rails_contract():
     raw = payload()
     raw["ai"]["tool_foreground_wait_ms"] = 0

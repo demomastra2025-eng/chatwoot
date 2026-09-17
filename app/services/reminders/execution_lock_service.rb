@@ -30,7 +30,7 @@ class Reminders::ExecutionLockService
     result = nil
     lock_scope = -> { result = with_locked_execution(&) }
 
-    if reminder.relative? && reminder.remindable.present? && !reminder.manual_schedule_override?
+    if lock_remindable?
       reminder.remindable.with_lock(&lock_scope)
     else
       lock_scope.call
@@ -50,6 +50,13 @@ class Reminders::ExecutionLockService
 
     reminder_generation = reminder.metadata.to_h.fetch(Reminder::AUTOMATION_RULE_GENERATION_KEY, 1).to_i
     reminder_generation == rule.lifecycle_generation
+  end
+
+  def lock_remindable?
+    return false if reminder.remindable.blank?
+    return true if reminder.remindable_type == 'Scheduling::Appointment'
+
+    reminder.relative? && !reminder.manual_schedule_override?
   end
 
   def with_locked_execution(&)

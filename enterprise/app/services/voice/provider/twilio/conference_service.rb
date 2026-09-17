@@ -1,11 +1,8 @@
 class Voice::Provider::Twilio::ConferenceService
   pattr_initialize [:conversation!, { twilio_client: nil }]
 
-  def ensure_conference_sid
-    existing = conversation.additional_attributes&.dig('conference_sid')
-    return existing if existing.present?
-
-    sid = Voice::Conference::Name.for(conversation)
+  def ensure_conference_sid(call_ref:)
+    sid = Voice::Conference::Name.for(conversation, call_ref: call_ref)
     merge_attributes('conference_sid' => sid)
     sid
   end
@@ -18,10 +15,12 @@ class Voice::Provider::Twilio::ConferenceService
     )
   end
 
-  def end_conference
+  def end_conference(call_ref:)
+    conference_sid = Voice::Conference::Name.for(conversation, call_ref: call_ref)
+
     twilio_client
       .conferences
-      .list(friendly_name: Voice::Conference::Name.for(conversation), status: 'in-progress')
+      .list(friendly_name: conference_sid, status: 'in-progress')
       .each { |conf| twilio_client.conferences(conf.sid).update(status: 'completed') }
   end
 

@@ -81,7 +81,8 @@ RSpec.describe LeadForms::IngestSubmissionService do
     described_class.new(lead_form: another_form, params: payload).perform
 
     expect(account.lead_submissions.count).to eq(2)
-    expect(account.conversations.count).to eq(2)
+    expect(account.conversations.count).to eq(1)
+    expect(account.conversations.first.messages.count).to eq(2)
   end
 
   it 'rejects submissions missing required form schema fields' do

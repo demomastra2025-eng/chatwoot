@@ -268,8 +268,23 @@ const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
 const conversationCustomViews = useMapGetter(
   'customViews/getConversationCustomViews'
 );
+const conversationSidebarUnreadCounts = useMapGetter(
+  'getConversationSidebarUnreadCounts'
+);
 
 const conversationStats = useMapGetter('conversationStats/getStats');
+
+const getSidebarUnreadCount = (collection, key) => {
+  if (!key) return 0;
+  return Number(
+    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
+  );
+};
+
+const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
+const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
+const appointmentStatusCount = status =>
+  getSidebarUnreadCount('appointment_statuses', status);
 
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
@@ -614,6 +629,7 @@ const appointmentStatusSidebarItems = computed(() => {
         iconClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
         labelClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
         countClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
+        count: appointmentStatusCount(status),
         active: currentAppointmentStatus.value === status,
         activeOn: conversationStatusActiveOn,
         to: withCurrentConversationScopeAppointmentStatus(status),
@@ -1419,7 +1435,7 @@ const menuItems = computed(() => {
             children: teams.value.map(team => ({
               name: `${team.name}-${team.id}`,
               label: team.name,
-
+              badge: teamUnreadCount(team.id),
               to: withConversationStatus(
                 'team_conversations',
                 {
@@ -1449,6 +1465,7 @@ const menuItems = computed(() => {
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
+                      badge: labelUnreadCount(label.title),
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'

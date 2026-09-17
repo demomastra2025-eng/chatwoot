@@ -1,4 +1,7 @@
 Rails.application.configure do
+  # Deployment releases are content-addressed and must not be rewritten by DB tasks.
+  config.active_record.dump_schema_after_migration = false if ENV['ONELINK_IMMUTABLE_RELEASE'] == '1'
+
   # Settings specified here will take precedence over those in config/application.rb.
 
   # In the development environment your application's code is reloaded on

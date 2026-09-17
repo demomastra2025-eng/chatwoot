@@ -85,23 +85,36 @@ module LeadForms
     end
 
     def create_conversation!(submission, contact_inbox)
-      conversation = account.conversations.new(
-        inbox: lead_form.inbox,
-        contact: contact_inbox.contact,
-        contact_inbox: contact_inbox,
+      attributes = {
         status: conversation_status,
-        additional_attributes: {
-          source: 'lead_form',
-          lead_form_id: lead_form.id,
-          lead_submission_id: submission.id,
-          lead_source_kind: lead_form.source_kind,
-          referer_url: params['referer_url'],
-          landing_url: params['landing_url']
-        }.compact,
+        additional_attributes: lead_conversation_attributes(submission),
         custom_attributes: lead_form.settings.to_h.fetch('conversation_custom_attributes', {})
+      }
+
+      if lead_form.inbox.email?
+        return account.conversations.create!(
+          attributes.merge(inbox: lead_form.inbox, contact: contact_inbox.contact, contact_inbox: contact_inbox)
+        )
+      end
+
+      conversation = Conversations::IdentityResolver.resolve_primary!(contact_inbox: contact_inbox, attributes: attributes)
+      conversation.update!(
+        status: conversation_status,
+        additional_attributes: conversation.additional_attributes.merge(lead_conversation_attributes(submission)),
+        custom_attributes: conversation.custom_attributes.merge(attributes[:custom_attributes])
       )
-      conversation.save!
       conversation
+    end
+
+    def lead_conversation_attributes(submission)
+      {
+        source: 'lead_form',
+        lead_form_id: lead_form.id,
+        lead_submission_id: submission.id,
+        lead_source_kind: lead_form.source_kind,
+        referer_url: params['referer_url'],
+        landing_url: params['landing_url']
+      }.compact
     end
 
     def create_message!(submission, conversation)

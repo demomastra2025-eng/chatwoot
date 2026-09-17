@@ -86,3 +86,57 @@ describe.each(['get', 'filter'])(
     });
   }
 );
+
+describe('#CommunicationThreadAPI sidebar unread endpoints', () => {
+  const originalAxios = window.axios;
+  const axiosMock = { get: vi.fn(), post: vi.fn() };
+
+  beforeEach(() => {
+    window.axios = axiosMock;
+    axiosMock.get.mockReset();
+    axiosMock.post.mockReset();
+    window.history.pushState({}, '', '/app/accounts/43/communication_threads');
+  });
+
+  afterEach(() => {
+    window.axios = originalAxios;
+    window.history.pushState({}, '', '/');
+  });
+
+  it('maps basic thread filters to the lightweight GET endpoint', async () => {
+    axiosMock.get.mockResolvedValue({ data: { counts: {} } });
+
+    await communicationThreadAPI.sidebarUnreadCounts({
+      status: 'open',
+      assigneeType: 'me',
+      crmStageId: 12,
+    });
+
+    expect(axiosMock.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/43/communication_threads/sidebar_unread_counts',
+      {
+        params: expect.objectContaining({
+          status: 'open',
+          assignee_type: 'me',
+          crm_stage_id: 12,
+        }),
+      }
+    );
+  });
+
+  it('sends advanced filters to the lightweight POST endpoint', async () => {
+    axiosMock.post.mockResolvedValue({ data: { counts: {} } });
+    const queryData = { payload: [{ attribute_key: 'status' }] };
+
+    await communicationThreadAPI.filterSidebarUnreadCounts({
+      queryData,
+      crmPipelineId: 9,
+    });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/43/communication_threads/filter_sidebar_unread_counts',
+      queryData,
+      { params: expect.objectContaining({ crm_pipeline_id: 9 }) }
+    );
+  });
+});

@@ -40,6 +40,14 @@ const assistant = computed(() =>
 );
 
 const assistantConfig = computed(() => assistant.value?.config || {});
+const workspaceAudioTranscriptionsEnabled = computed(() => {
+  const getAccount = store.getters['accounts/getAccount'];
+  const account =
+    typeof getAccount === 'function'
+      ? getAccount(route.params.accountId)
+      : null;
+  return account?.settings?.audio_transcriptions === true;
+});
 const settingsTabs = computed(() => [
   {
     key: 'profile',
@@ -75,6 +83,7 @@ const CAPABILITY_SETTINGS_CONFIG_KEYS = Object.freeze([
   'context_access',
   'handoff_enabled',
   'tool_access',
+  'use_audio_transcriptions',
 ]);
 
 const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
@@ -314,6 +323,9 @@ const handleDeleteSuccess = () => {
               <AssistantBasicSettingsForm
                 ref="generalCapabilitiesFormRef"
                 :assistant="assistant"
+                :audio-transcriptions-available="
+                  workspaceAudioTranscriptionsEnabled
+                "
                 :show-avatar-section="false"
                 :show-identity-fields="false"
                 :show-core-settings="false"

@@ -21,17 +21,18 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
 
   def create
     conversation = fetch_conversation_by_display_id
-    ensure_call_sid!(conversation)
+    call_ref = ensure_call_sid!(conversation)
 
     return render_unsupported_native_join_response(conversation) unless twilio_conference_inbox?
 
     conference_service = Voice::Provider::Twilio::ConferenceService.new(conversation: conversation)
-    conference_sid = conference_service.ensure_conference_sid
+    conference_sid = conference_service.ensure_conference_sid(call_ref: call_ref)
     conference_service.mark_agent_joined(user: current_user)
 
     render json: {
       status: 'success',
       id: conversation.display_id,
+      call_ref: call_ref,
       conference_sid: conference_sid,
       using_webrtc: true
     }
@@ -44,18 +45,16 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     end
 
     conversation = fetch_conversation_by_display_id
-    Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference
+    call_ref = params.require(:call_ref)
+    Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference(call_ref: call_ref)
     render json: { status: 'success', id: conversation.display_id }
   end
 
   private
 
   def ensure_call_sid!(conversation)
-    return conversation.identifier if conversation.identifier.present?
-
     incoming_sid = params.require(:call_sid)
-
-    conversation.update!(identifier: incoming_sid)
+    conversation.update!(identifier: incoming_sid) if conversation.identifier.blank?
     incoming_sid
   end
 

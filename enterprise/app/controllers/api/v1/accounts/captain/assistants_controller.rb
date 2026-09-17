@@ -8,6 +8,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :temperature,
     :model, :feature_image_understanding,
     :auto_reply_on_last_incoming,
+    :use_audio_transcriptions,
     :handoff_enabled, :auto_completion_enabled,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze

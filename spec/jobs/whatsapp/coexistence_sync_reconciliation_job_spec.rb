@@ -23,7 +23,7 @@ RSpec.describe Whatsapp::CoexistenceSyncReconciliationJob do
   end
 
   it 'uses the dedicated WhatsApp history queue served in DEV and production' do
-    expect(described_class.queue_name).to eq('whatsappweb_history')
+    expect(described_class.queue_name).to eq('whatsapp_coexistence_history')
   end
 
   it 'holds the WABA lock while reconciling an unknown provider outcome' do

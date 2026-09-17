@@ -1283,7 +1283,11 @@ describe('useCallSession', () => {
 
     const endingCall = callSession.endCall(callA);
     await vi.waitFor(() => {
-      expect(VoiceAPI.leaveConference).toHaveBeenCalledWith(4083, 6);
+      expect(VoiceAPI.leaveConference).toHaveBeenCalledWith(
+        4083,
+        6,
+        'twilio-end-call-a'
+      );
     });
     callsStore.addCall({ callSid: 'twilio-end-call-b', provider: 'twilio' });
     callsStore.setCallActive('twilio-end-call-b', 'twilio');

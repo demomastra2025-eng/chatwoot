@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::CallRecordingFetchJob, type: :job do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, call_transcriptions: true) }
   let(:call) { create(:call, account: account, status: 'completed', media_session_id: 'session-recorded') }
   let(:client) { instance_double(Whatsapp::MediaServerClient) }
 
@@ -38,6 +38,15 @@ RSpec.describe Whatsapp::CallRecordingFetchJob, type: :job do
     described_class.perform_now(call.id)
 
     expect(Whatsapp::CallMessageBuilder).to have_received(:update_recording_url!).with(call: call)
+    expect(Whatsapp::CallTranscriptionJob).not_to have_received(:perform_later)
+  end
+
+  it 'does not enqueue transcription when workspace call transcription is disabled' do
+    account.update!(call_transcriptions: false)
+    call.recording.attach(io: StringIO.new('existing-recording'), filename: 'existing.ogg', content_type: 'audio/ogg')
+
+    described_class.perform_now(call.id)
+
     expect(Whatsapp::CallTranscriptionJob).not_to have_received(:perform_later)
   end
 

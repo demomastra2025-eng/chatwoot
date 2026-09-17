@@ -86,6 +86,7 @@ describe('AssistantBasicSettingsForm', () => {
       feature_document_reading: false,
       feature_image_understanding: false,
       handoff_enabled: true,
+      use_audio_transcriptions: true,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
           enabled: true,
@@ -230,6 +231,41 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config.feature_web).toBe(true);
+  });
+
+  it('persists the AI agent audio transcript capability', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: { use_audio_transcriptions: false },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.use_audio_transcriptions).toBe(false);
+  });
+
+  it('does not update the capability while workspace transcription is unavailable', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: { use_audio_transcriptions: true },
+      },
+      audioTranscriptionsAvailable: false,
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config).not.toHaveProperty(
+      'use_audio_transcriptions'
+    );
   });
 
   it('persists web search, page reading, and document reading independently', async () => {

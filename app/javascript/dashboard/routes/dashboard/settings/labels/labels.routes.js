@@ -12,7 +12,7 @@ export default {
           path: '',
           name: 'labels_wrapper',
           meta: {
-            permissions: ['administrator'],
+            permissions: ['administrator', 'agent', 'custom_role'],
           },
           redirect: to => {
             return { name: 'labels_list', params: to.params };
@@ -23,7 +23,7 @@ export default {
           name: 'labels_list',
           component: LabelsHome,
           meta: {
-            permissions: ['administrator'],
+            permissions: ['administrator', 'agent', 'custom_role'],
           },
         },
       ],

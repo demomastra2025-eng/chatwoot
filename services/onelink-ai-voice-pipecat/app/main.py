@@ -66,8 +66,10 @@ def create_app(
             "active_sessions": manager.active_count,
             "runtime_engine": "pipecat",
             "realtime_provider": runtime_settings.realtime_provider,
+            "provider_readiness": runtime_settings.provider_readiness,
             "supported_providers": [
                 "gemini-live",
+                "openai-live",
                 "openai-realtime",
                 "elevenlabs",
                 "cartesia",

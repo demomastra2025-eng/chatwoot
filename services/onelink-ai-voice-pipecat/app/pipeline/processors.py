@@ -23,6 +23,7 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
+    SpeechOutputAudioRawFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
     UserStartedSpeakingFrame,
@@ -273,7 +274,9 @@ class AssistantLifecycleProcessor(FrameProcessor):
             await self._activity.bot_stopped()
             self._state.touch()
             self._state.publish_ai_speaking("stopped")
-        elif self._recorder is not None and isinstance(frame, TTSAudioRawFrame):
+        elif self._recorder is not None and isinstance(
+            frame, (SpeechOutputAudioRawFrame, TTSAudioRawFrame)
+        ):
             await self._recorder.write_outbound(frame.audio, sample_rate=frame.sample_rate)
         await self.push_frame(frame, direction)
 

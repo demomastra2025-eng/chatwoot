@@ -8,14 +8,38 @@ class Voice::CallStatus::Manager
     status = Telephony::CallSession.normalize_status(raw_status)
     return unless status
 
-    current_status = Telephony::CallSession.normalize_status(conversation.additional_attributes&.dig('call_status'))
-    return if current_status == status && status_attributes_current?(status, duration: duration, timestamp: timestamp)
+    current_status = Telephony::CallSession.normalize_status(current_call_status)
+    return if unchanged_status?(current_status, status, duration: duration, timestamp: timestamp)
 
-    apply_status(status, duration: duration, timestamp: timestamp)
+    apply_status_if_current(status, duration: duration, timestamp: timestamp) if current_call?
     update_message(status)
   end
 
+  def current_call_status
+    return message_status unless current_call?
+
+    message_status || conversation.additional_attributes&.dig('call_status')
+  end
+
+  def current_call?(target_conversation = conversation)
+    current_ref = target_conversation.additional_attributes&.dig('telephony_call_ref').presence
+    return true if current_ref.blank?
+
+    current_ref.to_s == call_sid.to_s
+  end
+
   private
+
+  def unchanged_status?(current_status, status, duration:, timestamp:)
+    return false if current_status != status
+    return true unless current_call?
+
+    status_attributes_current?(status, duration: duration, timestamp: timestamp)
+  end
+
+  def message_status
+    normalized_content_attributes(voice_message_for_call).dig('data', 'status')
+  end
 
   def status_attributes_current?(status, duration:, timestamp:)
     attrs = conversation.additional_attributes || {}
@@ -35,8 +59,8 @@ class Voice::CallStatus::Manager
     ringing_status_attributes_current?(attrs)
   end
 
-  def apply_status(status, duration:, timestamp:)
-    attrs = (conversation.additional_attributes || {}).dup
+  def apply_status(target_conversation, status, duration:, timestamp:)
+    attrs = (target_conversation.additional_attributes || {}).dup
     attrs['call_status'] = status
 
     if status == 'in_progress'
@@ -49,10 +73,19 @@ class Voice::CallStatus::Manager
       clear_active_status_attributes(attrs)
     end
 
-    conversation.update!(
+    target_conversation.update!(
       additional_attributes: attrs,
       last_activity_at: current_time
     )
+  end
+
+  def apply_status_if_current(status, duration:, timestamp:)
+    conversation.class.transaction do
+      locked_conversation = conversation.class.lock.find(conversation.id)
+      if current_call?(locked_conversation)
+        apply_status(locked_conversation, status, duration: duration, timestamp: timestamp)
+      end
+    end
   end
 
   def resolved_duration(attrs, provided_duration, timestamp)

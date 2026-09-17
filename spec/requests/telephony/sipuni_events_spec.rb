@@ -120,6 +120,73 @@ RSpec.describe 'Sipuni events webhook', type: :request do
     )
   end
 
+  it 'creates one missed call from an unmatched terminal Sipuni webhook' do
+    started_at = Time.zone.at(Time.current.to_i - 30)
+
+    with_modified_env(
+      SIPUNI_WEBHOOK_TOKEN: token,
+      SIPUNI_EXTERNAL_NUMBER: voice_channel.phone_number,
+      SIPUNI_INTERNAL_NUMBER: sip_profile.internal_extension
+    ) do
+      2.times do
+        perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+          post "/sipuni/events/#{token}",
+               params: native_sipuni_terminal_webhook_event_params(started_at).merge(call_id: 'sipuni-unregistered-1')
+        end
+      end
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('success' => true, 'status' => 'accepted')
+
+    call_session = account.telephony_call_sessions.find_by!(external_call_ref: 'sipuni:sipuni-unregistered-1')
+    expect(call_session).to have_attributes(
+      provider: 'sipuni',
+      provider_call_sid: 'sipuni-unregistered-1',
+      status: 'missed',
+      direction: 'inbound',
+      answered_at: nil,
+      end_reason: 'NOANSWER',
+      inbox_id: voice_inbox.id,
+      number_binding_id: number_binding.id
+    )
+    expect(call_session.metadata.dig('metadata', 'sipuni_webhook_mode')).to eq('terminal_fallback')
+    expect(account.telephony_call_sessions.where(provider_call_sid: 'sipuni-unregistered-1').count).to eq(1)
+    expect(account.telephony_events.where(event_key: 'sipuni:sipuni-unregistered-1:2:NOANSWER').count).to eq(1)
+  end
+
+  it 'keeps an unmatched answered Sipuni terminal event reconciliation-only' do
+    started_at = Time.zone.at(Time.current.to_i - 30)
+    params = native_sipuni_terminal_webhook_event_params(started_at).merge(
+      call_id: 'sipuni-external-answer-1',
+      status: 'ANSWER'
+    )
+
+    with_modified_env(SIPUNI_WEBHOOK_TOKEN: token, SIPUNI_EXTERNAL_NUMBER: voice_channel.phone_number) do
+      post "/sipuni/events/#{token}", params: params
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('success' => true, 'status' => 'reconciliation_pending')
+    expect(account.telephony_call_sessions.where(provider_call_sid: 'sipuni-external-answer-1')).to be_empty
+  end
+
+  it 'keeps a secondary transfer hang-up reconciliation-only' do
+    started_at = Time.zone.at(Time.current.to_i - 30)
+    params = native_sipuni_terminal_webhook_event_params(started_at).merge(
+      call_id: 'sipuni-transfer-leg-1',
+      event: '4'
+    )
+
+    with_modified_env(SIPUNI_WEBHOOK_TOKEN: token, SIPUNI_EXTERNAL_NUMBER: voice_channel.phone_number) do
+      post "/sipuni/events/#{token}", params: params
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('success' => true, 'status' => 'reconciliation_pending')
+    expect(account.telephony_call_sessions.where(provider_call_sid: 'sipuni-transfer-leg-1')).to be_empty
+  end
+
   it 'attaches Sipuni webhook lifecycle to an active native Janus call instead of creating a duplicate provider call' do
     allow(ActionCable.server).to receive(:broadcast)
 
@@ -320,6 +387,56 @@ RSpec.describe 'Sipuni events webhook', type: :request do
 
     expect(response).to have_http_status(:unauthorized)
     expect(response.parsed_body).to include('success' => false, 'error' => 'unauthorized')
+  end
+
+  it 'overrides untrusted tenant routing fields for a channel-scoped token' do
+    voice_channel.update!(
+      provider_config: voice_channel.provider_config_hash.merge('sipuni_events_webhook_token' => token)
+    )
+    foreign_account = create(:account)
+    foreign_connection = create(:telephony_provider_connection, account: foreign_account, provider_kind: 'sipuni')
+    foreign_channel = create(
+      :channel_voice,
+      account: foreign_account,
+      provider: 'sipuni',
+      provider_config: {
+        provider_kind: 'sipuni',
+        provider_connection_id: foreign_connection.id,
+        number_ref: 'foreign-sipuni-number'
+      }
+    )
+    foreign_binding = Telephony::NumberBinding.sync_from_voice_channel!(foreign_channel)
+    started_at = Time.zone.at(Time.current.to_i - 30)
+    foreign_call_session = create(
+      :telephony_call_session,
+      account: foreign_account,
+      inbox: foreign_channel.inbox,
+      conversation: create(:conversation, account: foreign_account, inbox: foreign_channel.inbox),
+      number_binding: foreign_binding,
+      provider: 'sipuni',
+      provider_call_sid: 'sipuni-tenant-guard-1',
+      external_call_ref: 'sipuni:sipuni-tenant-guard-1',
+      status: 'ringing',
+      direction: 'inbound',
+      from_number: '+770****1002',
+      to_number: foreign_binding.phone_number,
+      started_at: started_at
+    )
+
+    perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+      post "/sipuni/events/#{token}",
+           params: native_sipuni_terminal_webhook_event_params(started_at).merge(
+             call_id: 'sipuni-tenant-guard-1',
+             chatwoot_account_id: foreign_account.id,
+             chatwoot_inbox_id: foreign_channel.inbox.id,
+             number_ref: foreign_binding.number_ref
+           )
+    end
+
+    call_session = account.telephony_call_sessions.find_by!(provider_call_sid: 'sipuni-tenant-guard-1')
+    expect(call_session).to have_attributes(inbox_id: voice_inbox.id, number_binding_id: number_binding.id)
+    expect(foreign_call_session.reload).to have_attributes(status: 'ringing', inbox_id: foreign_channel.inbox.id)
+    expect(foreign_account.telephony_call_sessions.where(provider_call_sid: 'sipuni-tenant-guard-1').count).to eq(1)
   end
 
   def post_unmatched_sipuni_start(call_id:, timestamp: Time.current.to_i, set_legacy_token: true)

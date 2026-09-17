@@ -10,7 +10,10 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
       ends_at: 1.day.from_now + 30.minutes
     )
   end
+  let(:inbox) { create(:inbox, account: account) }
+  let(:contact_inbox) { create(:contact_inbox, contact: appointment.contact, inbox: inbox) }
   let(:reminder_group) do
+    contact_inbox
     create(
       :reminder_group,
       account: account,
@@ -21,6 +24,7 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
           timing_mode: 'relative',
           relative_anchor: 'appointment.starts_at',
           relative_offset_seconds: -1.day.to_i,
+          target_inbox_id: inbox.id,
           timezone: 'UTC'
         )
       ]
@@ -41,6 +45,7 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
 
     expect(claim).to be_materialized
     expect(claim.reminder).to be_present
+    expect(claim.reminder).to be_pending
     expect(claim.reminder.metadata).to include('touch_plan_enrollment_id' => enrollment.id)
   end
 

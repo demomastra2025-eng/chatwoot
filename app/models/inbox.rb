@@ -52,19 +52,6 @@ class Inbox < ApplicationRecord
   include InboxAgentAvailability
 
   API_CHANNEL_TYPES = %w[Channel::Api].freeze
-  DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES = %w[
-    Channel::FacebookPage
-    Channel::Instagram
-    Channel::Line
-    Channel::Telegram
-    Channel::TelegramPersonal
-    Channel::TwitterProfile
-    Channel::Weixin
-    Channel::Tiktok
-    Channel::VkCommunity
-    Channel::Whatsapp
-    Channel::WhatsappWeb
-  ].freeze
 
   # Not allowing characters:
   validates :name, presence: true
@@ -103,7 +90,7 @@ class Inbox < ApplicationRecord
 
   enum sender_name_type: { friendly: 0, professional: 1 }
 
-  before_validation :apply_single_conversation_default, on: :create
+  before_validation :apply_conversation_policy
   after_create :inherit_workspace_working_hours, if: :inherit_working_hours_from_account?
   after_destroy :delete_round_robin_agents
 
@@ -211,14 +198,6 @@ class Inbox < ApplicationRecord
     channel_type == 'Channel::TwilioSms' && channel.medium == 'whatsapp'
   end
 
-  def lock_to_single_conversation
-    default_single_conversation_for_channel?
-  end
-
-  def lock_to_single_conversation?
-    default_single_conversation_for_channel?
-  end
-
   def assignable_agents
     (account.users.where(id: members.select(:user_id)) + account.administrators).uniq
   end
@@ -322,14 +301,8 @@ class Inbox < ApplicationRecord
     Rails.configuration.dispatcher.dispatch(INBOX_UPDATED, Time.zone.now, inbox: self, changed_attributes: previous_changes)
   end
 
-  def apply_single_conversation_default
-    self[:lock_to_single_conversation] = default_single_conversation_for_channel?
-  end
-
-  def default_single_conversation_for_channel?
-    return true if DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES.include?(resolved_channel_type)
-
-    twilio_whatsapp?
+  def apply_conversation_policy
+    self[:lock_to_single_conversation] = resolved_channel_type != 'Channel::Email'
   end
 
   def resolved_channel_type

@@ -6,7 +6,7 @@ class Whatsapp::CoexistenceHistoryFailureRecoveryJob < MutexApplicationJob
   RECOVERY_INTERVAL = 5.seconds
   RECOVERY_LOCK_TIMEOUT = 30.minutes
 
-  queue_as :whatsappweb_history_recovery
+  queue_as :whatsapp_coexistence_history_recovery
 
   retry_on Whatsapp::WabaLivePriority::LiveTrafficPendingError, wait: 15.seconds, attempts: :unlimited, jitter: 0.5
   retry_on MutexApplicationJob::LockAcquisitionError, wait: 15.seconds, attempts: :unlimited, jitter: 0.5

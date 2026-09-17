@@ -1813,7 +1813,6 @@ Scope:
 - Scanned assistant-scope registry definitions for explicit `requires_confirmation: false`, high-risk implicit confirmation, and medium-risk no-confirmation tools.
 - Compared the medium/no-confirmation set against the intended policy boundary:
   - allowed: conversation/contact/CRM operational mutations protected by normal entity permissions;
-  - allowed: Kaspi Pay connect/status/reconcile/sync helpers covered by the Kaspi tooling contract;
   - not allowed: account-admin configuration mutations without explicit confirmation.
 
 Findings:
@@ -1825,8 +1824,7 @@ Findings:
   - Conversations: `add_contact_note`, `add_label_to_conversation`, `add_private_note`, `assign_conversation`, `handoff`, `remove_label_from_conversation`, `resolve_conversation`, `send_notification`, `update_priority`
   - Contacts/companies: `create_contact`, `update_contact`, `update_company`
   - CRM: `update_deal`, `add_deal_comment`, `update_task`, `complete_task`, `add_task_comment`
-  - Payments: `start_kaspi_pay_connection`, `send_kaspi_pay_phone`, `get_kaspi_pay_payment_status`, `get_kaspi_pay_payment`, `sync_kaspi_pay_payment_status`, `reconcile_kaspi_pay_payment`
-- Account-admin/config mutation families are explicit-confirmation covered after the previous slices: assistant/scenario/knowledge/custom-tool admin, user/team/role, inbox settings/members/assignment/auto-reply, support content, macros, automation rules, campaign controls, webhooks, labels, appointment payment, Kaspi Pay high-risk payment actions, message send/edit/retry, WhatsApp reconnect.
+- Account-admin/config mutation families are explicit-confirmation covered after the previous slices: assistant/scenario/knowledge/custom-tool admin, user/team/role, inbox settings/members/assignment/auto-reply, support content, macros, automation rules, campaign controls, webhooks, labels, appointment payment, message send/edit/retry, WhatsApp reconnect.
 - High-risk assistant-scope tools without explicit registry `requires_confirmation` remain covered by catalog/runtime auto-inference; existing regression coverage includes `create_deal` as the representative high-risk fallback case and `search_contacts` as read-only no-over-gating case.
 - No new production code change was needed in this final pass.
 

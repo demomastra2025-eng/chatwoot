@@ -1,7 +1,7 @@
 require 'digest'
 
 class Voice::OutboundCallBuilder
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
 
   attr_reader :account, :inbox, :user, :contact
 
@@ -30,12 +30,16 @@ class Voice::OutboundCallBuilder
       @contact = contact_inbox.contact
       raise ArgumentError, 'Contact inbox must belong to account' if contact.account_id != account.id
 
-      conversation = find_or_create_conversation!(contact_inbox)
+      conversation = Conversations::IdentityResolver.resolve_primary!(
+        contact_inbox: contact_inbox,
+        attributes: { status: :open }
+      )
       conversation.reload
-      validate_conversation!(conversation, contact_inbox)
+      validate_conversation!(conversation)
       conference_sid = Voice::Conference::Name.for(conversation)
       call = initiate_call!(conversation)
       call_sid = call[:call_sid]
+      conference_sid = Voice::Conference::Name.for(conversation, call_ref: call_sid) unless native_telephony_provider?
       status = call[:status] || 'ringing'
       update_conversation!(conversation, call_sid, conference_sid, timestamp, status)
       build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
@@ -58,11 +62,10 @@ class Voice::OutboundCallBuilder
     ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
   end
 
-  def validate_conversation!(conversation, contact_inbox)
+  def validate_conversation!(conversation)
     valid = conversation.account_id == account.id &&
             conversation.inbox_id == inbox.id &&
-            conversation.contact_id == contact.id &&
-            conversation.contact_inbox_id == contact_inbox.id
+            conversation.contact_id == contact.id
     return if valid
 
     raise ArgumentError, 'conversation does not match voice context'
@@ -72,28 +75,6 @@ class Voice::OutboundCallBuilder
     @normalized_contact_phone ||= Contacts::PhoneNumberNormalizer.normalize(contact.phone_number) ||
                                   Contacts::PhoneNumberNormalizer.normalize(contact.phone_number, default_country: 'KZ') ||
                                   contact.phone_number
-  end
-
-  def create_conversation!(contact_inbox)
-    account.conversations.create!(
-      contact_inbox_id: contact_inbox.id,
-      inbox_id: inbox.id,
-      contact_id: contact.id,
-      status: :open
-    )
-  end
-
-  def find_or_create_conversation!(contact_inbox)
-    reusable_native_telephony_conversation || create_conversation!(contact_inbox)
-  end
-
-  def reusable_native_telephony_conversation
-    return unless native_telephony_provider?
-
-    account.conversations
-           .where(inbox_id: inbox.id, contact_id: contact.id)
-           .order(last_activity_at: :desc, id: :desc)
-           .first
   end
 
   def provider_owned_sip_provider?
@@ -143,7 +124,7 @@ class Voice::OutboundCallBuilder
     )
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
-    attrs['telephony_call_ref'] = call_sid if native_telephony_provider?
+    attrs['telephony_call_ref'] = call_sid
 
     update_attrs = {
       additional_attributes: attrs,
@@ -180,8 +161,6 @@ class Voice::OutboundCallBuilder
   end
 
   def reset_reused_native_call_state!(attrs, call_sid)
-    return unless native_telephony_provider?
-
     return if current_call_ref(attrs) == call_sid
 
     %w[

@@ -190,6 +190,16 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
+    it 'applies GPT Live frontend and Responses delegation defaults' do
+      expect(described_class.normalize(provider: 'openai-live')).to include(
+        'provider' => 'openai-live',
+        'model' => 'gpt-live-1',
+        'delegation_model' => 'gpt-5.4-mini',
+        'voice' => 'marin',
+        'language' => 'ru-KZ'
+      )
+    end
+
     it 'does not pass Gemini auto language to another provider' do
       expect(described_class.normalize(provider: 'openai-realtime', language: 'auto')).to include(
         'language' => 'ru-KZ'

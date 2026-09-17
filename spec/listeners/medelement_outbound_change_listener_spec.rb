@@ -8,10 +8,14 @@ RSpec.describe MedelementOutboundChangeListener do
   let(:actor) { create(:user) }
   let(:resource) { create(:scheduling_resource, account: account) }
   let(:appointment) { create(:scheduling_appointment, account: account, resource: resource) }
+  let(:outbound_service) { instance_double(Integrations::Medelement::OutboundChangeService, perform: nil) }
 
-  before { clear_enqueued_jobs }
+  before do
+    clear_enqueued_jobs
+    allow(Integrations::Medelement::OutboundChangeService).to receive(:new).and_return(outbound_service)
+  end
 
-  it 'enqueues local appointment changes immediately with the desired state' do
+  it 'creates the local provider command receipt synchronously with the desired state' do
     event = Events::Base.new(
       'appointment_updated',
       Time.current,
@@ -25,7 +29,7 @@ RSpec.describe MedelementOutboundChangeListener do
 
     listener.appointment_updated(event)
 
-    expect(Integrations::Medelement::OutboundChangeJob).to have_been_enqueued.with(
+    expect(Integrations::Medelement::OutboundChangeService).to have_received(:new).with(
       entity_type: 'appointment',
       entity_id: appointment.id,
       event_name: 'appointment_updated',
@@ -40,7 +44,39 @@ RSpec.describe MedelementOutboundChangeListener do
         )
       },
       actor_id: actor.id,
+      actor_descriptor: { type: 'User', id: actor.id },
       event_key: a_string_starting_with('onelink-event:')
+    )
+    expect(outbound_service).to have_received(:perform)
+  end
+
+  it 'uses the persisted source version so repeated target states remain distinct events' do
+    desired = Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(appointment)
+    first_event = Events::Base.new(
+      'appointment_updated', Time.current, appointment: appointment, medelement_source_updated_at: '2026-09-05T10:00:00.000000Z'
+    )
+    first_key = listener.send(:event_key, first_event, 'appointment', appointment.id, desired)
+    second_event = Events::Base.new(
+      'appointment_updated', Time.current, appointment: appointment, medelement_source_updated_at: '2026-09-05T10:00:01.000000Z'
+    )
+
+    second_key = listener.send(:event_key, second_event, 'appointment', appointment.id, desired)
+
+    expect(second_key).not_to eq(first_key)
+  end
+
+  it 'deduplicates semantic callbacks from the same persistence transition' do
+    desired = Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(appointment)
+    source_version = '2026-09-05T10:00:00.000000Z'
+    updated_event = Events::Base.new(
+      'appointment_updated', Time.current, appointment: appointment, medelement_source_updated_at: source_version
+    )
+    cancelled_event = Events::Base.new(
+      'appointment_cancelled', Time.current, appointment: appointment, medelement_source_updated_at: source_version
+    )
+
+    expect(listener.send(:event_key, updated_event, 'appointment', appointment.id, desired)).to eq(
+      listener.send(:event_key, cancelled_event, 'appointment', appointment.id, desired)
     )
   end
 
@@ -82,8 +118,10 @@ RSpec.describe MedelementOutboundChangeListener do
     expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
   end
 
-  it 'enqueues Captain appointment changes without assigning an assistant id as a user id' do
+  it 'links Captain appointment changes to a command without assigning an assistant id as a user id' do
     assistant = create(:captain_assistant, account: account)
+    command = instance_double(Integrations::Medelement::ProviderCommand)
+    allow(outbound_service).to receive(:perform).and_return(command)
     event = Events::Base.new(
       'appointment_created',
       Time.current,
@@ -93,7 +131,7 @@ RSpec.describe MedelementOutboundChangeListener do
 
     listener.appointment_created(event)
 
-    expect(Integrations::Medelement::OutboundChangeJob).to have_been_enqueued.with(
+    expect(Integrations::Medelement::OutboundChangeService).to have_received(:new).with(
       entity_type: 'appointment',
       entity_id: appointment.id,
       event_name: 'appointment_created',
@@ -106,8 +144,10 @@ RSpec.describe MedelementOutboundChangeListener do
         )
       },
       actor_id: nil,
+      actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
       event_key: a_string_starting_with('onelink-event:')
     )
+    expect(appointment.medelement_provider_command_receipt).to eq(command)
   end
 
   it 'ignores a Captain assistant from another account' do
@@ -182,7 +222,7 @@ RSpec.describe MedelementOutboundChangeListener do
     )
   end
 
-  it 'freezes the complete appointment and contact state in the queued event' do
+  it 'freezes the complete appointment and contact state in the command intent' do
     appointment.update!(
       client_first_name: 'Event',
       client_last_name: 'Patient',
@@ -199,7 +239,7 @@ RSpec.describe MedelementOutboundChangeListener do
 
     listener.appointment_created(event)
 
-    expect(Integrations::Medelement::OutboundChangeJob).to have_been_enqueued.with(
+    expect(Integrations::Medelement::OutboundChangeService).to have_received(:new).with(
       entity_type: 'appointment',
       entity_id: appointment.id,
       event_name: 'appointment_created',
@@ -220,6 +260,7 @@ RSpec.describe MedelementOutboundChangeListener do
         )
       },
       actor_id: actor.id,
+      actor_descriptor: { type: 'User', id: actor.id },
       event_key: a_string_starting_with('onelink-event:')
     )
   end

@@ -59,12 +59,13 @@ class Account < ApplicationRecord
 
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
-  store_accessor :settings, :audio_transcriptions, :auto_resolve_label
+  store_accessor :settings, :audio_transcriptions, :call_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features, :captain_runtime
   store_accessor :settings, :captain_observability, :mcp_access
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
+  store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings,
                  :scheduling_contact_required,
                  :scheduling_company_enabled,
@@ -141,7 +142,6 @@ class Account < ApplicationRecord
   has_many :scheduling_expenses, dependent: :destroy_async, class_name: 'Scheduling::Expense'
   has_many :scheduling_holidays, dependent: :destroy_async, class_name: 'Scheduling::Holiday'
   has_many :scheduling_payments, dependent: :destroy_async, class_name: 'Scheduling::Payment'
-  has_many :kaspi_pay_payments, dependent: :destroy_async, class_name: 'KaspiPay::Payment'
   has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
   has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
   has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'
@@ -248,6 +248,16 @@ class Account < ApplicationRecord
 
   def scheduling_allow_overlapping_appointments?
     settings.is_a?(Hash) && ActiveModel::Type::Boolean.new.cast(settings['scheduling_allow_overlapping_appointments'])
+  end
+
+  def audio_transcriptions_enabled?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['audio_transcriptions'])
+  end
+
+  def call_transcriptions_enabled?
+    value = settings.to_h['call_transcriptions']
+    value = settings.to_h['audio_transcriptions'] if value.nil?
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def usage_limits

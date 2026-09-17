@@ -123,6 +123,24 @@ describe Conversations::FilterService do
         ]
       end
 
+      it 'excludes imported history from the unread-only result' do
+        params[:unread] = 'true'
+        live_conversation = create(:conversation, account: account, inbox: inbox, agent_last_seen_at: 1.day.ago)
+        history_conversation = create(:conversation, account: account, inbox: inbox, agent_last_seen_at: nil)
+        create(:message, account: account, conversation: live_conversation, message_type: :incoming)
+        create(
+          :message,
+          account: account,
+          conversation: history_conversation,
+          message_type: :incoming,
+          content_attributes: { imported_history: true }
+        )
+
+        result = filter_service.new(params, user_1, account).perform
+
+        expect(result[:conversations].map(&:id)).to contain_exactly(live_conversation.id)
+      end
+
       it 'filter conversations by additional_attributes and status' do
         params[:payload] = payload
         result = filter_service.new(params, user_1, account).perform

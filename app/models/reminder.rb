@@ -95,8 +95,10 @@ class Reminder < ApplicationRecord
   RESPONSE_ACTIONS = [RESPONSE_ACTION_CONFIRM_APPOINTMENT].freeze
   POST_DELIVERY_AUDIT_SOURCE_KEY = 'post_delivery_audit_source'.freeze
   POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
+  AUTOMATION_EVENT_NAME_KEY = 'automation_event_name'.freeze
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
+  AUTOMATION_ACTION_SIGNATURE_KEY = 'automation_action_signature'.freeze
   AUTOMATION_EXECUTION_KEY = 'automation_execution_key'.freeze
   AUTOMATION_RULE_GENERATION_KEY = 'automation_rule_generation'.freeze
   TRANSIENT_METADATA_KEYS = [
@@ -110,8 +112,10 @@ class Reminder < ApplicationRecord
     TRANSIENT_METADATA_KEYS + [
       POST_DELIVERY_AUDIT_SOURCE_KEY,
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+      AUTOMATION_EVENT_NAME_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
+      AUTOMATION_ACTION_SIGNATURE_KEY,
       AUTOMATION_EXECUTION_KEY,
       AUTOMATION_RULE_GENERATION_KEY
     ]
@@ -320,13 +324,14 @@ class Reminder < ApplicationRecord
     remindable
   end
 
-  def mark_automation_provenance!(automation_rule, trigger_message: nil, action_key: nil, execution_key: nil)
+  def mark_automation_provenance!(automation_rule, trigger_message: nil, action_key: nil, action_signature: nil,
+                                  execution_key: nil)
     unless automation_rule.is_a?(AutomationRule) && automation_rule.account_id == account_id
       raise ArgumentError, 'Automation rule must belong to the reminder account'
     end
 
     validate_automation_trigger_message!(trigger_message)
-    provenance = automation_provenance(automation_rule, trigger_message, action_key, execution_key)
+    provenance = automation_provenance(automation_rule, trigger_message, action_key, action_signature, execution_key)
 
     with_internal_metadata_write do
       update!(metadata: metadata.to_h.merge(provenance))
@@ -345,7 +350,10 @@ class Reminder < ApplicationRecord
 
   def mark_delivery_dispatched!(message_id)
     with_internal_metadata_write do
-      update!(metadata: metadata.to_h.merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id))
+      update!(
+        processing_started_at: nil,
+        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id)
+      )
     end
   end
 
@@ -688,12 +696,14 @@ class Reminder < ApplicationRecord
     target_conversation_id || conversation_id || (remindable_id if remindable_type == 'Conversation')
   end
 
-  def automation_provenance(automation_rule, trigger_message, action_key, execution_key)
+  def automation_provenance(automation_rule, trigger_message, action_key, action_signature, execution_key)
     {
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
       POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+      AUTOMATION_EVENT_NAME_KEY => automation_rule.event_name,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
       AUTOMATION_ACTION_KEY => action_key.presence&.to_s,
+      AUTOMATION_ACTION_SIGNATURE_KEY => action_signature.presence&.to_s,
       AUTOMATION_EXECUTION_KEY => execution_key.presence&.to_s,
       AUTOMATION_RULE_GENERATION_KEY => automation_rule.lifecycle_generation
     }.compact

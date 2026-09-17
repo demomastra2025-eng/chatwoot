@@ -1,5 +1,5 @@
 class Whatsapp::CoexistenceSyncJob < ApplicationJob
-  queue_as :whatsappweb_history
+  queue_as :whatsapp_coexistence_history
 
   retry_on Whatsapp::FacebookApiClient::Error, wait: :polynomially_longer, attempts: 5 do |job, error|
     channel = Channel::Whatsapp.find_by(id: job.arguments.first)

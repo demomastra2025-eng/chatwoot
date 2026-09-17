@@ -6,6 +6,7 @@ RSpec.describe 'Inboxes API', type: :request do
   let(:account) { create(:account) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:whatsapp_api_version) { GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0') }
 
   describe 'GET /api/v1/accounts/{account.id}/inboxes' do
     context 'when it is an unauthenticated user' do
@@ -658,8 +659,20 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
+      it 'rejects the retired LinkedIn Personal channel type' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: { name: 'Retired channel', channel: { type: 'linkedin_personal' } },
+               as: :json
+        end.not_to change(Inbox, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+
       it 'persists top-level Janus SIP voice channel parameters for native voice inbox creation' do
         account.enable_features!('channel_voice')
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
 
         expect do
@@ -670,6 +683,7 @@ RSpec.describe 'Inboxes API', type: :request do
                  phone_number: phone_number,
                  provider: 'sipuni',
                  provider_config: {
+                   provider_connection_id: provider_connection.id,
                    number_ref: 'number-ref-top-level',
                    routing_mode: 'operator',
                    operator_agent_aor: 'sip:1001@example.test',
@@ -713,6 +727,7 @@ RSpec.describe 'Inboxes API', type: :request do
       it 'creates one Janus SIP voice inbox that is ready for both operator and Captain routing' do
         account.enable_features!('channel_voice')
         assistant = create(:captain_assistant, account: account)
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
 
         expect do
@@ -723,6 +738,7 @@ RSpec.describe 'Inboxes API', type: :request do
                  phone_number: phone_number,
                  provider: 'sipuni',
                  provider_config: {
+                   provider_connection_id: provider_connection.id,
                    number_ref: 'number-ref-unified',
                    app_route_app_ref: 'fallback-app-ref-unified',
                    routing_mode: 'operator',
@@ -1312,7 +1328,7 @@ RSpec.describe 'Inboxes API', type: :request do
           phone_number_id: 'phone-1'
         ).and_return(token_inspection)
 
-        stub_request(:get, 'https://graph.facebook.com/v22.0/waba-1/message_templates')
+        stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/waba-1/message_templates")
           .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
 
         whatsapp_channel = create(
@@ -1379,6 +1395,40 @@ RSpec.describe 'Inboxes API', type: :request do
           'number_ref' => 'sipuni-number-ref',
           'sipuni_events_webhook_token' => 'new-webhook-token'
         )
+      end
+
+      it 'removes the legacy Binotel webhook token when rotating the canonical token' do
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'binotel')
+        voice_channel = create(
+          :channel_voice,
+          account: account,
+          provider: 'binotel',
+          provider_config: {
+            provider_kind: 'binotel',
+            provider_connection_id: provider_connection.id,
+            number_ref: 'binotel-number-ref',
+            binotel_webhook_token: 'legacy-token'
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{voice_channel.inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: {
+                channel: {
+                  provider_config: {
+                    binotel_events_webhook_token: 'canonical-token',
+                    binotel_webhook_token: 'attacker-controlled-legacy-token'
+                  }
+                }
+              },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(voice_channel.reload.provider_config).to include(
+          'number_ref' => 'binotel-number-ref',
+          'binotel_events_webhook_token' => 'canonical-token'
+        )
+        expect(voice_channel.provider_config).not_to have_key('binotel_webhook_token')
       end
 
       it 'rejects runtime identity updates for whatsapp web inboxes' do
@@ -1930,7 +1980,7 @@ RSpec.describe 'Inboxes API', type: :request do
     context 'when it is an authenticated administrator' do
       context 'with WhatsApp inbox' do
         it 'syncs templates immediately and returns the refreshed inbox payload' do
-          stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+          stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/123456789/message_templates")
             .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [] }.to_json)
 
           post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
@@ -2161,7 +2211,7 @@ RSpec.describe 'Inboxes API', type: :request do
     end
 
     it 'syncs templates immediately and returns the refreshed inbox payload' do
-      stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+      stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/123456789/message_templates")
         .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [remote_template] }.to_json)
 
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",

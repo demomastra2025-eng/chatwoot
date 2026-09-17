@@ -29,7 +29,18 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def find_or_create_conversation
-    existing_conversation = existing_campaign_conversation || reusable_single_conversation
+    if single_conversation_inbox?
+      created = false
+      conversation = Conversations::IdentityResolver.resolve_primary!(
+        contact_inbox: @contact_inbox,
+        attributes: conversation_params
+      ) { created = true }
+      sync_conversation_attributes!(conversation)
+      conversation.update!(waiting_since: nil) if created && conversation.waiting_since.present?
+      return conversation
+    end
+
+    existing_conversation = existing_campaign_conversation
     if existing_conversation.present?
       sync_conversation_attributes!(existing_conversation)
       return existing_conversation
@@ -115,17 +126,22 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def sync_conversation_attributes!(conversation)
-    updates = {}
-    merged_attributes = merged_conversation_additional_attributes
-
-    if merged_attributes.present?
-      next_attributes = (conversation.additional_attributes || {}).merge(merged_attributes)
-      updates[:additional_attributes] = next_attributes if next_attributes != conversation.additional_attributes
-    end
-
-    updates[:campaign_id] = nil if single_conversation_inbox? && conversation.campaign_id.present? && conversation.campaign_id != campaign.id
+    updates = conversation_attribute_updates(conversation)
 
     conversation.update!(updates) if updates.present?
+  end
+
+  def conversation_attribute_updates(conversation)
+    merged_attributes = merged_conversation_additional_attributes
+    next_attributes = (conversation.additional_attributes || {}).merge(merged_attributes)
+    updates = {}
+    updates[:additional_attributes] = next_attributes if merged_attributes.present? && next_attributes != conversation.additional_attributes
+    updates[:campaign_id] = nil if reusable_campaign_conversation?(conversation)
+    updates
+  end
+
+  def reusable_campaign_conversation?(conversation)
+    single_conversation_inbox? && conversation.campaign_id.present? && conversation.campaign_id != campaign.id
   end
 
   def merged_conversation_additional_attributes
@@ -144,15 +160,6 @@ class Campaigns::OneoffConversationBuilder
     @contact_inbox.conversations.find_by(campaign: campaign)
   end
 
-  def reusable_single_conversation
-    return unless single_conversation_inbox?
-
-    @contact_inbox.conversations
-                  .where(campaign_id: nil)
-                  .order(created_at: :desc)
-                  .first || @contact_inbox.conversations.order(created_at: :desc).first
-  end
-
   def conversation_campaign_id
     return if single_conversation_inbox?
 
@@ -160,7 +167,7 @@ class Campaigns::OneoffConversationBuilder
   end
 
   def single_conversation_inbox?
-    campaign_inbox.lock_to_single_conversation?
+    !campaign_inbox.email?
   end
 
   def campaign_agent?

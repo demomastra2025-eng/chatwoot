@@ -68,6 +68,7 @@ const errorLabel = computed(() => {
 });
 const PROVIDER_LABELS = Object.freeze({
   'gemini-live': 'Gemini Live',
+  'openai-live': 'OpenAI GPT Live',
   'openai-realtime': 'OpenAI Realtime',
   elevenlabs: 'ElevenLabs + OpenRouter',
   cartesia: 'Cartesia + OpenRouter',

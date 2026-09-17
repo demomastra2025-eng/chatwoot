@@ -10,12 +10,22 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   end
 
   def perform_reply
-    should_send_template_message = template_params.present? || !message.conversation.can_reply?
-    if should_send_template_message
-      send_template_message
-    else
-      send_session_message
-    end
+    return send_template_message if template_params.present?
+
+    delivery_policy = Outbound::DeliveryPolicy.evaluate(
+      conversation: conversation,
+      inbox: inbox,
+      content_kind: 'free_text',
+      attachments: message.attachments
+    )
+    return fail_delivery_policy!(delivery_policy) unless delivery_policy.allowed?
+
+    send_session_message
+  end
+
+  def fail_delivery_policy!(delivery_policy)
+    message.update!(status: :failed, external_error: delivery_policy.reason)
+    update_campaign_delivery(status: :failed, error_message: delivery_policy.reason)
   end
 
   def send_template_message
@@ -60,7 +70,7 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   def handle_template_send_result(message_id, name, lang_code)
     return handle_submitted_template(message_id, name, lang_code) if message_id.present?
     return handle_deferred_template if transient_whatsapp_cloud_retry_scheduled?
-    return handle_ambiguous_template if ambiguous_whatsapp_cloud_delivery?
+    return handle_ambiguous_template if ambiguous_whatsapp_delivery?
 
     update_campaign_delivery(status: :failed, error_message: 'WhatsApp provider did not return a message id')
   end
@@ -140,8 +150,10 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
     channel.provider == 'whatsapp_cloud' && Whatsapp::Providers::WhatsappCloudService.transient_send_retry_scheduled?(message.reload)
   end
 
-  def ambiguous_whatsapp_cloud_delivery?
-    channel.provider == 'whatsapp_cloud' && Whatsapp::Providers::WhatsappCloudService.delivery_outcome_unknown?(message.reload)
+  def ambiguous_whatsapp_delivery?
+    return Whatsapp::Providers::WhatsappCloudService.delivery_outcome_unknown?(message.reload) if channel.provider == 'whatsapp_cloud'
+
+    Whatsapp::Providers::Whatsapp360DialogService.delivery_outcome_unknown?(message.reload)
   end
 
   def blank_session_message?

@@ -254,7 +254,7 @@ describe Messages::Facebook::MessageBuilder do
           expect(facebook_channel.inbox.conversations.last.id).to eq(existing_conversation.id)
         end
 
-        it 'creates a new conversation if last conversation is resolved' do
+        it 'reuses the persistent conversation if the legacy lock flag is disabled' do
           existing_conversation = create(:conversation, account_id: facebook_channel.inbox.account.id, inbox_id: facebook_channel.inbox.id,
                                                         contact_id: contact.id, contact_inbox_id: contact_inbox.id, status: :resolved)
 
@@ -264,8 +264,8 @@ describe Messages::Facebook::MessageBuilder do
 
           facebook_channel.inbox.reload
 
-          expect(facebook_channel.inbox.conversations.last.id).not_to eq(existing_conversation.id)
-          expect(Conversation.count).to eq(inital_count + 1)
+          expect(facebook_channel.inbox.conversations.last.id).to eq(existing_conversation.id)
+          expect(Conversation.count).to eq(inital_count)
         end
       end
 

@@ -4,6 +4,7 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
   end
 
   description 'Update the appointment linked to the current conversation with a new specialist, service, or confirmed time details'
+  param :appointment_id, type: :number, desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
   param :resource_id, type: :number, desc: 'Updated specialist resource ID', required: false
   param :service_id, type: :number, desc: 'Updated local service ID returned by search_scheduling_services', required: false
   param :starts_at, type: :string, desc: 'Updated appointment start datetime in ISO 8601 format', required: false
@@ -21,9 +22,10 @@ class Captain::Tools::Copilot::UpdateAppointmentService < Captain::Tools::Copilo
               'list_*_custom_fields tool first; only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
-  def execute(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil, client_comment: nil,
-              custom_attributes: nil)
+  def execute(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
+              client_comment: nil, custom_attributes: nil)
     appointment = appointment_operations.update_current_appointment(
+      appointment_id: appointment_id,
       resource_id: resource_id,
       service_id: service_id,
       starts_at: starts_at,

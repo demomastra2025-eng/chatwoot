@@ -32,10 +32,13 @@ import {
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
+import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
   fromDateTimeInputValue,
   getServicePriceForResource,
+  isAppointmentProviderOwned,
   isMedelementResource,
+  medelementCabinetsForResource,
   servicesAvailableForResource,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
@@ -69,6 +72,7 @@ const scrollContainer = ref(null);
 const isCreating = ref(false);
 const isSavingCreate = ref(false);
 const savingAppointmentKey = ref('');
+const cancellingAppointmentKey = ref('');
 const createForm = reactive({
   clientFirstName: '',
   clientLastName: '',
@@ -77,6 +81,7 @@ const createForm = reactive({
   clientNameStructured: true,
   clientPhone: '',
   endsAt: '',
+  medelementCabinetCode: '',
   resourceId: '',
   serviceAmount: '',
   serviceId: '',
@@ -146,6 +151,7 @@ const resourceOptions = computed(() =>
 const serviceOptions = computed(() =>
   activeServices.value.map(service => ({
     label: service.name,
+    wrapLabel: true,
     value: service.id,
   }))
 );
@@ -156,7 +162,11 @@ const serviceOptionsForForm = form => {
   );
 
   return servicesAvailableForResource(activeServices.value, resource).map(
-    service => ({ label: service.name, value: service.id })
+    service => ({
+      label: service.name,
+      value: service.id,
+      wrapLabel: true,
+    })
   );
 };
 const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
@@ -246,20 +256,28 @@ const buildDefaultAppointmentTimes = () => {
 
 const resetCreateForm = () => {
   const primaryResource = activeResources.value[0];
+  const primaryResourceCabinets =
+    medelementCabinetsForResource(primaryResource);
   const defaults = buildDefaultAppointmentTimes();
+  const contactNameParts = schedulingContactNameParts({
+    firstName: contact.value?.first_name || contact.value?.firstName,
+    fullName: contactName.value,
+    lastName: contact.value?.last_name || contact.value?.lastName,
+    middleName: contact.value?.middle_name || contact.value?.middleName,
+  });
 
   Object.assign(createForm, {
-    clientFirstName:
-      contact.value?.first_name ||
-      contact.value?.firstName ||
-      contactName.value,
-    clientLastName: contact.value?.last_name || contact.value?.lastName || '',
-    clientMiddleName:
-      contact.value?.middle_name || contact.value?.middleName || '',
+    clientFirstName: contactNameParts.firstName,
+    clientLastName: contactNameParts.lastName,
+    clientMiddleName: contactNameParts.middleName,
     clientName: contactName.value,
     clientNameStructured: true,
     clientPhone: contactPhone.value,
     endsAt: defaults.endsAt,
+    medelementCabinetCode:
+      primaryResourceCabinets.length === 1
+        ? primaryResourceCabinets[0].code
+        : '',
     resourceId: primaryResource?.id || '',
     serviceAmount: '',
     serviceId: '',
@@ -279,6 +297,17 @@ const selectedCreateResource = computed(() =>
   activeResources.value.find(
     resource => Number(resource.id) === Number(createForm.resourceId)
   )
+);
+const selectedCreateMedelementCabinets = computed(() =>
+  medelementCabinetsForResource(selectedCreateResource.value)
+);
+const medelementCabinetOptions = computed(() =>
+  selectedCreateMedelementCabinets.value.map(cabinet => ({
+    label:
+      [cabinet.name, cabinet.number].filter(Boolean).join(' · ') ||
+      cabinet.code,
+    value: cabinet.code,
+  }))
 );
 
 const conversationDisplayIds = computed(() => {
@@ -312,6 +341,9 @@ const lookupParams = computed(() => {
 });
 
 const appointmentKey = appointment => `appointment-${appointment.id}`;
+const isProviderCancellationPending = appointment =>
+  isAppointmentProviderOwned(appointment) &&
+  appointment?.providerConfirmationStatus === 'pending';
 const isAppointmentOpen = appointment =>
   openAppointmentKeys.value.includes(appointmentKey(appointment));
 
@@ -358,6 +390,10 @@ const formFromAppointment = appointment => {
       '',
     conversationId: appointment.conversationId || '',
     endsAt: toDateTimeInputValue(appointment.endsAt),
+    medelementCabinetCode:
+      appointment.customAttributes?.medelementCabinetCode ||
+      appointment.customAttributes?.medelement_cabinet_code ||
+      '',
     resourceId: appointment.resourceId || '',
     serviceAmount:
       appointment.serviceAmount === null ||
@@ -389,6 +425,14 @@ const selectedResourceForForm = form =>
     resource => Number(resource.id) === Number(form?.resourceId)
   );
 
+const medelementCabinetOptionsForForm = form =>
+  medelementCabinetsForResource(selectedResourceForForm(form)).map(cabinet => ({
+    label:
+      [cabinet.name, cabinet.number].filter(Boolean).join(' · ') ||
+      cabinet.code,
+    value: cabinet.code,
+  }));
+
 const updateFormEndFromDuration = form => {
   if (!form?.startsAt) return;
 
@@ -419,6 +463,8 @@ const syncFormServiceFields = form => {
 
 const handleFormResourceChange = (form, value) => {
   form.resourceId = value;
+  const cabinets = medelementCabinetsForResource(selectedResourceForForm(form));
+  form.medelementCabinetCode = cabinets.length === 1 ? cabinets[0].code : '';
   if (
     !serviceOptionsForForm(form).some(
       option => Number(option.value) === Number(form.serviceId)
@@ -487,12 +533,19 @@ const medelementServiceError = form =>
     ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED')
     : '';
 
+const medelementCabinetError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  !form?.medelementCabinetCode
+    ? t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED')
+    : '';
+
 const isAppointmentFormInvalid = form =>
   !contactId.value ||
   !form?.clientFirstName?.trim() ||
   Boolean(medelementLastNameError(form)) ||
   Boolean(medelementPhoneError(form)) ||
   Boolean(medelementServiceError(form)) ||
+  Boolean(medelementCabinetError(form)) ||
   !form?.resourceId ||
   !form?.startsAt ||
   !form?.endsAt ||
@@ -521,6 +574,9 @@ const buildAppointmentPayload = (form, appointment) => {
           : form.conversationDisplayId || createConversationDisplayId.value
       ),
       conversation_id: toNumeric(form.conversationId),
+      custom_attributes: form.medelementCabinetCode
+        ? { medelement_cabinet_code: form.medelementCabinetCode }
+        : undefined,
       ends_at: fromDateTimeInputValue(form.endsAt),
       resource_id: toNumeric(form.resourceId),
       service_amount:
@@ -561,6 +617,13 @@ const buildCreatePayload = () => {
       client_phone: createForm.clientPhone,
       contact_id: toNumeric(contactId.value),
       conversation_display_id: toNumeric(createConversationDisplayId.value),
+      ...(createForm.medelementCabinetCode
+        ? {
+            custom_attributes: {
+              medelement_cabinet_code: createForm.medelementCabinetCode,
+            },
+          }
+        : {}),
       ends_at: fromDateTimeInputValue(createForm.endsAt),
       resource_id: toNumeric(createForm.resourceId),
       service_amount:
@@ -587,10 +650,9 @@ const buildCreatePayload = () => {
 };
 
 const upsertAppointment = appointment => {
-  appointments.value = mergeUniqueAppointments(
-    [appointment],
-    appointments.value
-  );
+  appointments.value = mergeUniqueAppointments(appointments.value, [
+    appointment,
+  ]);
   appointmentForms[appointmentKey(appointment)] =
     formFromAppointment(appointment);
 };
@@ -635,8 +697,11 @@ const loadAppointments = async () => {
 
     appointments.value = mergeUniqueAppointments(...results);
     setAppointmentForms();
-    openAppointmentKeys.value = appointments.value[0]
-      ? [appointmentKey(appointments.value[0])]
+    const firstEditableAppointment = appointments.value.find(
+      appointment => !isAppointmentProviderOwned(appointment)
+    );
+    openAppointmentKeys.value = firstEditableAppointment
+      ? [appointmentKey(firstEditableAppointment)]
       : [];
     return { committed: true, requestId };
   } catch (error) {
@@ -654,6 +719,8 @@ const loadAppointments = async () => {
 };
 
 const toggleAppointment = appointment => {
+  if (isAppointmentProviderOwned(appointment)) return;
+
   const key = appointmentKey(appointment);
   openAppointmentKeys.value = isAppointmentOpen(appointment)
     ? openAppointmentKeys.value.filter(item => item !== key)
@@ -705,6 +772,9 @@ const syncCreateServiceFields = () => {
 
 const handleCreateResourceChange = value => {
   createForm.resourceId = value;
+  const cabinets = medelementCabinetsForResource(selectedCreateResource.value);
+  createForm.medelementCabinetCode =
+    cabinets.length === 1 ? cabinets[0].code : '';
   if (
     !serviceOptionsForForm(createForm).some(
       option => Number(option.value) === Number(createForm.serviceId)
@@ -775,10 +845,39 @@ const saveCreateAppointment = async () => {
   }
 };
 
+async function cancelAppointment(appointment) {
+  const key = appointmentKey(appointment);
+  cancellingAppointmentKey.value = key;
+  try {
+    const response = await SchedulingAppointmentsAPI.cancel(appointment.id);
+    const savedAppointment = normalizePayload(response.data);
+    upsertAppointment(savedAppointment);
+    refreshSidebarCounters();
+    if (
+      isAppointmentProviderOwned(savedAppointment) &&
+      savedAppointment.status !== 'cancelled'
+    ) {
+      useAlert(t('SCHEDULING.PROVIDER_COMMANDS.QUEUED'));
+    } else {
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
+    }
+  } catch (error) {
+    useAlert(formatSchedulingErrorMessage(error, t));
+  } finally {
+    cancellingAppointmentKey.value = '';
+  }
+}
+
 const saveAppointment = async appointment => {
+  if (isAppointmentProviderOwned(appointment)) return;
+
   const key = appointmentKey(appointment);
   const form = appointmentForms[key];
   if (isAppointmentFormInvalid(form)) return;
+  if (form.status === 'cancelled' && appointment.status !== 'cancelled') {
+    await cancelAppointment(appointment);
+    return;
+  }
 
   savingAppointmentKey.value = key;
   try {
@@ -1134,6 +1233,34 @@ watch(
                     />
                   </div>
 
+                  <div
+                    v-if="isMedelementResource(selectedCreateResource)"
+                    class="scheduling-appointment-drawer-row"
+                  >
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      for="scheduling-conversation-appointment-medelement-cabinet"
+                    >
+                      {{ $t('SCHEDULING.MEDELEMENT.CABINET') }}
+                    </label>
+                    <SchedulingSelectField
+                      id="scheduling-conversation-appointment-medelement-cabinet"
+                      class="scheduling-appointment-drawer-control scheduling-appointment-drawer-select-control"
+                      :aria-label="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                      :model-value="createForm.medelementCabinetCode"
+                      :options="medelementCabinetOptions"
+                      :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                      :message="medelementCabinetError(createForm)"
+                      :message-type="
+                        medelementCabinetError(createForm) ? 'error' : 'info'
+                      "
+                      dropdown-placement="auto"
+                      @update:model-value="
+                        createForm.medelementCabinetCode = $event
+                      "
+                    />
+                  </div>
+
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
@@ -1153,6 +1280,7 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
                       "
                       dropdown-placement="auto"
+                      wrap-label
                       @update:model-value="handleCreateServiceChange"
                     />
                     <Input
@@ -1270,7 +1398,11 @@ watch(
         >
           <button
             type="button"
-            class="flex w-full p-0 text-left hover:bg-n-alpha-1 rtl:text-right"
+            class="flex w-full p-0 text-left rtl:text-right"
+            :class="{
+              'hover:bg-n-alpha-1': !isAppointmentProviderOwned(appointment),
+            }"
+            :disabled="isAppointmentProviderOwned(appointment)"
             @click="toggleAppointment(appointment)"
           >
             <span
@@ -1298,11 +1430,32 @@ watch(
                 </span>
               </span>
               <span
+                v-if="!isAppointmentProviderOwned(appointment)"
                 class="i-lucide-chevron-down mt-0.5 size-4 shrink-0 text-n-slate-10 transition-transform"
                 :class="{ 'rotate-180': isAppointmentOpen(appointment) }"
               />
             </span>
           </button>
+
+          <div
+            v-if="
+              isAppointmentProviderOwned(appointment) &&
+              appointment.status !== 'cancelled' &&
+              !isProviderCancellationPending(appointment)
+            "
+            class="flex justify-end px-3 pb-2.5"
+          >
+            <Button
+              size="sm"
+              slate
+              faded
+              :is-loading="
+                cancellingAppointmentKey === appointmentKey(appointment)
+              "
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
+              @click="cancelAppointment(appointment)"
+            />
+          </div>
 
           <div
             v-show="isAppointmentOpen(appointment)"
@@ -1505,6 +1658,57 @@ watch(
                     />
                   </div>
 
+                  <div
+                    v-if="
+                      isMedelementResource(
+                        selectedResourceForForm(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      )
+                    "
+                    class="scheduling-appointment-drawer-row"
+                  >
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      :for="`scheduling-conversation-appointment-medelement-cabinet-${appointment.id}`"
+                    >
+                      {{ $t('SCHEDULING.MEDELEMENT.CABINET') }}
+                    </label>
+                    <SchedulingSelectField
+                      :id="`scheduling-conversation-appointment-medelement-cabinet-${appointment.id}`"
+                      class="scheduling-appointment-drawer-control scheduling-appointment-drawer-select-control"
+                      :aria-label="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                      :model-value="
+                        appointmentForms[appointmentKey(appointment)]
+                          .medelementCabinetCode
+                      "
+                      :options="
+                        medelementCabinetOptionsForForm(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                      :placeholder="$t('SCHEDULING.MEDELEMENT.CABINET')"
+                      :message="
+                        medelementCabinetError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                      :message-type="
+                        medelementCabinetError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                          ? 'error'
+                          : 'info'
+                      "
+                      dropdown-placement="auto"
+                      @update:model-value="
+                        appointmentForms[
+                          appointmentKey(appointment)
+                        ].medelementCabinetCode = $event
+                      "
+                    />
+                  </div>
+
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
@@ -1534,6 +1738,7 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
                       "
                       dropdown-placement="auto"
+                      wrap-label
                       @update:model-value="
                         handleFormServiceChange(
                           appointmentForms[appointmentKey(appointment)],

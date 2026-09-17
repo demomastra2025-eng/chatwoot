@@ -11,7 +11,14 @@ class Campaigns::CampaignConversationBuilder
       # We won't send campaigns if a conversation is already present
       raise 'Conversation already present' if @contact_inbox.reload.conversations.present?
 
-      @conversation = ::Conversation.create!(conversation_params)
+      @conversation = if @contact_inbox.inbox.email?
+                        ::Conversation.create!(conversation_params)
+                      else
+                        Conversations::IdentityResolver.resolve_primary!(
+                          contact_inbox: @contact_inbox,
+                          attributes: conversation_params
+                        )
+                      end
       Messages::MessageBuilder.new(@campaign.sender, @conversation, message_params).perform
     end
     @conversation

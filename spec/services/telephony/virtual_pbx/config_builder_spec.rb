@@ -22,6 +22,60 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     )
   end
 
+  it 'keeps Wazo blocked until every external calling boundary is explicitly verified' do
+    profile = instance_double(
+      Telephony::SipProfile,
+      enabled?: true,
+      registered_for_routing?: true,
+      metadata: { 'wazo_endpoint_uuid' => 'endpoint-1' }
+    )
+    inbox = instance_double(Inbox, telephony_sip_profiles: [profile])
+    channel = instance_double(Channel::Voice, provider: 'wazo', inbox: inbox)
+    connection = instance_double(Telephony::ProviderConnection, provisioning_status: 'ready', metadata: {})
+    binding = instance_double(Telephony::NumberBinding, provider_connection: connection)
+    builder = described_class.new(account: account)
+    allow(builder).to receive(:wazo_live_configuration_fingerprint).and_return('a' * 64)
+
+    warnings = builder.send(:wazo_readiness_warnings, channel: channel, binding: binding, policy: nil)
+
+    expect(warnings.pluck(:code)).to contain_exactly(
+      'wazo_inbound_route_unverified', 'wazo_outbound_route_unverified',
+      'wazo_event_ingress_unverified', 'wazo_recording_unverified'
+    )
+
+    verified_connection = instance_double(
+      Telephony::ProviderConnection,
+      provisioning_status: 'ready',
+      metadata: described_class::WAZO_LIVE_VERIFICATION_FLAGS.keys.index_with(true).merge(
+        'wazo_verified_configuration_fingerprint' => 'a' * 64
+      )
+    )
+    verified_binding = instance_double(Telephony::NumberBinding, provider_connection: verified_connection)
+
+    expect(builder.send(:wazo_readiness_warnings, channel: channel, binding: verified_binding, policy: nil)).to be_empty
+
+    allow(builder).to receive(:wazo_live_configuration_fingerprint).and_return('b' * 64)
+    stale_warnings = builder.send(:wazo_readiness_warnings, channel: channel, binding: verified_binding, policy: nil)
+    expect(stale_warnings.pluck(:code)).to contain_exactly(
+      'wazo_inbound_route_unverified', 'wazo_outbound_route_unverified',
+      'wazo_event_ingress_unverified', 'wazo_recording_unverified'
+    )
+
+    malformed_connection = instance_double(
+      Telephony::ProviderConnection,
+      provisioning_status: 'ready',
+      metadata: described_class::WAZO_LIVE_VERIFICATION_FLAGS.keys.index_with(true).merge(
+        'wazo_verified_configuration_fingerprint' => ['not-a-string']
+      )
+    )
+    malformed_binding = instance_double(Telephony::NumberBinding, provider_connection: malformed_connection)
+    malformed_warnings = builder.send(:wazo_readiness_warnings, channel: channel, binding: malformed_binding, policy: nil)
+    expect(malformed_warnings.pluck(:code)).to contain_exactly(
+      'wazo_inbound_route_unverified', 'wazo_outbound_route_unverified',
+      'wazo_event_ingress_unverified', 'wazo_recording_unverified'
+    )
+  end
+
   it 'returns handled-call visibility without a number binding or routing policy' do
     voice_channel = create_native_sip_channel(
       phone_number: '+17775550124',

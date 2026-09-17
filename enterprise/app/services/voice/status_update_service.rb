@@ -26,7 +26,7 @@ class Voice::StatusUpdateService
     normalized_status = normalize_status(call_status)
     return if normalized_status.blank?
 
-    conversation = account.conversations.find_by(identifier: call_sid)
+    conversation = find_conversation
     return unless conversation
 
     Voice::CallStatus::Manager.new(
@@ -40,6 +40,18 @@ class Voice::StatusUpdateService
   end
 
   private
+
+  def find_conversation
+    account.conversations.find_by(identifier: call_sid) || voice_message&.conversation
+  end
+
+  def voice_message
+    account.messages
+           .joins(:conversation)
+           .where(content_type: 'voice_call', source_id: "voice_call:#{call_sid}")
+           .order(created_at: :desc, id: :desc)
+           .first
+  end
 
   def normalize_status(status)
     return if status.to_s.strip.empty?

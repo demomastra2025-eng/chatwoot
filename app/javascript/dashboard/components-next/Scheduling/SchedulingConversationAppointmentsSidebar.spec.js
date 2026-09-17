@@ -78,6 +78,16 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
         data: { payload: { ...existingAppointment, client_name: 'Айша' } },
       })
     ),
+    cancel: vi.fn(() =>
+      Promise.resolve({
+        data: {
+          payload: {
+            ...existingAppointment,
+            medelement_provider_sync_status: 'pending',
+          },
+        },
+      })
+    ),
   },
 }));
 
@@ -155,6 +165,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.create.mockClear();
     SchedulingAppointmentsAPI.get.mockClear();
     SchedulingAppointmentsAPI.update.mockClear();
+    SchedulingAppointmentsAPI.cancel.mockClear();
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
     });
@@ -324,6 +335,21 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
   });
 
+  it('splits a two-part chat contact name when the surname field is empty', async () => {
+    const currentChat = defaultCurrentChat();
+    currentChat.meta.sender.name = 'Айжан Касымова';
+    const wrapper = mountComponent(currentChat);
+    await flushPromises();
+
+    const header = wrapper.findComponent({ name: 'SidebarActionsHeader' });
+    await header.vm.$emit('click', 'new_appointment');
+
+    expect(wrapper.vm.createForm).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+    });
+  });
+
   it('renders appointment status as a colored icon before the title without a dashed status rail', async () => {
     const wrapper = mountComponent();
     await flushPromises();
@@ -460,6 +486,121 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
     expect(payload).not.toHaveProperty('service_amount');
+  });
+
+  it('hydrates and sends the selected MedElement cabinet when editing a local appointment', async () => {
+    mocks.resources[0].customAttributes = {
+      medelement_cabinets: [
+        { company_cabinet_code: '501', cabinet_name: 'Главный' },
+      ],
+      medelement_specialist_code: 'specialist-1',
+    };
+    mocks.services[0].customAttributes = {
+      medelement_nomenclature_code: 'service-9',
+    };
+    mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
+    const localMedelementAppointment = {
+      ...existingAppointment,
+      clientLastName: 'Касымова',
+      clientPhone: ['+7', '700', '000', '0001'].join(''),
+      customAttributes: { medelementCabinetCode: '501' },
+      source: 'conversation',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [localMedelementAppointment] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(
+      wrapper.vm.appointmentForms['appointment-501'].medelementCabinetCode
+    ).toBe('501');
+    expect(
+      wrapper
+        .find('#scheduling-conversation-appointment-medelement-cabinet-501')
+        .exists()
+    ).toBe(true);
+
+    await wrapper.vm.saveAppointment(localMedelementAppointment);
+
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
+      501,
+      expect.objectContaining({
+        custom_attributes: { medelement_cabinet_code: '501' },
+      })
+    );
+  });
+
+  it('keeps provider-owned MedElement appointments read-only', async () => {
+    const providerAppointment = {
+      ...existingAppointment,
+      source: 'medelement',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [providerAppointment] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.vm.openAppointmentKeys).toEqual([]);
+    expect(wrapper.find('section button').attributes('disabled')).toBeDefined();
+    wrapper.vm.toggleAppointment(providerAppointment);
+    await wrapper.vm.saveAppointment(providerAppointment);
+
+    expect(wrapper.vm.openAppointmentKeys).toEqual([]);
+    expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+
+    SchedulingAppointmentsAPI.cancel.mockResolvedValueOnce({
+      data: {
+        payload: {
+          ...providerAppointment,
+          provider_confirmation_status: 'pending',
+        },
+      },
+    });
+
+    await wrapper.vm.cancelAppointment(providerAppointment);
+
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'SCHEDULING.PROVIDER_COMMANDS.QUEUED'
+    );
+    expect(
+      wrapper.vm.isProviderCancellationPending(wrapper.vm.appointments[0])
+    ).toBe(true);
+  });
+
+  it('uses the cancellation endpoint instead of updating the record status', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    wrapper.vm.appointmentForms['appointment-501'].status = 'cancelled';
+
+    await wrapper.vm.saveAppointment(existingAppointment);
+
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
+    expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+  });
+
+  it('uses the cabinet code as the edit option label when provider names are absent', async () => {
+    mocks.resources.splice(0, mocks.resources.length, {
+      id: 9,
+      active: true,
+      name: 'Doctor',
+      customAttributes: {
+        medelement_specialist_code: 'specialist-1',
+        medelement_cabinets: [
+          {
+            company_cabinet_code: 'cabinet-1',
+          },
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(
+      wrapper.vm.medelementCabinetOptionsForForm({ resourceId: 9 })
+    ).toEqual([{ label: 'cabinet-1', value: 'cabinet-1' }]);
   });
 
   it('updates an existing appointment without stale service ids when no active services exist', async () => {
@@ -605,6 +746,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
   it('requires MedElement patient identity but allows an appointment without a service', async () => {
     mocks.resources[0].customAttributes = {
+      medelement_cabinets: [
+        { company_cabinet_code: 'cabinet-1', cabinet_name: 'Кабинет 1' },
+      ],
       medelement_specialist_code: 'specialist-1',
     };
     mocks.services[0].customAttributes = {
@@ -627,7 +771,52 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: ['+7', '700', '000', '0001'].join(''),
     });
 
+    expect(wrapper.vm.createForm.medelementCabinetCode).toBe('cabinet-1');
     expect(wrapper.vm.isCreateFormInvalid).toBe(false);
+  });
+
+  it('requires a cabinet for a MedElement specialist and sends the selected cabinet', async () => {
+    mocks.resources[0].customAttributes = {
+      medelement_cabinets: [
+        { company_cabinet_code: '501', cabinet_name: 'Главный' },
+        {
+          company_cabinet_code: '502',
+          cabinet_name: 'Диагностика',
+          cabinet_number: '2',
+        },
+      ],
+      medelement_specialist_code: 'specialist-1',
+    };
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper
+      .findComponent({ name: 'SidebarActionsHeader' })
+      .vm.$emit('click', 'new_appointment');
+
+    expect(
+      wrapper
+        .find('#scheduling-conversation-appointment-medelement-cabinet')
+        .exists()
+    ).toBe(true);
+    expect(wrapper.vm.medelementCabinetOptions).toEqual([
+      { label: 'Главный', value: '501' },
+      { label: 'Диагностика · 2', value: '502' },
+    ]);
+
+    Object.assign(wrapper.vm.createForm, {
+      clientLastName: 'Касымова',
+      clientPhone: ['+7', '700', '000', '0001'].join(''),
+    });
+    expect(wrapper.vm.isCreateFormInvalid).toBe(true);
+
+    wrapper.vm.createForm.medelementCabinetCode = '502';
+    await wrapper.vm.saveCreateAppointment();
+
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        custom_attributes: { medelement_cabinet_code: '502' },
+      })
+    );
   });
 
   it('uses explicit service links for the selected MedElement specialist', async () => {
@@ -670,7 +859,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
-      { label: 'Консультация', value: 9 },
+      { label: 'Консультация', value: 9, wrapLabel: true },
     ]);
   });
 
@@ -707,8 +896,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
-      { label: 'Консультация', value: 9 },
-      { label: 'Другая услуга', value: 10 },
+      { label: 'Консультация', value: 9, wrapLabel: true },
+      { label: 'Другая услуга', value: 10, wrapLabel: true },
     ]);
   });
 

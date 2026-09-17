@@ -4,8 +4,7 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
   let(:account) do
     create(
       :account,
-      audio_transcriptions: false,
-      captain_features: { 'audio_transcription' => true },
+      audio_transcriptions: true,
       captain_runtime: { 'audio_transcription_prompt' => 'Transcribe Kazakh and Russian accurately.' }
     )
   end
@@ -33,8 +32,11 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
         account.disable_features!('captain_integration')
       end
 
-      it 'returns transcription limit exceeded' do
-        expect(service.perform).to eq({ error: 'Transcription limit exceeded' })
+      it 'still permits workspace audio transcription' do
+        allow(service).to receive(:supported_attachment_format?).and_return(true)
+        allow(service).to receive(:transcribe_audio).and_return('Workspace transcript')
+
+        expect(service.perform).to eq({ success: true, transcriptions: 'Workspace transcript' })
       end
     end
 
@@ -56,9 +58,9 @@ RSpec.describe Messages::AudioTranscriptionService, type: :service do
       end
     end
 
-    context 'when captain audio transcription feature is disabled' do
+    context 'when workspace audio transcription is disabled' do
       before do
-        account.update!(captain_features: { 'audio_transcription' => false }, audio_transcriptions: true)
+        account.update!(audio_transcriptions: false)
       end
 
       it 'returns error for transcription limit exceeded' do

@@ -52,16 +52,14 @@ describe Sms::IncomingMessageService do
         expect(sms_channel.inbox.conversations.open.last.status).to eq('open')
       end
 
-      it 'creates a new conversation if last conversation is resolved and lock to single conversation is disabled' do
+      it 'reuses the persistent conversation when the legacy lock flag is disabled' do
         sms_channel.inbox.update(lock_to_single_conversation: false)
         contact_inbox = create(:contact_inbox, inbox: sms_channel.inbox, source_id: params[:from])
         last_conversation = create(:conversation, inbox: sms_channel.inbox, contact_inbox: contact_inbox)
         last_conversation.update(status: 'resolved')
         described_class.new(inbox: sms_channel.inbox, params: params).perform
-        # new conversation should be created
-        expect(sms_channel.inbox.conversations.count).to eq(2)
-        # message appended to the last conversation
-        expect(contact_inbox.conversations.last.messages.last.content).to eq(params[:text])
+        expect(sms_channel.inbox.conversations.count).to eq(1)
+        expect(last_conversation.reload.messages.last.content).to eq(params[:text])
       end
 
       it 'will not create a new conversation if last conversation is not resolved and lock to single conversation is disabled' do

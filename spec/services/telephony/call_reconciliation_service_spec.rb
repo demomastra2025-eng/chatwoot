@@ -374,6 +374,39 @@ RSpec.describe Telephony::CallReconciliationService do
       end
     end
 
+    it 'closes stale Wazo local outbound calls without a terminal browser event' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'wazo',
+        external_call_ref: 'wazo:local:stale-outbound-1',
+        provider_call_sid: nil,
+        status: 'created',
+        direction: 'outbound',
+        started_at: now - 2.minutes,
+        last_event_at: now - 2.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'wazo',
+            'route_action' => 'operator'
+          }
+        }
+      )
+
+      with_modified_env('TELEPHONY_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS' => '30') do
+        expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      expect(call_session.reload).to have_attributes(
+        status: 'no_answer',
+        ended_at: now,
+        ended_by: 'native_sip_reconciliation',
+        end_reason: 'native_sip_missing_outbound_no_answer',
+        duration_seconds: 0
+      )
+    end
+
     it 'completes stale native Binotel local outbound calls answered without a terminal browser event' do
       call_session = create(
         :telephony_call_session,

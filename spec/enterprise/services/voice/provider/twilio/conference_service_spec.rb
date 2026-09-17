@@ -13,19 +13,22 @@ describe Voice::Provider::Twilio::ConferenceService do
   end
 
   describe '#ensure_conference_sid' do
-    it 'returns existing sid if present' do
-      conversation.update!(additional_attributes: { 'conference_sid' => 'CF_EXISTING' })
+    it 'returns and persists the deterministic conference name for the requested call' do
+      expected_name = Voice::Conference::Name.for(conversation, call_ref: 'CALL123')
 
-      expect(service.ensure_conference_sid).to eq('CF_EXISTING')
+      expect(service.ensure_conference_sid(call_ref: 'CALL123')).to eq(expected_name)
+      expect(conversation.reload.additional_attributes['conference_sid']).to eq(expected_name)
     end
 
-    it 'sets and returns generated sid when missing' do
-      allow(Voice::Conference::Name).to receive(:for).and_return('CF_GEN')
+    it 'replaces the previous call conference when the persistent conversation is reused' do
+      previous_name = Voice::Conference::Name.for(conversation, call_ref: 'CALL-A')
+      current_name = Voice::Conference::Name.for(conversation, call_ref: 'CALL-B')
+      conversation.update!(additional_attributes: { 'conference_sid' => previous_name })
 
-      sid = service.ensure_conference_sid
+      sid = service.ensure_conference_sid(call_ref: 'CALL-B')
 
-      expect(sid).to eq('CF_GEN')
-      expect(conversation.reload.additional_attributes['conference_sid']).to eq('CF_GEN')
+      expect(sid).to eq(current_name)
+      expect(conversation.reload.additional_attributes['conference_sid']).to eq(current_name)
     end
   end
 
@@ -52,9 +55,24 @@ describe Voice::Provider::Twilio::ConferenceService do
       allow(twilio_client).to receive(:conferences).with('CF123').and_return(conf_context)
       allow(conf_context).to receive(:update).with(status: 'completed')
 
-      service.end_conference
+      service.end_conference(call_ref: 'CALL123')
 
       expect(conf_context).to have_received(:update).with(status: 'completed')
+    end
+
+    it 'targets a stale call conference by call_ref instead of the persistent conversation current conference' do
+      stale_name = Voice::Conference::Name.for(conversation, call_ref: 'CALL-A')
+      current_name = Voice::Conference::Name.for(conversation, call_ref: 'CALL-B')
+      conversation.update!(additional_attributes: { 'conference_sid' => current_name, 'telephony_call_ref' => 'CALL-B' })
+      conferences_proxy = instance_double(Twilio::REST::Api::V2010::AccountContext::ConferenceList)
+
+      allow(twilio_client).to receive(:conferences).with(no_args).and_return(conferences_proxy)
+      allow(conferences_proxy).to receive(:list).and_return([])
+
+      service.end_conference(call_ref: 'CALL-A')
+
+      expect(conferences_proxy).to have_received(:list).with(friendly_name: stale_name, status: 'in-progress')
+      expect(conferences_proxy).not_to have_received(:list).with(friendly_name: current_name, status: 'in-progress')
     end
   end
 end

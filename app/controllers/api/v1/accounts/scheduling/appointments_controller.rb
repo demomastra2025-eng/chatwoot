@@ -74,7 +74,14 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def create
     existing_appointment = idempotent_appointment
-    return render_payload(appointment_payload(existing_appointment), status: :ok) if existing_appointment.present?
+    if existing_appointment.present?
+      Integrations::Medelement::AppointmentProviderCommandReceiptLookupService.new(
+        account: Current.account,
+        appointment: existing_appointment,
+        operation: 'create_reception'
+      ).perform
+      return render_payload(appointment_payload(existing_appointment), status: :ok)
+    end
 
     appointment = Scheduling::Appointments::UpsertService.new(
       account: Current.account,
@@ -99,9 +106,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def cancel
-    appointment = Scheduling::Appointments::UpsertService.new(
-      account: Current.account,
-      params: { status: 'cancelled', payment_status: 'cancelled' },
+    appointment = Scheduling::Appointments::CancelService.new(
       appointment: @appointment,
       actor: Current.user
     ).perform

@@ -12,7 +12,7 @@ class Captain::UiActionContract
     open_outbound open_touches open_outbound_personal open_touch_plans open_templates open_automation_rules
     open_macros open_canned_responses open_inboxes_settings open_agents_settings open_teams_settings
     open_labels_settings open_account_settings open_scheduling_settings open_assignment_policies
-    open_integrations open_webhooks open_kaspi_pay_settings open_reports open_conversation_reports
+    open_integrations open_webhooks open_reports open_conversation_reports
     open_sla_reports open_csat_reports open_help_center open_captain_settings open_captain_assistants
     open_captain_observability
   ].freeze

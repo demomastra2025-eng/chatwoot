@@ -51,6 +51,10 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     render json: { meta: result[:count] }
   end
 
+  def sidebar_unread_counts
+    @sidebar_unread_counts = CommunicationThreadFinder.new(Current.user, params).perform_sidebar_unread_counts
+  end
+
   def filter
     result = CommunicationThreads::FilterService.new(params.permit!, Current.user, Current.account).perform
     @communication_threads = result[:communication_threads]
@@ -59,6 +63,18 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     preload_crm_deal_stages(@communication_threads)
     preload_meta_ad_referrals(@communication_threads)
     render :index
+  rescue CustomExceptions::CustomFilter::InvalidAttribute,
+         CustomExceptions::CustomFilter::InvalidOperator,
+         CustomExceptions::CustomFilter::InvalidQueryOperator,
+         CustomExceptions::CustomFilter::InvalidValue => e
+    render_could_not_create_error(e.message)
+  end
+
+  def filter_sidebar_unread_counts
+    @sidebar_unread_counts = CommunicationThreads::FilterService
+                             .new(params.permit!, Current.user, Current.account)
+                             .perform_sidebar_unread_counts
+    render :sidebar_unread_counts
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
          CustomExceptions::CustomFilter::InvalidQueryOperator,
@@ -166,18 +182,20 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_links: operational_links_for(@communication_thread)
     )
     @communication_thread = service.perform
+    channel_read_states = service.channel_read_states
     render json: {
       id: @communication_thread.display_id,
-      unread_count: @communication_thread.unread_count,
+      unread_count: channel_read_states.sum { |state| state[:unread_count] },
       agent_last_seen_at: service.last_seen_at&.to_i,
-      channels: service.channel_read_states
+      channels: channel_read_states
     }
   end
 
   def unread
     @communication_thread = CommunicationThreads::MarkUnreadService.new(
       communication_thread: @communication_thread,
-      accessible_links: operational_links_for(@communication_thread)
+      accessible_links: operational_links_for(@communication_thread),
+      current_user: Current.user
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
@@ -215,14 +233,21 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def first_unread_message_id_for(communication_thread)
     conversation_ids = accessible_links_for(communication_thread).select(:conversation_id)
 
-    messages = Message.joins(:conversation)
+    messages = Message.without_imported_history
+                      .joins(:conversation)
                       .where(
                         account_id: Current.account.id,
                         conversation_id: conversation_ids,
                         message_type: Message.message_types[:incoming],
                         private: false
                       )
-                      .where('messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0))
+    messages = messages.where(
+      'messages.created_at > COALESCE(' \
+      "(SELECT COALESCE(last_seen_at, '-infinity'::timestamp) FROM conversation_user_read_states " \
+      'WHERE conversation_id = conversations.id AND user_id = ?), ' \
+      "conversations.agent_last_seen_at, '-infinity'::timestamp)",
+      Current.user.id
+    )
     messages = messages.where('messages.created_at >= ?', communication_thread.session_started_at) if communication_thread.session_started_at?
 
     messages.reorder('messages.created_at ASC', 'messages.id ASC').limit(1).pick(:id)
@@ -359,8 +384,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def validate_assignee!
     return unless params.key?(:assignee_id) && params[:assignee_id].present?
-
-    return if Current.account.account_users.exists?(user_id: params[:assignee_id])
+    return if Current.account.users.exists?(id: params[:assignee_id])
 
     raise ArgumentError, "Invalid communication thread assignee_id: #{params[:assignee_id]}"
   end
@@ -457,7 +481,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
         include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status,
         unread_counts: @channel_unread_counts_by_conversation_id,
-        last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id
+        last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id,
+        last_seen_timestamps: @channel_last_seen_timestamps_by_conversation_id
       ).perform
     end
   end
@@ -508,12 +533,19 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
     incoming_messages = incoming_channel_messages(conversation_ids)
     @last_incoming_message_timestamps_by_conversation_id = incoming_messages.group(:conversation_id).maximum(:created_at)
-    @channel_unread_counts_by_conversation_id = unread_channel_message_counts(incoming_messages)
+    user_read_state = Conversations::UserReadStatePreloader.new(
+      account: Current.account,
+      conversation_ids: conversation_ids,
+      user: Current.user
+    ).perform
+    @channel_last_seen_timestamps_by_conversation_id = user_read_state.last_seen_timestamps
+    @channel_unread_counts_by_conversation_id = user_read_state.unread_counts
   end
 
   def reset_channel_message_state
     @channel_unread_counts_by_conversation_id = {}
     @last_incoming_message_timestamps_by_conversation_id = {}
+    @channel_last_seen_timestamps_by_conversation_id = {}
   end
 
   def incoming_channel_messages(conversation_ids)
@@ -536,7 +568,23 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def preload_last_non_activity_messages_by_thread
-    @last_non_activity_messages_by_thread_id = preload_last_messages_by_thread(non_activity: true)
+    @last_non_activity_messages_by_thread_id = {}
+    activity_thread_links = {}
+
+    @accessible_links_by_thread_id.each do |thread_id, links|
+      last_public_message = @last_public_messages_by_thread_id[thread_id]
+      if last_public_message&.activity?
+        activity_thread_links[thread_id] = links
+      else
+        @last_non_activity_messages_by_thread_id[thread_id] = last_public_message
+      end
+    end
+
+    return if activity_thread_links.empty?
+
+    @last_non_activity_messages_by_thread_id.merge!(
+      preload_last_messages_by_thread(non_activity: true, links_by_thread_id: activity_thread_links)
+    )
   end
 
   def preload_list_message_associations
@@ -611,8 +659,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       preloader.for_communication_threads(@accessible_links_by_thread_id)
   end
 
-  def preload_last_messages_by_thread(non_activity: false)
-    links = @accessible_links_by_thread_id.values.flatten
+  def preload_last_messages_by_thread(non_activity: false, links_by_thread_id: @accessible_links_by_thread_id)
+    links = links_by_thread_id.values.flatten
     conversation_ids = links.map(&:conversation_id)
     return {} if conversation_ids.empty?
 
@@ -628,7 +676,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                                        .reorder(Arel.sql('messages.conversation_id, messages.created_at DESC, messages.id DESC'))
                                        .index_by(&:conversation_id)
 
-    @accessible_links_by_thread_id.transform_values do |thread_links|
+    links_by_thread_id.transform_values do |thread_links|
       messages = thread_links.filter_map { |link| last_messages_by_conversation_id[link.conversation_id] }
       messages_in_current_session(messages, thread_links).max_by { |message| [message.created_at, message.id] }
     end

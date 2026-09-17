@@ -62,15 +62,10 @@ class Twitter::TweetParserService < Twitter::WebhooksBaseService
   end
 
   def set_conversation
-    tweet_conversations = @contact_inbox.conversations.where("additional_attributes ->> 'tweet_id' = ?", parent_tweet_id)
-    @conversation = tweet_conversations.first
-    return if @conversation
-
-    tweet_message = @inbox.messages.find_by(source_id: parent_tweet_id)
-    @conversation = tweet_message.conversation if tweet_message
-    return if @conversation
-
-    @conversation = ::Conversation.create!(conversation_params)
+    @conversation = Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: @contact_inbox,
+      attributes: conversation_params
+    )
   end
 
   def message_already_exist?

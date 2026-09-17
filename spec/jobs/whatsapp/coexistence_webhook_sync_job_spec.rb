@@ -34,7 +34,7 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
   end
 
   it 'uses the dedicated WhatsApp history queue' do
-    expect(described_class.queue_name).to eq('whatsappweb_history')
+    expect(described_class.queue_name).to eq('whatsapp_coexistence_history')
   end
 
   it 'retries before taking the WABA lock while live traffic is waiting' do
@@ -44,7 +44,7 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
 
     expect do
       job.perform_now
-    end.to have_enqueued_job(described_class).on_queue('whatsappweb_history')
+    end.to have_enqueued_job(described_class).on_queue('whatsapp_coexistence_history')
   end
 
   it 'keeps retrying lock contention after the previous retry limit' do
@@ -56,7 +56,7 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
 
     expect do
       job.perform_now
-    end.to have_enqueued_job(described_class).on_queue('whatsappweb_history')
+    end.to have_enqueued_job(described_class).on_queue('whatsapp_coexistence_history')
   end
 
   it 'registers retries for media events that arrive before their history placeholder' do

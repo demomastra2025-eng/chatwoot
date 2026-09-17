@@ -4,13 +4,14 @@ class CommunicationThreads::RealtimeUpdateService
   EVENT_NAME = 'communication_thread.updated'
   FEATURE_NAME = 'communication_threads'
 
-  def initialize(communication_thread_id:, source_conversation_id:, source_event:, **options)
+  def initialize(communication_thread_id:, source_conversation_id:, source_event:, message_id: nil, performer_id: nil,
+                 recipient_user_ids: [])
     @communication_thread_id = communication_thread_id
     @source_conversation_id = source_conversation_id
     @source_event = source_event
-    @message_id = options[:message_id]
-    @performer_id = options[:performer_id]
-    @recipient_user_ids = Array(options[:recipient_user_ids]).map(&:to_i)
+    @message_id = message_id
+    @performer_id = performer_id
+    @recipient_user_ids = Array(recipient_user_ids).map(&:to_i)
   end
 
   def perform
@@ -37,7 +38,8 @@ class CommunicationThreads::RealtimeUpdateService
 
   private
 
-  attr_reader :communication_thread_id, :source_conversation_id, :source_event, :message_id, :performer_id, :recipient_user_ids
+  attr_reader :communication_thread_id, :source_conversation_id, :source_event, :message_id, :performer_id,
+              :recipient_user_ids
 
   def source_message(source_conversation)
     return if message_id.blank?
@@ -47,51 +49,72 @@ class CommunicationThreads::RealtimeUpdateService
 
   def broadcast_dashboard_updates(communication_thread, links, source_conversation, message)
     account = communication_thread.account
-    participant_user_ids = communication_thread.communication_thread_participants.pluck(:user_id)
-    access_contexts = CommunicationThreads::RealtimeAccessSnapshotBuilder.new(account, participant_user_ids).perform
-    payloads_by_visible_link_ids = {}
-
-    access_contexts.each_value do |access_context|
-      account_user = access_context[:account_user]
-      user = account_user.user
-      policy = communication_thread_policy(account, user, communication_thread, access_context)
-      visible_links = recipient_visible_links(user, links, participant_user_ids, policy)
-      next if visible_links.blank?
-      next unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
-
-      visible_link_ids = visible_links.map(&:id).sort
-      payload = payloads_by_visible_link_ids[visible_link_ids] ||=
-        realtime_payload(communication_thread, visible_links, source_conversation, message, participant_user_ids)
-      broadcast(account, user, payload, policy)
+    members_by_payload = Hash.new { |hash, key| hash[key] = [] }
+    groups = recipient_groups(account, communication_thread, links, source_conversation)
+    read_states = batch_read_states(account, links, groups)
+    groups.each_value do |group|
+      shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
+      group[:recipients].each do |recipient|
+        user = recipient[:user]
+        payload = realtime_payload(
+          communication_thread,
+          group[:links],
+          shared_payload,
+          user,
+          read_states,
+          recipient
+        )
+        members_by_payload[payload] << user.pubsub_token
+      end
     end
+
+    members_by_payload.each { |payload, members| broadcast(account, members, payload) }
+  end
+
+  def recipient_groups(account, communication_thread, links, source_conversation)
+    CommunicationThreads::RealtimeRecipientGroups.new(
+      account: account,
+      communication_thread: communication_thread,
+      links: links,
+      source_conversation: source_conversation,
+      recipient_user_ids: recipient_user_ids
+    ).perform
   end
 
   def recipient_visible_links(user, links, participant_user_ids, policy)
-    return links if @recipient_user_ids.include?(user.id) || participant_user_ids.include?(user.id)
+    return links if recipient_user_ids.include?(user.id) || participant_user_ids.include?(user.id)
+    return [] unless policy.show?
 
-    policy.show? ? links : []
+    access_context = CommunicationThreads::RealtimeAccessSnapshotBuilder.new(
+      account: links.first&.conversation&.account,
+      users: [user],
+      links: links
+    ).perform[user.id]
+    return [] unless access_context
+
+    links.select { |link| access_context.link_ids.include?(link.id) }
   end
 
-  def communication_thread_policy(account, user, communication_thread, access_context)
-    CommunicationThreadPolicy.new(
-      {
-        user: user,
-        account: account,
-        account_user: access_context[:account_user],
-        thread_access_snapshot: access_context[:thread_access_snapshot]
-      },
-      communication_thread
-    )
+  def batch_read_states(account, links, groups)
+    Conversations::UserReadStateBatchPreloader.new(
+      account: account,
+      conversation_ids: links.map(&:conversation_id),
+      users: groups.values.flat_map { |group| group[:recipients].map { |recipient| recipient[:user] } }.uniq
+    ).perform
   end
 
-  def realtime_payload(communication_thread, links, source_conversation, message, participant_user_ids)
-    channels = channel_payloads(communication_thread, links)
+  def shared_realtime_payload(communication_thread, links, source_conversation, message)
     payload = thread_identity_payload(communication_thread, links, source_conversation)
-              .merge(thread_state_payload(communication_thread, links, channels, participant_user_ids))
+              .merge(thread_invariant_state_payload(communication_thread, links))
               .merge(thread_timing_payload(communication_thread, links))
     payload[:message_id] = message&.id
     payload[:message] = message_payload(message, communication_thread) if message.present?
     payload
+  end
+
+  def realtime_payload(communication_thread, links, shared_payload, user, read_states, recipient)
+    channels = channel_payloads(communication_thread, links, user, read_states)
+    shared_payload.merge(user_thread_state_payload(channels, recipient))
   end
 
   def thread_identity_payload(communication_thread, links, source_conversation)
@@ -112,18 +135,25 @@ class CommunicationThreads::RealtimeUpdateService
     }
   end
 
-  def thread_state_payload(communication_thread, links, channels, participant_user_ids)
+  def thread_invariant_state_payload(communication_thread, links)
     {
-      channels: channels,
-      can_reply: channels.any? { |channel| channel_replyable?(channel) },
       status: communication_thread.status,
       priority: communication_thread.priority,
       assignee_id: communication_thread.assignee_id,
       team_id: communication_thread.team_id,
       labels: label_list(links),
-      scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread),
-      unread_count: communication_thread.unread_count,
-      participant_user_ids: participant_user_ids
+      scheduling_appointment_statuses: scheduling_appointment_statuses(communication_thread)
+    }
+  end
+
+  def user_thread_state_payload(channels, recipient)
+    {
+      channels: channels,
+      can_reply: channels.any? { |channel| channel_replyable?(channel) },
+      unread_count: channels.sum { |channel| channel[:unread_count].to_i },
+      current_user_participant: recipient[:participant],
+      can_manage_participants: recipient[:policy].manage_participants?,
+      can_leave_participation: recipient[:participant]
     }
   end
 
@@ -156,11 +186,13 @@ class CommunicationThreads::RealtimeUpdateService
     }
   end
 
-  def channel_payloads(communication_thread, links)
+  def channel_payloads(communication_thread, links, user, read_states)
     CommunicationThreads::ChannelCapabilitiesBuilder.new(
       links: links,
       contact: communication_thread.contact,
-      deduplicate_linked: false
+      deduplicate_linked: false,
+      unread_counts: read_states.unread_counts_for(user),
+      last_seen_timestamps: read_states.last_seen_timestamps_for(user)
     ).perform
   end
 
@@ -187,17 +219,11 @@ class CommunicationThreads::RealtimeUpdateService
     links.flat_map { |link| link.conversation&.label_list }.compact.uniq
   end
 
-  def broadcast(account, user, data, policy)
-    current_user_participant = data[:participant_user_ids].include?(user.id)
-    payload = data.merge(
-      account_id: account.id,
-      current_user_participant: current_user_participant,
-      can_manage_participants: policy.manage_participants?,
-      can_leave_participation: current_user_participant
-    )
+  def broadcast(account, members, data)
+    payload = data.merge(account_id: account.id)
     payload[:performer] = performer(account).push_event_data if performer(account).present?
 
-    ActionCableBroadcastJob.perform_later([user.pubsub_token], EVENT_NAME, payload)
+    ActionCableBroadcastJob.perform_later(members.uniq, EVENT_NAME, payload)
   end
 
   def performer(account)

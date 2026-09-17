@@ -2,6 +2,56 @@ require 'rails_helper'
 
 RSpec.describe Reminders::ExecuteService do
   describe '#perform' do
+    it 'runs the appointment provider guard before message materialization' do
+      conversation = create(:conversation)
+      appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: appointment,
+        status: :processing,
+        body: 'Provider-guarded reminder'
+      )
+      guard = instance_double(Reminders::AppointmentProviderGuard, perform: Reminders::AppointmentProviderGuard::STOP)
+      allow(Reminders::AppointmentProviderGuard).to receive(:new)
+        .with(reminder: touch, phase: :materialization)
+        .and_return(guard)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+    end
+
+    it 'rechecks provider freshness immediately before materialization' do
+      conversation = create(:conversation, status: :open)
+      appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: appointment,
+        timing_mode: :absolute,
+        status: :processing,
+        body: 'Provider-guarded reminder'
+      )
+      early_guard = instance_double(Reminders::AppointmentProviderGuard)
+      final_guard = instance_double(Reminders::AppointmentProviderGuard)
+      conversation_resolver = instance_double(Reminders::ConversationResolver, perform: conversation)
+      allow(Reminders::ConversationResolver).to receive(:new).with(reminder: touch).and_return(conversation_resolver)
+      allow(Reminders::AppointmentProviderGuard).to receive(:new).and_return(early_guard, final_guard)
+      allow(early_guard).to receive(:perform).and_return(Reminders::AppointmentProviderGuard::CONTINUE)
+      allow(final_guard).to receive(:perform).and_return(Reminders::AppointmentProviderGuard::STOP)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(early_guard).to have_received(:perform).once
+      expect(final_guard).to have_received(:perform).once
+    end
+
     it 'cancels a missed MedElement appointment reminder before creating a WhatsApp route' do
       zone = Time.find_zone!('Asia/Almaty')
 
@@ -76,6 +126,38 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.additional_attributes['touch_id']).to eq(touch.id)
       expect(message.additional_attributes).not_to include('automation_rule_id', 'touch_origin')
       expect(message.content).to include(conversation.contact.name)
+    end
+
+    it 'retargets every conversation reference before completing a post-delivery action touch' do
+      original_conversation = create(:conversation, status: :resolved)
+      replacement_conversation = create(
+        :conversation,
+        account: original_conversation.account,
+        inbox: original_conversation.inbox,
+        contact: original_conversation.contact,
+        contact_inbox: original_conversation.contact_inbox,
+        status: :open
+      )
+      touch = create(
+        :reminder,
+        account: original_conversation.account,
+        conversation: original_conversation,
+        target_conversation: original_conversation,
+        remindable: original_conversation,
+        status: :processing,
+        body: 'Follow up in the active conversation',
+        post_delivery_action: Reminder::POST_DELIVERY_ACTION_RESOLVE_CONVERSATION
+      )
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to change { replacement_conversation.messages.outgoing.count }.by(1)
+
+      touch.reload
+      expect(touch).to be_completed
+      expect(touch.conversation).to eq(replacement_conversation)
+      expect(touch.target_conversation).to eq(replacement_conversation)
+      expect(touch.remindable).to eq(replacement_conversation)
     end
 
     it 'adds trusted automation provenance only for an automation reminder' do

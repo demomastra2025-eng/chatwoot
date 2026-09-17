@@ -1,6 +1,14 @@
 class Whatsapp::Providers::Whatsapp360DialogService < Whatsapp::Providers::BaseService
+  DELIVERY_OUTCOME_UNKNOWN_KEY = 'whatsapp_360_delivery_outcome_unknown'.freeze
+
+  def self.delivery_outcome_unknown?(message)
+    ActiveModel::Type::Boolean.new.cast(message&.content_attributes.to_h.deep_stringify_keys[DELIVERY_OUTCOME_UNKNOWN_KEY])
+  end
+
   def send_message(phone_number, message)
     @message = message
+    return if suppress_ambiguous_delivery_retry?(message)
+
     if message.attachments.present?
       send_attachment_message(phone_number, message)
     elsif message.content_type == 'input_select'
@@ -11,17 +19,16 @@ class Whatsapp::Providers::Whatsapp360DialogService < Whatsapp::Providers::BaseS
   end
 
   def send_template(phone_number, template_info, message)
-    response = HTTParty.post(
-      "#{api_base_path}/messages",
-      headers: api_headers,
-      body: {
+    return if suppress_ambiguous_delivery_retry?(message)
+
+    submit_message(
+      {
         to: phone_number,
         template: template_body_parameters(template_info),
         type: 'template'
-      }.to_json
+      },
+      message
     )
-
-    process_response(response, message)
   end
 
   def sync_templates
@@ -62,18 +69,19 @@ class Whatsapp::Providers::Whatsapp360DialogService < Whatsapp::Providers::BaseS
     ENV.fetch('360DIALOG_BASE_URL', 'https://waba.360dialog.io/v1')
   end
 
+  def request_timeout
+    ENV.fetch('WHATSAPP_360_API_TIMEOUT', 20).to_i
+  end
+
   def send_text_message(phone_number, message)
-    response = HTTParty.post(
-      "#{api_base_path}/messages",
-      headers: api_headers,
-      body: {
+    submit_message(
+      {
         to: phone_number,
         text: { body: message.outgoing_content },
         type: 'text'
-      }.to_json
+      },
+      message
     )
-
-    process_response(response, message)
   end
 
   def send_attachment_message(phone_number, message)
@@ -85,17 +93,14 @@ class Whatsapp::Providers::Whatsapp360DialogService < Whatsapp::Providers::BaseS
     type_content['caption'] = message.outgoing_content unless %w[audio sticker].include?(type)
     type_content['filename'] = attachment.file.filename if type == 'document'
 
-    response = HTTParty.post(
-      "#{api_base_path}/messages",
-      headers: api_headers,
-      body: {
+    submit_message(
+      {
         'to' => phone_number,
         'type' => type,
         type.to_s => type_content
-      }.to_json
+      },
+      message
     )
-
-    process_response(response, message)
   end
 
   def error_message(response)
@@ -118,16 +123,46 @@ class Whatsapp::Providers::Whatsapp360DialogService < Whatsapp::Providers::BaseS
   def send_interactive_text_message(phone_number, message)
     payload = create_payload_based_on_items(message)
 
-    response = HTTParty.post(
-      "#{api_base_path}/messages",
-      headers: api_headers,
-      body: {
+    submit_message(
+      {
         to: phone_number,
         interactive: payload,
         type: 'interactive'
-      }.to_json
+      },
+      message
+    )
+  end
+
+  def submit_message(body, message)
+    response = HTTParty.post(
+      "#{api_base_path}/messages",
+      headers: api_headers,
+      body: body.to_json,
+      timeout: request_timeout
     )
 
     process_response(response, message)
+  rescue Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ETIMEDOUT,
+         Whatsapp::Providers::BaseService::DeliveryAcknowledgementMissingError => e
+    record_unknown_delivery_outcome!(message, e)
+    nil
+  end
+
+  def record_unknown_delivery_outcome!(message, error)
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys.except('external_error')
+    content_attributes.merge!(
+      DELIVERY_OUTCOME_UNKNOWN_KEY => true,
+      'whatsapp_360_delivery_outcome_unknown_at' => Time.current.iso8601,
+      'whatsapp_360_delivery_outcome_error_class' => error.class.name
+    )
+    message.update!(status: :sent, external_error: nil, content_attributes: content_attributes)
+    Rails.logger.warn("[WHATSAPP_360] delivery outcome unknown; automatic retry suppressed message_id=#{message.id} error=#{error.class}")
+  end
+
+  def suppress_ambiguous_delivery_retry?(message)
+    return false unless self.class.delivery_outcome_unknown?(message)
+
+    Rails.logger.warn("[WHATSAPP_360] duplicate send suppressed after unknown delivery outcome message_id=#{message.id}")
+    true
   end
 end

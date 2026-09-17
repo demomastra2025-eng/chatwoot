@@ -62,8 +62,8 @@ RSpec.describe Inbox do
       )
     end
 
-    it 'defaults to true for messenger channels' do
-      messenger_channels = [
+    it 'uses one persistent conversation for every non-email channel' do
+      persistent_channels = [
         Channel::FacebookPage.new(account: account),
         Channel::Instagram.new(account: account),
         Channel::Line.new(account: account),
@@ -75,10 +75,14 @@ RSpec.describe Inbox do
         Channel::Weixin.new(account: account),
         Channel::Whatsapp.new(account: account),
         Channel::WhatsappWeb.new(account: account),
-        build_twilio_channel(medium: :whatsapp)
+        Channel::Api.new(account: account),
+        Channel::Sms.new(account: account),
+        Channel::WebWidget.new(account: account),
+        build_twilio_channel(medium: :whatsapp),
+        build_twilio_channel(medium: :sms)
       ]
 
-      messenger_channels.each do |channel|
+      persistent_channels.each do |channel|
         inbox = build_inbox(channel: channel)
 
         inbox.valid?
@@ -87,25 +91,15 @@ RSpec.describe Inbox do
       end
     end
 
-    it 'keeps false by default for non-messenger channels' do
-      non_messenger_channels = [
-        Channel::Api.new(account: account),
-        Channel::Email.new(account: account),
-        Channel::Sms.new(account: account),
-        Channel::WebWidget.new(account: account),
-        build_twilio_channel(medium: :sms)
-      ]
+    it 'allows multiple conversations only for email' do
+      inbox = build_inbox(channel: Channel::Email.new(account: account))
 
-      non_messenger_channels.each do |channel|
-        inbox = build_inbox(channel: channel)
+      inbox.valid?
 
-        inbox.valid?
-
-        expect(inbox.lock_to_single_conversation).to be(false), channel.class.name
-      end
+      expect(inbox.lock_to_single_conversation).to be(false)
     end
 
-    it 'ignores an explicit false value for messenger channels' do
+    it 'ignores an explicit false value for non-email channels' do
       inbox = build_inbox(
         channel: Channel::TelegramPersonal.new(account: account),
         lock_to_single_conversation: false
@@ -117,7 +111,7 @@ RSpec.describe Inbox do
       expect(inbox[:lock_to_single_conversation]).to be(true)
     end
 
-    it 'ignores an explicit true value for non-messenger channels' do
+    it 'ignores an explicit true value for email' do
       inbox = build_inbox(
         channel: Channel::Email.new(account: account),
         lock_to_single_conversation: true

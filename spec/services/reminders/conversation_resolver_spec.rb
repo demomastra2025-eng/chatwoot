@@ -21,7 +21,7 @@ RSpec.describe Reminders::ConversationResolver do
         .to raise_error(Reminders::UndeliverableTargetError, 'Touch target is not deliverable for this inbox')
     end
 
-    it 'preserves Telegram transport attributes when replacing a resolved conversation' do
+    it 'preserves Telegram transport attributes when reopening a resolved conversation' do
       account = create(:account)
       channel = create(:channel_telegram, account: account)
       inbox = channel.inbox
@@ -64,7 +64,9 @@ RSpec.describe Reminders::ConversationResolver do
 
       conversation = described_class.new(reminder: reminder).perform
 
-      expect(conversation).not_to eq(resolved_conversation)
+      expect(conversation).to eq(resolved_conversation)
+      expect(conversation).to be_open
+      expect(conversation.identity_key).to eq('primary')
       expect(conversation.additional_attributes).to include(
         'chat_id' => 987_654_321,
         'business_connection_id' => 'business-1'

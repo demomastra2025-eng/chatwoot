@@ -73,23 +73,22 @@ describe Campaigns::OneoffConversationBuilder do
         sender = create(:user, account: account, role: :agent)
         campaign.update!(sender: sender)
         existing_contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: '77001234567')
+        existing_conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          contact: contact,
+          contact_inbox: existing_contact_inbox,
+          status: :open
+        )
 
         {
           pending: 'pending',
           open: 'open',
           resolved: 'resolved'
         }.each do |status_name, status|
-          existing_conversation = create(
-            :conversation,
-            account: account,
-            inbox: inbox,
-            contact: contact,
-            contact_inbox: existing_contact_inbox,
-            status: status,
-            created_at: Time.current + Conversation.count.seconds
-          )
           waiting_since = status_name == :pending ? 30.minutes.ago : nil
-          existing_conversation.update!(waiting_since: waiting_since)
+          existing_conversation.update!(status: status, waiting_since: waiting_since)
 
           message = described_class.new(campaign: campaign, contact: contact).perform
 

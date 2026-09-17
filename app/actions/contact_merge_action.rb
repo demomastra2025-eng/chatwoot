@@ -9,6 +9,7 @@ class ContactMergeAction
 
     ActiveRecord::Base.transaction do
       validate_contacts
+      lock_contact_inboxes
       merge_owner
       merge_conversations
       merge_contact_inboxes
@@ -33,6 +34,10 @@ class ContactMergeAction
 
   def belongs_to_account?(contact)
     @account.id == contact.account_id
+  end
+
+  def lock_contact_inboxes
+    ContactInbox.where(contact_id: [@base_contact.id, @mergee_contact.id]).order(:id).lock.load
   end
 
   def merge_conversations

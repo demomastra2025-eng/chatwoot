@@ -76,6 +76,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  audioTranscriptionsAvailable: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['submit', 'handoffCapabilityChange']);
@@ -100,6 +104,7 @@ const initialState = {
     web: false,
     documentReading: false,
     imageUnderstanding: false,
+    useAudioTranscriptions: true,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -301,6 +306,7 @@ const updateStateFromAssistant = assistant => {
     web: config.feature_web || false,
     documentReading: config.feature_document_reading || false,
     imageUnderstanding: config.feature_image_understanding || false,
+    useAudioTranscriptions: config.use_audio_transcriptions !== false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
@@ -373,6 +379,10 @@ const buildPayload = async () => {
       handoff_enabled: handoffToHumanEnabled.value,
       tool_access: state.toolAccess,
     };
+    if (props.audioTranscriptionsAvailable) {
+      assistantPayload.config.use_audio_transcriptions =
+        state.features.useAudioTranscriptions;
+    }
   }
 
   return {
@@ -679,6 +689,15 @@ defineExpose({
           <Switch
             v-model="state.features.documentReading"
             :disabled="!isFirecrawlConfigured"
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3">
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.USE_AUDIO_TRANSCRIPTIONS') }}
+          </span>
+          <Switch
+            v-model="state.features.useAudioTranscriptions"
+            :disabled="!audioTranscriptionsAvailable"
           />
         </label>
         <div v-if="!isFirecrawlConfigured" class="text-xs text-n-amber-11">

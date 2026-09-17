@@ -34,6 +34,7 @@ import { LocalStorage } from 'shared/helpers/localStorage';
 import {
   filterDuplicateSourceMessages,
   getUnreadIncomingMessages,
+  isImportedHistoryMessage,
   isPublicIncomingMessage,
 } from 'dashboard/helper/conversationHelper';
 
@@ -185,14 +186,17 @@ export default {
       return messages;
     },
     unReadMessages() {
+      const unreadCandidates = this.getMessages.filter(
+        message => !isImportedHistoryMessage(message)
+      );
       if (!isCommunicationThread(this.currentChat)) {
         return getUnreadIncomingMessages(
-          this.getMessages,
+          unreadCandidates,
           this.currentChat.agent_last_seen_at
         );
       }
 
-      return this.getMessages.filter(message =>
+      return unreadCandidates.filter(message =>
         this.isUnreadCommunicationThreadMessage(message)
       );
     },
@@ -352,6 +356,7 @@ export default {
         return;
       }
       this.conversationHistoryGeneration += 1;
+      this.hasUserScrolled = false;
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
       this.openedUnreadMessageIds = [];

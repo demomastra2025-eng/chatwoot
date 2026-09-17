@@ -6,6 +6,7 @@ import {
   OPERATOR_TYPES_6,
   OPERATOR_TYPES_7,
   OPERATOR_TYPES_8,
+  SERVICE_SET_OPERATOR_TYPES,
 } from './operators';
 
 const APPOINTMENT_AUTOMATION_CONDITIONS = [
@@ -49,7 +50,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     key: 'service_id',
     name: 'APPOINTMENT_SERVICE',
     inputType: 'search_select',
-    filterOperators: OPERATOR_TYPES_1,
+    filterOperators: SERVICE_SET_OPERATOR_TYPES,
   },
 ];
 
@@ -515,6 +516,10 @@ export const AUTOMATIONS = {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
     actions: APPOINTMENT_AUTOMATION_ACTIONS,
   },
+  appointment_rescheduled: {
+    conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
+    actions: APPOINTMENT_AUTOMATION_ACTIONS,
+  },
   appointment_cancelled: {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
     actions: APPOINTMENT_AUTOMATION_ACTIONS,
@@ -633,6 +638,10 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'appointment_updated',
     value: 'APPOINTMENT_UPDATED',
+  },
+  {
+    key: 'appointment_rescheduled',
+    value: 'APPOINTMENT_RESCHEDULED',
   },
   {
     key: 'appointment_cancelled',

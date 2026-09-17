@@ -20,6 +20,36 @@ RSpec.describe Message do
     it { is_expected.to have_one(:meta_ad_referral).dependent(:nullify) }
   end
 
+  describe '.without_imported_history' do
+    it 'supports serialized hashes, native JSON objects, and malformed opaque legacy values' do
+      regular_message = create(:message)
+      serialized_history = create(:message, content_attributes: { imported_history: true })
+      native_json_history = create(:message)
+      opaque_legacy_message = create(:message)
+      malformed_legacy_message = create(:message)
+      connection = described_class.connection
+      connection.execute(
+        "UPDATE messages SET content_attributes = #{connection.quote({ imported_history: true }.to_json)}::json " \
+        "WHERE id = #{native_json_history.id}"
+      )
+      connection.execute(
+        "UPDATE messages SET content_attributes = #{connection.quote('opaque'.to_json)}::json " \
+        "WHERE id = #{opaque_legacy_message.id}"
+      )
+      connection.execute(
+        "UPDATE messages SET content_attributes = #{connection.quote('{legacy opaque value'.to_json)}::json " \
+        "WHERE id = #{malformed_legacy_message.id}"
+      )
+
+      visible_ids = described_class.where(
+        id: [regular_message.id, serialized_history.id, native_json_history.id, opaque_legacy_message.id,
+             malformed_legacy_message.id]
+      ).without_imported_history.pluck(:id)
+
+      expect(visible_ids).to contain_exactly(regular_message.id, opaque_legacy_message.id, malformed_legacy_message.id)
+    end
+  end
+
   describe 'length validations' do
     let!(:message) { create(:message) }
 

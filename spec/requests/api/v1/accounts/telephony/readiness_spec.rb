@@ -23,7 +23,7 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     expect(payload).to include('ready' => true, 'warnings' => [])
     expect(payload.fetch('janus_sip')).to include(
       'healthy' => true,
-      'providers' => %w[asterisk_analog sipuni binotel beeline],
+      'providers' => %w[asterisk_analog sipuni binotel beeline wazo],
       'mode' => 'browser_webphone'
     )
     expect(payload.fetch('account')).to include(
@@ -80,5 +80,38 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     inbox = payload.fetch('inboxes').first
     expect(inbox).to include('ready' => false, 'number_binding_present' => false)
     expect(inbox.fetch('warnings').map { |warning| warning['code'] }).to include('missing_number_binding')
+  end
+
+  it 'rejects a supported number binding from a different SIP provider' do
+    voice_channel.update!(provider: 'wazo')
+    voice_inbox.telephony_number_binding.update!(provider: 'sipuni')
+
+    get path, headers: headers
+
+    payload = response.parsed_body.fetch('payload')
+    inbox = payload.fetch('inboxes').first
+    warning_codes = inbox.fetch('warnings').map { |warning| warning['code'] }
+
+    expect(payload).to include('ready' => false)
+    expect(inbox).to include('provider' => 'wazo', 'ready' => false)
+    expect(warning_codes).to include('binding_provider_mismatch')
+  end
+
+  it 'propagates blocking Virtual PBX readiness warnings to the account summary' do
+    voice_inbox
+    virtual_pbx = Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(voice_inbox)
+    virtual_pbx[:warnings] << {
+      code: 'provider_live_boundary_unverified',
+      message: 'Provider live boundary has not been verified',
+      severity: 'blocking'
+    }
+    builder = instance_double(Telephony::VirtualPbx::ConfigBuilder, for_inbox: virtual_pbx)
+    allow(Telephony::VirtualPbx::ConfigBuilder).to receive(:new).and_return(builder)
+
+    get path, headers: headers
+
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('ready' => false)
+    expect(payload.dig('inboxes', 0, 'warnings').pluck('code')).to include('provider_live_boundary_unverified')
   end
 end

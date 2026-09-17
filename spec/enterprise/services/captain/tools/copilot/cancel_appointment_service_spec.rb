@@ -39,6 +39,17 @@ RSpec.describe Captain::Tools::Copilot::CancelAppointmentService do
     expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
   end
 
+  it 'cancels the explicitly selected appointment when the conversation has multiple appointments' do
+    resource = create(:scheduling_resource, account: account)
+    selected = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation)
+    other = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation)
+
+    payload = JSON.parse(execute_confirmed(appointment_id: selected.id))
+
+    expect(payload).to include('appointment_id' => selected.id, 'status' => 'cancelled')
+    expect(other.reload.status).to eq('scheduled')
+  end
+
   def execute_confirmed(**arguments)
     first_result = service.execute(**arguments)
     first_payload = JSON.parse(first_result)

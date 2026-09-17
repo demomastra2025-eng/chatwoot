@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Telephony::OperatorIdentityResolver
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
 
   Identity = Struct.new(:source, :record, keyword_init: true) do
     def agent_binding

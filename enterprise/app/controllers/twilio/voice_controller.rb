@@ -26,24 +26,21 @@ class Twilio::VoiceController < ApplicationController
     )
 
     conversation = resolve_conversation
-    conference_sid = ensure_conference_sid!(conversation)
+    conference_sid = ensure_conference_sid!(conversation, canonical_conference_call_ref)
 
-    render xml: conference_twiml(conference_sid, agent_leg?(twilio_from))
+    render xml: conference_twiml(conference_sid, agent_leg?(twilio_from), canonical_conference_call_ref)
   end
 
   def conference_status
     event = mapped_conference_event
     return head :no_content unless event
 
-    conversation = find_conversation_for_conference!(
-      friendly_name: params[:FriendlyName],
-      call_sid: twilio_call_sid
-    )
+    conversation = find_conversation_for_conference!(friendly_name: params[:FriendlyName])
 
     Voice::Conference::Manager.new(
       conversation: conversation,
       event: event,
-      call_sid: twilio_call_sid,
+      call_sid: @conference_call_ref || canonical_conference_call_ref,
       participant_label: participant_label
     ).process
 
@@ -66,6 +63,14 @@ class Twilio::VoiceController < ApplicationController
 
   def twilio_direction
     @twilio_direction ||= (params['Direction'] || params['CallDirection']).to_s
+  end
+
+  def canonical_conference_call_ref
+    return params[:call_ref] if params[:call_ref].present?
+    return twilio_call_sid if agent_leg?(twilio_from)
+    return params['ParentCallSid'].presence || twilio_call_sid if twilio_direction == 'outbound-dial'
+
+    twilio_call_sid
   end
 
   def mapped_conference_event
@@ -106,14 +111,14 @@ class Twilio::VoiceController < ApplicationController
     if params[:conversation_id].present?
       current_account.conversations.find_by!(display_id: params[:conversation_id])
     else
-      current_account.conversations.find_by!(identifier: twilio_call_sid)
+      find_conversation_by_call_ref!(twilio_call_sid)
     end
   end
 
   def sync_outbound_leg(call_sid:, from_number:, direction:)
     parent_sid = params['ParentCallSid'].presence
     lookup_sid = direction == 'outbound-dial' ? parent_sid || call_sid : call_sid
-    conversation = current_account.conversations.find_by!(identifier: lookup_sid)
+    conversation = find_conversation_by_call_ref!(lookup_sid)
 
     Voice::CallSessionSyncService.new(
       conversation: conversation,
@@ -127,21 +132,23 @@ class Twilio::VoiceController < ApplicationController
     ).perform
   end
 
-  def ensure_conference_sid!(conversation)
+  def ensure_conference_sid!(conversation, call_sid)
+    conference_sid = Voice::Conference::Name.for(conversation, call_ref: call_sid)
     attrs = conversation.additional_attributes || {}
-    attrs['conference_sid'] ||= Voice::Conference::Name.for(conversation)
-    conversation.update!(additional_attributes: attrs)
-    attrs['conference_sid']
+    if current_call?(conversation, call_sid) && attrs['conference_sid'] != conference_sid
+      conversation.update!(additional_attributes: attrs.merge('conference_sid' => conference_sid))
+    end
+    conference_sid
   end
 
-  def conference_twiml(conference_sid, agent_leg)
+  def conference_twiml(conference_sid, agent_leg, call_ref)
     Twilio::TwiML::VoiceResponse.new.tap do |response|
       response.dial do |dial|
         dial.conference(
           conference_sid,
           start_conference_on_enter: agent_leg,
           end_conference_on_exit: false,
-          status_callback: conference_status_callback_url,
+          status_callback: conference_status_callback_url(call_ref),
           status_callback_event: 'start end join leave',
           status_callback_method: 'POST',
           participant_label: agent_leg ? 'agent' : 'contact'
@@ -150,21 +157,70 @@ class Twilio::VoiceController < ApplicationController
     end.to_s
   end
 
-  def conference_status_callback_url
+  def conference_status_callback_url(call_ref)
     phone_digits = inbox_channel.phone_number.delete_prefix('+')
-    Rails.application.routes.url_helpers.twilio_voice_conference_status_url(phone: phone_digits)
+    Rails.application.routes.url_helpers.twilio_voice_conference_status_url(phone: phone_digits, call_ref: call_ref)
   end
 
-  def find_conversation_for_conference!(friendly_name:, call_sid:)
-    name = friendly_name.to_s
-    scope = current_account.conversations
+  def find_conversation_for_conference!(friendly_name:)
+    return find_conversation_for_callback_ref! if params[:call_ref].present?
 
-    if name.present?
-      conversation = scope.where("additional_attributes->>'conference_sid' = ?", name).first
-      return conversation if conversation
-    end
+    conversation = find_conversation_for_conference_name(friendly_name.to_s)
+    return conversation if conversation
 
-    scope.find_by!(identifier: call_sid)
+    @conference_call_ref = canonical_conference_call_ref
+    find_conversation_by_call_ref!(@conference_call_ref)
+  end
+
+  def find_conversation_for_callback_ref!
+    @conference_call_ref = params[:call_ref]
+    find_conversation_by_call_ref!(@conference_call_ref)
+  end
+
+  def find_conversation_for_conference_name(name)
+    return if name.blank?
+
+    conversation = current_account.conversations.where("additional_attributes->>'conference_sid' = ?", name).first
+    return remember_current_conference_call(conversation) if conversation
+
+    message = voice_messages.limit(100).detect { |candidate| voice_message_conference_sid(candidate) == name }
+    remember_message_conference_call(message) if message
+  end
+
+  def remember_current_conference_call(conversation)
+    @conference_call_ref = conversation.additional_attributes&.dig('telephony_call_ref').presence || canonical_conference_call_ref
+    conversation
+  end
+
+  def remember_message_conference_call(message)
+    @conference_call_ref = voice_message_call_ref(message) || canonical_conference_call_ref
+    message.conversation
+  end
+
+  def find_conversation_by_call_ref!(call_ref)
+    current_account.conversations.find_by(identifier: call_ref) ||
+      voice_messages.find_by(source_id: "voice_call:#{call_ref}")&.conversation ||
+      raise(ActiveRecord::RecordNotFound, "Couldn't find Conversation for call #{call_ref}")
+  end
+
+  def voice_messages
+    current_account.messages
+                   .joins(:conversation)
+                   .where(conversations: { inbox_id: inbox.id }, content_type: 'voice_call')
+                   .order(created_at: :desc, id: :desc)
+  end
+
+  def current_call?(conversation, call_ref)
+    current_ref = conversation.additional_attributes&.dig('telephony_call_ref').presence || conversation.identifier
+    current_ref.to_s == call_ref.to_s
+  end
+
+  def voice_message_call_ref(message)
+    message.content_attributes.to_h.deep_stringify_keys.dig('data', 'call_sid')
+  end
+
+  def voice_message_conference_sid(message)
+    message.content_attributes.to_h.deep_stringify_keys.dig('data', 'conference_sid')
   end
 
   def set_inbox!

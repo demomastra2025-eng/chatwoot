@@ -45,7 +45,7 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
 
   it 'reuses the latest inbox conversation for an existing duplicated contact' do
     contact_inbox = build_contact_inbox
-    duplicated_conversation = create(
+    create(
       :conversation,
       account: channel.account,
       inbox: channel.inbox,
@@ -54,11 +54,12 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
       last_activity_at: 2.minutes.ago
     )
 
-    contact_inbox.conversations.create!(
+    latest_conversation = contact_inbox.conversations.create!(
       account: channel.account,
       inbox: channel.inbox,
       contact: contact_inbox.contact,
-      status: :open
+      status: :open,
+      last_activity_at: 1.minute.ago
     )
 
     resolved_conversation = described_class.new(
@@ -68,10 +69,10 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
       additional_attributes: { chat_id: '23' }
     ).perform
 
-    expect(resolved_conversation.id).to eq(duplicated_conversation.id)
+    expect(resolved_conversation.id).to eq(latest_conversation.id)
   end
 
-  it 'does not reuse resolved conversations when lock_to_single_conversation is disabled' do
+  it 'reuses the persistent resolved conversation when the legacy lock flag is disabled' do
     channel.inbox.update!(lock_to_single_conversation: false)
     contact_inbox = build_contact_inbox
 
@@ -92,7 +93,7 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
       additional_attributes: { chat_id: '23' }
     ).perform
 
-    expect(active_conversation.id).not_to eq(resolved_conversation.id)
-    expect(active_conversation.status).not_to eq('resolved')
+    expect(active_conversation.id).to eq(resolved_conversation.id)
+    expect(active_conversation.status).to eq('resolved')
   end
 end

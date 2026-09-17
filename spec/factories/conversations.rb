@@ -7,14 +7,20 @@ FactoryBot.define do
     identifier { SecureRandom.hex }
 
     after(:build) do |conversation|
-      conversation.account ||= conversation.inbox&.account || conversation.contact&.account || create(:account)
-      conversation.inbox ||= create(
-        :inbox,
-        account: conversation.account,
-        channel: create(:channel_widget, account: conversation.account)
-      )
-      conversation.contact ||= create(:contact, :with_email, account: conversation.account)
-      conversation.contact_inbox ||= create(:contact_inbox, contact: conversation.contact, inbox: conversation.inbox)
+      if conversation.contact_inbox.present?
+        conversation.account = conversation.contact_inbox.inbox.account
+        conversation.inbox = conversation.contact_inbox.inbox
+        conversation.contact = conversation.contact_inbox.contact
+      else
+        conversation.account ||= conversation.inbox&.account || conversation.contact&.account || create(:account)
+        conversation.inbox ||= create(
+          :inbox,
+          account: conversation.account,
+          channel: create(:channel_widget, account: conversation.account)
+        )
+        conversation.contact ||= create(:contact, :with_email, account: conversation.account)
+        conversation.contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: conversation.inbox)
+      end
     end
 
     trait :with_team do

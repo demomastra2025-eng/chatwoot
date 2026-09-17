@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_16_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -35,8 +35,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
     t.index ["account_id", "resource", "capability", "access_scope"], name: "index_access_role_grants_on_account_lookup"
     t.index ["account_id"], name: "index_access_role_grants_on_account_id"
     t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying::text, 'own'::character varying::text, 'team'::character varying::text, 'all'::character varying::text])", name: "access_role_grants_supported_scope"
-    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'transition'::character varying, 'take'::character varying, 'override_schedule'::character varying, 'complete_cancel'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying]::text[])", name: "access_role_grants_supported_capability"
-    t.check_constraint "resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'override_schedule'::character varying]::text[])) OR resource::text <> 'appointments'::text AND (resource::text = 'contacts'::text AND capability::text = 'view'::text OR resource::text = 'contacts'::text AND capability::text = 'create'::text OR resource::text = 'contacts'::text AND capability::text = 'update_fields'::text OR resource::text = 'contacts'::text AND capability::text = 'assign'::text OR resource::text = 'contacts'::text AND capability::text = 'delete_archive'::text OR resource::text = 'contacts'::text AND capability::text = 'view_configuration'::text OR resource::text = 'contacts'::text AND capability::text = 'configure'::text OR resource::text = 'contacts'::text AND capability::text = 'export'::text OR resource::text = 'contacts'::text AND capability::text = 'view_reports'::text OR resource::text = 'conversations'::text AND capability::text = 'view'::text OR resource::text = 'conversations'::text AND capability::text = 'create'::text OR resource::text = 'conversations'::text AND capability::text = 'update_fields'::text OR resource::text = 'conversations'::text AND capability::text = 'assign'::text OR resource::text = 'conversations'::text AND capability::text = 'transition'::text OR resource::text = 'conversations'::text AND capability::text = 'take'::text OR resource::text = 'conversations'::text AND capability::text = 'delete_archive'::text OR resource::text = 'conversations'::text AND capability::text = 'view_configuration'::text OR resource::text = 'conversations'::text AND capability::text = 'configure'::text OR resource::text = 'conversations'::text AND capability::text = 'export'::text OR resource::text = 'conversations'::text AND capability::text = 'view_reports'::text OR resource::text = 'deals'::text AND capability::text = 'view'::text OR resource::text = 'deals'::text AND capability::text = 'create'::text OR resource::text = 'deals'::text AND capability::text = 'update_fields'::text OR resource::text = 'deals'::text AND capability::text = 'assign'::text OR resource::text = 'deals'::text AND capability::text = 'transition'::text OR resource::text = 'deals'::text AND capability::text = 'delete_archive'::text OR resource::text = 'deals'::text AND capability::text = 'view_configuration'::text OR resource::text = 'deals'::text AND capability::text = 'configure'::text OR resource::text = 'deals'::text AND capability::text = 'export'::text OR resource::text = 'deals'::text AND capability::text = 'view_reports'::text OR resource::text = 'tasks'::text AND capability::text = 'view'::text OR resource::text = 'tasks'::text AND capability::text = 'create'::text OR resource::text = 'tasks'::text AND capability::text = 'update_fields'::text OR resource::text = 'tasks'::text AND capability::text = 'assign'::text OR resource::text = 'tasks'::text AND capability::text = 'transition'::text OR resource::text = 'tasks'::text AND capability::text = 'complete_cancel'::text OR resource::text = 'tasks'::text AND capability::text = 'delete_archive'::text OR resource::text = 'tasks'::text AND capability::text = 'view_configuration'::text OR resource::text = 'tasks'::text AND capability::text = 'configure'::text OR resource::text = 'tasks'::text AND capability::text = 'export'::text OR resource::text = 'tasks'::text AND capability::text = 'view_reports'::text)", name: "access_role_grants_supported_resource_capability"
+    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'override_schedule'::character varying::text, 'complete_cancel'::character varying::text, 'view_finance'::character varying::text, 'manage_finance'::character varying::text])", name: "access_role_grants_supported_capability"
+    t.check_constraint "resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_finance'::character varying::text, 'manage_finance'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'override_schedule'::character varying::text])) OR resource::text <> 'appointments'::text AND (resource::text = 'contacts'::text AND capability::text = 'view'::text OR resource::text = 'contacts'::text AND capability::text = 'create'::text OR resource::text = 'contacts'::text AND capability::text = 'update_fields'::text OR resource::text = 'contacts'::text AND capability::text = 'assign'::text OR resource::text = 'contacts'::text AND capability::text = 'delete_archive'::text OR resource::text = 'contacts'::text AND capability::text = 'view_configuration'::text OR resource::text = 'contacts'::text AND capability::text = 'configure'::text OR resource::text = 'contacts'::text AND capability::text = 'export'::text OR resource::text = 'contacts'::text AND capability::text = 'view_reports'::text OR resource::text = 'conversations'::text AND capability::text = 'view'::text OR resource::text = 'conversations'::text AND capability::text = 'create'::text OR resource::text = 'conversations'::text AND capability::text = 'update_fields'::text OR resource::text = 'conversations'::text AND capability::text = 'assign'::text OR resource::text = 'conversations'::text AND capability::text = 'transition'::text OR resource::text = 'conversations'::text AND capability::text = 'take'::text OR resource::text = 'conversations'::text AND capability::text = 'delete_archive'::text OR resource::text = 'conversations'::text AND capability::text = 'view_configuration'::text OR resource::text = 'conversations'::text AND capability::text = 'configure'::text OR resource::text = 'conversations'::text AND capability::text = 'export'::text OR resource::text = 'conversations'::text AND capability::text = 'view_reports'::text OR resource::text = 'deals'::text AND capability::text = 'view'::text OR resource::text = 'deals'::text AND capability::text = 'create'::text OR resource::text = 'deals'::text AND capability::text = 'update_fields'::text OR resource::text = 'deals'::text AND capability::text = 'assign'::text OR resource::text = 'deals'::text AND capability::text = 'transition'::text OR resource::text = 'deals'::text AND capability::text = 'delete_archive'::text OR resource::text = 'deals'::text AND capability::text = 'view_configuration'::text OR resource::text = 'deals'::text AND capability::text = 'configure'::text OR resource::text = 'deals'::text AND capability::text = 'export'::text OR resource::text = 'deals'::text AND capability::text = 'view_reports'::text OR resource::text = 'tasks'::text AND capability::text = 'view'::text OR resource::text = 'tasks'::text AND capability::text = 'create'::text OR resource::text = 'tasks'::text AND capability::text = 'update_fields'::text OR resource::text = 'tasks'::text AND capability::text = 'assign'::text OR resource::text = 'tasks'::text AND capability::text = 'transition'::text OR resource::text = 'tasks'::text AND capability::text = 'complete_cancel'::text OR resource::text = 'tasks'::text AND capability::text = 'delete_archive'::text OR resource::text = 'tasks'::text AND capability::text = 'view_configuration'::text OR resource::text = 'tasks'::text AND capability::text = 'configure'::text OR resource::text = 'tasks'::text AND capability::text = 'export'::text OR resource::text = 'tasks'::text AND capability::text = 'view_reports'::text)", name: "access_role_grants_supported_resource_capability"
     t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying::text, 'conversations'::character varying::text, 'appointments'::character varying::text, 'deals'::character varying::text, 'tasks'::character varying::text])", name: "access_role_grants_supported_resource"
   end
 
@@ -1347,6 +1347,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
     t.index ["conversation_id"], name: "index_conversation_status_transitions_on_conversation_id"
   end
 
+  create_table "conversation_user_read_states", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "last_seen_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id"], name: "index_conversation_user_read_states_on_account_id_and_user_id"
+    t.index ["account_id"], name: "index_conversation_user_read_states_on_account_id"
+    t.index ["conversation_id", "user_id"], name: "idx_conversation_user_read_states_unique", unique: true
+    t.index ["conversation_id"], name: "index_conversation_user_read_states_on_conversation_id"
+    t.index ["user_id"], name: "index_conversation_user_read_states_on_user_id"
+  end
+
   create_table "conversations", id: :serial, force: :cascade do |t|
     t.integer "account_id", null: false
     t.integer "inbox_id", null: false
@@ -1374,8 +1388,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
     t.datetime "waiting_since"
     t.text "cached_label_list"
     t.bigint "assignee_agent_bot_id"
+    t.string "identity_key"
     t.index ["account_id", "display_id"], name: "index_conversations_on_account_id_and_display_id", unique: true
     t.index ["account_id", "id"], name: "index_conversations_on_id_and_account_id"
+    t.index ["account_id", "inbox_id", "contact_id", "identity_key"], name: "idx_conversations_on_account_inbox_contact_identity", where: "(identity_key IS NOT NULL)"
     t.index ["account_id", "inbox_id", "status", "assignee_id"], name: "conv_acid_inbid_stat_asgnid_idx"
     t.index ["account_id"], name: "index_conversations_on_account_id"
     t.index ["assignee_id", "account_id"], name: "index_conversations_on_assignee_id_and_account_id"
@@ -1949,36 +1965,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
     t.datetime "updated_at", null: false
     t.jsonb "settings", default: {}
     t.check_constraint "app_id::text <> 'postiz'::text", name: "integrations_hooks_app_id_not_postiz"
-  end
-
-  create_table "kaspi_pay_payments", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "integration_hook_id", null: false
-    t.string "source_type"
-    t.bigint "source_id"
-    t.string "payment_type", null: false
-    t.integer "amount", null: false
-    t.string "currency", default: "KZT", null: false
-    t.string "kaspi_operation_id"
-    t.string "kaspi_order_number"
-    t.string "status", default: "pending", null: false
-    t.string "status_description"
-    t.text "qr_token"
-    t.string "receipt_url"
-    t.datetime "expires_at"
-    t.datetime "paid_at"
-    t.datetime "failed_at"
-    t.string "idempotency_key"
-    t.jsonb "metadata", default: {}, null: false
-    t.datetime "created_at", null: false
-    t.datetime "updated_at", null: false
-    t.string "qr_original_token"
-    t.index ["account_id", "idempotency_key"], name: "index_kaspi_pay_payments_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
-    t.index ["account_id", "kaspi_operation_id"], name: "index_kaspi_pay_payments_on_account_id_and_kaspi_operation_id", unique: true, where: "(kaspi_operation_id IS NOT NULL)"
-    t.index ["account_id", "status"], name: "index_kaspi_pay_payments_on_account_id_and_status"
-    t.index ["account_id"], name: "index_kaspi_pay_payments_on_account_id"
-    t.index ["integration_hook_id"], name: "index_kaspi_pay_payments_on_integration_hook_id"
-    t.index ["source_type", "source_id"], name: "index_kaspi_pay_payments_on_source"
+    t.check_constraint "app_id::text <> (('ka'::text || 'spi'::text) || '_pay'::text)", name: "integrations_hooks_app_id_not_retired_payment_provider"
   end
 
   create_table "labels", force: :cascade do |t|
@@ -2448,6 +2435,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
     t.text "processed_message_content"
     t.jsonb "sentiment", default: {}
     t.index "((additional_attributes -> 'campaign_id'::text))", name: "index_messages_on_additional_attributes_campaign_id", using: :gin
+    t.index "to_tsvector('english'::regconfig, COALESCE(content, ''::text))", name: "index_messages_on_english_search_vector", using: :gin
     t.index ["account_id", "content_type", "created_at"], name: "idx_messages_account_content_created"
     t.index ["account_id", "conversation_id", "created_at"], name: "idx_messages_account_conversation_public_chat_time", order: { created_at: :desc }, where: "((private = false) AND (message_type <> 2))"
     t.index ["account_id", "created_at", "message_type"], name: "index_messages_on_account_created_type"
@@ -3796,6 +3784,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
   add_foreign_key "contacts", "users", column: "owner_id"
   add_foreign_key "conversation_status_transitions", "accounts"
   add_foreign_key "conversation_status_transitions", "conversations"
+  add_foreign_key "conversation_user_read_states", "accounts", on_delete: :cascade
+  add_foreign_key "conversation_user_read_states", "conversations", on_delete: :cascade
+  add_foreign_key "conversation_user_read_states", "users", on_delete: :cascade
   add_foreign_key "crm_comments", "accounts"
   add_foreign_key "crm_comments", "users"
   add_foreign_key "crm_deal_contacts", "accounts"
@@ -3842,8 +3833,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_182000) do
   add_foreign_key "crm_tasks", "users", column: "completed_by_id", on_delete: :nullify
   add_foreign_key "crm_tasks", "users", column: "creator_id"
   add_foreign_key "inboxes", "portals"
-  add_foreign_key "kaspi_pay_payments", "accounts"
-  add_foreign_key "kaspi_pay_payments", "integrations_hooks", column: "integration_hook_id"
   add_foreign_key "lead_forms", "accounts"
   add_foreign_key "lead_forms", "inboxes"
   add_foreign_key "lead_submissions", "accounts"

@@ -25,10 +25,12 @@ class Voice::Conference::Manager
   end
 
   def ensure_conference_sid!
+    return unless status_manager.current_call?
+
     attrs = conversation.additional_attributes || {}
     return if attrs['conference_sid'].present?
 
-    attrs['conference_sid'] = Voice::Conference::Name.for(conversation)
+    attrs['conference_sid'] = Voice::Conference::Name.for(conversation, call_ref: call_sid)
     conversation.update!(additional_attributes: attrs)
   end
 
@@ -58,7 +60,7 @@ class Voice::Conference::Manager
   end
 
   def current_status
-    conversation.additional_attributes&.dig('call_status')
+    status_manager.current_call_status
   end
 
   def normalized_current_status

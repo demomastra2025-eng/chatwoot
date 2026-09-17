@@ -39,6 +39,7 @@ RSpec.describe 'Twilio::VoiceController', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('<Response>')
       expect(response.body).to include('<Dial>')
+      expect(response.body).to include("call_ref=#{call_sid}")
     end
 
     it 'syncs an existing outbound conversation when Twilio sends the PSTN leg' do
@@ -97,6 +98,34 @@ RSpec.describe 'Twilio::VoiceController', type: :request do
       }
 
       expect(response).to have_http_status(:ok)
+      expect(response.body).to include(Voice::Conference::Name.for(conversation, call_ref: parent_sid))
+      expect(response.body).to include("call_ref=#{parent_sid}")
+    end
+
+    it 'joins an agent leg to the canonical call conference instead of its own CallSid conference' do
+      canonical_call_sid = 'CA_contact_leg'
+      agent_call_sid = 'CA_agent_leg'
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        identifier: canonical_call_sid,
+        additional_attributes: { 'telephony_call_ref' => canonical_call_sid }
+      )
+
+      post "/twilio/voice/call/#{digits}", params: {
+        'CallSid' => agent_call_sid,
+        'From' => 'client:agent-1',
+        'To' => to_number,
+        'Direction' => 'outbound-api',
+        'conversation_id' => conversation.display_id,
+        'call_ref' => canonical_call_sid
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(Voice::Conference::Name.for(conversation, call_ref: canonical_call_sid))
+      expect(response.body).not_to include(Voice::Conference::Name.for(conversation, call_ref: agent_call_sid))
+      expect(response.body).to include("call_ref=#{canonical_call_sid}")
     end
 
     it 'raises not found when inbox is not present' do
@@ -141,6 +170,49 @@ RSpec.describe 'Twilio::VoiceController', type: :request do
         'CallStatus' => 'busy'
       }
       expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe 'POST /twilio/voice/conference_status/:phone' do
+    it 'routes a stale call callback through the matching voice message after the conversation starts a newer call' do
+      stale_call_sid = 'CA_stale_call'
+      current_call_sid = 'CA_current_call'
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        identifier: current_call_sid,
+        additional_attributes: {
+          'telephony_call_ref' => current_call_sid,
+          'conference_sid' => 'current-conference'
+        }
+      )
+      stale_conference_sid = Voice::Conference::Name.for(conversation, call_ref: stale_call_sid)
+      stale_message = Voice::CallMessageBuilder.perform!(
+        conversation: conversation,
+        direction: 'inbound',
+        payload: { call_sid: stale_call_sid, conference_sid: stale_conference_sid }
+      )
+      expect(stale_message.content_attributes.dig('data', 'conference_sid')).to eq(stale_conference_sid)
+      manager = instance_double(Voice::Conference::Manager, process: nil)
+
+      expect(Voice::Conference::Manager).to receive(:new).with(
+        conversation: conversation,
+        event: 'end',
+        call_sid: stale_call_sid,
+        participant_label: 'contact'
+      ).and_return(manager)
+
+      post "/twilio/voice/conference_status/#{digits}", params: {
+        'CallSid' => 'CA_stale_child_leg',
+        'FriendlyName' => stale_conference_sid,
+        'StatusCallbackEvent' => 'conference-end',
+        'ParticipantLabel' => 'contact',
+        'call_ref' => stale_call_sid
+      }
+
+      expect(response).to have_http_status(:no_content)
+      expect(manager).to have_received(:process)
     end
   end
 end

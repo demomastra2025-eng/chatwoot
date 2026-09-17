@@ -112,7 +112,7 @@ describe Twilio::IncomingMessageService do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'creates a new conversation if last conversation is resolved and lock to single conversation is disabled' do
+      it 'reuses the persistent conversation when the legacy lock flag is disabled' do
         params = {
           SmsSid: 'SMxx',
           From: '+12345',
@@ -124,8 +124,8 @@ describe Twilio::IncomingMessageService do
         twilio_channel.inbox.update(lock_to_single_conversation: false)
         conversation.update(status: 'resolved')
         described_class.new(params: params).perform
-        expect(twilio_channel.inbox.conversations.count).to eq(2)
-        expect(twilio_channel.inbox.conversations.last.messages.last.content).to eq('testing3')
+        expect(twilio_channel.inbox.conversations.count).to eq(1)
+        expect(conversation.reload.messages.last.content).to eq('testing3')
       end
 
       it 'will not create a new conversation if last conversation is not resolved and lock to single conversation is disabled' do

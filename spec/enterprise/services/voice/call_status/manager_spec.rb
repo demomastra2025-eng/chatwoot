@@ -5,7 +5,15 @@ require 'rails_helper'
 RSpec.describe Voice::CallStatus::Manager do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
-  let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+  let(:conversation) do
+    create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      identifier: 'fresh-call-ref',
+      additional_attributes: { 'telephony_call_ref' => 'fresh-call-ref' }
+    )
+  end
 
   it 'updates only the voice call message matching the call sid' do
     stale_message = create(
@@ -142,5 +150,61 @@ RSpec.describe Voice::CallStatus::Manager do
     described_class.new(conversation: conversation, call_sid: 'missing-call-ref').process_status_update('ringing')
 
     expect(stale_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+  end
+
+  it 'does not let a late call overwrite the current call summary' do
+    conversation.update!(
+      identifier: 'current-call-ref',
+      additional_attributes: {
+        'telephony_call_ref' => 'current-call-ref',
+        'call_status' => 'ringing'
+      }
+    )
+    stale_message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      content_type: 'voice_call',
+      source_id: 'voice_call:old-call-ref',
+      content_attributes: { data: { call_sid: 'old-call-ref', status: 'ringing' } }
+    )
+
+    described_class.new(conversation: conversation, call_sid: 'old-call-ref').process_status_update('completed')
+
+    expect(stale_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+    expect(conversation.reload.additional_attributes['call_status']).to eq('ringing')
+  end
+
+  it 'rechecks the current call under row lock before updating the aggregate summary' do
+    stale_message = create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      content_type: 'voice_call',
+      source_id: 'voice_call:fresh-call-ref',
+      content_attributes: { data: { call_sid: 'fresh-call-ref', status: 'ringing' } }
+    )
+    locked_scope = Conversation.lock
+    allow(Conversation).to receive(:lock).and_return(locked_scope)
+    allow(locked_scope).to receive(:find) do |conversation_id|
+      Conversation.where(id: conversation.id).update_all(
+        identifier: 'new-call-ref',
+        additional_attributes: {
+          'telephony_call_ref' => 'new-call-ref',
+          'call_status' => 'ringing'
+        }
+      )
+      Conversation.find(conversation_id)
+    end
+
+    described_class.new(conversation: conversation, call_sid: 'fresh-call-ref').process_status_update('completed')
+
+    expect(stale_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+    expect(conversation.reload.additional_attributes).to include(
+      'telephony_call_ref' => 'new-call-ref',
+      'call_status' => 'ringing'
+    )
   end
 end

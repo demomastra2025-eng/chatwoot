@@ -1,5 +1,5 @@
 class Telephony::RoutingService
-  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   ROUTE_CONFIG_KEYS = {
     mode: :routing_mode,
     app_ref: :app_route_app_ref,

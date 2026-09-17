@@ -4,7 +4,7 @@ require 'rails_helper'
 
 RSpec.describe Inboxes::ConversationPolicyNormalizer do
   describe '.perform' do
-    it 'normalizes messenger, Twilio WhatsApp, and non-messenger inboxes' do
+    it 'normalizes every non-email inbox to one conversation and email to multiple conversations' do
       account = create(:account)
       telegram_inbox = create(:channel_telegram, account: account).inbox
       twitter_channel = create(:channel_twitter_profile, account: account)
@@ -17,7 +17,7 @@ RSpec.describe Inboxes::ConversationPolicyNormalizer do
       twitter_inbox.update_column(:lock_to_single_conversation, false)
       email_inbox.update_column(:lock_to_single_conversation, true)
       twilio_whatsapp_inbox.update_column(:lock_to_single_conversation, false)
-      twilio_sms_inbox.update_column(:lock_to_single_conversation, true)
+      twilio_sms_inbox.update_column(:lock_to_single_conversation, false)
 
       result = described_class.perform
 
@@ -30,7 +30,7 @@ RSpec.describe Inboxes::ConversationPolicyNormalizer do
       expect(twitter_inbox.reload[:lock_to_single_conversation]).to be(true)
       expect(email_inbox.reload[:lock_to_single_conversation]).to be(false)
       expect(twilio_whatsapp_inbox.reload[:lock_to_single_conversation]).to be(true)
-      expect(twilio_sms_inbox.reload[:lock_to_single_conversation]).to be(false)
+      expect(twilio_sms_inbox.reload[:lock_to_single_conversation]).to be(true)
     end
 
     it 'is idempotent when inbox policies already match their channels' do

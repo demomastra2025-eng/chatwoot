@@ -128,12 +128,28 @@ describe('#mutations', () => {
         conversationRecords: [{ id: 1 }],
         messageRecords: [{ id: 1 }],
         articleRecords: [{ id: 1 }],
+        uiFlags: {
+          isFetching: true,
+          isSearchCompleted: true,
+          contact: { isFetching: true },
+          conversation: { isFetching: true },
+          message: { isFetching: true },
+          article: { isFetching: true },
+        },
       };
       mutations[types.CLEAR_SEARCH_RESULTS](state);
       expect(state.contactRecords).toEqual([]);
       expect(state.conversationRecords).toEqual([]);
       expect(state.messageRecords).toEqual([]);
       expect(state.articleRecords).toEqual([]);
+      expect(state.uiFlags).toEqual({
+        isFetching: false,
+        isSearchCompleted: false,
+        contact: { isFetching: false },
+        conversation: { isFetching: false },
+        message: { isFetching: false },
+        article: { isFetching: false },
+      });
     });
   });
 });

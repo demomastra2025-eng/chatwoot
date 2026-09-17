@@ -68,4 +68,12 @@ RSpec.describe Voice::Conference::Manager do
     expect(conversation.reload.additional_attributes['call_status']).to eq('no_answer')
     expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
   end
+
+  it 'derives a distinct conference name for every call on the same conversation' do
+    first_name = Voice::Conference::Name.for(conversation, call_ref: 'call-a')
+    second_name = Voice::Conference::Name.for(conversation, call_ref: 'call-b')
+
+    expect(first_name).not_to eq(second_name)
+    expect(first_name).to start_with("conf_account_#{account.id}_conv_#{conversation.display_id}_call_")
+  end
 end

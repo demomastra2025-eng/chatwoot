@@ -238,7 +238,8 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
         expect(body['conference_sid']).to be_present
         conversation.reload
         expect(conversation.identifier).to eq('CALL123')
-        expect(conference_service).to have_received(:ensure_conference_sid)
+        expect(body['call_ref']).to eq('CALL123')
+        expect(conference_service).to have_received(:ensure_conference_sid).with(call_ref: 'CALL123')
         expect(conference_service).to have_received(:mark_agent_joined)
       end
 
@@ -301,11 +302,20 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       it 'ends conference and returns success' do
         delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
                headers: agent.create_new_auth_token,
-               params: { conversation_id: conversation.display_id }
+               params: { conversation_id: conversation.display_id, call_ref: 'CALL123' }
 
         expect(response).to have_http_status(:ok)
         expect(response.parsed_body['id']).to eq(conversation.display_id)
-        expect(conference_service).to have_received(:end_conference)
+        expect(conference_service).to have_received(:end_conference).with(call_ref: 'CALL123')
+      end
+
+      it 'requires an explicit call_ref so a stale client cannot end the current call by conversation id alone' do
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
+               headers: agent.create_new_auth_token,
+               params: { conversation_id: conversation.display_id }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(conference_service).not_to have_received(:end_conference)
       end
 
       it 'does not allow ending conferences for conversations from inboxes without access' do

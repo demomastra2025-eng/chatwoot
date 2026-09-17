@@ -108,8 +108,54 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
   const sidebarUnreadRefreshCalls = () =>
     mockDispatch.mock.calls.filter(
-      ([actionName]) => actionName === 'fetchSidebarUnreadCounts'
+      ([actionName]) => actionName === 'fetchRealtimeSidebarUnreadCounts'
     );
+
+  describe('personal read state', () => {
+    it('does not overwrite personal unread fields from a shared conversation update', () => {
+      actionCable.onConversationUpdated({
+        id: 42,
+        status: 'open',
+        unread_count: 0,
+        agent_last_seen_at: 1712345678,
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith('updateConversation', {
+        id: 42,
+        status: 'open',
+      });
+    });
+
+    it('accepts read fields only when the current user performed the read', () => {
+      actionCable.onConversationRead({
+        id: 42,
+        unread_count: 0,
+        agent_last_seen_at: 1712345678,
+        performer: { id: 7 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'updateConversation',
+        expect.objectContaining({
+          unread_count: 0,
+          agent_last_seen_at: 1712345678,
+        })
+      );
+
+      mockDispatch.mockClear();
+      actionCable.onConversationRead({
+        id: 42,
+        unread_count: 0,
+        agent_last_seen_at: 1712345678,
+        performer: { id: 8 },
+      });
+
+      expect(mockDispatch).toHaveBeenCalledWith('updateConversation', {
+        id: 42,
+        performer: { id: 8 },
+      });
+    });
+  });
 
   describe('sidebar unread count refreshes', () => {
     it('debounces repeated refreshes from realtime events', async () => {
@@ -132,7 +178,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
       vi.useFakeTimers();
       let resolveRefresh;
       mockDispatch.mockImplementation(actionName => {
-        if (actionName !== 'fetchSidebarUnreadCounts') return undefined;
+        if (actionName !== 'fetchRealtimeSidebarUnreadCounts') return undefined;
 
         return new Promise(resolve => {
           resolveRefresh = resolve;
@@ -212,6 +258,42 @@ describe('ActionCableConnector - Copilot Tests', () => {
         counts
       );
       expect(actionCable.lastSidebarUnreadCountsRefreshAt).toBe(refreshedAt);
+    });
+
+    it('isolates cross-tab counts between different advanced filters', () => {
+      const firstFilters = {
+        communicationThreadMode: true,
+        queryData: {
+          payload: [{ attribute_key: 'status', values: ['open'] }],
+        },
+      };
+      const secondFilters = {
+        communicationThreadMode: true,
+        queryData: {
+          payload: [{ attribute_key: 'status', values: ['resolved'] }],
+        },
+      };
+      store.$store.state.conversations.conversationFilters = firstFilters;
+
+      const firstContextId = actionCable.sidebarUnreadCountsContextId();
+      const secondContextId =
+        actionCable.sidebarUnreadCountsContextId(secondFilters);
+      expect(firstContextId).not.toBe(secondContextId);
+
+      actionCable.onSidebarUnreadCountsStorage({
+        key: actionCable.sidebarUnreadCountsStorageKey,
+        newValue: JSON.stringify({
+          contextId: secondContextId,
+          counts: { all: 99 },
+          requestedAt: Date.now() - 1,
+          refreshedAt: Date.now(),
+        }),
+      });
+
+      expect(store.$store.commit).not.toHaveBeenCalledWith(
+        'SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS',
+        { all: 99 }
+      );
     });
 
     it('ignores stale counts from an older request', () => {

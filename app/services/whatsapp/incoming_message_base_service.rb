@@ -219,10 +219,10 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def set_conversation
-    @conversation = conversation_from_reply_context || existing_contact_conversation
-    return if @conversation
-
-    @conversation = ::Conversation.create!(conversation_params)
+    @conversation = Conversations::IdentityResolver.resolve_primary!(
+      contact_inbox: @contact_inbox,
+      attributes: conversation_params
+    )
   end
 
   def attach_files

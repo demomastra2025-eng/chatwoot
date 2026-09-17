@@ -49,7 +49,7 @@ class Telephony::NumberBinding < ApplicationRecord
 
   MANAGED_BY_ONELINK = 'onelink'
   MANAGED_OWNERSHIP_STATUSES = %w[local managed].freeze
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
 
   KNOWN_PROVIDER_CONFIG_KEYS = %w[
     number_ref

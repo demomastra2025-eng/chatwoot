@@ -18,14 +18,19 @@ Metrics/ClassLength:
   Exclude:
     - 'app/models/message.rb'
     - 'app/models/conversation.rb'
+    - 'app/services/search_service.rb'
 
 Metrics/MethodLength:
   Max: 19
   Exclude:
     - 'enterprise/lib/captain/agent.rb'
+    - 'app/services/scheduling/payload_builder.rb'
+    - 'app/services/search_service.rb'
 
 RSpec/ExampleLength:
   Max: 50
+  Exclude:
+    - 'spec/finders/conversation_finder_spec.rb'
 
 Style/Documentation:
   Enabled: false
@@ -89,8 +94,19 @@ Metrics/BlockLength:
 
 Metrics/ModuleLength:
   Exclude:
+    - app/services/scheduling/payload_builder.rb
     - lib/seeders/message_seeder.rb
     - spec/support/slack_stubs.rb
+
+Metrics/CyclomaticComplexity:
+  Exclude:
+    - app/services/scheduling/payload_builder.rb
+    - app/services/search_service.rb
+
+Metrics/PerceivedComplexity:
+  Exclude:
+    - app/services/scheduling/payload_builder.rb
+    - app/services/search_service.rb
 
 Rails/HelperInstanceVariable:
   Exclude:
@@ -177,7 +193,7 @@ Metrics/AbcSize:
   Max: 26
   Exclude:
     - 'app/controllers/concerns/auth_helper.rb'
-
+    - 'app/services/scheduling/payload_builder.rb'
     - 'app/models/integrations/hook.rb'
     - 'app/models/canned_response.rb'
     - 'app/models/telegram_bot.rb'
