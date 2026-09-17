@@ -11,7 +11,6 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useWindowSize } from '@vueuse/core';
 
 import wootConstants from 'dashboard/constants/globals';
-import { shouldMountCaptainCopilot } from 'dashboard/helper/captainCopilotPanel';
 
 const CommandBar = defineAsyncComponent(
   () => import('./commands/commandbar.vue')
@@ -25,11 +24,6 @@ const WhatsappCallWidget = defineAsyncComponent(
   () => import('dashboard/components/widgets/WhatsappCallWidget.vue')
 );
 
-import CopilotLauncher from 'dashboard/components-next/copilot/CopilotLauncher.vue';
-const CopilotContainer = defineAsyncComponent(
-  () => import('dashboard/components/copilot/CopilotContainer.vue')
-);
-
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
@@ -41,8 +35,6 @@ export default {
     WootKeyShortcutModal,
     AddAccountModal,
     UpgradePage,
-    CopilotLauncher,
-    CopilotContainer,
     FloatingCallWidget,
     WhatsappCallWidget,
     MobileSidebarLauncher,
@@ -97,12 +89,6 @@ export default {
         previously_used_conversation_display_type: conversationDisplayType,
       } = this.uiSettings;
       return conversationDisplayType;
-    },
-    shouldMountCopilot() {
-      return shouldMountCaptainCopilot({
-        uiSettings: this.uiSettings,
-        route: this.$route,
-      });
     },
   },
   watch: {
@@ -178,12 +164,10 @@ export default {
       <template v-if="!showUpgradePage">
         <router-view />
         <CommandBar />
-        <CopilotLauncher />
         <MobileSidebarLauncher
           :is-mobile-sidebar-open="isMobileSidebarOpen"
           @toggle="toggleMobileSidebar"
         />
-        <CopilotContainer v-if="shouldMountCopilot" />
         <FloatingCallWidget />
         <WhatsappCallWidget v-if="hasWhatsappCall" />
       </template>
