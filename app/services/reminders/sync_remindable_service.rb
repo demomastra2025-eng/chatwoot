@@ -1,6 +1,4 @@
 class Reminders::SyncRemindableService
-  ROUTE_REASSIGNMENT_REQUIRED = 'Touch requires channel reassignment after entity update'.freeze
-
   attr_reader :remindable
 
   def initialize(remindable:, allow_processing: false)
@@ -33,6 +31,8 @@ class Reminders::SyncRemindableService
     return unless syncable_touch?(touch)
 
     touch.assign_attributes(sync_attributes_for(touch))
+    clear_stale_target_routes(touch)
+    Reminders::TargetRouteResolver.new(reminder: touch).perform
     touch.scheduled_at_will_change! if touch.relative_schedule_stale?
     persist_sync!(touch) if touch.changed?
   end
@@ -44,6 +44,19 @@ class Reminders::SyncRemindableService
   def persist_sync!(touch)
     touch.save!
     touch.approve! if touch.draft? && touch.ready_for_pending?
+  end
+
+  def clear_stale_target_routes(touch)
+    if touch.target_contact_inbox.present? &&
+       (touch.target_contact_inbox.contact_id != touch.target_contact_id || touch.target_contact_inbox.inbox_id != touch.target_inbox_id)
+      touch.target_contact_inbox = nil
+    end
+
+    return if touch.target_conversation.blank?
+    return if touch.target_conversation.contact_id == touch.target_contact_id &&
+              touch.target_conversation.inbox_id == touch.target_inbox_id
+
+    touch.target_conversation = nil
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
@@ -59,59 +72,18 @@ class Reminders::SyncRemindableService
 
     if contact.present? && touch.target_contact_id != contact.id
       attrs[:target_contact] = contact
-      attrs.merge!(route_sync_attributes(touch, contact))
+      attrs[:target_contact_inbox] = nil
+      attrs[:target_conversation] = nil
     elsif contact.blank? && touch.target_contact_id.present?
       attrs[:target_contact] = nil
       attrs[:target_contact_inbox] = nil
       attrs[:target_conversation] = nil
       attrs[:status] = :draft
-      attrs[:last_error] = ROUTE_REASSIGNMENT_REQUIRED
-    elsif route_invalid_for_current_contact?(touch, contact)
-      attrs.merge!(route_sync_attributes(touch, contact))
     end
 
     attrs
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
-
-  def route_sync_attributes(touch, contact)
-    return {} if touch.target_inbox_id.blank?
-    return {} if contact.blank?
-
-    if contactable_inbox_ids(contact).include?(touch.target_inbox_id)
-      {
-        target_contact_inbox: contact.contact_inboxes.find_by(inbox_id: touch.target_inbox_id),
-        target_conversation: keep_target_conversation?(touch, contact) ? touch.target_conversation : nil,
-        last_error: nil
-      }
-    else
-      {
-        target_contact_inbox: nil,
-        target_conversation: nil,
-        status: :draft,
-        last_error: ROUTE_REASSIGNMENT_REQUIRED
-      }
-    end
-  end
-
-  def route_invalid_for_current_contact?(touch, contact)
-    return false if touch.target_inbox_id.blank? || contact.blank?
-
-    contactable_inbox_ids(contact).exclude?(touch.target_inbox_id)
-  end
-
-  def contactable_inbox_ids(contact)
-    @contactable_inbox_ids ||= {}
-    @contactable_inbox_ids[contact.id] ||= Contacts::ContactableInboxesService.new(contact: contact).get.map do |item|
-      item[:inbox].id
-    end
-  end
-
-  def keep_target_conversation?(touch, contact)
-    touch.target_conversation.present? &&
-      touch.target_conversation.contact_id == contact.id &&
-      touch.target_conversation.inbox_id == touch.target_inbox_id
-  end
 
   def desired_owner
     case remindable

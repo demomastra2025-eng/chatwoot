@@ -112,6 +112,7 @@ class Reminder < ApplicationRecord
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
   AUTOMATION_ACTION_SIGNATURE_KEY = 'automation_action_signature'.freeze
+  ROUTE_ERROR_CODE_KEY = 'route_error_code'.freeze
   TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
@@ -129,7 +130,8 @@ class Reminder < ApplicationRecord
       AUTOMATION_EVENT_NAME_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
-      AUTOMATION_ACTION_SIGNATURE_KEY
+      AUTOMATION_ACTION_SIGNATURE_KEY,
+      ROUTE_ERROR_CODE_KEY
     ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
@@ -238,6 +240,7 @@ class Reminder < ApplicationRecord
   before_validation :refresh_fingerprint
   before_save :increment_schedule_revision, if: :will_save_change_to_scheduled_at?
   after_create :retain_attachment_blobs
+  after_save :reset_route_metadata_write
 
   scope :ordered, -> { order(scheduled_at: :asc, created_at: :asc, id: :asc) }
   scope :open_statuses, -> { where(status: OPEN_STATUSES) }
@@ -245,6 +248,28 @@ class Reminder < ApplicationRecord
 
   def ready_for_pending?
     scheduled_at.present? && route_resolved? && content_ready?
+  end
+
+  def mark_route_reassignment_required!
+    @route_metadata_write = true
+    self.status = :draft
+    self.last_error = Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_MESSAGE
+    self.metadata = metadata.to_h.merge(
+      ROUTE_ERROR_CODE_KEY => Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_REQUIRED
+    )
+  end
+
+  def clear_route_error!
+    return unless metadata.to_h.key?(ROUTE_ERROR_CODE_KEY) ||
+                  last_error == Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_MESSAGE
+
+    @route_metadata_write = true
+    self.metadata = metadata.to_h.except(ROUTE_ERROR_CODE_KEY)
+    self.last_error = nil
+  end
+
+  def route_reassignment_required?
+    metadata.to_h[ROUTE_ERROR_CODE_KEY] == Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_REQUIRED
   end
 
   def approve!
@@ -445,11 +470,23 @@ class Reminder < ApplicationRecord
     with_lock do
       next unless editable?
 
-      update!(yield)
+      attributes = yield.with_indifferent_access
+      clear_implicit_target_routes!(attributes)
+      assign_attributes(attributes)
+      Reminders::TargetRouteResolver.new(reminder: self).perform
+      save!
       approve! if draft? && ready_for_pending?
       updated = true
     end
     updated
+  end
+
+  def clear_implicit_target_routes!(attributes)
+    route_changed = attributes.key?(:target_inbox_id) || attributes.key?(:target_contact_id)
+    return unless route_changed
+
+    self.target_contact_inbox = nil unless attributes.key?(:target_contact_inbox_id)
+    self.target_conversation = nil unless attributes.key?(:target_conversation_id)
   end
 
   def destroy_if_allowed!
@@ -650,8 +687,20 @@ class Reminder < ApplicationRecord
     return if @internal_metadata_write
 
     visible_metadata = metadata.to_h.except(*INTERNAL_METADATA_KEYS)
-    stored_metadata = persisted? ? metadata_in_database.to_h.slice(*INTERNAL_METADATA_KEYS) : {}
-    self.metadata = visible_metadata.merge(stored_metadata)
+    stored_keys = INTERNAL_METADATA_KEYS - [ROUTE_ERROR_CODE_KEY]
+    stored_metadata = persisted? ? metadata_in_database.to_h.slice(*stored_keys) : {}
+    route_metadata = if @route_metadata_write
+                       metadata.to_h.slice(ROUTE_ERROR_CODE_KEY)
+                     elsif persisted?
+                       metadata_in_database.to_h.slice(ROUTE_ERROR_CODE_KEY)
+                     else
+                       {}
+                     end
+    self.metadata = visible_metadata.merge(stored_metadata).merge(route_metadata)
+  end
+
+  def reset_route_metadata_write
+    @route_metadata_write = false
   end
 
   def with_internal_metadata_write
@@ -742,11 +791,11 @@ class Reminder < ApplicationRecord
   # rubocop:enable Metrics/CyclomaticComplexity
 
   def anchor_conversation
-    target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
+    conversation || (remindable if remindable.is_a?(Conversation)) || target_conversation
   end
 
   def automation_conversation_id
-    target_conversation_id || conversation_id || (remindable_id if remindable_type == 'Conversation')
+    conversation_id || (remindable_id if remindable_type == 'Conversation') || target_conversation_id
   end
 
   def automation_provenance(automation_rule, trigger_message, action_key, action_signature)
@@ -778,19 +827,21 @@ class Reminder < ApplicationRecord
   end
 
   def route_resolved?
+    return false if route_reassignment_required?
     return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
 
     return false if target_inbox_id.blank?
     return true if target_contact_inbox_id.present?
-    return true if active_conversation_target?
+    return true if active_target_conversation?
     return false if target_contact.blank?
 
     Campaigns::TargetResolver.new(inbox: target_inbox, contact: target_contact).resolve.present?
   end
 
-  def active_conversation_target?
-    (target_conversation.present? && !target_conversation.resolved?) ||
-      (conversation.present? && !conversation.resolved?)
+  def active_target_conversation?
+    target_conversation.present? && !target_conversation.resolved? &&
+      target_conversation.inbox_id == target_inbox_id &&
+      target_conversation.contact_id == target_contact_id
   end
 
   def sync_account_from_associations
@@ -822,11 +873,25 @@ class Reminder < ApplicationRecord
   def hydrate_from_conversation(record)
     return if record.blank?
 
+    hydrate_source_conversation(record)
+    hydrate_delivery_from_conversation(record)
+  end
+
+  def hydrate_source_conversation(record)
     self.conversation ||= record
-    self.target_conversation ||= record
+  end
+
+  def hydrate_delivery_from_conversation(record)
     self.target_inbox ||= record.inbox
     self.target_contact ||= record.contact
+    return unless source_matches_delivery_target?(record)
+
+    self.target_conversation ||= record
     self.target_contact_inbox ||= record.contact_inbox
+  end
+
+  def source_matches_delivery_target?(record)
+    target_inbox_id == record.inbox_id && target_contact_id == record.contact_id
   end
 
   def hydrate_from_deal(deal)
@@ -929,13 +994,17 @@ class Reminder < ApplicationRecord
   end
 
   def delivery_policy_ready_for_validation?
-    return false if cancelled? || completed? || failed?
+    return false if delivery_policy_validation_blocked?
     return false unless send_message?
     return false if target_inbox.blank? || scheduled_at.blank?
     return true if channel_template? && template_params.present?
     return true if agent? && instructions.present?
 
     free_text? && (body.present? || attachments.present? || files.attached?)
+  end
+
+  def delivery_policy_validation_blocked?
+    cancelled? || completed? || failed? || route_reassignment_required?
   end
 
   def delivery_policy_content_kind
@@ -945,7 +1014,14 @@ class Reminder < ApplicationRecord
   end
 
   def delivery_policy_conversation
-    target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
+    return target_conversation if matches_delivery_target?(target_conversation)
+
+    source = conversation || (remindable if remindable.is_a?(Conversation))
+    source if matches_delivery_target?(source)
+  end
+
+  def matches_delivery_target?(candidate)
+    candidate.present? && candidate.inbox_id == target_inbox_id && candidate.contact_id == target_contact_id
   end
 
   def validate_repeat_requirements

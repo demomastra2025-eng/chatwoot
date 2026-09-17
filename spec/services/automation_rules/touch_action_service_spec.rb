@@ -10,6 +10,53 @@ RSpec.describe AutomationRules::TouchActionService do
   let(:service) { described_class.new(rule: rule, account: account, record: conversation, entity_kind: 'conversation') }
 
   describe '#create_touch' do
+    it 'routes an explicit cross-inbox touch without inheriting source delivery associations' do
+      target_inbox = create(:inbox, account: account)
+      target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_inbox)
+
+      touch = service.create_touch(
+        body: 'Cross-inbox follow-up',
+        delay_minutes: 10,
+        target_inbox_id: target_inbox.id
+      )
+
+      expect(touch).to be_pending
+      expect(touch).to have_attributes(
+        conversation_id: conversation.id,
+        target_inbox_id: target_inbox.id,
+        target_contact_id: contact.id,
+        target_contact_inbox_id: target_contact_inbox.id,
+        target_conversation_id: nil
+      )
+    end
+
+    it 'persists an unroutable cross-inbox touch as a diagnostic draft' do
+      target_channel = create(
+        :channel_whatsapp,
+        account: account,
+        sync_templates: false,
+        validate_provider_config: false
+      )
+      contact.update!(phone_number: nil, email: nil)
+
+      touch = service.create_touch(
+        body: 'Cross-inbox follow-up',
+        delay_minutes: 10,
+        target_inbox_id: target_channel.inbox.id
+      )
+
+      expect(touch).to be_draft
+      expect(touch).to have_attributes(
+        conversation_id: conversation.id,
+        target_inbox_id: target_channel.inbox.id,
+        target_contact_id: contact.id,
+        target_contact_inbox_id: nil,
+        target_conversation_id: nil,
+        last_error: Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_MESSAGE
+      )
+      expect(touch.metadata[Reminder::ROUTE_ERROR_CODE_KEY]).to eq(Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_REQUIRED)
+    end
+
     it 'defaults auto-cancel off unless the automation action explicitly enables it' do
       touch = service.create_touch([{ body: 'Follow up later', delay_minutes: 10 }])
 
@@ -202,6 +249,20 @@ RSpec.describe AutomationRules::TouchActionService do
           post_delivery_action: 'resolve_conversation'
         )
       end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
+    end
+
+    it 'rejects a cross-inbox post-delivery action before creating the touch' do
+      target_inbox = create(:inbox, account: account)
+
+      expect do
+        service.create_touch(
+          body: 'Unsafe cross-inbox follow-up',
+          delay_minutes: 5,
+          target_inbox_id: target_inbox.id,
+          post_delivery_action: 'resolve_conversation'
+        )
+      end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
+        .and not_change(Reminder, :count)
     end
 
     it 'persists an exact quick-reply confirmation action for an appointment touch' do

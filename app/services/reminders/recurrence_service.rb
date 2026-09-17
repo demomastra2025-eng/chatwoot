@@ -12,8 +12,13 @@ class Reminders::RecurrenceService
     return if next_scheduled_at.blank?
     return if reminder.repeat_until_at.present? && next_scheduled_at > reminder.repeat_until_at
 
-    next_touch = reminder.account.reminders.create!(next_touch_attributes(next_scheduled_at))
-    next_touch.approve! if next_touch.draft? && next_touch.ready_for_pending?
+    next_touch = nil
+    Reminder.transaction do
+      next_touch = reminder.account.reminders.new(next_touch_attributes(next_scheduled_at))
+      Reminders::TargetRouteResolver.new(reminder: next_touch).perform
+      next_touch.save!
+      next_touch.approve! if next_touch.draft? && next_touch.ready_for_pending?
+    end
     next_touch
   end
 
