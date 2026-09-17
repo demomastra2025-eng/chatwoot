@@ -1,9 +1,12 @@
 import types from '../../../mutation-types';
+import pinia from 'dashboard/store/pinia';
+import { useConversationPageStore } from 'dashboard/stores/conversationPage';
 
-export const setPageFilter = ({ dispatch, filter, page, markEndReached }) => {
-  dispatch('conversationPage/setCurrentPage', { filter, page }, { root: true });
+export const setPageFilter = ({ filter, page, markEndReached }) => {
+  const conversationPageStore = useConversationPageStore(pinia);
+  conversationPageStore.setCurrentPage({ filter, page });
   if (markEndReached) {
-    dispatch('conversationPage/setEndReached', { filter }, { root: true });
+    conversationPageStore.setEndReached({ filter });
   }
 };
 
@@ -72,7 +75,7 @@ export const buildConversationList = (
       appliedFilters: 'all_count',
     }[filterType] || 'all_count';
   if (totalCountKey && metaData?.[totalCountKey] !== undefined) {
-    context.dispatch('conversationPage/setTotalCount', {
+    useConversationPageStore(pinia).setTotalCount({
       filter: filterType,
       count: metaData[totalCountKey],
     });
@@ -90,7 +93,6 @@ export const buildConversationList = (
   context.commit(types.CLEAR_LIST_LOADING_STATUS);
   setContacts(context.commit, conversationList);
   setPageFilter({
-    dispatch: context.dispatch,
     filter: filterType,
     page: requestPayload.page,
     markEndReached: !conversationList.length,

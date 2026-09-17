@@ -73,6 +73,7 @@ import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/c
 import { filterConversationsByCommunicationThreadMode } from 'dashboard/helper/communicationThreadHelper';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { useConversationPageStore } from 'dashboard/stores/conversationPage';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 import {
   isValidConversationPipelineSelection,
@@ -131,6 +132,7 @@ const router = useRouter();
 const route = useRoute();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
+const conversationPageStore = useConversationPageStore();
 
 const resolveAttributesModalRef = ref(null);
 const conversationListRef = ref(null);
@@ -529,21 +531,17 @@ const currentPageFilterKey = computed(() => {
 });
 
 const inbox = useFunctionGetter('inboxes/getInbox', activeInbox);
-const currentPage = useFunctionGetter(
-  'conversationPage/getCurrentPageFilter',
-  currentPageFilterKey
+const currentPage = computed(() =>
+  conversationPageStore.getCurrentPageFilter(currentPageFilterKey.value)
 );
-const currentFiltersPage = useFunctionGetter(
-  'conversationPage/getCurrentPageFilter',
-  currentPageFilterKey
+const currentFiltersPage = computed(() =>
+  conversationPageStore.getCurrentPageFilter(currentPageFilterKey.value)
 );
-const currentListTotal = useFunctionGetter(
-  'conversationPage/getTotalCount',
-  currentPageFilterKey
+const currentListTotal = computed(() =>
+  conversationPageStore.getTotalCount(currentPageFilterKey.value)
 );
-const hasCurrentPageEndReached = useFunctionGetter(
-  'conversationPage/getHasEndReached',
-  currentPageFilterKey
+const hasCurrentPageEndReached = computed(() =>
+  conversationPageStore.getHasEndReached(currentPageFilterKey.value)
 );
 
 const conversationCustomAttributes = useFunctionGetter(
@@ -1087,7 +1085,7 @@ function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
     store.dispatch('clearConversationFilters');
   }
   resetBulkActions();
-  store.dispatch('conversationPage/reset');
+  conversationPageStore.reset();
   if (hasActiveFolders.value) {
     const payload = activeFolder.value.query;
     fetchSavedFilteredConversations(payload);
@@ -1228,7 +1226,7 @@ async function onApplyFilter(payload) {
 
   resetBulkActions();
   foldersQuery.value = filterQueryGenerator(payload);
-  store.dispatch('conversationPage/reset');
+  conversationPageStore.reset();
   fetchFilteredConversations(payload);
 }
 
