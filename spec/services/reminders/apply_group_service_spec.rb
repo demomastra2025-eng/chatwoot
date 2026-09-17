@@ -68,6 +68,32 @@ RSpec.describe Reminders::ApplyGroupService do
       expect(reminders.pluck(:body)).to contain_exactly('Conversation only', 'Legacy shared step')
     end
 
+    it 'routes eager cross-inbox plan touches through the selected inbox' do
+      target_inbox = create(:inbox, account: account)
+      target_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: target_inbox)
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: ['conversation'],
+        touches: [touch_definition(body: 'Cross-inbox plan touch').merge(target_inbox_id: target_inbox.id)]
+      )
+
+      reminder = described_class.new(
+        account: account,
+        reminder_group: reminder_group,
+        remindable: conversation,
+        actor: actor
+      ).perform.sole
+
+      expect(reminder).to be_pending
+      expect(reminder).to have_attributes(
+        conversation_id: conversation.id,
+        target_inbox_id: target_inbox.id,
+        target_contact_inbox_id: target_contact_inbox.id,
+        target_conversation_id: nil
+      )
+    end
+
     it 'propagates a safe post-delivery action from conversation touch plans' do
       forged_rule = create(:automation_rule, account: account)
       reminder_group = create(
