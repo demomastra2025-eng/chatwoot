@@ -1,5 +1,6 @@
 <script>
-import { mapGetters } from 'vuex';
+import { mapState } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
@@ -22,8 +23,8 @@ export default {
     };
   },
   computed: {
-    ...mapGetters({
-      uiFlags: 'inboxes/getUIFlags',
+    ...mapState(useInboxStore, {
+      uiFlags: store => store.getUIFlags,
     }),
   },
   validations: {
@@ -37,15 +38,12 @@ export default {
       }
 
       try {
-        const telegramChannel = await this.$store.dispatch(
-          'inboxes/createChannel',
-          {
-            channel: {
-              type: 'telegram',
-              bot_token: this.botToken,
-            },
-          }
-        );
+        const telegramChannel = await useInboxStore().createChannel({
+          channel: {
+            type: 'telegram',
+            bot_token: this.botToken,
+          },
+        });
 
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'agents'),

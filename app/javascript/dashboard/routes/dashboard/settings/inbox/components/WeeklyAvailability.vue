@@ -1,5 +1,6 @@
 <script>
-import { mapGetters } from 'vuex';
+import { mapState } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useAlert } from 'dashboard/composables';
 import inboxMixin from 'shared/mixins/inboxMixin';
 import SettingsToggleSection from 'dashboard/components-next/Settings/SettingsToggleSection.vue';
@@ -55,7 +56,9 @@ export default {
     };
   },
   computed: {
-    ...mapGetters({ uiFlags: 'inboxes/getUIFlags' }),
+    ...mapState(useInboxStore, {
+      uiFlags: store => store.getUIFlags,
+    }),
     hasError() {
       if (!this.isBusinessHoursEnabled) return false;
       return this.timeSlots.filter(slot => slot.from && !slot.valid).length > 0;
@@ -128,7 +131,7 @@ export default {
           timezone: this.timeZone.value,
           channel: {},
         };
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(error.message || this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));

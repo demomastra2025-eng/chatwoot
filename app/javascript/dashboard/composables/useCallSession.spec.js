@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { createApp } from 'vue';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 
 const {
   addEventListenerMock,
@@ -120,6 +121,9 @@ const mountUseCallSession = () => {
 describe('useCallSession', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    vi.spyOn(useInboxStore(), 'getInbox', 'get').mockReturnValue(
+      inboxGetterMock
+    );
     vi.clearAllMocks();
     routeMock.params = {};
     selectedChatMock.value = {};

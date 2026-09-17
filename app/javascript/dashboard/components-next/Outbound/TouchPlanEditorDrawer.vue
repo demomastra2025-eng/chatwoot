@@ -1,10 +1,11 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import TouchPlansAPI from 'dashboard/api/touchPlans';
 import { useAlert } from 'dashboard/composables';
-import { useMapGetter, useStore } from 'dashboard/composables/store';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
@@ -104,10 +105,9 @@ const STEP_ENTITY_KIND_ICONS = {
 };
 
 const { t } = useI18n();
-const store = useStore();
-const getAllInboxes = useMapGetter('inboxes/getAllInboxes');
-const getFilteredWhatsAppTemplates = useMapGetter(
-  'inboxes/getFilteredWhatsAppTemplates'
+const getAllInboxes = useInboxStoreGetter('getAllInboxes');
+const getFilteredWhatsAppTemplates = useInboxStoreGetter(
+  'getFilteredWhatsAppTemplates'
 );
 
 const browserTimezone =
@@ -1079,7 +1079,7 @@ watch(
   () => [props.modelValue, props.touchPlan?.id],
   async () => {
     if (props.modelValue && inboxesList.value.length === 0) {
-      await store.dispatch('inboxes/get');
+      await useInboxStore().get();
     }
 
     hydrateForm();

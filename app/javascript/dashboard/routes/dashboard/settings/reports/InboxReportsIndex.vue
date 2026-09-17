@@ -1,10 +1,15 @@
 <script setup>
+import { storeToRefs } from 'pinia';
 import { ref } from 'vue';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import ReportHeader from './components/ReportHeader.vue';
 import SummaryReports from './components/SummaryReports.vue';
 import V4Button from 'dashboard/components-next/button/Button.vue';
 
 const summarReportsRef = ref(null);
+const inboxStore = useInboxStore();
+const { getInboxes: inboxes } = storeToRefs(inboxStore);
+const fetchInboxes = () => inboxStore.get();
 
 const onDownloadClick = () => {
   summarReportsRef.value.downloadReports();
@@ -27,9 +32,9 @@ const onDownloadClick = () => {
   <SummaryReports
     ref="summarReportsRef"
     action-key="summaryReports/fetchInboxSummaryReports"
-    getter-key="inboxes/getInboxes"
-    fetch-items-key="inboxes/get"
     summary-key="summaryReports/getInboxSummaryReports"
     type="inbox"
+    :items="inboxes"
+    :fetch-items="fetchInboxes"
   />
 </template>

@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 // [TODO] This componet is too big and bulky to be in the same file, we can consider splitting this into multiple
 // composables and components, useVirtualChatList, useChatlistFilters
 import {
@@ -220,7 +221,7 @@ const appliedFilters = useMapGetter('getAppliedConversationFiltersV2');
 const folders = useMapGetter('customViews/getConversationCustomViews');
 const agentList = useMapGetter('agents/getAgents');
 const teamsList = useMapGetter('teams/getTeams');
-const inboxesList = useMapGetter('inboxes/getInboxes');
+const inboxesList = useInboxStoreGetter('getInboxes');
 const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
@@ -530,7 +531,7 @@ const currentPageFilterKey = computed(() => {
   })}`;
 });
 
-const inbox = useFunctionGetter('inboxes/getInbox', activeInbox);
+const inbox = useInboxStoreGetter('getInbox', activeInbox);
 const currentPage = computed(() =>
   conversationPageStore.getCurrentPageFilter(currentPageFilterKey.value)
 );

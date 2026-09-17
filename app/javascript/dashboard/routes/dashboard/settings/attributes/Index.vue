@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useToggle } from '@vueuse/core';
 import { picoSearch } from '@scmmishra/pico-search';
@@ -54,7 +55,7 @@ const { currentAccount } = useAccount();
 const { checkPermissions } = usePolicy();
 const referencesStore = useCrmReferencesStore();
 
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 const accountId = useMapGetter('getCurrentAccountId');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'

@@ -1,4 +1,5 @@
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useAlert } from 'dashboard/composables';
 import inboxMixin from 'shared/mixins/inboxMixin';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
@@ -496,7 +497,7 @@ export default {
             hmac_mandatory: this.hmacMandatory,
           },
         };
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
@@ -516,7 +517,7 @@ export default {
             selected_feature_flags: selectedFlags,
           },
         };
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
@@ -535,7 +536,7 @@ export default {
             allowed_domains: sanitizedAllowedDomains,
           },
         };
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         this.allowedDomains = sanitizedAllowedDomains;
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
@@ -554,7 +555,7 @@ export default {
 
         payload.channel.provider_config = { api_key: this.whatsAppInboxAPIKey };
 
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
@@ -1096,7 +1097,7 @@ export default {
     },
     async updateCallingEnabled() {
       try {
-        await this.$store.dispatch('inboxes/updateInbox', {
+        await useInboxStore().updateInbox({
           id: this.inbox.id,
           formData: false,
           channel: {
@@ -1113,7 +1114,7 @@ export default {
     },
     async updateAiVoiceEnabled() {
       try {
-        await this.$store.dispatch('inboxes/updateInbox', {
+        await useInboxStore().updateInbox({
           id: this.inbox.id,
           formData: false,
           channel: {
@@ -1167,7 +1168,7 @@ export default {
 
       this.isUpdatingSipuniWebhook = true;
       try {
-        await this.$store.dispatch('inboxes/updateInbox', {
+        await useInboxStore().updateInbox({
           id: this.inbox.id,
           formData: false,
           channel: {
@@ -1227,7 +1228,7 @@ export default {
       try {
         const providerConfig = { ...this.inbox.provider_config };
         delete providerConfig.binotel_webhook_token;
-        await this.$store.dispatch('inboxes/updateInbox', {
+        await useInboxStore().updateInbox({
           id: this.inbox.id,
           formData: false,
           channel: {
@@ -1249,7 +1250,7 @@ export default {
     async syncTemplates() {
       this.isSyncingTemplates = true;
       try {
-        await this.$store.dispatch('inboxes/syncTemplates', this.inbox.id);
+        await useInboxStore().syncTemplates(this.inbox.id);
         useAlert(
           this.$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUCCESS')
         );

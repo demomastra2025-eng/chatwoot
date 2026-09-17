@@ -1,6 +1,7 @@
 import { computed, ref, watch, onUnmounted, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { useStore } from 'vuex';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
@@ -217,7 +218,7 @@ export function useCallSession() {
     const inboxId = routeInboxId.value;
     if (!inboxId) return null;
 
-    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    const inbox = useInboxStore().getInbox(inboxId);
     return isBrowserCallingInbox(inbox) ? inboxId : null;
   });
   const routeCommunicationThread = computed(() => {
@@ -265,7 +266,7 @@ export function useCallSession() {
     const inboxId = positiveNumber(thread.inbox_id);
     if (!inboxId) return null;
 
-    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    const inbox = useInboxStore().getInbox(inboxId);
     return isBrowserCallingInbox(inbox) ? inboxId : null;
   });
   const incomingVoiceInboxId = computed(() => {
@@ -287,7 +288,7 @@ export function useCallSession() {
     return call ? Number(call.inboxId) : null;
   });
   const browserSipProviderForInboxId = inboxId => {
-    const inbox = store.getters?.['inboxes/getInbox']?.(inboxId);
+    const inbox = useInboxStore().getInbox(inboxId);
     const provider = (inbox?.provider || inbox?.channel?.provider)
       ?.toString()
       .toLowerCase();

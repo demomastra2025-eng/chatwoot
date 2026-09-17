@@ -1,8 +1,8 @@
 <script setup>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
-import { useStore } from 'dashboard/composables/store';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
@@ -39,7 +39,6 @@ const props = defineProps({
 const emit = defineEmits(['created']);
 
 const { t } = useI18n();
-const store = useStore();
 const PHONE_NUMBER_PATTERN = /^\+[1-9]\d{1,14}$/;
 
 const dialogRef = ref(null);
@@ -685,7 +684,7 @@ const handleSubmit = async () => {
 
   try {
     isSubmitting.value = true;
-    const response = await store.dispatch('inboxes/createWhatsAppTemplate', {
+    const response = await useInboxStore().createWhatsAppTemplate({
       inboxId: props.inboxId,
       template: buildWhatsAppTemplatePayload(form),
     });

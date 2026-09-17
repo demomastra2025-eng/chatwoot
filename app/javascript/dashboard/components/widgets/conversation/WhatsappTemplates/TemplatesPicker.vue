@@ -1,7 +1,8 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, toRef } from 'vue';
 import { useAlert } from 'dashboard/composables';
-import { useFunctionGetter, useStore } from 'dashboard/composables/store';
 import {
   COMPONENT_TYPES,
   MEDIA_FORMATS,
@@ -24,13 +25,12 @@ const props = defineProps({
 const emit = defineEmits(['onSelect']);
 
 const { t } = useI18n();
-const store = useStore();
 const query = ref('');
 const isRefreshing = ref(false);
 const expandedTemplateName = ref('');
 
-const whatsAppTemplateMessages = useFunctionGetter(
-  'inboxes/getConversationWhatsAppTemplates',
+const whatsAppTemplateMessages = useInboxStoreGetter(
+  'getConversationWhatsAppTemplates',
   toRef(props, 'inboxId')
 );
 
@@ -86,7 +86,7 @@ const selectVariant = variant => {
 const refreshTemplates = async () => {
   isRefreshing.value = true;
   try {
-    await store.dispatch('inboxes/syncTemplates', props.inboxId);
+    await useInboxStore().syncTemplates(props.inboxId);
     useAlert(t('WHATSAPP_TEMPLATES.PICKER.REFRESH_SUCCESS'));
   } catch (error) {
     useAlert(t('WHATSAPP_TEMPLATES.PICKER.REFRESH_ERROR'));

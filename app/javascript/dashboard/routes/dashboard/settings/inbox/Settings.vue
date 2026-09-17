@@ -1,4 +1,6 @@
 <script>
+import { mapState } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { mapGetters } from 'vuex';
 import { shouldBeUrl } from 'shared/helpers/Validators';
 import { useAlert } from 'dashboard/composables';
@@ -196,8 +198,12 @@ export default {
     ...mapGetters({
       accountId: 'getCurrentAccountId',
       isFeatureEnabledonAccount: 'accounts/isFeatureEnabledonAccount',
-      uiFlags: 'inboxes/getUIFlags',
+
       portals: 'portals/allPortals',
+    }),
+
+    ...mapState(useInboxStore, {
+      uiFlags: store => store.getUIFlags,
     }),
     selectedTabKey() {
       return this.tabs[this.selectedTabIndex]?.key;
@@ -657,9 +663,7 @@ export default {
       return this.$route.params.inboxId;
     },
     inbox() {
-      const inbox = this.$store.getters['inboxes/getInbox'](
-        this.currentInboxId
-      );
+      const inbox = useInboxStore().getInbox(this.currentInboxId);
       return this.isInboxFromCurrentAccount(inbox) ? inbox : {};
     },
     inboxHealthStatus() {
@@ -789,9 +793,7 @@ export default {
     hasDuplicateInstagramInbox() {
       const instagramId = this.inbox.instagram_id;
       const instagramInbox =
-        this.$store.getters['inboxes/getInstagramInboxByInstagramId'](
-          instagramId
-        );
+        useInboxStore().getInstagramInboxByInstagramId(instagramId);
 
       return this.inbox.channel_type === INBOX_TYPES.FB && instagramInbox;
     },
@@ -1035,14 +1037,14 @@ export default {
       }
 
       try {
-        await this.$store.dispatch('inboxes/get');
+        await useInboxStore().get();
       } catch (error) {
         return null;
       }
 
       return Boolean(
         this.isInboxFromCurrentAccount(
-          this.$store.getters['inboxes/getInbox'](this.currentInboxId)
+          useInboxStore().getInbox(this.currentInboxId)
         )
       );
     },
@@ -1076,10 +1078,7 @@ export default {
       );
     },
     async resetWebhookSecret() {
-      const response = await this.$store.dispatch(
-        'inboxes/resetSecret',
-        this.inbox.id
-      );
+      const response = await useInboxStore().resetSecret(this.inbox.id);
       if (response) {
         useAlert(
           this.$t(
@@ -1300,7 +1299,7 @@ export default {
 
       try {
         this.isRefreshingWhatsappWebStatus = true;
-        await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
+        await useInboxStore().refreshWhatsappWebQr({
           inboxId: this.currentInboxId,
           statusOnly: true,
           includeQrCode: ['waiting_for_qr', 'qr_ready'].includes(
@@ -1325,10 +1324,8 @@ export default {
 
       try {
         this.isLoadingWhatsappWebDiagnostics = true;
-        this.whatsappWebDiagnostics = await this.$store.dispatch(
-          'inboxes/getWhatsappWebDiagnostics',
-          this.currentInboxId
-        );
+        this.whatsappWebDiagnostics =
+          await useInboxStore().getWhatsappWebDiagnostics(this.currentInboxId);
       } catch (error) {
         this.whatsappWebDiagnostics = null;
       } finally {
@@ -1343,12 +1340,12 @@ export default {
 
       try {
         this.isLoadingTelegramPersonalDiagnostics = true;
-        this.telegramPersonalDiagnostics = await this.$store.dispatch(
-          'inboxes/getTelegramPersonalDiagnostics',
-          force
-            ? { inboxId: this.currentInboxId, force: true }
-            : this.currentInboxId
-        );
+        this.telegramPersonalDiagnostics =
+          await useInboxStore().getTelegramPersonalDiagnostics(
+            force
+              ? { inboxId: this.currentInboxId, force: true }
+              : this.currentInboxId
+          );
       } catch (error) {
         this.telegramPersonalDiagnostics = null;
       } finally {
@@ -1396,7 +1393,7 @@ export default {
 
       try {
         this.isSavingTelegramPersonalIgnoredChats = true;
-        await this.$store.dispatch('inboxes/updateInbox', {
+        await useInboxStore().updateInbox({
           id: this.currentInboxId,
           formData: false,
           channel: {
@@ -1524,10 +1521,7 @@ export default {
     async requestTelegramPersonalCode() {
       try {
         this.isRunningTelegramPersonalRequestCode = true;
-        await this.$store.dispatch(
-          'inboxes/requestTelegramPersonalCode',
-          this.currentInboxId
-        );
+        await useInboxStore().requestTelegramPersonalCode(this.currentInboxId);
         this.telegramPersonalCode = '';
         this.telegramPersonalPassword = '';
         await this.fetchTelegramPersonalDiagnostics();
@@ -1546,10 +1540,7 @@ export default {
     async requestTelegramPersonalQr() {
       try {
         this.isRunningTelegramPersonalRequestQr = true;
-        await this.$store.dispatch(
-          'inboxes/requestTelegramPersonalQr',
-          this.currentInboxId
-        );
+        await useInboxStore().requestTelegramPersonalQr(this.currentInboxId);
         this.telegramPersonalCode = '';
         this.telegramPersonalPassword = '';
         await this.fetchTelegramPersonalDiagnostics();
@@ -1573,7 +1564,7 @@ export default {
 
       try {
         this.isRunningTelegramPersonalVerifyCode = true;
-        await this.$store.dispatch('inboxes/verifyTelegramPersonalCode', {
+        await useInboxStore().verifyTelegramPersonalCode({
           inboxId: this.currentInboxId,
           code: this.telegramPersonalCode.trim(),
         });
@@ -1598,7 +1589,7 @@ export default {
 
       try {
         this.isRunningTelegramPersonalVerifyPassword = true;
-        await this.$store.dispatch('inboxes/verifyTelegramPersonalPassword', {
+        await useInboxStore().verifyTelegramPersonalPassword({
           inboxId: this.currentInboxId,
           password: this.telegramPersonalPassword.trim(),
         });
@@ -1616,10 +1607,7 @@ export default {
     async reconnectTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalReconnect = true;
-        await this.$store.dispatch(
-          'inboxes/reconnectTelegramPersonal',
-          this.currentInboxId
-        );
+        await useInboxStore().reconnectTelegramPersonal(this.currentInboxId);
         await this.fetchTelegramPersonalDiagnostics();
         useAlert(
           this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.RECONNECT_SUCCESS')
@@ -1636,10 +1624,7 @@ export default {
     async historySyncTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalHistorySync = true;
-        await this.$store.dispatch(
-          'inboxes/historySyncTelegramPersonal',
-          this.currentInboxId
-        );
+        await useInboxStore().historySyncTelegramPersonal(this.currentInboxId);
         await this.fetchTelegramPersonalDiagnostics();
         useAlert(
           this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.HISTORY_SYNC_SUCCESS')
@@ -1656,7 +1641,7 @@ export default {
     async fullHistorySyncTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalFullHistorySync = true;
-        await this.$store.dispatch('inboxes/historySyncTelegramPersonal', {
+        await useInboxStore().historySyncTelegramPersonal({
           inboxId: this.currentInboxId,
           payload: {
             force: true,
@@ -1680,10 +1665,7 @@ export default {
     async contactsSyncTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalContactsSync = true;
-        await this.$store.dispatch(
-          'inboxes/contactsSyncTelegramPersonal',
-          this.currentInboxId
-        );
+        await useInboxStore().contactsSyncTelegramPersonal(this.currentInboxId);
         await this.fetchTelegramPersonalDiagnostics();
         useAlert(
           this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.CONTACTS_SYNC_SUCCESS')
@@ -1700,10 +1682,7 @@ export default {
     async disconnectTelegramPersonal() {
       try {
         this.isRunningTelegramPersonalDisconnect = true;
-        await this.$store.dispatch(
-          'inboxes/disconnectTelegramPersonal',
-          this.currentInboxId
-        );
+        await useInboxStore().disconnectTelegramPersonal(this.currentInboxId);
         await this.fetchTelegramPersonalDiagnostics();
         useAlert(
           this.$t('INBOX_MGMT.EDIT.TELEGRAM_PERSONAL.DISCONNECT_SUCCESS')
@@ -1819,10 +1798,10 @@ export default {
 
       try {
         this.isLoadingWeixinDiagnostics = true;
-        this.weixinDiagnostics = await this.$store.dispatch(
-          'inboxes/getWeixinDiagnostics',
-          { inboxId: this.currentInboxId, force }
-        );
+        this.weixinDiagnostics = await useInboxStore().getWeixinDiagnostics({
+          inboxId: this.currentInboxId,
+          force,
+        });
       } catch (error) {
         this.weixinDiagnostics = null;
       } finally {
@@ -1879,10 +1858,7 @@ export default {
     async requestWeixinQr() {
       try {
         this.isRunningWeixinRequestQr = true;
-        await this.$store.dispatch(
-          'inboxes/requestWeixinQr',
-          this.currentInboxId
-        );
+        await useInboxStore().requestWeixinQr(this.currentInboxId);
         await this.fetchWeixinDiagnostics({ force: true });
         useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.REQUEST_QR_SUCCESS'));
       } catch (error) {
@@ -1896,10 +1872,7 @@ export default {
     async reconnectWeixin() {
       try {
         this.isRunningWeixinReconnect = true;
-        await this.$store.dispatch(
-          'inboxes/reconnectWeixin',
-          this.currentInboxId
-        );
+        await useInboxStore().reconnectWeixin(this.currentInboxId);
         await this.fetchWeixinDiagnostics({ force: true });
         useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.RECONNECT_SUCCESS'));
       } catch (error) {
@@ -1913,10 +1886,7 @@ export default {
     async disconnectWeixin() {
       try {
         this.isRunningWeixinDisconnect = true;
-        await this.$store.dispatch(
-          'inboxes/disconnectWeixin',
-          this.currentInboxId
-        );
+        await useInboxStore().disconnectWeixin(this.currentInboxId);
         await this.fetchWeixinDiagnostics({ force: true });
         useAlert(this.$t('INBOX_MGMT.EDIT.WEIXIN.DISCONNECT_SUCCESS'));
       } catch (error) {
@@ -2027,10 +1997,7 @@ export default {
 
       try {
         this.isRunningWhatsappWebDisconnect = true;
-        await this.$store.dispatch(
-          'inboxes/disconnectWhatsappWeb',
-          this.currentInboxId
-        );
+        await useInboxStore().disconnectWhatsappWeb(this.currentInboxId);
         await this.fetchWhatsappWebDiagnostics();
         useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT_SUCCESS'));
       } catch (error) {
@@ -2049,10 +2016,7 @@ export default {
 
       try {
         this.isRunningWhatsappWebRecovery = true;
-        await this.$store.dispatch(
-          'inboxes/reconnectWhatsappWeb',
-          this.currentInboxId
-        );
+        await useInboxStore().reconnectWhatsappWeb(this.currentInboxId);
 
         await this.fetchWhatsappWebDiagnostics();
         useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.RECOVER_SUCCESS'));
@@ -2071,10 +2035,7 @@ export default {
 
       try {
         this.isRunningWhatsappWebReauthorization = true;
-        await this.$store.dispatch(
-          'inboxes/reauthorizeWhatsappWeb',
-          this.currentInboxId
-        );
+        await useInboxStore().reauthorizeWhatsappWeb(this.currentInboxId);
 
         await this.fetchWhatsappWebDiagnostics();
         useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE_SUCCESS'));
@@ -2140,7 +2101,7 @@ export default {
         if (this.avatarFile) {
           payload.avatar = this.avatarFile;
         }
-        await this.$store.dispatch('inboxes/updateInbox', payload);
+        await useInboxStore().updateInbox(payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
         this.showBusinessNameInput = false;
       } catch (error) {
@@ -2153,10 +2114,7 @@ export default {
     },
     async handleAvatarDelete() {
       try {
-        await this.$store.dispatch(
-          'inboxes/deleteInboxAvatar',
-          this.currentInboxId
-        );
+        await useInboxStore().deleteInboxAvatar(this.currentInboxId);
         this.avatarFile = null;
         this.avatarUrl = '';
         useAlert(this.$t('INBOX_MGMT.DELETE.API.AVATAR_SUCCESS_MESSAGE'));
@@ -2177,7 +2135,7 @@ export default {
     async confirmInboxDeletion() {
       try {
         this.isDeletingInbox = true;
-        await this.$store.dispatch('inboxes/delete', this.inbox.id);
+        await useInboxStore().delete(this.inbox.id);
         useAlert(this.$t('INBOX_MGMT.DELETE.API.SUCCESS_MESSAGE'));
         await this.$router.replace({
           name: getInboxFlowRouteName(this.$route, 'list'),

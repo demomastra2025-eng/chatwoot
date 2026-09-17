@@ -1,4 +1,5 @@
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, provide, useTemplateRef } from 'vue';
 import { useElementSize } from '@vueuse/core';
 // composable
@@ -132,7 +133,7 @@ export default {
       return this.currentChat.inbox_id;
     },
     inbox() {
-      return this.$store.getters['inboxes/getInbox'](this.inboxId);
+      return useInboxStore().getInbox(this.inboxId);
     },
     typingUsersList() {
       const getTypingUsers =
@@ -241,9 +242,7 @@ export default {
       const instagramId = this.inbox.instagram_id;
       const { additional_attributes: additionalAttributes = {} } = this.inbox;
       const instagramInbox =
-        this.$store.getters['inboxes/getInstagramInboxByInstagramId'](
-          instagramId
-        );
+        useInboxStore().getInstagramInboxByInstagramId(instagramId);
 
       return (
         this.inbox.channel_type === INBOX_TYPES.FB &&

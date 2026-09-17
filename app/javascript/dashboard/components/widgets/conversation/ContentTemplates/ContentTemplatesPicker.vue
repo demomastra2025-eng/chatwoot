@@ -1,7 +1,7 @@
 <script setup>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed } from 'vue';
 import { useAlert } from 'dashboard/composables';
-import { useStore } from 'dashboard/composables/store';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import { useI18n } from 'vue-i18n';
 import { TWILIO_CONTENT_TEMPLATE_TYPES } from 'shared/constants/messages';
@@ -16,12 +16,11 @@ const props = defineProps({
 const emit = defineEmits(['onSelect']);
 
 const { t } = useI18n();
-const store = useStore();
 const query = ref('');
 const isRefreshing = ref(false);
 
 const twilioTemplates = computed(() => {
-  const inbox = store.getters['inboxes/getInbox'](props.inboxId);
+  const inbox = useInboxStore().getInbox(props.inboxId);
   return inbox?.content_templates?.templates || [];
 });
 
@@ -50,7 +49,7 @@ const getTemplateType = template => {
 const refreshTemplates = async () => {
   isRefreshing.value = true;
   try {
-    await store.dispatch('inboxes/syncTemplates', props.inboxId);
+    await useInboxStore().syncTemplates(props.inboxId);
     useAlert(t('CONTENT_TEMPLATES.PICKER.REFRESH_SUCCESS'));
   } catch (error) {
     useAlert(t('CONTENT_TEMPLATES.PICKER.REFRESH_ERROR'));

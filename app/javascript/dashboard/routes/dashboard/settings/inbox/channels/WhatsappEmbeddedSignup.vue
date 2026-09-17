@@ -1,6 +1,6 @@
 <script setup>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -24,7 +24,6 @@ import {
   getWhatsAppEmbeddedSignupConfigErrors,
 } from './whatsapp/utils';
 
-const store = useStore();
 const router = useRouter();
 const route = useRoute();
 const { t } = useI18n();
@@ -172,10 +171,8 @@ const completeSignupFlow = async businessDataParam => {
       phone_number_id: businessDataParam?.phone_number_id || '',
     };
 
-    const responseData = await store.dispatch(
-      'inboxes/createWhatsAppEmbeddedSignup',
-      params
-    );
+    const responseData =
+      await useInboxStore().createWhatsAppEmbeddedSignup(params);
 
     authCode.value = null;
     handleSignupSuccess(responseData);

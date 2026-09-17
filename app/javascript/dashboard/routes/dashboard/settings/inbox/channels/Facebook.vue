@@ -17,6 +17,7 @@ import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
 import { loadScript } from 'dashboard/helper/DOMHelpers';
 import * as Sentry from '@sentry/vue';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 
 export default {
   components: {
@@ -217,8 +218,8 @@ export default {
       if (!this.v$.$error) {
         this.emptyStateMessage = this.$t('INBOX_MGMT.DETAILS.CREATING_CHANNEL');
         this.isCreating = true;
-        this.$store
-          .dispatch('inboxes/createFBChannel', this.channelParams())
+        useInboxStore()
+          .createFBChannel(this.channelParams())
           .then(data => {
             router.replace({
               name: getInboxFlowRouteName(this.$route, 'agents'),

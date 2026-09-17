@@ -1,5 +1,7 @@
 <!-- eslint-disable vue/v-slot-style -->
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapState } from 'pinia';
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
@@ -41,7 +43,10 @@ export default {
   computed: {
     ...mapGetters({
       uiFlags: 'integrations/getUIFlags',
-      dialogFlowEnabledInboxes: 'inboxes/dialogFlowEnabledInboxes',
+    }),
+
+    ...mapState(useInboxStore, {
+      dialogFlowEnabledInboxes: store => store.dialogFlowEnabledInboxes,
     }),
     inboxes() {
       return this.dialogFlowEnabledInboxes

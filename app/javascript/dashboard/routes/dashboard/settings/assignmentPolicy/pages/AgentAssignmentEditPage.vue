@@ -1,4 +1,6 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -27,7 +29,7 @@ const router = useRouter();
 const store = useStore();
 
 const uiFlags = useMapGetter('assignmentPolicies/getUIFlags');
-const inboxes = useMapGetter('inboxes/getAllInboxes');
+const inboxes = useInboxStoreGetter('getAllInboxes');
 const labelsList = useMapGetter('labels/getLabels');
 const inboxUiFlags = useMapGetter('assignmentPolicies/getInboxUiFlags');
 const selectedPolicyById = useMapGetter(
@@ -268,7 +270,7 @@ const fetchPolicyData = async () => {
 
   // Fetch inboxes if not already loaded (needed for inbox link prompt)
   if (!inboxes.value?.length) {
-    store.dispatch('inboxes/get');
+    useInboxStore().get();
   }
 
   // Fetch policy if not available

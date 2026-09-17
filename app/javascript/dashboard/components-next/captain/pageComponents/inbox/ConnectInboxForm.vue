@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { reactive, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
@@ -21,7 +22,7 @@ const { t } = useI18n();
 
 const formState = {
   uiFlags: useMapGetter('captainInboxes/getUIFlags'),
-  inboxes: useMapGetter('inboxes/getInboxes'),
+  inboxes: useInboxStoreGetter('getInboxes'),
   captainInboxes: useMapGetter('captainInboxes/getRecords'),
 };
 

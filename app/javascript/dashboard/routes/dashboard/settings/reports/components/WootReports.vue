@@ -27,6 +27,14 @@ export default {
       type: String,
       default: '',
     },
+    items: {
+      type: Array,
+      default: null,
+    },
+    fetchItems: {
+      type: Function,
+      default: null,
+    },
     downloadButtonLabel: {
       type: String,
       default: 'Download Reports',
@@ -64,7 +72,7 @@ export default {
       return pluralMap[this.type] || this.type;
     },
     filterItemsList() {
-      return this.$store.getters[this.getterKey] || [];
+      return this.items ?? this.$store.getters[this.getterKey] ?? [];
     },
     isAgentType() {
       return this.type === 'agent';
@@ -84,6 +92,10 @@ export default {
     },
   },
   mounted() {
+    if (this.fetchItems) {
+      this.fetchItems();
+      return;
+    }
     this.$store.dispatch(this.actionKey);
   },
   methods: {

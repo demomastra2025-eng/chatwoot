@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref, watch, onMounted, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -36,7 +37,7 @@ const infiniteLoaderOptions = computed(() => ({
 const meta = useMapGetter('notifications/getMeta');
 const uiFlags = useMapGetter('notifications/getUIFlags');
 const records = useMapGetter('notifications/getFilteredNotificationsV4');
-const inboxById = useMapGetter('inboxes/getInboxById');
+const inboxById = useInboxStoreGetter('getInboxById');
 
 const currentConversationId = computed(() => Number(route.params.id));
 

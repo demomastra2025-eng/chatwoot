@@ -1,6 +1,7 @@
 import { ref } from 'vue';
 import { useConversationFilterContext } from './provider';
 
+import { createPinia, setActivePinia } from 'pinia';
 const crmReferencesStoreMock = vi.hoisted(() => ({
   pipelines: [],
 }));
@@ -39,6 +40,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
 
 describe('useConversationFilterContext', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     crmReferencesStoreMock.pipelines = [];
   });
 

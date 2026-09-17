@@ -1,4 +1,6 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { h, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { provideSidebarContext } from './provider';
@@ -261,7 +263,7 @@ provideSidebarContext({
   sidebarWidth,
 });
 
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 const labels = useMapGetter('labels/getLabelsOnSidebar');
 const teams = useMapGetter('teams/getMyTeams');
 const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
@@ -854,7 +856,7 @@ const syncWhatsappWebStatuses = async inboxList => {
 
   await Promise.allSettled(
     inboxList.map(inbox =>
-      store.dispatch('inboxes/refreshWhatsappWebQr', {
+      useInboxStore().refreshWhatsappWebQr({
         inboxId: inbox.id,
         statusOnly: true,
         includeQrCode: false,
@@ -870,7 +872,7 @@ const syncTelegramPersonalStatuses = async inboxList => {
 
   await Promise.allSettled(
     inboxList.map(inbox =>
-      store.dispatch('inboxes/getTelegramPersonalDiagnostics', inbox.id)
+      useInboxStore().getTelegramPersonalDiagnostics(inbox.id)
     )
   );
 };
@@ -974,7 +976,7 @@ watch(hasCrmDeals, enabled => {
 onMounted(async () => {
   await Promise.allSettled([
     store.dispatch('labels/get'),
-    store.dispatch('inboxes/get'),
+    useInboxStore().get(),
     store.dispatch('notifications/unReadCount'),
     ...([
       'communication_threads_dashboard',

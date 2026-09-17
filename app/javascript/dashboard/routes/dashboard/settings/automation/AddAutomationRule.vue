@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, onMounted } from 'vue';
 import { useStore } from 'dashboard/composables/store';
 import { useAutomation } from 'dashboard/composables/useAutomation';
@@ -59,7 +60,7 @@ const onSave = (payload, mode) => {
 };
 
 onMounted(() => {
-  store.dispatch('inboxes/get');
+  useInboxStore().get();
   store.dispatch('agents/get');
   store.dispatch('contacts/get');
   store.dispatch('teams/get');

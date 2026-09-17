@@ -3,6 +3,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from './VoiceCallButton.vue';
 
@@ -98,6 +99,7 @@ const mountComponent = ({
     getSelectedChat: selectedChat,
   };
   storeMock.dispatch = dispatchMock;
+  vi.spyOn(useInboxStore(), 'getInboxes', 'get').mockReturnValue(inboxes);
 
   const wrapper = shallowMount(VoiceCallButton, {
     props: {

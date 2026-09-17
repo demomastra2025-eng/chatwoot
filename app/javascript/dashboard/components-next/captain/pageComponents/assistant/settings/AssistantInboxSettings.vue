@@ -1,8 +1,10 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, reactive, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
-import { useMapGetter, useStore } from 'dashboard/composables/store';
+import { useStore } from 'dashboard/composables/store';
 
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import CardLayout from 'dashboard/components-next/CardLayout.vue';
@@ -20,9 +22,9 @@ const props = defineProps({
 const store = useStore();
 const { t } = useI18n();
 
-const inboxUiFlags = useMapGetter('inboxes/getUIFlags');
+const inboxUiFlags = useInboxStoreGetter('getUIFlags');
 const isFetching = computed(() => inboxUiFlags.value.isFetching);
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 
 const connectionStateByInboxId = reactive({});
 const isUpdatingByInboxId = reactive({});
@@ -73,7 +75,7 @@ const sortedInboxes = computed(() => {
 });
 
 const fetchInboxes = () => {
-  store.dispatch('inboxes/get');
+  useInboxStore().get();
 };
 
 watch(

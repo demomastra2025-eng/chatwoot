@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
@@ -89,7 +90,7 @@ const appliedFilters = ref(
 const filterSource = computed(() => {
   const sources = {
     teams: store.getters['teams/getTeams'],
-    inboxes: store.getters['inboxes/getInboxes'],
+    inboxes: useInboxStore().getInboxes,
     labels: store.getters['labels/getLabels'],
     agents: store.getters['agents/getAgents'],
   };

@@ -31,7 +31,7 @@ import dashboardApps from './modules/dashboardApps';
 import draftMessages from './modules/draftMessages';
 import globalConfig from 'shared/store/globalConfig';
 import inboxAssignableAgents from './modules/inboxAssignableAgents';
-import inboxes from './modules/inboxes';
+
 import inboxMembers from './modules/inboxMembers';
 import integrations from './modules/integrations';
 import labels from './modules/labels';
@@ -92,7 +92,7 @@ export default createStore({
     draftMessages,
     globalConfig,
     inboxAssignableAgents,
-    inboxes,
+
     inboxMembers,
     integrations,
     labels,

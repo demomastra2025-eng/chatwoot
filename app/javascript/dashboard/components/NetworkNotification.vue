@@ -1,9 +1,9 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { ref, computed, onBeforeUnmount, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { useEmitter } from 'dashboard/composables/emitter';
-import { useMapGetter } from 'dashboard/composables/store';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import {
   isAConversationRoute,
@@ -34,7 +34,7 @@ import Icon from 'next/icon/Icon.vue';
 
 const { t } = useI18n();
 const route = useRoute();
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 
 const RECONNECTED_BANNER_TIMEOUT = 2000;
 const CHANNEL_ALERT_TIMEOUT = 3000;

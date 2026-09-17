@@ -6,6 +6,7 @@ import * as automationHelper from 'dashboard/helper/automationHelper';
 import { createPinia, setActivePinia } from 'pinia';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import {
   customAttributes,
   appointmentFieldDefinitions,
@@ -34,6 +35,7 @@ vi.mock('dashboard/helper/automationHelper');
 describe('useAutomation', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    vi.spyOn(useInboxStore(), 'getInboxes', 'get').mockReturnValue(inboxes);
     const crmReferencesStore = useCrmReferencesStore();
     crmReferencesStore.fieldDefinitions.appointment =
       appointmentFieldDefinitions;

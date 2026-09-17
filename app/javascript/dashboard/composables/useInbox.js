@@ -1,3 +1,4 @@
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
@@ -43,7 +44,7 @@ export const INBOX_FEATURE_MAP = {
  */
 export const useInbox = (inboxId = null) => {
   const currentChat = useMapGetter('getSelectedChat');
-  const inboxGetter = useMapGetter('inboxes/getInboxById');
+  const inboxGetter = useInboxStoreGetter('getInboxById');
 
   const inbox = computed(() => {
     const targetInboxId = inboxId || currentChat.value?.inbox_id;

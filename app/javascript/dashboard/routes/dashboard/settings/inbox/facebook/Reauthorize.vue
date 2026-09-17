@@ -1,4 +1,5 @@
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 /* global FB */
 import InboxReconnectionRequired from '../components/InboxReconnectionRequired.vue';
 import { useAlert } from 'dashboard/composables';
@@ -85,7 +86,7 @@ export default {
     },
     async reauthorizeFBPage(omniauthToken) {
       try {
-        await this.$store.dispatch('inboxes/reauthorizeFacebookPage', {
+        await useInboxStore().reauthorizeFacebookPage({
           omniauthToken,
           inboxId: this.inboxId,
         });

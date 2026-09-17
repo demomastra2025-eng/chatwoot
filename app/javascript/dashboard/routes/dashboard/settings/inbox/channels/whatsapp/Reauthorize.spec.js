@@ -1,4 +1,6 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 
 import Reauthorize from './Reauthorize.vue';
 import NextButton from 'next/button/Button.vue';
@@ -7,14 +9,11 @@ import InboxReconnectionRequired from '../../components/InboxReconnectionRequire
 
 const setupFacebookSdkMock = vi.hoisted(() => vi.fn());
 const initWhatsAppEmbeddedSignupMock = vi.hoisted(() => vi.fn());
-const dispatchMock = vi.hoisted(() => vi.fn());
+let pinia;
+let registerWhatsAppPhoneNumber;
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
-}));
-
-vi.mock('vuex', () => ({
-  useStore: () => ({ dispatch: dispatchMock }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -66,6 +65,7 @@ const buildWrapper = ({
       whatsappRegistrationIncomplete,
     },
     global: {
+      plugins: [pinia],
       mocks: { $t: key => key },
       stubs: { InboxReconnectionRequired: true, NextButton: true },
     },
@@ -73,6 +73,11 @@ const buildWrapper = ({
 
 describe('WhatsApp reauthorization', () => {
   beforeEach(() => {
+    pinia = createPinia();
+    setActivePinia(pinia);
+    registerWhatsAppPhoneNumber = vi
+      .spyOn(useInboxStore(), 'registerWhatsAppPhoneNumber')
+      .mockResolvedValue({ id: 42 });
     window.chatwootConfig = {
       whatsappAppId: 'app-id',
       whatsappConfigurationId: 'configuration-id',
@@ -80,7 +85,6 @@ describe('WhatsApp reauthorization', () => {
     };
     setupFacebookSdkMock.mockReset().mockResolvedValue();
     initWhatsAppEmbeddedSignupMock.mockReset();
-    dispatchMock.mockReset();
   });
 
   it('shows a proactive expiry explanation for an expiring token', () => {
@@ -173,7 +177,7 @@ describe('WhatsApp reauthorization', () => {
   });
 
   it('submits the PIN through registration without opening Meta login', async () => {
-    dispatchMock.mockResolvedValue({ id: 42 });
+    registerWhatsAppPhoneNumber.mockResolvedValue({ id: 42 });
     const wrapper = buildWrapper({
       whatsappRegistrationIncomplete: true,
       providerConfig: {
@@ -189,10 +193,10 @@ describe('WhatsApp reauthorization', () => {
     await wrapper.findAllComponents(NextButton)[0].trigger('click');
     await flushPromises();
 
-    expect(dispatchMock).toHaveBeenCalledWith(
-      'inboxes/registerWhatsAppPhoneNumber',
-      { inboxId: 42, verificationPin: '123456' }
-    );
+    expect(registerWhatsAppPhoneNumber).toHaveBeenCalledWith({
+      inboxId: 42,
+      verificationPin: '123456',
+    });
     expect(initWhatsAppEmbeddedSignupMock).not.toHaveBeenCalled();
   });
 
@@ -210,7 +214,7 @@ describe('WhatsApp reauthorization', () => {
     expect(
       wrapper.findAllComponents(NextButton)[0].attributes('disabled')
     ).toBeDefined();
-    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(registerWhatsAppPhoneNumber).not.toHaveBeenCalled();
   });
 
   it('uses the reconciled health registration status over the stale inbox status', async () => {
@@ -230,7 +234,7 @@ describe('WhatsApp reauthorization', () => {
   });
 
   it('disables PIN retry immediately after the API returns an unknown outcome', async () => {
-    dispatchMock.mockRejectedValue({
+    registerWhatsAppPhoneNumber.mockRejectedValue({
       response: { data: { error_code: 'outcome_unknown' } },
     });
     const wrapper = buildWrapper({
@@ -247,6 +251,6 @@ describe('WhatsApp reauthorization', () => {
     await flushPromises();
 
     expect(wrapper.findComponent(Input).props('disabled')).toBe(true);
-    expect(dispatchMock).toHaveBeenCalledTimes(1);
+    expect(registerWhatsAppPhoneNumber).toHaveBeenCalledTimes(1);
   });
 });

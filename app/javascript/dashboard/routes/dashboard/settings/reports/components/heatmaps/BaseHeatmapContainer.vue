@@ -1,4 +1,6 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { onMounted, ref, computed, watch } from 'vue';
 import { useToggle } from '@vueuse/core';
 import MetricCard from '../overview/MetricCard.vue';
@@ -58,7 +60,7 @@ const { t } = useI18n();
 
 const uiFlags = useMapGetter('getOverviewUIFlags');
 const heatmapData = useMapGetter(props.storeGetter);
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 
 const selectedFrom = ref(null);
 const selectedTo = ref(null);
@@ -255,7 +257,7 @@ watch(
 );
 
 onMounted(() => {
-  store.dispatch('inboxes/get');
+  useInboxStore().get();
   startRefetching();
 });
 </script>

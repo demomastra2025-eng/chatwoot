@@ -1,4 +1,5 @@
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import V4Button from 'dashboard/components-next/button/Button.vue';
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
@@ -40,7 +41,7 @@ export default {
   },
   mounted() {
     this.$store.dispatch('agents/get');
-    this.$store.dispatch('inboxes/get');
+    useInboxStore().get();
     this.$store.dispatch('teams/get');
     this.$store.dispatch('labels/get');
     this.$store.dispatch('sla/get');

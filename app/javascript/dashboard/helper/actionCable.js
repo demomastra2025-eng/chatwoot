@@ -1,3 +1,4 @@
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import AuthAPI from '../api/auth';
 import BaseActionCableConnector from '../../shared/helpers/BaseActionCableConnector';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
@@ -746,7 +747,7 @@ class ActionCableConnector extends BaseActionCableConnector {
   onCacheInvalidate = data => {
     const keys = data.cache_keys;
     this.app.$store.dispatch('labels/revalidate', { newKey: keys.label });
-    this.app.$store.dispatch('inboxes/revalidate', { newKey: keys.inbox });
+    useInboxStore().revalidate({ newKey: keys.inbox });
     this.app.$store.dispatch('teams/revalidate', { newKey: keys.team });
   };
 

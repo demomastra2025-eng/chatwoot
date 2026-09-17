@@ -1,4 +1,5 @@
 <script>
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, ref } from 'vue';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
@@ -275,7 +276,7 @@ export default {
       if (!this.isCommunicationThread) return this.inbox;
 
       const inboxId = this.activeReplyChannel?.inbox_id;
-      return inboxId ? this.$store.getters['inboxes/getInbox'](inboxId) : null;
+      return inboxId ? useInboxStore().getInbox(inboxId) : null;
     },
     captainConversation() {
       if (!this.isCommunicationThread) return this.currentConversation;

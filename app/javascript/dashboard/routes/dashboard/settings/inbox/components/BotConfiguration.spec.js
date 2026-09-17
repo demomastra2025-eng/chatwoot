@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { computed, defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 
 const mockState = vi.hoisted(() => ({
   dispatch: vi.fn(),
@@ -179,11 +181,15 @@ vi.mock('dashboard/components-next/spinner/Spinner.vue', () => ({
 }));
 
 const { default: BotConfiguration } = await import('./BotConfiguration.vue');
+let pinia;
 
-const buildWrapper = props => mount(BotConfiguration, { props });
+const buildWrapper = props =>
+  mount(BotConfiguration, { props, global: { plugins: [pinia] } });
 
 describe('Inbox BotConfiguration Captain settings', () => {
   beforeEach(() => {
+    pinia = createPinia();
+    setActivePinia(pinia);
     mockState.dispatch.mockReset();
     mockState.dispatch.mockResolvedValue({});
     mockState.useAlert.mockReset();
@@ -248,6 +254,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
   });
 
   it('connects the concrete inbox when an assistant is selected', async () => {
+    const getInboxes = vi.spyOn(useInboxStore(), 'get').mockResolvedValue();
     const wrapper = buildWrapper({ inbox: mockState.inbox });
     await flushPromises();
 
@@ -265,7 +272,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
       autoReplyMode: 'always',
       replyToOpenConversations: false,
     });
-    expect(mockState.dispatch).toHaveBeenCalledWith('inboxes/get');
+    expect(getInboxes).toHaveBeenCalled();
     expect(mockState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.INBOXES.CREATE.SUCCESS_MESSAGE'
     );

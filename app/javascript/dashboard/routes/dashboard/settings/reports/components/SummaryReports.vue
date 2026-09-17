@@ -32,7 +32,15 @@ const props = defineProps({
   },
   fetchItemsKey: {
     type: String,
-    required: true,
+    default: '',
+  },
+  items: {
+    type: Array,
+    default: null,
+  },
+  fetchItems: {
+    type: Function,
+    default: null,
   },
 });
 
@@ -54,7 +62,8 @@ const flagMap = {
 const uiFlags = useMapGetter('summaryReports/getUIFlags');
 const isLoading = computed(() => uiFlags.value[flagMap[props.type]] ?? false);
 
-const rowItems = useMapGetter([props.getterKey]) || [];
+const legacyRowItems = useMapGetter([props.getterKey]);
+const rowItems = computed(() => props.items ?? legacyRowItems.value ?? []);
 const reportMetrics = useMapGetter([props.summaryKey]) || [];
 
 const getMetrics = id =>
@@ -150,7 +159,11 @@ const fetchReportsWithRetry = async () => {
 };
 
 const fetchAllData = () => {
-  store.dispatch(props.fetchItemsKey);
+  if (props.fetchItems) {
+    props.fetchItems();
+  } else {
+    store.dispatch(props.fetchItemsKey);
+  }
   fetchReportsWithRetry();
 };
 

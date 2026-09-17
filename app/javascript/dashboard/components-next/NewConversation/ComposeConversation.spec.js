@@ -1,6 +1,7 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createPinia, setActivePinia } from 'pinia';
 const routerPush = vi.hoisted(() => vi.fn());
 const getContactableInboxes = vi.hoisted(() => vi.fn());
 const storeDispatch = vi.hoisted(() => vi.fn());
@@ -69,6 +70,7 @@ import ComposeConversation from './ComposeConversation.vue';
 
 describe('ComposeConversation active WhatsApp conversation reuse', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     routerPush.mockClear();
     getContactableInboxes.mockReset();
     storeDispatch.mockReset();

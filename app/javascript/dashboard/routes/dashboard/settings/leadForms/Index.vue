@@ -1,9 +1,10 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useStore } from 'vuex';
-import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
@@ -33,7 +34,7 @@ const metaForm = reactive({
   metaPageId: '',
   verifyToken: '',
 });
-const inboxes = useMapGetter('inboxes/getInboxes');
+const inboxes = useInboxStoreGetter('getInboxes');
 
 const accountId = computed(() => route.params.accountId);
 const publicApiOrigin = window.location.origin;
@@ -191,7 +192,7 @@ const fetchLeadIntake = async () => {
 const loadPage = async () => {
   try {
     await Promise.all([
-      store.dispatch('inboxes/get'),
+      useInboxStore().get(),
       store.dispatch('attributes/get'),
       fetchLeadIntake(),
     ]);

@@ -1,25 +1,69 @@
-import * as MutationHelpers from 'shared/helpers/vuex/mutationHelpers';
-import * as types from '../mutation-types';
+import { defineStore } from 'pinia';
+import { computed, unref } from 'vue';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
-import InboxesAPI from '../../api/inboxes';
-import WebChannel from '../../api/channel/webChannel';
-import FBChannel from '../../api/channel/fbChannel';
-import TwilioChannel from '../../api/channel/twilioChannel';
-import WhatsappChannel from '../../api/channel/whatsappChannel';
-import { throwErrorMessage } from '../utils/api';
-import AnalyticsHelper from '../../helper/AnalyticsHelper';
+import InboxesAPI from 'dashboard/api/inboxes';
+import WebChannel from 'dashboard/api/channel/webChannel';
+import FBChannel from 'dashboard/api/channel/fbChannel';
+import TwilioChannel from 'dashboard/api/channel/twilioChannel';
+import WhatsappChannel from 'dashboard/api/channel/whatsappChannel';
+import { throwErrorMessage } from 'dashboard/store/utils/api';
+import AnalyticsHelper from 'dashboard/helper/AnalyticsHelper';
 import camelcaseKeys from 'camelcase-keys';
-import { ACCOUNT_EVENTS } from '../../helper/AnalyticsHelper/events';
+import { ACCOUNT_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 import { storeOneTimeWebhookVerifyToken } from 'shared/helpers/whatsappCloudCredentials';
-import { channelActions, buildInboxData } from './inboxes/channelActions';
 import {
   COMPONENT_TYPES,
   UNSUPPORTED_TEMPLATE_COMPONENT_TYPES,
   UNSUPPORTED_TEMPLATE_HEADER_FORMATS,
 } from 'dashboard/helper/templateHelper';
 
-export const state = {
+const mutationTypes = {
+  SET_INBOXES_UI_FLAG: 'SET_INBOXES_UI_FLAG',
+  SET_INBOXES: 'SET_INBOXES',
+  SET_INBOXES_ITEM: 'SET_INBOXES_ITEM',
+  ADD_INBOXES: 'ADD_INBOXES',
+  EDIT_INBOXES: 'EDIT_INBOXES',
+  DELETE_INBOXES: 'DELETE_INBOXES',
+};
+
+const types = { default: mutationTypes };
+
+const buildInboxData = inboxParams => {
+  const formData = new FormData();
+  const { channel = {}, ...inboxProperties } = inboxParams;
+  Object.keys(inboxProperties).forEach(key => {
+    formData.append(key, inboxProperties[key]);
+  });
+  const {
+    selectedFeatureFlags,
+    ignore_jids: ignoreJidsSnakeCase,
+    ignoreJids,
+    ...channelParams
+  } = channel;
+  const arrayFields = [
+    ['selected_feature_flags', selectedFeatureFlags],
+    ['ignore_jids', ignoreJidsSnakeCase || ignoreJids],
+  ];
+
+  arrayFields.forEach(([fieldName, value]) => {
+    if (!Array.isArray(value)) return;
+
+    if (value.length) {
+      value.forEach(entry => {
+        formData.append(`channel[${fieldName}][]`, entry);
+      });
+    } else {
+      formData.append(`channel[${fieldName}][]`, '');
+    }
+  });
+  Object.keys(channelParams).forEach(key => {
+    formData.append(`channel[${key}]`, channel[key]);
+  });
+  return formData;
+};
+
+const initialState = () => ({
   records: [],
   uiFlags: {
     isFetching: false,
@@ -30,18 +74,28 @@ export const state = {
     isUpdatingIMAP: false,
     isUpdatingSMTP: false,
   },
-};
+});
 
-const whatsappWebLifecycleRequests = new Map();
+const whatsappWebLifecycleRequests = new WeakMap();
+const getWhatsappWebLifecycleRequests = store => {
+  let requests = whatsappWebLifecycleRequests.get(store);
+  if (!requests) {
+    requests = new Map();
+    whatsappWebLifecycleRequests.set(store, requests);
+  }
+  return requests;
+};
 const WHATSAPP_WEB_OPERATION_IN_PROGRESS =
   'Another WhatsApp Web operation is already in progress';
 const runWhatsappWebLifecycleRequest = (
+  store,
   inboxId,
   operation,
   { reuseExisting = false } = {}
 ) => {
+  const requests = getWhatsappWebLifecycleRequests(store);
   const requestKey = String(inboxId);
-  const existingRequest = whatsappWebLifecycleRequests.get(requestKey);
+  const existingRequest = requests.get(requestKey);
 
   if (existingRequest) {
     return reuseExisting
@@ -49,17 +103,29 @@ const runWhatsappWebLifecycleRequest = (
       : Promise.reject(new Error(WHATSAPP_WEB_OPERATION_IN_PROGRESS));
   }
 
-  const request = operation().finally(() =>
-    whatsappWebLifecycleRequests.delete(requestKey)
-  );
-  whatsappWebLifecycleRequests.set(requestKey, request);
+  const request = operation().finally(() => requests.delete(requestKey));
+  requests.set(requestKey, request);
   return request;
 };
-const telegramPersonalDiagnosticsRequests = new Map();
-const telegramPersonalDiagnosticsCache = new Map();
+const telegramPersonalRuntimeScopes = new WeakMap();
+const getTelegramPersonalRuntimeScope = store => {
+  let scope = telegramPersonalRuntimeScopes.get(store);
+  if (!scope) {
+    scope = { requests: new Map(), cache: new Map() };
+    telegramPersonalRuntimeScopes.set(store, scope);
+  }
+  return scope;
+};
 const TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
-const weixinDiagnosticsRequests = new Map();
-const weixinDiagnosticsCache = new Map();
+const weixinRuntimeScopes = new WeakMap();
+const getWeixinRuntimeScope = store => {
+  let scope = weixinRuntimeScopes.get(store);
+  if (!scope) {
+    scope = { requests: new Map(), cache: new Map() };
+    weixinRuntimeScopes.set(store, scope);
+  }
+  return scope;
+};
 const WEIXIN_DIAGNOSTICS_COOLDOWN_MS = 3000;
 const hasOwn = (object, key) =>
   Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -140,12 +206,12 @@ const normalizeTelegramPersonalDiagnosticsPayload = payload => {
   };
 };
 
-const clearTelegramPersonalDiagnosticsCache = inboxId => {
-  telegramPersonalDiagnosticsCache.delete(String(inboxId));
+const clearTelegramPersonalDiagnosticsCache = (store, inboxId) => {
+  getTelegramPersonalRuntimeScope(store).cache.delete(String(inboxId));
 };
 
-const getCachedTelegramPersonalDiagnostics = inboxId => {
-  const cachedDiagnostics = telegramPersonalDiagnosticsCache.get(
+const getCachedTelegramPersonalDiagnostics = (store, inboxId) => {
+  const cachedDiagnostics = getTelegramPersonalRuntimeScope(store).cache.get(
     String(inboxId)
   );
 
@@ -157,15 +223,15 @@ const getCachedTelegramPersonalDiagnostics = inboxId => {
     Date.now() - cachedDiagnostics.fetchedAt >
     TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS
   ) {
-    clearTelegramPersonalDiagnosticsCache(inboxId);
+    clearTelegramPersonalDiagnosticsCache(store, inboxId);
     return null;
   }
 
   return cachedDiagnostics.data;
 };
 
-const cacheTelegramPersonalDiagnostics = (inboxId, diagnostics) => {
-  telegramPersonalDiagnosticsCache.set(String(inboxId), {
+const cacheTelegramPersonalDiagnostics = (store, inboxId, diagnostics) => {
+  getTelegramPersonalRuntimeScope(store).cache.set(String(inboxId), {
     data: diagnostics,
     fetchedAt: Date.now(),
   });
@@ -266,12 +332,14 @@ const normalizeWeixinDiagnosticsPayload = payload => {
   };
 };
 
-const clearWeixinDiagnosticsCache = inboxId => {
-  weixinDiagnosticsCache.delete(String(inboxId));
+const clearWeixinDiagnosticsCache = (store, inboxId) => {
+  getWeixinRuntimeScope(store).cache.delete(String(inboxId));
 };
 
-const getCachedWeixinDiagnostics = inboxId => {
-  const cachedDiagnostics = weixinDiagnosticsCache.get(String(inboxId));
+const getCachedWeixinDiagnostics = (store, inboxId) => {
+  const cachedDiagnostics = getWeixinRuntimeScope(store).cache.get(
+    String(inboxId)
+  );
 
   if (!cachedDiagnostics) {
     return null;
@@ -281,60 +349,47 @@ const getCachedWeixinDiagnostics = inboxId => {
     Date.now() - cachedDiagnostics.fetchedAt >
     WEIXIN_DIAGNOSTICS_COOLDOWN_MS
   ) {
-    clearWeixinDiagnosticsCache(inboxId);
+    clearWeixinDiagnosticsCache(store, inboxId);
     return null;
   }
 
   return cachedDiagnostics.data;
 };
 
-const cacheWeixinDiagnostics = (inboxId, diagnostics) => {
-  weixinDiagnosticsCache.set(String(inboxId), {
+const cacheWeixinDiagnostics = (store, inboxId, diagnostics) => {
+  getWeixinRuntimeScope(store).cache.set(String(inboxId), {
     data: diagnostics,
     fetchedAt: Date.now(),
   });
 };
 
-const commitWeixinDiagnostics = (
-  commit,
-  inboxGetters,
-  inboxId,
-  diagnostics
-) => {
-  const currentInbox = inboxGetters?.getInbox
-    ? inboxGetters.getInbox(inboxId)
-    : null;
+const commitWeixinDiagnostics = (store, inboxId, diagnostics) => {
+  const currentInbox = store.getInbox(inboxId);
   const mergedInbox = mergeWeixinDiagnostics(currentInbox, diagnostics);
 
   if (mergedInbox) {
-    commit(types.default.EDIT_INBOXES, mergedInbox);
+    store.applyMutation(types.default.EDIT_INBOXES, mergedInbox);
   }
 };
 
-const removeInboxFromClientState = (commit, inboxId) => {
-  clearTelegramPersonalDiagnosticsCache(inboxId);
-  clearWeixinDiagnosticsCache(inboxId);
-  telegramPersonalDiagnosticsRequests.delete(String(inboxId));
-  weixinDiagnosticsRequests.delete(String(inboxId));
-  commit(types.default.DELETE_INBOXES, inboxId);
+const removeInboxFromClientState = (store, inboxId) => {
+  const requestKey = String(inboxId);
+  clearTelegramPersonalDiagnosticsCache(store, inboxId);
+  clearWeixinDiagnosticsCache(store, inboxId);
+  getTelegramPersonalRuntimeScope(store).requests.delete(requestKey);
+  getWeixinRuntimeScope(store).requests.delete(requestKey);
+  store.applyMutation(types.default.DELETE_INBOXES, inboxId);
 };
 
-const commitTelegramPersonalDiagnostics = (
-  commit,
-  inboxGetters,
-  inboxId,
-  diagnostics
-) => {
-  const currentInbox = inboxGetters?.getInbox
-    ? inboxGetters.getInbox(inboxId)
-    : null;
+const commitTelegramPersonalDiagnostics = (store, inboxId, diagnostics) => {
+  const currentInbox = store.getInbox(inboxId);
   const mergedInbox = mergeTelegramPersonalDiagnostics(
     currentInbox,
     diagnostics
   );
 
   if (mergedInbox) {
-    commit(types.default.EDIT_INBOXES, mergedInbox);
+    store.applyMutation(types.default.EDIT_INBOXES, mergedInbox);
   }
 };
 
@@ -383,7 +438,7 @@ const mergeWhatsappWebInboxPayload = (
 const visibleInboxRecords = records =>
   records.filter(inbox => !isInboxPendingDeletion(inbox));
 
-export const getters = {
+const getters = {
   getInboxes($state) {
     return visibleInboxRecords($state.records);
   },
@@ -477,10 +532,12 @@ export const getters = {
       return true;
     });
   },
-  getConversationWhatsAppTemplates: ($state, $getters) => inboxId =>
-    $getters
-      .getFilteredWhatsAppTemplates(inboxId)
-      .filter(template => template.visible_in_conversation_picker !== false),
+  getConversationWhatsAppTemplates() {
+    return inboxId =>
+      this.getFilteredWhatsAppTemplates(inboxId).filter(
+        template => template.visible_in_conversation_picker !== false
+      );
+  },
   getNewConversationInboxes($state) {
     return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
@@ -623,8 +680,8 @@ const withCurrentRouteAccountIdList = (
     ? inboxes.map(inbox => withCurrentRouteAccountId(inbox, accountId))
     : inboxes;
 
-export const actions = {
-  revalidate: async ({ commit }, { newKey }) => {
+const actions = {
+  async revalidate({ newKey }) {
     const accountId = currentRouteAccountId();
     try {
       const isExistingKeyValid = await InboxesAPI.validateCacheKey(
@@ -635,7 +692,7 @@ export const actions = {
         const response = await InboxesAPI.refetchAndCommit(newKey, accountId);
         if (!isCurrentRouteAccountId(accountId)) return;
 
-        commit(
+        this.applyMutation(
           types.default.SET_INBOXES,
           withCurrentRouteAccountIdList(response.data.payload, accountId)
         );
@@ -644,99 +701,131 @@ export const actions = {
       // Ignore error
     }
   },
-  get: async ({ commit }) => {
+  async get() {
     const accountId = currentRouteAccountId();
-    commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: true });
+    this.applyMutation(types.default.SET_INBOXES_UI_FLAG, { isFetching: true });
     try {
       const response = await InboxesAPI.get(true);
       if (!isCurrentRouteAccountId(accountId)) return;
 
-      commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: false });
-      commit(
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isFetching: false,
+      });
+      this.applyMutation(
         types.default.SET_INBOXES,
         withCurrentRouteAccountIdList(response.data.payload, accountId)
       );
     } catch (error) {
       if (!isCurrentRouteAccountId(accountId)) return;
 
-      commit(types.default.SET_INBOXES_UI_FLAG, { isFetching: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isFetching: false,
+      });
     }
   },
-  createChannel: async ({ commit }, params) => {
+  async createChannel(params) {
     try {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
       const response = await WebChannel.create(params);
       storeOneTimeWebhookVerifyToken(
         response.data.id,
         params.channel?.provider_config?.webhook_verify_token
       );
-      commit(types.default.ADD_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       const { channel = {} } = params;
       sendAnalyticsEvent(channel.type);
       return response.data;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       return throwErrorMessage(error);
     }
   },
-  createWebsiteChannel: async ({ commit }, params) => {
+  async createWebsiteChannel(params) {
     try {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
       const response = await WebChannel.create(buildInboxData(params));
-      commit(types.default.ADD_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       sendAnalyticsEvent('website');
       return response.data;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       return throwErrorMessage(error);
     }
   },
-  createTwilioChannel: async ({ commit }, params) => {
+  async createTwilioChannel(params) {
     try {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
       const response = await TwilioChannel.create(params);
-      commit(types.default.ADD_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       sendAnalyticsEvent('twilio');
       return response.data;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       throw error;
     }
   },
-  createFBChannel: async ({ commit }, params) => {
+  async createFBChannel(params) {
     try {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
       const response = await FBChannel.create(params);
-      commit(types.default.ADD_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       sendAnalyticsEvent('facebook');
       return response.data;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       throw new Error(error);
     }
   },
-  createWhatsAppEmbeddedSignup: async ({ commit }, params) => {
+  async createWhatsAppEmbeddedSignup(params) {
     try {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
       const response = await WhatsappChannel.createEmbeddedSignup(params);
-      commit(types.default.ADD_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       sendAnalyticsEvent('whatsapp');
       return response.data;
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
       throw error;
     }
   },
-  reauthorizeWhatsApp: async ({ commit, getters: inboxGetters }, params) => {
+  async reauthorizeWhatsApp(params) {
     const response = await WhatsappChannel.reauthorizeWhatsApp(params);
-    const currentInbox = inboxGetters?.getInbox
-      ? inboxGetters.getInbox(params.inboxId)
-      : null;
+    const currentInbox = this?.getInbox ? this.getInbox(params.inboxId) : null;
     const responseProviderConfig = response.data?.provider_config;
     const currentProviderConfig = currentInbox?.provider_config;
     const providerConfig =
@@ -757,17 +846,12 @@ export const actions = {
       provider_config: providerConfig || currentProviderConfig,
     };
 
-    commit(types.default.EDIT_INBOXES, updatedInbox);
+    this.applyMutation(types.default.EDIT_INBOXES, updatedInbox);
     return updatedInbox;
   },
-  registerWhatsAppPhoneNumber: async (
-    { commit, getters: inboxGetters },
-    params
-  ) => {
+  async registerWhatsAppPhoneNumber(params) {
     const response = await WhatsappChannel.registerPhoneNumber(params);
-    const currentInbox = inboxGetters?.getInbox
-      ? inboxGetters.getInbox(params.inboxId)
-      : null;
+    const currentInbox = this?.getInbox ? this.getInbox(params.inboxId) : null;
     const updatedInbox = {
       ...currentInbox,
       reauthorization_required: response.data.reauthorization_required,
@@ -776,96 +860,135 @@ export const actions = {
         ...(response.data.provider_config || {}),
       },
     };
-    commit(types.default.EDIT_INBOXES, updatedInbox);
+    this.applyMutation(types.default.EDIT_INBOXES, updatedInbox);
     return updatedInbox;
   },
-  ...channelActions,
+  async createVoiceChannel(params) {
+    try {
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: true,
+      });
+      const response = await InboxesAPI.create({
+        name: params.name,
+        channel: { ...params.voice, type: 'voice' },
+      });
+      this.applyMutation(types.default.ADD_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
+      sendAnalyticsEvent('voice');
+      return response.data;
+    } catch (error) {
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isCreating: false,
+      });
+      throw error;
+    }
+  },
   // TODO: Extract other create channel methods to separate files to reduce file size
   // - createChannel
   // - createWebsiteChannel
   // - createTwilioChannel
   // - createFBChannel
-  updateInbox: async ({ commit }, { id, formData = true, ...inboxParams }) => {
-    commit(types.default.SET_INBOXES_UI_FLAG, { isUpdating: true });
+  async updateInbox({ id, formData = true, ...inboxParams }) {
+    this.applyMutation(types.default.SET_INBOXES_UI_FLAG, { isUpdating: true });
     try {
       const response = await InboxesAPI.update(
         id,
         formData ? buildInboxData(inboxParams) : inboxParams
       );
-      commit(types.default.EDIT_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdating: false });
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdating: false,
+      });
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdating: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdating: false,
+      });
       throwErrorMessage(error);
     }
   },
-  updateInboxIMAP: async ({ commit }, { id, ...inboxParams }) => {
-    commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingIMAP: true });
+  async updateInboxIMAP({ id, ...inboxParams }) {
+    this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+      isUpdatingIMAP: true,
+    });
     try {
       const response = await InboxesAPI.update(id, inboxParams);
-      commit(types.default.EDIT_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingIMAP: false });
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdatingIMAP: false,
+      });
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingIMAP: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdatingIMAP: false,
+      });
       throwErrorMessage(error);
     }
   },
-  updateInboxSMTP: async ({ commit }, { id, ...inboxParams }) => {
-    commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingSMTP: true });
+  async updateInboxSMTP({ id, ...inboxParams }) {
+    this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+      isUpdatingSMTP: true,
+    });
     try {
       const response = await InboxesAPI.update(id, inboxParams);
-      commit(types.default.EDIT_INBOXES, response.data);
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingSMTP: false });
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdatingSMTP: false,
+      });
     } catch (error) {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isUpdatingSMTP: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isUpdatingSMTP: false,
+      });
       throwErrorMessage(error);
     }
   },
-  delete: async ({ commit }, inboxId) => {
-    commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: true });
+  async delete(inboxId) {
+    this.applyMutation(types.default.SET_INBOXES_UI_FLAG, { isDeleting: true });
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       await InboxesAPI.delete(inboxId);
-      removeInboxFromClientState(commit, inboxId);
+      removeInboxFromClientState(this, inboxId);
       return null;
     } catch (error) {
       if ([404, 410].includes(error?.response?.status)) {
-        removeInboxFromClientState(commit, inboxId);
+        removeInboxFromClientState(this, inboxId);
         return null;
       }
 
       throw new Error(error);
     } finally {
-      commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: false });
+      this.applyMutation(types.default.SET_INBOXES_UI_FLAG, {
+        isDeleting: false,
+      });
     }
   },
-  reauthorizeFacebookPage: async ({ commit }, params) => {
+  async reauthorizeFacebookPage(params) {
     try {
       const response = await FBChannel.reauthorizeFacebookPage(params);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
     } catch (error) {
       throw new Error(error.message);
     }
   },
-  deleteInboxAvatar: async (_, inboxId) => {
+  async deleteInboxAvatar(inboxId) {
     try {
       await InboxesAPI.deleteInboxAvatar(inboxId);
     } catch (error) {
       throw new Error(error);
     }
   },
-  syncTemplates: async ({ commit }, inboxId) => {
+  async syncTemplates(inboxId) {
     try {
       const response = await InboxesAPI.syncTemplates(inboxId);
       if (response.data?.id) {
-        commit(types.default.EDIT_INBOXES, response.data);
+        this.applyMutation(types.default.EDIT_INBOXES, response.data);
       }
       return response.data;
     } catch (error) {
       throw new Error(error);
     }
   },
-  refreshWhatsappWebQr: async ({ commit, getters: inboxGetters }, payload) => {
+  async refreshWhatsappWebQr(payload) {
     const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
     const isStatusOnly =
       typeof payload === 'object' && payload?.statusOnly === true;
@@ -885,20 +1008,19 @@ export const actions = {
               : {}),
           }
         : {};
-    const currentInbox = inboxGetters?.getInbox
-      ? inboxGetters.getInbox(inboxId)
-      : null;
+    const currentInbox = this?.getInbox ? this.getInbox(inboxId) : null;
 
     if (isInboxPendingDeletion(currentInbox)) {
       return currentInbox;
     }
 
     return runWhatsappWebLifecycleRequest(
+      this,
       inboxId,
       () =>
         InboxesAPI.refreshWhatsappWebQr(inboxId, requestPayload)
           .then(response => {
-            const existingInbox = state.records.find(
+            const existingInbox = this.records.find(
               record => record.id === response.data.id
             );
             const inboxPayload = isStatusOnly
@@ -909,12 +1031,12 @@ export const actions = {
                 )
               : response.data;
 
-            commit(types.default.EDIT_INBOXES, inboxPayload);
+            this.applyMutation(types.default.EDIT_INBOXES, inboxPayload);
             return inboxPayload;
           })
           .catch(error => {
             if ([404, 410].includes(error?.response?.status)) {
-              commit(types.default.DELETE_INBOXES, inboxId);
+              this.applyMutation(types.default.DELETE_INBOXES, inboxId);
               return null;
             }
 
@@ -923,57 +1045,57 @@ export const actions = {
       { reuseExisting: isStatusOnly }
     );
   },
-  reconnectWhatsappWeb: async ({ commit }, inboxId) => {
-    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+  async reconnectWhatsappWeb(inboxId) {
+    return runWhatsappWebLifecycleRequest(this, inboxId, async () => {
       try {
         const response = await InboxesAPI.reconnectWhatsappWeb(inboxId);
         const reconnectedInbox = response.data;
 
-        commit(types.default.EDIT_INBOXES, reconnectedInbox);
+        this.applyMutation(types.default.EDIT_INBOXES, reconnectedInbox);
         return reconnectedInbox;
       } catch (error) {
         throw new Error(error?.response?.data?.error || error.message);
       }
     });
   },
-  reauthorizeWhatsappWeb: async ({ commit }, inboxId) => {
-    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+  async reauthorizeWhatsappWeb(inboxId) {
+    return runWhatsappWebLifecycleRequest(this, inboxId, async () => {
       try {
         const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId);
         const reauthorizedInbox = response.data;
 
-        commit(types.default.EDIT_INBOXES, reauthorizedInbox);
+        this.applyMutation(types.default.EDIT_INBOXES, reauthorizedInbox);
         return reauthorizedInbox;
       } catch (error) {
         throw new Error(error?.response?.data?.error || error.message);
       }
     });
   },
-  disconnectWhatsappWeb: async ({ commit }, inboxId) => {
-    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+  async disconnectWhatsappWeb(inboxId) {
+    return runWhatsappWebLifecycleRequest(this, inboxId, async () => {
       try {
         const response = await InboxesAPI.disconnectWhatsappWeb(inboxId);
-        commit(types.default.EDIT_INBOXES, response.data);
+        this.applyMutation(types.default.EDIT_INBOXES, response.data);
         return response.data;
       } catch (error) {
         throw new Error(error?.response?.data?.error || error.message);
       }
     });
   },
-  repairWhatsappWeb: async ({ commit }, inboxId) => {
-    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+  async repairWhatsappWeb(inboxId) {
+    return runWhatsappWebLifecycleRequest(this, inboxId, async () => {
       try {
         const response = await InboxesAPI.repairWhatsappWeb(inboxId);
         const repairedInbox = response.data;
 
-        commit(types.default.EDIT_INBOXES, repairedInbox);
+        this.applyMutation(types.default.EDIT_INBOXES, repairedInbox);
         return repairedInbox;
       } catch (error) {
         throw new Error(error?.response?.data?.error || error.message);
       }
     });
   },
-  getWhatsappWebDiagnostics: async (_, inboxId) => {
+  async getWhatsappWebDiagnostics(inboxId) {
     try {
       const response = await InboxesAPI.getWhatsappWebDiagnostics(inboxId);
       return response.data;
@@ -981,108 +1103,105 @@ export const actions = {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  requestTelegramPersonalCode: async ({ commit }, inboxId) => {
+  async requestTelegramPersonalCode(inboxId) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.requestTelegramPersonalCode(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  requestTelegramPersonalQr: async ({ commit }, inboxId) => {
+  async requestTelegramPersonalQr(inboxId) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.requestTelegramPersonalQr(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  verifyTelegramPersonalCode: async ({ commit }, { inboxId, code }) => {
+  async verifyTelegramPersonalCode({ inboxId, code }) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.verifyTelegramPersonalCode(
         inboxId,
         code
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  verifyTelegramPersonalPassword: async ({ commit }, { inboxId, password }) => {
+  async verifyTelegramPersonalPassword({ inboxId, password }) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.verifyTelegramPersonalPassword(
         inboxId,
         password
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  reconnectTelegramPersonal: async ({ commit }, inboxId) => {
+  async reconnectTelegramPersonal(inboxId) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.reconnectTelegramPersonal(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  historySyncTelegramPersonal: async ({ commit }, payload) => {
+  async historySyncTelegramPersonal(payload) {
     try {
       const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
       const requestPayload =
         typeof payload === 'object' ? payload.payload || {} : {};
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.historySyncTelegramPersonal(
         inboxId,
         requestPayload
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  contactsSyncTelegramPersonal: async ({ commit }, payload) => {
+  async contactsSyncTelegramPersonal(payload) {
     try {
       const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
       const requestPayload =
         typeof payload === 'object' ? payload.payload || {} : {};
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.contactsSyncTelegramPersonal(
         inboxId,
         requestPayload
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  disconnectTelegramPersonal: async ({ commit }, inboxId) => {
+  async disconnectTelegramPersonal(inboxId) {
     try {
-      clearTelegramPersonalDiagnosticsCache(inboxId);
+      clearTelegramPersonalDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.disconnectTelegramPersonal(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  getTelegramPersonalDiagnostics: async (
-    { commit, getters: inboxGetters },
-    payload
-  ) => {
+  async getTelegramPersonalDiagnostics(payload) {
     const { inboxId, force } =
       normalizeTelegramPersonalDiagnosticsPayload(payload);
 
@@ -1093,80 +1212,73 @@ export const actions = {
     const requestKey = String(inboxId);
 
     if (!force) {
-      const cachedDiagnostics = getCachedTelegramPersonalDiagnostics(inboxId);
+      const cachedDiagnostics = getCachedTelegramPersonalDiagnostics(
+        this,
+        inboxId
+      );
 
       if (cachedDiagnostics) {
-        commitTelegramPersonalDiagnostics(
-          commit,
-          inboxGetters,
-          inboxId,
-          cachedDiagnostics
-        );
+        commitTelegramPersonalDiagnostics(this, inboxId, cachedDiagnostics);
         return cachedDiagnostics;
       }
 
-      if (telegramPersonalDiagnosticsRequests.has(requestKey)) {
-        return telegramPersonalDiagnosticsRequests.get(requestKey);
+      if (getTelegramPersonalRuntimeScope(this).requests.has(requestKey)) {
+        return getTelegramPersonalRuntimeScope(this).requests.get(requestKey);
       }
     }
 
     const request = InboxesAPI.getTelegramPersonalDiagnostics(inboxId)
       .then(response => {
-        cacheTelegramPersonalDiagnostics(inboxId, response.data);
-        commitTelegramPersonalDiagnostics(
-          commit,
-          inboxGetters,
-          inboxId,
-          response.data
-        );
+        cacheTelegramPersonalDiagnostics(this, inboxId, response.data);
+        commitTelegramPersonalDiagnostics(this, inboxId, response.data);
         return response.data;
       })
       .catch(error => {
         if ([404, 410].includes(error?.response?.status)) {
-          removeInboxFromClientState(commit, inboxId);
+          removeInboxFromClientState(this, inboxId);
           return null;
         }
 
         throw new Error(error?.response?.data?.error || error.message);
       })
       .finally(() => {
-        telegramPersonalDiagnosticsRequests.delete(requestKey);
+        getTelegramPersonalRuntimeScope(this).requests.delete(requestKey);
       });
 
-    telegramPersonalDiagnosticsRequests.set(requestKey, request);
+    getTelegramPersonalRuntimeScope(this).requests.set(requestKey, request);
     return request;
   },
-  requestWeixinQr: async ({ commit }, inboxId) => {
+  async requestWeixinQr(inboxId) {
     try {
-      clearWeixinDiagnosticsCache(inboxId);
+      clearWeixinDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.requestWeixinQr(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  reconnectWeixin: async ({ commit }, inboxId) => {
+  async reconnectWeixin(inboxId) {
     try {
-      clearWeixinDiagnosticsCache(inboxId);
+      clearWeixinDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.reconnectWeixin(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  disconnectWeixin: async ({ commit }, inboxId) => {
+  async disconnectWeixin(inboxId) {
     try {
-      clearWeixinDiagnosticsCache(inboxId);
+      clearWeixinDiagnosticsCache(this, inboxId);
       const response = await InboxesAPI.disconnectWeixin(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  getWeixinDiagnostics: async ({ commit, getters: inboxGetters }, payload) => {
+  async getWeixinDiagnostics(payload) {
     const { inboxId, force } = normalizeWeixinDiagnosticsPayload(payload);
 
     if (!inboxId) {
@@ -1176,103 +1288,95 @@ export const actions = {
     const requestKey = String(inboxId);
 
     if (!force) {
-      const cachedDiagnostics = getCachedWeixinDiagnostics(inboxId);
+      const cachedDiagnostics = getCachedWeixinDiagnostics(this, inboxId);
 
       if (cachedDiagnostics) {
-        commitWeixinDiagnostics(
-          commit,
-          inboxGetters,
-          inboxId,
-          cachedDiagnostics
-        );
+        commitWeixinDiagnostics(this, inboxId, cachedDiagnostics);
         return cachedDiagnostics;
       }
 
-      if (weixinDiagnosticsRequests.has(requestKey)) {
-        return weixinDiagnosticsRequests.get(requestKey);
+      if (getWeixinRuntimeScope(this).requests.has(requestKey)) {
+        return getWeixinRuntimeScope(this).requests.get(requestKey);
       }
     }
 
     const request = InboxesAPI.getWeixinDiagnostics(inboxId)
       .then(response => {
-        cacheWeixinDiagnostics(inboxId, response.data);
-        commitWeixinDiagnostics(commit, inboxGetters, inboxId, response.data);
+        cacheWeixinDiagnostics(this, inboxId, response.data);
+        commitWeixinDiagnostics(this, inboxId, response.data);
         return response.data;
       })
       .catch(error => {
         if ([404, 410].includes(error?.response?.status)) {
-          removeInboxFromClientState(commit, inboxId);
+          removeInboxFromClientState(this, inboxId);
           return null;
         }
 
         throw new Error(error?.response?.data?.error || error.message);
       })
       .finally(() => {
-        weixinDiagnosticsRequests.delete(requestKey);
+        getWeixinRuntimeScope(this).requests.delete(requestKey);
       });
 
-    weixinDiagnosticsRequests.set(requestKey, request);
+    getWeixinRuntimeScope(this).requests.set(requestKey, request);
     return request;
   },
-  createCSATTemplate: async (_, { inboxId, template }) => {
+  async createCSATTemplate({ inboxId, template }) {
     const response = await InboxesAPI.createCSATTemplate(inboxId, template);
     return response.data;
   },
-  createWhatsAppTemplate: async ({ commit }, { inboxId, template }) => {
+  async createWhatsAppTemplate({ inboxId, template }) {
     try {
       const response = await InboxesAPI.createWhatsAppTemplate(
         inboxId,
         template
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  deleteWhatsAppTemplate: async ({ commit }, { inboxId, templateName }) => {
+  async deleteWhatsAppTemplate({ inboxId, templateName }) {
     try {
       const response = await InboxesAPI.deleteWhatsAppTemplate(
         inboxId,
         templateName
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  updateWhatsAppTemplateVisibility: async (
-    { commit },
-    { inboxId, templateName, visible }
-  ) => {
+  async updateWhatsAppTemplateVisibility({ inboxId, templateName, visible }) {
     try {
       const response = await InboxesAPI.updateWhatsAppTemplateVisibility(
         inboxId,
         templateName,
         visible
       );
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
-  getCSATTemplateStatus: async (_, { inboxId }) => {
+  async getCSATTemplateStatus({ inboxId }) {
     const response = await InboxesAPI.getCSATTemplateStatus(inboxId);
     return response.data;
   },
-  analyzeCSATTemplateUtility: async (_, { inboxId, template }) => {
+  async analyzeCSATTemplateUtility({ inboxId, template }) {
     const response = await InboxesAPI.analyzeCSATTemplateUtility(
       inboxId,
       template
     );
     return response.data;
   },
-  resetSecret: async ({ commit }, inboxId) => {
+  async resetSecret(inboxId) {
     try {
       const response = await InboxesAPI.resetSecret(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
+      this.applyMutation(types.default.EDIT_INBOXES, response.data);
       return response.data;
     } catch (error) {
       throwErrorMessage(error);
@@ -1281,21 +1385,38 @@ export const actions = {
   },
 };
 
-export const mutations = {
-  [types.default.SET_INBOXES_UI_FLAG]($state, uiFlag) {
-    $state.uiFlags = { ...$state.uiFlags, ...uiFlag };
-  },
-  [types.default.SET_INBOXES]: MutationHelpers.set,
-  [types.default.SET_INBOXES_ITEM]: MutationHelpers.setSingleRecord,
-  [types.default.ADD_INBOXES]: MutationHelpers.create,
-  [types.default.EDIT_INBOXES]: MutationHelpers.update,
-  [types.default.DELETE_INBOXES]: MutationHelpers.destroy,
-};
-
-export default {
-  namespaced: true,
-  state,
+export const useInboxStore = defineStore('inboxes', {
+  state: initialState,
   getters,
-  actions,
-  mutations,
-};
+  actions: {
+    applyMutation(type, payload) {
+      if (type === mutationTypes.SET_INBOXES_UI_FLAG) {
+        this.uiFlags = { ...this.uiFlags, ...payload };
+      } else if (type === mutationTypes.SET_INBOXES) {
+        this.records = payload;
+      } else if (type === mutationTypes.SET_INBOXES_ITEM) {
+        const index = this.records.findIndex(
+          record => record.id === payload.id
+        );
+        if (index === -1) this.records.push(payload);
+        else this.records[index] = payload;
+      } else if (type === mutationTypes.ADD_INBOXES) {
+        this.records.push(payload);
+      } else if (type === mutationTypes.EDIT_INBOXES) {
+        const index = this.records.findIndex(
+          record => record.id === payload.id
+        );
+        if (index !== -1) this.records[index] = payload;
+      } else if (type === mutationTypes.DELETE_INBOXES) {
+        this.records = this.records.filter(record => record.id !== payload);
+      }
+    },
+    ...actions,
+  },
+});
+
+export const useInboxStoreGetter = (getter, ...args) =>
+  computed(() => {
+    const value = useInboxStore()[getter];
+    return args.length ? value(...args.map(unref)) : value;
+  });

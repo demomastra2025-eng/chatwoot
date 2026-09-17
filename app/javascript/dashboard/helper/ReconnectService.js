@@ -1,3 +1,4 @@
+import { useInboxStore } from 'dashboard/stores/inboxes';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { differenceInSeconds } from 'date-fns';
@@ -207,7 +208,7 @@ class ReconnectService {
     );
     await Promise.all([
       this.store.dispatch('labels/revalidate', { newKey: label }),
-      this.store.dispatch('inboxes/revalidate', { newKey: inbox }),
+      useInboxStore().revalidate({ newKey: inbox }),
       this.store.dispatch('teams/revalidate', { newKey: team }),
     ]);
   };

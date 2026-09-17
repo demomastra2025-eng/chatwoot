@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import {
   reactive,
   computed,
@@ -51,9 +52,9 @@ const store = useStore();
 const formState = {
   uiFlags: useMapGetter('campaigns/getUIFlags'),
   labels: useMapGetter('labels/getLabels'),
-  inboxes: useMapGetter('inboxes/getOutboundCampaignInboxes'),
-  getFilteredWhatsAppTemplates: useMapGetter(
-    'inboxes/getFilteredWhatsAppTemplates'
+  inboxes: useInboxStoreGetter('getOutboundCampaignInboxes'),
+  getFilteredWhatsAppTemplates: useInboxStoreGetter(
+    'getFilteredWhatsAppTemplates'
   ),
   cannedResponses: useMapGetter('getCannedResponses'),
 };

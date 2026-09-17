@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -24,8 +25,8 @@ const selectedPolicyById = useMapGetter(
   'agentCapacityPolicies/getAgentCapacityPolicyById'
 );
 const agentsList = useMapGetter('agents/getAgents');
-const inboxes = useMapGetter('inboxes/getAllInboxes');
-const inboxesUiFlags = useMapGetter('inboxes/getUIFlags');
+const inboxes = useInboxStoreGetter('getAllInboxes');
+const inboxesUiFlags = useInboxStoreGetter('getUIFlags');
 
 const routeId = computed(() => route.params.id);
 const selectedPolicy = computed(() => selectedPolicyById.value(routeId.value));

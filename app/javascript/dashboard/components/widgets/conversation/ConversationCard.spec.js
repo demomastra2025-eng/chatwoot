@@ -3,6 +3,7 @@ import { shallowMount } from '@vue/test-utils';
 
 import ConversationCard from './ConversationCard.vue';
 
+import { createPinia, setActivePinia } from 'pinia';
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   mapGetters: {},
@@ -82,6 +83,7 @@ describe('ConversationCard', () => {
   });
 
   beforeEach(() => {
+    setActivePinia(createPinia());
     window.history.replaceState({}, '', '/');
     mocks.routerPush.mockClear();
     mocks.mapGetters = {

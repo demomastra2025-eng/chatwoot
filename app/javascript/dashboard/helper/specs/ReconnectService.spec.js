@@ -7,6 +7,8 @@ import {
   isNotificationRoute,
 } from 'dashboard/helper/routeHelpers';
 import ReconnectService from 'dashboard/helper/ReconnectService';
+import { createPinia, setActivePinia } from 'pinia';
+import { useInboxStore } from 'dashboard/stores/inboxes';
 
 vi.mock('shared/helpers/mitt', () => ({
   emitter: {
@@ -48,6 +50,7 @@ describe('ReconnectService', () => {
   let reconnectService;
 
   beforeEach(() => {
+    setActivePinia(createPinia());
     routerMock.currentRoute.value = {
       name: '',
       params: { conversation_id: null, communication_thread_id: null },
@@ -416,6 +419,9 @@ describe('ReconnectService', () => {
 
   describe('revalidateCaches', () => {
     it('should dispatch revalidate actions for labels, inboxes, and teams', async () => {
+      const revalidateInbox = vi
+        .spyOn(useInboxStore(), 'revalidate')
+        .mockResolvedValue();
       storeMock.dispatch.mockResolvedValueOnce({
         label: 'labelKey',
         inbox: 'inboxKey',
@@ -426,7 +432,7 @@ describe('ReconnectService', () => {
       expect(storeMock.dispatch).toHaveBeenCalledWith('labels/revalidate', {
         newKey: 'labelKey',
       });
-      expect(storeMock.dispatch).toHaveBeenCalledWith('inboxes/revalidate', {
+      expect(revalidateInbox).toHaveBeenCalledWith({
         newKey: 'inboxKey',
       });
       expect(storeMock.dispatch).toHaveBeenCalledWith('teams/revalidate', {

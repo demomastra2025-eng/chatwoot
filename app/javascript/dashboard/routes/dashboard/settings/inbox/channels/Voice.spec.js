@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 
 import Voice from './Voice.vue';
 
@@ -11,6 +12,7 @@ const routeMock = vi.hoisted(() => ({
 const routerReplaceMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
 const createVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
+let pinia;
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -48,6 +50,7 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
 const buildWrapper = () =>
   mount(Voice, {
     global: {
+      plugins: [pinia],
       stubs: {
         PageHeader: true,
         ChannelSelector: {
@@ -68,6 +71,8 @@ const buildWrapper = () =>
 
 describe('Voice channel setup', () => {
   beforeEach(() => {
+    pinia = createPinia();
+    setActivePinia(pinia);
     dispatchMock.mockReset();
     routerReplaceMock.mockReset();
     routerPushMock.mockReset();

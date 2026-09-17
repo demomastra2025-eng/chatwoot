@@ -1,4 +1,5 @@
 <script setup>
+import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, h, onMounted, onUnmounted, ref } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import wootConstants from 'dashboard/constants/globals';
@@ -22,7 +23,7 @@ const store = useStore();
 const currentUserAvailability = useMapGetter('getCurrentUserAvailability');
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUserAutoOffline = useMapGetter('getCurrentUserAutoOffline');
-const currentUserInboxes = useMapGetter('inboxes/getInboxes');
+const currentUserInboxes = useInboxStoreGetter('getInboxes');
 
 const { isImpersonating } = useImpersonation();
 
