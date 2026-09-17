@@ -78,8 +78,9 @@ describe('#actions', () => {
       });
 
       const request = actions.get({ commit });
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.waitFor(() =>
+        expect(resolveInboxes).toEqual(expect.any(Function))
+      );
       window.history.pushState({}, '', '/app/accounts/6/settings/inboxes');
 
       resolveInboxes({ data: { payload: [inboxList[0]] } });
