@@ -33,7 +33,6 @@ const legacyVuexModuleImports = new Set([
   './modules/contacts',
   './modules/conversationLabels',
   './modules/conversationMetadata',
-  './modules/conversationSearch',
   './modules/conversationStats',
   './modules/conversationTypingStatus',
   './modules/conversationWatchers',
@@ -94,5 +93,9 @@ describe('dashboard state boundary', () => {
 
   it('keeps conversation pagination out of the legacy Vuex registry', () => {
     expect(storeSource()).not.toContain('conversationPage');
+  });
+
+  it('keeps conversation search out of the legacy Vuex registry', () => {
+    expect(storeSource()).not.toContain('conversationSearch');
   });
 });

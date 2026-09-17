@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useMapGetter, useStore } from 'dashboard/composables/store.js';
+import { storeToRefs } from 'pinia';
+import { useStore } from 'dashboard/composables/store.js';
 import { useRouter, useRoute } from 'vue-router';
 import { useTrack } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
@@ -15,6 +16,7 @@ import {
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { CONVERSATION_EVENTS } from '../../../helper/AnalyticsHelper/events';
+import { useConversationSearchStore } from 'dashboard/stores/conversationSearch';
 
 import Policy from 'dashboard/components/policy.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -28,6 +30,7 @@ import SearchResultArticlesList from './SearchResultArticlesList.vue';
 const router = useRouter();
 const route = useRoute();
 const store = useStore();
+const conversationSearchStore = useConversationSearchStore();
 const { t } = useI18n();
 
 const PER_PAGE = 15; // Results per page
@@ -40,13 +43,13 @@ const pages = ref({
   articles: 1,
 });
 
-const contactRecords = useMapGetter('conversationSearch/getContactRecords');
-const conversationRecords = useMapGetter(
-  'conversationSearch/getConversationRecords'
-);
-const messageRecords = useMapGetter('conversationSearch/getMessageRecords');
-const articleRecords = useMapGetter('conversationSearch/getArticleRecords');
-const uiFlags = useMapGetter('conversationSearch/getUIFlags');
+const {
+  contactRecords,
+  conversationRecords,
+  messageRecords,
+  articleRecords,
+  uiFlags,
+} = storeToRefs(conversationSearchStore);
 
 const addTypeToRecords = (records, type) =>
   records.value.map(item => ({ ...useCamelCase(item, { deep: true }), type }));
@@ -241,7 +244,7 @@ const filters = ref({
 
 const clearSearchResult = () => {
   pages.value = { contacts: 1, conversations: 1, messages: 1, articles: 1 };
-  store.dispatch('conversationSearch/clearSearchResults');
+  conversationSearchStore.clearSearchResults();
 };
 
 const buildSearchPayload = (basePayload = {}, searchType = 'message') => {
@@ -292,7 +295,7 @@ const onSearch = q => {
   useTrack(CONVERSATION_EVENTS.SEARCH_CONVERSATION);
 
   const searchPayload = buildSearchPayload({ q, page: 1 });
-  store.dispatch('conversationSearch/fullSearch', searchPayload);
+  conversationSearchStore.fullSearch(searchPayload);
 };
 
 const onFilterChange = () => {
@@ -310,10 +313,10 @@ const onBack = () => {
 
 const loadMore = () => {
   const SEARCH_ACTIONS = {
-    contacts: 'conversationSearch/contactSearch',
-    conversations: 'conversationSearch/conversationSearch',
-    messages: 'conversationSearch/messageSearch',
-    articles: 'conversationSearch/articleSearch',
+    contacts: 'contactSearch',
+    conversations: 'conversationSearch',
+    messages: 'messageSearch',
+    articles: 'articleSearch',
   };
 
   if (uiFlags.value.isFetching || selectedTab.value === 'all') return;
@@ -326,7 +329,7 @@ const loadMore = () => {
     tab
   );
 
-  store.dispatch(SEARCH_ACTIONS[tab], payload);
+  conversationSearchStore[SEARCH_ACTIONS[tab]](payload);
 };
 
 const onTabChange = tab => {
@@ -335,7 +338,7 @@ const onTabChange = tab => {
 };
 
 onMounted(() => {
-  store.dispatch('conversationSearch/clearSearchResults');
+  conversationSearchStore.clearSearchResults();
   store.dispatch('agents/get');
 
   const parsedFilters = parseURLParams(
@@ -352,7 +355,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   query.value = '';
-  store.dispatch('conversationSearch/clearSearchResults');
+  conversationSearchStore.clearSearchResults();
 });
 </script>
 
