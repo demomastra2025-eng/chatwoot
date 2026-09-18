@@ -46,8 +46,41 @@ RSpec.describe 'Access Roles API', type: :request do
       )
       expect(payload.fetch('meta')).to eq(
         'resources' => AccessRoleGrant::RESOURCE_CAPABILITIES,
-        'access_scopes' => AccessRoleGrant::ACCESS_SCOPES
+        'access_scopes' => AccessRoleGrant::ACCESS_SCOPES,
+        'mutations_enabled' => false,
+        'legacy_mutations_enabled' => true
       )
+    end
+
+    it 'does not advertise normalized mutations from the release gate alone' do
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') do
+        get path, headers: administrator.create_new_auth_token, as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'mutations_enabled')).to be(false)
+      expect(response.parsed_body.dig('meta', 'legacy_mutations_enabled')).to be(true)
+    end
+
+    it 'advertises normalized mutations when the release gate and enforced mode are active' do
+      enforce_access_control!
+
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') do
+        get path, headers: administrator.create_new_auth_token, as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'mutations_enabled')).to be(true)
+      expect(response.parsed_body.dig('meta', 'legacy_mutations_enabled')).to be(false)
+    end
+
+    it 'disables the legacy writer once a canonical role exists' do
+      create(:access_role, account: account, grant_source: :canonical)
+
+      get path, headers: administrator.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'legacy_mutations_enabled')).to be(false)
     end
 
     it 'returns system role identity and zero assignment counts' do

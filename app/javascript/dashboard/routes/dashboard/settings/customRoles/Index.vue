@@ -3,6 +3,7 @@ import { useAlert } from 'dashboard/composables';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import AccessRoleMatrix from './component/AccessRoleMatrix.vue';
+import AccessRoleModal from './component/AccessRoleModal.vue';
 import CustomRoleModal from './component/CustomRoleModal.vue';
 import CustomRoleTableBody from './component/CustomRoleTableBody.vue';
 import CustomRolePaywall from './component/CustomRolePaywall.vue';
@@ -26,6 +27,15 @@ const searchQuery = ref('');
 
 const records = useMapGetter('customRole/getCustomRoles');
 const accessRoleCatalog = useMapGetter('customRole/getAccessRoleCatalog');
+const mutationsEnabled = computed(
+  () => accessRoleCatalog.value.mutationsEnabled
+);
+const legacyMutationsEnabled = computed(
+  () => accessRoleCatalog.value.legacyMutationsEnabled
+);
+const canMutateRoles = computed(
+  () => mutationsEnabled.value || legacyMutationsEnabled.value
+);
 
 const filteredRecords = computed(() => {
   const query = searchQuery.value.trim();
@@ -87,7 +97,13 @@ const tableHeaders = computed(() => {
 const showAlertMessage = message => useAlert(message);
 
 const openAddModal = () => {
-  if (isBehindAPaywall.value) return;
+  if (
+    isBehindAPaywall.value ||
+    !accessRoleCatalog.value.loaded ||
+    !canMutateRoles.value
+  ) {
+    return;
+  }
   customRoleModalMode.value = 'add';
   selectedRole.value = null;
   showCustomRoleModal.value = true;
@@ -113,9 +129,17 @@ const closeDeletePopup = () => {
   showDeleteConfirmationPopup.value = false;
 };
 
-const deleteCustomRole = async id => {
+const deleteCustomRole = async roleSnapshot => {
+  const { id } = roleSnapshot;
   try {
-    await store.dispatch('customRole/deleteCustomRole', id);
+    if (mutationsEnabled.value) {
+      await store.dispatch('customRole/deleteAccessRole', {
+        id,
+        lockVersion: roleSnapshot.lock_version,
+      });
+    } else {
+      await store.dispatch('customRole/deleteCustomRole', id);
+    }
     showAlertMessage(t('CUSTOM_ROLE.DELETE.API.SUCCESS_MESSAGE'));
   } catch (error) {
     const errorMessage =
@@ -126,14 +150,29 @@ const deleteCustomRole = async id => {
   }
 };
 
+const rebaseSelectedRole = id => {
+  const freshRole = accessRoleCatalog.value.records.find(
+    role => role.id === id
+  );
+  if (!freshRole) {
+    hideCustomRoleModal();
+    showAlertMessage(t('CUSTOM_ROLE.ACCESS_EDITOR.NOT_FOUND_ERROR'));
+    return;
+  }
+
+  selectedRole.value = freshRole;
+  showAlertMessage(t('CUSTOM_ROLE.ACCESS_EDITOR.STALE_ERROR'));
+};
+
 const confirmDeletion = () => {
-  const id = activeResponse.value.id;
+  const roleSnapshot = activeResponse.value;
+  const { id } = roleSnapshot;
   closeDeletePopup();
   activeResponse.value = {};
   if (id === undefined || id === null || loading.value[id]) return;
 
   loading.value[id] = true;
-  deleteCustomRole(id);
+  deleteCustomRole(roleSnapshot);
 };
 </script>
 
@@ -168,7 +207,9 @@ const confirmDeletion = () => {
           <Button
             :label="$t('CUSTOM_ROLE.HEADER_BTN_TXT')"
             size="sm"
-            :disabled="isBehindAPaywall"
+            :disabled="
+              isBehindAPaywall || !accessRoleCatalog.loaded || !canMutateRoles
+            "
             @click="openAddModal"
           />
         </template>
@@ -184,10 +225,19 @@ const confirmDeletion = () => {
           :is-loading="uiFlags.fetchingAccessRoleCatalog"
           :has-error="accessRoleCatalog.error"
           :search-query="searchQuery"
+          :mutations-enabled="mutationsEnabled"
+          :deleting-roles="loading"
           @retry="fetchAccessRoleCatalog"
+          @edit="openEditModal"
+          @delete="openDeletePopup"
         />
 
         <BaseTable
+          v-if="
+            accessRoleCatalog.loaded &&
+            !mutationsEnabled &&
+            legacyMutationsEnabled
+          "
           :headers="tableHeaders"
           :items="filteredRecords"
           :no-data-message="
@@ -209,7 +259,17 @@ const confirmDeletion = () => {
     </template>
 
     <woot-modal v-model:show="showCustomRoleModal" @close="hideCustomRoleModal">
+      <AccessRoleModal
+        v-if="mutationsEnabled"
+        :mode="customRoleModalMode"
+        :selected-role="selectedRole"
+        :resources="accessRoleCatalog.resources"
+        :access-scopes="accessRoleCatalog.accessScopes"
+        @close="hideCustomRoleModal"
+        @stale="rebaseSelectedRole"
+      />
       <CustomRoleModal
+        v-else-if="legacyMutationsEnabled"
         :mode="customRoleModalMode"
         :selected-role="selectedRole"
         @close="hideCustomRoleModal"

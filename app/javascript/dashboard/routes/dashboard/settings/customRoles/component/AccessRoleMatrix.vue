@@ -25,9 +25,17 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  mutationsEnabled: {
+    type: Boolean,
+    default: false,
+  },
+  deletingRoles: {
+    type: Object,
+    default: () => ({}),
+  },
 });
 
-const emit = defineEmits(['retry']);
+const emit = defineEmits(['retry', 'edit', 'delete']);
 const { t } = useI18n();
 
 const scopeClasses = {
@@ -90,6 +98,8 @@ const translations = computed(() => ({
     all: t('CUSTOM_ROLE.ACCESS_MATRIX.SCOPES.ALL'),
   },
 }));
+
+const sourceRole = id => props.roles.find(role => role.id === id);
 
 const matrixRoles = computed(() => {
   const query = props.searchQuery.trim().toLowerCase();
@@ -208,6 +218,31 @@ const matrixRoles = computed(() => {
             </p>
           </div>
           <div class="flex flex-shrink-0 items-center gap-3">
+            <div
+              v-if="mutationsEnabled && role.role_kind === 'custom'"
+              class="flex items-center gap-2"
+            >
+              <Button
+                :label="$t('CUSTOM_ROLE.EDIT.BUTTON_TEXT')"
+                size="sm"
+                faded
+                slate
+                type="button"
+                @click.stop="emit('edit', sourceRole(role.id))"
+              />
+              <Button
+                :label="$t('CUSTOM_ROLE.DELETE.BUTTON_TEXT')"
+                size="sm"
+                ruby
+                type="button"
+                :is-loading="Boolean(deletingRoles[role.id])"
+                :disabled="
+                  Boolean(deletingRoles[role.id]) ||
+                  role.assigned_users_count > 0
+                "
+                @click.stop="emit('delete', sourceRole(role.id))"
+              />
+            </div>
             <span class="text-body-small text-n-slate-10">
               {{
                 $t('CUSTOM_ROLE.ACCESS_MATRIX.ASSIGNED_USERS', {

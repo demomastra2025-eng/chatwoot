@@ -5,7 +5,7 @@
     "DESCRIPTION": "Custom roles are roles that are created by the account owner or admin. These roles can be assigned to agents to define their access and permissions within the account. Custom roles can be created with specific permissions and access levels to suit the requirements of the organization.",
     "ACCESS_MATRIX": {
       "TITLE": "Role access matrix",
-      "DESCRIPTION": "Review the effective resource, capability, and scope grants for system and custom roles. Editing remains in the custom role list below.",
+      "DESCRIPTION": "Review the effective resource, capability, and scope grants for system and custom roles.",
       "LOADING": "Loading the role access matrix...",
       "ERROR": "The role access matrix could not be loaded.",
       "RETRY": "Try again",
@@ -52,6 +52,17 @@
         "TEAM": "Team",
         "ALL": "All"
       }
+    },
+    "ACCESS_EDITOR": {
+      "ADD_TITLE": "Add access role",
+      "EDIT_TITLE": "Edit access role",
+      "DESCRIPTION": "Configure the role scope separately for every resource and capability.",
+      "CREATE_SUCCESS": "Access role created successfully.",
+      "UPDATE_SUCCESS": "Access role updated successfully.",
+      "SAVE_ERROR": "The access role could not be saved.",
+      "STALE_ERROR": "This role was changed elsewhere. The form has been reloaded with the latest data.",
+      "NOT_FOUND_ERROR": "This role no longer exists. The role list has been refreshed.",
+      "VALIDATION_ERROR": "Enter a name with at least two characters and a description."
     },
     "COUNT": "{n} custom role | {n} custom roles",
     "HEADER_BTN_TXT": "Add custom role",

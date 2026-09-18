@@ -7,4 +7,6 @@ end
 json.meta do
   json.resources AccessRoleGrant::RESOURCE_CAPABILITIES
   json.access_scopes AccessRoleGrant::ACCESS_SCOPES
+  json.mutations_enabled AccessControl::AccessRoleMutator.mutations_enabled_for?(account: Current.account)
+  json.legacy_mutations_enabled AccessControl::AccessRoleMutator.legacy_mutations_enabled_for?(account: Current.account)
 end

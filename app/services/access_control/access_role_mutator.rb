@@ -21,6 +21,19 @@ class AccessControl::AccessRoleMutator
     new(account).destroy(access_role, lock_version)
   end
 
+  def self.mutations_enabled_for?(account:)
+    release_enabled? && account.access_control_mode_enforced?
+  end
+
+  def self.legacy_mutations_enabled_for?(account:)
+    !mutations_enabled_for?(account: account) &&
+      !account.access_roles.canonical_grant_source.exists?
+  end
+
+  def self.release_enabled?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ACCESS_ROLE_MUTATIONS_ENABLED', false))
+  end
+
   def initialize(account)
     @account = account
   end
@@ -81,7 +94,7 @@ class AccessControl::AccessRoleMutator
   attr_reader :account
 
   def ensure_release_enabled!
-    return if ActiveModel::Type::Boolean.new.cast(ENV.fetch('ACCESS_ROLE_MUTATIONS_ENABLED', false))
+    return if self.class.release_enabled?
 
     raise Error.new(
       'ACCESS_ROLE_MUTATIONS_NOT_ENABLED',

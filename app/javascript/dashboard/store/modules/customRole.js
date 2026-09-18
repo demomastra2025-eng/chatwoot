@@ -1,4 +1,7 @@
-import { throwErrorMessage } from 'dashboard/store/utils/api';
+import {
+  parseAPIErrorResponse,
+  throwErrorMessage,
+} from 'dashboard/store/utils/api';
 import * as MutationHelpers from 'shared/helpers/vuex/mutationHelpers';
 import * as types from '../mutation-types';
 import CustomRoleAPI from '../../api/customRole';
@@ -10,6 +13,9 @@ export const state = {
     records: [],
     resources: {},
     accessScopes: [],
+    mutationsEnabled: false,
+    legacyMutationsEnabled: false,
+    loaded: false,
     error: false,
   },
   accessRoleCatalogRequestId: 0,
@@ -34,35 +40,131 @@ export const getters = {
   },
 };
 
+let latestAccessRoleCatalogOperation = Promise.resolve(false);
+
+const handleAccessRoleError = async (error, dispatch) => {
+  const status = error?.response?.status;
+  const responseCode = error?.response?.data?.code;
+  const code =
+    responseCode || (status === 404 ? 'ACCESS_ROLE_NOT_FOUND' : null);
+  const catalogRefreshCodes = [
+    'STALE_ACCESS_ROLE',
+    'ACCESS_ROLE_NOT_FOUND',
+    'ACCESS_ROLE_MUTATIONS_NOT_ENABLED',
+    'ACCESS_CONTROL_NOT_ENFORCED',
+  ];
+  if (catalogRefreshCodes.includes(code)) {
+    await dispatch('fetchAccessRoleCatalog', { throwOnError: true });
+  }
+
+  const accessRoleError = new Error(parseAPIErrorResponse(error));
+  accessRoleError.code = code;
+  throw accessRoleError;
+};
+
 export const actions = {
-  fetchAccessRoleCatalog: async function fetchAccessRoleCatalog({
-    commit,
-    state: $state,
-  }) {
+  fetchAccessRoleCatalog(
+    { commit, state: $state },
+    { throwOnError = false } = {}
+  ) {
     const requestId = $state.accessRoleCatalogRequestId + 1;
     commit(types.default.SET_ACCESS_ROLE_CATALOG_REQUEST_ID, requestId);
     commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, {
       fetchingAccessRoleCatalog: true,
     });
     commit(types.default.SET_ACCESS_ROLE_CATALOG_ERROR, false);
-    try {
-      const response = await AccessRoleAPI.get();
-      if ($state.accessRoleCatalogRequestId !== requestId) return;
-      const { data = [], meta = {} } = response.data;
-      commit(types.default.SET_ACCESS_ROLE_CATALOG, {
-        records: data,
-        resources: meta.resources || {},
-        accessScopes: meta.access_scopes || [],
-      });
-    } catch (error) {
-      if ($state.accessRoleCatalogRequestId !== requestId) return;
-      commit(types.default.SET_ACCESS_ROLE_CATALOG_ERROR, true);
-    } finally {
-      if ($state.accessRoleCatalogRequestId === requestId) {
-        commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, {
-          fetchingAccessRoleCatalog: false,
+    const operation = (async () => {
+      try {
+        const response = await AccessRoleAPI.get();
+        if ($state.accessRoleCatalogRequestId !== requestId) {
+          return latestAccessRoleCatalogOperation;
+        }
+        const { data = [], meta = {} } = response.data;
+        commit(types.default.SET_ACCESS_ROLE_CATALOG, {
+          records: data,
+          resources: meta.resources || {},
+          accessScopes: meta.access_scopes || [],
+          mutationsEnabled: Boolean(meta.mutations_enabled),
+          legacyMutationsEnabled: meta.legacy_mutations_enabled ?? true,
+          loaded: true,
         });
+        return true;
+      } catch (error) {
+        if ($state.accessRoleCatalogRequestId !== requestId) {
+          return latestAccessRoleCatalogOperation;
+        }
+        commit(types.default.SET_ACCESS_ROLE_CATALOG_ERROR, true);
+        throw error;
+      } finally {
+        if ($state.accessRoleCatalogRequestId === requestId) {
+          commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, {
+            fetchingAccessRoleCatalog: false,
+          });
+        }
       }
+    })();
+    latestAccessRoleCatalogOperation = operation;
+
+    return throwOnError ? operation : operation.catch(() => false);
+  },
+
+  createAccessRole: async function createAccessRole(
+    { commit, dispatch },
+    accessRole
+  ) {
+    commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { creatingItem: true });
+    try {
+      let response;
+      try {
+        response = await AccessRoleAPI.create({ access_role: accessRole });
+      } catch (error) {
+        return await handleAccessRoleError(error, dispatch);
+      }
+      await dispatch('fetchAccessRoleCatalog', { throwOnError: true });
+      return response.data.data;
+    } finally {
+      commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { creatingItem: false });
+    }
+  },
+
+  updateAccessRole: async function updateAccessRole(
+    { commit, dispatch },
+    { id, ...accessRole }
+  ) {
+    commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { updatingItem: true });
+    try {
+      let response;
+      try {
+        response = await AccessRoleAPI.update(id, {
+          access_role: accessRole,
+        });
+      } catch (error) {
+        return await handleAccessRoleError(error, dispatch);
+      }
+      await dispatch('fetchAccessRoleCatalog', { throwOnError: true });
+      return response.data.data;
+    } finally {
+      commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { updatingItem: false });
+    }
+  },
+
+  deleteAccessRole: async function deleteAccessRole(
+    { commit, dispatch },
+    { id, lockVersion }
+  ) {
+    commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { deletingItem: true });
+    try {
+      try {
+        await AccessRoleAPI.delete(id, {
+          access_role: { lock_version: lockVersion },
+        });
+      } catch (error) {
+        return await handleAccessRoleError(error, dispatch);
+      }
+      await dispatch('fetchAccessRoleCatalog', { throwOnError: true });
+      return id;
+    } finally {
+      commit(types.default.SET_CUSTOM_ROLE_UI_FLAG, { deletingItem: false });
     }
   },
 

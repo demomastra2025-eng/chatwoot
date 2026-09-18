@@ -4,8 +4,18 @@ import { ref } from 'vue';
 
 import Index from './Index.vue';
 
-const { dispatch } = vi.hoisted(() => ({
+const { catalog, dispatch, useAlert } = vi.hoisted(() => ({
+  catalog: {
+    records: [{ id: 1, name: 'Employee', grants: [] }],
+    resources: {},
+    accessScopes: [],
+    mutationsEnabled: false,
+    legacyMutationsEnabled: true,
+    loaded: true,
+    error: false,
+  },
   dispatch: vi.fn(),
+  useAlert: vi.fn(),
 }));
 
 const roles = [
@@ -32,7 +42,7 @@ vi.mock('@scmmishra/pico-search', () => ({
 }));
 
 vi.mock('dashboard/composables', () => ({
-  useAlert: vi.fn(),
+  useAlert,
 }));
 
 vi.mock('dashboard/composables/store', () => ({
@@ -40,12 +50,7 @@ vi.mock('dashboard/composables/store', () => ({
   useMapGetter: key => {
     if (key === 'customRole/getCustomRoles') return ref(roles);
     if (key === 'customRole/getAccessRoleCatalog') {
-      return ref({
-        records: [{ id: 1, name: 'Employee', grants: [] }],
-        resources: {},
-        accessScopes: [],
-        error: false,
-      });
+      return ref(catalog);
     }
     if (key === 'customRole/getUIFlags') {
       return ref({
@@ -68,15 +73,30 @@ const mountComponent = () =>
         $t: key => key,
       },
       stubs: {
-        AccessRoleMatrix: true,
+        AccessRoleMatrix: {
+          name: 'AccessRoleMatrix',
+          props: ['mutationsEnabled'],
+          emits: ['edit', 'delete', 'retry'],
+          template: '<div data-testid="access-role-matrix" />',
+        },
         BaseSettingsHeader: {
           template: '<header><slot name="actions" /></header>',
         },
         BaseTable: {
+          name: 'BaseTable',
           props: ['items'],
           template: '<div><slot name="row" :items="items" /></div>',
         },
-        Button: true,
+        Button: {
+          name: 'Button',
+          props: ['disabled'],
+          template: '<button :disabled="disabled" />',
+        },
+        AccessRoleModal: {
+          name: 'AccessRoleModal',
+          emits: ['close', 'stale'],
+          template: '<div />',
+        },
         CustomRoleModal: true,
         CustomRolePaywall: true,
         CustomRoleTableBody: {
@@ -105,7 +125,12 @@ const mountComponent = () =>
           template:
             '<button data-testid="confirm-delete" @click="onConfirm">Confirm</button>',
         },
-        WootModal: true,
+        WootModal: {
+          name: 'WootModal',
+          props: ['show'],
+          emits: ['update:show'],
+          template: '<div><slot /></div>',
+        },
       },
     },
   });
@@ -114,6 +139,11 @@ describe('Custom roles settings index', () => {
   beforeEach(() => {
     dispatch.mockReset();
     dispatch.mockResolvedValue();
+    useAlert.mockReset();
+    catalog.records = [{ id: 1, name: 'Employee', grants: [] }];
+    catalog.mutationsEnabled = false;
+    catalog.legacyMutationsEnabled = true;
+    catalog.loaded = true;
   });
 
   it('owns loading per role and rejects duplicate deletion while pending', async () => {
@@ -174,5 +204,82 @@ describe('Custom roles settings index', () => {
     expect(
       wrapper.get('[data-testid="delete-role-7"]').attributes('data-loading')
     ).toBe('false');
+  });
+
+  it('uses the normalized delete command and hides the legacy table when enabled', async () => {
+    const accessRole = {
+      id: 12,
+      name: 'Support',
+      role_kind: 'custom',
+      lock_version: 5,
+      assigned_users_count: 0,
+      grants: [],
+    };
+    catalog.records = [accessRole];
+    catalog.mutationsEnabled = true;
+    catalog.legacyMutationsEnabled = false;
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'BaseTable' }).exists()).toBe(false);
+    wrapper
+      .findComponent({ name: 'AccessRoleMatrix' })
+      .vm.$emit('delete', accessRole);
+    catalog.records = [{ ...accessRole, lock_version: 6 }];
+    await wrapper.get('[data-testid="confirm-delete"]').trigger('click');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('customRole/deleteAccessRole', {
+      id: accessRole.id,
+      lockVersion: accessRole.lock_version,
+    });
+  });
+
+  it('closes a stale editor when the refreshed role no longer exists', async () => {
+    const accessRole = {
+      id: 12,
+      name: 'Support',
+      role_kind: 'custom',
+      lock_version: 5,
+      assigned_users_count: 0,
+      grants: [],
+    };
+    catalog.records = [accessRole];
+    catalog.mutationsEnabled = true;
+    catalog.legacyMutationsEnabled = false;
+    const wrapper = mountComponent();
+    wrapper
+      .findComponent({ name: 'AccessRoleMatrix' })
+      .vm.$emit('edit', accessRole);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent({ name: 'WootModal' }).props('show')).toBe(
+      true
+    );
+    catalog.records = [];
+
+    wrapper.findComponent({ name: 'AccessRoleModal' }).vm.$emit('stale', 12);
+    await wrapper.vm.$nextTick();
+
+    expect(useAlert).toHaveBeenCalledWith(
+      'CUSTOM_ROLE.ACCESS_EDITOR.NOT_FOUND_ERROR'
+    );
+    expect(wrapper.findComponent({ name: 'WootModal' }).props('show')).toBe(
+      false
+    );
+  });
+
+  it('keeps role management read-only when neither writer is enabled', () => {
+    catalog.mutationsEnabled = false;
+    catalog.legacyMutationsEnabled = false;
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'BaseTable' }).exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'Button' }).props('disabled')).toBe(
+      true
+    );
+    expect(
+      wrapper
+        .findComponent({ name: 'AccessRoleMatrix' })
+        .props('mutationsEnabled')
+    ).toBe(false);
   });
 });

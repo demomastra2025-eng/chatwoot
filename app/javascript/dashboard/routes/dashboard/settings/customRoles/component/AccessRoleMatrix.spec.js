@@ -43,10 +43,10 @@ const mountComponent = props =>
       },
       stubs: {
         Button: {
-          props: ['label'],
+          props: ['label', 'disabled'],
           emits: ['click'],
           template:
-            '<button type="button" @click="$emit(\'click\')">{{ label }}</button>',
+            '<button type="button" :disabled="disabled" @click="$emit(\'click\', $event)">{{ label }}</button>',
         },
       },
     },
@@ -116,5 +116,51 @@ describe('AccessRoleMatrix', () => {
     expect(
       wrapper.find('[data-testid="access-role-matrix-empty"]').exists()
     ).toBe(true);
+  });
+
+  it('exposes edit and delete only for custom roles when mutations are enabled', async () => {
+    const customRole = {
+      ...roles[0],
+      id: 11,
+      name: 'Support',
+      system_key: null,
+      role_kind: 'custom',
+      assigned_users_count: 0,
+    };
+    const readOnlyWrapper = mountComponent({
+      roles: [customRole],
+      resources,
+    });
+    const editableWrapper = mountComponent({
+      roles: [customRole],
+      resources,
+      mutationsEnabled: true,
+    });
+
+    expect(readOnlyWrapper.findAll('button')).toHaveLength(0);
+    const [editButton, deleteButton] = editableWrapper.findAll('button');
+    await editButton.trigger('click');
+    await deleteButton.trigger('click');
+
+    expect(editableWrapper.emitted('edit')[0]).toEqual([customRole]);
+    expect(editableWrapper.emitted('delete')[0]).toEqual([customRole]);
+  });
+
+  it('disables deletion for an assigned custom role', () => {
+    const wrapper = mountComponent({
+      roles: [
+        {
+          ...roles[0],
+          id: 12,
+          system_key: null,
+          role_kind: 'custom',
+          assigned_users_count: 1,
+        },
+      ],
+      resources,
+      mutationsEnabled: true,
+    });
+
+    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined();
   });
 });

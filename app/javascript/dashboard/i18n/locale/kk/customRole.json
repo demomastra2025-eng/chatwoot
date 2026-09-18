@@ -5,7 +5,7 @@
     "DESCRIPTION": "Custom roles are roles that are created by the account owner or admin. These roles can be assigned to agents to define their access and permissions within the account. Custom roles can be created with specific permissions and access levels to suit the requirements of the organization.",
     "ACCESS_MATRIX": {
       "TITLE": "Рөлдердің қол жеткізу матрицасы",
-      "DESCRIPTION": "Жүйелік және пайдаланушы рөлдерінің ресурстарға, әрекеттерге және қол жеткізу деңгейлеріне берілген құқықтарын қараңыз. Өңдеу төмендегі пайдаланушы рөлдерінің тізімінде қалады.",
+      "DESCRIPTION": "Жүйелік және пайдаланушы рөлдерінің ресурстарға, әрекеттерге және қол жеткізу деңгейлеріне берілген құқықтарын қараңыз.",
       "LOADING": "Қол жеткізу матрицасы жүктелуде...",
       "ERROR": "Рөлдердің қол жеткізу матрицасын жүктеу мүмкін болмады.",
       "RETRY": "Қайталау",
@@ -52,6 +52,17 @@
         "TEAM": "Команда",
         "ALL": "Барлығы"
       }
+    },
+    "ACCESS_EDITOR": {
+      "ADD_TITLE": "Қол жеткізу рөлін қосу",
+      "EDIT_TITLE": "Қол жеткізу рөлін өзгерту",
+      "DESCRIPTION": "Әр ресурс пен әрекет үшін рөлдің қол жеткізу деңгейін баптаңыз.",
+      "CREATE_SUCCESS": "Қол жеткізу рөлі сәтті құрылды.",
+      "UPDATE_SUCCESS": "Қол жеткізу рөлі сәтті жаңартылды.",
+      "SAVE_ERROR": "Қол жеткізу рөлін сақтау мүмкін болмады.",
+      "STALE_ERROR": "Бұл рөл басқа жерде өзгертілді. Пішін соңғы деректермен жаңартылды.",
+      "NOT_FOUND_ERROR": "Бұл рөл енді жоқ. Рөлдер тізімі жаңартылды.",
+      "VALIDATION_ERROR": "Кемінде екі таңбадан тұратын атау мен сипаттаманы енгізіңіз."
     },
     "HEADER_BTN_TXT": "Add custom role",
     "LOADING": "Fetching custom roles...",
