@@ -86,6 +86,28 @@ RSpec.describe 'Custom Roles API', type: :request do
 
         expect(body).to include('name' => 'Support')
       end
+
+      it 'materializes a supported role when the account is in shadow mode' do
+        AccessControl::ModeTransition.call(account: account, to: :shadow)
+        params = {
+          custom_role: {
+            name: 'Support',
+            description: 'Support role',
+            permissions: %w[crm_task_view]
+          }
+        }
+
+        post "/api/v1/accounts/#{account.id}/custom_roles",
+             params: params,
+             headers: administrator.create_new_auth_token
+
+        created_role = account.custom_roles.find(response.parsed_body.fetch('id'))
+        expect(response).to have_http_status(:success)
+        expect(created_role.access_role).to have_attributes(name: 'Support', description: 'Support role')
+        expect(created_role.access_role.grants.pluck(:resource, :capability, :access_scope)).to eq(
+          [%w[tasks view all]]
+        )
+      end
     end
 
     context 'when the user is an agent and is authenticated' do
@@ -122,6 +144,25 @@ RSpec.describe 'Custom Roles API', type: :request do
 
         expect(body).to include('name' => 'Updated Role')
       end
+
+      it 'updates an existing canonical role in the same request' do
+        custom_role.update!(permissions: %w[crm_task_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+
+        put "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+            params: {
+              custom_role: {
+                name: 'Updated Role',
+                description: 'Updated description',
+                permissions: %w[crm_task_view]
+              }
+            },
+            headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(mapped_role.reload).to have_attributes(name: 'Updated Role', description: 'Updated description')
+        expect(mapped_role.grants.pluck(:resource, :capability, :access_scope)).to eq([%w[tasks view all]])
+      end
     end
 
     context 'when the user is an agent and is authenticated' do
@@ -152,6 +193,49 @@ RSpec.describe 'Custom Roles API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(CustomRole.count).to eq(0)
+      end
+
+      it 'deletes an unassigned canonical role with the custom role' do
+        custom_role.update!(permissions: %w[crm_task_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+
+        delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+               headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(AccessRole.where(id: mapped_role.id)).not_to exist
+      end
+
+      it 'returns a diagnostic error when the canonical role is assigned to an account user' do
+        custom_role.update!(permissions: %w[crm_task_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+        grant_ids = mapped_role.grant_ids
+        create(:account_user, account: account, access_role: mapped_role)
+
+        delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+               headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body.fetch('error')).to be_present
+        expect(CustomRole.where(id: custom_role.id)).to exist
+        expect(AccessRole.where(id: mapped_role.id)).to exist
+        expect(AccessRoleGrant.where(id: grant_ids).count).to eq(grant_ids.size)
+      end
+
+      it 'returns a diagnostic error when the canonical role is referenced by a lifecycle snapshot' do
+        custom_role.update!(permissions: %w[crm_task_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+        grant_ids = mapped_role.grant_ids
+        create(:account_user_lifecycle_snapshot, account: account, access_role: mapped_role)
+
+        delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+               headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body.fetch('error')).to be_present
+        expect(CustomRole.where(id: custom_role.id)).to exist
+        expect(AccessRole.where(id: mapped_role.id)).to exist
+        expect(AccessRoleGrant.where(id: grant_ids).count).to eq(grant_ids.size)
       end
 
       it 'rejects deletion while the role is assigned' do

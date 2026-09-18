@@ -32,7 +32,8 @@ class CustomRole < ApplicationRecord
   belongs_to :account
   has_many :account_users, dependent: :restrict_with_error
   has_many :account_user_lifecycle_snapshots, dependent: :restrict_with_error
-  has_one :access_role, foreign_key: :legacy_custom_role_id, dependent: :restrict_with_error, inverse_of: :legacy_custom_role
+  # Deletion uses a fresh scoped lookup in destroy_materialized_access_role to avoid stale association state.
+  has_one :access_role, foreign_key: :legacy_custom_role_id, dependent: nil, inverse_of: :legacy_custom_role
 
   PERMISSIONS = %w[
     conversation_manage
@@ -59,8 +60,9 @@ class CustomRole < ApplicationRecord
   validate :permissions_remain_mappable_when_enforced, if: :will_save_change_to_permissions?
 
   before_validation :lock_account_for_access_control
-  before_destroy :lock_account_for_access_control
-  after_save :reconcile_materialized_access_role, if: :saved_change_to_permissions?
+  before_destroy :lock_account_for_access_control, prepend: true
+  before_destroy :destroy_materialized_access_role
+  after_save :reconcile_materialized_access_role, if: :access_role_reconciliation_required?
 
   private
 
@@ -72,9 +74,24 @@ class CustomRole < ApplicationRecord
   end
 
   def reconcile_materialized_access_role
-    return unless AccessRole.exists?(legacy_custom_role_id: id)
-    return unless AccessControl::LegacyCustomRoleMapper.analyze(self).mappable?
+    analysis = AccessControl::LegacyCustomRoleMapper.analyze(self)
+    return unless analysis.mappable?
+    return if account.access_control_mode_legacy? && !AccessRole.exists?(legacy_custom_role_id: id)
 
     AccessControl::LegacyCustomRoleMapper.call(custom_role: self)
+  end
+
+  def access_role_reconciliation_required?
+    saved_change_to_name? || saved_change_to_description? || saved_change_to_permissions?
+  end
+
+  def destroy_materialized_access_role
+    role = AccessRole.find_by(account_id: account_id, legacy_custom_role_id: id)
+    return unless role
+    return if role.destroy
+
+    messages = role.errors.full_messages.presence || ['Access role could not be deleted']
+    messages.each { |message| errors.add(:base, message) }
+    throw(:abort)
   end
 end

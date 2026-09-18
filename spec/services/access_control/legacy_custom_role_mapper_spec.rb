@@ -75,6 +75,22 @@ RSpec.describe AccessControl::LegacyCustomRoleMapper do
       expect(AccessRoleGrant.where(id: extra_grant.id)).not_to exist
     end
 
+    it 'reconciles role metadata without treating its current name as a collision' do
+      custom_role = create(
+        :custom_role,
+        account: account,
+        name: 'Sales',
+        description: 'Old description',
+        permissions: %w[crm_task_view]
+      )
+      role = described_class.call(custom_role: custom_role)
+      custom_role.update_columns(name: 'Support', description: 'New description') # rubocop:disable Rails/SkipsModelValidations
+
+      described_class.call(custom_role: custom_role.reload)
+
+      expect(role.reload).to have_attributes(name: 'Support', description: 'New description')
+    end
+
     it 'reserves system role names before presets are materialized' do
       custom_role = create(:custom_role, account: account, name: 'Administrator', permissions: %w[crm_task_view])
 

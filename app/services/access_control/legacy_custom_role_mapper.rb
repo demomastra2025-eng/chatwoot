@@ -34,6 +34,7 @@ class AccessControl::LegacyCustomRoleMapper
       raise ArgumentError, "Unsupported permissions: #{analysis.unsupported_permissions.join(', ')}" unless analysis.mappable?
 
       role = find_or_create_role(custom_role)
+      reconcile_attributes(role, custom_role)
       reconcile_grants(role, analysis.grants)
       role
     end
@@ -59,18 +60,28 @@ class AccessControl::LegacyCustomRoleMapper
     AccessRole.create!(
       account: custom_role.account,
       legacy_custom_role: custom_role,
-      name: unique_name(custom_role)
+      name: unique_name(custom_role),
+      description: custom_role.description
     )
   end
   private_class_method :find_or_create_role
 
-  def self.unique_name(custom_role)
+  def self.reconcile_attributes(role, custom_role)
+    attributes = {
+      name: unique_name(custom_role, excluding_role_id: role.id),
+      description: custom_role.description
+    }
+    role.update!(attributes) unless role.attributes.symbolize_keys.slice(*attributes.keys) == attributes
+  end
+  private_class_method :reconcile_attributes
+
+  def self.unique_name(custom_role, excluding_role_id: nil)
     name = custom_role.name.to_s.strip
-    return name unless reserved_or_used_name?(custom_role.account_id, name)
+    return name unless reserved_or_used_name?(custom_role.account_id, name, excluding_role_id: excluding_role_id)
 
     imported_name = "#{name} (Imported #{custom_role.id})"
     suffix = 1
-    while used_name?(custom_role.account_id, imported_name)
+    while used_name?(custom_role.account_id, imported_name, excluding_role_id: excluding_role_id)
       suffix += 1
       imported_name = "#{name} (Imported #{custom_role.id}-#{suffix})"
     end
@@ -78,14 +89,16 @@ class AccessControl::LegacyCustomRoleMapper
   end
   private_class_method :unique_name
 
-  def self.reserved_or_used_name?(account_id, name)
+  def self.reserved_or_used_name?(account_id, name, excluding_role_id: nil)
     reserved_names = AccessControl::SystemRoleCatalog::ROLE_NAMES.values.map(&:downcase)
-    reserved_names.include?(name.downcase) || used_name?(account_id, name)
+    reserved_names.include?(name.downcase) || used_name?(account_id, name, excluding_role_id: excluding_role_id)
   end
   private_class_method :reserved_or_used_name?
 
-  def self.used_name?(account_id, name)
-    AccessRole.where(account_id: account_id).exists?(['lower(name) = ?', name.downcase])
+  def self.used_name?(account_id, name, excluding_role_id: nil)
+    roles = AccessRole.where(account_id: account_id)
+    roles = roles.where.not(id: excluding_role_id) if excluding_role_id
+    roles.exists?(['lower(name) = ?', name.downcase])
   end
   private_class_method :used_name?
 
