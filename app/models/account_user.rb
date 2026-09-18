@@ -82,6 +82,14 @@ class AccountUser < ApplicationRecord
 
   private
 
+  def authorize_canonical_access_role_assignment
+    previous_authorization = @canonical_access_role_assignment_authorized
+    @canonical_access_role_assignment_authorized = true
+    yield
+  ensure
+    @canonical_access_role_assignment_authorized = previous_authorization
+  end
+
   def ensure_within_user_limit
     return if account.blank? || user.blank?
     return unless account.user_countable_for_limits?(user)
@@ -104,6 +112,7 @@ class AccountUser < ApplicationRecord
   end
 
   def synchronize_access_role
+    return if @canonical_access_role_assignment_authorized
     return if account.blank?
     return if new_record? && access_role_id?
 

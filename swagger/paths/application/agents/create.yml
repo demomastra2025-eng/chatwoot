@@ -25,3 +25,9 @@ responses:
       application/json:
         schema:
           $ref: '#/components/schemas/bad_request_error'
+  '409':
+    description: Assignment capability, mode, or payload conflict
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'

@@ -42,6 +42,9 @@ describe('#actions', () => {
             mutationsEnabled: accessRoleCatalog.meta.mutations_enabled,
             legacyMutationsEnabled:
               accessRoleCatalog.meta.legacy_mutations_enabled,
+            assignmentsEnabled: accessRoleCatalog.meta.assignments_enabled,
+            legacyAssignmentsEnabled:
+              accessRoleCatalog.meta.legacy_assignments_enabled,
             loaded: true,
           },
         ],
@@ -70,6 +73,8 @@ describe('#actions', () => {
         expect.objectContaining({
           mutationsEnabled: false,
           legacyMutationsEnabled: true,
+          assignmentsEnabled: false,
+          legacyAssignmentsEnabled: true,
           loaded: true,
         })
       );
@@ -148,6 +153,9 @@ describe('#actions', () => {
             accessScopes: newerCatalog.meta.access_scopes,
             mutationsEnabled: newerCatalog.meta.mutations_enabled,
             legacyMutationsEnabled: newerCatalog.meta.legacy_mutations_enabled,
+            assignmentsEnabled: newerCatalog.meta.assignments_enabled,
+            legacyAssignmentsEnabled:
+              newerCatalog.meta.legacy_assignments_enabled,
             loaded: true,
           },
         ],

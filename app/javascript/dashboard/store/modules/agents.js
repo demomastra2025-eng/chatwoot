@@ -41,14 +41,17 @@ export const getters = {
 };
 
 export const actions = {
-  get: async ({ commit }) => {
+  get: async ({ commit }, { throwOnError = false } = {}) => {
     commit(types.default.SET_AGENT_FETCHING_STATUS, true);
     try {
       const response = await AgentAPI.get();
       commit(types.default.SET_AGENT_FETCHING_STATUS, false);
       commit(types.default.SET_AGENTS, response.data);
+      return response.data;
     } catch (error) {
       commit(types.default.SET_AGENT_FETCHING_STATUS, false);
+      if (throwOnError) throw error;
+      return false;
     }
   },
   create: async ({ commit }, agentInfo) => {
@@ -70,7 +73,7 @@ export const actions = {
       commit(types.default.SET_AGENT_UPDATING_STATUS, false);
     } catch (error) {
       commit(types.default.SET_AGENT_UPDATING_STATUS, false);
-      throw new Error(error);
+      throw error;
     }
   },
   updateSingleAgentPresence: ({ commit }, { id, availabilityStatus }) => {

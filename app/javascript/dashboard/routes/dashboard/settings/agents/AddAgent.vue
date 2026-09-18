@@ -1,11 +1,16 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useVuelidate } from '@vuelidate/core';
 import { required, email } from '@vuelidate/validators';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
+import {
+  buildAgentRoleAssignment,
+  buildAgentRoleOptions,
+} from './agentRoleOptions';
 
 const emit = defineEmits(['close']);
 
@@ -14,7 +19,7 @@ const { t } = useI18n();
 
 const agentName = ref('');
 const agentEmail = ref('');
-const selectedRoleId = ref('agent');
+const selectedRoleId = ref(null);
 
 const rules = {
   agentName: { required },
@@ -30,35 +35,35 @@ const v$ = useVuelidate(rules, {
 
 const uiFlags = useMapGetter('agents/getUIFlags');
 const getCustomRoles = useMapGetter('customRole/getCustomRoles');
+const accessRoleCatalog = useMapGetter('customRole/getAccessRoleCatalog');
 
-const roles = computed(() => {
-  const defaultRoles = [
-    {
-      id: 'administrator',
-      name: 'administrator',
-      label: t('AGENT_MGMT.AGENT_TYPES.ADMINISTRATOR'),
-    },
-    {
-      id: 'agent',
-      name: 'agent',
-      label: t('AGENT_MGMT.AGENT_TYPES.AGENT'),
-    },
-  ];
-
-  const customRoles = getCustomRoles.value.map(role => ({
-    id: role.id,
-    name: `custom_${role.id}`,
-    label: role.name,
-  }));
-
-  return [...defaultRoles, ...customRoles];
-});
+const roles = computed(() =>
+  buildAgentRoleOptions({
+    catalog: accessRoleCatalog.value,
+    customRoles: getCustomRoles.value,
+    t,
+  })
+);
 
 const selectedRole = computed(() =>
-  roles.value.find(
-    role =>
-      role.id === selectedRoleId.value || role.name === selectedRoleId.value
-  )
+  roles.value.find(role => role.id === selectedRoleId.value)
+);
+
+watch(
+  roles,
+  options => {
+    if (selectedRole.value) return;
+
+    const employeeRole = accessRoleCatalog.value.records.find(
+      role => role.system_key === 'employee'
+    );
+    selectedRoleId.value =
+      options.find(option => option.id === 'legacy:agent')?.id ||
+      options.find(option => option.id === `access:${employeeRole?.id}`)?.id ||
+      options[0]?.id ||
+      null;
+  },
+  { immediate: true }
 );
 
 const addAgent = async () => {
@@ -71,16 +76,24 @@ const addAgent = async () => {
       email: agentEmail.value,
     };
 
-    if (selectedRole.value.name.startsWith('custom_')) {
-      payload.custom_role_id = selectedRole.value.id;
-    } else {
-      payload.role = selectedRole.value.name;
-    }
+    Object.assign(
+      payload,
+      buildAgentRoleAssignment({ option: selectedRole.value })
+    );
 
     await store.dispatch('agents/create', payload);
     useAlert(t('AGENT_MGMT.ADD.API.SUCCESS_MESSAGE'));
     emit('close');
   } catch (error) {
+    const code = error?.response?.data?.code;
+    if (
+      [
+        'ACCESS_ROLE_ASSIGNMENTS_NOT_ENABLED',
+        'ACCESS_CONTROL_NOT_ENFORCED',
+      ].includes(code)
+    ) {
+      await store.dispatch('customRole/fetchAccessRoleCatalog');
+    }
     const {
       response: {
         data: {

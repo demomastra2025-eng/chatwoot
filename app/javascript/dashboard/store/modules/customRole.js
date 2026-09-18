@@ -15,6 +15,8 @@ export const state = {
     accessScopes: [],
     mutationsEnabled: false,
     legacyMutationsEnabled: false,
+    assignmentsEnabled: false,
+    legacyAssignmentsEnabled: true,
     loaded: false,
     error: false,
   },
@@ -86,6 +88,8 @@ export const actions = {
           accessScopes: meta.access_scopes || [],
           mutationsEnabled: Boolean(meta.mutations_enabled),
           legacyMutationsEnabled: meta.legacy_mutations_enabled ?? true,
+          assignmentsEnabled: Boolean(meta.assignments_enabled),
+          legacyAssignmentsEnabled: meta.legacy_assignments_enabled ?? true,
           loaded: true,
         });
         return true;
@@ -246,6 +250,10 @@ export const mutations = {
   },
   [types.default.SET_ACCESS_ROLE_CATALOG_ERROR](_state, error) {
     _state.accessRoleCatalog.error = error;
+    if (error) {
+      _state.accessRoleCatalog.assignmentsEnabled = false;
+      _state.accessRoleCatalog.legacyAssignmentsEnabled = true;
+    }
   },
   [types.default.SET_ACCESS_ROLE_CATALOG_REQUEST_ID](_state, requestId) {
     _state.accessRoleCatalogRequestId = requestId;

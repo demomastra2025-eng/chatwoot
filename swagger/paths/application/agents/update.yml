@@ -32,6 +32,12 @@ responses:
       application/json:
         schema:
           $ref: '#/components/schemas/bad_request_error'
+  409:
+    description: Stale assignment or assignment capability, mode, or payload conflict
+    content:
+      application/json:
+        schema:
+          $ref: '#/components/schemas/bad_request_error'
   403:
     description: Access denied
     content:

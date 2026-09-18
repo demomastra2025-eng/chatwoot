@@ -15,6 +15,10 @@ import EditAgent from './EditAgent.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import {
+  getAccessRoleDisplayName,
+  isAgentAssignmentCatalogReady,
+} from './agentRoleOptions';
 
 const getters = useStoreGetters();
 const store = useStore();
@@ -49,16 +53,32 @@ const filteredAgentList = computed(() => {
 const uiFlags = computed(() => getters['agents/getUIFlags'].value);
 const currentUserId = computed(() => getters.getCurrentUserID.value);
 const customRoles = useMapGetter('customRole/getCustomRoles');
+const accessRoleCatalog = useMapGetter('customRole/getAccessRoleCatalog');
+const customRoleUIFlags = useMapGetter('customRole/getUIFlags');
+const assignmentCatalogReady = computed(() =>
+  isAgentAssignmentCatalogReady({
+    catalog: accessRoleCatalog.value,
+    isFetching: customRoleUIFlags.value.fetchingAccessRoleCatalog,
+  })
+);
 
 onMounted(() => {
   store.dispatch('agents/get');
   store.dispatch('customRole/getCustomRole');
+  store.dispatch('customRole/fetchAccessRoleCatalog');
 });
 
 const findCustomRole = agent =>
   customRoles.value.find(role => role.id === agent.custom_role_id);
 
 const getAgentRoleName = agent => {
+  if (accessRoleCatalog.value.assignmentsEnabled) {
+    return getAccessRoleDisplayName({
+      catalog: accessRoleCatalog.value,
+      accessRoleId: agent.access_role_id,
+      t,
+    });
+  }
   if (!agent.custom_role_id) {
     return t(`AGENT_MGMT.AGENT_TYPES.${agent.role.toUpperCase()}`);
   }
@@ -73,6 +93,9 @@ const getAgentRolePermissions = agent => {
   const customRole = findCustomRole(agent);
   return customRole?.permissions || [];
 };
+
+const hasLegacyRoleTooltip = agent =>
+  !accessRoleCatalog.value.assignmentsEnabled && agent.custom_role_id;
 
 const verifiedAdministrators = computed(() => {
   return agentList.value.filter(
@@ -169,6 +192,7 @@ const confirmDeletion = () => {
           <Button
             :label="$t('AGENT_MGMT.HEADER_BTN_TXT')"
             size="sm"
+            :disabled="!assignmentCatalogReady"
             @click="openAddPopup"
           />
         </template>
@@ -208,14 +232,16 @@ const confirmDeletion = () => {
                   class="block w-fit text-body-main text-n-slate-11 relative"
                   :class="{
                     'hover:text-n-slate-12 group cursor-pointer':
-                      agent.custom_role_id,
+                      hasLegacyRoleTooltip(agent),
                   }"
                 >
                   {{ getAgentRoleName(agent) }}
 
                   <div
                     class="absolute ltr:left-0 rtl:right-0 z-10 hidden w-[300px] bg-n-alpha-3 backdrop-blur-[100px] rounded-xl outline outline-1 outline-n-container shadow-lg top-14 md:top-12"
-                    :class="{ 'group-hover:block': agent.custom_role_id }"
+                    :class="{
+                      'group-hover:block': hasLegacyRoleTooltip(agent),
+                    }"
                   >
                     <div class="flex flex-col gap-1 p-4">
                       <span class="text-heading-3 text-n-slate-12">
@@ -260,6 +286,7 @@ const confirmDeletion = () => {
               icon="i-woot-edit-pen"
               slate
               sm
+              :disabled="!assignmentCatalogReady"
               @click="openEditPopup(agent)"
             />
             <Button
@@ -290,6 +317,7 @@ const confirmDeletion = () => {
         :email="currentAgent.email"
         :availability="currentAgent.availability_status"
         :custom-role-id="currentAgent.custom_role_id"
+        :access-role-id="currentAgent.access_role_id"
         @close="hideEditPopup"
       />
     </woot-modal>

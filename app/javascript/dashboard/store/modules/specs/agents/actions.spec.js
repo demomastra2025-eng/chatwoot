@@ -27,6 +27,15 @@ describe('#actions', () => {
         [types.default.SET_AGENT_FETCHING_STATUS, false],
       ]);
     });
+
+    it('propagates an API error when an authoritative refresh is requested', async () => {
+      const error = { message: 'Refresh failed' };
+      axios.get.mockRejectedValue(error);
+
+      await expect(
+        actions.get({ commit }, { throwOnError: true })
+      ).rejects.toBe(error);
+    });
   });
 
   describe('#create', () => {
@@ -62,9 +71,13 @@ describe('#actions', () => {
       ]);
     });
     it('sends correct actions if API is error', async () => {
-      axios.patch.mockRejectedValue({ message: 'Incorrect header' });
-      await expect(actions.update({ commit }, agentList[0])).rejects.toThrow(
-        Error
+      const error = {
+        message: 'Incorrect header',
+        response: { data: { code: 'TEST_ERROR' } },
+      };
+      axios.patch.mockRejectedValue(error);
+      await expect(actions.update({ commit }, agentList[0])).rejects.toBe(
+        error
       );
       expect(commit.mock.calls).toEqual([
         [types.default.SET_AGENT_UPDATING_STATUS, true],

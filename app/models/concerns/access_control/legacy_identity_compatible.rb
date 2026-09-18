@@ -4,6 +4,7 @@ module AccessControl::LegacyIdentityCompatible
   private
 
   def access_role_matches_enforced_identity
+    return if @canonical_access_role_assignment_authorized
     return unless account&.access_control_mode_enforced?
 
     expected_role = expected_access_role_for_legacy_identity

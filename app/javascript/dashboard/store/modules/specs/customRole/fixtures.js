@@ -100,5 +100,7 @@ export const accessRoleCatalog = {
     access_scopes: ['none', 'own', 'team', 'all'],
     mutations_enabled: false,
     legacy_mutations_enabled: true,
+    assignments_enabled: false,
+    legacy_assignments_enabled: true,
   },
 };

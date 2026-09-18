@@ -48,7 +48,9 @@ RSpec.describe 'Access Roles API', type: :request do
         'resources' => AccessRoleGrant::RESOURCE_CAPABILITIES,
         'access_scopes' => AccessRoleGrant::ACCESS_SCOPES,
         'mutations_enabled' => false,
-        'legacy_mutations_enabled' => true
+        'legacy_mutations_enabled' => true,
+        'assignments_enabled' => false,
+        'legacy_assignments_enabled' => true
       )
     end
 
@@ -72,6 +74,28 @@ RSpec.describe 'Access Roles API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.dig('meta', 'mutations_enabled')).to be(true)
       expect(response.parsed_body.dig('meta', 'legacy_mutations_enabled')).to be(false)
+    end
+
+    it 'does not advertise normalized assignments from the release gate alone' do
+      ClimateControl.modify(ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+        get path, headers: administrator.create_new_auth_token, as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'assignments_enabled')).to be(false)
+      expect(response.parsed_body.dig('meta', 'legacy_assignments_enabled')).to be(true)
+    end
+
+    it 'advertises normalized assignments when the release gate and enforced mode are active' do
+      enforce_access_control!
+
+      ClimateControl.modify(ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+        get path, headers: administrator.create_new_auth_token, as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'assignments_enabled')).to be(true)
+      expect(response.parsed_body.dig('meta', 'legacy_assignments_enabled')).to be(false)
     end
 
     it 'disables the legacy writer once a canonical role exists' do

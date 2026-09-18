@@ -35,3 +35,8 @@ properties:
       - integer
       - 'null'
     description: The custom role id of the agent
+  access_role_id:
+    type:
+      - integer
+      - 'null'
+    description: The canonical account-scoped access role id of the agent

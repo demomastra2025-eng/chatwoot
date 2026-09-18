@@ -34,12 +34,20 @@ describe('#mutations', () => {
   });
 
   describe('#SET_ACCESS_ROLE_CATALOG_ERROR', () => {
-    it('sets the catalog error state', () => {
-      const state = { accessRoleCatalog: { error: false } };
+    it('sets the error and falls back from stale canonical assignment capability', () => {
+      const state = {
+        accessRoleCatalog: {
+          error: false,
+          assignmentsEnabled: true,
+          legacyAssignmentsEnabled: false,
+        },
+      };
 
       mutations[types.SET_ACCESS_ROLE_CATALOG_ERROR](state, true);
 
       expect(state.accessRoleCatalog.error).toBe(true);
+      expect(state.accessRoleCatalog.assignmentsEnabled).toBe(false);
+      expect(state.accessRoleCatalog.legacyAssignmentsEnabled).toBe(true);
     });
   });
 

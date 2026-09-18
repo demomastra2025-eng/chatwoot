@@ -1,13 +1,19 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Auth from '../../../../api/auth';
 import wootConstants from 'dashboard/constants/globals';
+import {
+  buildAgentRoleAssignment,
+  buildAgentRoleOptions,
+  initialAgentRoleOptionId,
+} from './agentRoleOptions';
 
 const props = defineProps({
   id: {
@@ -34,6 +40,10 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  accessRoleId: {
+    type: Number,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['close']);
@@ -45,7 +55,8 @@ const { t } = useI18n();
 
 const agentName = ref(props.name);
 const agentAvailability = ref(props.availability);
-const selectedRoleId = ref(props.customRoleId || props.type);
+const selectedRoleId = ref(null);
+const previousAccessRoleId = ref(props.accessRoleId);
 const agentCredentials = ref({ email: props.email });
 
 const rules = {
@@ -66,35 +77,33 @@ const pageTitle = computed(
 
 const uiFlags = useMapGetter('agents/getUIFlags');
 const getCustomRoles = useMapGetter('customRole/getCustomRoles');
+const accessRoleCatalog = useMapGetter('customRole/getAccessRoleCatalog');
 
-const roles = computed(() => {
-  const defaultRoles = [
-    {
-      id: 'administrator',
-      name: 'administrator',
-      label: t('AGENT_MGMT.AGENT_TYPES.ADMINISTRATOR'),
-    },
-    {
-      id: 'agent',
-      name: 'agent',
-      label: t('AGENT_MGMT.AGENT_TYPES.AGENT'),
-    },
-  ];
-
-  const customRoles = getCustomRoles.value.map(role => ({
-    id: role.id,
-    name: `custom_${role.id}`,
-    label: role.name,
-  }));
-
-  return [...defaultRoles, ...customRoles];
-});
+const roles = computed(() =>
+  buildAgentRoleOptions({
+    catalog: accessRoleCatalog.value,
+    customRoles: getCustomRoles.value,
+    t,
+  })
+);
 
 const selectedRole = computed(() =>
-  roles.value.find(
-    role =>
-      role.id === selectedRoleId.value || role.name === selectedRoleId.value
-  )
+  roles.value.find(role => role.id === selectedRoleId.value)
+);
+
+watch(
+  roles,
+  () => {
+    if (selectedRole.value) return;
+
+    selectedRoleId.value = initialAgentRoleOptionId({
+      catalog: accessRoleCatalog.value,
+      accessRoleId: props.accessRoleId,
+      customRoleId: props.customRoleId,
+      role: props.type,
+    });
+  },
+  { immediate: true }
 );
 
 const statusList = computed(() => {
@@ -124,17 +133,42 @@ const editAgent = async () => {
       availability: agentAvailability.value,
     };
 
-    if (selectedRole.value.name.startsWith('custom_')) {
-      payload.custom_role_id = selectedRole.value.id;
-    } else {
-      payload.role = selectedRole.value.name;
-      payload.custom_role_id = null;
-    }
+    Object.assign(
+      payload,
+      buildAgentRoleAssignment({
+        option: selectedRole.value,
+        previousAccessRoleId: previousAccessRoleId.value,
+      })
+    );
 
     await store.dispatch('agents/update', payload);
     useAlert(t('AGENT_MGMT.EDIT.API.SUCCESS_MESSAGE'));
     emit('close');
   } catch (error) {
+    const code = error?.response?.data?.code;
+    if (code === 'STALE_ACCESS_ROLE_ASSIGNMENT') {
+      try {
+        const [agents] = await Promise.all([
+          store.dispatch('agents/get', { throwOnError: true }),
+          store.dispatch('customRole/fetchAccessRoleCatalog', {
+            throwOnError: true,
+          }),
+        ]);
+        const refreshedAgent = agents.find(agent => agent.id === props.id);
+        if (refreshedAgent) {
+          previousAccessRoleId.value = refreshedAgent.access_role_id;
+        }
+      } catch {
+        // Preserve the draft and stale baseline when authoritative refresh fails.
+      }
+    } else if (
+      [
+        'ACCESS_ROLE_ASSIGNMENTS_NOT_ENABLED',
+        'ACCESS_CONTROL_NOT_ENFORCED',
+      ].includes(code)
+    ) {
+      await store.dispatch('customRole/fetchAccessRoleCatalog');
+    }
     useAlert(t('AGENT_MGMT.EDIT.API.ERROR_MESSAGE'));
   }
 };

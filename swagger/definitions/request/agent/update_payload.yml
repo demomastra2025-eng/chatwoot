@@ -1,12 +1,26 @@
 type: object
-required:
-  - role
 properties:
+  name:
+    type: string
+    description: Full name of the agent.
   role:
     type: string
     enum: ['agent', 'administrator']
-    description: Whether its administrator or agent
+    description: Legacy system role. Do not combine with custom_role_id or access_role_id.
     example: 'agent'
+  custom_role_id:
+    type:
+      - integer
+      - 'null'
+    description: Legacy custom role ID. Do not combine with role or access_role_id.
+  access_role_id:
+    type: integer
+    description: Canonical account-scoped access role ID. Available only when access-role assignment capability is enabled; requires previous_access_role_id and cannot be combined with legacy role fields.
+  previous_access_role_id:
+    type:
+      - integer
+      - 'null'
+    description: Optimistic-concurrency baseline required whenever access_role_id is supplied.
   availability_status:
     type: string
     enum: ['available', 'busy', 'offline']

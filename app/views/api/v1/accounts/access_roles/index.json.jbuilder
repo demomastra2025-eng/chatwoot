@@ -9,4 +9,6 @@ json.meta do
   json.access_scopes AccessRoleGrant::ACCESS_SCOPES
   json.mutations_enabled AccessControl::AccessRoleMutator.mutations_enabled_for?(account: Current.account)
   json.legacy_mutations_enabled AccessControl::AccessRoleMutator.legacy_mutations_enabled_for?(account: Current.account)
+  json.assignments_enabled AccessControl::AccessRoleAssigner.assignments_enabled_for?(account: Current.account)
+  json.legacy_assignments_enabled AccessControl::AccessRoleAssigner.legacy_assignments_enabled_for?(account: Current.account)
 end
