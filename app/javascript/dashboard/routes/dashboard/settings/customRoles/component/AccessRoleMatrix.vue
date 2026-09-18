@@ -35,7 +35,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['retry', 'edit', 'delete']);
+const emit = defineEmits(['retry', 'clone', 'edit', 'delete']);
 const { t } = useI18n();
 
 const scopeClasses = {
@@ -100,6 +100,10 @@ const translations = computed(() => ({
 }));
 
 const sourceRole = id => props.roles.find(role => role.id === id);
+const cloneSourceRole = role => ({
+  ...sourceRole(role.id),
+  name: role.displayName,
+});
 
 const matrixRoles = computed(() => {
   const query = props.searchQuery.trim().toLowerCase();
@@ -218,11 +222,17 @@ const matrixRoles = computed(() => {
             </p>
           </div>
           <div class="flex flex-shrink-0 items-center gap-3">
-            <div
-              v-if="mutationsEnabled && role.role_kind === 'custom'"
-              class="flex items-center gap-2"
-            >
+            <div v-if="mutationsEnabled" class="flex items-center gap-2">
               <Button
+                :label="$t('CUSTOM_ROLE.ACCESS_EDITOR.CLONE_BUTTON')"
+                size="sm"
+                faded
+                slate
+                type="button"
+                @click.stop="emit('clone', cloneSourceRole(role))"
+              />
+              <Button
+                v-if="role.role_kind === 'custom'"
                 :label="$t('CUSTOM_ROLE.EDIT.BUTTON_TEXT')"
                 size="sm"
                 faded
@@ -231,6 +241,7 @@ const matrixRoles = computed(() => {
                 @click.stop="emit('edit', sourceRole(role.id))"
               />
               <Button
+                v-if="role.role_kind === 'custom'"
                 :label="$t('CUSTOM_ROLE.DELETE.BUTTON_TEXT')"
                 size="sm"
                 ruby

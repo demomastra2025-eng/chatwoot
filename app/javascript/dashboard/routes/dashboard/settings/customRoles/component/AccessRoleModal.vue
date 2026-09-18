@@ -10,7 +10,7 @@ const props = defineProps({
   mode: {
     type: String,
     default: 'add',
-    validator: value => ['add', 'edit'].includes(value),
+    validator: value => ['add', 'clone', 'edit'].includes(value),
   },
   selectedRole: {
     type: Object,
@@ -95,12 +95,41 @@ const availableScopes = computed(() => {
 const isInvalid = computed(
   () => name.value.trim().length < 2 || !description.value.trim()
 );
+const modalTitle = computed(() => {
+  if (props.mode === 'edit') {
+    return t('CUSTOM_ROLE.ACCESS_EDITOR.EDIT_TITLE');
+  }
+  if (props.mode === 'clone') {
+    return t('CUSTOM_ROLE.ACCESS_EDITOR.CLONE_TITLE');
+  }
+  return t('CUSTOM_ROLE.ACCESS_EDITOR.ADD_TITLE');
+});
+const submitLabel = computed(() => {
+  if (props.mode === 'edit') return t('CUSTOM_ROLE.EDIT.SUBMIT');
+  if (props.mode === 'clone') {
+    return t('CUSTOM_ROLE.ACCESS_EDITOR.CLONE_SUBMIT');
+  }
+  return t('CUSTOM_ROLE.ADD.SUBMIT');
+});
 
 const hydrateForm = () => {
   const selectedRole = props.selectedRole || {};
-  name.value = props.mode === 'edit' ? selectedRole.name || '' : '';
-  description.value =
-    props.mode === 'edit' ? selectedRole.description || '' : '';
+  if (props.mode === 'clone') {
+    name.value = t('CUSTOM_ROLE.ACCESS_EDITOR.CLONE_NAME', {
+      name: selectedRole.name || '',
+    });
+  } else {
+    name.value = props.mode === 'edit' ? selectedRole.name || '' : '';
+  }
+  if (props.mode === 'add') {
+    description.value = '';
+  } else if (props.mode === 'clone' && !selectedRole.description) {
+    description.value = t('CUSTOM_ROLE.ACCESS_EDITOR.CLONE_DESCRIPTION', {
+      name: selectedRole.name || '',
+    });
+  } else {
+    description.value = selectedRole.description || '';
+  }
 
   Object.keys(grantScopes).forEach(key => delete grantScopes[key]);
   resourceGroups.value.forEach(group => {
@@ -199,11 +228,7 @@ const submit = async () => {
 <template>
   <div class="flex max-h-[85vh] flex-col overflow-auto">
     <woot-modal-header
-      :header-title="
-        mode === 'edit'
-          ? $t('CUSTOM_ROLE.ACCESS_EDITOR.EDIT_TITLE')
-          : $t('CUSTOM_ROLE.ACCESS_EDITOR.ADD_TITLE')
-      "
+      :header-title="modalTitle"
       :header-content="$t('CUSTOM_ROLE.ACCESS_EDITOR.DESCRIPTION')"
     />
 
@@ -280,11 +305,7 @@ const submit = async () => {
         />
         <Button
           type="submit"
-          :label="
-            mode === 'edit'
-              ? $t('CUSTOM_ROLE.EDIT.SUBMIT')
-              : $t('CUSTOM_ROLE.ADD.SUBMIT')
-          "
+          :label="submitLabel"
           :disabled="isSubmitting"
           :is-loading="isSubmitting"
         />

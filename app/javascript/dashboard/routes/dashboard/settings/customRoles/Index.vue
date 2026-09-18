@@ -115,6 +115,14 @@ const openEditModal = role => {
   showCustomRoleModal.value = true;
 };
 
+const openCloneModal = role => {
+  if (!mutationsEnabled.value) return;
+
+  customRoleModalMode.value = 'clone';
+  selectedRole.value = role;
+  showCustomRoleModal.value = true;
+};
+
 const hideCustomRoleModal = () => {
   selectedRole.value = null;
   showCustomRoleModal.value = false;
@@ -228,6 +236,7 @@ const confirmDeletion = () => {
           :mutations-enabled="mutationsEnabled"
           :deleting-roles="loading"
           @retry="fetchAccessRoleCatalog"
+          @clone="openCloneModal"
           @edit="openEditModal"
           @delete="openDeletePopup"
         />

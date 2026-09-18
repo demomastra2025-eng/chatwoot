@@ -55,6 +55,11 @@
     },
     "ACCESS_EDITOR": {
       "ADD_TITLE": "Add access role",
+      "CLONE_TITLE": "Clone access role",
+      "CLONE_BUTTON": "Clone",
+      "CLONE_SUBMIT": "Create clone",
+      "CLONE_NAME": "{name} copy",
+      "CLONE_DESCRIPTION": "Copy of the {name} access role.",
       "EDIT_TITLE": "Edit access role",
       "DESCRIPTION": "Configure the role scope separately for every resource and capability.",
       "CREATE_SUCCESS": "Access role created successfully.",

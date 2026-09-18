@@ -15,7 +15,17 @@ vi.mock('dashboard/composables/store', () => ({
 vi.mock('dashboard/composables', () => ({ useAlert }));
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key }),
+  useI18n: () => ({
+    t: (key, params) => {
+      if (key === 'CUSTOM_ROLE.ACCESS_EDITOR.CLONE_NAME') {
+        return `${params.name} copy`;
+      }
+      if (key === 'CUSTOM_ROLE.ACCESS_EDITOR.CLONE_DESCRIPTION') {
+        return `Copy of ${params.name}`;
+      }
+      return key;
+    },
+  }),
 }));
 
 const resources = {
@@ -92,6 +102,35 @@ describe('AccessRoleModal', () => {
           access_scope: 'own',
         },
       ],
+    });
+    expect(wrapper.emitted('close')).toHaveLength(1);
+  });
+
+  it('previews a clone and creates only copied metadata and normalized grants', async () => {
+    const sourceRole = {
+      ...role,
+      system_key: 'employee',
+      role_kind: 'system',
+      description: null,
+      assigned_users_count: 9,
+      legacy_custom_role_id: null,
+    };
+    const wrapper = mountComponent({
+      mode: 'clone',
+      selectedRole: sourceRole,
+    });
+
+    expect(wrapper.get('input').element.value).toBe('Support copy');
+    expect(wrapper.get('textarea').element.value).toBe('Copy of Support');
+    expect(wrapper.findAll('select')[0].element.value).toBe('team');
+
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('customRole/createAccessRole', {
+      name: 'Support copy',
+      description: 'Copy of Support',
+      grants: sourceRole.grants,
     });
     expect(wrapper.emitted('close')).toHaveLength(1);
   });

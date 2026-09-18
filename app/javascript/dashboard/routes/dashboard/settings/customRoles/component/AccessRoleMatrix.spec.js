@@ -118,7 +118,7 @@ describe('AccessRoleMatrix', () => {
     ).toBe(true);
   });
 
-  it('exposes edit and delete only for custom roles when mutations are enabled', async () => {
+  it('exposes clone for every role and edit/delete only for custom roles when mutations are enabled', async () => {
     const customRole = {
       ...roles[0],
       id: 11,
@@ -132,16 +132,26 @@ describe('AccessRoleMatrix', () => {
       resources,
     });
     const editableWrapper = mountComponent({
-      roles: [customRole],
+      roles: [roles[0], customRole],
       resources,
       mutationsEnabled: true,
     });
 
     expect(readOnlyWrapper.findAll('button')).toHaveLength(0);
-    const [editButton, deleteButton] = editableWrapper.findAll('button');
+    const [systemCloneButton, customCloneButton, editButton, deleteButton] =
+      editableWrapper.findAll('button');
+    await systemCloneButton.trigger('click');
+    await customCloneButton.trigger('click');
     await editButton.trigger('click');
     await deleteButton.trigger('click');
 
+    expect(editableWrapper.emitted('clone')[0][0]).toMatchObject({
+      id: roles[0].id,
+      name: 'Localized employee',
+      system_key: 'employee',
+      grants: roles[0].grants,
+    });
+    expect(editableWrapper.emitted('clone')[1][0]).toMatchObject(customRole);
     expect(editableWrapper.emitted('edit')[0]).toEqual([customRole]);
     expect(editableWrapper.emitted('delete')[0]).toEqual([customRole]);
   });
@@ -161,6 +171,6 @@ describe('AccessRoleMatrix', () => {
       mutationsEnabled: true,
     });
 
-    expect(wrapper.findAll('button')[1].attributes('disabled')).toBeDefined();
+    expect(wrapper.findAll('button')[2].attributes('disabled')).toBeDefined();
   });
 });

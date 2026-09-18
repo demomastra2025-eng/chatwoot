@@ -76,7 +76,7 @@ const mountComponent = () =>
         AccessRoleMatrix: {
           name: 'AccessRoleMatrix',
           props: ['mutationsEnabled'],
-          emits: ['edit', 'delete', 'retry'],
+          emits: ['clone', 'edit', 'delete', 'retry'],
           template: '<div data-testid="access-role-matrix" />',
         },
         BaseSettingsHeader: {
@@ -94,6 +94,7 @@ const mountComponent = () =>
         },
         AccessRoleModal: {
           name: 'AccessRoleModal',
+          props: ['mode', 'selectedRole'],
           emits: ['close', 'stale'],
           template: '<div />',
         },
@@ -264,6 +265,42 @@ describe('Custom roles settings index', () => {
     );
     expect(wrapper.findComponent({ name: 'WootModal' }).props('show')).toBe(
       false
+    );
+  });
+
+  it('opens a normalized clone draft for system roles', async () => {
+    const systemRole = {
+      id: 1,
+      name: 'Сотрудник',
+      role_kind: 'system',
+      system_key: 'employee',
+      assigned_users_count: 3,
+      grants: [
+        {
+          resource: 'contacts',
+          capability: 'view',
+          access_scope: 'own',
+        },
+      ],
+    };
+    catalog.records = [systemRole];
+    catalog.mutationsEnabled = true;
+    catalog.legacyMutationsEnabled = false;
+    const wrapper = mountComponent();
+
+    wrapper
+      .findComponent({ name: 'AccessRoleMatrix' })
+      .vm.$emit('clone', systemRole);
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.findComponent({ name: 'AccessRoleModal' }).props()
+    ).toMatchObject({
+      mode: 'clone',
+      selectedRole: systemRole,
+    });
+    expect(wrapper.findComponent({ name: 'WootModal' }).props('show')).toBe(
+      true
     );
   });
 
