@@ -210,6 +210,47 @@ RSpec.describe Whatsapp::WebhookSubscriptionHealthService do
       .to raise_error(described_class::CheckError, /Application request limit reached/)
   end
 
+  it 'defers WABA rate limits without retrying or recording reauthorization' do
+    error_payload = {
+      'error' => {
+        'code' => 80_008,
+        'type' => 'OAuthException',
+        'message' => 'Too many calls to this WhatsApp Business account'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_raise(provider_error)
+
+    expect(channel).not_to receive(:record_provider_authorization_error_if_current!)
+    expect(described_class.new(channel).perform).to eq(:skipped)
+    expect(channel.reload.reauthorization_required?).to be(false)
+  end
+
+  it 'defers a WABA rate limit wrapped by callback repair without retrying' do
+    error_payload = {
+      'error' => {
+        'code' => 80_008,
+        'type' => 'OAuthException',
+        'message' => 'Too many calls to this WhatsApp Business account'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA callback subscription failed', response)
+    setup_service = instance_double(Whatsapp::WebhookSetupService)
+
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_return(false)
+    allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(setup_service)
+    allow(setup_service).to receive(:register_callback_if_missing) do
+      raise provider_error
+    rescue Whatsapp::FacebookApiClient::Error
+      raise Whatsapp::WebhookSetupService::CallbackSetupError, 'Webhook setup failed'
+    end
+
+    expect(described_class.new(channel).perform).to eq(:skipped)
+    expect(channel.reload.reauthorization_required?).to be(false)
+  end
+
   it 'wraps provider failures in a retryable error without exposing credentials' do
     allow(api_client).to receive(:app_subscribed_to_waba?).and_raise('request failed token-secret')
 

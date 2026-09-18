@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::TokenHealthCheckService do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
   let(:channel) do
     create(
       :channel_whatsapp,
@@ -223,6 +223,28 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
 
   context 'when token inspection fails transiently' do
     let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService) }
+
+    it 'records unknown health for a WABA rate limit without requesting reauthorization' do
+      error_payload = {
+        'error' => {
+          'code' => 80_008,
+          'type' => 'OAuthException',
+          'message' => 'Too many calls to this WhatsApp Business account'
+        }
+      }
+      response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+      provider_error = Whatsapp::FacebookApiClient::Error.new('WABA phone numbers fetch failed', response)
+      allow(token_inspection_service).to receive(:perform).and_raise(provider_error)
+      allow(Rails.logger).to receive(:error)
+
+      expect(channel).not_to receive(:record_provider_configuration_error!)
+
+      result = described_class.new(channel).perform
+
+      expect(result).to include('status' => 'unknown')
+      expect(channel.reload.reauthorization_required?).to be(false)
+      expect(channel.provider_config).not_to include('authorization_status', 'authorization_error')
+    end
 
     it 'stores unknown health without clearing an existing hard authorization state' do
       channel.record_provider_configuration_error!(

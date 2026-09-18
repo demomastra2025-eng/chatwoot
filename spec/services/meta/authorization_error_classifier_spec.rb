@@ -28,7 +28,17 @@ RSpec.describe Meta::AuthorizationErrorClassifier do
 
     it 'classifies Meta throttling and HTTP 5xx as transient' do
       expect(described_class.classify({ error: { code: 4 } })).to be_transient
+      expect(described_class.classify({ error: { code: 80_008 } })).to be_transient
       expect(described_class.classify({ error: { code: 999 } }, http_status: 503)).to be_transient
+    end
+
+    it 'identifies the WhatsApp Business account rate limit without treating it as an authorization failure' do
+      result = described_class.classify(
+        error: { code: 80_008, type: 'OAuthException', message: 'Too many calls to this WhatsApp Business account' }
+      )
+
+      expect(result).to be_rate_limited
+      expect(result).not_to be_action_required
     end
 
     it 'classifies missing permissions separately from invalid credentials' do

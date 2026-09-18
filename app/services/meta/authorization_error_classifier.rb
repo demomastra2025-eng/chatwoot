@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Meta::AuthorizationErrorClassifier
-  TRANSIENT_CODES = [1, 2, 4, 17, 341].freeze
+  TRANSIENT_CODES = [1, 2, 4, 17, 341, 80_008].freeze
   TRANSIENT_HTTP_STATUSES = [408, 425, 429].freeze
   PERMISSION_CODE_RANGE = (200..299)
   CONFIRMED_INVALID_TOKEN_SUBCODES = [458, 459, 460, 463, 464, 467, 490].freeze
@@ -17,6 +17,10 @@ class Meta::AuthorizationErrorClassifier
 
     def confirmed_invalid?
       kind == :reauthorization_required && confirmed
+    end
+
+    def rate_limited?
+      error['code'].to_i == 80_008
     end
   end
 
