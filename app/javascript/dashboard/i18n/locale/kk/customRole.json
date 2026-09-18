@@ -3,6 +3,56 @@
     "HEADER": "Custom Roles",
     "LEARN_MORE": "Learn more about custom roles",
     "DESCRIPTION": "Custom roles are roles that are created by the account owner or admin. These roles can be assigned to agents to define their access and permissions within the account. Custom roles can be created with specific permissions and access levels to suit the requirements of the organization.",
+    "ACCESS_MATRIX": {
+      "TITLE": "Рөлдердің қол жеткізу матрицасы",
+      "DESCRIPTION": "Жүйелік және пайдаланушы рөлдерінің ресурстарға, әрекеттерге және қол жеткізу деңгейлеріне берілген құқықтарын қараңыз. Өңдеу төмендегі пайдаланушы рөлдерінің тізімінде қалады.",
+      "LOADING": "Қол жеткізу матрицасы жүктелуде...",
+      "ERROR": "Рөлдердің қол жеткізу матрицасын жүктеу мүмкін болмады.",
+      "RETRY": "Қайталау",
+      "EMPTY": "Қол жеткізу рөлдері жоқ.",
+      "ASSIGNED_USERS": "{n} қызметкер",
+      "ROLE_KIND": {
+        "SYSTEM": "Жүйелік рөл",
+        "CUSTOM": "Пайдаланушы рөлі"
+      },
+      "SYSTEM_ROLES": {
+        "ADMINISTRATOR": "Әкімші",
+        "EMPLOYEE": "Қызметкер",
+        "DEPARTMENT_LEAD": "Бөлім басшысы",
+        "COMMERCIAL_DIRECTOR": "Коммерциялық директор",
+        "OBSERVER": "Бақылаушы"
+      },
+      "RESOURCES": {
+        "CONTACTS": "Контактілер",
+        "CONVERSATIONS": "Диалогтар",
+        "APPOINTMENTS": "Жазылулар",
+        "DEALS": "Мәмілелер",
+        "TASKS": "Тапсырмалар"
+      },
+      "CAPABILITIES": {
+        "VIEW": "Көру",
+        "CREATE": "Құру",
+        "UPDATE_FIELDS": "Өрістерді өзгерту",
+        "ASSIGN": "Тағайындау",
+        "TRANSITION": "Күйін өзгерту",
+        "TAKE": "Өзіне алу",
+        "COMPLETE_CANCEL": "Аяқтау немесе болдырмау",
+        "DELETE_ARCHIVE": "Жою немесе мұрағаттау",
+        "VIEW_CONFIGURATION": "Баптауларды көру",
+        "CONFIGURE": "Баптау",
+        "EXPORT": "Экспорт",
+        "VIEW_REPORTS": "Есептерді көру",
+        "VIEW_FINANCE": "Қаржыны көру",
+        "MANAGE_FINANCE": "Қаржыны басқару",
+        "OVERRIDE_SCHEDULE": "Кесте қайшылықтарын растау"
+      },
+      "SCOPES": {
+        "NONE": "Жоқ",
+        "OWN": "Өзінікі",
+        "TEAM": "Команда",
+        "ALL": "Барлығы"
+      }
+    },
     "HEADER_BTN_TXT": "Add custom role",
     "LOADING": "Fetching custom roles...",
     "SEARCH_404": "There are no items matching this query.",

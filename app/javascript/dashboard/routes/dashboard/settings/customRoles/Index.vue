@@ -2,6 +2,7 @@
 import { useAlert } from 'dashboard/composables';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
+import AccessRoleMatrix from './component/AccessRoleMatrix.vue';
 import CustomRoleModal from './component/CustomRoleModal.vue';
 import CustomRoleTableBody from './component/CustomRoleTableBody.vue';
 import CustomRolePaywall from './component/CustomRolePaywall.vue';
@@ -24,6 +25,7 @@ const activeResponse = ref({});
 const searchQuery = ref('');
 
 const records = useMapGetter('customRole/getCustomRoles');
+const accessRoleCatalog = useMapGetter('customRole/getAccessRoleCatalog');
 
 const filteredRecords = computed(() => {
   const query = searchQuery.value.trim();
@@ -65,8 +67,12 @@ const fetchCustomRoles = async () => {
   }
 };
 
+const fetchAccessRoleCatalog = () =>
+  store.dispatch('customRole/fetchAccessRoleCatalog');
+
 onMounted(() => {
   fetchCustomRoles();
+  fetchAccessRoleCatalog();
 });
 
 const tableHeaders = computed(() => {
@@ -78,11 +84,7 @@ const tableHeaders = computed(() => {
   ];
 });
 
-const showAlertMessage = message => {
-  loading.value[activeResponse.value.id] = false;
-  activeResponse.value = {};
-  useAlert(message);
-};
+const showAlertMessage = message => useAlert(message);
 
 const openAddModal = () => {
   if (isBehindAPaywall.value) return;
@@ -119,13 +121,19 @@ const deleteCustomRole = async id => {
     const errorMessage =
       error?.message || t('CUSTOM_ROLE.DELETE.API.ERROR_MESSAGE');
     showAlertMessage(errorMessage);
+  } finally {
+    loading.value[id] = false;
   }
 };
 
 const confirmDeletion = () => {
-  loading[activeResponse.value.id] = true;
+  const id = activeResponse.value.id;
   closeDeletePopup();
-  deleteCustomRole(activeResponse.value.id);
+  activeResponse.value = {};
+  if (id === undefined || id === null || loading.value[id]) return;
+
+  loading.value[id] = true;
+  deleteCustomRole(id);
 };
 </script>
 
@@ -133,7 +141,13 @@ const confirmDeletion = () => {
   <SettingsLayout
     :is-loading="uiFlags.fetchingList"
     :loading-message="$t('CUSTOM_ROLE.LOADING')"
-    :no-records-found="!records.length && !isBehindAPaywall"
+    :no-records-found="
+      !records.length &&
+      !accessRoleCatalog.records.length &&
+      !uiFlags.fetchingAccessRoleCatalog &&
+      !accessRoleCatalog.error &&
+      !isBehindAPaywall
+    "
     :no-records-message="$t('CUSTOM_ROLE.LIST.404')"
   >
     <template #header>
@@ -163,25 +177,35 @@ const confirmDeletion = () => {
 
     <template #body>
       <CustomRolePaywall v-if="isBehindAPaywall" />
-      <BaseTable
-        v-else
-        :headers="tableHeaders"
-        :items="filteredRecords"
-        :no-data-message="
-          searchQuery
-            ? $t('CUSTOM_ROLE.NO_RESULTS')
-            : $t('CUSTOM_ROLE.LIST.404')
-        "
-      >
-        <template #row="{ items }">
-          <CustomRoleTableBody
-            :roles="items"
-            :loading="loading"
-            @edit="openEditModal"
-            @delete="openDeletePopup"
-          />
-        </template>
-      </BaseTable>
+      <div v-else class="flex flex-col gap-6">
+        <AccessRoleMatrix
+          :roles="accessRoleCatalog.records"
+          :resources="accessRoleCatalog.resources"
+          :is-loading="uiFlags.fetchingAccessRoleCatalog"
+          :has-error="accessRoleCatalog.error"
+          :search-query="searchQuery"
+          @retry="fetchAccessRoleCatalog"
+        />
+
+        <BaseTable
+          :headers="tableHeaders"
+          :items="filteredRecords"
+          :no-data-message="
+            searchQuery
+              ? $t('CUSTOM_ROLE.NO_RESULTS')
+              : $t('CUSTOM_ROLE.LIST.404')
+          "
+        >
+          <template #row="{ items }">
+            <CustomRoleTableBody
+              :roles="items"
+              :loading="loading"
+              @edit="openEditModal"
+              @delete="openDeletePopup"
+            />
+          </template>
+        </BaseTable>
+      </div>
     </template>
 
     <woot-modal v-model:show="showCustomRoleModal" @close="hideCustomRoleModal">

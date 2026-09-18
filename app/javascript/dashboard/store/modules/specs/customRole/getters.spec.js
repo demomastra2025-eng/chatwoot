@@ -1,10 +1,15 @@
 import { getters } from '../../customRole';
-import { customRoleList } from './fixtures';
+import { accessRoleCatalog, customRoleList } from './fixtures';
 
 describe('#getters', () => {
   it('getCustomRoles', () => {
     const state = { records: customRoleList };
     expect(getters.getCustomRoles(state)).toEqual(customRoleList);
+  });
+
+  it('getAccessRoleCatalog', () => {
+    const state = { accessRoleCatalog };
+    expect(getters.getAccessRoleCatalog(state)).toEqual(accessRoleCatalog);
   });
 
   it('getUIFlags', () => {

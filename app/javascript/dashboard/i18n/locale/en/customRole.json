@@ -3,6 +3,56 @@
     "HEADER": "Custom Roles",
     "LEARN_MORE": "Learn more about custom roles",
     "DESCRIPTION": "Custom roles are roles that are created by the account owner or admin. These roles can be assigned to agents to define their access and permissions within the account. Custom roles can be created with specific permissions and access levels to suit the requirements of the organization.",
+    "ACCESS_MATRIX": {
+      "TITLE": "Role access matrix",
+      "DESCRIPTION": "Review the effective resource, capability, and scope grants for system and custom roles. Editing remains in the custom role list below.",
+      "LOADING": "Loading the role access matrix...",
+      "ERROR": "The role access matrix could not be loaded.",
+      "RETRY": "Try again",
+      "EMPTY": "No access roles are available.",
+      "ASSIGNED_USERS": "{n} employee | {n} employees",
+      "ROLE_KIND": {
+        "SYSTEM": "System role",
+        "CUSTOM": "Custom role"
+      },
+      "SYSTEM_ROLES": {
+        "ADMINISTRATOR": "Administrator",
+        "EMPLOYEE": "Employee",
+        "DEPARTMENT_LEAD": "Department lead",
+        "COMMERCIAL_DIRECTOR": "Commercial director",
+        "OBSERVER": "Observer"
+      },
+      "RESOURCES": {
+        "CONTACTS": "Contacts",
+        "CONVERSATIONS": "Conversations",
+        "APPOINTMENTS": "Appointments",
+        "DEALS": "Deals",
+        "TASKS": "Tasks"
+      },
+      "CAPABILITIES": {
+        "VIEW": "View",
+        "CREATE": "Create",
+        "UPDATE_FIELDS": "Update fields",
+        "ASSIGN": "Assign",
+        "TRANSITION": "Change status",
+        "TAKE": "Take ownership",
+        "COMPLETE_CANCEL": "Complete or cancel",
+        "DELETE_ARCHIVE": "Delete or archive",
+        "VIEW_CONFIGURATION": "View configuration",
+        "CONFIGURE": "Configure",
+        "EXPORT": "Export",
+        "VIEW_REPORTS": "View reports",
+        "VIEW_FINANCE": "View finance",
+        "MANAGE_FINANCE": "Manage finance",
+        "OVERRIDE_SCHEDULE": "Override schedule conflicts"
+      },
+      "SCOPES": {
+        "NONE": "None",
+        "OWN": "Own",
+        "TEAM": "Team",
+        "ALL": "All"
+      }
+    },
     "COUNT": "{n} custom role | {n} custom roles",
     "HEADER_BTN_TXT": "Add custom role",
     "LOADING": "Fetching custom roles...",

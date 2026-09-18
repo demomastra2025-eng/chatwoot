@@ -68,6 +68,7 @@ const getFormattedPermissions = role => {
             sm
             class="hover:enabled:text-n-ruby-11 hover:enabled:bg-n-ruby-2"
             :is-loading="loading[customRole.id]"
+            :disabled="loading[customRole.id]"
             @click="emit('delete', customRole)"
           />
         </div>

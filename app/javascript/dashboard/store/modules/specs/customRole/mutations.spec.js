@@ -1,6 +1,6 @@
 import types from '../../../mutation-types';
 import { mutations } from '../../customRole';
-import { customRoleList } from './fixtures';
+import { accessRoleCatalog, customRoleList } from './fixtures';
 
 describe('#mutations', () => {
   describe('#SET_CUSTOM_ROLE', () => {
@@ -8,6 +8,48 @@ describe('#mutations', () => {
       const state = { records: [] };
       mutations[types.SET_CUSTOM_ROLE](state, customRoleList);
       expect(state.records).toEqual(customRoleList);
+    });
+  });
+
+  describe('#SET_ACCESS_ROLE_CATALOG', () => {
+    it('sets canonical records and metadata and clears the error', () => {
+      const state = {
+        accessRoleCatalog: {
+          records: [],
+          resources: {},
+          accessScopes: [],
+          error: true,
+        },
+      };
+      const data = {
+        records: accessRoleCatalog.data,
+        resources: accessRoleCatalog.meta.resources,
+        accessScopes: accessRoleCatalog.meta.access_scopes,
+      };
+
+      mutations[types.SET_ACCESS_ROLE_CATALOG](state, data);
+
+      expect(state.accessRoleCatalog).toEqual({ ...data, error: false });
+    });
+  });
+
+  describe('#SET_ACCESS_ROLE_CATALOG_ERROR', () => {
+    it('sets the catalog error state', () => {
+      const state = { accessRoleCatalog: { error: false } };
+
+      mutations[types.SET_ACCESS_ROLE_CATALOG_ERROR](state, true);
+
+      expect(state.accessRoleCatalog.error).toBe(true);
+    });
+  });
+
+  describe('#SET_ACCESS_ROLE_CATALOG_REQUEST_ID', () => {
+    it('sets the latest catalog request id', () => {
+      const state = { accessRoleCatalogRequestId: 0 };
+
+      mutations[types.SET_ACCESS_ROLE_CATALOG_REQUEST_ID](state, 2);
+
+      expect(state.accessRoleCatalogRequestId).toBe(2);
     });
   });
 

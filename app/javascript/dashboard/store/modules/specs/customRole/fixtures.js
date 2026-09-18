@@ -75,3 +75,28 @@ export const customRoleList = [
     updated_at: '2024-09-06T09:55:19.519Z',
   },
 ];
+
+export const accessRoleCatalog = {
+  data: [
+    {
+      id: 10,
+      name: 'Employee',
+      description: null,
+      system_key: 'employee',
+      role_kind: 'system',
+      legacy_custom_role_id: null,
+      assigned_users_count: 2,
+      grants: [
+        {
+          resource: 'contacts',
+          capability: 'view',
+          access_scope: 'own',
+        },
+      ],
+    },
+  ],
+  meta: {
+    resources: { contacts: ['view', 'create'] },
+    access_scopes: ['none', 'own', 'team', 'all'],
+  },
+};
