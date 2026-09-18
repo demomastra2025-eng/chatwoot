@@ -5,6 +5,10 @@ RSpec.describe 'Enterprise Agents API', type: :request do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let!(:custom_role) { create(:custom_role, account: account, permissions: %w[crm_task_view]) }
 
+  around do |example|
+    ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') { example.run }
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/agents' do
     let(:params) { { email: 'test@example.com', name: 'Test User', role: 'agent', custom_role_id: custom_role.id } }
 

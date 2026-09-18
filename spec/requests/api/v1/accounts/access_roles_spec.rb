@@ -77,7 +77,7 @@ RSpec.describe 'Access Roles API', type: :request do
     end
 
     it 'does not advertise normalized assignments from the release gate alone' do
-      ClimateControl.modify(ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true', ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
         get path, headers: administrator.create_new_auth_token, as: :json
       end
 
@@ -89,13 +89,21 @@ RSpec.describe 'Access Roles API', type: :request do
     it 'advertises normalized assignments when the release gate and enforced mode are active' do
       enforce_access_control!
 
-      ClimateControl.modify(ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true', ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
         get path, headers: administrator.create_new_auth_token, as: :json
       end
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.dig('meta', 'assignments_enabled')).to be(true)
       expect(response.parsed_body.dig('meta', 'legacy_assignments_enabled')).to be(false)
+    end
+
+    it 'fails closed when assignments are enabled without mutations' do
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'false', ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+        get path, headers: administrator.create_new_auth_token, as: :json
+      end
+
+      expect(response).to have_http_status(:internal_server_error)
     end
 
     it 'disables the legacy writer once a canonical role exists' do
@@ -205,6 +213,7 @@ RSpec.describe 'Access Roles API', type: :request do
       expect(role).to have_attributes(name: 'Clinic coordinator', description: 'Coordinates patient work', system_key: nil)
       expect(role).to be_canonical_grant_source
       expect(role.legacy_custom_role).to have_attributes(name: 'Clinic coordinator', permissions: [])
+      expect(account.reload.access_role_canonicalized_at).to be_present
       expect(serialized_grants(role)).to contain_exactly(
         %w[contacts view team],
         %w[tasks assign own]
@@ -224,6 +233,24 @@ RSpec.describe 'Access Roles API', type: :request do
 
       expect(response).to have_http_status(:conflict)
       expect(response.parsed_body['code']).to eq('ACCESS_CONTROL_NOT_ENFORCED')
+    end
+
+    it 'does not record canonicalization when the first normalized creation rolls back' do
+      enforce_access_control!
+
+      post path,
+           params: {
+             access_role: {
+               name: 'Broken role',
+               grants: [{ resource: 'contacts', capability: 'complete_cancel', access_scope: 'all' }]
+             }
+           },
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.reload.access_role_canonicalized_at).to be_nil
+      expect(account.access_roles.where(name: 'Broken role')).not_to exist
     end
 
     it 'atomically replaces metadata and grants without changing frozen legacy permissions' do
@@ -292,7 +319,9 @@ RSpec.describe 'Access Roles API', type: :request do
 
     it 'does not claim grant ownership for an empty update' do
       enforce_access_control!
-      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      custom_role = ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'false') do
+        create(:custom_role, account: account, permissions: %w[crm_task_view])
+      end
       role = custom_role.access_role
 
       patch "#{path}/#{role.id}",
@@ -334,6 +363,10 @@ RSpec.describe 'Access Roles API', type: :request do
       expect(AccessRole.where(id: role.id)).not_to exist
       expect(CustomRole.where(id: custom_role_id)).not_to exist
       expect(AccessRoleGrant.where(id: grant_ids)).not_to exist
+      expect(account.reload.access_role_canonicalized_at).to be_present
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'false') do
+        expect(AccessControl::AccessRoleMutator.legacy_mutations_enabled_for?(account: account)).to be(false)
+      end
     end
 
     it 'rejects deletion while the role is assigned and preserves both identities' do

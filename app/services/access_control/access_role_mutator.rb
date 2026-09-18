@@ -27,11 +27,11 @@ class AccessControl::AccessRoleMutator
 
   def self.legacy_mutations_enabled_for?(account:)
     !mutations_enabled_for?(account: account) &&
-      !account.access_roles.canonical_grant_source.exists?
+      !account.access_role_canonicalized?
   end
 
   def self.release_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ACCESS_ROLE_MUTATIONS_ENABLED', false))
+    AccessControl::ReleaseGate.mutations_enabled?
   end
 
   def initialize(account)
@@ -44,15 +44,17 @@ class AccessControl::AccessRoleMutator
     account.with_lock do
       ensure_enforced!
       grants = extract_grants(attributes, required: true)
-      custom_role = account.custom_roles.create!(
+      custom_role = account.custom_roles.build(
         name: attributes['name'],
         description: attributes['description'],
         permissions: []
       )
+      custom_role.with_canonical_access_role_mutation(&:save!)
       role = account.access_roles.find_by!(legacy_custom_role_id: custom_role.id)
       ensure_exact_name!(role, custom_role)
       role.update!(grant_source: 'canonical')
       replace_grants(role, grants)
+      mark_account_canonicalized!
       role.reload
     end
   end
@@ -69,6 +71,7 @@ class AccessControl::AccessRoleMutator
       role.update!(grant_source: 'canonical') unless role.canonical_grant_source?
       update_legacy_metadata(role, attributes)
       replace_grants(role, extract_grants(attributes)) if attributes.key?('grants')
+      mark_account_canonicalized!
       role.reload
     end
   end
@@ -82,9 +85,10 @@ class AccessControl::AccessRoleMutator
       ensure_mutable!(role)
       ensure_current_version!(role, lock_version)
       custom_role = role.legacy_custom_role
-      destroyed = custom_role.destroy
+      destroyed = custom_role.with_canonical_access_role_mutation(&:destroy)
       raise ActiveRecord::RecordInvalid, custom_role unless destroyed
 
+      mark_account_canonicalized!
       true
     end
   end
@@ -92,6 +96,12 @@ class AccessControl::AccessRoleMutator
   private
 
   attr_reader :account
+
+  def mark_account_canonicalized!
+    return if account.access_role_canonicalized_at?
+
+    account.update!(access_role_canonicalized_at: Time.current)
+  end
 
   def ensure_release_enabled!
     return if self.class.release_enabled?
@@ -136,7 +146,7 @@ class AccessControl::AccessRoleMutator
     return if metadata.empty?
 
     custom_role = role.legacy_custom_role
-    custom_role.update!(metadata)
+    custom_role.with_canonical_access_role_mutation { custom_role.update!(metadata) }
     role.reload
     ensure_exact_name!(role, custom_role)
   end

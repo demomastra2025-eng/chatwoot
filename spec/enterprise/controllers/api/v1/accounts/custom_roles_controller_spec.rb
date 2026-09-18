@@ -267,4 +267,37 @@ RSpec.describe 'Custom Roles API', type: :request do
       end
     end
   end
+
+  context 'when the account has completed a normalized role mutation' do
+    before do
+      account.update!(access_role_canonicalized_at: Time.current)
+    end
+
+    it 'rejects legacy API creation' do
+      expect do
+        post "/api/v1/accounts/#{account.id}/custom_roles",
+             params: { custom_role: { name: 'Blocked role', permissions: %w[crm_task_view] } },
+             headers: administrator.create_new_auth_token
+      end.not_to change(CustomRole, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it 'rejects legacy API updates' do
+      put "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+          params: { custom_role: { name: 'Blocked update' } },
+          headers: administrator.create_new_auth_token
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(custom_role.reload.name).to eq('Manager')
+    end
+
+    it 'rejects legacy API deletion' do
+      delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+             headers: administrator.create_new_auth_token
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(custom_role.reload).to be_persisted
+    end
+  end
 end

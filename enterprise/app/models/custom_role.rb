@@ -57,14 +57,44 @@ class CustomRole < ApplicationRecord
 
   validates :name, presence: true
   validates :permissions, inclusion: { in: PERMISSIONS }
+  validate :legacy_access_role_mutation_allowed, if: :access_role_writer_change?
   validate :permissions_remain_compatible_when_enforced, if: :will_save_change_to_permissions?
 
   before_validation :lock_account_for_access_control
   before_destroy :lock_account_for_access_control, prepend: true
+  before_destroy :ensure_legacy_access_role_destruction_allowed
   before_destroy :destroy_materialized_access_role
   after_save :reconcile_materialized_access_role, if: :access_role_reconciliation_required?
 
+  def with_canonical_access_role_mutation
+    previous_authorization = @canonical_access_role_mutation_authorized
+    @canonical_access_role_mutation_authorized = true
+    yield self
+  ensure
+    @canonical_access_role_mutation_authorized = previous_authorization unless frozen?
+  end
+
   private
+
+  def legacy_access_role_mutation_allowed
+    return if canonical_access_role_mutation_authorized?
+    return if account && AccessControl::AccessRoleMutator.legacy_mutations_enabled_for?(account: account)
+
+    errors.add(:base, 'Legacy role mutations are disabled for this account')
+  end
+
+  def ensure_legacy_access_role_destruction_allowed
+    legacy_access_role_mutation_allowed
+    throw(:abort) if errors[:base].include?('Legacy role mutations are disabled for this account')
+  end
+
+  def canonical_access_role_mutation_authorized?
+    @canonical_access_role_mutation_authorized == true
+  end
+
+  def access_role_writer_change?
+    new_record? || will_save_change_to_name? || will_save_change_to_description? || will_save_change_to_permissions?
+  end
 
   def permissions_remain_compatible_when_enforced
     return unless account&.access_control_mode_enforced?

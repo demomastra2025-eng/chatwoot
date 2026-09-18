@@ -78,7 +78,7 @@ class AccessControl::ModeTransition
 
   def validate_canonical_rollback!(from)
     return unless from == 'enforced' && target_mode == 'shadow'
-    return unless account.access_roles.exists?(grant_source: 'canonical')
+    return unless account.access_role_canonicalized?
 
     raise InvalidTransition, 'Access control cannot return to shadow after normalized role mutations'
   end

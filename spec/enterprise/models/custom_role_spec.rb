@@ -71,7 +71,7 @@ RSpec.describe CustomRole, type: :model do
     expect(account.access_roles.where(name: 'Support')).not_to exist
   end
 
-  it 'preserves canonical grants after a metadata change in enforced mode' do
+  it 'rejects legacy metadata changes for a canonical-owned role in enforced mode' do
     account = create(:account)
     AccessControl::SystemRoleBootstrapper.call(account: account)
     custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
@@ -82,9 +82,10 @@ RSpec.describe CustomRole, type: :model do
 
     mapped_role.update!(grant_source: 'canonical')
     mapped_role.grants.find_by!(resource: 'tasks', capability: 'view').update!(access_scope: 'own')
-    custom_role.update!(name: 'Support')
+    expect(custom_role.update(name: 'Support')).to be(false)
 
-    expect(mapped_role.reload.name).to eq('Support')
+    expect(custom_role.errors[:base]).to include('Legacy role mutations are disabled for this account')
+    expect(mapped_role.reload.name).not_to eq('Support')
     expect(mapped_role.grants.reload.pluck(:resource, :capability, :access_scope)).to eq(
       [%w[tasks view own]]
     )
@@ -175,5 +176,47 @@ RSpec.describe CustomRole, type: :model do
     expect(custom_role.update(permissions: %w[contact_manage])).to be(false)
     expect(custom_role.errors[:permissions]).to include('cannot be changed while access control is enforced')
     expect(custom_role.reload.permissions).to eq(%w[crm_task_view])
+  end
+
+  context 'when the account has completed a normalized role mutation' do
+    let(:account) { create(:account) }
+    let!(:legacy_role) { create(:custom_role, account: account, name: 'Legacy support', permissions: %w[crm_task_view]) }
+
+    before do
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') do
+        normalized_role = AccessControl::AccessRoleMutator.create(
+          account: account,
+          attributes: { 'name' => 'Normalized support', 'grants' => [] }
+        )
+        AccessControl::AccessRoleMutator.destroy(
+          account: account,
+          access_role: normalized_role,
+          lock_version: normalized_role.lock_version
+        )
+      end
+    end
+
+    it 'rejects legacy role creation after the last normalized role is deleted' do
+      role = account.custom_roles.build(name: 'Legacy again', permissions: %w[crm_task_view])
+
+      expect(role.save).to be(false)
+      expect(role.errors[:base]).to include('Legacy role mutations are disabled for this account')
+    end
+
+    it 'rejects legacy role updates after the last normalized role is deleted' do
+      expect(legacy_role.update(name: 'Changed through legacy writer')).to be(false)
+      expect(legacy_role.errors[:base]).to include('Legacy role mutations are disabled for this account')
+      expect(legacy_role.reload.name).to eq('Legacy support')
+    end
+
+    it 'rejects legacy role deletion after the last normalized role is deleted' do
+      expect(legacy_role.destroy).to be(false)
+      expect(legacy_role.errors[:base]).to include('Legacy role mutations are disabled for this account')
+      expect(legacy_role.reload).to be_persisted
+    end
   end
 end

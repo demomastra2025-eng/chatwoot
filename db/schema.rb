@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_18_104500) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_18_190000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -57,7 +57,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_104500) do
     t.index ["account_id"], name: "index_access_roles_on_account_id"
     t.index ["legacy_custom_role_id"], name: "index_access_roles_on_legacy_custom_role", unique: true, where: "(legacy_custom_role_id IS NOT NULL)"
     t.check_constraint "btrim(name::text) <> ''::text", name: "access_roles_non_blank_name"
-    t.check_constraint "grant_source::text = ANY (ARRAY['legacy'::character varying, 'canonical'::character varying]::text[])", name: "chk_access_roles_grant_source"
+    t.check_constraint "grant_source::text = ANY (ARRAY['legacy'::character varying::text, 'canonical'::character varying::text])", name: "chk_access_roles_grant_source"
     t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying::text, 'department_lead'::character varying::text, 'employee'::character varying::text, 'commercial_director'::character varying::text, 'observer'::character varying::text]))", name: "access_roles_supported_system_key"
     t.check_constraint "system_key IS NULL OR legacy_custom_role_id IS NULL", name: "access_roles_single_identity_source"
   end
@@ -151,6 +151,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_104500) do
     t.jsonb "settings", default: {}
     t.jsonb "feature_flags_overflow", default: [], null: false
     t.bigint "billing_organization_id"
+    t.datetime "access_role_canonicalized_at"
+    t.index ["access_role_canonicalized_at"], name: "index_accounts_on_access_role_canonicalized_at"
     t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
     t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying::text, 'shadow'::character varying::text, 'enforced'::character varying::text])", name: "accounts_supported_access_control_mode"

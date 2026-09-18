@@ -19,6 +19,10 @@ module AccessControl::ModeControlled
     @access_control_mode_transition_authorized = false
   end
 
+  def access_role_canonicalized?
+    access_role_canonicalized_at.present? || access_roles.canonical_grant_source.exists?
+  end
+
   private
 
   def access_control_mode_changed_through_transition

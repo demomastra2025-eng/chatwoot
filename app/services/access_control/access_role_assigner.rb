@@ -28,7 +28,7 @@ class AccessControl::AccessRoleAssigner
   end
 
   def self.release_enabled?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('ACCESS_ROLE_ASSIGNMENTS_ENABLED', false))
+    AccessControl::ReleaseGate.assignments_enabled?
   end
 
   def initialize(account)
