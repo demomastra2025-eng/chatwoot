@@ -3112,3 +3112,34 @@ test('VoiceApplication prepares only an AI Pipecat-to-Node runtime fallback', as
   assert.equal(requestPayload.ai_context, undefined);
   assert.equal(requestPayload.routing.ai_context, undefined);
 });
+
+test('rejects Gemini 3.8 fallback to the legacy Node runtime', async () => {
+  const handoffs = [];
+  const app = new VoiceApplication({
+    client: {
+      handoffRuntime: async payload => {
+        handoffs.push(payload);
+      }
+    }
+  });
+  const aiContext = {
+    call_session_id: 4865,
+    runtime_session_id: 'runtime-fallback-38',
+    runtime_generation: 'pipecat-generation-38',
+    ai: { provider: 'gemini-live', model: 'gemini-3.8-live' }
+  };
+
+  await assert.rejects(
+    app.prepareAiRuntimeFallback({
+      requestPayload: {
+        call_ref: 'voice-agent-call-38',
+        runtime_session_id: 'runtime-fallback-38',
+        ai_context: aiContext
+      },
+      routeDecision: { action: 'ai', ai_context: aiContext },
+      error: new Error('provider unavailable')
+    }),
+    error => error.code === 'gemini_3_8_legacy_runtime_unsupported'
+  );
+  assert.equal(handoffs.length, 0);
+});

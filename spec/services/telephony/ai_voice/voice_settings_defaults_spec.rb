@@ -5,7 +5,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
     it 'keeps Gemini Live as the default provider' do
       expect(described_class.normalize({})).to include(
         'provider' => 'gemini-live',
-        'model' => 'gemini-3.1-flash-live-preview',
+        'model' => 'gemini-3.8-live',
         'voice' => 'sulafat',
         'language' => 'auto',
         'input_language_priorities' => %w[ru-KZ kk-KZ en-US],
@@ -216,6 +216,24 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize(thinking_level: 'unknown')).to include(
         'thinking_level' => 'minimal'
       )
+    end
+
+    it 'forces queued audio cleanup for Gemini 3.8 interruptions' do
+      expect(
+        described_class.normalize(
+          model: 'gemini-3.8-live',
+          interruptions_enabled: true,
+          clear_audio_on_interrupt: false
+        )
+      ).to include('clear_audio_on_interrupt' => true)
+
+      expect(
+        described_class.normalize(
+          model: 'gemini-3.8-live',
+          interruptions_enabled: false,
+          clear_audio_on_interrupt: false
+        )
+      ).to include('clear_audio_on_interrupt' => false)
     end
 
     it 'gates Gemini native audio features by model and always uses the supported API version' do

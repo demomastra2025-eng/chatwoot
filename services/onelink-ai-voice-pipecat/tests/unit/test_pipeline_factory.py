@@ -175,7 +175,8 @@ def test_builds_supported_provider_pipeline(
             assert stt._filter_background_audio is True
         else:
             assert stt._settings.model == "ink-whisper"
-        assert stt._settings.language is Language.RU
+        expected_stt_language = "rus" if provider in {"elevenlabs", "fish"} else Language.RU
+        assert stt._settings.language == expected_stt_language
         assert tts._settings.language == "ru"
         llm = cast(OpenRouterLLMService, assembly.llm)
         assert llm._settings.extra == {
@@ -516,8 +517,8 @@ def test_cascade_auto_language_uses_configured_primary_and_secondary_hints(provi
     )
 
     stt = cast(OneLinkElevenLabsRealtimeSTTService, assembly.stt)
-    assert stt._settings.language is Language.RU
-    assert stt._secondary_languages == ["kk", "en"]
+    assert stt._settings.language == "rus"
+    assert stt._secondary_languages == ["kaz", "eng"]
     assert stt._settings.keyterms == list(ELEVENLABS_STT_KEYTERMS)
 
 
@@ -607,10 +608,14 @@ def test_gemini_31_uses_thinking_and_context_compression_settings():
     assert llm._settings.context_window_compression.enabled is False
 
 
-def test_gemini_25_does_not_receive_unsupported_thinking_level():
+@pytest.mark.parametrize(
+    "model",
+    ["gemini-2.5-flash-native-audio-preview-12-2025", "gemini-3.8-live"],
+)
+def test_gemini_models_without_thinking_config_do_not_receive_it(model):
     context = _context(
         "gemini-live",
-        model="gemini-2.5-flash-native-audio-preview-12-2025",
+        model=model,
         voice="sulafat",
     )
     context.ai.thinking_level = "high"
@@ -876,6 +881,18 @@ def test_gemini_25_tool_uses_native_non_blocking_contract():
         model="gemini-2.5-flash-native-audio-preview-12-2025",
         voice="sulafat",
     )
+    context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=5_000))
+
+    tool = _build_tools(context, MagicMock()).standard_tools[0]
+
+    assert tool.handler is not None
+    assert tool.handler._pipecat_cancel_on_interruption is False
+    assert tool.handler._pipecat_timeout_secs == 13.0
+
+
+@pytest.mark.parametrize("model", ["gemini-3.8-live", "gemini-2.0-flash-live-001"])
+def test_compatible_gemini_tools_use_native_non_blocking_contract(model):
+    context = _context("gemini-live", model=model, voice="sulafat")
     context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=5_000))
 
     tool = _build_tools(context, MagicMock()).standard_tools[0]

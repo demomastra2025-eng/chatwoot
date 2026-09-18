@@ -12,6 +12,7 @@ from pipecat.frames.frames import Frame, VADUserStoppedSpeakingFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
 from pipecat.services.settings import is_given
+from pipecat.transcriptions.language import Language
 from websockets.asyncio.client import connect as websocket_connect
 from websockets.protocol import State
 
@@ -38,13 +39,18 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
         super().__init__(**kwargs)
         primary_value = getattr(self._settings.language, "value", self._settings.language)
         primary = str(primary_value or "").strip().lower()
-        self._secondary_languages = list(
-            dict.fromkeys(
-                language.strip().lower()
-                for language in (secondary_languages or [])
-                if language.strip() and language.strip().lower() != primary
-            )
-        )
+        normalized_secondary_languages: list[str] = []
+        for language in secondary_languages or []:
+            candidate = language.strip().lower()
+            if not candidate:
+                continue
+            try:
+                candidate = self.language_to_service_language(Language(candidate)) or candidate
+            except ValueError:
+                pass
+            if candidate != primary:
+                normalized_secondary_languages.append(candidate)
+        self._secondary_languages = list(dict.fromkeys(normalized_secondary_languages))
         # The media bridge emits low-latency 20 ms PCM frames, while ElevenLabs
         # recommends 100 ms to 1 s chunks for realtime STT. ffmpeg can also
         # release several 20 ms frames in one stdout read, which previously

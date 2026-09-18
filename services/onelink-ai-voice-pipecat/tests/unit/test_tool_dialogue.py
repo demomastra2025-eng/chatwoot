@@ -670,6 +670,24 @@ async def test_mutating_tool_speaks_progress_without_duplicate_execution():
     assert state.executions == 1
 
 
+def test_gemini_38_uses_native_async_completion_instead_of_runtime_bridge():
+    activity = ConversationActivity()
+    gemini_31 = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", model="gemini-3.1-flash-live-preview"),
+        state=FakeState(),
+        activity=activity,
+    )
+    gemini_38 = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", model="gemini-3.8-live"),
+        state=FakeState(),
+        activity=activity,
+    )
+    tool = definition("faq_lookup", foreground_wait_ms=1_000)
+
+    assert gemini_31._uses_gemini_async_completion(tool) is True
+    assert gemini_38._uses_gemini_async_completion(tool) is False
+
+
 @pytest.mark.asyncio
 async def test_post_tool_stall_forces_one_continuation_instruction():
     state = FakeState()

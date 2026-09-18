@@ -478,7 +478,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(voice_settings).to include(
           'humanlike_defaults_profile' => 'standard_v1',
           'provider' => 'gemini-live',
-          'model' => 'gemini-3.1-flash-live-preview',
+          'model' => 'gemini-3.8-live',
           'voice_activity_profile' => 'balanced',
           'interruptions_enabled' => true,
           'interruption_mode' => 'transcript_confirmed',

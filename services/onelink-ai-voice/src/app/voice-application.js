@@ -11,6 +11,7 @@ const GEMINI_OUTPUT_RATE = parseStreamRate(process.env.VOICE_AGENT_REALTIME_OUTP
 const RECORDING_SAMPLE_RATE = parseStreamRate(process.env.VOICE_AGENT_RECORDING_SAMPLE_RATE, 16_000);
 const REALTIME_INPUT_GAIN = parseAudioGain(process.env.VOICE_AGENT_REALTIME_INPUT_GAIN, 0.75);
 const REALTIME_OUTPUT_GAIN = parseAudioGain(process.env.VOICE_AGENT_REALTIME_OUTPUT_GAIN, 0.9);
+const GEMINI_3_8_LIVE_MODEL = 'gemini-3.8-live';
 
 class VoiceApplication {
   constructor({
@@ -428,6 +429,14 @@ class VoiceApplication {
     }
 
     const aiContext = aiContextCandidate(requestPayload, routeDecision);
+    const ai = aiContext.ai || routeDecision.ai || {};
+    const provider = ai.provider || aiContext.provider || routeDecision.provider;
+    const model = ai.model || aiContext.model || routeDecision.model;
+    if (provider === 'gemini-live' && model === GEMINI_3_8_LIVE_MODEL) {
+      const fallbackError = new Error('Gemini 3.8 Live requires the Pipecat runtime');
+      fallbackError.code = 'gemini_3_8_legacy_runtime_unsupported';
+      throw fallbackError;
+    }
     const sourceRuntimeGeneration = aiContext.runtime_generation || aiContext.runtimeGeneration;
     if (!sourceRuntimeGeneration) {
       throw new Error('AI runtime fallback requires source_runtime_generation');

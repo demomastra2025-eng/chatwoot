@@ -1,6 +1,6 @@
 class Telephony::AiVoice::ContextBuilder
   DEFAULT_PROVIDER = 'gemini-live'.freeze
-  DEFAULT_MODEL = 'gemini-3.1-flash-live-preview'.freeze
+  DEFAULT_MODEL = 'gemini-3.8-live'.freeze
   DEFAULT_VOICE = 'sulafat'.freeze
   DEFAULT_LANGUAGE = 'auto'.freeze
   DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze

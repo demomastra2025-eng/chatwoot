@@ -51,8 +51,8 @@ def test_connection_query_repeats_secondary_language_hints():
 
     query = parse_qs(urlencode(service._connection_query_params()))
 
-    assert query["language_code"] == ["ru"]
-    assert query["secondary_languages"] == ["kk", "en"]
+    assert query["language_code"] == ["rus"]
+    assert query["secondary_languages"] == ["kaz", "eng"]
     assert query["keyterms"] == ["OneLink", "слоган"]
     assert query["audio_format"] == ["pcm_16000"]
     assert query["commit_strategy"] == ["manual"]

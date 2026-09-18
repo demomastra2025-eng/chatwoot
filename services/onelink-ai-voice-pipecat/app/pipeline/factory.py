@@ -86,6 +86,13 @@ from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTSer
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
+from app.services.gemini_live_capabilities import (
+    GEMINI_AFFECTIVE_DIALOG_MODELS,
+    GEMINI_AUTO_LANGUAGE_MODELS,
+    GEMINI_PROACTIVE_AUDIO_CONFIG_MODELS,
+    GEMINI_THINKING_LEVEL_MODELS,
+    supports_native_async_tools,
+)
 from app.services.gemini_stt import OneLinkGeminiSTTService
 from app.services.openai_live import OneLinkOpenAILiveLLMService
 from app.sessions.state import SessionState
@@ -128,15 +135,6 @@ CRM_DATA_INTEGRITY_INSTRUCTION = (
     "нейтральное название и сразу вызови инструмент; не задавай тот же вопрос снова. Не сообщай "
     "об успешной записи до успешного результата инструмента. Фактический источник: {source}."
 )
-GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
-GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
-    {
-        "gemini-3.1-flash-live-preview",
-        "gemini-2.5-flash-native-audio-preview-12-2025",
-    }
-)
-GEMINI_THINKING_LEVEL_MODELS = frozenset({"gemini-3.1-flash-live-preview"})
-GEMINI_PROACTIVE_AUDIO_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
 GEMINI_STT_LANGUAGE_ALIASES = {
     # Gemini 3.5 Transcribe supports Russian as ru-RU, not OneLink's ru-KZ locale.
     "ru-KZ": "ru-RU",
@@ -426,7 +424,8 @@ def build_pipeline(
             and context.ai.model in GEMINI_AFFECTIVE_DIALOG_MODELS
         )
         proactive_audio_enabled = (
-            context.ai.proactive_audio_enabled and context.ai.model in GEMINI_PROACTIVE_AUDIO_MODELS
+            context.ai.proactive_audio_enabled
+            and context.ai.model in GEMINI_PROACTIVE_AUDIO_CONFIG_MODELS
         )
         llm_context = LLMContext(messages=cast(Any, initial_messages))
         aggregators = _aggregators(
@@ -903,8 +902,8 @@ def _build_tools(
     tool_dialogue: ToolDialogueCoordinator,
 ) -> ToolsSchema:
     schemas: list[FunctionSchema] = []
-    async_tools_supported = not (
-        context.ai.provider == "gemini-live" and "gemini-3" in context.ai.model.lower()
+    async_tools_supported = context.ai.provider != "gemini-live" or supports_native_async_tools(
+        context.ai.model
     )
     for tool in context.tools:
         schema_error = _tool_schema_error(tool)
@@ -1005,10 +1004,8 @@ def _tool_handler(
         )
 
     @tool_options(
-        # Gemini 3 Live does not yet implement NON_BLOCKING function calls;
-        # keep its supported blocking contract instead of causing a provider
-        # ErrorFrame. Cascaded/OpenRouter and compatible realtime models use
-        # Pipecat's native async-tool path.
+        # Gemini 3.1 cannot accept NON_BLOCKING declarations. Gemini 3.8 and
+        # compatible realtime models use Pipecat's native async-tool path.
         cancel_on_interruption=not survive_interruption,
         timeout_secs=timeout_secs,
     )

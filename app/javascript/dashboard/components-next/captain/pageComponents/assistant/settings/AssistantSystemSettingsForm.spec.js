@@ -60,7 +60,7 @@ describe('AssistantSystemSettingsForm', () => {
       resolution_message: 'Спасибо, вопрос закрыт.',
       voice_settings: {
         provider: 'gemini-live',
-        model: 'gemini-3.1-flash-live-preview',
+        model: 'gemini-3.8-live',
         voice: 'sulafat',
         language: 'auto',
         input_language_priorities: ['ru-KZ', 'kk-KZ', 'en-US'],

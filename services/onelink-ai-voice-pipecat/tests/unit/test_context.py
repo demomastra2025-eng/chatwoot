@@ -105,6 +105,22 @@ def test_context_accepts_gemini_auto_language_and_thinking_level():
     assert context.ai.thinking_level == "high"
 
 
+def test_gemini_38_interruptions_require_queued_audio_cleanup():
+    raw = payload()
+    raw["ai"].update(
+        model="gemini-3.8-live",
+        interruptions_enabled=True,
+        clear_audio_on_interrupt=False,
+    )
+
+    with pytest.raises(ValidationError, match="require clear_audio_on_interrupt"):
+        VoiceContext.model_validate(raw)
+
+    raw["ai"]["interruptions_enabled"] = False
+    context = VoiceContext.model_validate(raw)
+    assert context.ai.clear_audio_on_interrupt is False
+
+
 def test_context_preserves_unknown_forward_compatible_keys():
     raw = payload()
     raw["captain"] = {"assistant_id": 99, "new_contract_key": "kept"}

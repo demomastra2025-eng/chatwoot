@@ -16,6 +16,7 @@ from pipecat.services.llm_service import FunctionCallParams, FunctionCallResultP
 
 from app.pipeline.context import AiSettings, ToolDefinition
 from app.pipeline.processors import ConversationActivity
+from app.services.gemini_live_capabilities import supports_native_async_tools
 from app.sessions.state import READ_ONLY_INFLIGHT_FENCE_TOOLS
 
 SpeechCallback = Callable[[str], Awaitable[bool | None]]
@@ -646,10 +647,9 @@ class ToolDialogueCoordinator:
     def _uses_gemini_async_completion(self, definition: ToolDefinition) -> bool:
         return (
             self._ai.provider == "gemini-live"
-            # Gemini 3 does not support NON_BLOCKING tool declarations yet, so
-            # retain the runtime-owned foreground/background bridge only for
-            # that model family. Gemini 2.5 uses Pipecat's native async tools.
-            and "gemini-3" in self._ai.model.lower()
+            # Retain the runtime-owned bridge only for models such as Gemini
+            # 3.1 that cannot accept NON_BLOCKING function declarations.
+            and not supports_native_async_tools(self._ai.model)
             and not _is_terminal_tool(definition.name)
             and self._foreground_wait_ms(definition) > 0
         )

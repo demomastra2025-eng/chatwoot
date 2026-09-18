@@ -656,7 +656,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['ai']).to include(
       'provider' => 'gemini-live',
-      'model' => 'gemini-3.1-flash-live-preview',
+      'model' => 'gemini-3.8-live',
       'voice' => 'sulafat',
       'first_message' => 'Здравствуйте! Я голосовой помощник OneLink. Чем могу помочь?',
       'max_duration_sec' => 900

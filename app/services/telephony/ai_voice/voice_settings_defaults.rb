@@ -16,7 +16,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'humanlike_defaults_profile' => 'standard_v1',
     'provider' => 'gemini-live',
     'stt_provider' => 'elevenlabs',
-    'model' => 'gemini-3.1-flash-live-preview',
+    'model' => 'gemini-3.8-live',
     'delegation_model' => 'gpt-5.4-mini',
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
@@ -83,7 +83,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
-      'model' => 'gemini-3.1-flash-live-preview', 'voice' => 'sulafat', 'language' => 'auto'
+      'model' => 'gemini-3.8-live', 'voice' => 'sulafat', 'language' => 'auto'
     }.freeze,
     'openai-live' => { 'model' => 'gpt-live-1', 'voice' => 'marin' }.freeze,
     'openai-realtime' => { 'model' => 'gpt-realtime-2', 'voice' => 'alloy' }.freeze,
@@ -115,7 +115,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   FLOAT_KEYS = %w[temperature ambient_noise_volume_dbfs vad_confidence vad_min_volume].freeze
   GEMINI_AUTO_LANGUAGE_MODELS = %w[
-    gemini-3.1-flash-live-preview gemini-2.5-flash-native-audio-preview-12-2025
+    gemini-3.8-live gemini-3.1-flash-live-preview gemini-2.5-flash-native-audio-preview-12-2025
   ].freeze
   GEMINI_AFFECTIVE_DIALOG_MODELS = %w[gemini-2.5-flash-native-audio-preview-12-2025].freeze
   GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AFFECTIVE_DIALOG_MODELS
@@ -179,6 +179,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       return unless provider == 'gemini-live'
 
       normalized['api_version'] = 'v1beta'
+      normalized['clear_audio_on_interrupt'] = true if normalized['model'] == 'gemini-3.8-live' && normalized['interruptions_enabled']
     end
 
     def gemini_model_supported?(provider, model, models)

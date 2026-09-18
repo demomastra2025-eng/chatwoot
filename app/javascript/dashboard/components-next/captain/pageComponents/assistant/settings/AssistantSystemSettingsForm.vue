@@ -39,7 +39,7 @@ const { t } = useI18n();
 const DEFAULT_VOICE_SETTINGS = {
   provider: 'gemini-live',
   sttProvider: 'elevenlabs',
-  model: 'gemini-3.1-flash-live-preview',
+  model: 'gemini-3.8-live',
   delegationModel: 'gpt-5.4-mini',
   voice: 'sulafat',
   language: 'auto',
@@ -75,6 +75,7 @@ const GEMINI_AFFECTIVE_DIALOG_MODELS = new Set([
   'gemini-2.5-flash-native-audio-preview-12-2025',
 ]);
 const GEMINI_AUTO_LANGUAGE_MODELS = new Set([
+  'gemini-3.8-live',
   'gemini-3.1-flash-live-preview',
   'gemini-2.5-flash-native-audio-preview-12-2025',
 ]);
@@ -96,10 +97,14 @@ const VOICE_PROVIDER_OPTIONS = Object.freeze([
 
 const VOICE_PROVIDER_PRESETS = Object.freeze({
   'gemini-live': {
-    model: 'gemini-3.1-flash-live-preview',
+    model: 'gemini-3.8-live',
     voice: 'sulafat',
     language: 'auto',
     models: [
+      {
+        value: 'gemini-3.8-live',
+        label: 'Gemini 3.8 Live',
+      },
       {
         value: 'gemini-3.1-flash-live-preview',
         label: 'Gemini 3.1 Flash Live Preview',

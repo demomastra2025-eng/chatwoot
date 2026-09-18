@@ -9,6 +9,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from app.clients.onelink import Correlation
+from app.services.gemini_live_capabilities import requires_clear_audio_on_interrupt
 
 
 class ContextModel(BaseModel):
@@ -94,6 +95,17 @@ class AiSettings(ContextModel):
     )
     post_tool_continuation_ms: int = Field(default=4_000, ge=100, le=120_000)
     ordinary_answer_continuation_ms: int = Field(default=2_500, ge=500, le=120_000)
+
+    @model_validator(mode="after")
+    def validate_interruption_audio_contract(self) -> AiSettings:
+        if (
+            self.provider == "gemini-live"
+            and self.interruptions_enabled
+            and requires_clear_audio_on_interrupt(self.model)
+            and not self.clear_audio_on_interrupt
+        ):
+            raise ValueError("Gemini 3.8 interruptions require clear_audio_on_interrupt")
+        return self
 
 
 class ToolDefinition(ContextModel):
