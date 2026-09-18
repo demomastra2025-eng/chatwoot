@@ -65,10 +65,12 @@ RSpec.describe AccessControl::LegacyCustomRoleMapper do
       role = described_class.call(custom_role: custom_role)
       role.grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'team')
       extra_grant = role.grants.create!(account: account, resource: 'appointments', capability: 'view', access_scope: 'all')
-      custom_role.update!(permissions: %w[contact_manage])
+      previous_version = role.lock_version
+      custom_role.update_columns(permissions: %w[contact_manage]) # rubocop:disable Rails/SkipsModelValidations
 
       described_class.call(custom_role: custom_role)
 
+      expect(role.reload.lock_version).to be > previous_version
       expect(role.grants.reload.pluck(:resource, :capability, :access_scope)).to match_array(
         %w[view create update_fields].map { |capability| ['contacts', capability, 'all'] }
       )

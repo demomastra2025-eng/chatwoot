@@ -47,6 +47,7 @@ class AccessControl::ModeTransition
 
   def transition(from)
     validate_transition!(from)
+    validate_canonical_rollback!(from)
     readiness = readiness_for_transition
     account.authorize_access_control_mode_transition do
       account.update!(access_control_mode: target_mode)
@@ -73,5 +74,12 @@ class AccessControl::ModeTransition
     raise NotReady, readiness unless readiness.ready?
 
     readiness
+  end
+
+  def validate_canonical_rollback!(from)
+    return unless from == 'enforced' && target_mode == 'shadow'
+    return unless account.access_roles.exists?(grant_source: 'canonical')
+
+    raise InvalidTransition, 'Access control cannot return to shadow after normalized role mutations'
   end
 end

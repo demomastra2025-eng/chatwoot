@@ -48,6 +48,24 @@ RSpec.describe AccessControl::ModeTransition do
       expect(account.reload).to be_access_control_mode_shadow
     end
 
+    it 'rejects rollback after a normalized role mutation' do
+      account = create(:account)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      create(:account_user, account: account, role: :agent)
+      described_class.call(account: account, to: :shadow)
+      described_class.call(account: account, to: :enforced)
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') do
+        AccessControl::AccessRoleMutator.create(
+          account: account,
+          attributes: { 'name' => 'Support', 'grants' => [] }
+        )
+      end
+
+      expect { described_class.call(account: account, to: :shadow) }
+        .to raise_error(described_class::InvalidTransition, /normalized role mutations/)
+      expect(account.reload).to be_access_control_mode_enforced
+    end
+
     it 'rejects unknown modes before locking the account' do
       account = create(:account)
 

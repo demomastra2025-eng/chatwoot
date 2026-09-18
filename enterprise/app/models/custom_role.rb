@@ -57,7 +57,7 @@ class CustomRole < ApplicationRecord
 
   validates :name, presence: true
   validates :permissions, inclusion: { in: PERMISSIONS }
-  validate :permissions_remain_mappable_when_enforced, if: :will_save_change_to_permissions?
+  validate :permissions_remain_compatible_when_enforced, if: :will_save_change_to_permissions?
 
   before_validation :lock_account_for_access_control
   before_destroy :lock_account_for_access_control, prepend: true
@@ -66,11 +66,14 @@ class CustomRole < ApplicationRecord
 
   private
 
-  def permissions_remain_mappable_when_enforced
+  def permissions_remain_compatible_when_enforced
     return unless account&.access_control_mode_enforced?
-    return if AccessControl::LegacyCustomRoleMapper.analyze(self).mappable?
 
-    errors.add(:permissions, 'must be representable while access control is enforced')
+    if persisted? && canonical_access_role?
+      errors.add(:permissions, 'cannot be changed while access control is enforced')
+    elsif !AccessControl::LegacyCustomRoleMapper.analyze(self).mappable?
+      errors.add(:permissions, 'must be representable while access control is enforced')
+    end
   end
 
   def reconcile_materialized_access_role
@@ -78,7 +81,14 @@ class CustomRole < ApplicationRecord
     return unless analysis.mappable?
     return if account.access_control_mode_legacy? && !AccessRole.exists?(legacy_custom_role_id: id)
 
-    AccessControl::LegacyCustomRoleMapper.call(custom_role: self)
+    AccessControl::LegacyCustomRoleMapper.call(
+      custom_role: self,
+      reconcile_grants: !canonical_access_role?
+    )
+  end
+
+  def canonical_access_role?
+    AccessRole.exists?(legacy_custom_role_id: id, grant_source: 'canonical')
   end
 
   def access_role_reconciliation_required?

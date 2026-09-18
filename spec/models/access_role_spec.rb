@@ -15,6 +15,10 @@ RSpec.describe AccessRole do
     it { is_expected.to validate_uniqueness_of(:name).scoped_to(:account_id).case_insensitive }
     it { is_expected.to validate_inclusion_of(:system_key).in_array(described_class::SYSTEM_KEYS).allow_nil }
 
+    it 'rejects unsupported grant ownership values' do
+      expect { access_role.grant_source = 'unsupported' }.to raise_error(ArgumentError, /not a valid grant_source/)
+    end
+
     it 'rejects a legacy custom role from another account' do
       access_role.legacy_custom_role = create(:custom_role)
 
@@ -49,6 +53,10 @@ RSpec.describe AccessRole do
         end
       end.to raise_error(ActiveRecord::StatementInvalid)
     end
+  end
+
+  it 'defaults new roles to legacy grant ownership' do
+    expect(create(:access_role)).to be_legacy_grant_source
   end
 
   it 'cannot be destroyed while assigned to an account user' do

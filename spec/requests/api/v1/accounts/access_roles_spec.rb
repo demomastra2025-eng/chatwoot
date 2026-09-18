@@ -104,4 +104,242 @@ RSpec.describe 'Access Roles API', type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
   end
+
+  describe 'normalized mutations' do
+    around do |example|
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') { example.run }
+    end
+
+    it 'rejects mutations while the rolling-release gate is disabled' do
+      enforce_access_control!
+
+      ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'false') do
+        expect do
+          post api_v1_account_access_roles_url(account_id: account.id),
+               params: { access_role: { name: 'Support', grants: [] } },
+               headers: administrator.create_new_auth_token,
+               as: :json
+        end.not_to change(AccessRole, :count)
+      end
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body['code']).to eq('ACCESS_ROLE_MUTATIONS_NOT_ENABLED')
+    end
+
+    it 'creates a linked custom role with normalized grants in enforced mode' do
+      enforce_access_control!
+
+      post path,
+           params: {
+             access_role: {
+               name: 'Clinic coordinator',
+               description: 'Coordinates patient work',
+               grants: [
+                 { resource: 'contacts', capability: 'view', access_scope: 'team' },
+                 { resource: 'tasks', capability: 'assign', access_scope: 'own' }
+               ]
+             }
+           },
+           headers: administrator.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:created)
+      role = account.access_roles.find(response.parsed_body.dig('data', 'id'))
+      expect(role).to have_attributes(name: 'Clinic coordinator', description: 'Coordinates patient work', system_key: nil)
+      expect(role).to be_canonical_grant_source
+      expect(role.legacy_custom_role).to have_attributes(name: 'Clinic coordinator', permissions: [])
+      expect(serialized_grants(role)).to contain_exactly(
+        %w[contacts view team],
+        %w[tasks assign own]
+      )
+      expect(response.parsed_body.dig('data', 'lock_version')).to eq(role.lock_version)
+    end
+
+    it 'rejects normalized creation before access control is enforced' do
+      administrator
+
+      expect do
+        post path,
+             params: { access_role: { name: 'Support', grants: [] } },
+             headers: administrator.create_new_auth_token,
+             as: :json
+      end.not_to change(AccessRole, :count)
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body['code']).to eq('ACCESS_CONTROL_NOT_ENFORCED')
+    end
+
+    it 'atomically replaces metadata and grants without changing frozen legacy permissions' do
+      enforce_access_control!
+      role = create_normalized_role
+      original_version = role.lock_version
+
+      patch "#{path}/#{role.id}",
+            params: {
+              access_role: {
+                name: 'Regional support',
+                description: 'Updated description',
+                lock_version: original_version,
+                grants: [{ resource: 'deals', capability: 'update_fields', access_scope: 'all' }]
+              }
+            },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(role.reload).to have_attributes(name: 'Regional support', description: 'Updated description')
+      expect(role).to be_canonical_grant_source
+      expect(role.lock_version).to be > original_version
+      expect(role.legacy_custom_role).to have_attributes(name: 'Regional support', permissions: [])
+      expect(serialized_grants(role)).to eq([%w[deals update_fields all]])
+    end
+
+    it 'rolls back metadata and grants when a replacement grant is invalid' do
+      enforce_access_control!
+      role = create_normalized_role
+      original_attributes = role.attributes.slice('name', 'description', 'lock_version')
+      original_grants = serialized_grants(role)
+
+      patch "#{path}/#{role.id}",
+            params: {
+              access_role: {
+                name: 'Broken update',
+                lock_version: role.lock_version,
+                grants: [{ resource: 'contacts', capability: 'complete_cancel', access_scope: 'all' }]
+              }
+            },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(role.reload.attributes.slice('name', 'description', 'lock_version')).to eq(original_attributes)
+      expect(role.legacy_custom_role.name).to eq(original_attributes.fetch('name'))
+      expect(serialized_grants(role)).to eq(original_grants)
+    end
+
+    it 'rejects stale updates without overwriting the current role' do
+      enforce_access_control!
+      role = create_normalized_role
+      stale_version = role.lock_version
+      role.update!(description: 'Concurrent update')
+
+      patch "#{path}/#{role.id}",
+            params: { access_role: { description: 'Stale update', lock_version: stale_version } },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body['code']).to eq('STALE_ACCESS_ROLE')
+      expect(role.reload.description).to eq('Concurrent update')
+    end
+
+    it 'does not claim grant ownership for an empty update' do
+      enforce_access_control!
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      role = custom_role.access_role
+
+      patch "#{path}/#{role.id}",
+            params: { access_role: { lock_version: role.lock_version } },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('MUTATION_REQUIRED')
+      expect(role.reload).to be_legacy_grant_source
+    end
+
+    it 'rejects system role mutations' do
+      enforce_access_control!
+      role = account.access_roles.find_by!(system_key: 'employee')
+
+      patch "#{path}/#{role.id}",
+            params: { access_role: { name: 'Renamed employee', lock_version: role.lock_version } },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('SYSTEM_ROLE_IMMUTABLE')
+      expect(role.reload.name).to eq('Employee')
+    end
+
+    it 'deletes an unassigned custom role and its legacy identity' do
+      enforce_access_control!
+      role = create_normalized_role
+      custom_role_id = role.legacy_custom_role_id
+      grant_ids = role.grant_ids
+
+      delete "#{path}/#{role.id}",
+             params: { access_role: { lock_version: role.lock_version } },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(AccessRole.where(id: role.id)).not_to exist
+      expect(CustomRole.where(id: custom_role_id)).not_to exist
+      expect(AccessRoleGrant.where(id: grant_ids)).not_to exist
+    end
+
+    it 'rejects deletion while the role is assigned and preserves both identities' do
+      enforce_access_control!
+      role = create_normalized_role
+      create(:account_user, account: account, custom_role: role.legacy_custom_role, access_role: role)
+
+      delete "#{path}/#{role.id}",
+             params: { access_role: { lock_version: role.lock_version } },
+             headers: administrator.create_new_auth_token,
+             as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['message']).to be_present
+      expect(role.reload).to be_persisted
+      expect(role.legacy_custom_role.reload).to be_persisted
+    end
+
+    it 'does not expose a role from another account to mutation' do
+      enforce_access_control!
+      foreign_role = create(:access_role)
+
+      patch "#{path}/#{foreign_role.id}",
+            params: { access_role: { name: 'Cross-account update', lock_version: foreign_role.lock_version } },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(foreign_role.reload.name).not_to eq('Cross-account update')
+    end
+
+    it 'rejects normalized mutations from non-administrators' do
+      enforce_access_control!
+
+      post path,
+           params: { access_role: { name: 'Support', grants: [] } },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
+  def enforce_access_control!
+    administrator
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    account.reload
+  end
+
+  def create_normalized_role
+    AccessControl::AccessRoleMutator.create(
+      account: account,
+      attributes: {
+        'name' => 'Support',
+        'description' => 'Initial description',
+        'grants' => [{ 'resource' => 'tasks', 'capability' => 'view', 'access_scope' => 'team' }]
+      }
+    )
+  end
+
+  def serialized_grants(role)
+    role.grants.reload.order(:resource, :capability).pluck(:resource, :capability, :access_scope)
+  end
 end

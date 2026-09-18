@@ -27,7 +27,7 @@ class AccessControl::LegacyCustomRoleMapper
     Analysis.new(grants: merge_grants(mapped_grants), unsupported_permissions: unsupported.sort)
   end
 
-  def self.call(custom_role:)
+  def self.call(custom_role:, reconcile_grants: true)
     custom_role.account.with_lock do
       custom_role.lock!
       analysis = analyze(custom_role)
@@ -35,7 +35,8 @@ class AccessControl::LegacyCustomRoleMapper
 
       role = find_or_create_role(custom_role)
       reconcile_attributes(role, custom_role)
-      reconcile_grants(role, analysis.grants)
+      grants_changed = reconcile_grants(role, analysis.grants) if reconcile_grants && role.legacy_grant_source?
+      role.update!(updated_at: Time.current) if grants_changed
       role
     end
   end
@@ -104,16 +105,24 @@ class AccessControl::LegacyCustomRoleMapper
 
   def self.reconcile_grants(role, definitions)
     expected = definitions.index_by { |grant| [grant[:resource], grant[:capability]] }
+    changed = false
     role.grants.find_each do |grant|
       definition = expected.delete([grant.resource, grant.capability])
       if definition
-        grant.update!(access_scope: definition[:access_scope]) unless grant.access_scope == definition[:access_scope]
+        unless grant.access_scope == definition[:access_scope]
+          grant.update!(access_scope: definition[:access_scope])
+          changed = true
+        end
       else
         grant.destroy!
+        changed = true
       end
     end
 
-    expected.each_value { |grant| role.grants.create!(grant.merge(account: role.account)) }
+    expected.each_value do |grant|
+      role.grants.create!(grant.merge(account: role.account))
+      changed = true
+    end
+    changed
   end
-  private_class_method :reconcile_grants
 end

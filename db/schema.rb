@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_16_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_18_104500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -49,12 +49,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_120000) do
     t.integer "lock_version", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "grant_source", default: "legacy", null: false
     t.index "account_id, lower((name)::text)", name: "index_access_roles_on_account_and_lower_name", unique: true
+    t.index ["account_id", "grant_source"], name: "index_access_roles_on_account_id_and_grant_source"
     t.index ["account_id", "id"], name: "index_access_roles_on_account_and_id", unique: true
     t.index ["account_id", "system_key"], name: "index_access_roles_on_account_and_system_key", unique: true, where: "(system_key IS NOT NULL)"
     t.index ["account_id"], name: "index_access_roles_on_account_id"
     t.index ["legacy_custom_role_id"], name: "index_access_roles_on_legacy_custom_role", unique: true, where: "(legacy_custom_role_id IS NOT NULL)"
     t.check_constraint "btrim(name::text) <> ''::text", name: "access_roles_non_blank_name"
+    t.check_constraint "grant_source::text = ANY (ARRAY['legacy'::character varying, 'canonical'::character varying]::text[])", name: "chk_access_roles_grant_source"
     t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying::text, 'department_lead'::character varying::text, 'employee'::character varying::text, 'commercial_director'::character varying::text, 'observer'::character varying::text]))", name: "access_roles_supported_system_key"
     t.check_constraint "system_key IS NULL OR legacy_custom_role_id IS NULL", name: "access_roles_single_identity_source"
   end

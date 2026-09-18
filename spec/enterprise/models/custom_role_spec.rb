@@ -71,7 +71,7 @@ RSpec.describe CustomRole, type: :model do
     expect(account.access_roles.where(name: 'Support')).not_to exist
   end
 
-  it 'reconciles a materialized mapping after a representable permission change' do
+  it 'preserves canonical grants after a metadata change in enforced mode' do
     account = create(:account)
     AccessControl::SystemRoleBootstrapper.call(account: account)
     custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
@@ -80,9 +80,14 @@ RSpec.describe CustomRole, type: :model do
     AccessControl::ModeTransition.call(account: account, to: :shadow)
     AccessControl::ModeTransition.call(account: account, to: :enforced)
 
-    custom_role.update!(permissions: %w[contact_manage])
+    mapped_role.update!(grant_source: 'canonical')
+    mapped_role.grants.find_by!(resource: 'tasks', capability: 'view').update!(access_scope: 'own')
+    custom_role.update!(name: 'Support')
 
-    expect(mapped_role.grants.reload.pluck(:resource).uniq).to eq(%w[contacts])
+    expect(mapped_role.reload.name).to eq('Support')
+    expect(mapped_role.grants.reload.pluck(:resource, :capability, :access_scope)).to eq(
+      [%w[tasks view own]]
+    )
   end
 
   it 'reconciles materialized role metadata in legacy mode' do
@@ -132,7 +137,20 @@ RSpec.describe CustomRole, type: :model do
     expect(mapped_role.reload).to be_persisted
   end
 
-  it 'rejects permissions that cannot be represented in enforced mode' do
+  it 'continues mapping permission changes for a legacy-owned role in enforced mode' do
+    account = create(:account)
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+    AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    expect(custom_role.update(permissions: %w[contact_manage])).to be(true)
+    expect(custom_role.reload.permissions).to eq(%w[contact_manage])
+    expect(custom_role.access_role.grants.pluck(:resource).uniq).to eq(%w[contacts])
+  end
+
+  it 'rejects unrepresentable permission changes for a legacy-owned role in enforced mode' do
     account = create(:account)
     AccessControl::SystemRoleBootstrapper.call(account: account)
     custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
@@ -142,6 +160,20 @@ RSpec.describe CustomRole, type: :model do
 
     expect(custom_role.update(permissions: %w[report_manage])).to be(false)
     expect(custom_role.errors[:permissions]).to include('must be representable while access control is enforced')
+    expect(custom_role.reload.permissions).to eq(%w[crm_task_view])
+  end
+
+  it 'rejects legacy permission changes for a canonical-owned role' do
+    account = create(:account)
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+    mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    mapped_role.update!(grant_source: 'canonical')
+
+    expect(custom_role.update(permissions: %w[contact_manage])).to be(false)
+    expect(custom_role.errors[:permissions]).to include('cannot be changed while access control is enforced')
     expect(custom_role.reload.permissions).to eq(%w[crm_task_view])
   end
 end

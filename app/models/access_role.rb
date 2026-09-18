@@ -1,6 +1,8 @@
 class AccessRole < ApplicationRecord
   include AccessControl::AccountLockable
 
+  enum :grant_source, { legacy: 'legacy', canonical: 'canonical' }, suffix: true
+
   SYSTEM_KEYS = %w[administrator department_lead employee commercial_director observer].freeze
 
   belongs_to :account
@@ -17,6 +19,7 @@ class AccessRole < ApplicationRecord
 
   validates :name, presence: true, uniqueness: { scope: :account_id, case_sensitive: false }
   validates :system_key, inclusion: { in: SYSTEM_KEYS }, allow_nil: true
+  validates :grant_source, inclusion: { in: grant_sources.keys }
   validates :system_key, uniqueness: { scope: :account_id }, allow_nil: true
   validates :legacy_custom_role_id, uniqueness: true, allow_nil: true
   validate :legacy_custom_role_belongs_to_account
