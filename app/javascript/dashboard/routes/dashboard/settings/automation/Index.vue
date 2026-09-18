@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useAlert } from 'dashboard/composables';
 import AddAutomationRule from './AddAutomationRule.vue';
 import EditAutomationRule from './EditAutomationRule.vue';
@@ -55,7 +54,7 @@ const isSLAEnabled = computed(() =>
 );
 
 onMounted(() => {
-  useInboxStore().get();
+  store.dispatch('inboxes/get');
   store.dispatch('agents/get');
   store.dispatch('contacts/get');
   store.dispatch('teams/get');

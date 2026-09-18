@@ -2,8 +2,6 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
 import SidebarProfileMenuStatus from './SidebarProfileMenuStatus.vue';
 
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 const { webphoneClient, storeDispatch } = vi.hoisted(() => {
   const listeners = {};
   return {
@@ -105,11 +103,6 @@ const sipSession = overrides => ({
 
 describe('SidebarProfileMenuStatus', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
-    vi.spyOn(useInboxStore(), 'getInboxes', 'get').mockReturnValue([
-      { id: 43, name: 'Отдел продаж' },
-      { id: 44, name: 'Поддержка' },
-    ]);
     webphoneClient.sessions = {};
     webphoneClient.bootstrapIncomingSupport.mockReset();
     webphoneClient.bootstrapIncomingSupport.mockResolvedValue();

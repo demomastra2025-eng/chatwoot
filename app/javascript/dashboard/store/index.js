@@ -20,7 +20,9 @@ import contactNotes from './modules/contactNotes';
 import contacts from './modules/contacts';
 import conversationLabels from './modules/conversationLabels';
 import conversationMetadata from './modules/conversationMetadata';
+import conversationPage from './modules/conversationPage';
 import conversations from './modules/conversations';
+import conversationSearch from './modules/conversationSearch';
 import conversationStats from './modules/conversationStats';
 import conversationTypingStatus from './modules/conversationTypingStatus';
 import conversationWatchers from './modules/conversationWatchers';
@@ -31,7 +33,7 @@ import dashboardApps from './modules/dashboardApps';
 import draftMessages from './modules/draftMessages';
 import globalConfig from 'shared/store/globalConfig';
 import inboxAssignableAgents from './modules/inboxAssignableAgents';
-
+import inboxes from './modules/inboxes';
 import inboxMembers from './modules/inboxMembers';
 import integrations from './modules/integrations';
 import labels from './modules/labels';
@@ -81,7 +83,9 @@ export default createStore({
     contacts,
     conversationLabels,
     conversationMetadata,
+    conversationPage,
     conversations,
+    conversationSearch,
     conversationStats,
     conversationTypingStatus,
     conversationWatchers,
@@ -92,7 +96,7 @@ export default createStore({
     draftMessages,
     globalConfig,
     inboxAssignableAgents,
-
+    inboxes,
     inboxMembers,
     integrations,
     labels,

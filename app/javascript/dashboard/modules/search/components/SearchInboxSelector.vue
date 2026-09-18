@@ -1,9 +1,9 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { ref, computed, defineModel } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToggle } from '@vueuse/core';
 import { vOnClickOutside } from '@vueuse/components';
+import { useMapGetter } from 'dashboard/composables/store.js';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -34,7 +34,7 @@ const [showDropdown, toggleDropdown] = useToggle();
 
 const searchQuery = ref('');
 
-const inboxesList = useInboxStoreGetter('getInboxes');
+const inboxesList = useMapGetter('inboxes/getInboxes');
 
 const inboxesSection = computed(() => {
   const inboxes = inboxesList.value?.map(inbox => {

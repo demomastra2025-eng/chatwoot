@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, ref, watch, defineAsyncComponent, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -369,7 +368,7 @@ const fallbackInboxId = computed(() => {
 });
 
 const inbox = computed(() => {
-  return inboxId.value ? useInboxStore().getInbox(inboxId.value) : {};
+  return inboxId.value ? store.getters['inboxes/getInbox'](inboxId.value) : {};
 });
 
 const selectionInboxIds = computed(() => {

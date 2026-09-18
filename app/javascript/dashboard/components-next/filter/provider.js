@@ -1,4 +1,3 @@
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, h } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useOperators } from './operators';
@@ -65,7 +64,7 @@ export function useConversationFilterContext() {
 
   const labels = useMapGetter('labels/getLabels');
   const agents = useMapGetter('agents/getAgents');
-  const inboxes = useInboxStoreGetter('getInboxes');
+  const inboxes = useMapGetter('inboxes/getInboxes');
   const teams = useMapGetter('teams/getTeams');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
   const crmReferencesStore = useCrmReferencesStore();

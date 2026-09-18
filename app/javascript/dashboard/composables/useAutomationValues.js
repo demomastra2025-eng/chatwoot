@@ -1,4 +1,3 @@
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages';
@@ -28,7 +27,7 @@ export default function useAutomationValues() {
   const agents = useMapGetter('agents/getVerifiedAgents');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
   const contacts = useMapGetter('contacts/getContacts');
-  const inboxes = useInboxStoreGetter('getInboxes');
+  const inboxes = useMapGetter('inboxes/getInboxes');
   const labels = useMapGetter('labels/getLabels');
   const teams = useMapGetter('teams/getTeams');
   const slaPolicies = useMapGetter('sla/getSLA');

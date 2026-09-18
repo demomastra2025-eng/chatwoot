@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
@@ -26,8 +25,8 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
+    ...mapGetters({
+      uiFlags: 'inboxes/getUIFlags',
     }),
   },
   validations: {
@@ -44,15 +43,18 @@ export default {
       }
 
       try {
-        const lineChannel = await useInboxStore().createChannel({
-          name: this.channelName?.trim(),
-          channel: {
-            type: 'line',
-            line_channel_id: this.lineChannelId,
-            line_channel_secret: this.lineChannelSecret,
-            line_channel_token: this.lineChannelToken,
-          },
-        });
+        const lineChannel = await this.$store.dispatch(
+          'inboxes/createChannel',
+          {
+            name: this.channelName?.trim(),
+            channel: {
+              type: 'line',
+              line_channel_id: this.lineChannelId,
+              line_channel_secret: this.lineChannelSecret,
+              line_channel_token: this.lineChannelToken,
+            },
+          }
+        );
 
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'agents'),

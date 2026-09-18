@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import router from '../../../../index';
 import PageHeader from '../../SettingsSubPageHeader.vue';
@@ -18,8 +17,8 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
+    ...mapGetters({
+      uiFlags: 'inboxes/getUIFlags',
     }),
   },
   methods: {
@@ -35,7 +34,7 @@ export default {
     },
     async requestInitialQr(inboxId) {
       try {
-        await useInboxStore().requestWeixinQr(inboxId);
+        await this.$store.dispatch('inboxes/requestWeixinQr', inboxId);
       } catch (error) {
         useAlert(
           error.message || this.$t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_ERROR')
@@ -44,7 +43,7 @@ export default {
     },
     async createChannel() {
       try {
-        const channel = await useInboxStore().createChannel({
+        const channel = await this.$store.dispatch('inboxes/createChannel', {
           channel: this.normalizedChannelPayload(),
         });
 

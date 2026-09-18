@@ -1,7 +1,7 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useMapGetter } from 'dashboard/composables/store';
 
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -18,7 +18,7 @@ const props = defineProps({
 const emit = defineEmits(['sendMessage']);
 
 const { t } = useI18n();
-const inbox = useInboxStoreGetter('getInbox');
+const inbox = useMapGetter('inboxes/getInbox');
 
 const searchQuery = ref('');
 const selectedTemplate = ref(null);

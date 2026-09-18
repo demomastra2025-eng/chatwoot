@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createPinia, setActivePinia } from 'pinia';
 
 import { LocalStorage } from 'shared/helpers/localStorage';
 import {
@@ -7,7 +6,6 @@ import {
   consumeScheduledMessageDraft,
 } from 'dashboard/composables/useScheduledMessageDraft';
 import ReplyBox from './ReplyBox.vue';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 
 const replyButtonLabel = context =>
   ReplyBox.computed.replyButtonLabel.call({
@@ -357,19 +355,6 @@ describe('ReplyBox', () => {
   });
 
   it('keeps template-required WhatsApp channels actionable without allowing free-text input', () => {
-    setActivePinia(createPinia());
-    useInboxStore().records = [
-      {
-        id: 143,
-        message_templates: [
-          {
-            name: 'approved_template',
-            status: 'approved',
-            components: [{ type: 'BODY', text: 'Hello' }],
-          },
-        ],
-      },
-    ];
     const context = {
       isCommunicationThreadConversation: true,
       activeReplyChannel: {
@@ -395,6 +380,12 @@ describe('ReplyBox', () => {
       ReplyBox.computed.showWhatsappTemplates.call({
         inboxId: 143,
         isPrivate: false,
+        $store: {
+          getters: {
+            'inboxes/getFilteredWhatsAppTemplates': inboxId =>
+              inboxId === 143 ? [{ name: 'approved_template' }] : [],
+          },
+        },
       })
     ).toBe(true);
   });

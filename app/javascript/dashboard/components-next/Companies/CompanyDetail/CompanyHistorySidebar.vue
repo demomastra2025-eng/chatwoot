@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -20,7 +19,7 @@ defineProps({
 
 const { t } = useI18n();
 const contactsById = useMapGetter('contacts/getContactById');
-const stateInbox = useInboxStoreGetter('getInboxById');
+const stateInbox = useMapGetter('inboxes/getInboxById');
 const accountLabels = useMapGetter('labels/getLabels');
 
 const accountLabelsValue = computed(() => accountLabels.value);

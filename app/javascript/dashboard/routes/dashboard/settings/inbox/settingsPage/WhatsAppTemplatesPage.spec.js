@@ -1,10 +1,9 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 
 import WhatsAppTemplatesPage from './WhatsAppTemplatesPage.vue';
 
-const { permissionState, useAlertMock } = vi.hoisted(() => ({
+const { dispatch, permissionState, useAlertMock } = vi.hoisted(() => ({
+  dispatch: vi.fn(),
   permissionState: { canManage: true },
   useAlertMock: vi.fn(),
 }));
@@ -17,6 +16,10 @@ vi.mock('dashboard/composables', () => ({
   useAlert: useAlertMock,
 }));
 
+vi.mock('dashboard/composables/store', () => ({
+  useStore: () => ({ dispatch }),
+}));
+
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({ checkPermissions: () => permissionState.canManage }),
 }));
@@ -26,14 +29,11 @@ const inbox = {
   message_templates: [],
   csat_config: {},
 };
-let pinia;
-let syncTemplates;
 
 const mountComponent = (inboxProp = inbox) =>
   shallowMount(WhatsAppTemplatesPage, {
     props: { inbox: inboxProp, embedded: true },
     global: {
-      plugins: [pinia],
       stubs: {
         Button: true,
         CreateWhatsAppTemplateDialog: true,
@@ -58,16 +58,14 @@ const syncedInbox = {
 
 describe('WhatsAppTemplatesPage', () => {
   beforeEach(() => {
-    pinia = createPinia();
-    setActivePinia(pinia);
-    syncTemplates = vi.spyOn(useInboxStore(), 'syncTemplates');
+    dispatch.mockReset();
     permissionState.canManage = true;
     useAlertMock.mockReset();
   });
 
   it('refreshes the visible template list from the updated store prop', async () => {
     const wrapper = mountComponent();
-    syncTemplates.mockImplementation(async () => {
+    dispatch.mockImplementation(async () => {
       await wrapper.setProps({ inbox: syncedInbox });
       return syncedInbox;
     });
@@ -77,7 +75,7 @@ describe('WhatsAppTemplatesPage', () => {
     await wrapper.vm.syncTemplates();
     await flushPromises();
 
-    expect(syncTemplates).toHaveBeenCalledWith(7);
+    expect(dispatch).toHaveBeenCalledWith('inboxes/syncTemplates', 7);
     expect(wrapper.text()).toContain('synced_order_update');
     expect(useAlertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUCCESS'
@@ -128,7 +126,7 @@ describe('WhatsAppTemplatesPage', () => {
     wrapper.vm.openCreateDialog();
     await flushPromises();
 
-    expect(syncTemplates).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
     expect(wrapper.findAllComponents({ name: 'Button' })).toHaveLength(0);
     expect(wrapper.findComponent({ name: 'Dialog' }).exists()).toBe(false);
   });

@@ -1,12 +1,11 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { picoSearch } from '@scmmishra/pico-search';
 import Avatar from 'next/avatar/Avatar.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
-
+import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import { useAccount } from 'dashboard/composables/useAccount';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -14,12 +13,13 @@ import ChannelName from './components/ChannelName.vue';
 import ChannelIcon from 'next/icon/ChannelIcon.vue';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
 
+const getters = useStoreGetters();
 const { accountScopedRoute } = useAccount();
 const { t } = useI18n();
 
 const searchQuery = ref('');
 
-const inboxes = useInboxStoreGetter('getInboxes');
+const inboxes = useMapGetter('inboxes/getInboxes');
 
 const normalizeValue = value => {
   return value ? String(value).trim() : '';
@@ -482,7 +482,7 @@ const filteredInboxesList = computed(() => {
 
 const showAddCard = computed(() => !searchQuery.value.trim());
 
-const uiFlags = useInboxStoreGetter('getUIFlags');
+const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
 </script>
 
 <template>

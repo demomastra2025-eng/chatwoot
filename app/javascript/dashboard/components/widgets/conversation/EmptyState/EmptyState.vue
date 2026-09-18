@@ -1,6 +1,4 @@
 <script>
-import { useInboxStore } from 'dashboard/stores/inboxes';
-import { mapState } from 'pinia';
 import { mapGetters } from 'vuex';
 import { useAdmin } from 'dashboard/composables/useAdmin';
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -32,14 +30,9 @@ export default {
     ...mapGetters({
       currentChat: 'getSelectedChat',
       allConversations: 'getAllConversations',
-
+      inboxesList: 'inboxes/getInboxes',
+      uiFlags: 'inboxes/getUIFlags',
       loadingChatList: 'getChatListLoadingStatus',
-    }),
-
-    ...mapState(useInboxStore, {
-      inboxesList: store => store.getInboxes,
-
-      uiFlags: store => store.getUIFlags,
     }),
     loadingIndicatorMessage() {
       if (this.uiFlags.isFetching) {

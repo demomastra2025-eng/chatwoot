@@ -1,6 +1,4 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 
 import ConfigurationPage from './ConfigurationPage.vue';
 
@@ -13,8 +11,6 @@ const getVirtualPbxProvisioningRunsMock = vi.hoisted(() => vi.fn());
 const updateVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 const storeDispatchMock = vi.hoisted(() => vi.fn());
 const copyTextToClipboardMock = vi.hoisted(() => vi.fn());
-let pinia;
-let updateInbox;
 
 vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
@@ -114,7 +110,6 @@ const buildWrapper = ({ inbox = baseInbox } = {}) =>
       inbox,
     },
     global: {
-      plugins: [pinia],
       mocks: {
         $t: key => key,
         $store: {
@@ -145,11 +140,6 @@ const buildWrapper = ({ inbox = baseInbox } = {}) =>
 
 describe('ConfigurationPage Virtual PBX management', () => {
   beforeEach(() => {
-    pinia = createPinia();
-    setActivePinia(pinia);
-    updateInbox = vi
-      .spyOn(useInboxStore(), 'updateInbox')
-      .mockResolvedValue({});
     alertMock.mockReset();
     getVirtualPbxStatusMock.mockReset();
     getVirtualPbxProvisioningPlanMock.mockReset();
@@ -445,7 +435,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     await wrapper.vm.updateSipuniWebhookToken();
     await flushPromises();
 
-    expect(updateInbox).toHaveBeenCalledWith({
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
       id: 42,
       formData: false,
       channel: {
@@ -506,7 +496,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     await wrapper.vm.updateBinotelWebhookToken();
     await flushPromises();
 
-    expect(updateInbox).toHaveBeenCalledWith({
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
       id: 42,
       formData: false,
       channel: {

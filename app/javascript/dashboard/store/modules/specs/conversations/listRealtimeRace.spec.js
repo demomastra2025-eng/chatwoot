@@ -2,8 +2,6 @@ import actions from '../../conversations/actions';
 import { mutations } from '../../conversations';
 import CommunicationThreadApi from 'dashboard/api/inbox/communicationThread';
 import { buildCommunicationThreadConversation } from 'dashboard/helper/communicationThreadHelper';
-import pinia from 'dashboard/store/pinia';
-import { useConversationPageStore } from 'dashboard/stores/conversationPage';
 
 const thread = (updatedAt = 1) => ({
   id: 7,
@@ -75,7 +73,6 @@ const cases = [
 ];
 
 beforeEach(() => {
-  useConversationPageStore(pinia).reset();
   actions.invalidateConversationListRequests(contextFor());
 });
 afterEach(() => vi.restoreAllMocks());
@@ -104,11 +101,11 @@ it.each(cases)(
     expect(context.state.listLoadingStatus).toBe(false);
     expect(context.state.listLoadingError).toBe(false);
     expect(api).toHaveBeenCalledTimes(1);
-    expect(
-      useConversationPageStore(pinia).getCurrentPageFilter(
-        filter ? 'appliedFilters' : 'all'
-      )
-    ).toBe(page);
+    expect(context.dispatch).toHaveBeenCalledWith(
+      'conversationPage/setCurrentPage',
+      { filter: filter ? 'appliedFilters' : 'all', page },
+      { root: true }
+    );
   }
 );
 

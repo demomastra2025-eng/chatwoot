@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
@@ -258,7 +257,7 @@ const communicationThreadQuery = () => {
 
 const getCallInfo = call => {
   const conversation = store.getters.getConversationById(call?.conversationId);
-  const inbox = useInboxStore().getInbox(
+  const inbox = store.getters['inboxes/getInbox'](
     call?.inboxId || conversation?.inbox_id
   );
   const sender = conversation?.meta?.sender;

@@ -5,12 +5,6 @@ import {
   isOnParticipatingView,
 } from '../actionHelpers';
 import types from '../../../../mutation-types';
-import pinia from 'dashboard/store/pinia';
-import { useConversationPageStore } from 'dashboard/stores/conversationPage';
-
-beforeEach(() => {
-  useConversationPageStore(pinia).reset();
-});
 
 describe('#isOnMentionsView', () => {
   it('return valid responses when passing the state', () => {
@@ -76,13 +70,9 @@ describe('#buildConversationList', () => {
       false
     );
 
-    const conversationPageStore = useConversationPageStore(pinia);
-    expect(conversationPageStore.getTotalCount('scope:label:vip')).toBe(7);
-    expect(conversationPageStore.getCurrentPageFilter('scope:label:vip')).toBe(
-      1
-    );
-    expect(conversationPageStore.getHasEndReached('scope:label:vip')).toBe(
-      true
+    expect(context.dispatch).toHaveBeenCalledWith(
+      'conversationPage/setTotalCount',
+      { filter: 'scope:label:vip', count: 7 }
     );
     expect(context.dispatch).not.toHaveBeenCalledWith(
       'conversationStats/set',

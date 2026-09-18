@@ -1,6 +1,4 @@
 <script>
-import { useInboxStore } from 'dashboard/stores/inboxes';
-import { mapState } from 'pinia';
 import { mapGetters } from 'vuex';
 import { uploadFile } from 'dashboard/helper/uploadHelper';
 import { useAlert } from 'dashboard/composables';
@@ -140,15 +138,11 @@ export default {
   },
   computed: {
     ...mapGetters({
+      allInboxes: 'inboxes/getAllInboxes',
       cannedMessages: 'getCannedResponses',
       currentAccountId: 'getCurrentAccountId',
       getAccount: 'accounts/getAccount',
-    }),
-
-    ...mapState(useInboxStore, {
-      allInboxes: store => store.getAllInboxes,
-
-      getFilteredWhatsAppTemplates: store => store.getFilteredWhatsAppTemplates,
+      getFilteredWhatsAppTemplates: 'inboxes/getFilteredWhatsAppTemplates',
     }),
     accountTimezone() {
       return (

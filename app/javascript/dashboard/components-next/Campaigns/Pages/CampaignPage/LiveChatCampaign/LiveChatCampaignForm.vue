@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { reactive, computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
@@ -41,7 +40,7 @@ const store = useStore();
 
 const formState = {
   uiFlags: useMapGetter('campaigns/getUIFlags'),
-  inboxes: useInboxStoreGetter('getWebsiteInboxes'),
+  inboxes: useMapGetter('inboxes/getWebsiteInboxes'),
 };
 
 const senderList = ref([]);

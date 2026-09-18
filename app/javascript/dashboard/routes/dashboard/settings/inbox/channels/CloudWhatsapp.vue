@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
@@ -28,9 +27,7 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
-    }),
+    ...mapGetters({ uiFlags: 'inboxes/getUIFlags' }),
   },
   validations: {
     inboxName: { required },
@@ -48,20 +45,23 @@ export default {
 
       try {
         const webhookVerifyToken = generateWebhookVerifyToken();
-        const whatsappChannel = await useInboxStore().createChannel({
-          name: this.inboxName?.trim(),
-          channel: {
-            type: 'whatsapp',
-            phone_number: this.phoneNumber,
-            provider: 'whatsapp_cloud',
-            provider_config: {
-              api_key: this.apiKey,
-              phone_number_id: this.phoneNumberId,
-              business_account_id: this.businessAccountId,
-              webhook_verify_token: webhookVerifyToken,
+        const whatsappChannel = await this.$store.dispatch(
+          'inboxes/createChannel',
+          {
+            name: this.inboxName?.trim(),
+            channel: {
+              type: 'whatsapp',
+              phone_number: this.phoneNumber,
+              provider: 'whatsapp_cloud',
+              provider_config: {
+                api_key: this.apiKey,
+                phone_number_id: this.phoneNumberId,
+                business_account_id: this.businessAccountId,
+                webhook_verify_token: webhookVerifyToken,
+              },
             },
-          },
-        });
+          }
+        );
 
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'agents'),

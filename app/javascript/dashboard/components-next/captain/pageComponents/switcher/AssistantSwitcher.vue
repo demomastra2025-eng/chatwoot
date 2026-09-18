@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -42,7 +41,7 @@ const fetchDataForRoute = async (routeName, assistantId) => {
       await store.dispatch('captainScenarios/get', { assistantId });
     },
     captain_assistants_channels_index: async () => {
-      await useInboxStore().get();
+      await store.dispatch('inboxes/get');
       await store.dispatch('captainAssistants/show', assistantId);
     },
     captain_tools_index: async () => {
@@ -65,7 +64,7 @@ const fetchDataForRoute = async (routeName, assistantId) => {
       await store.dispatch('captainAssistants/show', assistantId);
     },
     captain_assistants_inboxes_index: async () => {
-      await useInboxStore().get();
+      await store.dispatch('inboxes/get');
       await store.dispatch('captainAssistants/show', assistantId);
     },
   };

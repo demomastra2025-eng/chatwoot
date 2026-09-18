@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref, useAttrs } from 'vue';
 import { useI18n } from 'vue-i18n';
 import * as Sentry from '@sentry/vue';
@@ -95,7 +94,7 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 const isPreparingCall = ref(false);
 
-const inboxesList = useInboxStoreGetter('getInboxes');
+const inboxesList = useMapGetter('inboxes/getInboxes');
 const contactsUiFlags = useMapGetter('contacts/getUIFlags');
 
 const voiceInboxes = computed(() =>

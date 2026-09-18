@@ -1,8 +1,8 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref, watch } from 'vue';
 import Icon from 'next/icon/Icon.vue';
 import { useLoadWithRetry } from 'dashboard/composables/loadWithRetry';
+import { useMapGetter } from 'dashboard/composables/store';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useMessageContext } from '../provider.js';
@@ -20,7 +20,7 @@ const localHasError = ref(false);
 const showGallery = ref(false);
 
 const { filteredCurrentChatAttachments, inboxId } = useMessageContext();
-const inboxGetter = useInboxStoreGetter('getInbox');
+const inboxGetter = useMapGetter('inboxes/getInbox');
 const { isLoaded, hasError, loadWithRetry } = useLoadWithRetry({
   max_retry: 4,
   backoff: 500,

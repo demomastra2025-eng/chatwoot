@@ -1,9 +1,7 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { defineComponent, h } from 'vue';
 import { createStore } from 'vuex';
 import { mount } from '@vue/test-utils';
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useInbox } from '../useInbox';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
@@ -81,14 +79,6 @@ vi.mock('dashboard/composables/useTransformKeys', () => ({
 }));
 
 describe('useInbox', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-    const getInboxById = mockStore.getters['inboxes/getInboxById'];
-    vi.spyOn(useInboxStore(), 'getInboxById', 'get').mockReturnValue(
-      getInboxById
-    );
-  });
-
   const createTestComponent = inboxId =>
     defineComponent({
       setup() {

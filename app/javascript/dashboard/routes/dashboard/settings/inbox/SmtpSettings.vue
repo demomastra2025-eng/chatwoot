@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
 import { useVuelidate } from '@vuelidate/core';
@@ -69,9 +68,7 @@ export default {
     domain: { required },
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
-    }),
+    ...mapGetters({ uiFlags: 'inboxes/getUIFlags' }),
   },
   watch: {
     inbox() {
@@ -147,7 +144,7 @@ export default {
             smtp_authentication: this.authMechanism,
           },
         };
-        await useInboxStore().updateInboxSMTP(payload);
+        await this.$store.dispatch('inboxes/updateInboxSMTP', payload);
         useAlert(this.$t('INBOX_MGMT.SMTP.EDIT.SUCCESS_MESSAGE'));
       } catch (error) {
         useAlert(

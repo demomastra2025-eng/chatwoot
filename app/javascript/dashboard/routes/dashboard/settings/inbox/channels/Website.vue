@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import router from '../../../../index';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -30,8 +29,8 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
+    ...mapGetters({
+      uiFlags: 'inboxes/getUIFlags',
     }),
     textAreaChannels() {
       if (
@@ -46,18 +45,21 @@ export default {
   methods: {
     async createChannel() {
       try {
-        const website = await useInboxStore().createWebsiteChannel({
-          name: this.inboxName?.trim(),
-          greeting_enabled: this.greetingEnabled,
-          greeting_message: this.greetingMessage,
-          channel: {
-            type: 'web_widget',
-            website_url: this.channelWebsiteUrl,
-            widget_color: this.channelWidgetColor,
-            welcome_title: this.channelWelcomeTitle,
-            welcome_tagline: this.channelWelcomeTagline,
-          },
-        });
+        const website = await this.$store.dispatch(
+          'inboxes/createWebsiteChannel',
+          {
+            name: this.inboxName?.trim(),
+            greeting_enabled: this.greetingEnabled,
+            greeting_message: this.greetingMessage,
+            channel: {
+              type: 'web_widget',
+              website_url: this.channelWebsiteUrl,
+              widget_color: this.channelWidgetColor,
+              welcome_title: this.channelWelcomeTitle,
+              welcome_tagline: this.channelWelcomeTagline,
+            },
+          }
+        );
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'agents'),
           params: {

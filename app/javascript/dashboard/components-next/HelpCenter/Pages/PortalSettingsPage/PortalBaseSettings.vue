@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { reactive, watch, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { buildPortalURL } from 'dashboard/helper/portalHelper';
@@ -51,7 +50,7 @@ const state = reactive({
 const originalState = reactive({ ...state });
 
 const liveChatWidgets = computed(() => {
-  const inboxes = useInboxStore().getInboxes;
+  const inboxes = store.getters['inboxes/getInboxes'];
   const widgetOptions = inboxes
     .filter(inbox => inbox.channel_type === 'Channel::WebWidget')
     .map(inbox => ({

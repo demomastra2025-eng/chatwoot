@@ -1,8 +1,8 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -32,6 +32,7 @@ const props = defineProps({
 });
 
 const { t } = useI18n();
+const store = useStore();
 const { checkPermissions } = usePolicy();
 const canManageTemplates = computed(() => checkPermissions(['administrator']));
 
@@ -66,7 +67,7 @@ const syncTemplates = async () => {
 
   try {
     isSyncingTemplates.value = true;
-    await useInboxStore().syncTemplates(props.inbox.id);
+    await store.dispatch('inboxes/syncTemplates', props.inbox.id);
     useAlert(t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_SUCCESS'));
   } catch (error) {
     useAlert(error.message);
@@ -95,7 +96,7 @@ const deleteTemplate = async () => {
 
   try {
     isDeletingTemplate.value = true;
-    await useInboxStore().deleteWhatsAppTemplate({
+    await store.dispatch('inboxes/deleteWhatsAppTemplate', {
       inboxId: props.inbox.id,
       templateName: templatePendingDelete.value.name,
     });
@@ -142,7 +143,7 @@ const updateTemplateVisibility = async (templateGroup, visible) => {
   const templateName = templateGroup.name;
   updatingVisibility.value.add(templateName);
   try {
-    await useInboxStore().updateWhatsAppTemplateVisibility({
+    await store.dispatch('inboxes/updateWhatsAppTemplateVisibility', {
       inboxId: props.inbox.id,
       templateName,
       visible,

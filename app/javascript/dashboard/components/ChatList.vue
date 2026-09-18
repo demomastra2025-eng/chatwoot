@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 // [TODO] This componet is too big and bulky to be in the same file, we can consider splitting this into multiple
 // composables and components, useVirtualChatList, useChatlistFilters
 import {
@@ -74,7 +73,6 @@ import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/c
 import { filterConversationsByCommunicationThreadMode } from 'dashboard/helper/communicationThreadHelper';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
-import { useConversationPageStore } from 'dashboard/stores/conversationPage';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 import {
   isValidConversationPipelineSelection,
@@ -133,7 +131,6 @@ const router = useRouter();
 const route = useRoute();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
-const conversationPageStore = useConversationPageStore();
 
 const resolveAttributesModalRef = ref(null);
 const conversationListRef = ref(null);
@@ -221,7 +218,7 @@ const appliedFilters = useMapGetter('getAppliedConversationFiltersV2');
 const folders = useMapGetter('customViews/getConversationCustomViews');
 const agentList = useMapGetter('agents/getAgents');
 const teamsList = useMapGetter('teams/getTeams');
-const inboxesList = useInboxStoreGetter('getInboxes');
+const inboxesList = useMapGetter('inboxes/getInboxes');
 const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
@@ -531,18 +528,22 @@ const currentPageFilterKey = computed(() => {
   })}`;
 });
 
-const inbox = useInboxStoreGetter('getInbox', activeInbox);
-const currentPage = computed(() =>
-  conversationPageStore.getCurrentPageFilter(currentPageFilterKey.value)
+const inbox = useFunctionGetter('inboxes/getInbox', activeInbox);
+const currentPage = useFunctionGetter(
+  'conversationPage/getCurrentPageFilter',
+  currentPageFilterKey
 );
-const currentFiltersPage = computed(() =>
-  conversationPageStore.getCurrentPageFilter(currentPageFilterKey.value)
+const currentFiltersPage = useFunctionGetter(
+  'conversationPage/getCurrentPageFilter',
+  currentPageFilterKey
 );
-const currentListTotal = computed(() =>
-  conversationPageStore.getTotalCount(currentPageFilterKey.value)
+const currentListTotal = useFunctionGetter(
+  'conversationPage/getTotalCount',
+  currentPageFilterKey
 );
-const hasCurrentPageEndReached = computed(() =>
-  conversationPageStore.getHasEndReached(currentPageFilterKey.value)
+const hasCurrentPageEndReached = useFunctionGetter(
+  'conversationPage/getHasEndReached',
+  currentPageFilterKey
 );
 
 const conversationCustomAttributes = useFunctionGetter(
@@ -1086,7 +1087,7 @@ function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
     store.dispatch('clearConversationFilters');
   }
   resetBulkActions();
-  conversationPageStore.reset();
+  store.dispatch('conversationPage/reset');
   if (hasActiveFolders.value) {
     const payload = activeFolder.value.query;
     fetchSavedFilteredConversations(payload);
@@ -1227,7 +1228,7 @@ async function onApplyFilter(payload) {
 
   resetBulkActions();
   foldersQuery.value = filterQueryGenerator(payload);
-  conversationPageStore.reset();
+  store.dispatch('conversationPage/reset');
   fetchFilteredConversations(payload);
 }
 

@@ -1,4 +1,3 @@
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, ref, unref } from 'vue';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
@@ -69,7 +68,7 @@ export const useWhatsappCallInitiation = (options = {}) => {
   const selectedChannel = computed(() => unref(options.channel) || {});
   const inbox = computed(() => {
     const inboxId = selectedInboxId.value;
-    return inboxId ? useInboxStore().getInbox(inboxId) : null;
+    return inboxId ? store.getters['inboxes/getInbox'](inboxId) : null;
   });
   const currentContact = computed(() => {
     const optionContact = unref(options.contact);

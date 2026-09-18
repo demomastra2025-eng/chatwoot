@@ -1,6 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, watch, reactive } from 'vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
@@ -24,10 +22,10 @@ const { t } = useI18n();
 const assistantId = computed(() => Number(route.params.assistantId));
 const assistantUiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetchingAssistant = computed(() => assistantUiFlags.value.fetchingItem);
-const inboxUiFlags = useInboxStoreGetter('getUIFlags');
+const inboxUiFlags = useMapGetter('inboxes/getUIFlags');
 const isFetching = computed(() => inboxUiFlags.value.isFetching);
 
-const inboxes = useInboxStoreGetter('getInboxes');
+const inboxes = useMapGetter('inboxes/getInboxes');
 const connectionStateByInboxId = reactive({});
 const autoReplyModeByInboxId = reactive({});
 const isUpdatingByInboxId = reactive({});
@@ -121,7 +119,7 @@ watch(
       return;
     }
 
-    useInboxStore().get();
+    store.dispatch('inboxes/get');
     store.dispatch('captainAssistants/show', currentAssistantId);
   },
   { immediate: true }
@@ -151,7 +149,7 @@ const toggleInboxConnection = async (inbox, nextValue) => {
       useAlert(t('CAPTAIN.INBOXES.DELETE.SUCCESS_MESSAGE'));
     }
 
-    await useInboxStore().get();
+    await store.dispatch('inboxes/get');
   } catch (error) {
     connectionStateByInboxId[inbox.id] = !nextValue;
     const fallbackErrorMessage = nextValue
@@ -180,7 +178,7 @@ const updateAutoReplyMode = async (inbox, event) => {
       autoReplyMode: nextMode,
     });
     useAlert(t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'));
-    await useInboxStore().get();
+    await store.dispatch('inboxes/get');
   } catch (error) {
     autoReplyModeByInboxId[inbox.id] = previousMode;
     useAlert(

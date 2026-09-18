@@ -5,7 +5,7 @@ import {
   allKeysRequired,
   extractTemplateVariables,
 } from '../templateHelper';
-import { templates } from './fixtures/inboxTemplateFixtures';
+import { templates } from '../../store/modules/specs/inboxes/templateFixtures';
 
 describe('templateHelper', () => {
   const technicianTemplate = templates.find(t => t.name === 'technician_visit');

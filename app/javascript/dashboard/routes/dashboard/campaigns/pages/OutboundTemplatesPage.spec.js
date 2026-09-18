@@ -4,8 +4,6 @@ import { ref } from 'vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import OutboundTemplatesPage from './OutboundTemplatesPage.vue';
 
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 const { routeState, permissionState } = vi.hoisted(() => ({
   routeState: {
     name: 'outbound_templates_index',
@@ -62,12 +60,6 @@ const mountComponent = () =>
 
 describe('OutboundTemplatesPage', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
-    vi.spyOn(
-      useInboxStore(),
-      'getOutboundCampaignInboxes',
-      'get'
-    ).mockImplementation(() => outboundInboxes.value);
     routeState.name = 'outbound_templates_index';
     routeState.params = { accountId: '1' };
     routeState.query = {};

@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { computed, ref, watch } from 'vue';
 import { OnClickOutside } from '@vueuse/components';
 import { useRoute } from 'vue-router';
@@ -45,7 +44,7 @@ const currentInboxId = computed(() =>
   Number(props.inbox?.id || route.params.inboxId)
 );
 const currentInboxFromStore = computed(() =>
-  useInboxStore().getInbox(currentInboxId.value)
+  store.getters['inboxes/getInbox'](currentInboxId.value)
 );
 const currentInbox = computed(() => {
   const storeInbox = currentInboxFromStore.value || {};
@@ -144,7 +143,7 @@ const fetchCaptainChannelData = async () => {
 };
 
 const refreshInboxData = async () => {
-  await useInboxStore().get();
+  await store.dispatch('inboxes/get');
 };
 
 const syncLocalStateFromInbox = () => {

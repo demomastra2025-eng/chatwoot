@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
@@ -15,7 +14,7 @@ const conversations = useMapGetter(
   'contactConversations/getAllConversationsByContactId'
 );
 const contactsById = useMapGetter('contacts/getContactById');
-const stateInbox = useInboxStoreGetter('getInboxById');
+const stateInbox = useMapGetter('inboxes/getInboxById');
 const accountLabels = useMapGetter('labels/getLabels');
 
 const accountLabelsValue = computed(() => accountLabels.value);

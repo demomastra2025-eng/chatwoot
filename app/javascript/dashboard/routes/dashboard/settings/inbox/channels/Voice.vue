@@ -1,6 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { reactive, computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -8,6 +6,7 @@ import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
 import { useAlert } from 'dashboard/composables';
 import { isPhoneE164 } from 'shared/helpers/Validators';
+import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 
@@ -18,6 +17,7 @@ import Select from 'dashboard/components-next/select/Select.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 
 const { t } = useI18n();
+const store = useStore();
 const route = useRoute();
 const router = useRouter();
 
@@ -91,7 +91,7 @@ const isValidSipPort = value => {
   );
 };
 
-const uiFlags = useInboxStoreGetter('getUIFlags');
+const uiFlags = useMapGetter('inboxes/getUIFlags');
 const isCreatingVirtualPbx = ref(false);
 const isVirtualPbxAdvancedVisible = ref(false);
 
@@ -456,7 +456,7 @@ async function createTwilioChannel() {
   if (!isFormValid) return;
 
   try {
-    const channel = await useInboxStore().createVoiceChannel({
+    const channel = await store.dispatch('inboxes/createVoiceChannel', {
       name: twilioState.phoneNumber,
       voice: {
         phone_number: twilioState.phoneNumber,

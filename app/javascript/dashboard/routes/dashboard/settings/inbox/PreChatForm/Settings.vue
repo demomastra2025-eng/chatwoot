@@ -1,8 +1,7 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, watch, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useStore } from 'vuex';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import PreChatFields from './PreChatFields.vue';
@@ -20,8 +19,9 @@ const props = defineProps({
 const emit = defineEmits(['saved']);
 
 const { t } = useI18n();
+const store = useStore();
 
-const uiFlags = useInboxStoreGetter('getUIFlags');
+const uiFlags = useMapGetter('inboxes/getUIFlags');
 const customAttributes = useMapGetter('attributes/getAttributes');
 
 const preChatFormEnabled = ref(false);
@@ -80,7 +80,7 @@ const updateInbox = async () => {
         },
       },
     };
-    await useInboxStore().updateInbox(payload);
+    await store.dispatch('inboxes/updateInbox', payload);
     emit('saved');
     useAlert(t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
   } catch (error) {

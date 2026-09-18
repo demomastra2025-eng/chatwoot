@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { reactive, onMounted, ref, defineProps, watch, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -184,7 +183,7 @@ const checkTemplateStatus = async () => {
 
   try {
     templateLoading.value = true;
-    const response = await useInboxStore().getCSATTemplateStatus({
+    const response = await store.dispatch('inboxes/getCSATTemplateStatus', {
       inboxId: props.inbox.id,
     });
 
@@ -238,14 +237,17 @@ const analyzeTemplateUtility = async () => {
   resetUtilityAnalysis();
 
   try {
-    const response = await useInboxStore().analyzeCSATTemplateUtility({
-      inboxId: props.inbox.id,
-      template: {
-        message: state.message,
-        button_text: state.templateButtonText,
-        language: state.templateLanguage,
-      },
-    });
+    const response = await store.dispatch(
+      'inboxes/analyzeCSATTemplateUtility',
+      {
+        inboxId: props.inbox.id,
+        template: {
+          message: state.message,
+          button_text: state.templateButtonText,
+          language: state.templateLanguage,
+        },
+      }
+    );
     utilityAnalysisResult.value = response;
   } catch (error) {
     const errorMessage =
@@ -382,13 +384,13 @@ const updateInbox = async attributes => {
     ...attributes,
   };
 
-  await useInboxStore().updateInbox(payload);
+  await store.dispatch('inboxes/updateInbox', payload);
 };
 
 const createTemplate = async () => {
   if (!isAnyWhatsAppChannel.value) return null;
 
-  const response = await useInboxStore().createCSATTemplate({
+  const response = await store.dispatch('inboxes/createCSATTemplate', {
     inboxId: props.inbox.id,
     template: {
       message: state.message,

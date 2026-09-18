@@ -1,6 +1,6 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
@@ -38,6 +38,7 @@ const props = defineProps({
 const emit = defineEmits(['registered']);
 
 const { t } = useI18n();
+const store = useStore();
 
 const SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -181,7 +182,7 @@ const reauthorizeWhatsApp = async params => {
   isRequestingAuthorization.value = true;
 
   try {
-    const updatedInbox = await useInboxStore().reauthorizeWhatsApp({
+    const updatedInbox = await store.dispatch('inboxes/reauthorizeWhatsApp', {
       inboxId: props.inbox.id,
       ...params,
     });
@@ -211,7 +212,7 @@ const registerPhoneNumber = async () => {
   isSubmittingRegistration.value = true;
   registrationErrorCode.value = null;
   try {
-    await useInboxStore().registerWhatsAppPhoneNumber({
+    await store.dispatch('inboxes/registerWhatsAppPhoneNumber', {
       inboxId: props.inbox.id,
       verificationPin: verificationPin.value,
     });

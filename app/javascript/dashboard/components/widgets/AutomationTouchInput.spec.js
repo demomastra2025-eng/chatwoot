@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
-import { createPinia, setActivePinia } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
 
 import AutomationTouchInput from './AutomationTouchInput.vue';
 
@@ -64,29 +62,18 @@ const defaultStoreGetters = {
   ],
 };
 
-const mountComponent = ({ storeGetters = {}, ...props } = {}) => {
-  const getters = { ...defaultStoreGetters, ...storeGetters };
-  const pinia = createPinia();
-  setActivePinia(pinia);
-  useInboxStore().records = getters['inboxes/getAllInboxes'].map(inbox => ({
-    ...inbox,
-    channel_type: inbox.channel_type || inbox.channelType,
-    message_templates:
-      getters['inboxes/getFilteredWhatsAppTemplates']?.(inbox.id) || [],
-  }));
-
-  return shallowMount(AutomationTouchInput, {
+const mountComponent = ({ storeGetters = {}, ...props } = {}) =>
+  shallowMount(AutomationTouchInput, {
     props: {
       eventName: 'message_created',
       modelValue: {},
       ...props,
     },
     global: {
-      plugins: [pinia],
       mocks: {
         $store: {
           dispatch: vi.fn(),
-          getters,
+          getters: { ...defaultStoreGetters, ...storeGetters },
         },
         $t: key => key,
       },
@@ -108,7 +95,6 @@ const mountComponent = ({ storeGetters = {}, ...props } = {}) => {
       },
     },
   });
-};
 
 const applyLastPayload = async wrapper => {
   const payload = wrapper.emitted('update:modelValue').at(-1)[0];

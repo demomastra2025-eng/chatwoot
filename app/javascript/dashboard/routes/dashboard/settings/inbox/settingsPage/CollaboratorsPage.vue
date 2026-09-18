@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { ref, computed, watch, onMounted } from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
@@ -272,7 +271,7 @@ const handleToggleAutoAssignment = async val => {
       formData: false,
       enable_auto_assignment: val,
     };
-    await useInboxStore().updateInbox(payload);
+    await store.dispatch('inboxes/updateInbox', payload);
     useAlert(t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
   } catch (error) {
     useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
@@ -407,7 +406,7 @@ const updateInbox = async () => {
         max_assignment_limit: maxAssignmentLimit.value,
       },
     };
-    await useInboxStore().updateInbox(payload);
+    await store.dispatch('inboxes/updateInbox', payload);
     useAlert(t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
   } catch (error) {
     useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));

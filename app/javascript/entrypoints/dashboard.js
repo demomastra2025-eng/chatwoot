@@ -18,9 +18,9 @@ import createAxios from 'dashboard/helper/APIHelper';
 
 import commonHelpers, { isJSONValid } from 'dashboard/helper/commons';
 import { sync } from 'vuex-router-sync';
+import { createPinia } from 'pinia';
 import router, { initalizeRouter } from 'dashboard/routes';
 import store from 'dashboard/store';
-import pinia from 'dashboard/store/pinia';
 import constants from 'dashboard/constants/globals';
 import * as Sentry from '@sentry/vue';
 import {
@@ -50,6 +50,8 @@ const i18n = createI18n({
 registerDashboardI18n(i18n.global);
 
 sync(store, router);
+
+const pinia = createPinia();
 
 const app = createApp(App);
 app.use(i18n);

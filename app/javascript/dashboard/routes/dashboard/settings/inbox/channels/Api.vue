@@ -1,6 +1,5 @@
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
@@ -27,8 +26,8 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
+    ...mapGetters({
+      uiFlags: 'inboxes/getUIFlags',
     }),
   },
   validations: {
@@ -43,7 +42,7 @@ export default {
       }
 
       try {
-        const apiChannel = await useInboxStore().createChannel({
+        const apiChannel = await this.$store.dispatch('inboxes/createChannel', {
           name: this.channelName?.trim(),
           channel: {
             type: 'api',

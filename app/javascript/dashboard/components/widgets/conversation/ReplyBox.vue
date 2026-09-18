@@ -1,5 +1,4 @@
 <script>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { defineAsyncComponent, useTemplateRef } from 'vue';
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
@@ -233,9 +232,9 @@ export default {
       if (this.isCommunicationCallReplyAction) return false;
       // We support templates for API channels if someone updates templates manually via API
       // That's why we don't explicitly check for channel type here
-      const templates = useInboxStore().getFilteredWhatsAppTemplates(
-        this.inboxId
-      );
+      const templates = this.$store.getters[
+        'inboxes/getFilteredWhatsAppTemplates'
+      ](this.inboxId);
       return !!(templates && templates.length) && !this.isPrivate;
     },
     showContentTemplates() {
@@ -267,7 +266,7 @@ export default {
         : this.currentChat.inbox_id;
     },
     inbox() {
-      return useInboxStore().getInbox(this.inboxId);
+      return this.$store.getters['inboxes/getInbox'](this.inboxId);
     },
     messagePlaceHolder() {
       if (this.isEditorDisabled) {

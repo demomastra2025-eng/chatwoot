@@ -1,7 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createPinia, setActivePinia } from 'pinia';
 const mockSession = vi.hoisted(() => ({
   activeCall: null,
   incomingCalls: [],
@@ -168,7 +167,6 @@ const mountComponent = () =>
 
 describe('FloatingCallWidget', () => {
   beforeEach(() => {
-    setActivePinia(createPinia());
     mockSession.activeCall = null;
     mockSession.incomingCalls = [];
     mockSession.hasActiveCall = false;

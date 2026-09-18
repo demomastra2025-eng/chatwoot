@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import {
   computed,
   onBeforeUnmount,
@@ -9,6 +8,7 @@ import {
   watch,
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import QRCode from 'qrcode';
 import { useAlert } from 'dashboard/composables';
@@ -34,6 +34,7 @@ import {
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
+const store = useStore();
 const TELEGRAM_PERSONAL_REDIRECT_DELAY_MS = 1500;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
 const WEIXIN_REDIRECT_DELAY_MS = 1500;
@@ -87,7 +88,7 @@ const currentInboxId = computed(() => {
 });
 
 const currentInbox = computed(() =>
-  useInboxStore().getInbox(currentInboxId.value)
+  store.getters['inboxes/getInbox'](currentInboxId.value)
 );
 
 // Use useInbox composable with the inbox ID
@@ -524,7 +525,7 @@ const whatsappWebStatusMessage = computed(() => {
 const hasDuplicateInstagramInbox = computed(() => {
   const instagramId = currentInbox.value.instagram_id;
   const facebookInbox =
-    useInboxStore().getFacebookInboxByInstagramId(instagramId);
+    store.getters['inboxes/getFacebookInboxByInstagramId'](instagramId);
 
   return (
     currentInbox.value.channel_type === INBOX_TYPES.INSTAGRAM && facebookInbox
@@ -665,7 +666,7 @@ async function maybeScheduleTelegramPersonalSetupFullHistorySync({
 
   try {
     isSchedulingTelegramPersonalFullHistory.value = true;
-    await useInboxStore().historySyncTelegramPersonal({
+    await store.dispatch('inboxes/historySyncTelegramPersonal', {
       inboxId: currentInbox.value.id,
       payload: {
         force: true,
@@ -711,7 +712,10 @@ async function fetchTelegramPersonalDiagnostics() {
   }
 
   try {
-    await useInboxStore().getTelegramPersonalDiagnostics(currentInbox.value.id);
+    await store.dispatch(
+      'inboxes/getTelegramPersonalDiagnostics',
+      currentInbox.value.id
+    );
   } catch (error) {
     // Diagnostics stay best-effort during setup.
   }
@@ -723,7 +727,7 @@ async function fetchWeixinDiagnostics() {
   }
 
   try {
-    await useInboxStore().getWeixinDiagnostics(currentInbox.value.id);
+    await store.dispatch('inboxes/getWeixinDiagnostics', currentInbox.value.id);
   } catch (error) {
     // Diagnostics stay best-effort during setup.
   }
@@ -813,7 +817,7 @@ async function requestWeixinQr({ silent = false } = {}) {
 
   try {
     isRequestingWeixinQr.value = true;
-    await useInboxStore().requestWeixinQr(currentInbox.value.id);
+    await store.dispatch('inboxes/requestWeixinQr', currentInbox.value.id);
     if (!silent) {
       useAlert(t('INBOX_MGMT.FINISH.WEIXIN.REQUEST_QR_SUCCESS'));
     }
@@ -837,7 +841,10 @@ async function requestTelegramPersonalCode({ silent = false } = {}) {
 
   try {
     isRequestingTelegramPersonalCode.value = true;
-    await useInboxStore().requestTelegramPersonalCode(currentInbox.value.id);
+    await store.dispatch(
+      'inboxes/requestTelegramPersonalCode',
+      currentInbox.value.id
+    );
     telegramPersonalCode.value = '';
     telegramPersonalPassword.value = '';
     if (!silent) {
@@ -866,7 +873,10 @@ async function requestTelegramPersonalQr({ silent = false } = {}) {
 
   try {
     isRequestingTelegramPersonalQr.value = true;
-    await useInboxStore().requestTelegramPersonalQr(currentInbox.value.id);
+    await store.dispatch(
+      'inboxes/requestTelegramPersonalQr',
+      currentInbox.value.id
+    );
     telegramPersonalCode.value = '';
     telegramPersonalPassword.value = '';
     if (!silent) {
@@ -896,7 +906,7 @@ async function verifyTelegramPersonalCode() {
 
   try {
     isVerifyingTelegramPersonalCode.value = true;
-    await useInboxStore().verifyTelegramPersonalCode({
+    await store.dispatch('inboxes/verifyTelegramPersonalCode', {
       inboxId: currentInbox.value.id,
       code: telegramPersonalCode.value.trim(),
     });
@@ -927,7 +937,7 @@ async function verifyTelegramPersonalPassword() {
 
   try {
     isVerifyingTelegramPersonalPassword.value = true;
-    await useInboxStore().verifyTelegramPersonalPassword({
+    await store.dispatch('inboxes/verifyTelegramPersonalPassword', {
       inboxId: currentInbox.value.id,
       password: telegramPersonalPassword.value.trim(),
     });
@@ -1027,7 +1037,7 @@ async function refreshWhatsappWebQr({
   }
 
   try {
-    await useInboxStore().refreshWhatsappWebQr({
+    await store.dispatch('inboxes/refreshWhatsappWebQr', {
       inboxId: currentInbox.value.id,
       statusOnly: false,
       artifactType,
@@ -1132,7 +1142,7 @@ async function fetchWhatsappWebStatus() {
 
   try {
     isSyncingWhatsappWebStatus.value = true;
-    await useInboxStore().refreshWhatsappWebQr({
+    await store.dispatch('inboxes/refreshWhatsappWebQr', {
       inboxId: currentInbox.value.id,
       statusOnly: true,
       includeQrCode: ['waiting_for_qr', 'qr_ready'].includes(
@@ -1169,12 +1179,12 @@ async function ensureInboxLoaded() {
   }
 
   try {
-    await useInboxStore().get();
+    await store.dispatch('inboxes/get');
   } catch (error) {
     return null;
   }
 
-  return Boolean(useInboxStore().getInbox(currentInboxId.value)?.id);
+  return Boolean(store.getters['inboxes/getInbox'](currentInboxId.value)?.id);
 }
 
 async function redirectToInboxListIfMissing() {

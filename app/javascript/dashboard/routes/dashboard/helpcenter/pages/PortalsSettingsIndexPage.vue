@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStore } from 'dashboard/stores/inboxes';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { useUISettings } from 'dashboard/composables/useUISettings';
@@ -45,7 +44,7 @@ const fetchPortalAndItsCategories = async (slug, locale) => {
     store.dispatch('portals/show', selectedPortalParam),
     store.dispatch('categories/index', selectedPortalParam),
     store.dispatch('agents/get'),
-    useInboxStore().get(),
+    store.dispatch('inboxes/get'),
   ]);
 };
 

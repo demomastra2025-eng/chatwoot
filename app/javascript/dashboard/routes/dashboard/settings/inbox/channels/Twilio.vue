@@ -1,7 +1,6 @@
 <!-- Deprecated in favour of separate files for SMS and Whatsapp and also to implement new providers for each platform in the future-->
 <script>
-import { mapState } from 'pinia';
-import { useInboxStore } from 'dashboard/stores/inboxes';
+import { mapGetters } from 'vuex';
 import { useVuelidate } from '@vuelidate/core';
 import { useAlert } from 'dashboard/composables';
 import { required } from '@vuelidate/validators';
@@ -40,8 +39,8 @@ export default {
     };
   },
   computed: {
-    ...mapState(useInboxStore, {
-      uiFlags: store => store.getUIFlags,
+    ...mapGetters({
+      uiFlags: 'inboxes/getUIFlags',
     }),
     authTokeni18nKey() {
       return this.useAPIKey ? 'API_KEY_SECRET' : 'AUTH_TOKEN';
@@ -85,19 +84,22 @@ export default {
       }
 
       try {
-        const twilioChannel = await useInboxStore().createTwilioChannel({
-          twilio_channel: {
-            name: this.channelName?.trim(),
-            medium: this.medium,
-            account_sid: this.accountSID,
-            api_key_sid: this.apiKeySID,
-            auth_token: this.authToken,
-            messaging_service_sid: this.messagingServiceSID,
-            phone_number: this.messagingServiceSID
-              ? null
-              : `+${this.phoneNumber.replace(/\D/g, '')}`,
-          },
-        });
+        const twilioChannel = await this.$store.dispatch(
+          'inboxes/createTwilioChannel',
+          {
+            twilio_channel: {
+              name: this.channelName?.trim(),
+              medium: this.medium,
+              account_sid: this.accountSID,
+              api_key_sid: this.apiKeySID,
+              auth_token: this.authToken,
+              messaging_service_sid: this.messagingServiceSID,
+              phone_number: this.messagingServiceSID
+                ? null
+                : `+${this.phoneNumber.replace(/\D/g, '')}`,
+            },
+          }
+        );
 
         router.replace({
           name: getInboxFlowRouteName(this.$route, 'agents'),

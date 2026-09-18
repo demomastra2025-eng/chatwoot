@@ -1,5 +1,4 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { debounce } from '@chatwoot/utils';
@@ -155,9 +154,9 @@ const { t } = useI18n();
 const store = useStore();
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const cannedResponses = useMapGetter('getCannedResponses');
-const getAllInboxes = useInboxStoreGetter('getAllInboxes');
-const getFilteredWhatsAppTemplates = useInboxStoreGetter(
-  'getFilteredWhatsAppTemplates'
+const getAllInboxes = useMapGetter('inboxes/getAllInboxes');
+const getFilteredWhatsAppTemplates = useMapGetter(
+  'inboxes/getFilteredWhatsAppTemplates'
 );
 const messageComposerRef = ref(null);
 const searchContacts = createContactSearcher();

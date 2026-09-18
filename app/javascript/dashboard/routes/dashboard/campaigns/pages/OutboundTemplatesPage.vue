@@ -1,11 +1,10 @@
 <script setup>
-import { useInboxStoreGetter } from 'dashboard/stores/inboxes';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 
-import { useStoreGetters } from 'dashboard/composables/store';
+import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
@@ -18,11 +17,11 @@ const { t } = useI18n();
 const route = useRoute();
 const { checkPermissions } = usePolicy();
 const getters = useStoreGetters();
-const getOutboundCampaignInboxes = useInboxStoreGetter(
-  'getOutboundCampaignInboxes'
+const getOutboundCampaignInboxes = useMapGetter(
+  'inboxes/getOutboundCampaignInboxes'
 );
-const getFilteredWhatsAppTemplates = useInboxStoreGetter(
-  'getFilteredWhatsAppTemplates'
+const getFilteredWhatsAppTemplates = useMapGetter(
+  'inboxes/getFilteredWhatsAppTemplates'
 );
 const cannedHomeRef = ref(null);
 const whatsAppTemplatesRef = ref(null);
