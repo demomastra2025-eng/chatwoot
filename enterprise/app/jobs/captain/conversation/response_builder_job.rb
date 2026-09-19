@@ -309,11 +309,25 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
+    return provider_error_handoff_requested? || authorized_v2_handoff_requested? if @assistant.handoff_requires_explicit_consent?
+
     v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
   end
 
+  def authorized_v2_handoff_requested?
+    ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
+      v2_handoff_tool_fired? && @response['response'] == 'conversation_handoff'
+  end
+
   def response_cancelled?
-    assistant_cancelled_response? || manager_cancelled_response?
+    assistant_cancelled_response? || manager_cancelled_response? || unauthorized_strict_handoff_response?
+  end
+
+  def unauthorized_strict_handoff_response?
+    return false unless @assistant.handoff_requires_explicit_consent?
+    return false unless ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response&.[]('response'))
+
+    !authorized_v2_handoff_requested? && !provider_error_handoff_requested?
   end
 
   def assistant_cancelled_response?
@@ -355,7 +369,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def provider_error_handoff_requested?
-    @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
+    return false unless @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
+    return true unless @assistant.handoff_requires_explicit_consent?
+
+    ActiveModel::Type::Boolean.new.cast(
+      @response[Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_AUTHORIZED_KEY]
+    )
   end
 
   def normalize_blank_public_response!

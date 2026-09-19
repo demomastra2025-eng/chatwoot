@@ -795,6 +795,76 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.waiting_since).to be_present
     end
 
+    it 'continues with a public response when a strict handoff lacks backend authorization' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Продолжу помогать здесь.',
+          'handoff_tool_called' => true
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.captain_handoff_applied_at).to be_nil
+      expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
+    end
+
+    it 'applies an authorized strict handoff with one public message and one private note' do
+      assistant.update!(config: assistant.config.merge(
+        'handoff_requires_explicit_consent' => true,
+        'handoff_message_enabled' => true,
+        'handoff_message_mode' => 'ai'
+      ))
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'conversation_handoff',
+          'handoff_tool_called' => true,
+          'handoff_authorized' => true,
+          'handoff_reason' => 'Customer explicitly requested human assistance.',
+          'handoff_message' => 'Передаю сотруднику.'
+        }
+      )
+
+      public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+      private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
+      expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)
+
+      expect(conversation.reload.captain_handoff_applied_at).to be_present
+      expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Передаю сотруднику.')
+    end
+
+    it 'cancels an untrusted provider-error sentinel in strict mode without handing off' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+          'error_class' => 'SemanticOutputError'
+        }
+      )
+
+      expect { described_class.perform_now(conversation, assistant) }.not_to(change { conversation.messages.count })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.captain_handoff_applied_at).to be_nil
+    end
+
+    it 'allows a trusted provider-error fallback in strict mode' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+          Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_AUTHORIZED_KEY => true,
+          'error_class' => 'RubyLLM::RateLimitError'
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.captain_handoff_applied_at).to be_present
+    end
+
     it 'does not consume usage when a handoff loses the control fence' do
       allow(Llm::EventBus).to receive(:publish)
       allow(agent_runner_service).to receive(:generate_response).and_return(
