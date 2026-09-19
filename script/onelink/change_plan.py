@@ -85,9 +85,12 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
         for path in files
     )
     frontend = any(
-        Path(path).suffix in FRONTEND_SUFFIXES
-        or path.startswith(FRONTEND_ROOTS)
-        or path in {"package.json", "pnpm-lock.yaml", "vite.config.mts"}
+        not path.startswith(SIDECAR_ROOTS)
+        and (
+            Path(path).suffix in FRONTEND_SUFFIXES
+            or path.startswith(FRONTEND_ROOTS)
+            or path in {"package.json", "pnpm-lock.yaml", "vite.config.mts"}
+        )
         for path in files
     )
     migrations = any(path.startswith("db/migrate/") for path in files)
@@ -143,6 +146,13 @@ def related_specs(paths: Iterable[str]) -> list[str]:
 def existing_files_with_suffixes(paths: Iterable[str], suffixes: set[str]) -> list[str]:
     return sorted(
         path for path in paths if Path(path).suffix in suffixes and Path(path).is_file()
+    )
+
+
+def frontend_files(paths: Iterable[str]) -> list[str]:
+    return existing_files_with_suffixes(
+        (path for path in paths if not path.startswith(SIDECAR_ROOTS)),
+        FRONTEND_SUFFIXES,
     )
 
 
@@ -202,7 +212,7 @@ def main() -> int:
         if args.list == "ruby":
             selected = existing_files_with_suffixes(files, RUBY_SUFFIXES)
         elif args.list == "frontend":
-            selected = existing_files_with_suffixes(files, FRONTEND_SUFFIXES)
+            selected = frontend_files(files)
         elif args.list == "specs":
             selected = related_specs(files)
         elif args.list == "migrations":

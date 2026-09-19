@@ -9,6 +9,7 @@ from script.onelink.change_plan import (
     changed_files,
     classify,
     existing_files_with_suffixes,
+    frontend_files,
     related_specs,
     unsupported_release_sidecars,
     validate_migrations,
@@ -119,6 +120,18 @@ class ChangePlanTest(unittest.TestCase):
 
         self.assertTrue(plan["sidecar"])
         self.assertTrue(plan["high_risk"])
+        self.assertFalse(plan["frontend"])
+
+    def test_sidecar_javascript_is_not_sent_to_chatwoot_frontend_checks(self):
+        self.assertEqual(
+            frontend_files(
+                [
+                    "services/onelink-ai-voice/src/index.js",
+                    "app/javascript/dashboard/helper/AnalyticsHelper/index.js",
+                ]
+            ),
+            ["app/javascript/dashboard/helper/AnalyticsHelper/index.js"],
+        )
 
     def test_ai_voice_sidecar_is_covered_by_immutable_release(self):
         self.assertEqual(IMMUTABLE_RELEASE_SIDECAR_ROOTS, ("services/onelink-ai-voice/",))
