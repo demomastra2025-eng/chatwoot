@@ -62,6 +62,7 @@ coverage
 # ignore packages
 node_modules
 package-lock.json
+!services/onelink-ai-voice/package-lock.json
 
 
 *.dump
