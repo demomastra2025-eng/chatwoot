@@ -183,6 +183,7 @@ rollback() {
   echo "DEV verification failed: ${reason}" >&2
   current_target="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
   if [[ "${current_target}" == "${RELEASE}" && -n "${PREVIOUS}" && -d "${PREVIOUS}" ]]; then
+    rm -f "${CURRENT}.rollback"
     ln -s "${PREVIOUS}" "${CURRENT}.rollback"
     mv -Tf "${CURRENT}.rollback" "${CURRENT}"
     if [[ -f "${VOICE_START_BACKUP}" ]]; then
