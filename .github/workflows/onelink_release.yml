@@ -86,6 +86,16 @@ jobs:
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
             BASE_SHA="${HEAD_SHA}^"
           fi
+          linear_reconciliation=false
+          read -r stale_deployment_sha reconciled_live_sha extra < script/onelink/dev_reconciled_live_shas.txt
+          if [[ -z "${extra:-}" && "$BASE_SHA" == "$stale_deployment_sha" && \
+                "$stale_deployment_sha" =~ ^[0-9a-f]{40}$ && "$reconciled_live_sha" =~ ^[0-9a-f]{40}$ ]] && \
+             ! git merge-base --is-ancestor "$reconciled_live_sha" "$HEAD_SHA" && \
+             git cat-file -e "${reconciled_live_sha}^{commit}"; then
+              BASE_SHA="$reconciled_live_sha"
+              linear_reconciliation=true
+              echo "::notice::Using audited actual live DEV ${BASE_SHA} instead of the stale GitHub deployment record."
+          fi
           git diff --check "$BASE_SHA" "$HEAD_SHA"
           python3 -m unittest script/onelink/test_change_plan.py
           python3 -m unittest script/onelink/test_dev_release_gate.py
@@ -96,8 +106,7 @@ jobs:
             --validate-migrations --validate-release-surface
           echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
           deploy_verb=deploy
-          if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA" && \
-             grep -Fxq "$BASE_SHA" script/onelink/dev_reconciled_live_shas.txt; then
+          if [[ "$linear_reconciliation" == true ]]; then
             deploy_verb=rollback
             echo "::notice::Using the audited rollback verb for the one-time linear reconciliation of live DEV ${BASE_SHA}."
           fi

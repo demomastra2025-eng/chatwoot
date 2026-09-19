@@ -74,7 +74,7 @@ class DevReleaseGateTest(unittest.TestCase):
             return evaluate(self.repo, self.live_sha, candidate_sha, allow_rollback=allow_rollback, manifest=self.manifest)
 
     def acknowledge_live_sha(self, live_sha: str | None = None):
-        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{live_sha or self.live_sha}\n")
+        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{self.divergent_sha} {live_sha or self.live_sha}\n")
         self.commit("acknowledge reconciled live release")
 
     def test_rejects_divergent_candidate_that_drops_live_functionality(self):
@@ -106,7 +106,7 @@ class DevReleaseGateTest(unittest.TestCase):
             self.evaluate(self.sha())
 
     def test_rejects_invalid_reconciliation_sha(self):
-        self.write("script/onelink/dev_reconciled_live_shas.txt", "not-a-sha\n")
+        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{self.divergent_sha} not-a-sha\n")
         self.commit("add invalid reconciliation marker")
 
         with self.assertRaisesRegex(GateError, "invalid SHA"):

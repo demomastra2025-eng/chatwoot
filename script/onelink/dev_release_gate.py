@@ -113,10 +113,10 @@ def reconciles_live_sha(repo: Path, live_sha: str, candidate_sha: str) -> bool:
     if result.returncode != 0:
         return False
 
-    reconciled_shas = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    if any(not SHA_PATTERN.fullmatch(sha) for sha in reconciled_shas):
+    entries = [line.split() for line in result.stdout.splitlines() if line.strip()]
+    if any(len(entry) != 2 or any(not SHA_PATTERN.fullmatch(sha) for sha in entry) for entry in entries):
         raise GateError(f"invalid SHA in {RECONCILED_LIVE_SHAS_PATH}")
-    return live_sha in reconciled_shas
+    return any(reconciled_live_sha == live_sha for _, reconciled_live_sha in entries)
 
 
 def change_plan(repo: Path, live_sha: str, candidate_sha: str) -> list[Change]:
