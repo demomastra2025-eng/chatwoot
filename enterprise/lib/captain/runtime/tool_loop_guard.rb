@@ -6,7 +6,7 @@ class Captain::Runtime::ToolLoopGuard
   MAX_REQUESTS_PER_TOOL = 6
   MAX_REQUESTS_PER_RUN = 16
   MAX_REQUESTS_BY_TOOL = {
-    'search_scheduling_services' => 2
+    'search_scheduling_services' => 4
   }.freeze
 
   def initialize(context_wrapper, tool_name)

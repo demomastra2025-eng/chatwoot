@@ -25,5 +25,24 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
         'active' => true
       )
     end
+
+    it 'matches Russian morphology and configured aliases without requiring an exact substring' do
+      service1.update!(
+        name: 'МРТ шейного отдела позвоночника',
+        custom_attributes: { 'aliases' => ['магнитно резонансная томография шеи'] }
+      )
+
+      payload = JSON.parse(service.execute(query: 'МРТ шеи', include_inactive: false, limit: 10))
+
+      expect(payload['services'].map { |item| item['id'] }).to eq([service1.id])
+    end
+
+    it 'preserves deterministic service ordering without a query' do
+      earlier_name = create(:scheduling_service, account: account, name: 'A consultation')
+
+      payload = JSON.parse(service.execute(include_inactive: false, limit: 10))
+
+      expect(payload['services'].map { |item| item['id'] }).to eq([earlier_name.id, service1.id])
+    end
   end
 end

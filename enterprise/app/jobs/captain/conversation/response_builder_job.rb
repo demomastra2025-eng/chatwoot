@@ -10,6 +10,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   DOCUMENT_PARSE_WAIT_TIMEOUT = 6.seconds
   DOCUMENT_PARSE_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
+  DEFAULT_HANDOFF_PRIVATE_NOTE = 'Captain transferred the conversation to a human agent.'.freeze
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -46,6 +47,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil)
     initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
 
+    ensure_response_fence_current!(stage: 'job_start')
     return unless current_buffer_state_valid? && conversation_allows_captain_response?
 
     Current.executed_by = @assistant
@@ -77,7 +79,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @assistant = assistant
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id || conversation.messages.incoming.last&.id
-    @expected_control_generation = expected_control_generation || message_control_generation || conversation.captain_control_generation
+    @expected_control_generation = expected_control_generation || message_control_generation || conversation.current_captain_control_generation
   end
 
   def generate_and_process_response
@@ -89,11 +91,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       assistant: @assistant,
       conversation: @conversation,
       callbacks: callbacks,
-      response_fence: {
-        control_generation: @expected_control_generation,
-        buffer_token: @buffer_token,
-        last_message_id: @expected_last_message_id
-      }.compact
+      response_fence: response_fence
     ).generate_response(
       message_history: collect_previous_messages
     )
@@ -102,16 +100,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_response
+    ensure_response_fence_current!(stage: 'response_processing')
     return unless current_buffer_state_valid?
-    return process_cancelled_response if response_cancelled?
+    return process_non_public_response if non_public_response?
 
     normalize_blank_public_response!
 
     processed_response =
       if handoff_requested?
-        process_action(handoff_action_name)
-        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
-        true
+        handoff_applied = process_action(handoff_action_name)
+        account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
+        handoff_applied
       elsif conversation_allows_captain_response?
         process_pending_response
       else
@@ -121,31 +120,85 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     clear_buffer_state_if_current if processed_response
   end
 
+  def non_public_response?
+    response_cancelled? || response_suppressed?
+  end
+
+  def process_non_public_response
+    return process_cancelled_response if response_cancelled?
+
+    process_suppressed_response
+  end
+
+  def process_suppressed_response
+    account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+    clear_buffer_state_if_current
+    Llm::EventBus.publish(
+      'captain.response.suppressed',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: account.id,
+      assistant_id: @assistant.id,
+      conversation_id: @conversation.id,
+      communication_thread_id: @conversation.communication_thread&.id,
+      job_id: job_id
+    )
+    true
+  end
+
+  def response_suppressed?
+    @response&.dig('response_suppressed') == true || @response&.dig('response_mode') == 'suppress'
+  end
+
   def process_pending_response
     attachment_ids = response_attachment_ids
     return process_cancelled_response if response_cancelled?
 
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
-    @conversation.with_lock do
-      return process_cancelled_response unless current_buffer_state_valid?
-      return process_cancelled_response if response_cancelled?
+    @conversation.with_captain_control_lock do
+      @conversation.with_lock do
+        ensure_response_fence_current!(stage: 'response_persistence')
+        return process_cancelled_response unless current_buffer_state_valid?
+        return process_cancelled_response if response_cancelled?
 
-      ActiveRecord::Base.transaction do
-        create_messages(attachment_ids: attachment_ids)
-        Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
-        account.increment_response_usage
-        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+        ActiveRecord::Base.transaction do
+          create_messages(attachment_ids: attachment_ids)
+          Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
+          account.increment_response_usage
+          account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+        end
       end
     end
     true
   end
 
+  def ensure_response_fence_current!(stage:)
+    Captain::Conversation::RunFenceService.new(
+      assistant: @assistant,
+      state: {
+        account_id: account.id,
+        assistant_id: @assistant.id,
+        conversation: { id: @conversation.id },
+        captain_response_fence: response_fence
+      },
+      stage: stage
+    ).ensure_current!
+  end
+
+  def response_fence
+    {
+      control_generation: @expected_control_generation,
+      buffer_token: @buffer_token,
+      last_message_id: @expected_last_message_id
+    }.compact
+  end
+
   def collect_previous_messages
     messages = if history_message_limit.positive?
-                 conversation_messages_scope.reorder(created_at: :desc).limit(history_message_limit).to_a.reverse
+                 conversation_messages_scope.reorder(created_at: :desc, id: :desc).limit(history_message_limit).to_a.reverse
                else
-                 conversation_messages_scope.to_a
+                 conversation_messages_scope.reorder(created_at: :asc, id: :asc).to_a
                end
 
     messages.each_with_index.map do |message, index|
@@ -163,8 +216,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_messages_scope
-    @conversation
-      .messages
+    Captain::Conversation::ControlService
+      .messages_scope(@conversation)
       .where(message_type: [:incoming, :outgoing])
       .where(private: false)
   end
@@ -327,13 +380,11 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_action(action)
-    was_open = conversation_open?
     reason = action == 'provider_error_handoff' ? provider_error_note_content : handoff_activity_reason
     result = bot_handoff_with_activity_reason(reason) do
       case action
-      when 'handoff' then create_handoff_notifications
+      when 'handoff', 'v2_handoff' then create_handoff_notifications
       when 'provider_error_handoff' then create_provider_error_handoff_notifications
-      when 'v2_handoff' then create_v2_handoff_notifications(was_open)
       end
     end
     result == :applied
@@ -349,13 +400,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def create_provider_error_handoff_notifications
     create_provider_error_private_note
+    create_handoff_message(preserve_waiting_since: true)
     send_out_of_office_message_if_applicable
-  end
-
-  def create_v2_handoff_notifications(was_open)
-    return create_handoff_message(preserve_waiting_since: true) if was_open
-
-    create_handoff_notifications
   end
 
   def bot_handoff_with_activity_reason(reason = handoff_activity_reason, &)
@@ -424,10 +470,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def create_handoff_message(preserve_waiting_since: false)
-    return unless @assistant.handoff_message_enabled?
-
     handoff_message = handoff_message_content
-    return if handoff_message.blank?
 
     I18n.with_locale(@assistant.account.locale) do
       create_outgoing_message(
@@ -438,15 +481,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_message_content
-    return @response['handoff_message'].presence if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+    if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
+      return @response['handoff_message'].presence || @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
+    end
 
     @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
   end
 
   def create_handoff_private_note
-    reason = @response['handoff_reason'].to_s.strip
-    return if reason.blank?
-
+    reason = @response['handoff_reason'].to_s.strip.presence || DEFAULT_HANDOFF_PRIVATE_NOTE
     create_private_note(reason)
   end
 
@@ -906,7 +949,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return false unless conversation_eligible_for_response?
     return false unless control_generation_current?
 
-    current_last_incoming_message_id = @conversation.reload.messages.incoming.last&.id
+    @conversation.reload
+    current_last_incoming_message_id = Captain::Conversation::ControlService
+                                       .messages_scope(@conversation)
+                                       .incoming
+                                       .reorder(created_at: :desc, id: :desc)
+                                       .pick(:id)
     return bufferless_state_valid?(current_last_incoming_message_id) if @buffer_token.blank?
 
     buffered_state_valid?(current_last_incoming_message_id)
@@ -956,7 +1004,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def control_generation_current?
     @conversation.reload.captain_ai_control_active? &&
       !Captain::Conversation::ControlService.human_response_after?(@conversation, @expected_last_message_id) &&
-      @conversation.captain_control_generation.to_i == @expected_control_generation.to_i
+      @conversation.current_captain_control_generation.to_i == @expected_control_generation.to_i
   end
 
   def message_control_generation

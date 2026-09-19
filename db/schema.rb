@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1072,6 +1072,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "session_started_at"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
@@ -1415,6 +1418,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.string "event_type", null: false
     t.jsonb "meta", default: {}, null: false
     t.datetime "created_at", null: false
+    t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
     t.index ["account_id", "eventable_type", "eventable_id", "created_at"], name: "index_crm_events_on_account_eventable_created_at"
     t.index ["account_id"], name: "index_crm_events_on_account_id"
     t.index ["actor_id"], name: "index_crm_events_on_actor_id"
@@ -2539,6 +2543,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
+    t.index "account_id, regexp_replace((client_identifier)::text, '[^0-9]'::text, ''::text, 'g'::text)", name: "idx_scheduling_appointments_account_normalized_identifier", where: "(client_identifier IS NOT NULL)"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"

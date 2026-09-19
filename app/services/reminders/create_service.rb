@@ -12,15 +12,19 @@ class Reminders::CreateService
   end
 
   def perform
-    reminder = account.reminders.new(
-      reminder_attributes.merge(
-        remindable: remindable,
-        reminder_group: reminder_group
+    reminder = nil
+    Reminder.transaction do
+      reminder = account.reminders.new(
+        reminder_attributes.merge(
+          remindable: remindable,
+          reminder_group: reminder_group
+        )
       )
-    )
-    reminder.creator = creator if creator.is_a?(User)
-    reminder.save!
-    reminder.approve! if reminder.draft? && reminder.ready_for_pending?
+      reminder.creator = creator if creator.is_a?(User)
+      Reminders::TargetRouteResolver.new(reminder: reminder).perform
+      reminder.save!
+      reminder.approve! if reminder.draft? && reminder.ready_for_pending?
+    end
     reminder
   end
 

@@ -6,7 +6,23 @@ module Enterprise::Conversation
   end
 
   def captain_human_control_active?
-    captain_control_state == Captain::Conversation::ControlService::HUMAN_CONTROL
+    current_captain_control_state == Captain::Conversation::ControlService::HUMAN_CONTROL
+  end
+
+  def captain_control_owner
+    communication_thread || self
+  end
+
+  def current_captain_control_state
+    captain_control_owner.captain_control_state
+  end
+
+  def current_captain_control_generation
+    captain_control_owner.captain_control_generation
+  end
+
+  def current_captain_handoff_applied_at
+    captain_control_owner.captain_handoff_applied_at
   end
 
   def stamp_captain_control_generation!(message)
@@ -19,6 +35,10 @@ module Enterprise::Conversation
 
   def prepare_captain_ai_control!
     captain_control_service.prepare_ai!
+  end
+
+  def with_captain_control_lock(&)
+    captain_control_service.with_control_lock(&)
   end
 
   def publish_captain_ai_control_activated!(source:, actor: nil)

@@ -343,7 +343,8 @@ class AutomationRules::TouchActionService
   def valid_post_delivery_action?(params, action)
     entity_kind == 'conversation' &&
       action.in?(Reminder::POST_DELIVERY_ACTIONS) &&
-      (params[:action_type].presence || 'send_message').to_s == 'send_message'
+      (params[:action_type].presence || 'send_message').to_s == 'send_message' &&
+      (params[:target_inbox_id].blank? || params[:target_inbox_id].to_i == record.inbox_id)
   end
 
   def validate_response_action!(params)

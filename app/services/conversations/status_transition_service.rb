@@ -11,8 +11,10 @@ class Conversations::StatusTransitionService
 
   def perform
     if explicit_captain_control_release?
-      conversation.save! if conversation.has_changes_to_save?
-      return conversation.with_lock { perform_transition }
+      return conversation.with_captain_control_lock do
+        conversation.save! if conversation.has_changes_to_save?
+        conversation.with_lock { perform_transition }
+      end
     end
 
     perform_transition

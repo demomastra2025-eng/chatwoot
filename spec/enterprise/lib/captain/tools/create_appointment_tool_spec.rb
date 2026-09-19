@@ -34,6 +34,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       'action' => 'create_appointment',
       'appointment_id' => payload.dig('appointment', 'id'),
       'status' => payload.dig('appointment', 'status'),
+      'provider_confirmation_required' => false,
       'resource_id' => resource.id,
       'contact_id' => contact.id,
       'service_id' => scheduling_service.id,
@@ -97,6 +98,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       'expected_operation' => 'create_reception',
       'linked' => true
     )
+    expect(payload['provider_confirmation_required']).to be(true)
     expect(payload.dig('provider_command_receipt', 'command')).to include(
       'operation' => 'create_reception',
       'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }

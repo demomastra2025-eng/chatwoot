@@ -49,6 +49,28 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(claim.reminder.metadata).to include('touch_plan_enrollment_id' => enrollment.id)
   end
 
+  it 'keeps source context separate from the deferred delivery route' do
+    source_inbox = create(:inbox, account: account)
+    source_contact_inbox = create(:contact_inbox, contact: appointment.contact, inbox: source_inbox)
+    source_conversation = create(
+      :conversation,
+      account: account,
+      inbox: source_inbox,
+      contact: appointment.contact,
+      contact_inbox: source_contact_inbox
+    )
+    appointment.update!(conversation: source_conversation)
+
+    claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
+
+    expect(claim.reminder).to have_attributes(
+      conversation_id: source_conversation.id,
+      target_inbox_id: inbox.id,
+      target_contact_inbox_id: contact_inbox.id,
+      target_conversation_id: nil
+    )
+  end
+
   it 'reraises a unique violation that did not create an occurrence claim' do
     service = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute)
     allow(service).to receive(:process_locked_enrollment).and_raise(ActiveRecord::RecordNotUnique)

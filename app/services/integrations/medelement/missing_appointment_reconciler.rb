@@ -41,6 +41,13 @@ class Integrations::Medelement::MissingAppointmentReconciler
   def tombstone!(attributes)
     attributes['medelement_removed_at'] ||= Time.current.iso8601
     attributes['source_mode'] = 'provider_tombstone'
+    attributes['provider_status_audit'] = {
+      'source' => 'medelement_missing_reconciliation',
+      'previous_status' => appointment.status,
+      'status' => 'cancelled',
+      'reason' => 'missing_from_two_authoritative_snapshots',
+      'observed_at' => Time.current.iso8601
+    }
     appointment.assign_attributes(
       status: 'cancelled',
       payment_status: 'cancelled',

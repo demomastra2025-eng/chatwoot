@@ -189,5 +189,59 @@ RSpec.describe Reminders::SyncRemindableService do
 
       expect(touch.reload.target_contact_id).to eq(primary_contact.id)
     end
+
+    it 'clears a no-route error and approves the draft after the target route appears' do
+      account = create(:account)
+      source_inbox = create(:inbox, account: account)
+      channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      contact = create(:contact, account: account, phone_number: nil, email: nil)
+      source_contact_inbox = create(:contact_inbox, contact: contact, inbox: source_inbox)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: source_inbox,
+        contact: contact,
+        contact_inbox: source_contact_inbox
+      )
+      touch = Reminders::CreateService.new(
+        account: account,
+        remindable: conversation,
+        attributes: {
+          body: 'Retry after route assignment',
+          scheduled_at: 1.hour.from_now,
+          target_inbox_id: channel.inbox.id
+        }
+      ).perform
+
+      expect(touch).to be_draft
+      expect(touch).to be_route_reassignment_required
+
+      contact.update!(phone_number: '+77001232233')
+      expect { touch.approve! }.to raise_error(ActiveRecord::RecordInvalid)
+
+      target_contact_inbox = create(
+        :contact_inbox,
+        contact: contact,
+        inbox: channel.inbox,
+        source_id: contact.phone_number.delete('+')
+      )
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: target_contact_inbox
+      )
+      create(:message, account: account, inbox: channel.inbox, conversation: target_conversation, message_type: :incoming)
+      described_class.new(remindable: conversation).perform_for(touch, raise_errors: true)
+
+      expect(touch.reload).to be_pending
+      expect(touch.metadata).not_to have_key(Reminder::ROUTE_ERROR_CODE_KEY)
+      expect(touch.last_error).to be_nil
+      expect(touch.target_contact_inbox).to have_attributes(
+        contact_id: contact.id,
+        inbox_id: channel.inbox.id
+      )
+    end
   end
 end

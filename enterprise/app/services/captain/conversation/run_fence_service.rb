@@ -11,10 +11,11 @@ class Captain::Conversation::RunFenceService
     buffer_state_changed: :buffer_state_changed?
   }.freeze
 
-  def initialize(assistant:, state:)
+  def initialize(assistant:, state:, stage: 'tool_execution')
     @assistant = assistant
     @state = state.to_h.with_indifferent_access
     @fence = @state[:captain_response_fence].to_h.with_indifferent_access
+    @stage = stage
   end
 
   def ensure_current!
@@ -29,7 +30,7 @@ class Captain::Conversation::RunFenceService
 
   private
 
-  attr_reader :assistant, :state, :fence
+  attr_reader :assistant, :state, :fence, :stage
 
   def stale_reason
     STALE_CHECKS.find { |_reason, predicate| send(predicate) }&.first&.to_s&.presence
@@ -76,7 +77,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def control_generation_current?
-    conversation.captain_control_generation.to_i == fence[:control_generation].to_i
+    conversation.current_captain_control_generation.to_i == fence[:control_generation].to_i
   end
 
   def conversation_allows_captain_response?
@@ -93,7 +94,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def latest_incoming_message_id
-    conversation.messages.incoming.reorder(created_at: :desc, id: :desc).pick(:id)
+    Captain::Conversation::ControlService.messages_scope(conversation).incoming.reorder(created_at: :desc, id: :desc).pick(:id)
   end
 
   def buffer_state_current?
@@ -123,12 +124,13 @@ class Captain::Conversation::RunFenceService
       account_id: state[:account_id],
       assistant_id: state[:assistant_id],
       conversation_id: state.dig(:conversation, :id),
+      communication_thread_id: conversation&.communication_thread&.id,
       expected_control_generation: fence[:control_generation],
-      actual_control_generation: conversation&.captain_control_generation,
+      actual_control_generation: conversation&.current_captain_control_generation,
       expected_last_message_id: fence[:last_message_id],
       expected_buffer_token: fence[:buffer_token],
       reason: reason,
-      stage: 'tool_execution'
+      stage: stage
     )
   rescue StandardError => e
     Rails.logger.warn("[CAPTAIN][RunFence] Failed to publish fence event: #{e.class}: #{e.message}")

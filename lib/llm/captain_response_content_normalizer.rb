@@ -11,6 +11,7 @@ class Llm::CaptainResponseContentNormalizer
       return content unless content.respond_to?(:with_indifferent_access)
 
       payload = content.with_indifferent_access
+      payload['response_mode'] = normalized_response_mode(payload['response_mode'])
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
       apply_text_default!(payload, 'handoff_message')
@@ -28,6 +29,7 @@ class Llm::CaptainResponseContentNormalizer
 
       {
         response: text,
+        response_mode: 'reply',
         reasoning: DEFAULT_REASONING,
         artifact_ids: [],
         handoff_message: '',
@@ -51,6 +53,10 @@ class Llm::CaptainResponseContentNormalizer
     end
 
     private
+
+    def normalized_response_mode(value)
+      value.to_s.strip.presence || 'reply'
+    end
 
     def apply_reasoning_default!(payload)
       apply_text_default!(payload, 'reasoning')

@@ -56,15 +56,14 @@ class Reminders::ApplyGroupService
   end
 
   def create_reminder!(definition)
-    reminder = account.reminders.create!(
-      touch_attributes_from(definition).merge(
-        creator: reminder_creator,
-        remindable: remindable,
-        reminder_group: reminder_group
-      )
-    )
+    reminder = Reminders::CreateService.new(
+      account: account,
+      remindable: remindable,
+      attributes: touch_attributes_from(definition),
+      creator: reminder_creator,
+      reminder_group: reminder_group
+    ).perform
     reminder.mark_automation_provenance!(actor) if actor.is_a?(AutomationRule)
-    reminder.approve! if reminder.draft? && reminder.ready_for_pending?
     reminder
   end
 
@@ -73,15 +72,16 @@ class Reminders::ApplyGroupService
     attributes[:action_type] = attributes[:action_type].presence || 'send_message'
     attributes[:repeat_mode] = attributes[:repeat_mode].presence || 'once'
     explicit_auto_cancel = attributes.key?(:auto_cancel_on_incoming)
-    attributes[:auto_cancel_on_incoming] = Reminders::BooleanParam.call(
+    auto_cancel_on_incoming = Reminders::BooleanParam.call(
       attributes[:auto_cancel_on_incoming],
       default: false,
       field_name: 'auto_cancel_on_incoming'
     )
-    return attributes unless explicit_auto_cancel
+    return attributes.except(:auto_cancel_on_incoming) unless explicit_auto_cancel
 
+    attributes[:auto_cancel_on_incoming] = auto_cancel_on_incoming
     attributes[:metadata] = attributes[:metadata].to_h.stringify_keys.merge(
-      'auto_cancel_on_incoming_explicit' => attributes[:auto_cancel_on_incoming]
+      'auto_cancel_on_incoming_explicit' => auto_cancel_on_incoming
     )
     attributes
   end
@@ -100,7 +100,12 @@ class Reminders::ApplyGroupService
     entity_kind == 'conversation' &&
       action.in?(Reminder::POST_DELIVERY_ACTIONS) &&
       (params[:action_type].presence || 'send_message').to_s == 'send_message' &&
-      (params[:repeat_mode].presence || 'once').to_s == 'once'
+      (params[:repeat_mode].presence || 'once').to_s == 'once' &&
+      same_conversation_route?(params)
+  end
+
+  def same_conversation_route?(params)
+    params[:target_inbox_id].blank? || params[:target_inbox_id].to_i == remindable.inbox_id
   end
 
   def reminder_creator
