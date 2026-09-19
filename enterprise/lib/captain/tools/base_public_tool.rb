@@ -86,7 +86,11 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
   end
 
   def captain_control_snapshot(conversation_id)
-    account_scoped(::Conversation).where(id: conversation_id).pick(:captain_control_state, :captain_control_generation)
+    conversation = account_scoped(::Conversation).includes(:communication_thread).find_by(id: conversation_id)
+    return [nil, nil] if conversation.blank?
+
+    owner = conversation.captain_control_owner
+    [owner.captain_control_state, owner.captain_control_generation]
   end
 
   def captain_control_current?(control_state, control_generation, expected_generation)

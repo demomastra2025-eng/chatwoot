@@ -21,6 +21,30 @@ class Messages::StatusUpdateService
       status: status,
       external_error: (status == 'failed' ? external_error : nil)
     )
+    update_touch_delivery_status
+  end
+
+  def update_touch_delivery_status
+    touch_id = message.additional_attributes.to_h['touch_id']
+    return if touch_id.blank?
+
+    reminder = Reminder.find_by(id: touch_id, account_id: message.account_id)
+    return if reminder.blank?
+
+    reminder.record_delivery_status!(
+      message_id: message.id,
+      stage: touch_delivery_stage,
+      error: external_error
+    )
+  end
+
+  def touch_delivery_stage
+    return 'template_rejected' if status == 'failed' && external_error.to_s.match?(/template|шаблон/i)
+    return 'failed' if status == 'failed'
+    return 'read' if status == 'read'
+    return 'delivered' if status == 'delivered'
+
+    'provider_accepted'
   end
 
   def valid_status_transition?

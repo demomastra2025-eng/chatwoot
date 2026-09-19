@@ -282,6 +282,49 @@ RSpec.describe Reminder do
       expect(reminder.scheduled_at.to_i).to eq((conversation.created_at + 1.hour).to_i)
     end
 
+    it 'keeps a cross-inbox relative anchor on the source conversation' do
+      account = create(:account)
+      source_inbox = create(:inbox, account: account)
+      target_inbox = create(:inbox, account: account)
+      contact = create(:contact, account: account)
+      source_contact_inbox = create(:contact_inbox, contact: contact, inbox: source_inbox)
+      target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_inbox)
+      source_conversation = create(
+        :conversation,
+        account: account,
+        inbox: source_inbox,
+        contact: contact,
+        contact_inbox: source_contact_inbox,
+        created_at: 2.days.ago
+      )
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: target_inbox,
+        contact: contact,
+        contact_inbox: target_contact_inbox,
+        created_at: 1.hour.ago
+      )
+      reminder = build(
+        :reminder,
+        account: account,
+        conversation: source_conversation,
+        remindable: source_conversation,
+        target_inbox: target_inbox,
+        target_contact: contact,
+        target_contact_inbox: target_contact_inbox,
+        target_conversation: target_conversation,
+        timing_mode: :relative,
+        relative_anchor: 'conversation.created_at',
+        relative_offset_seconds: 1.hour.to_i,
+        scheduled_at: nil
+      )
+
+      reminder.validate
+
+      expect(reminder.scheduled_at.to_i).to eq((source_conversation.created_at + 1.hour).to_i)
+    end
+
     it 'materializes relative scheduling on the calculated date with a fixed time of day' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(
@@ -467,6 +510,52 @@ RSpec.describe Reminder do
   end
 
   describe 'official WhatsApp delivery policy' do
+    it 'does not use a source inbox message to open the target inbox delivery window' do
+      account = create(:account)
+      source_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      target_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      contact = create(:contact, account: account)
+      source_contact_inbox = create(:contact_inbox, contact: contact, inbox: source_channel.inbox)
+      target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_channel.inbox)
+      source_conversation = create(
+        :conversation,
+        account: account,
+        inbox: source_channel.inbox,
+        contact: contact,
+        contact_inbox: source_contact_inbox
+      )
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: target_channel.inbox,
+        contact: contact,
+        contact_inbox: target_contact_inbox
+      )
+      create(
+        :message,
+        account: account,
+        inbox: source_channel.inbox,
+        conversation: source_conversation,
+        message_type: :incoming,
+        created_at: 1.hour.ago
+      )
+      reminder = build(
+        :reminder,
+        account: account,
+        conversation: source_conversation,
+        remindable: source_conversation,
+        target_inbox: target_channel.inbox,
+        target_contact: contact,
+        target_contact_inbox: target_contact_inbox,
+        target_conversation: target_conversation,
+        scheduled_at: 1.hour.from_now,
+        body: 'Target inbox follow-up'
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+    end
+
     it 'rejects manual free-text touches when the scheduled delivery is outside the 24-hour window' do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
@@ -732,7 +821,8 @@ RSpec.describe Reminder do
           'delivery_materialized_message_id' => 123,
           'delivery_dispatched_message_id' => 123,
           'post_delivery_automation_rule_id' => 456,
-          'post_delivery_audit_source' => 'automation'
+          'post_delivery_audit_source' => 'automation',
+          'route_error_code' => 'forged-route-error'
         }
       )
 
@@ -755,6 +845,15 @@ RSpec.describe Reminder do
   end
 
   describe '#approve!' do
+    it 'does not approve an AI wakeup while a protected route error is present' do
+      reminder = create(:reminder, :draft, action_type: :ai_agent_wakeup)
+      reminder.mark_route_reassignment_required!
+      reminder.save!
+
+      expect { reminder.approve! }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(reminder.reload).to be_draft
+    end
+
     it 'does not reopen a completed touch' do
       reminder = create(:reminder, status: :completed, completed_at: Time.current)
 
@@ -792,6 +891,44 @@ RSpec.describe Reminder do
         Reminder::AUTOMATION_EVENT_NAME_KEY => rule.event_name
       )
       expect(reminder.metadata.keys & Reminder::TRANSIENT_METADATA_KEYS).to be_empty
+    end
+
+    it 'validates cross-inbox automation provenance against the source conversation' do
+      account = create(:account)
+      source_inbox = create(:inbox, account: account)
+      target_inbox = create(:inbox, account: account)
+      contact = create(:contact, account: account)
+      source_contact_inbox = create(:contact_inbox, contact: contact, inbox: source_inbox)
+      target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_inbox)
+      source_conversation = create(
+        :conversation,
+        account: account,
+        inbox: source_inbox,
+        contact: contact,
+        contact_inbox: source_contact_inbox
+      )
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: target_inbox,
+        contact: contact,
+        contact_inbox: target_contact_inbox
+      )
+      trigger_message = create(:message, account: account, inbox: source_inbox, conversation: source_conversation)
+      rule = create(:automation_rule, account: account)
+      reminder = create(
+        :reminder,
+        account: account,
+        conversation: source_conversation,
+        remindable: source_conversation,
+        target_inbox: target_inbox,
+        target_contact: contact,
+        target_contact_inbox: target_contact_inbox,
+        target_conversation: target_conversation
+      )
+
+      expect { reminder.mark_automation_provenance!(rule, trigger_message: trigger_message) }.not_to raise_error
+      expect(reminder.reload.metadata[Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY]).to eq(trigger_message.id)
     end
 
     it 'rejects automation provenance from another account' do
@@ -892,6 +1029,33 @@ RSpec.describe Reminder do
       expect(reminder).to be_valid
       reminder.save!
       expect(reminder.reload.post_delivery_action).to be_nil
+    end
+  end
+
+  describe 'delivery lifecycle ordering' do
+    let(:reminder) { create(:reminder) }
+    let(:message_id) { 123_456 }
+
+    before { reminder.mark_delivery_materialized!(message_id) }
+
+    it 'does not let finalization downgrade a callback-confirmed delivery' do
+      reminder.record_delivery_status!(message_id: message_id, stage: 'delivered')
+
+      reminder.mark_delivery_dispatched!(message_id, stage: 'provider_accepted')
+
+      expect(reminder.reload.delivery_stage).to eq('delivered')
+      expect(reminder).to be_delivery_dispatched_for(message_id)
+    end
+
+    it 'ignores late lower and failure statuses after delivery or read' do
+      reminder.record_delivery_status!(message_id: message_id, stage: 'delivered')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'failed', error: 'late failure')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'read')
+      reminder.record_delivery_status!(message_id: message_id, stage: 'provider_accepted')
+
+      expect(reminder.reload.delivery_stage).to eq('read')
+      expect(reminder).not_to be_failed
+      expect(reminder.last_error).to be_blank
     end
   end
 

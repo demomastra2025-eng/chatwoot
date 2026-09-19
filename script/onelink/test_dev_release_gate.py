@@ -73,6 +73,10 @@ class DevReleaseGateTest(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             return evaluate(self.repo, self.live_sha, candidate_sha, allow_rollback=allow_rollback, manifest=self.manifest)
 
+    def acknowledge_live_sha(self, live_sha: str | None = None):
+        self.write("script/onelink/dev_reconciled_live_shas.txt", f"{live_sha or self.live_sha}\n")
+        self.commit("acknowledge reconciled live release")
+
     def test_rejects_divergent_candidate_that_drops_live_functionality(self):
         with self.assertRaisesRegex(GateError, "divergent/non-descendant"):
             self.evaluate(self.divergent_sha)
@@ -83,6 +87,30 @@ class DevReleaseGateTest(unittest.TestCase):
         changes = self.evaluate(self.sha())
 
         self.assertTrue(any("script/onelink/deployment_fix.sh" in change.paths for change in changes))
+
+    def test_accepts_linear_candidate_that_explicitly_reconciles_live(self):
+        self.write("app/services/integrations/medelement/functional.rb", "functional change\n")
+        self.write("app/services/integrations/medelement/contract.rb", "live contract\n")
+        self.acknowledge_live_sha()
+
+        changes = self.evaluate(self.sha())
+
+        self.assertTrue(any("script/onelink/deployment_fix.sh" in change.paths for change in changes))
+
+    def test_rejects_linear_candidate_with_a_different_reconciliation_sha(self):
+        self.write("app/services/integrations/medelement/functional.rb", "functional change\n")
+        self.write("app/services/integrations/medelement/contract.rb", "live contract\n")
+        self.acknowledge_live_sha("0" * 40)
+
+        with self.assertRaisesRegex(GateError, "divergent/non-descendant"):
+            self.evaluate(self.sha())
+
+    def test_rejects_invalid_reconciliation_sha(self):
+        self.write("script/onelink/dev_reconciled_live_shas.txt", "not-a-sha\n")
+        self.commit("add invalid reconciliation marker")
+
+        with self.assertRaisesRegex(GateError, "invalid SHA"):
+            self.evaluate(self.sha())
 
     def test_requires_explicit_rollback_flag_for_divergent_candidate(self):
         changes = self.evaluate(self.divergent_sha, allow_rollback=True)

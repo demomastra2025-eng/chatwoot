@@ -235,6 +235,8 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     expect(touch.reload).to be_failed
     expect(touch).not_to be_delivery_dispatched_for(message.id)
     expect(touch.last_error).to eq('recipient unavailable')
+    expect(touch.delivery_stage).to eq('failed')
+    expect(touch.metadata[Reminder::DELIVERY_FAILURE_CATEGORY_KEY]).to eq('failed')
     expect(touch.processing_claim_token).to eq(active_claim)
   end
 
@@ -277,6 +279,7 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     expect(message.external_error).to eq(described_class::UNCONFIRMED_PROVIDER_DELIVERY)
     expect(touch.reload).to be_failed
     expect(touch).not_to be_delivery_dispatched_for(message.id)
+    expect(touch.delivery_stage).to eq('failed')
   end
 
   it 'suppresses duplicate reminder dispatch after an unknown 360Dialog outcome' do

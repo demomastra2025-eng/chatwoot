@@ -25,6 +25,7 @@ jobs:
     outputs:
       runtime: ${{ steps.plan.outputs.runtime }}
       sidecar: ${{ steps.plan.outputs.sidecar }}
+      deploy_verb: ${{ steps.plan.outputs.deploy_verb }}
     services:
       postgres:
         image: pgvector/pgvector@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
@@ -94,6 +95,13 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             --validate-migrations --validate-release-surface
           echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          deploy_verb=deploy
+          if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA" && \
+             grep -Fxq "$BASE_SHA" script/onelink/dev_reconciled_live_shas.txt; then
+            deploy_verb=rollback
+            echo "::notice::Using the audited rollback verb for the one-time linear reconciliation of live DEV ${BASE_SHA}."
+          fi
+          echo "deploy_verb=$deploy_verb" >> "$GITHUB_OUTPUT"
           if [[ "$HAS_DEV_PROOF" != true ]]; then
             echo 'runtime=true' >> "$GITHUB_OUTPUT"
             echo '::notice::No successful DEV deployment proof exists; forcing bootstrap deployment.'
@@ -291,12 +299,14 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
+          DEPLOY_VERB: ${{ needs.release-gate.outputs.deploy_verb }}
         run: |
+          [[ "$DEPLOY_VERB" == deploy || "$DEPLOY_VERB" == rollback ]]
           for ((attempt = 1; attempt <= 40; attempt++)); do
             if ssh -i ~/.ssh/onelink-dev \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-              "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"; then
+              "$DEPLOY_USER@$DEPLOY_HOST" "$DEPLOY_VERB $GITHUB_SHA"; then
               exit 0
             else
               status=$?

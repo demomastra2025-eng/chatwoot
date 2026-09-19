@@ -85,6 +85,21 @@ class Reminder < ApplicationRecord
   PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
   DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
   DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
+  DELIVERY_STAGE_KEY = 'delivery_stage'.freeze
+  DELIVERY_STAGE_UPDATED_AT_KEY = 'delivery_stage_updated_at'.freeze
+  DELIVERY_FAILURE_CATEGORY_KEY = 'delivery_failure_category'.freeze
+  DELIVERY_STAGES = %w[materialized provider_accepted provider_unknown retry_scheduled delivered read failed template_rejected].freeze
+  DELIVERY_STAGE_RANKS = {
+    'materialized' => 0,
+    'provider_unknown' => 1,
+    'retry_scheduled' => 1,
+    'provider_accepted' => 2,
+    'delivered' => 3,
+    'read' => 4,
+    'failed' => 4,
+    'template_rejected' => 4
+  }.freeze
+  DELIVERY_TERMINAL_STAGES = %w[read failed template_rejected].freeze
   POST_DELIVERY_ACTION_MESSAGE_ID_KEY = 'post_delivery_action_message_id'.freeze
   POST_DELIVERY_ACTION_EXECUTED_AT_KEY = 'post_delivery_action_executed_at'.freeze
   POST_DELIVERY_ACTION_RESOLVE_CONVERSATION = 'resolve_conversation'.freeze
@@ -97,10 +112,14 @@ class Reminder < ApplicationRecord
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
   AUTOMATION_ACTION_SIGNATURE_KEY = 'automation_action_signature'.freeze
+  ROUTE_ERROR_CODE_KEY = 'route_error_code'.freeze
   TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
     DELIVERY_DISPATCHED_MESSAGE_ID_KEY,
+    DELIVERY_STAGE_KEY,
+    DELIVERY_STAGE_UPDATED_AT_KEY,
+    DELIVERY_FAILURE_CATEGORY_KEY,
     POST_DELIVERY_ACTION_MESSAGE_ID_KEY,
     POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
@@ -111,7 +130,8 @@ class Reminder < ApplicationRecord
       AUTOMATION_EVENT_NAME_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
-      AUTOMATION_ACTION_SIGNATURE_KEY
+      AUTOMATION_ACTION_SIGNATURE_KEY,
+      ROUTE_ERROR_CODE_KEY
     ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
@@ -220,6 +240,7 @@ class Reminder < ApplicationRecord
   before_validation :refresh_fingerprint
   before_save :increment_schedule_revision, if: :will_save_change_to_scheduled_at?
   after_create :retain_attachment_blobs
+  after_save :reset_route_metadata_write
 
   scope :ordered, -> { order(scheduled_at: :asc, created_at: :asc, id: :asc) }
   scope :open_statuses, -> { where(status: OPEN_STATUSES) }
@@ -227,6 +248,28 @@ class Reminder < ApplicationRecord
 
   def ready_for_pending?
     scheduled_at.present? && route_resolved? && content_ready?
+  end
+
+  def mark_route_reassignment_required!
+    @route_metadata_write = true
+    self.status = :draft
+    self.last_error = Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_MESSAGE
+    self.metadata = metadata.to_h.merge(
+      ROUTE_ERROR_CODE_KEY => Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_REQUIRED
+    )
+  end
+
+  def clear_route_error!
+    return unless metadata.to_h.key?(ROUTE_ERROR_CODE_KEY) ||
+                  last_error == Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_MESSAGE
+
+    @route_metadata_write = true
+    self.metadata = metadata.to_h.except(ROUTE_ERROR_CODE_KEY)
+    self.last_error = nil
+  end
+
+  def route_reassignment_required?
+    metadata.to_h[ROUTE_ERROR_CODE_KEY] == Reminders::TargetRouteResolver::ROUTE_REASSIGNMENT_REQUIRED
   end
 
   def approve!
@@ -317,20 +360,56 @@ class Reminder < ApplicationRecord
 
   def mark_delivery_materialized!(message_id)
     with_internal_metadata_write do
-      update!(metadata: metadata.to_h.merge(DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id))
+      update!(metadata: metadata.to_h.merge(
+        DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id,
+        DELIVERY_STAGE_KEY => 'materialized',
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+      ))
     end
+  end
+
+  def delivery_stage
+    metadata.to_h[DELIVERY_STAGE_KEY].presence
   end
 
   def delivery_dispatched_for?(message_id)
     metadata.to_h[DELIVERY_DISPATCHED_MESSAGE_ID_KEY].to_s == message_id.to_s
   end
 
-  def mark_delivery_dispatched!(message_id)
+  def mark_delivery_dispatched!(message_id, stage: 'provider_accepted')
+    raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
+
+    effective_stage = delivery_stage_transition_allowed?(delivery_stage, stage) ? stage : delivery_stage
     with_internal_metadata_write do
       update!(
         processing_started_at: nil,
-        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id)
+        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(
+          DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id,
+          DELIVERY_STAGE_KEY => effective_stage,
+          DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+        )
       )
+    end
+  end
+
+  def record_delivery_status!(message_id:, stage:, error: nil)
+    raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
+
+    with_lock do
+      reload
+      next unless delivery_materialized_for?(message_id)
+      next unless delivery_stage_transition_allowed?(delivery_stage, stage)
+
+      attributes = metadata.to_h.merge(
+        DELIVERY_STAGE_KEY => stage,
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+      )
+      attributes[DELIVERY_FAILURE_CATEGORY_KEY] = stage if stage.in?(%w[failed template_rejected])
+      update_attributes = { metadata: attributes }
+      if stage.in?(%w[failed template_rejected])
+        update_attributes.merge!(status: :failed, last_error: error.presence || 'Provider delivery failed')
+      end
+      with_internal_metadata_write { update!(update_attributes) }
     end
   end
 
@@ -356,12 +435,34 @@ class Reminder < ApplicationRecord
     )
   end
 
-  def fail!(message)
-    update!(
+  def fail!(message, delivery_stage: nil)
+    attributes = {
       status: :failed,
       last_error: message,
       attempts_count: attempts_count.to_i + 1
-    )
+    }
+    if delivery_stage.present?
+      raise ArgumentError, 'Invalid delivery stage' unless delivery_stage.in?(%w[failed template_rejected])
+      return false unless delivery_stage_transition_allowed?(self.delivery_stage, delivery_stage)
+
+      attributes[:metadata] = metadata.to_h.merge(
+        DELIVERY_STAGE_KEY => delivery_stage,
+        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601,
+        DELIVERY_FAILURE_CATEGORY_KEY => delivery_stage
+      )
+    end
+
+    return update!(attributes) if delivery_stage.blank?
+
+    with_internal_metadata_write { update!(attributes) }
+  end
+
+  def delivery_stage_transition_allowed?(current_stage, candidate_stage)
+    return true if current_stage.blank?
+    return false if current_stage.in?(DELIVERY_TERMINAL_STAGES)
+    return false if current_stage == 'delivered' && candidate_stage.in?(%w[failed template_rejected])
+
+    DELIVERY_STAGE_RANKS.fetch(candidate_stage) > DELIVERY_STAGE_RANKS.fetch(current_stage)
   end
 
   def update_if_editable!
@@ -369,11 +470,23 @@ class Reminder < ApplicationRecord
     with_lock do
       next unless editable?
 
-      update!(yield)
+      attributes = yield.with_indifferent_access
+      clear_implicit_target_routes!(attributes)
+      assign_attributes(attributes)
+      Reminders::TargetRouteResolver.new(reminder: self).perform
+      save!
       approve! if draft? && ready_for_pending?
       updated = true
     end
     updated
+  end
+
+  def clear_implicit_target_routes!(attributes)
+    route_changed = attributes.key?(:target_inbox_id) || attributes.key?(:target_contact_id)
+    return unless route_changed
+
+    self.target_contact_inbox = nil unless attributes.key?(:target_contact_inbox_id)
+    self.target_conversation = nil unless attributes.key?(:target_conversation_id)
   end
 
   def destroy_if_allowed!
@@ -574,8 +687,20 @@ class Reminder < ApplicationRecord
     return if @internal_metadata_write
 
     visible_metadata = metadata.to_h.except(*INTERNAL_METADATA_KEYS)
-    stored_metadata = persisted? ? metadata_in_database.to_h.slice(*INTERNAL_METADATA_KEYS) : {}
-    self.metadata = visible_metadata.merge(stored_metadata)
+    stored_keys = INTERNAL_METADATA_KEYS - [ROUTE_ERROR_CODE_KEY]
+    stored_metadata = persisted? ? metadata_in_database.to_h.slice(*stored_keys) : {}
+    route_metadata = if @route_metadata_write
+                       metadata.to_h.slice(ROUTE_ERROR_CODE_KEY)
+                     elsif persisted?
+                       metadata_in_database.to_h.slice(ROUTE_ERROR_CODE_KEY)
+                     else
+                       {}
+                     end
+    self.metadata = visible_metadata.merge(stored_metadata).merge(route_metadata)
+  end
+
+  def reset_route_metadata_write
+    @route_metadata_write = false
   end
 
   def with_internal_metadata_write
@@ -666,11 +791,11 @@ class Reminder < ApplicationRecord
   # rubocop:enable Metrics/CyclomaticComplexity
 
   def anchor_conversation
-    target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
+    conversation || (remindable if remindable.is_a?(Conversation)) || target_conversation
   end
 
   def automation_conversation_id
-    target_conversation_id || conversation_id || (remindable_id if remindable_type == 'Conversation')
+    conversation_id || (remindable_id if remindable_type == 'Conversation') || target_conversation_id
   end
 
   def automation_provenance(automation_rule, trigger_message, action_key, action_signature)
@@ -702,19 +827,21 @@ class Reminder < ApplicationRecord
   end
 
   def route_resolved?
+    return false if route_reassignment_required?
     return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
 
     return false if target_inbox_id.blank?
     return true if target_contact_inbox_id.present?
-    return true if active_conversation_target?
+    return true if active_target_conversation?
     return false if target_contact.blank?
 
     Campaigns::TargetResolver.new(inbox: target_inbox, contact: target_contact).resolve.present?
   end
 
-  def active_conversation_target?
-    (target_conversation.present? && !target_conversation.resolved?) ||
-      (conversation.present? && !conversation.resolved?)
+  def active_target_conversation?
+    target_conversation.present? && !target_conversation.resolved? &&
+      target_conversation.inbox_id == target_inbox_id &&
+      target_conversation.contact_id == target_contact_id
   end
 
   def sync_account_from_associations
@@ -746,11 +873,25 @@ class Reminder < ApplicationRecord
   def hydrate_from_conversation(record)
     return if record.blank?
 
+    hydrate_source_conversation(record)
+    hydrate_delivery_from_conversation(record)
+  end
+
+  def hydrate_source_conversation(record)
     self.conversation ||= record
-    self.target_conversation ||= record
+  end
+
+  def hydrate_delivery_from_conversation(record)
     self.target_inbox ||= record.inbox
     self.target_contact ||= record.contact
+    return unless source_matches_delivery_target?(record)
+
+    self.target_conversation ||= record
     self.target_contact_inbox ||= record.contact_inbox
+  end
+
+  def source_matches_delivery_target?(record)
+    target_inbox_id == record.inbox_id && target_contact_id == record.contact_id
   end
 
   def hydrate_from_deal(deal)
@@ -853,13 +994,17 @@ class Reminder < ApplicationRecord
   end
 
   def delivery_policy_ready_for_validation?
-    return false if cancelled? || completed? || failed?
+    return false if delivery_policy_validation_blocked?
     return false unless send_message?
     return false if target_inbox.blank? || scheduled_at.blank?
     return true if channel_template? && template_params.present?
     return true if agent? && instructions.present?
 
     free_text? && (body.present? || attachments.present? || files.attached?)
+  end
+
+  def delivery_policy_validation_blocked?
+    cancelled? || completed? || failed? || route_reassignment_required?
   end
 
   def delivery_policy_content_kind
@@ -869,7 +1014,14 @@ class Reminder < ApplicationRecord
   end
 
   def delivery_policy_conversation
-    target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
+    return target_conversation if matches_delivery_target?(target_conversation)
+
+    source = conversation || (remindable if remindable.is_a?(Conversation))
+    source if matches_delivery_target?(source)
+  end
+
+  def matches_delivery_target?(candidate)
+    candidate.present? && candidate.inbox_id == target_inbox_id && candidate.contact_id == target_contact_id
   end
 
   def validate_repeat_requirements

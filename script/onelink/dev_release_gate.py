@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+RECONCILED_LIVE_SHAS_PATH = "script/onelink/dev_reconciled_live_shas.txt"
 CRITICAL_PREFIXES = (
     "app/controllers/api/v1/accounts/scheduling/",
     "app/services/integrations/medelement/",
@@ -107,6 +108,17 @@ def is_ancestor(repo: Path, ancestor: str, candidate: str) -> bool:
     return result.returncode == 0
 
 
+def reconciles_live_sha(repo: Path, live_sha: str, candidate_sha: str) -> bool:
+    result = git(repo, "show", f"{candidate_sha}:{RECONCILED_LIVE_SHAS_PATH}", check=False)
+    if result.returncode != 0:
+        return False
+
+    reconciled_shas = {line.strip() for line in result.stdout.splitlines() if line.strip()}
+    if any(not SHA_PATTERN.fullmatch(sha) for sha in reconciled_shas):
+        raise GateError(f"invalid SHA in {RECONCILED_LIVE_SHAS_PATH}")
+    return live_sha in reconciled_shas
+
+
 def change_plan(repo: Path, live_sha: str, candidate_sha: str) -> list[Change]:
     output = git(repo, "diff", "--name-status", "--find-renames", live_sha, candidate_sha).stdout
     changes: list[Change] = []
@@ -180,16 +192,18 @@ def evaluate(
     protected_paths = set(manifest.protected_files) if manifest else set()
     contract_paths = protected_paths | (set(manifest.contract_specs) if manifest else set())
     descendant = is_ancestor(repo, live_sha, candidate_sha)
+    reconciled_live = descendant or reconciles_live_sha(repo, live_sha, candidate_sha)
     unified_descendant = not manifest or is_ancestor(repo, manifest.required_ancestor, candidate_sha)
     critical_changes = [change for change in changes if change.critical or contract_paths.intersection(change.paths)]
     critical_deletions = [change for change in critical_changes if change.deleted]
     missing_contract_paths = sorted(path for path in contract_paths if object_id(repo, candidate_sha, path) is None)
-    reverts = critical_revert_commits(repo, live_sha, candidate_sha, manifest) if descendant else []
-    rollbacks = semantic_rollbacks(repo, live_sha, candidate_sha, manifest, changed_paths) if descendant and manifest else []
+    reverts = critical_revert_commits(repo, live_sha, candidate_sha, manifest) if reconciled_live else []
+    rollbacks = semantic_rollbacks(repo, live_sha, candidate_sha, manifest, changed_paths) if reconciled_live and manifest else []
 
     print(f"live_sha={live_sha}")
     print(f"candidate_sha={candidate_sha}")
     print(f"candidate_descends_from_live={'yes' if descendant else 'no'}")
+    print(f"candidate_explicitly_reconciles_live={'yes' if reconciled_live and not descendant else 'no'}")
     if manifest:
         print(f"required_ancestor={manifest.required_ancestor}")
         print(f"candidate_descends_from_required_ancestor={'yes' if unified_descendant else 'no'}")
@@ -208,7 +222,7 @@ def evaluate(
         print(f"missing_contract_path={path}")
 
     violations: list[str] = []
-    if not descendant:
+    if not reconciled_live:
         violations.append("candidate is divergent/non-descendant from the actual live SHA")
     if not unified_descendant:
         violations.append("candidate does not descend from the required unified contract SHA")

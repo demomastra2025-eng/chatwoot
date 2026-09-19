@@ -4,6 +4,9 @@ class Integrations::Medelement::AppointmentImporterService
   RECEPTION_EXTERNAL_REF_PREFIX = 'medelement:reception:'.freeze
   PRIMARY_APPOINTMENT_TYPE = 'primary'.freeze
   MIN_DURATION_MINUTES = 5
+  NO_SHOW_PROVIDER_STATUSES = ['no_show', 'no show', 'неявка', 'не явился', 'не явилась'].freeze
+  CANCELLED_PROVIDER_STATUSES = ['cancelled', 'canceled', 'отменена', 'отменено'].freeze
+  COMPLETED_PROVIDER_STATUSES = ['completed', 'complete', 'завершена', 'завершено', 'оказана'].freeze
   RECONCILIATION_ATTRIBUTE_KEYS = %w[
     medelement_missing_since
     medelement_missing_syncs
@@ -75,6 +78,7 @@ class Integrations::Medelement::AppointmentImporterService
     services, unresolved_service_codes = resolved_services(reception)
     service_binding = Integrations::Medelement::AppointmentServiceBinding.new(appointment: appointment)
     service_identity_authoritative = service_binding.provider_identity_authoritative?(reception)
+    status_resolution = provider_status_resolution(appointment, reception)
 
     base_attributes = {
       account: account,
@@ -84,7 +88,7 @@ class Integrations::Medelement::AppointmentImporterService
       starts_at: starts_at,
       ends_at: ends_at,
       duration_min: duration_minutes(starts_at, ends_at),
-      status: appointment_status(appointment, reception),
+      status: status_resolution[:status],
       appointment_type: PRIMARY_APPOINTMENT_TYPE,
       source: provider_binding(appointment, reception).source,
       service: service_identity_authoritative ? services.first : appointment.service,
@@ -96,7 +100,8 @@ class Integrations::Medelement::AppointmentImporterService
         contact: contact,
         services: services,
         unresolved_service_codes: unresolved_service_codes,
-        service_binding: service_binding
+        service_binding: service_binding,
+        status_resolution: status_resolution
       )
     }
 
@@ -104,11 +109,26 @@ class Integrations::Medelement::AppointmentImporterService
   end
   # rubocop:enable Metrics/MethodLength
 
-  def appointment_status(appointment, reception)
-    return 'completed' unless reception['ACTIVE'].to_i == 1
-    return 'confirmed' if appointment.status == 'confirmed'
+  def provider_status_resolution(appointment, reception)
+    provider_status = provider_status_value(reception)
+    return { status: 'no_show', reason: 'provider_explicit_no_show', raw_status: provider_status } if provider_status.in?(NO_SHOW_PROVIDER_STATUSES)
+    if provider_status.in?(CANCELLED_PROVIDER_STATUSES)
+      return { status: 'cancelled', reason: 'provider_explicit_cancelled', raw_status: provider_status }
+    end
+    if provider_status.in?(COMPLETED_PROVIDER_STATUSES)
+      return { status: 'completed', reason: 'provider_explicit_completed', raw_status: provider_status }
+    end
+    return { status: 'cancelled', reason: 'provider_removed' } if reception['REMOVED'].to_i == 1
+    return { status: 'completed', reason: 'provider_inactive' } unless reception['ACTIVE'].to_i == 1
+    return { status: 'confirmed', reason: 'preserved_local_confirmation' } if appointment.status == 'confirmed'
 
-    'scheduled'
+    { status: 'scheduled', reason: 'provider_active' }
+  end
+
+  def provider_status_value(reception)
+    %w[VISIT_STATUS_NAME RECEPTION_STATUS STATUS].filter_map do |key|
+      reception[key].to_s.downcase.squish.presence
+    end.first
   end
 
   def client_attributes(contact)
@@ -156,6 +176,7 @@ class Integrations::Medelement::AppointmentImporterService
     services = service_data.fetch(:services)
     unresolved_service_codes = service_data.fetch(:unresolved_service_codes)
     service_binding = service_data.fetch(:service_binding)
+    status_resolution = service_data.fetch(:status_resolution)
     attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
@@ -164,7 +185,15 @@ class Integrations::Medelement::AppointmentImporterService
       'medelement_list_fingerprint' => import_context[:list_fingerprint],
       'medelement_detail_synced_at' => import_context[:detail_synced_at],
       'medelement_patient_unresolved' => contact.blank?,
-      'source_mode' => provider_binding(appointment, reception).source_mode
+      'source_mode' => provider_binding(appointment, reception).source_mode,
+      'provider_status_audit' => {
+        'source' => 'medelement_reception_sync',
+        'previous_status' => appointment.status,
+        'status' => status_resolution[:status],
+        'reason' => status_resolution[:reason],
+        'raw_status' => status_resolution[:raw_status],
+        'observed_at' => import_context[:detail_synced_at] || Time.current.iso8601
+      }.compact
     ).compact
     service_binding.reconcile_provider_attributes(
       attributes: attributes,
