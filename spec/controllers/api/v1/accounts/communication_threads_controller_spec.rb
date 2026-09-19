@@ -697,7 +697,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'skips expensive list metadata for subsequent pages when requested' do
+    it 'skips faceted list metadata while retaining authoritative pagination when requested' do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)
 
@@ -707,7 +707,11 @@ RSpec.describe 'Communication Threads API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body.dig('data', 'meta')).to be_nil
+      expect(response.parsed_body.dig('data', 'meta')).to include(
+        'count' => 1,
+        'current_page' => 1,
+        'has_more' => false
+      )
       expect(response.parsed_body.dig('data', 'payload').pluck('id')).to include(conversation.reload.communication_thread.display_id)
     end
 
@@ -867,9 +871,31 @@ RSpec.describe 'Communication Threads API', type: :request do
         matching_conversation.reload.communication_thread.display_id
       )
       expect(body.dig(:data, :meta)).to include(
+        count: 1,
+        current_page: 1,
+        has_more: false,
         all_count: 1,
         unassigned_count: 1
       )
+    end
+
+    it 'intersects server search with advanced filters' do
+      matching_conversation.contact.update!(name: 'Needle Customer')
+      wrong_stage_conversation.contact.update!(name: 'Needle Wrong Stage')
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter?q=needle",
+           params: {
+             payload: advanced_filter_payload
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      expect(body.dig(:data, :payload).pluck(:id)).to contain_exactly(
+        matching_conversation.reload.communication_thread.display_id
+      )
+      expect(body.dig(:data, :meta)).to include(count: 1, has_more: false)
     end
 
     it 'includes canonical participant threads in participating filters without legacy inbox access' do

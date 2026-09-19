@@ -5,6 +5,8 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   DEFAULT_STATUS = 'open'.freeze
   RESULTS_PER_PAGE = ENV.fetch('CONVERSATION_RESULTS_PER_PAGE', '25').to_i
+  MAX_PAGE = 10_000
+  MESSAGE_SEARCH_LOOKBACK = 3.months
   THREAD_RELATION_FILTERS = {
     include_status: true,
     include_inbox: true,
@@ -101,6 +103,42 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     SQL
   end
 
+  def self.apply_search(relation, query)
+    search_query = query.to_s.strip
+    return relation if search_query.blank?
+
+    escaped_query = ActiveRecord::Base.sanitize_sql_like(search_query)
+    search = "%#{escaped_query}%"
+    phone_search = "%#{ActiveRecord::Base.sanitize_sql_like(search_query.gsub(/\s+/, ''))}%"
+    message_types = [Message.message_types[:incoming], Message.message_types[:outgoing]].join(', ')
+
+    relation.left_joins(:contact).where(
+      <<~SQL.squish,
+        CAST(communication_threads.display_id AS TEXT) ILIKE :search
+        OR contacts.name ILIKE :search
+        OR contacts.email ILIKE :search
+        OR contacts.identifier ILIKE :search
+        OR contacts.additional_attributes ->> 'company_name' ILIKE :search
+        OR regexp_replace(COALESCE(contacts.phone_number, ''), '\s+', '', 'g') ILIKE :phone_search
+        OR EXISTS (
+          SELECT 1
+          FROM communication_thread_conversations search_thread_links
+          INNER JOIN messages search_messages
+            ON search_messages.conversation_id = search_thread_links.conversation_id
+           AND search_messages.account_id = search_thread_links.account_id
+          WHERE search_thread_links.communication_thread_id = communication_threads.id
+            AND search_thread_links.account_id = communication_threads.account_id
+            AND search_messages.created_at >= :message_search_since
+            AND search_messages.message_type IN (#{message_types})
+            AND search_messages.content ILIKE :search
+        )
+      SQL
+      search: search,
+      phone_search: phone_search,
+      message_search_since: MESSAGE_SEARCH_LOOKBACK.ago
+    )
+  end
+
   def initialize(current_user, params = nil, operational: false, **legacy_params)
     @current_user = current_user
     @current_account = current_user.account
@@ -112,10 +150,12 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     set_up
     count = include_meta? ? thread_counts : {}
     filter_by_assignee_type
+    threads = communication_threads
 
     {
-      communication_threads: communication_threads,
-      count: count
+      communication_threads: threads,
+      count: count,
+      pagination: pagination_metadata
     }
   end
 
@@ -141,6 +181,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def set_up
     validate_params!
     find_accessible_threads
+    filter_by_query
     filter_by_status
     filter_by_inbox
     filter_by_team
@@ -174,6 +215,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     @communication_threads = base_thread_scope
     @communication_threads = @communication_threads.where(id: participating_thread_ids) if params[:conversation_type] == 'participating'
     @communication_threads = @communication_threads.left_joins(:communication_thread_conversations).distinct
+  end
+
+  def filter_by_query
+    @communication_threads = self.class.apply_search(@communication_threads, params[:q])
   end
 
   def filter_by_status
@@ -597,8 +642,26 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     relation
       .includes(thread_list_preloads)
       .order(Arel.sql(sort_clause))
-      .page(params[:page] || 1)
+      .page(current_page)
       .per(RESULTS_PER_PAGE)
+  end
+
+  def current_page
+    (Integer(params[:page], exception: false) || 1).clamp(1, MAX_PAGE)
+  end
+
+  def pagination_metadata
+    total_count = CommunicationThread.where(
+      id: @communication_threads.except(:order).select(:id)
+    ).count
+
+    {
+      count: total_count,
+      current_page: current_page,
+      per_page: RESULTS_PER_PAGE,
+      total_pages: (total_count.to_f / RESULTS_PER_PAGE).ceil,
+      has_more: current_page * RESULTS_PER_PAGE < total_count
+    }
   end
 
   def sort_clause

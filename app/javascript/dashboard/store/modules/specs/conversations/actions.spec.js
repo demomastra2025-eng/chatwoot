@@ -239,6 +239,7 @@ describe('#actions', () => {
         page: 1,
         status: 'open',
         communicationThreadMode: true,
+        q: 'needle',
       };
 
       await actions.fetchCommunicationThreads({

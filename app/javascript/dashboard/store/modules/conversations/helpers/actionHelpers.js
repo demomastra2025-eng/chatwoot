@@ -1,5 +1,18 @@
 import types from '../../../mutation-types';
 
+const CONVERSATION_STATS_META_KEYS = [
+  'mine_count',
+  'unassigned_count',
+  'all_count',
+  'participating_count',
+  'assigned_count',
+  'mine_unread_count',
+  'unassigned_unread_count',
+  'assigned_unread_count',
+  'all_unread_count',
+  'assignee_counts',
+];
+
 export const setPageFilter = ({ dispatch, filter, page, markEndReached }) => {
   dispatch('conversationPage/setCurrentPage', { filter, page }, { root: true });
   if (markEndReached) {
@@ -61,7 +74,10 @@ export const buildConversationList = (
       : types.SET_ALL_CONVERSATION,
     conversationList
   );
-  if (metaData && Object.keys(metaData).length && updateConversationStats) {
+  const hasConversationStatsMeta = CONVERSATION_STATS_META_KEYS.some(key =>
+    Object.prototype.hasOwnProperty.call(metaData || {}, key)
+  );
+  if (hasConversationStatsMeta && updateConversationStats) {
     context.dispatch('conversationStats/set', metaData);
   }
   const totalCountKey =
@@ -71,10 +87,11 @@ export const buildConversationList = (
       all: 'all_count',
       appliedFilters: 'all_count',
     }[filterType] || 'all_count';
-  if (totalCountKey && metaData?.[totalCountKey] !== undefined) {
+  const totalCount = metaData?.count ?? metaData?.[totalCountKey];
+  if (totalCountKey && totalCount !== undefined) {
     context.dispatch('conversationPage/setTotalCount', {
       filter: filterType,
-      count: metaData[totalCountKey],
+      count: totalCount,
     });
   }
   if (updateConversationStats && metaData?.unread_counts) {
@@ -93,6 +110,8 @@ export const buildConversationList = (
     dispatch: context.dispatch,
     filter: filterType,
     page: requestPayload.page,
-    markEndReached: !conversationList.length,
+    markEndReached:
+      metaData?.has_more === false ||
+      (metaData?.has_more === undefined && !conversationList.length),
   });
 };

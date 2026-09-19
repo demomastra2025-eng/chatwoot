@@ -69,6 +69,7 @@ const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'crmPipelineId',
   'crmStageId',
   'appointmentStatus',
+  'q',
 ];
 
 const hasFilterValue = value => {
@@ -92,6 +93,7 @@ const SIDEBAR_COUNT_SCOPE_FILTER_KEYS = [
   'crmStageId',
   'appointmentStatus',
   'unread',
+  'q',
 ];
 
 export const hasSidebarCountScopeFilters = params =>

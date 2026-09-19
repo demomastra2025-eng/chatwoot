@@ -1,6 +1,13 @@
 # rubocop:disable Metrics/BlockLength
 json.data do
   json.meta do
+    if @communication_threads_pagination.present?
+      json.count @communication_threads_pagination[:count]
+      json.current_page @communication_threads_pagination[:current_page]
+      json.per_page @communication_threads_pagination[:per_page]
+      json.total_pages @communication_threads_pagination[:total_pages]
+      json.has_more @communication_threads_pagination[:has_more]
+    end
     if @communication_threads_count.present?
       json.mine_count @communication_threads_count[:mine_count]
       json.assigned_count @communication_threads_count[:assigned_count]

@@ -42,6 +42,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    q,
     includeMeta = true,
   } = {}) {
     const url = this.url;
@@ -60,6 +61,7 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        q,
         include_meta: includeMeta,
       },
     };
@@ -81,6 +83,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    q,
     includeContextCounts,
   } = {}) {
     const url = `${this.url}/meta`;
@@ -97,6 +100,7 @@ class CommunicationThreadApi extends ApiClient {
       labels_scope: labelsScope,
       team_scope: teamScope,
       unread,
+      q,
       ...(includeContextCounts !== undefined
         ? { include_context_counts: includeContextCounts }
         : {}),
@@ -127,6 +131,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    q,
   } = {}) {
     return axios.get(`${this.url}/sidebar_unread_counts`, {
       params: {
@@ -141,6 +146,7 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        q,
       },
     });
   }
@@ -158,6 +164,7 @@ class CommunicationThreadApi extends ApiClient {
           labels_scope: payload.labelsScope || payload.labels_scope,
           team_scope: payload.teamScope || payload.team_scope,
           unread: payload.unread,
+          q: payload.q,
         },
       }
     );
@@ -175,6 +182,7 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: payload.labelsScope || payload.labels_scope,
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
+        q: payload.q,
         sort_by: payload.sortBy || payload.sort_by,
         include_meta: includeMeta,
         meta_only: metaOnly,

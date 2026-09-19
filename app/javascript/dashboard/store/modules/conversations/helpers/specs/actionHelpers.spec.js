@@ -83,4 +83,40 @@ describe('#buildConversationList', () => {
       expect.anything()
     );
   });
+
+  it('uses authoritative pagination metadata and stops on the last full page', () => {
+    const context = {
+      commit: vi.fn(),
+      dispatch: vi.fn(),
+    };
+
+    buildConversationList(
+      context,
+      { page: 2 },
+      {
+        payload: Array.from({ length: 25 }, (_, id) => ({
+          id,
+          meta: { sender: {} },
+        })),
+        meta: { count: 50, current_page: 2, has_more: false },
+      },
+      'all',
+      false,
+      true
+    );
+
+    expect(context.dispatch).toHaveBeenCalledWith(
+      'conversationPage/setTotalCount',
+      { filter: 'all', count: 50 }
+    );
+    expect(context.dispatch).toHaveBeenCalledWith(
+      'conversationPage/setEndReached',
+      { filter: 'all' },
+      { root: true }
+    );
+    expect(context.dispatch).not.toHaveBeenCalledWith(
+      'conversationStats/set',
+      expect.anything()
+    );
+  });
 });

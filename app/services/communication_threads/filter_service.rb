@@ -12,10 +12,12 @@ class CommunicationThreads::FilterService < FilterService
 
   def perform
     perform_scope
+    threads = meta_only? ? CommunicationThread.none : communication_threads
 
     {
-      communication_threads: meta_only? ? CommunicationThread.none : communication_threads,
-      count: include_meta? ? thread_counts : {}
+      communication_threads: threads,
+      count: include_meta? ? thread_counts : {},
+      pagination: meta_only? ? {} : pagination_metadata
     }
   end
 
@@ -34,6 +36,7 @@ class CommunicationThreads::FilterService < FilterService
         apply_crm_deal_context(@base_thread_scope)
       )
     )
+    @communication_threads = CommunicationThreadFinder.apply_search(@communication_threads, @params[:q])
   end
 
   def base_relation
@@ -58,7 +61,7 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def current_page
-    @params[:page] || 1
+    (Integer(@params[:page], exception: false) || 1).clamp(1, CommunicationThreadFinder::MAX_PAGE)
   end
 
   def include_meta?
@@ -90,6 +93,21 @@ class CommunicationThreads::FilterService < FilterService
       .order(Arel.sql(sort_clause))
       .page(current_page)
       .per(CommunicationThreadFinder::RESULTS_PER_PAGE)
+  end
+
+  def pagination_metadata
+    total_count = CommunicationThread.where(
+      id: @communication_threads.except(:order).select(:id)
+    ).count
+    per_page = CommunicationThreadFinder::RESULTS_PER_PAGE
+
+    {
+      count: total_count,
+      current_page: current_page,
+      per_page: per_page,
+      total_pages: (total_count.to_f / per_page).ceil,
+      has_more: current_page * per_page < total_count
+    }
   end
 
   private

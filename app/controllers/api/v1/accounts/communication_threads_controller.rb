@@ -40,6 +40,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     result = CommunicationThreadFinder.new(Current.user, params).perform
     @communication_threads = result[:communication_threads]
     @communication_threads_count = result[:count]
+    @communication_threads_pagination = result[:pagination]
     preload_accessible_links(@communication_threads)
     preload_crm_deal_stages(@communication_threads)
     preload_meta_ad_referrals(@communication_threads)
@@ -59,6 +60,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     result = CommunicationThreads::FilterService.new(params.permit!, Current.user, Current.account).perform
     @communication_threads = result[:communication_threads]
     @communication_threads_count = result[:count]
+    @communication_threads_pagination = result[:pagination]
     preload_accessible_links(@communication_threads)
     preload_crm_deal_stages(@communication_threads)
     preload_meta_ad_referrals(@communication_threads)

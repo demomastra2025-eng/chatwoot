@@ -223,6 +223,73 @@ RSpec.describe CommunicationThreadFinder do
         inboxes: include(inbox.id.to_s => 1)
       )
     end
+
+    it 'searches the visible thread by contact identity and recent message content' do
+      matching_thread, matching_conversation = create_thread_with_conversation
+      other_thread, = create_thread_with_conversation
+      matching_conversation.contact.update!(name: 'Needle Customer')
+      create(
+        :message,
+        account: account,
+        inbox: matching_conversation.inbox,
+        conversation: matching_conversation,
+        message_type: :incoming,
+        content: 'Unique treatment phrase'
+      )
+
+      contact_result = described_class.new(
+        user,
+        status: 'all',
+        assignee_type: 'all',
+        q: 'needle'
+      ).perform
+      message_result = described_class.new(
+        user,
+        status: 'all',
+        assignee_type: 'all',
+        q: 'treatment phrase'
+      ).perform
+
+      expect(contact_result[:communication_threads].map(&:id)).to eq([matching_thread.id])
+      expect(contact_result[:pagination]).to include(count: 1, current_page: 1, has_more: false)
+      expect(message_result[:communication_threads].map(&:id)).to eq([matching_thread.id])
+      expect(message_result[:communication_threads].map(&:id)).not_to include(other_thread.id)
+    end
+
+    it 'returns authoritative bounded pagination metadata' do
+      stub_const('CommunicationThreadFinder::RESULTS_PER_PAGE', 2)
+      3.times { create_thread_with_conversation }
+
+      result = described_class.new(
+        user,
+        status: 'all',
+        assignee_type: 'all',
+        page: 2
+      ).perform
+
+      expect(result[:communication_threads].size).to eq(1)
+      expect(result[:pagination]).to eq(
+        count: 3,
+        current_page: 2,
+        per_page: 2,
+        total_pages: 2,
+        has_more: false
+      )
+    end
+
+    it 'falls back to the first page for structured page parameters' do
+      create_thread_with_conversation
+
+      result = described_class.new(
+        user,
+        status: 'all',
+        assignee_type: 'all',
+        page: [2]
+      ).perform
+
+      expect(result[:pagination]).to include(current_page: 1, count: 1)
+      expect(result[:communication_threads].size).to eq(1)
+    end
   end
 
   def create_thread_for(contact:, unread_count: 0)

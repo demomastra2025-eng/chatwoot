@@ -45,6 +45,7 @@ describe('#CommunicationThreadAPI', () => {
         crmStageId: 34,
         labelsScope: 'any',
         teamScope: 'any',
+        q: 'needle',
       });
 
       expect(axiosMock.get).toHaveBeenCalledWith(
@@ -64,6 +65,7 @@ describe('#CommunicationThreadAPI', () => {
             team_scope: 'any',
             appointment_status: undefined,
             unread: undefined,
+            q: 'needle',
             include_meta: true,
           },
         }
@@ -76,6 +78,7 @@ describe('#CommunicationThreadAPI', () => {
         assigneeType: 'all',
         labelsScope: 'any',
         teamScope: 'any',
+        q: 'needle',
         includeContextCounts: true,
       });
 
@@ -95,6 +98,7 @@ describe('#CommunicationThreadAPI', () => {
             team_scope: 'any',
             appointment_status: undefined,
             unread: undefined,
+            q: 'needle',
             include_context_counts: true,
           },
         }
@@ -109,6 +113,7 @@ describe('#CommunicationThreadAPI', () => {
         crmStageId: 34,
         labelsScope: 'any',
         teamScope: 'any',
+        q: 'needle',
         queryData: {
           payload: [
             {
@@ -135,6 +140,7 @@ describe('#CommunicationThreadAPI', () => {
             labels_scope: payload.labelsScope,
             team_scope: payload.teamScope,
             unread: undefined,
+            q: 'needle',
             sort_by: undefined,
             include_meta: false,
             meta_only: false,

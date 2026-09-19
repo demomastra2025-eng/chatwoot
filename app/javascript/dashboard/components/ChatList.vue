@@ -107,6 +107,8 @@ const props = defineProps({
 
 const emit = defineEmits(['conversationLoad']);
 
+const SERVER_SEARCH_DELAY = 300;
+
 const ConversationFilter = defineAsyncComponent(
   () => import('next/filter/ConversationFilter.vue')
 );
@@ -162,6 +164,7 @@ const showDeleteFoldersModal = ref(false);
 const isContextMenuOpen = ref(false);
 const appliedFilter = ref([]);
 const localSearchQuery = ref('');
+let skipNextServerSearch = false;
 
 const filterAttributeName = attributeI18nKey => {
   switch (attributeI18nKey) {
@@ -279,9 +282,10 @@ const activeFolderName = computed(() => {
   return activeFolder.value?.name;
 });
 
-const hasLocalSearch = computed(() => {
-  return Boolean(localSearchQuery.value.trim());
-});
+const hasSearchQuery = computed(() => Boolean(localSearchQuery.value.trim()));
+const hasLocalSearch = computed(
+  () => hasSearchQuery.value && !props.communicationThreadMode
+);
 
 const hasActiveFolders = computed(() => {
   return Boolean(activeFolder.value && props.foldersId !== 0);
@@ -668,6 +672,9 @@ const conversationFilters = computed(() => {
     labelsScope: props.label ? undefined : activeLabelsScope.value || undefined,
     teamScope: props.teamId ? undefined : activeTeamScope.value || undefined,
     unread: activeUnreadOnly.value || undefined,
+    q: props.communicationThreadMode
+      ? localSearchQuery.value.trim() || undefined
+      : undefined,
   };
 });
 
@@ -1024,6 +1031,9 @@ function emitConversationLoaded() {
 }
 
 function clearLocalSearch() {
+  if (props.communicationThreadMode && localSearchQuery.value) {
+    skipNextServerSearch = true;
+  }
   localSearchQuery.value = '';
   emitter.emit('clearSearchInput');
 }
@@ -1043,6 +1053,9 @@ function fetchFilteredConversations(payload) {
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
+      q: props.communicationThreadMode
+        ? localSearchQuery.value.trim() || undefined
+        : undefined,
       sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
@@ -1065,6 +1078,9 @@ function fetchSavedFilteredConversations(payload) {
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
+      q: props.communicationThreadMode
+        ? localSearchQuery.value.trim() || undefined
+        : undefined,
       sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
@@ -1994,6 +2010,23 @@ watch(
   { immediate: true }
 );
 
+watch(localSearchQuery, (newQuery, oldQuery, onCleanup) => {
+  if (
+    !props.communicationThreadMode ||
+    newQuery === oldQuery ||
+    skipNextServerSearch
+  ) {
+    skipNextServerSearch = false;
+    return;
+  }
+
+  store.dispatch('invalidateConversationListRequests');
+  const timeoutId = setTimeout(() => {
+    resetAndFetchData({ preserveAppliedFilters: hasAppliedFilters.value });
+  }, SERVER_SEARCH_DELAY);
+  onCleanup(() => clearTimeout(timeoutId));
+});
+
 watch(conversationFilters, (newVal, oldVal) => {
   if (newVal !== oldVal) {
     store.dispatch('updateChatListFilters', newVal);
@@ -2073,7 +2106,7 @@ watch(conversationFilters, (newVal, oldVal) => {
         !chatListLoading &&
         !chatListLoadingError &&
         !conversationList.length &&
-        !hasLocalSearch
+        !hasSearchQuery
       "
       class="flex overflow-auto justify-center items-center p-4"
     >
@@ -2136,7 +2169,7 @@ watch(conversationFilters, (newVal, oldVal) => {
         />
       </Virtualizer>
       <p
-        v-else-if="!chatListLoading && hasLocalSearch"
+        v-else-if="!chatListLoading && hasSearchQuery"
         class="flex overflow-auto justify-center items-center p-4 text-center text-n-slate-11"
       >
         {{ $t('CHAT_LIST.LOCAL_SEARCH.EMPTY') }}
