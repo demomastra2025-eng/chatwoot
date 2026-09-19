@@ -100,6 +100,106 @@ const formatDateValue = (value, locale, withTime = false) => {
   ).format(parsedValue);
 };
 
+const normalizeSearchText = value =>
+  String(value || '')
+    .toLocaleLowerCase()
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+export const buildLocalizedNumberSearchAlias = (value, locale = 'en') => {
+  const search = normalizeSearchText(value);
+  if (!search || search.includes('%')) return '';
+
+  const formatter = new Intl.NumberFormat(locale);
+  const parts = formatter.formatToParts(12345.6);
+  const group = parts.find(part => part.type === 'group')?.value;
+  const decimal = parts.find(part => part.type === 'decimal')?.value;
+  let normalized = String(value).replace(/[\s\u00a0]/g, '');
+  if (group) normalized = normalized.split(group).join('');
+  if (decimal) normalized = normalized.replace(decimal, '.');
+  if (!/^-?\d+(?:\.\d+)?$/.test(normalized)) return '';
+
+  const numericValue = Number(normalized);
+  if (!Number.isFinite(numericValue)) return '';
+
+  return normalizeSearchText(formatter.format(numericValue)) === search
+    ? String(numericValue)
+    : '';
+};
+
+export const buildLocalizedDateSearchAliases = (value, locale = 'en') => {
+  const emptyAliases = { dateAlias: '', datetimeAlias: '' };
+  const search = normalizeSearchText(value);
+  const year = Number(search.match(/\b\d{4}\b/)?.[0]);
+  if (!year) return emptyAliases;
+
+  const month = Array.from({ length: 12 }, (_, index) => index).find(index => {
+    const label = new Intl.DateTimeFormat(locale, { month: 'short' }).format(
+      new Date(2000, index, 1)
+    );
+    return search.includes(normalizeSearchText(label));
+  });
+  if (month === undefined) return emptyAliases;
+
+  const timeMatch = search.match(/\b(\d{1,2}):(\d{2})\b/);
+  const numbers = search.match(/\d+/g)?.map(Number) || [];
+  const resolvedDay = numbers.find(
+    number => number !== year && number >= 1 && number <= 31
+  );
+  if (!resolvedDay) return emptyAliases;
+
+  const parsed = new Date(year, month, resolvedDay);
+  if (
+    parsed.getFullYear() !== year ||
+    parsed.getMonth() !== month ||
+    parsed.getDate() !== resolvedDay
+  ) {
+    return emptyAliases;
+  }
+
+  const dateAlias = `${year}-${String(month + 1).padStart(2, '0')}-${String(resolvedDay).padStart(2, '0')}`;
+  if (!timeMatch) {
+    return normalizeSearchText(formatDateValue(dateAlias, locale)) === search
+      ? { dateAlias, datetimeAlias: '' }
+      : emptyAliases;
+  }
+
+  let hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  const dayPeriodFormatter = new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+  });
+  const dayPeriod = targetHour =>
+    normalizeSearchText(
+      dayPeriodFormatter
+        .formatToParts(new Date(2000, 0, 1, targetHour))
+        .find(part => part.type === 'dayPeriod')?.value
+    );
+  const amLabel = dayPeriod(8);
+  const pmLabel = dayPeriod(20);
+  const usesDayPeriod = Boolean(amLabel || pmLabel);
+  if (
+    minute > 59 ||
+    (usesDayPeriod && (hour < 1 || hour > 12)) ||
+    (!usesDayPeriod && hour > 23)
+  ) {
+    return emptyAliases;
+  }
+  if (pmLabel && search.includes(pmLabel) && hour < 12) hour += 12;
+  if (amLabel && search.includes(amLabel) && hour === 12) hour = 0;
+
+  const withTime = new Date(year, month, resolvedDay, hour, minute);
+  if (normalizeSearchText(formatDateValue(withTime, locale, true)) !== search) {
+    return emptyAliases;
+  }
+
+  return {
+    dateAlias,
+    datetimeAlias: `${withTime.toISOString().slice(0, 16)}Z`,
+  };
+};
+
 const trimDisplayValue = value => {
   const normalizedValue = String(value).replace(/\s+/g, ' ').trim();
 

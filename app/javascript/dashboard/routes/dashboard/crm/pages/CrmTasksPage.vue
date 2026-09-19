@@ -1,6 +1,7 @@
 <script setup>
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -8,7 +9,7 @@ import {
   watch,
 } from 'vue';
 import { format } from 'date-fns';
-import { useLocalStorage } from '@vueuse/core';
+import { useDebounceFn, useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -75,10 +76,15 @@ import {
   normalizeCustomFieldFilters,
   recordMatchesCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
-import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
+import {
+  buildLocalizedDateSearchAliases,
+  buildLocalizedNumberSearchAlias,
+  resolveCustomFieldEntries,
+} from 'dashboard/stores/crm/customFieldFormatter';
 import {
   compactPayload,
   formatCrmErrorMessage,
+  normalizeMeta,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
 import {
@@ -109,6 +115,7 @@ const TASKS_PREFERENCES_STORAGE_KEY = 'crm-tasks-page-preferences';
 const MANUAL_BOARD_SORT_KEY = 'position';
 
 const tasks = ref([]);
+const tasksMeta = ref({ count: 0, hasMore: false, page: 1, perPage: 25 });
 const dealOptions = ref([]);
 const currentPresentation = ref('board');
 const currentCalendarView = ref('week');
@@ -206,6 +213,16 @@ let taskRealtimeSequence = 0;
 const pendingTaskRealtimeUpdates = new Map();
 let taskRealtimeLifecycleGeneration = 0;
 const taskRealtimeRequestSequences = new Map();
+let taskListReloadGeneration = 0;
+let debouncedTaskListReload = () => {};
+const scheduleTaskListReload = () => {
+  taskListReloadGeneration += 1;
+  debouncedTaskListReload(taskListReloadGeneration);
+};
+scheduleTaskListReload.cancel = () => {
+  taskListReloadGeneration += 1;
+};
+let suppressNextListSearchReload = false;
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
@@ -619,7 +636,31 @@ const searchableTaskCustomFieldTerms = task =>
     entry.displayValue,
   ]);
 
+const customFieldSearchAliases = computed(() => {
+  const search = normalizeFilterText(listQuickFilters.q);
+  if (!search) {
+    return {
+      checked: false,
+      dateAlias: '',
+      datetimeAlias: '',
+      numericAlias: '',
+    };
+  }
+
+  const yesLabel = normalizeFilterText(customFieldFilterLabels.value.yesLabel);
+  return {
+    checked: yesLabel.includes(search),
+    numericAlias: buildLocalizedNumberSearchAlias(
+      listQuickFilters.q,
+      localeCode.value
+    ),
+    ...buildLocalizedDateSearchAliases(listQuickFilters.q, localeCode.value),
+  };
+});
+
 const filteredListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return tasks.value;
+
   const search = normalizeFilterText(listQuickFilters.q);
 
   return tasks.value.filter(task => {
@@ -651,13 +692,15 @@ const resolveTaskSortValue = computed(() =>
   })
 );
 
-const sortedListTasks = computed(() =>
-  sortListRecords(
+const sortedListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return filteredListTasks.value;
+
+  return sortListRecords(
     filteredListTasks.value,
     listSort.value,
     resolveTaskSortValue.value
-  )
-);
+  );
+});
 
 const defaultTasksPreferences = () => ({
   boardSort: {
@@ -782,6 +825,8 @@ const persistTasksPreferences = () => {
 };
 
 const paginatedListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return sortedListTasks.value;
+
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
   return sortedListTasks.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
 });
@@ -796,7 +841,7 @@ const stripedTaskRowIds = computed(
 );
 
 const shouldShowListPagination = computed(
-  () => sortedListTasks.value.length > LIST_PAGE_SIZE
+  () => Number(tasksMeta.value.count || 0) > LIST_PAGE_SIZE
 );
 
 const taskListRowClass = row => [
@@ -1157,6 +1202,14 @@ const taskMatchesRealtimeFilters = task => {
 
 const applyTaskRealtimeState = task => {
   if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
+  if (currentPresentation.value === 'list') {
+    if (tasks.value.some(item => Number(item.id) === Number(task.id))) {
+      upsertTask(task);
+    }
+    scheduleTaskListReload();
+    return;
+  }
+
   if (taskMatchesRealtimeFilters(task)) {
     upsertTask(task);
   } else {
@@ -1410,6 +1463,37 @@ const loadTasks = async () => {
       due_from: filters.dateRange.from || undefined,
       due_to: filters.dateRange.to || undefined,
       outcome: filters.outcome || undefined,
+      q:
+        currentPresentation.value === 'list'
+          ? listQuickFilters.q || undefined
+          : undefined,
+      q_checked:
+        currentPresentation.value === 'list' &&
+        customFieldSearchAliases.value.checked
+          ? true
+          : undefined,
+      q_date_alias:
+        currentPresentation.value === 'list'
+          ? customFieldSearchAliases.value.dateAlias || undefined
+          : undefined,
+      q_datetime_alias:
+        currentPresentation.value === 'list'
+          ? customFieldSearchAliases.value.datetimeAlias || undefined
+          : undefined,
+      q_numeric_alias:
+        currentPresentation.value === 'list'
+          ? customFieldSearchAliases.value.numericAlias || undefined
+          : undefined,
+      sort_by:
+        currentPresentation.value === 'list'
+          ? listSort.value.key || undefined
+          : undefined,
+      sort_direction:
+        currentPresentation.value === 'list'
+          ? listSort.value.direction || undefined
+          : undefined,
+      task_state:
+        currentPresentation.value === 'list' ? filters.taskState : undefined,
     });
 
     if (currentPresentation.value === 'calendar') {
@@ -1432,12 +1516,44 @@ const loadTasks = async () => {
       ).toISOString();
     }
 
-    const loadedTasks = await fetchTaskPages({ loadGeneration, query });
+    let loadedTasks;
+    if (currentPresentation.value === 'list') {
+      const { data } = await CrmTasksAPI.get({
+        ...query,
+        page: listCurrentPage.value,
+        per_page: LIST_PAGE_SIZE,
+      });
+      if (loadGeneration !== taskLoadGeneration.value) return;
+
+      loadedTasks = normalizePayload(data);
+      tasksMeta.value = normalizeMeta(data);
+      const maxPage = Math.max(
+        1,
+        Math.ceil(Number(tasksMeta.value.count || 0) / LIST_PAGE_SIZE)
+      );
+      if (listCurrentPage.value > maxPage) {
+        listCurrentPage.value = maxPage;
+        await loadTasks();
+        return;
+      }
+    } else {
+      loadedTasks = await fetchTaskPages({ loadGeneration, query });
+      tasksMeta.value = {
+        count: loadedTasks?.length || 0,
+        hasMore: false,
+        page: 1,
+        perPage: loadedTasks?.length || 0,
+      };
+    }
     if (!loadedTasks) return;
 
     tasks.value = loadedTasks
       .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
-      .filter(taskMatchesRealtimeFilters);
+      .filter(
+        task =>
+          currentPresentation.value === 'list' ||
+          taskMatchesRealtimeFilters(task)
+      );
     pendingTaskRealtimeUpdates.forEach(update => {
       if (update.sequence <= realtimeSequenceAtStart) return;
 
@@ -1450,6 +1566,14 @@ const loadTasks = async () => {
   } finally {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
+};
+
+const handleListPageChange = async page => {
+  if (listCurrentPage.value === page) return;
+
+  scheduleTaskListReload.cancel?.();
+  listCurrentPage.value = page;
+  await loadTasks();
 };
 
 const refreshTaskFromRealtime = async payload => {
@@ -1483,8 +1607,12 @@ const refreshTaskFromRealtime = async payload => {
       task,
       realtimeSequence
     );
-    applyTaskRealtimeState(newest);
     if (Number(selectedTask.value?.id) === taskId) selectedTask.value = newest;
+    if (currentPresentation.value === 'list') {
+      await loadTasks();
+    } else {
+      applyTaskRealtimeState(newest);
+    }
   } catch (error) {
     if (
       lifecycleGeneration !== taskRealtimeLifecycleGeneration ||
@@ -1501,9 +1629,13 @@ const refreshTaskFromRealtime = async payload => {
     const remembered = pendingTaskRealtimeUpdates.get(taskId);
     if (remembered?.sequence > realtimeSequence) return;
 
-    taskLoadGeneration.value += 1;
-    ui.isLoading = false;
-    removeTask(taskId);
+    if (currentPresentation.value === 'list') {
+      await loadTasks();
+    } else {
+      taskLoadGeneration.value += 1;
+      ui.isLoading = false;
+      removeTask(taskId);
+    }
     if (Number(selectedTask.value?.id) === taskId) closeDrawer();
     if (Number(editingTaskTitleId.value) === taskId) closeTaskTitleEditor();
   } finally {
@@ -1633,6 +1765,7 @@ const consumeTaskOpenQuery = async () => {
 const handlePresentationChange = async presentation => {
   if (currentPresentation.value === presentation) return;
 
+  scheduleTaskListReload.cancel?.();
   currentPresentation.value = presentation;
   await loadTasks();
 };
@@ -1645,6 +1778,7 @@ const selectCalendarPresentation = async view => {
     return;
   }
 
+  scheduleTaskListReload.cancel?.();
   currentCalendarView.value = view;
   currentPresentation.value = 'calendar';
   await loadTasks();
@@ -1708,6 +1842,7 @@ const updateTaskCustomFieldFilterDraft = (key, value) => {
 };
 
 const applyFilters = async () => {
+  scheduleTaskListReload.cancel?.();
   listCurrentPage.value = 1;
   Object.assign(filters, {
     activityType: filterDraft.activityType,
@@ -1728,6 +1863,8 @@ const applyFilters = async () => {
 };
 
 const resetFilters = async () => {
+  scheduleTaskListReload.cancel?.();
+  suppressNextListSearchReload = Boolean(listQuickFilters.q);
   const defaults = defaultTasksPreferences();
   Object.assign(filters, {
     ...defaults.filters,
@@ -1801,23 +1938,29 @@ watch(
   }
 );
 
+debouncedTaskListReload = useDebounceFn(generation => {
+  if (generation !== taskListReloadGeneration) return;
+  loadTasks();
+}, 300);
+
 watch(
   () => listQuickFilters.q,
   () => {
+    if (suppressNextListSearchReload) {
+      suppressNextListSearchReload = false;
+      return;
+    }
     listCurrentPage.value = 1;
+    if (currentPresentation.value === 'list' && hasRestoredPreferences.value) {
+      scheduleTaskListReload();
+    }
   }
 );
 
-watch(filteredListTasks, rows => {
-  if (!rows.length) {
-    listCurrentPage.value = 1;
-    return;
-  }
-
-  const maxPage = Math.max(1, Math.ceil(rows.length / LIST_PAGE_SIZE));
-
-  if (listCurrentPage.value > maxPage) {
-    listCurrentPage.value = maxPage;
+watch(listSort, () => {
+  listCurrentPage.value = 1;
+  if (currentPresentation.value === 'list' && hasRestoredPreferences.value) {
+    scheduleTaskListReload();
   }
 });
 
@@ -2065,6 +2208,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  scheduleTaskListReload.cancel?.();
   isComponentUnmounted = true;
   taskRealtimeLifecycleGeneration += 1;
   taskRealtimeRequestSequences.clear();
@@ -2074,7 +2218,10 @@ onBeforeUnmount(() => {
   pendingTaskRealtimeUpdates.clear();
 });
 
-watch(accountId, () => {
+watch(accountId, async nextAccountId => {
+  scheduleTaskListReload.cancel();
+  suppressNextListSearchReload = false;
+  hasRestoredPreferences.value = false;
   taskRealtimeLifecycleGeneration += 1;
   taskRealtimeRequestSequences.clear();
   dealOptionsLoadGeneration += 1;
@@ -2083,9 +2230,17 @@ watch(accountId, () => {
   pendingTaskRealtimeUpdates.clear();
   taskRealtimeSequence = 0;
   tasks.value = [];
+  tasksMeta.value = { count: 0, hasMore: false, page: 1, perPage: 25 };
+  listCurrentPage.value = 1;
+  restoreTasksPreferences();
   closeDrawer();
   closeTaskTitleEditor();
-  if (canViewTasks.value) loadTasks();
+  await nextTick();
+  if (Number(accountId.value) !== Number(nextAccountId)) return;
+
+  hasRestoredPreferences.value = true;
+  persistTasksPreferences();
+  if (canViewTasks.value) await loadTasks();
 });
 
 watch(
@@ -2432,9 +2587,9 @@ watch(
             v-if="shouldShowListPagination"
             class="!border-t !border-n-weak !bg-transparent before:!hidden"
             :current-page="listCurrentPage"
-            :total-items="sortedListTasks.length"
+            :total-items="tasksMeta.count"
             :items-per-page="LIST_PAGE_SIZE"
-            @update:current-page="listCurrentPage = $event"
+            @update:current-page="handleListPageChange"
           />
         </div>
 

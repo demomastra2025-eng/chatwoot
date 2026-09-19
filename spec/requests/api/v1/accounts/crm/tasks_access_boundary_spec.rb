@@ -61,4 +61,190 @@ RSpec.describe 'CRM Tasks enforced access boundary', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'per_page')).to eq(500)
   end
+
+  it 'filters and stably sorts a bounded list page on the server' do
+    deadline = 1.day.from_now
+    active_first = create(:crm_task, account: account, assignee: viewer, title: 'Same', due_at: deadline)
+    active_second = create(:crm_task, account: account, assignee: viewer, title: 'Same', due_at: deadline)
+    completed = create(:crm_task, account: account, assignee: viewer, title: 'Same', completed_at: Time.current)
+
+    get path,
+        params: {
+          page: 1,
+          per_page: 1,
+          q: 'Same',
+          sort_by: 'dueAt',
+          sort_direction: 'asc',
+          task_state: 'active'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([active_first.id])
+    expect(response.parsed_body.fetch('meta')).to include(
+      'count' => 2,
+      'page' => 1,
+      'per_page' => 1,
+      'has_more' => true
+    )
+    expect(response.parsed_body.fetch('payload').pluck('id')).not_to include(completed.id)
+
+    get path,
+        params: {
+          page: 2,
+          per_page: 1,
+          q: 'Same',
+          sort_by: 'dueAt',
+          sort_direction: 'asc',
+          task_state: 'active'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([active_second.id])
+  end
+
+  it 'searches task catalog display names on the server' do
+    task_type = create(:crm_task_type, account: account, name: 'Контрольный звонок', code: 'follow_up_call')
+    current_task = create(:crm_task, account: account, assignee: viewer, task_type: task_type)
+    legacy_task = create(
+      :crm_task, account: account, assignee: viewer, task_type: nil, activity_type: task_type.code
+    )
+    create(:crm_task, account: account, assignee: viewer)
+
+    get path, params: { q: 'Контрольный звонок' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to contain_exactly(current_task.id, legacy_task.id)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(2)
+  end
+
+  it 'sorts activity types by their displayed catalog names' do
+    alphabetically_last = create(:crm_task_type, account: account, name: 'Явка', code: 'a_call')
+    alphabetically_first = create(:crm_task_type, account: account, name: 'Актуализация', code: 'z_follow_up')
+    last_task = create(
+      :crm_task, account: account, assignee: viewer, task_type: nil, activity_type: alphabetically_last.code
+    )
+    first_task = create(
+      :crm_task, account: account, assignee: viewer, task_type: nil, activity_type: alphabetically_first.code
+    )
+
+    get path, params: { sort_by: 'activityType', sort_direction: 'asc' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([first_task.id, last_task.id])
+  end
+
+  it 'searches displayed custom field labels and formatted values on the server' do
+    [
+      { key: 'customer_segment', label: 'Сегмент клиента', field_type: 'select',
+        options: [{ label: 'Крупный клиент', value: 'enterprise' }] },
+      { key: 'budget', label: 'Бюджет', field_type: 'currency' },
+      { key: 'follow_up_on', label: 'Дата контакта', field_type: 'date' },
+      { key: 'follow_up_at', label: 'Время контакта', field_type: 'datetime' },
+      { key: 'verified', label: 'Проверено', field_type: 'checkbox' },
+      { key: 'other_text', label: 'Другой текст', field_type: 'text' },
+      { key: 'literal_true', label: 'Строковое true', field_type: 'text' }
+    ].each do |attributes|
+      create(:crm_field_definition, account: account, entity_kind: 'task', **attributes)
+    end
+    matching_task = create(
+      :crm_task,
+      account: account,
+      assignee: viewer,
+      custom_attributes: {
+        'customer_segment' => 'enterprise',
+        'budget' => 1000,
+        'follow_up_at' => '2026-09-18T20:30:00-05:00',
+        'follow_up_on' => '2026-09-18',
+        'verified' => true
+      }
+    )
+    create(
+      :crm_task,
+      account: account,
+      assignee: viewer,
+      custom_attributes: { 'literal_true' => 'true', 'other_text' => 'enterprise' }
+    )
+
+    ['Сегмент клиента', 'Крупный клиент', '1 000'].each do |query|
+      get path, params: { q: query }, headers: headers, as: :json
+      expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+    end
+
+    get path, params: { q: '18 сент. 2026 г.', q_date_alias: '2026-09-18' }, headers: headers, as: :json
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+
+    get path,
+        params: { q: 'Sep 19, 2026, 01:30', q_datetime_alias: '2026-09-19T01:30Z' },
+        headers: headers,
+        as: :json
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+
+    get path, params: { q: '1,000', q_numeric_alias: '1000' }, headers: headers, as: :json
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+
+    get path, params: { q: 'Подтверждено', q_checked: true }, headers: headers, as: :json
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+  end
+
+  it 'ignores semantically invalid datetime aliases without raising' do
+    get path,
+        params: { q: 'impossible date', q_datetime_alias: '2026-02-31T25:99Z' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to be_empty
+  end
+
+  it 'does not apply percent display aliases to number or currency fields' do
+    create(:crm_field_definition, account: account, entity_kind: 'task', key: 'discount', field_type: 'percent')
+    create(:crm_field_definition, account: account, entity_kind: 'task', key: 'budget', field_type: 'currency')
+    matching_task = create(:crm_task, account: account, assignee: viewer, custom_attributes: { 'discount' => 15 })
+    create(:crm_task, account: account, assignee: viewer, custom_attributes: { 'budget' => 15 })
+
+    get path, params: { q: '15%' }, headers: headers, as: :json
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_task.id])
+  end
+
+  it 'does not search labels for custom values hidden by the formatter' do
+    [
+      { key: 'empty_text', label: 'Пустой текст', field_type: 'text' },
+      { key: 'empty_multi', label: 'Пустой список', field_type: 'multiselect', options: ['Один'] },
+      { key: 'unchecked', label: 'Не отмечено', field_type: 'checkbox' }
+    ].each do |attributes|
+      create(:crm_field_definition, account: account, entity_kind: 'task', **attributes)
+    end
+    create(
+      :crm_task,
+      account: account,
+      assignee: viewer,
+      custom_attributes: { 'empty_multi' => [], 'empty_text' => '', 'unchecked' => false }
+    )
+
+    ['Пустой текст', 'Пустой список', 'Не отмечено'].each do |query|
+      get path, params: { q: query }, headers: headers, as: :json
+      expect(response.parsed_body.fetch('payload')).to be_empty
+    end
+  end
+
+  it 'pages a synthetic task set without duplicates or gaps' do
+    expected_ids = create_list(:crm_task, 51, account: account, assignee: viewer, title: 'Scale task').pluck(:id).sort
+    actual_ids = (1..3).flat_map do |page|
+      get path,
+          params: { page: page, per_page: 25, q: 'Scale task', sort_by: 'id', sort_direction: 'asc' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'count')).to eq(51)
+      response.parsed_body.fetch('payload').pluck('id')
+    end
+
+    expect(actual_ids.each_slice(25).map(&:size)).to eq([25, 25, 1])
+    expect(actual_ids).to eq(expected_ids)
+    expect(actual_ids.uniq).to eq(actual_ids)
+  end
 end

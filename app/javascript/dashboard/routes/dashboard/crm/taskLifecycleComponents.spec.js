@@ -6,7 +6,9 @@ const { taskFieldDefinitions } = vi.hoisted(() => ({
   taskFieldDefinitions: [],
 }));
 
-vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
+vi.mock('vue-i18n', () => ({
+  useI18n: () => ({ locale: { value: 'en' }, t: key => key }),
+}));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {}, params: { accountId: 1 } }),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
@@ -173,14 +175,15 @@ afterEach(() => {
 });
 
 describe.each(['page', 'panel'])('%s task concurrency', kind => {
-  it('loads every bounded API page before publishing the complete task set', async () => {
+  it('uses bounded server pagination for list view and complete paging elsewhere', async () => {
     const { state } = await mountEditor(kind);
+    if (kind === 'page') state.currentPresentation = 'list';
     CrmTasksAPI.get.mockReset();
     CrmTasksAPI.get
       .mockResolvedValueOnce({
         data: {
           payload: [structuredClone(initialTask)],
-          meta: { has_more: true },
+          meta: { count: 2, has_more: true, page: 1, per_page: 25 },
         },
       })
       .mockResolvedValueOnce({
@@ -192,15 +195,28 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
 
     await state.loadTasks();
 
-    expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
-    expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ page: 1, per_page: 500 })
-    );
-    expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ page: 2, per_page: 500 })
-    );
+    if (kind === 'page') {
+      expect(state.tasks.map(task => task.id)).toEqual([7]);
+      expect(state.tasksMeta).toMatchObject({ count: 2, page: 1, perPage: 25 });
+      expect(CrmTasksAPI.get).toHaveBeenCalledTimes(1);
+      expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({
+          page: 1,
+          per_page: 25,
+          task_state: 'active',
+        })
+      );
+    } else {
+      expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
+      expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ page: 1, per_page: 500 })
+      );
+      expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ page: 2, per_page: 500 })
+      );
+    }
   });
 
   it('normalizes the scoped refresh response without losing custom-attribute keys', async () => {
@@ -588,6 +604,163 @@ describe('page async drawer scope', () => {
     expect(state.timelineItems).toEqual([]);
     expect(state.dealOptions).toEqual([]);
   });
+});
+
+it('requests the selected list page with server search and stable sort params', async () => {
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'needle';
+  state.listSort = { direction: 'desc', key: 'title' };
+  CrmTasksAPI.get.mockReset().mockResolvedValue({
+    data: {
+      payload: [{ ...initialTask, id: 8, title: 'Needle' }],
+      meta: { count: 26, has_more: false, page: 2, per_page: 25 },
+    },
+  });
+
+  await state.handleListPageChange(2);
+
+  expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      page: 2,
+      per_page: 25,
+      q: 'needle',
+      sort_by: 'title',
+      sort_direction: 'desc',
+      task_state: 'active',
+    })
+  );
+  expect(state.tasks.map(task => task.id)).toEqual([8]);
+  expect(state.tasksMeta).toMatchObject({ count: 26, page: 2, perPage: 25 });
+});
+
+it('sends the localized checked value as a typed custom-field search flag', async () => {
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'CHOICE_TOGGLE.YES';
+  CrmTasksAPI.get.mockReset().mockResolvedValue({
+    data: {
+      payload: [],
+      meta: { count: 0, has_more: false, page: 1, per_page: 25 },
+    },
+  });
+
+  await state.loadTasks();
+
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({
+      q: 'CHOICE_TOGGLE.YES',
+      q_checked: true,
+    })
+  );
+});
+
+it('resets a non-empty quick search with one authoritative request', async () => {
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  vi.useFakeTimers();
+
+  try {
+    state.listQuickFilters.q = 'needle';
+    await flushPromises();
+    CrmTasksAPI.get.mockReset().mockResolvedValue({
+      data: {
+        payload: [],
+        meta: { count: 0, has_more: false, page: 1, per_page: 25 },
+      },
+    });
+
+    await state.resetFilters();
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(CrmTasksAPI.get).toHaveBeenCalledTimes(1);
+    expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, per_page: 25 })
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('refetches the last valid list page when the current page becomes empty', async () => {
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.listCurrentPage = 2;
+  CrmTasksAPI.get
+    .mockReset()
+    .mockResolvedValueOnce({
+      data: {
+        payload: [],
+        meta: { count: 25, has_more: false, page: 2, per_page: 25 },
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        payload: [structuredClone(initialTask)],
+        meta: { count: 25, has_more: false, page: 1, per_page: 25 },
+      },
+    });
+
+  await state.loadTasks();
+
+  expect(state.listCurrentPage).toBe(1);
+  expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+    1,
+    expect.objectContaining({ page: 2, per_page: 25 })
+  );
+  expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+    2,
+    expect.objectContaining({ page: 1, per_page: 25 })
+  );
+  expect(state.tasks.map(task => task.id)).toEqual([7]);
+});
+
+it('cancels pending reloads and restores preferences before loading a different account', async () => {
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({
+      1: { currentPresentation: 'list' },
+      2: {
+        currentPresentation: 'list',
+        listQuickFilters: { q: 'new account search' },
+        listSort: { direction: 'desc', key: 'title' },
+      },
+    })
+  );
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.listCurrentPage = 3;
+  vi.useFakeTimers();
+
+  state.listQuickFilters.q = 'old account pending search';
+  await flushPromises();
+  CrmTasksAPI.get.mockReset().mockResolvedValue({
+    data: {
+      payload: [structuredClone(initialTask)],
+      meta: { count: 1, has_more: false, page: 1, per_page: 25 },
+    },
+  });
+
+  try {
+    state.accountId = 2;
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(state.listCurrentPage).toBe(1);
+    expect(state.listQuickFilters.q).toBe('new account search');
+    expect(state.listSort).toEqual({ direction: 'desc', key: 'title' });
+    expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        page: 1,
+        per_page: 25,
+        q: 'new account search',
+        sort_by: 'title',
+        sort_direction: 'desc',
+      })
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('reclassifies a sales task as standalone personal in one form save', async () => {
