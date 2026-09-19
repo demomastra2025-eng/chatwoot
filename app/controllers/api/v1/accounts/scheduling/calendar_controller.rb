@@ -97,12 +97,13 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
   end
 
   def appointment_page
-    params[:page].to_i.clamp(1, 10_000)
+    Integer(params[:page], exception: false).to_i.clamp(1, 10_000)
   end
 
   def appointments_per_page
     value = params[:per_page].presence || DEFAULT_APPOINTMENTS_PER_PAGE
-    value.to_i.clamp(1, MAX_APPOINTMENTS_PER_PAGE)
+    parsed_value = Integer(value, exception: false) || DEFAULT_APPOINTMENTS_PER_PAGE
+    parsed_value.clamp(1, MAX_APPOINTMENTS_PER_PAGE)
   end
 
   def resolved_view
