@@ -101,6 +101,33 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
+        it 'blocks a negated request to speak with an operator' do
+          create_triggering_message.call('Я не хочу поговорить с оператором.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks a negated request to contact a doctor' do
+          create_triggering_message.call('Я не хочу связаться с врачом.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'allows an independent direct request after a negated transfer clause' do
+          create_triggering_message.call('Я не хочу поговорить с оператором, но соедините меня с врачом.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to be_present
+        end
+
         it 'blocks an informational question about contacting a doctor' do
           create_triggering_message.call('Как связаться с врачом?')
 
@@ -170,6 +197,42 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
           expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks a negated self-harm intent statement' do
+          create_triggering_message.call('Я не хочу покончить с собой.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks a negated self-harm attempt statement' do
+          create_triggering_message.call('Я не пытаюсь убить себя.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'preserves an independent breathing emergency after a negated emergency clause' do
+          create_triggering_message.call('Я не умираю, но не могу дышать.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to be_present
+        end
+
+        it 'preserves an independent bleeding emergency after a negated emergency clause' do
+          create_triggering_message.call('Я не умираю, но у меня сильное кровотечение.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to be_present
         end
 
         it 'fails closed when the response fence is absent' do

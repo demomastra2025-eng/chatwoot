@@ -3,7 +3,8 @@ class Captain::Tools::HandoffConsentPolicy
                    'қызметкер|оператор|менеджер|әкімші|адам|дәрігер|human|agent|manager|doctor)'.freeze
   TRANSFER_PATTERN = '(?:соедин|подключ|переключ|переда|позов|қос|байланыстыр|ауыстыр|connect|transfer)'.freeze
   NEGATED_TRANSFER_PATTERN = /
-    не\s+(?:надо|нужно|хочу).{0,30}#{TRANSFER_PATTERN}|
+    не\s+(?:надо|нужно|хочу)[^,.;!?]{0,30}#{TRANSFER_PATTERN}|
+    не\s+(?:хочу|желаю|нужно)[^,.;!?]{0,30}?(?:поговорить|связаться)[^,.;!?]{0,40}?#{PERSON_PATTERN}|
     не\s+(?:соединяйте|подключайте|переключайте|передавайте|зовите)|
     (?:қоспаңыз|байланыстырмаңыз|ауыстырмаңыз|қажет\s+емес)|
     (?:don't|do\s+not)\s+(?:connect|transfer)|
@@ -28,7 +29,13 @@ class Captain::Tools::HandoffConsentPolicy
     /#{TRANSFER_PATTERN}.{0,60}#{PERSON_PATTERN}.{0,10}\?\z/i,
     /(?:would\s+you\s+like|do\s+you\s+want\s+me|shall\s+i).{0,60}#{TRANSFER_PATTERN}.{0,60}#{PERSON_PATTERN}/i
   ].freeze
-  NEGATED_EMERGENCY_PATTERN = /(?:не\s+умираю|не\s+задыхаюсь)/i
+  NEGATED_EMERGENCY_PATTERN = /
+    не\s+(?:умираю|задыхаюсь)|
+    не\s+хочу\s+покончить\s+с\s+собой|
+    не\s+пытаюсь\s+убить\s+себя|
+    не\s+сильн\w*\s+боль\w*\s+в\s+груди|
+    сильн\w*\s+(?:боль\w*\s+в\s+груди|кровотеч\w*)\s+нет
+  /ix
   NEGATED_HANDOFF_OFFER_PATTERN = /не\s+(?:могу|можем).{0,30}#{TRANSFER_PATTERN}/i
   EMERGENCY_PATTERN = /
     (?:не\s+могу\s+дышать|без\s+сознания|потерял[аи]?\s+сознание|сильн\w*\s+боль\w*\s+в\s+груди|
@@ -47,18 +54,21 @@ class Captain::Tools::HandoffConsentPolicy
     return false if incoming_message.blank?
 
     content = normalized_content(incoming_message)
-    return false if content.match?(NEGATED_EMERGENCY_PATTERN)
-
-    content.match?(EMERGENCY_PATTERN) || explicit_consent?(content, incoming_message)
+    emergency_signal?(content) || explicit_consent?(content, incoming_message)
   end
 
   private
 
   attr_reader :assistant, :conversation, :state
 
+  def emergency_signal?(content)
+    content_without_negated_signals = content.gsub(NEGATED_EMERGENCY_PATTERN, ' ')
+    content_without_negated_signals.match?(EMERGENCY_PATTERN)
+  end
+
   def explicit_consent?(content, incoming_message)
-    return false if content.match?(NEGATED_TRANSFER_PATTERN)
-    return true if DIRECT_REQUEST_PATTERNS.any? { |pattern| content.match?(pattern) }
+    content_without_negated_signals = content.gsub(NEGATED_TRANSFER_PATTERN, ' ')
+    return true if DIRECT_REQUEST_PATTERNS.any? { |pattern| content_without_negated_signals.match?(pattern) }
     return false unless content.match?(STANDALONE_AFFIRMATIVE_PATTERN)
 
     handoff_offer?(previous_public_message(incoming_message))
