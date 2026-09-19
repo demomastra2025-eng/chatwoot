@@ -10,8 +10,7 @@ describe('#MessageFormatter', () => {
       );
     });
     it('should format correctly', () => {
-      const message =
-        'Chatwoot is an opensource tool. https://one-link.kz';
+      const message = 'Chatwoot is an opensource tool. https://one-link.kz';
       expect(new MessageFormatter(message).formattedMessage).toMatch(
         '<p>Chatwoot is an opensource tool. <a href="https://one-link.kz" class="link" rel="noreferrer noopener nofollow" target="_blank">https://one-link.kz</a></p>'
       );

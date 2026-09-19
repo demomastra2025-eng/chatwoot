@@ -1,4 +1,5 @@
 <script>
+import NextSelect from 'dashboard/components-next/select/Select.vue';
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import BandwidthSms from './BandwidthSms.vue';
 import Twilio from './Twilio.vue';
@@ -6,6 +7,7 @@ import Twilio from './Twilio.vue';
 export default {
   components: {
     PageHeader,
+    NextSelect,
     Twilio,
     BandwidthSms,
   },
@@ -26,14 +28,14 @@ export default {
     <div class="flex-shrink-0 flex-grow-0">
       <label>
         {{ $t('INBOX_MGMT.ADD.SMS.PROVIDERS.LABEL') }}
-        <Select v-model="provider">
+        <NextSelect v-model="provider">
           <option value="twilio">
             {{ $t('INBOX_MGMT.ADD.SMS.PROVIDERS.TWILIO') }}
           </option>
           <option value="360dialog">
             {{ $t('INBOX_MGMT.ADD.SMS.PROVIDERS.BANDWIDTH') }}
           </option>
-        </Select>
+        </NextSelect>
       </label>
     </div>
     <Twilio v-if="provider === 'twilio'" type="sms" />

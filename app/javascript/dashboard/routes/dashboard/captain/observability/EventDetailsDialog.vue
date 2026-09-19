@@ -264,13 +264,13 @@ const contextItems = computed(() => {
     {
       key: 'recovery_kind',
       label: t('CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.RECOVERY_KIND'),
-      value: event.recovery_kind ? humanizeIdentifier(event.recovery_kind) : null,
+      value: event.recovery_kind
+        ? humanizeIdentifier(event.recovery_kind)
+        : null,
     },
     {
       key: 'completed_tools_count',
-      label: t(
-        'CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.COMPLETED_TOOLS_COUNT'
-      ),
+      label: t('CAPTAIN.OBSERVABILITY.DETAILS.CONTEXT.COMPLETED_TOOLS_COUNT'),
       value: stringValue(event.completed_tools_count),
     },
     {

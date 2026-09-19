@@ -6,6 +6,7 @@ import { getI18nKey } from 'dashboard/routes/dashboard/settings/helper/settingsH
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 import { useAlert } from 'dashboard/composables';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const { EXAMPLE_WEBHOOK_URL } = wootConstants;
 
@@ -24,6 +25,7 @@ const SUPPORTED_WEBHOOK_EVENTS = [
 
 export default {
   components: {
+    Checkbox,
     NextButton,
   },
   props: {
