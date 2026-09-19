@@ -18,4 +18,5 @@ export const BUS_EVENTS = {
   CRM_DEAL_REALTIME_EVENT: 'crmDealRealtimeEvent',
   CRM_TASK_REALTIME_EVENT: 'crmTaskRealtimeEvent',
   SCHEDULING_APPOINTMENT_REALTIME_EVENT: 'schedulingAppointmentRealtimeEvent',
+  CONTACT_REALTIME_EVENT: 'contactRealtimeEvent',
 };

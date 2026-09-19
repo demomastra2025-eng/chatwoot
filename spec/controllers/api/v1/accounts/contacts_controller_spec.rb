@@ -214,6 +214,66 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response_body['meta']['count']).to eq(2)
         expect(response_body['payload'].pluck('email')).to include(contact_with_label1.email, contact_with_label2.email)
       end
+
+      it 'paginates a company-filtered list with a stable id tie-breaker and authoritative count' do
+        timestamp = Time.zone.parse('2026-09-19 10:00:00')
+        scaled_contacts = Array.new(17) do |index|
+          create(
+            :contact,
+            :with_email,
+            account: account,
+            name: "Scale Contact #{index}",
+            last_activity_at: timestamp,
+            additional_attributes: { company_name: 'Scale Company' }
+          )
+        end
+
+        get "/api/v1/accounts/#{account.id}/contacts",
+            params: { company: 'Scale Company', sort: 'last_activity_at', page: 1 },
+            headers: admin.create_new_auth_token,
+            as: :json
+        first_page = response.parsed_body
+        second_admin = create(:user, account: account, role: :administrator)
+
+        get "/api/v1/accounts/#{account.id}/contacts",
+            params: { company: 'Scale Company', sort: 'last_activity_at', page: 2 },
+            headers: second_admin.create_new_auth_token,
+            as: :json
+        second_page = response.parsed_body
+
+        expect(first_page.dig('meta', 'count')).to eq(17)
+        expect(second_page.dig('meta', 'count')).to eq(17)
+        expect(first_page['payload'].size).to eq(15)
+        expect(second_page['payload'].size).to eq(2)
+        expect(first_page['payload'].pluck('id') + second_page['payload'].pluck('id')).to eq(scaled_contacts.map(&:id).sort)
+      end
+
+      it 'returns an authoritative search count for every page' do
+        Array.new(16) do |index|
+          create(:contact, :with_email, account: account, name: "Scale Needle #{index}")
+        end
+
+        get "/api/v1/accounts/#{account.id}/contacts/search",
+            params: { q: 'Scale Needle', sort: 'name', page: 2 },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'count')).to eq(16)
+        expect(response.parsed_body.dig('meta', 'current_page')).to eq(2)
+        expect(response.parsed_body['payload'].size).to eq(1)
+        expect(response.parsed_body.dig('meta', 'has_more')).to be(false)
+      end
+
+      it 'falls back to the first page for structured page params' do
+        get "/api/v1/accounts/#{account.id}/contacts",
+            params: { page: ['invalid'] },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'current_page')).to eq(1)
+      end
     end
   end
 
@@ -476,7 +536,7 @@ RSpec.describe 'Contacts API', type: :request do
 
       it 'returns has_more as true when there are more results' do
         # Create 16 contacts (more than RESULTS_PER_PAGE which is 15)
-        create_list(:contact, 16, account: account, name: 'searchable_contact')
+        create_list(:contact, 16, :with_email, account: account, name: 'searchable_contact')
 
         get "/api/v1/accounts/#{account.id}/contacts/search",
             params: { q: 'searchable_contact' },
@@ -486,13 +546,13 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         response_body = response.parsed_body
         expect(response_body['meta']['has_more']).to be(true)
-        expect(response_body['meta']['count']).to eq(15)
+        expect(response_body['meta']['count']).to eq(16)
         expect(response_body['payload'].length).to eq(15)
       end
 
       it 'returns has_more as false on the last page' do
         # Create 16 contacts
-        create_list(:contact, 16, account: account, name: 'searchable_contact')
+        create_list(:contact, 16, :with_email, account: account, name: 'searchable_contact')
 
         get "/api/v1/accounts/#{account.id}/contacts/search",
             params: { q: 'searchable_contact', page: 2 },
@@ -502,8 +562,34 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         response_body = response.parsed_body
         expect(response_body['meta']['has_more']).to be(false)
-        expect(response_body['meta']['count']).to eq(1)
+        expect(response_body['meta']['count']).to eq(16)
         expect(response_body['payload'].length).to eq(1)
+      end
+
+      it 'applies the company filter before search pagination and count' do
+        matching_contact = create(
+          :contact,
+          :with_email,
+          account: account,
+          name: 'Company Search Target',
+          additional_attributes: { company_name: 'Search Company' }
+        )
+        create(
+          :contact,
+          :with_email,
+          account: account,
+          name: 'Company Search Target',
+          additional_attributes: { company_name: 'Other Company' }
+        )
+
+        get "/api/v1/accounts/#{account.id}/contacts/search",
+            params: { q: 'Company Search Target', company: 'Search Company' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+        expect(response.parsed_body['payload'].pluck('id')).to eq([matching_contact.id])
       end
     end
   end
@@ -538,6 +624,24 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to conform_schema(200)
         expect(response.body).to include(contact2.email)
         expect(response.body).to include(contact1.email)
+      end
+
+      it 'applies the company filter before custom-filter pagination and count' do
+        contact1.update!(additional_attributes: contact1.additional_attributes.merge(company_name: 'Filter Company'))
+        contact2.update!(additional_attributes: contact2.additional_attributes.merge(company_name: 'Other Company'))
+
+        post "/api/v1/accounts/#{account.id}/contacts/filter?company=Filter%20Company",
+             params: { payload: [
+               attribute_key: 'country_code',
+               filter_operator: 'equal_to',
+               values: ['US']
+             ] },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'count')).to eq(1)
+        expect(response.parsed_body['payload'].pluck('id')).to eq([contact1.id])
       end
 
       it 'returns error the query operator is invalid' do

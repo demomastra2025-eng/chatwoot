@@ -28,7 +28,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
     render json: { error: 'Specify search string with parameter q' }, status: :unprocessable_content if params[:q].blank? && return
 
     search_query = params[:q].to_s.strip
-    contacts = policy_scope(Current.account.contacts).where(
+    contacts = resolved_contacts.where(
       [
         'name ILIKE :search',
         'email ILIKE :search',
@@ -39,7 +39,9 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
       search: "%#{search_query}%",
       phone_search: "%#{search_query.gsub(/\s+/, '')}%"
     )
-    @contacts = fetch_contacts_with_has_more(contacts)
+    @contacts = fetch_contacts(contacts)
+    @contacts_count = @contacts.total_count
+    @has_more = @contacts.next_page.present?
   end
 
   def import
@@ -76,8 +78,14 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   def filter
     result = ::Contacts::FilterService.new(Current.account, Current.user, params.permit!).perform
     contacts = policy_scope(result[:contacts])
-    @contacts_count = contacts.count
+    if params[:company].present?
+      contacts = contacts.where(
+        "contacts.additional_attributes ->> 'company_name' = ?",
+        params[:company].to_s
+      )
+    end
     @contacts = fetch_contacts(contacts)
+    @contacts_count = @contacts.total_count
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
          CustomExceptions::CustomFilter::InvalidQueryOperator,
@@ -165,33 +173,25 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
                          .resolved_contacts(use_crm_v2: Current.account.feature_enabled?('crm_v2'))
 
     @resolved_contacts = @resolved_contacts.tagged_with(params[:labels], any: true) if params[:labels].present?
+    if params[:company].present?
+      @resolved_contacts = @resolved_contacts.where(
+        "contacts.additional_attributes ->> 'company_name' = ?",
+        params[:company].to_s
+      )
+    end
     @resolved_contacts
   end
 
   def set_current_page
-    @current_page = params[:page] || 1
+    @current_page = (Integer(params[:page], exception: false) || 1).clamp(1, 10_000)
   end
 
   def fetch_contacts(contacts)
     filtrate(contacts)
+      .order(id: :asc)
       .includes(*contact_includes)
       .page(@current_page)
       .per(RESULTS_PER_PAGE)
-  end
-
-  def fetch_contacts_with_has_more(contacts)
-    # Calculate offset manually to fetch one extra record for has_more check
-    offset = (@current_page.to_i - 1) * RESULTS_PER_PAGE
-    results = filtrate(contacts)
-              .includes(*contact_includes)
-              .offset(offset)
-              .limit(RESULTS_PER_PAGE + 1)
-              .to_a
-
-    @has_more = results.size > RESULTS_PER_PAGE
-    results = results.first(RESULTS_PER_PAGE) if @has_more
-    @contacts_count = results.size
-    results
   end
 
   def build_contact_inbox

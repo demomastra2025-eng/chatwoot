@@ -4,7 +4,8 @@ properties:
     type: integer
     description: Total number of contacts
   current_page:
-    type:
-      - string
-      - integer
+    type: integer
     description: Current page number
+  has_more:
+    type: boolean
+    description: Whether another search-result page is available

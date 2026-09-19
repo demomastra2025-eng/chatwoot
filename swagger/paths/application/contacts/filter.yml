@@ -11,7 +11,18 @@ post:
     - name: page
       in: query
       schema:
-        type: number
+        type: integer
+        minimum: 1
+    - name: sort
+      in: query
+      schema:
+        type: string
+      description: Sort by contact attribute
+    - name: company
+      in: query
+      schema:
+        type: string
+      description: Filter contacts by exact company name
   requestBody:
     required: true
     content:

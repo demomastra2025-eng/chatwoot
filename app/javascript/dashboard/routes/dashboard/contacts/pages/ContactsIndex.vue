@@ -1,10 +1,18 @@
 <script setup>
-import { onMounted, computed, ref, reactive, watch } from 'vue';
+import {
+  onBeforeUnmount,
+  onMounted,
+  computed,
+  ref,
+  reactive,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
-import { debounce } from '@chatwoot/utils';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import filterQueryGenerator from 'dashboard/helper/filterQueryGenerator';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
@@ -19,6 +27,23 @@ import BulkActionsAPI from 'dashboard/api/bulkActions';
 
 const DEFAULT_SORT_FIELD = 'last_activity_at';
 const DEBOUNCE_DELAY = 300;
+const CONTACTS_PER_PAGE = 15;
+
+const cancellableDebounce = (callback, delay) => {
+  let timeoutId;
+  const debounced = (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      timeoutId = undefined;
+      callback(...args);
+    }, delay);
+  };
+  debounced.cancel = () => {
+    clearTimeout(timeoutId);
+    timeoutId = undefined;
+  };
+  return debounced;
+};
 
 const store = useStore();
 const route = useRoute();
@@ -41,10 +66,21 @@ const searchValue = ref(searchQuery.value || '');
 const companyFilterValue = ref(companyQuery.value || '');
 const pageNumber = computed(() => Number(route.query?.page) || 1);
 const contactUiActionQueriesReady = ref(false);
-// For infinite scroll in search, track page internally
-const searchPageNumber = ref(1);
 const contactsListLayoutRef = ref(null);
-const isLoadingMore = ref(false);
+let internallyPublishedListContext = null;
+
+const listContextSignature = ({ page, search, company }) =>
+  JSON.stringify({
+    page: Number(page) || 1,
+    search: search || '',
+    company: company || '',
+  });
+
+const routeListContext = computed(() => ({
+  page: pageNumber.value,
+  search: searchQuery.value || '',
+  company: companyQuery.value || '',
+}));
 
 const parseSortSettings = (sortString = '') => {
   const hasDescending = sortString.startsWith('-');
@@ -76,8 +112,6 @@ const isFetchingList = computed(
 );
 const currentPage = computed(() => Number(meta.value?.currentPage));
 const totalItems = computed(() => meta.value?.count);
-const hasMore = computed(() => meta.value?.hasMore ?? false);
-const isSearchView = computed(() => !!searchQuery.value);
 
 const selectedContactIds = ref([]);
 const isBulkActionLoading = ref(false);
@@ -110,9 +144,12 @@ const hasContacts = computed(() => contacts.value.length > 0);
 const companyFilterOptions = computed(() => {
   const companyNames = [
     ...new Set(
-      contacts.value
-        .map(contact => contact.additionalAttributes?.companyName)
-        .filter(Boolean)
+      [
+        companyFilterValue.value,
+        ...contacts.value.map(
+          contact => contact.additionalAttributes?.companyName
+        ),
+      ].filter(Boolean)
     ),
   ].sort((a, b) => a.localeCompare(b));
 
@@ -121,14 +158,7 @@ const companyFilterOptions = computed(() => {
     value: company,
   }));
 });
-const filteredContacts = computed(() => {
-  if (!companyFilterValue.value) return contacts.value;
-
-  return contacts.value.filter(
-    contact =>
-      contact.additionalAttributes?.companyName === companyFilterValue.value
-  );
-});
+const filteredContacts = computed(() => contacts.value);
 const isContactIndexView = computed(
   () => route.name === 'contacts_dashboard_index' && pageNumber.value === 1
 );
@@ -207,7 +237,7 @@ const toggleContactSelection = ({ id, value }) => {
   }
 };
 
-const updatePageParam = (page, search = '', company = '') => {
+const updatePageParam = async (page, search = '', company = '') => {
   const query = {
     ...route.query,
     page: page.toString(),
@@ -222,7 +252,18 @@ const updatePageParam = (page, search = '', company = '') => {
     delete query.company;
   }
 
-  router.replace({ query });
+  const targetSignature = listContextSignature({ page, search, company });
+  if (targetSignature === listContextSignature(routeListContext.value)) return;
+
+  internallyPublishedListContext = targetSignature;
+  try {
+    await router.replace({ query });
+  } catch (error) {
+    if (internallyPublishedListContext === targetSignature) {
+      internallyPublishedListContext = null;
+    }
+    throw error;
+  }
 };
 
 const buildSortAttr = () =>
@@ -232,16 +273,44 @@ const getCommonFetchParams = (page = 1) => ({
   page,
   sortAttr: buildSortAttr(),
   label: activeLabel.value,
+  company: companyFilterValue.value,
 });
+
+const lastAvailablePage = () =>
+  Math.max(1, Math.ceil((Number(meta.value?.count) || 0) / CONTACTS_PER_PAGE));
+
+const finishPageFetch = async (applied, page, retry) => {
+  if (!applied) return false;
+
+  const lastPage = lastAvailablePage();
+  const responsePage = Number(meta.value?.currentPage) || page;
+  if (responsePage > lastPage) {
+    return retry(lastPage);
+  }
+
+  await updatePageParam(
+    responsePage,
+    searchValue.value,
+    companyFilterValue.value
+  );
+  return true;
+};
 
 const fetchContacts = async (page = 1, options = {}) => {
   const { clearSelection: shouldClearSelection = true } = options;
   if (shouldClearSelection) {
     clearSelection();
   }
+  store.dispatch('contacts/invalidateListRequests');
+  await updatePageParam(page, searchValue.value, companyFilterValue.value);
   await store.dispatch('contacts/clearContactFilters');
-  await store.dispatch('contacts/get', getCommonFetchParams(page));
-  updatePageParam(page, searchValue.value, companyFilterValue.value);
+  const applied = await store.dispatch(
+    'contacts/get',
+    getCommonFetchParams(page)
+  );
+  return finishPageFetch(applied, page, nextPage =>
+    fetchContacts(nextPage, { clearSelection: false })
+  );
 };
 
 const fetchSavedOrAppliedFilteredContact = async (
@@ -249,18 +318,24 @@ const fetchSavedOrAppliedFilteredContact = async (
   page = 1,
   options = {}
 ) => {
-  if (!activeSegmentId.value && !hasAppliedFilters.value) return;
+  if (!activeSegmentId.value && !hasAppliedFilters.value) return false;
 
   const { clearSelection: shouldClearSelection = true } = options;
   if (shouldClearSelection) {
     clearSelection();
   }
 
-  await store.dispatch('contacts/filter', {
+  store.dispatch('contacts/invalidateListRequests');
+  await updatePageParam(page, searchValue.value, companyFilterValue.value);
+  const applied = await store.dispatch('contacts/filter', {
     ...getCommonFetchParams(page),
     queryPayload: payload,
   });
-  updatePageParam(page, searchValue.value, companyFilterValue.value);
+  return finishPageFetch(applied, page, nextPage =>
+    fetchSavedOrAppliedFilteredContact(payload, nextPage, {
+      clearSelection: false,
+    })
+  );
 };
 
 const fetchActiveContacts = async (page = 1, options = {}) => {
@@ -269,82 +344,64 @@ const fetchActiveContacts = async (page = 1, options = {}) => {
     clearSelection();
   }
 
+  store.dispatch('contacts/invalidateListRequests');
+  await updatePageParam(page, searchValue.value, companyFilterValue.value);
   await store.dispatch('contacts/clearContactFilters');
-  await store.dispatch('contacts/active', {
+  const applied = await store.dispatch('contacts/active', {
     page,
     sortAttr: buildSortAttr(),
   });
-  updatePageParam(page, searchValue.value, companyFilterValue.value);
+  return finishPageFetch(applied, page, nextPage =>
+    fetchActiveContacts(nextPage, { clearSelection: false })
+  );
 };
 
-const searchContacts = debounce(
-  async (value, page = 1, append = false, options = {}) => {
-    const { clearSelection: shouldClearSelection = true } = options;
+const performSearchContacts = async (value, page = 1, options = {}) => {
+  const { clearSelection: shouldClearSelection = true } = options;
 
-    if (!append) {
-      searchPageNumber.value = 1;
+  if (shouldClearSelection) {
+    clearSelection();
+  }
+  store.dispatch('contacts/invalidateListRequests');
+  await store.dispatch('contacts/clearContactFilters');
+  searchValue.value = value;
+  await updatePageParam(page, value, companyFilterValue.value);
 
-      if (shouldClearSelection) {
-        clearSelection();
-      }
-    }
-    await store.dispatch('contacts/clearContactFilters');
-    searchValue.value = value;
+  if (!value) {
+    return fetchContacts(page, { clearSelection: false });
+  }
 
-    if (!value) {
-      updatePageParam(page, '', companyFilterValue.value);
-      await fetchContacts(page, { clearSelection: false });
-      return;
-    }
+  const applied = await store.dispatch('contacts/search', {
+    ...getCommonFetchParams(page),
+    search: encodeURIComponent(value),
+  });
+  return finishPageFetch(applied, page, nextPage =>
+    performSearchContacts(value, nextPage, { clearSelection: false })
+  );
+};
 
-    updatePageParam(page, value, companyFilterValue.value);
-    await store.dispatch('contacts/search', {
-      ...getCommonFetchParams(page),
-      search: encodeURIComponent(value),
-      append,
-    });
-    searchPageNumber.value = page;
-  },
+const searchContacts = cancellableDebounce(
+  performSearchContacts,
   DEBOUNCE_DELAY
 );
-
-const loadMoreSearchResults = async () => {
-  if (!hasMore.value || isLoadingMore.value) return;
-
-  isLoadingMore.value = true;
-  const nextPage = searchPageNumber.value + 1;
-
-  await store.dispatch('contacts/search', {
-    ...getCommonFetchParams(nextPage),
-    search: encodeURIComponent(searchValue.value),
-    append: true,
-  });
-
-  searchPageNumber.value = nextPage;
-  isLoadingMore.value = false;
-};
 
 const fetchContactsBasedOnContext = async (page, options = {}) => {
   const { clearSelection: shouldClearSelection = true } = options;
   if (shouldClearSelection) {
     clearSelection();
   }
-  updatePageParam(page, searchValue.value, companyFilterValue.value);
-  if (isFetchingList.value) return;
-  if (searchQuery.value) {
-    await searchContacts(searchQuery.value, page, false, {
+  if (searchValue.value) {
+    return performSearchContacts(searchValue.value, page, {
       clearSelection: shouldClearSelection,
     });
-    return;
   }
   // Reset the search value when we change the view
   searchValue.value = '';
   // If we're on the active route, fetch active contacts
   if (isActiveView.value) {
-    await fetchActiveContacts(page, {
+    return fetchActiveContacts(page, {
       clearSelection: shouldClearSelection,
     });
-    return;
   }
   // If there are applied filters or active segment with query
   if (
@@ -353,25 +410,37 @@ const fetchContactsBasedOnContext = async (page, options = {}) => {
   ) {
     const queryPayload =
       activeSegment.value?.query || filterQueryGenerator(appliedFilters.value);
-    await fetchSavedOrAppliedFilteredContact(queryPayload, page, {
+    return fetchSavedOrAppliedFilteredContact(queryPayload, page, {
       clearSelection: shouldClearSelection,
     });
-    return;
   }
   // Default case: fetch regular contacts + label
-  await fetchContacts(page, {
+  return fetchContacts(page, {
     clearSelection: shouldClearSelection,
   });
 };
 
-const updateCompanyFilter = value => {
+const updateCompanyFilter = async value => {
+  searchContacts.cancel();
   companyFilterValue.value = value || '';
   clearSelection();
-  updatePageParam(1, searchValue.value, companyFilterValue.value);
+  store.dispatch('contacts/invalidateListRequests');
+  await updatePageParam(1, searchValue.value, companyFilterValue.value);
+  await fetchContactsBasedOnContext(1, {
+    clearSelection: false,
+  });
 };
 
-const onPageChange = page =>
-  fetchContactsBasedOnContext(page, { clearSelection: false });
+const handleSearch = value => {
+  searchValue.value = value;
+  store.dispatch('contacts/invalidateListRequests');
+  searchContacts(value, 1, { clearSelection: false });
+};
+
+const onPageChange = page => {
+  searchContacts.cancel();
+  return fetchContactsBasedOnContext(page, { clearSelection: false });
+};
 
 const assignLabels = async labelTitles => {
   if (!labelTitles.length || !selectedContactIds.value.length) {
@@ -419,14 +488,17 @@ const deleteContacts = async () => {
 };
 
 const handleSort = async ({ sort, order }) => {
+  searchContacts.cancel();
+  store.dispatch('contacts/invalidateListRequests');
   Object.assign(sortState, { activeSort: sort, activeOrdering: order });
+  await updatePageParam(1, searchValue.value, companyFilterValue.value);
 
   await updateUISettings({
     contacts_sort_by: buildSortAttr(),
   });
 
-  if (searchQuery.value) {
-    await searchContacts(searchValue.value, pageNumber.value, false, {
+  if (searchValue.value) {
+    await performSearchContacts(searchValue.value, 1, {
       clearSelection: false,
     });
     return;
@@ -491,6 +563,21 @@ const createContact = async contact => {
   await store.dispatch('contacts/create', contact);
 };
 
+const scheduleContactsReload = cancellableDebounce(() => {
+  fetchContactsBasedOnContext(pageNumber.value, { clearSelection: false });
+}, DEBOUNCE_DELAY);
+
+const handleContactRealtimeEvent = data => {
+  if (
+    data.account_id &&
+    Number(data.account_id) !== Number(route.params.accountId)
+  ) {
+    return;
+  }
+
+  scheduleContactsReload();
+};
+
 watch(hasSelection, value => {
   if (!value) {
     bulkDeleteDialogRef.value?.close?.();
@@ -510,37 +597,39 @@ watch(
 );
 
 watch(
-  [activeLabel, activeSegment, isActiveView],
+  [() => route.params.accountId, activeLabel, activeSegment, isActiveView],
   () => {
+    searchContacts.cancel();
+    store.dispatch('contacts/invalidateListRequests');
     fetchContactsBasedOnContext(pageNumber.value);
   },
   { deep: true }
 );
 
-watch(searchQuery, value => {
-  if (isFetchingList.value) return;
-  searchValue.value = value || '';
-  // Reset the view if there is search query when we click on the sidebar group
-  if (value === undefined) {
-    if (
-      isActiveView.value ||
-      activeLabel.value ||
-      activeSegment.value ||
-      hasAppliedFilters.value
-    )
-      return;
-    fetchContacts();
-  }
-});
+watch(
+  routeListContext,
+  context => {
+    searchValue.value = context.search;
+    companyFilterValue.value = context.company;
 
-watch(companyQuery, value => {
-  companyFilterValue.value = value || '';
-});
+    const contextSignature = listContextSignature(context);
+    if (contextSignature === internallyPublishedListContext) {
+      internallyPublishedListContext = null;
+      return;
+    }
+
+    searchContacts.cancel();
+    store.dispatch('contacts/invalidateListRequests');
+    fetchContactsBasedOnContext(context.page);
+  },
+  { deep: true }
+);
 
 onMounted(async () => {
+  emitter.on(BUS_EVENTS.CONTACT_REALTIME_EVENT, handleContactRealtimeEvent);
   if (!activeSegmentId.value) {
-    if (searchQuery.value) {
-      await searchContacts(searchQuery.value, pageNumber.value, false, {
+    if (searchValue.value) {
+      await performSearchContacts(searchValue.value, pageNumber.value, {
         clearSelection: false,
       });
       await consumeContactPrefillQuery();
@@ -563,6 +652,13 @@ onMounted(async () => {
 
   await consumeContactPrefillQuery();
   contactUiActionQueriesReady.value = true;
+});
+
+onBeforeUnmount(() => {
+  emitter.off(BUS_EVENTS.CONTACT_REALTIME_EVENT, handleContactRealtimeEvent);
+  scheduleContactsReload.cancel();
+  searchContacts.cancel();
+  store.dispatch('contacts/invalidateListRequests');
 });
 
 watch(
@@ -592,31 +688,23 @@ watch(
       :company-filter-options="companyFilterOptions"
       :header-title="headerTitle"
       :current-page="currentPage"
-      :total-items="companyFilterValue ? filteredContacts.length : totalItems"
-      :show-pagination-footer="
-        !isFetchingList && hasContacts && !isSearchView && !companyFilterValue
-      "
+      :total-items="totalItems"
+      :show-pagination-footer="!isFetchingList && hasContacts"
       :active-sort="sortState.activeSort"
       :active-ordering="sortState.activeOrdering"
       :active-segment="activeSegment"
       :segments-id="activeSegmentId"
       :is-fetching-list="isFetchingList"
       :has-applied-filters="hasAppliedFilters"
-      :use-infinite-scroll="isSearchView"
-      :has-more="hasMore"
-      :is-loading-more="isLoadingMore"
       @update:current-page="onPageChange"
-      @search="
-        value => searchContacts(value, 1, false, { clearSelection: false })
-      "
+      @search="handleSearch"
       @update:company-filter="updateCompanyFilter"
       @update:sort="handleSort"
       @apply-filter="fetchSavedOrAppliedFilteredContact"
       @clear-filters="fetchContacts"
-      @load-more="loadMoreSearchResults"
     >
       <div
-        v-if="isFetchingList && !(isSearchView && hasContacts)"
+        v-if="isFetchingList"
         class="flex items-center justify-center py-10 text-n-slate-11"
       >
         <Spinner />

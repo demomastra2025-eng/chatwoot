@@ -48,6 +48,67 @@ describe('#actions', () => {
         [types.SET_CONTACT_UI_FLAG, { isFetching: false }],
       ]);
     });
+
+    it('ignores a stale response when a newer list request finishes first', async () => {
+      let resolveFirst;
+      let resolveSecond;
+      const firstResponse = new Promise(resolve => {
+        resolveFirst = resolve;
+      });
+      const secondResponse = new Promise(resolve => {
+        resolveSecond = resolve;
+      });
+      axios.get
+        .mockReturnValueOnce(firstResponse)
+        .mockReturnValueOnce(secondResponse);
+
+      const firstRequest = actions.get({ commit }, { page: 1 });
+      const secondRequest = actions.get({ commit }, { page: 2 });
+      const secondPayload = [{ id: 200, name: 'Second page' }];
+
+      resolveSecond({
+        data: {
+          payload: secondPayload,
+          meta: { count: 16, current_page: 2 },
+        },
+      });
+      await secondRequest;
+      resolveFirst({
+        data: {
+          payload: contactList,
+          meta: { count: 16, current_page: 1 },
+        },
+      });
+      await firstRequest;
+
+      expect(commit).toHaveBeenCalledWith(types.SET_CONTACTS, secondPayload);
+      expect(commit).not.toHaveBeenCalledWith(types.SET_CONTACTS, contactList);
+      expect(commit).toHaveBeenCalledWith(types.SET_CONTACT_META, {
+        count: 16,
+        current_page: 2,
+      });
+    });
+
+    it('invalidates an in-flight list response on teardown', async () => {
+      let resolveRequest;
+      axios.get.mockReturnValueOnce(
+        new Promise(resolve => {
+          resolveRequest = resolve;
+        })
+      );
+
+      const request = actions.get({ commit }, { page: 1 });
+      actions.invalidateListRequests({ commit });
+      resolveRequest({
+        data: {
+          payload: contactList,
+          meta: { count: 2, current_page: 1 },
+        },
+      });
+      await request;
+
+      expect(commit).not.toHaveBeenCalledWith(types.SET_CONTACTS, contactList);
+    });
   });
 
   describe('#show', () => {

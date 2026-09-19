@@ -10,6 +10,11 @@ get:
     - $ref: '#/components/parameters/account_id'
     - $ref: '#/components/parameters/contact_sort_param'
     - $ref: '#/components/parameters/page'
+    - name: company
+      in: query
+      schema:
+        type: string
+      description: Filter contacts by exact company name
   responses:
     '200':
       description: Success

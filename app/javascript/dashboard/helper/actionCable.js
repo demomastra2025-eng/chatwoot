@@ -149,6 +149,8 @@ class ActionCableConnector extends BaseActionCableConnector {
       'conversation.typing_off': this.onTypingOff,
       'conversation.contact_changed': this.onConversationContactChange,
       'presence.update': this.onPresenceUpdate,
+      'contact.created': data =>
+        this.onContactRealtimeEvent('contact.created', data),
       'contact.deleted': this.onContactDelete,
       'contact.updated': this.onContactUpdate,
       'conversation.mentioned': this.onConversationMentioned,
@@ -716,6 +718,7 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   onContactDelete = data => {
+    this.onContactRealtimeEvent('contact.deleted', data);
     this.app.$store.dispatch(
       'contacts/deleteContactThroughConversations',
       data.id
@@ -724,8 +727,14 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   onContactUpdate = data => {
+    this.onContactRealtimeEvent('contact.updated', data);
     this.app.$store.dispatch('contacts/updateContact', data);
     this.app.$store.dispatch('updateContactInConversations', data);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onContactRealtimeEvent = (event, data) => {
+    emitter.emit(BUS_EVENTS.CONTACT_REALTIME_EVENT, { event, ...data });
   };
 
   onNotificationCreated = data => {

@@ -38,6 +38,13 @@ describe('#ContactsAPI', () => {
       );
     });
 
+    it('#get with company', () => {
+      contactAPI.get(2, '-name', '', 'Acme & Co');
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/contacts?include_contact_inboxes=false&page=2&sort=-name&company=Acme%20%26%20Co'
+      );
+    });
+
     it('#getConversations', () => {
       contactAPI.getConversations(1);
       expect(axiosMock.get).toHaveBeenCalledWith(
@@ -89,6 +96,14 @@ describe('#ContactsAPI', () => {
       expect(axiosMock.get).toHaveBeenCalledWith(
         '/api/v1/contacts/search?include_contact_inboxes=false&page=1&sort=date&q=leads&labels[]=customer-support',
         { signal: controller.signal }
+      );
+    });
+
+    it('#search with company', () => {
+      contactAPI.search('leads', 2, 'name', '', {}, 'Acme & Co');
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/contacts/search?include_contact_inboxes=false&page=2&sort=name&q=leads&company=Acme%20%26%20Co',
+        { signal: undefined }
       );
     });
 
@@ -153,6 +168,9 @@ describe('#buildContactParams', () => {
       buildContactParams(1, 'name', 'customer-support', 'message-content')
     ).toBe(
       'include_contact_inboxes=false&page=1&sort=name&q=message-content&labels[]=customer-support'
+    );
+    expect(buildContactParams(2, '-name', '', '', 'Acme & Co')).toBe(
+      'include_contact_inboxes=false&page=2&sort=-name&company=Acme%20%26%20Co'
     );
   });
 });

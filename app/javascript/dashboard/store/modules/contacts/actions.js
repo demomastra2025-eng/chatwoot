@@ -61,56 +61,45 @@ export const handleContactOperationErrors = error => {
   }
 };
 
+let contactListRequestGeneration = 0;
+
+const fetchContactList = async ({ commit }, request) => {
+  contactListRequestGeneration += 1;
+  const requestGeneration = contactListRequestGeneration;
+  commit(types.SET_CONTACT_UI_FLAG, { isFetching: true });
+
+  try {
+    const {
+      data: { payload, meta },
+    } = await request();
+    if (requestGeneration !== contactListRequestGeneration) return false;
+
+    commit(types.CLEAR_CONTACTS);
+    commit(types.SET_CONTACTS, payload);
+    commit(types.SET_CONTACT_META, meta);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (requestGeneration === contactListRequestGeneration) {
+      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
+    }
+  }
+};
+
 export const actions = {
-  search: async (
-    { commit },
-    { search, page, sortAttr, label, append = false }
-  ) => {
-    commit(types.SET_CONTACT_UI_FLAG, { isFetching: true });
-    try {
-      const {
-        data: { payload, meta },
-      } = await ContactAPI.search(search, page, sortAttr, label);
-      if (!append) {
-        commit(types.CLEAR_CONTACTS);
-      }
-      commit(append ? types.APPEND_CONTACTS : types.SET_CONTACTS, payload);
-      commit(types.SET_CONTACT_META, meta);
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    } catch (error) {
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    }
-  },
+  search: ({ commit }, { search, page, sortAttr, label, company }) =>
+    fetchContactList({ commit }, () =>
+      ContactAPI.search(search, page, sortAttr, label, {}, company)
+    ),
 
-  get: async ({ commit }, { page = 1, sortAttr, label } = {}) => {
-    commit(types.SET_CONTACT_UI_FLAG, { isFetching: true });
-    try {
-      const {
-        data: { payload, meta },
-      } = await ContactAPI.get(page, sortAttr, label);
-      commit(types.CLEAR_CONTACTS);
-      commit(types.SET_CONTACTS, payload);
-      commit(types.SET_CONTACT_META, meta);
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    } catch (error) {
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    }
-  },
+  get: ({ commit }, { page = 1, sortAttr, label, company } = {}) =>
+    fetchContactList({ commit }, () =>
+      ContactAPI.get(page, sortAttr, label, company)
+    ),
 
-  active: async ({ commit }, { page = 1, sortAttr } = {}) => {
-    commit(types.SET_CONTACT_UI_FLAG, { isFetching: true });
-    try {
-      const {
-        data: { payload, meta },
-      } = await ContactAPI.active(page, sortAttr);
-      commit(types.CLEAR_CONTACTS);
-      commit(types.SET_CONTACTS, payload);
-      commit(types.SET_CONTACT_META, meta);
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    } catch (error) {
-      commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-    }
-  },
+  active: ({ commit }, { page = 1, sortAttr } = {}) =>
+    fetchContactList({ commit }, () => ContactAPI.active(page, sortAttr)),
 
   show: async ({ commit }, { id }) => {
     commit(types.SET_CONTACT_UI_FLAG, { isFetchingItem: true });
@@ -299,24 +288,30 @@ export const actions = {
 
   filter: async (
     { commit },
-    { page = 1, sortAttr, queryPayload, resetState = true } = {}
+    { page = 1, sortAttr, queryPayload, company, resetState = true } = {}
   ) => {
+    if (resetState) {
+      return fetchContactList({ commit }, () =>
+        ContactAPI.filter(page, sortAttr, queryPayload, company)
+      );
+    }
+
     commit(types.SET_CONTACT_UI_FLAG, { isFetching: true });
     try {
       const {
-        data: { payload, meta },
-      } = await ContactAPI.filter(page, sortAttr, queryPayload);
-      if (resetState) {
-        commit(types.CLEAR_CONTACTS);
-        commit(types.SET_CONTACTS, payload);
-        commit(types.SET_CONTACT_META, meta);
-        commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
-      }
+        data: { payload },
+      } = await ContactAPI.filter(page, sortAttr, queryPayload, company);
       return payload;
-    } catch (error) {
+    } catch {
+      return [];
+    } finally {
       commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
     }
-    return [];
+  },
+
+  invalidateListRequests({ commit }) {
+    contactListRequestGeneration += 1;
+    commit(types.SET_CONTACT_UI_FLAG, { isFetching: false });
   },
 
   setContactFilters({ commit }, data) {

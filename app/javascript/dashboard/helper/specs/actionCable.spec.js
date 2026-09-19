@@ -467,6 +467,38 @@ describe('ActionCableConnector - Copilot Tests', () => {
         'updateContactInConversations',
         payload
       );
+      expect(emitter.emit).toHaveBeenCalledWith('contactRealtimeEvent', {
+        event: 'contact.updated',
+        ...payload,
+      });
+    });
+
+    it('publishes contact creation events for authoritative list reloads', () => {
+      const payload = { account_id: 1, id: 43, name: 'New customer' };
+
+      actionCable.onReceived({
+        event: 'contact.created',
+        data: payload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith('contactRealtimeEvent', {
+        event: 'contact.created',
+        ...payload,
+      });
+    });
+
+    it('publishes contact deletion events for authoritative list reloads', () => {
+      const payload = { account_id: 1, id: 44 };
+
+      actionCable.onReceived({
+        event: 'contact.deleted',
+        data: payload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith('contactRealtimeEvent', {
+        event: 'contact.deleted',
+        ...payload,
+      });
     });
   });
 
