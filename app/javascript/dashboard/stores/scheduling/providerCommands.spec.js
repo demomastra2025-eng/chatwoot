@@ -88,6 +88,124 @@ describe('useSchedulingProviderCommandsStore', () => {
     expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
   });
 
+  it('stops a provider command before confirmation after the account resets', async () => {
+    let resolveCreate;
+    SchedulingProviderCommandsAPI.create.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveCreate = resolve;
+        })
+    );
+    const store = useSchedulingProviderCommandsStore();
+
+    const execution = store.executeConfirmed(
+      {
+        appointment_id: 18,
+        operation: 'create_reception',
+      },
+      { pollIntervalMs: 0 }
+    );
+    store.resetForAccountChange();
+    resolveCreate({
+      data: { payload: { id: 42, status: 'awaiting_confirmation' } },
+    });
+
+    await expect(execution).rejects.toMatchObject({
+      code: 'stale_provider_context',
+    });
+    expect(SchedulingProviderCommandsAPI.confirm).not.toHaveBeenCalled();
+    expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+    expect(store.lastCommand).toBeNull();
+    expect(store.ui.isExecuting).toBe(false);
+  });
+
+  it('stops a provider command while confirmation is pending after the account resets', async () => {
+    let resolveConfirm;
+    SchedulingProviderCommandsAPI.create.mockResolvedValue({
+      data: { payload: { id: 42, status: 'awaiting_confirmation' } },
+    });
+    SchedulingProviderCommandsAPI.confirm.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveConfirm = resolve;
+        })
+    );
+    const store = useSchedulingProviderCommandsStore();
+
+    const execution = store.executeConfirmed(
+      { appointment_id: 18, operation: 'create_reception' },
+      { pollIntervalMs: 0 }
+    );
+    await vi.waitFor(() => {
+      expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalled();
+    });
+    store.resetForAccountChange();
+    resolveConfirm({ data: { payload: { id: 42, status: 'queued' } } });
+
+    await expect(execution).rejects.toMatchObject({
+      code: 'stale_provider_context',
+    });
+    expect(SchedulingProviderCommandsAPI.get).not.toHaveBeenCalled();
+  });
+
+  it('stops provider polling when the account resets during a status request', async () => {
+    let resolveGet;
+    SchedulingProviderCommandsAPI.create.mockResolvedValue({
+      data: { payload: { id: 42, status: 'awaiting_confirmation' } },
+    });
+    SchedulingProviderCommandsAPI.confirm.mockResolvedValue({
+      data: { payload: { id: 42, status: 'queued' } },
+    });
+    SchedulingProviderCommandsAPI.get.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveGet = resolve;
+        })
+    );
+    const store = useSchedulingProviderCommandsStore();
+
+    const execution = store.executeConfirmed(
+      { appointment_id: 18, operation: 'create_reception' },
+      { pollIntervalMs: 0 }
+    );
+    await vi.waitFor(() => {
+      expect(SchedulingProviderCommandsAPI.get).toHaveBeenCalled();
+    });
+    store.resetForAccountChange();
+    resolveGet({ data: { payload: { id: 42, status: 'succeeded' } } });
+
+    await expect(execution).rejects.toMatchObject({
+      code: 'stale_provider_context',
+    });
+    expect(store.lastCommand).toBeNull();
+  });
+
+  it('discards an active-command lookup completed after the account resets', async () => {
+    let resolveList;
+    SchedulingProviderCommandsAPI.list.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveList = resolve;
+        })
+    );
+    const store = useSchedulingProviderCommandsStore();
+
+    const lookup = store.findActive({
+      appointmentId: 18,
+      provider: 'medelement',
+    });
+    store.resetForAccountChange();
+    resolveList({
+      data: {
+        payload: [{ id: 42, provider: 'medelement', status: 'queued' }],
+      },
+    });
+
+    await expect(lookup).rejects.toMatchObject({
+      code: 'stale_provider_context',
+    });
+  });
+
   it('continues polling while automatic reconciliation is pending', async () => {
     SchedulingProviderCommandsAPI.create.mockResolvedValue({
       data: { payload: { id: 43, status: 'awaiting_confirmation' } },

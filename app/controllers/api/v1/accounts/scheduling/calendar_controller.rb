@@ -1,5 +1,7 @@
 class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Scheduling::BaseController
   ALLOWED_VIEWS = %w[day week month list].freeze
+  DEFAULT_APPOINTMENTS_PER_PAGE = 25
+  MAX_APPOINTMENTS_PER_PAGE = 100
   MAX_RANGE = 92.days
 
   def show
@@ -9,6 +11,16 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
     validate_range!(from, to)
     result = Scheduling::CalendarViewService.new(
       account: Current.account,
+      **calendar_options(from, to)
+    ).perform
+
+    render_payload(calendar_payload(result), meta: result[:meta])
+  end
+
+  private
+
+  def calendar_options(from, to)
+    {
       appointment_scope: appointment_scope,
       view: resolved_view,
       from: from,
@@ -17,13 +29,12 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       include_slots: parse_boolean(params[:include_slots]),
       duration_min: params[:duration_min],
       custom_attribute_filters: custom_attribute_filters_param,
-      filters: appointment_filters
-    ).perform
-
-    render_payload(calendar_payload(result))
+      filters: appointment_filters,
+      paginate_appointments: parse_boolean(params[:paginate_appointments]),
+      appointment_page: appointment_page,
+      appointments_per_page: appointments_per_page
+    }
   end
-
-  private
 
   def calendar_payload(result)
     Scheduling::PayloadBuilder.calendar(
@@ -83,6 +94,15 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       statuses: parse_csv_ids(params[:status]),
       payment_statuses: parse_csv_ids(params[:payment_status])
     }
+  end
+
+  def appointment_page
+    params[:page].to_i.clamp(1, 10_000)
+  end
+
+  def appointments_per_page
+    value = params[:per_page].presence || DEFAULT_APPOINTMENTS_PER_PAGE
+    value.to_i.clamp(1, MAX_APPOINTMENTS_PER_PAGE)
   end
 
   def resolved_view

@@ -18,6 +18,8 @@ import {
 import { appointmentMatchesCustomFieldFilters } from 'dashboard/routes/dashboard/scheduling/customFieldFilters';
 import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
+const LIST_PAGE_SIZE = 25;
+
 const defaultPayload = () => ({
   range: { from: null, to: null },
   resources: [],
@@ -79,6 +81,9 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     currentView: 'week',
 
     initialized: false,
+    listPage: 1,
+    listPerPage: LIST_PAGE_SIZE,
+    listTotal: 0,
     paymentStatusFilters: [],
     payload: defaultPayload(),
     selectedResourceIds: [],
@@ -105,6 +110,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       ),
     expenses: state => state.payload.expenses,
     holidays: state => state.payload.holidays,
+    listTotalPages: state =>
+      Math.max(Math.ceil(state.listTotal / state.listPerPage), 1),
     payments: state => state.payload.payments,
     resources: state => state.payload.resources,
     slots: state => state.payload.slots,
@@ -175,6 +182,41 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
 
     setWorkspaceTimezone(timezone) {
       this.workspaceTimezone = timezone || 'Asia/Almaty';
+    },
+
+    setListPage(page) {
+      this.listPage = Math.max(Number(page) || 1, 1);
+    },
+
+    resetListPagination() {
+      this.listPage = 1;
+      this.listTotal = 0;
+    },
+
+    invalidateRequests() {
+      this.activeRequestId += 1;
+      this.ui.isLoading = false;
+    },
+
+    resetForAccountChange() {
+      this.activeRequestId += 1;
+      this.customAttributeFilters = {};
+      this.listPage = 1;
+      this.listTotal = 0;
+      this.paymentStatusFilters = [];
+      this.payload = defaultPayload();
+      this.selectedResourceIds = [];
+      this.statusFilters = [];
+      this.ui = {
+        error: null,
+        isLoading: true,
+        lastLoadedAt: null,
+      };
+    },
+
+    setLoadError(error) {
+      this.ui.error = error;
+      this.ui.isLoading = false;
     },
 
     shiftAnchor(direction) {
@@ -262,6 +304,13 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           view: this.currentView,
         };
 
+        const paginateAppointments = options.paginateAppointments === true;
+        if (paginateAppointments) {
+          params.page = this.listPage;
+          params.paginate_appointments = true;
+          params.per_page = this.listPerPage;
+        }
+
         if (this.selectedResourceIds.length) {
           params.resource_ids = this.selectedResourceIds.join(',');
         }
@@ -290,6 +339,18 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         }
 
         const payload = normalizePayload(data);
+        if (paginateAppointments) {
+          const meta = camelcaseKeys(data?.meta || {});
+          this.listTotal = Number(meta.count) || 0;
+          const lastPage = Math.max(
+            Math.ceil(this.listTotal / this.listPerPage),
+            1
+          );
+          if (this.listPage > lastPage) {
+            this.listPage = lastPage;
+            return this.fetchCalendar(options);
+          }
+        }
         this.payload = { ...defaultPayload(), ...payload };
         this.ui.lastLoadedAt = new Date().toISOString();
         return this.payload;

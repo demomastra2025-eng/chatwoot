@@ -75,6 +75,65 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.visibleResources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
   });
 
+  it('ignores a pending calendar response after request invalidation', async () => {
+    let resolveRequest;
+    showMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveRequest = resolve;
+      })
+    );
+    const store = useSchedulingCalendarStore();
+    const request = store.fetchCalendar({ paginateAppointments: true });
+
+    store.invalidateRequests();
+    resolveRequest({
+      data: {
+        meta: { count: 1, page: 1, per_page: 25 },
+        payload: { appointments: [{ id: 99 }] },
+      },
+    });
+    await request;
+
+    expect(store.appointments).toEqual([]);
+    expect(store.listTotal).toBe(0);
+    expect(store.ui.isLoading).toBe(false);
+  });
+
+  it('clears account-scoped calendar state before loading another account', () => {
+    const store = useSchedulingCalendarStore();
+    store.payload = {
+      ...store.payload,
+      appointments: [{ id: 99 }],
+      resources: [{ id: 5 }],
+    };
+    store.customAttributeFilters = {
+      urgency: { operator: 'equal', value: 'high' },
+    };
+    store.listPage = 3;
+    store.listTotal = 51;
+    store.paymentStatusFilters = ['paid'];
+    store.selectedResourceIds = [5];
+    store.statusFilters = ['confirmed'];
+    store.ui.error = { message: 'Old account error' };
+    store.ui.lastLoadedAt = '2026-09-19T00:00:00Z';
+
+    store.resetForAccountChange();
+
+    expect(store.appointments).toEqual([]);
+    expect(store.resources).toEqual([]);
+    expect(store.customAttributeFilters).toEqual({});
+    expect(store.listPage).toBe(1);
+    expect(store.listTotal).toBe(0);
+    expect(store.paymentStatusFilters).toEqual([]);
+    expect(store.selectedResourceIds).toEqual([]);
+    expect(store.statusFilters).toEqual([]);
+    expect(store.ui).toEqual({
+      error: null,
+      isLoading: true,
+      lastLoadedAt: null,
+    });
+  });
+
   it('passes appointment custom field filters to the calendar request', async () => {
     showMock.mockResolvedValue({
       data: {
@@ -115,6 +174,74 @@ describe('useSchedulingCalendarStore', () => {
         },
       })
     );
+  });
+
+  it('requests one bounded appointment list page and stores the server count', async () => {
+    showMock.mockResolvedValue({
+      data: {
+        meta: { count: 51, page: 2, per_page: 25 },
+        payload: {
+          appointments: [{ id: 26 }],
+        },
+      },
+    });
+    const store = useSchedulingCalendarStore();
+    store.setListPage(2);
+
+    await store.fetchCalendar({ paginateAppointments: true });
+
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        page: 2,
+        paginate_appointments: true,
+        per_page: 25,
+      })
+    );
+    expect(store.listTotal).toBe(51);
+    expect(store.listTotalPages).toBe(3);
+    expect(store.appointments).toEqual([{ id: 26 }]);
+  });
+
+  it('keeps an old API full-list payload usable when pagination metadata is absent', async () => {
+    const appointments = Array.from({ length: 30 }, (_, index) => ({
+      id: index + 1,
+    }));
+    showMock.mockResolvedValue({
+      data: {
+        payload: { appointments },
+      },
+    });
+    const store = useSchedulingCalendarStore();
+
+    await store.fetchCalendar({ paginateAppointments: true });
+
+    expect(store.appointments).toEqual(appointments);
+    expect(store.listTotal).toBe(0);
+    expect(store.listTotalPages).toBe(1);
+  });
+
+  it('reloads the last valid appointment list page after the current page becomes empty', async () => {
+    showMock
+      .mockResolvedValueOnce({
+        data: {
+          meta: { count: 26, page: 3, per_page: 25 },
+          payload: { appointments: [] },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          meta: { count: 26, page: 2, per_page: 25 },
+          payload: { appointments: [{ id: 26 }] },
+        },
+      });
+    const store = useSchedulingCalendarStore();
+    store.setListPage(3);
+
+    await store.fetchCalendar({ paginateAppointments: true });
+
+    expect(showMock.mock.calls.map(([params]) => params.page)).toEqual([3, 2]);
+    expect(store.listPage).toBe(2);
+    expect(store.appointments).toEqual([{ id: 26 }]);
   });
 
   it('hides inactive appointments by default and includes them on opt-in', async () => {

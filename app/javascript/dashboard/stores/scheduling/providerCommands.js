@@ -22,23 +22,36 @@ const pause = milliseconds => {
   });
 };
 
+const createStaleProviderContextError = () => {
+  const error = new Error('The provider command account context changed');
+  error.code = 'stale_provider_context';
+  return error;
+};
+
+const assertCurrentProviderContext = isCurrent => {
+  if (!isCurrent()) throw createStaleProviderContextError();
+};
+
 const pollProviderCommand = async (
   command,
-  { attempt = 0, maxPollAttempts, pollIntervalMs }
+  { attempt = 0, isCurrent, maxPollAttempts, pollIntervalMs }
 ) => {
   if (TERMINAL_STATUSES.has(command.status) || attempt >= maxPollAttempts) {
     return command;
   }
 
   await pause(pollIntervalMs);
+  assertCurrentProviderContext(isCurrent);
   const showResponse = command.provider
     ? await SchedulingProviderCommandsAPI.get(command.id, {
         provider: command.provider,
       })
     : await SchedulingProviderCommandsAPI.get(command.id);
+  assertCurrentProviderContext(isCurrent);
 
   return pollProviderCommand(normalizePayload(showResponse.data), {
     attempt: attempt + 1,
+    isCurrent,
     maxPollAttempts,
     pollIntervalMs,
   });
@@ -143,6 +156,7 @@ export const useSchedulingProviderCommandsStore = defineStore(
   {
     state: () => ({
       lastCommand: null,
+      requestGeneration: 0,
       ui: {
         error: null,
         isExecuting: false,
@@ -150,42 +164,63 @@ export const useSchedulingProviderCommandsStore = defineStore(
     }),
 
     actions: {
+      resetForAccountChange() {
+        this.requestGeneration += 1;
+        this.lastCommand = null;
+        this.ui.error = null;
+        this.ui.isExecuting = false;
+      },
+
       async findActive({ appointmentId, provider }) {
+        const requestGeneration = this.requestGeneration;
         const response = await SchedulingProviderCommandsAPI.list({
           activeOnly: true,
           appointmentId,
           ...(provider ? { provider } : {}),
         });
+        assertCurrentProviderContext(
+          () => requestGeneration === this.requestGeneration
+        );
         return normalizePayload(response.data)?.[0] || null;
       },
 
       async loadPatientCandidates(command) {
+        const requestGeneration = this.requestGeneration;
         const response = command.provider
           ? await SchedulingProviderCommandsAPI.patientCandidates(command.id, {
               provider: command.provider,
             })
           : await SchedulingProviderCommandsAPI.patientCandidates(command.id);
+        assertCurrentProviderContext(
+          () => requestGeneration === this.requestGeneration
+        );
         return normalizePayload(response.data);
       },
 
       async resumePatientAction(command, action, expectedIntent) {
         assertProviderCommandIntent(command, expectedIntent);
+        const requestGeneration = this.requestGeneration;
+        const isCurrent = () => requestGeneration === this.requestGeneration;
         this.ui.error = null;
         this.ui.isExecuting = true;
         try {
+          assertCurrentProviderContext(isCurrent);
           const response = await action();
+          assertCurrentProviderContext(isCurrent);
           let resumedCommand = normalizePayload(response.data);
           resumedCommand = await pollProviderCommand(resumedCommand, {
+            isCurrent,
             maxPollAttempts: 75,
             pollIntervalMs: 1000,
           });
           this.lastCommand = resumedCommand;
           return resumedCommand;
         } catch (error) {
+          if (error?.code === 'stale_provider_context') throw error;
           this.ui.error = extractSchedulingError(error);
           throw this.ui.error;
         } finally {
-          this.ui.isExecuting = false;
+          if (isCurrent()) this.ui.isExecuting = false;
         }
       },
 
@@ -245,11 +280,15 @@ export const useSchedulingProviderCommandsStore = defineStore(
       },
 
       async cancel(command) {
+        const requestGeneration = this.requestGeneration;
         const response = command.provider
           ? await SchedulingProviderCommandsAPI.cancel(command.id, {
               provider: command.provider,
             })
           : await SchedulingProviderCommandsAPI.cancel(command.id);
+        assertCurrentProviderContext(
+          () => requestGeneration === this.requestGeneration
+        );
         this.lastCommand = normalizePayload(response.data);
         return this.lastCommand;
       },
@@ -258,10 +297,13 @@ export const useSchedulingProviderCommandsStore = defineStore(
         commandParams,
         { maxPollAttempts = 75, pollIntervalMs = 1000 } = {}
       ) {
+        const requestGeneration = this.requestGeneration;
+        const isCurrent = () => requestGeneration === this.requestGeneration;
         this.ui.error = null;
         this.ui.isExecuting = true;
 
         try {
+          assertCurrentProviderContext(isCurrent);
           const createResponse = await SchedulingProviderCommandsAPI.create({
             ...commandParams,
             idempotency_key:
@@ -271,6 +313,7 @@ export const useSchedulingProviderCommandsStore = defineStore(
                 commandParams.appointment_id
               ),
           });
+          assertCurrentProviderContext(isCurrent);
           let command = normalizePayload(createResponse.data);
 
           const confirmResponse = command.provider
@@ -281,10 +324,12 @@ export const useSchedulingProviderCommandsStore = defineStore(
             : await SchedulingProviderCommandsAPI.confirm(command.id, {
                 automatic: true,
               });
+          assertCurrentProviderContext(isCurrent);
           command = normalizePayload(confirmResponse.data);
           this.lastCommand = command;
 
           command = await pollProviderCommand(command, {
+            isCurrent,
             maxPollAttempts,
             pollIntervalMs,
           });
@@ -292,10 +337,11 @@ export const useSchedulingProviderCommandsStore = defineStore(
 
           return command;
         } catch (error) {
+          if (error?.code === 'stale_provider_context') throw error;
           this.ui.error = extractSchedulingError(error);
           throw this.ui.error;
         } finally {
-          this.ui.isExecuting = false;
+          if (isCurrent()) this.ui.isExecuting = false;
         }
       },
     },

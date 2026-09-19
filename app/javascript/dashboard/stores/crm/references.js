@@ -150,6 +150,7 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       task: [],
       appointment: [],
     },
+    fieldDefinitionRequestIds: {},
     pipelines: [],
     taskStatuses: [],
     taskTypes: [],
@@ -165,6 +166,14 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
   actions: {
     resetError() {
       this.ui.error = null;
+    },
+
+    resetFieldDefinitions(entityKind) {
+      this.fieldDefinitionRequestIds[entityKind] =
+        (this.fieldDefinitionRequestIds[entityKind] || 0) + 1;
+      this.fieldDefinitions[entityKind] = [];
+      this.ui.error = null;
+      this.ui.isLoadingFieldDefinitions = false;
     },
 
     async loadPipelines(params = {}) {
@@ -440,6 +449,9 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
 
     async loadFieldDefinitions(entityKind) {
+      const accountId = String(CrmFieldDefinitionsAPI.accountIdFromRoute || '');
+      const requestId = (this.fieldDefinitionRequestIds[entityKind] || 0) + 1;
+      this.fieldDefinitionRequestIds[entityKind] = requestId;
       this.ui.isLoadingFieldDefinitions = true;
       this.ui.error = null;
 
@@ -447,13 +459,26 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
         const { data } = await CrmFieldDefinitionsAPI.get({
           entity_kind: entityKind,
         });
+        if (
+          requestId !== this.fieldDefinitionRequestIds[entityKind] ||
+          String(CrmFieldDefinitionsAPI.accountIdFromRoute || '') !== accountId
+        ) {
+          return this.fieldDefinitions[entityKind];
+        }
         this.fieldDefinitions[entityKind] = normalizePayload(data);
         return this.fieldDefinitions[entityKind];
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        if (
+          requestId === this.fieldDefinitionRequestIds[entityKind] &&
+          String(CrmFieldDefinitionsAPI.accountIdFromRoute || '') === accountId
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingFieldDefinitions = false;
+        if (requestId === this.fieldDefinitionRequestIds[entityKind]) {
+          this.ui.isLoadingFieldDefinitions = false;
+        }
       }
     },
 

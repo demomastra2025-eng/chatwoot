@@ -22,6 +22,7 @@ import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomField
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import PhoneNumberInput from 'dashboard/components-next/phonenumberinput/PhoneNumberInput.vue';
+import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCalendarGrid from 'dashboard/components-next/Scheduling/SchedulingCalendarGrid.vue';
@@ -98,13 +99,14 @@ const crmReferencesStore = useCrmReferencesStore();
 const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
 const providerCommandsStore = useSchedulingProviderCommandsStore();
-const { currentAccount } = useAccount();
+const { accountId: routeAccountId, currentAccount } = useAccount();
 const store = useStore();
 const route = useRoute();
 const router = useRouter();
 const workspaceTimezone = computed(
   () => currentAccount.value?.settings?.workspace_timezone || 'Asia/Almaty'
 );
+const currentAccountId = computed(() => Number(routeAccountId.value) || null);
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
 const inlineContactDraftInitialized = ref(false);
@@ -136,8 +138,21 @@ const appointmentConversationDraft = reactive({
 const appointmentContactableInboxesByContactId = ref({});
 const appointmentConversationContactCreateRequested = ref(false);
 let appointmentConversationCreateRequestId = 0;
+let appointmentConversationAccountGeneration = 0;
 let appointmentConversationDisposed = false;
+let appointmentMutationGeneration = 0;
 let appointmentRealtimeRefreshTimer = null;
+let pageLoadRequestId = 0;
+let pageDisposed = false;
+
+const capturePageContext = () => {
+  const accountId = currentAccountId.value;
+  const mutationGeneration = appointmentMutationGeneration;
+  return () =>
+    !pageDisposed &&
+    accountId === currentAccountId.value &&
+    mutationGeneration === appointmentMutationGeneration;
+};
 
 const inlineContactForm = reactive({
   birthDate: '',
@@ -321,6 +336,8 @@ const patientActionStatuses = new Set([
   'awaiting_patient_selection',
   'awaiting_phone_refresh',
 ]);
+const isStaleProviderContextError = error =>
+  error?.code === 'stale_provider_context';
 
 const providerCommandTitle = computed(() => {
   const status = pendingProviderAction.value?.command?.status;
@@ -698,16 +715,41 @@ const visibleAppointments = computed(() => {
   );
 });
 
-function fetchCalendar() {
+function fetchCalendar({ resetListPage = false } = {}) {
+  if (resetListPage) {
+    calendarStore.resetListPagination();
+  }
   calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
-  return calendarStore.fetchCalendar();
+  const paginateAppointments = currentPresentation.value === 'list';
+  return calendarStore.fetchCalendar({
+    includeSlots: paginateAppointments ? false : undefined,
+    paginateAppointments,
+  });
 }
+
+const handleListPageChange = async page => {
+  calendarStore.setListPage(page);
+  await fetchCalendar();
+};
+
+const refreshCalendarAfterSuccessfulMutation = async shouldRefresh => {
+  if (!shouldRefresh) return;
+
+  try {
+    await fetchCalendar();
+  } catch {
+    // The mutation is already committed; the calendar error state offers retry.
+  }
+};
+
+const shouldRefreshCalendarAfterMutation = () =>
+  currentPresentation.value === 'list' || calendarStore.currentView === 'month';
 
 const currentView = computed({
   get: () => calendarStore.currentView,
   set: async value => {
     calendarStore.setView(value);
-    await fetchCalendar();
+    await fetchCalendar({ resetListPage: true });
   },
 });
 
@@ -1028,7 +1070,7 @@ const applyAppointmentFilters = async () => {
   customFieldFilters.value = nextCustomFieldFilters;
   calendarStore.setCustomAttributeFilters(nextCustomFieldFilters);
   filterDialogRef.value?.close();
-  await fetchCalendar();
+  await fetchCalendar({ resetListPage: true });
 };
 
 const syncSelectedResources = () => {
@@ -1049,13 +1091,42 @@ const syncSelectedResources = () => {
 };
 
 const loadPage = async () => {
-  await Promise.all([
-    crmReferencesStore.loadFieldDefinitions('appointment'),
-    referencesStore.loadResources({ include_inactive: true }),
-    referencesStore.loadServices({ include_inactive: true }),
-  ]);
+  const requestId = pageLoadRequestId + 1;
+  const requestedAccountId = currentAccountId.value;
+  pageLoadRequestId = requestId;
+  calendarStore.ui.error = null;
+  calendarStore.ui.isLoading = true;
+
+  try {
+    await Promise.all([
+      crmReferencesStore.loadFieldDefinitions('appointment'),
+      referencesStore.loadResources({ include_inactive: true }),
+      referencesStore.loadServices({ include_inactive: true }),
+    ]);
+  } catch (error) {
+    if (
+      requestId === pageLoadRequestId &&
+      requestedAccountId === currentAccountId.value
+    ) {
+      calendarStore.setLoadError(error);
+    }
+    return false;
+  }
+
+  if (
+    requestId !== pageLoadRequestId ||
+    requestedAccountId !== currentAccountId.value
+  ) {
+    return false;
+  }
+
   syncSelectedResources();
-  await fetchCalendar();
+  try {
+    await fetchCalendar();
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const resetAppointmentConversationDraft = () => {
@@ -1082,9 +1153,12 @@ const loadAppointmentConversationInboxes = async contextRequestId => {
   appointmentConversationDraft.contactableInboxes = [];
   const contactId = appointmentConversationDraft.contactId;
   if (!contactId) return;
+  const requestedAccountId = currentAccountId.value;
+  const requestedAccountGeneration = appointmentConversationAccountGeneration;
+  const cacheKey = `${requestedAccountId}:${contactId}`;
 
   const cachedInboxes =
-    appointmentContactableInboxesByContactId.value[contactId];
+    appointmentContactableInboxesByContactId.value[cacheKey];
   if (cachedInboxes) {
     if (contextRequestId === appointmentConversationDraft.contextRequestId) {
       appointmentConversationDraft.contactableInboxes = cachedInboxes;
@@ -1098,9 +1172,15 @@ const loadAppointmentConversationInboxes = async contextRequestId => {
     const contactableInboxes = buildContactableInboxesList(
       await fetchContactableInboxes(contactId)
     );
+    if (
+      requestedAccountId !== currentAccountId.value ||
+      requestedAccountGeneration !== appointmentConversationAccountGeneration
+    ) {
+      return;
+    }
     appointmentContactableInboxesByContactId.value = {
       ...appointmentContactableInboxesByContactId.value,
-      [contactId]: contactableInboxes,
+      [cacheKey]: contactableInboxes,
     };
     if (contextRequestId === appointmentConversationDraft.contextRequestId) {
       appointmentConversationDraft.contactableInboxes = contactableInboxes;
@@ -1215,7 +1295,7 @@ const handleAnchorDateSelect = async nextDate => {
   if (!nextDate) return;
 
   calendarStore.setAnchorDate(nextDate.toISOString());
-  await fetchCalendar();
+  await fetchCalendar({ resetListPage: true });
 };
 
 const openNewAppointment = (defaults = {}) => {
@@ -1262,7 +1342,14 @@ const openNewAppointment = (defaults = {}) => {
   );
 };
 
-const clearAppointmentPrefillQuery = async () => {
+const prefillQueryMatches = snapshot =>
+  appointmentPrefillKeys.every(
+    key => JSON.stringify(route.query[key]) === JSON.stringify(snapshot[key])
+  );
+
+const clearAppointmentPrefillQuery = async (snapshot, isCurrent) => {
+  if (!isCurrent() || !prefillQueryMatches(snapshot)) return;
+
   const nextQuery = { ...route.query };
   appointmentPrefillKeys.forEach(key => {
     delete nextQuery[key];
@@ -1274,6 +1361,11 @@ const clearAppointmentPrefillQuery = async () => {
 const consumeAppointmentPrefillQuery = async () => {
   if (queryValue('action') !== 'new') return;
 
+  const isCurrent = capturePageContext();
+  const prefillQuerySnapshot = Object.fromEntries(
+    appointmentPrefillKeys.map(key => [key, route.query[key]])
+  );
+  let shouldClearPrefill = true;
   const contactId = numericQueryValue('contactId');
 
   openNewAppointment({
@@ -1282,11 +1374,17 @@ const consumeAppointmentPrefillQuery = async () => {
   });
 
   try {
-    if (contactId) await formStore.loadContact(contactId);
+    if (contactId) {
+      const contact = await formStore.loadContact(contactId);
+      shouldClearPrefill = Boolean(contact && isCurrent());
+    }
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    shouldClearPrefill = isCurrent();
+    if (shouldClearPrefill) useAlert(formatErrorMessage(error));
   } finally {
-    await clearAppointmentPrefillQuery();
+    if (shouldClearPrefill) {
+      await clearAppointmentPrefillQuery(prefillQuerySnapshot, isCurrent);
+    }
   }
 };
 
@@ -1384,18 +1482,21 @@ const handleInlineContactSave = async () => {
     phone: formStore.form.clientPhone,
     resourceId: formStore.form.resourceId,
   };
+  const isCurrent = capturePageContext();
 
   try {
     if (isEditingContact.value) {
-      await formStore.updateInlineContact(
+      const contact = await formStore.updateInlineContact(
         formStore.form.contactId,
         contactPayload
       );
+      if (!contact || !isCurrent()) return;
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_UPDATE'));
       contactEditorMode.value = 'edit';
       fillInlineContactForm(formStore.selectedContact || formStore.form);
     } else {
-      await formStore.createInlineContact(contactPayload);
+      const contact = await formStore.createInlineContact(contactPayload);
+      if (!contact || !isCurrent()) return;
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_CREATE'));
       openInlineContactEdit();
       if (
@@ -1408,6 +1509,7 @@ const handleInlineContactSave = async () => {
       }
     }
   } catch (error) {
+    if (!isCurrent()) return;
     useAlert(formatErrorMessage(error));
   }
 };
@@ -1527,40 +1629,50 @@ const resetAppointmentFilters = async () => {
     filterableResources.value.map(resource => resource.id)
   );
   syncAppointmentFilterDraft();
-  await fetchCalendar();
+  await fetchCalendar({ resetListPage: true });
 };
 
+const providerActionIsCurrent = action => action?.isCurrent?.() !== false;
+
 const prepareProviderCommandAction = async (action, command) => {
+  if (!providerActionIsCurrent(action)) return false;
   selectedPatientToken.value = '';
   patientCandidates.value = [];
   pendingProviderAction.value = { ...action, command };
   if (command?.status === 'awaiting_patient_selection') {
     const payload = await providerCommandsStore.loadPatientCandidates(command);
+    if (!providerActionIsCurrent(action)) return false;
     patientCandidates.value = payload?.candidates || [];
   }
+  return true;
 };
 
 const refreshAfterProviderCommand = async action => {
+  if (!providerActionIsCurrent(action)) return false;
   try {
-    await calendarStore.refresh();
+    await fetchCalendar();
   } catch {
     // The provider result remains authoritative even if the calendar refresh fails.
   }
 
+  if (!providerActionIsCurrent(action)) return false;
   if (action.closeDrawer) handleDrawerClose();
+  return true;
 };
 
 const showProviderCommandOutcome = async (action, command) => {
+  if (!providerActionIsCurrent(action)) return;
   if (patientActionStatuses.has(command.status)) {
-    await prepareProviderCommandAction(action, command);
+    if (!(await prepareProviderCommandAction(action, command))) return;
     providerCommandDialogRef.value?.open();
     return;
   }
 
   providerCommandDialogRef.value?.close();
   pendingProviderAction.value = null;
-  await refreshAfterProviderCommand(action);
+  if (!(await refreshAfterProviderCommand(action))) return;
 
+  if (!providerActionIsCurrent(action)) return;
   if (command.status === 'succeeded') {
     useAlert(t('SCHEDULING.MEDELEMENT.SUCCESS'));
   } else if (command.status === 'reconciliation_required') {
@@ -1580,14 +1692,15 @@ const showProviderCommandOutcome = async (action, command) => {
 };
 
 const executeProviderCommandAction = async action => {
+  if (!providerActionIsCurrent(action)) return;
   if (action.intentMismatch) {
-    await prepareProviderCommandAction(action, action.command);
+    if (!(await prepareProviderCommandAction(action, action.command))) return;
     providerCommandDialogRef.value?.open();
     return;
   }
 
   if (patientActionStatuses.has(action.command?.status)) {
-    await prepareProviderCommandAction(action, action.command);
+    if (!(await prepareProviderCommandAction(action, action.command))) return;
     providerCommandDialogRef.value?.open();
     return;
   }
@@ -1607,6 +1720,7 @@ const executeProviderCommandAction = async action => {
 };
 
 const recoverConcurrentProviderCommand = async (action, error) => {
+  if (!providerActionIsCurrent(action)) return false;
   const errorCode = error?.code || error?.response?.data?.code;
   if (errorCode !== 'MEDELEMENT_COMMAND_IN_PROGRESS') return false;
 
@@ -1614,6 +1728,7 @@ const recoverConcurrentProviderCommand = async (action, error) => {
     appointmentId: action.appointment.id,
     provider: action.params.provider,
   });
+  if (!providerActionIsCurrent(action)) return false;
   if (!existing) {
     useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
     return true;
@@ -1630,7 +1745,12 @@ const stageProviderCommand = async ({
   params,
   closeDrawer = false,
 }) => {
-  const action = { appointment, closeDrawer, params };
+  const action = {
+    appointment,
+    closeDrawer,
+    isCurrent: capturePageContext(),
+    params,
+  };
   try {
     const existing = await providerCommandsStore.findActive({
       appointmentId: appointment.id,
@@ -1639,13 +1759,17 @@ const stageProviderCommand = async ({
     const stagedAction = buildProviderCommandAction(action, existing);
     await executeProviderCommandAction(stagedAction);
   } catch (error) {
+    if (isStaleProviderContextError(error)) return;
     try {
       if (await recoverConcurrentProviderCommand(action, error)) return;
     } catch (recoveryError) {
-      useAlert(formatErrorMessage(recoveryError));
+      if (isStaleProviderContextError(recoveryError)) return;
+      if (providerActionIsCurrent(action)) {
+        useAlert(formatErrorMessage(recoveryError));
+      }
       return;
     }
-    useAlert(formatErrorMessage(error));
+    if (providerActionIsCurrent(action)) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1673,6 +1797,7 @@ const stageCreateMedelementReception = appointment => {
 const handleProviderCommandConfirm = async () => {
   const action = pendingProviderAction.value;
   if (!action || providerCommandsStore.ui.isExecuting) return;
+  if (!providerActionIsCurrent(action)) return;
   if (action.intentMismatch) {
     useAlert(t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION'));
     return;
@@ -1702,22 +1827,28 @@ const handleProviderCommandConfirm = async () => {
 
     await showProviderCommandOutcome(action, command);
   } catch (error) {
+    if (isStaleProviderContextError(error)) return;
+    if (!providerActionIsCurrent(action)) return;
     providerCommandDialogRef.value?.close();
     useAlert(formatErrorMessage(error));
   }
 };
 
 const handleProviderCommandCancel = async () => {
-  const command = pendingProviderAction.value?.command;
+  const action = pendingProviderAction.value;
+  const command = action?.command;
   if (!command || providerCommandsStore.ui.isExecuting) return;
+  if (!providerActionIsCurrent(action)) return;
 
   try {
     await providerCommandsStore.cancel(command);
+    if (!providerActionIsCurrent(action)) return;
     providerCommandDialogRef.value?.close();
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isStaleProviderContextError(error)) return;
+    if (providerActionIsCurrent(action)) useAlert(formatErrorMessage(error));
   } finally {
-    pendingProviderAction.value = null;
+    if (providerActionIsCurrent(action)) pendingProviderAction.value = null;
   }
 };
 
@@ -1763,8 +1894,11 @@ const openAvailabilityOverrideDialog = (error, confirmedOverrides, retry) => {
   return true;
 };
 
-const submitAppointment = async (availabilityOverrides = {}) => {
-  if (isSelectedAppointmentProviderOwned.value) return;
+const submitAppointment = async (
+  availabilityOverrides = {},
+  isCurrent = capturePageContext()
+) => {
+  if (isSelectedAppointmentProviderOwned.value || !isCurrent()) return;
 
   if (isMedelementCabinetMissing.value) {
     useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
@@ -1782,8 +1916,10 @@ const submitAppointment = async (availabilityOverrides = {}) => {
     const companyCabinetCode = formStore.form.medelementCabinetCode;
     const appointment = await formStore.submit(
       calendarStore,
-      availabilityOverrides
+      availabilityOverrides,
+      isCurrent
     );
+    if (!appointment || !isCurrent()) return;
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
     handleDrawerClose();
 
@@ -1797,18 +1933,22 @@ const submitAppointment = async (availabilityOverrides = {}) => {
         }),
       });
     }
+    await refreshCalendarAfterSuccessfulMutation(
+      shouldRefreshCalendarAfterMutation()
+    );
   } catch (error) {
     if (
+      isCurrent() &&
       openAvailabilityOverrideDialog(
         error,
         availabilityOverrides,
-        submitAppointment
+        confirmedOverrides => submitAppointment(confirmedOverrides, isCurrent)
       )
     ) {
       return;
     }
 
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1839,12 +1979,17 @@ const handleAppointmentCancel = async () => {
     return;
   }
 
+  const isCurrent = capturePageContext();
   try {
-    await formStore.cancel(calendarStore);
+    const appointment = await formStore.cancel(calendarStore, isCurrent);
+    if (!appointment || !isCurrent()) return;
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
     handleDrawerClose();
+    await refreshCalendarAfterSuccessfulMutation(
+      shouldRefreshCalendarAfterMutation()
+    );
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1857,13 +2002,21 @@ const openAppointmentDeleteDialog = () => {
 const handleAppointmentDelete = async () => {
   if (isSelectedAppointmentProviderOwned.value) return;
 
+  const isCurrent = capturePageContext();
   try {
-    await formStore.destroy(calendarStore);
+    const deletedAppointmentId = await formStore.destroy(
+      calendarStore,
+      isCurrent
+    );
+    if (!deletedAppointmentId || !isCurrent()) return;
     appointmentDeleteDialogRef.value?.close();
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_DELETE'));
     handleDrawerClose();
+    await refreshCalendarAfterSuccessfulMutation(
+      shouldRefreshCalendarAfterMutation()
+    );
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -1871,14 +2024,18 @@ const updateAppointmentMutation = async (
   appointment,
   patch,
   { refresh = false } = {},
-  availabilityOverrides = {}
+  availabilityOverrides = {},
+  isCurrent = capturePageContext()
 ) => {
+  if (!isCurrent()) return;
+
   if (isAppointmentProviderOwned(appointment)) {
     const requestedResourceId = Number(
       patch.resource_id || appointment.resourceId
     );
     if (requestedResourceId !== Number(appointment.resourceId)) {
-      await calendarStore.refresh();
+      await fetchCalendar();
+      if (!isCurrent()) return;
       useAlert(t('SCHEDULING.MEDELEMENT.RESOURCE_CHANGE_UNSUPPORTED'));
       return;
     }
@@ -1888,7 +2045,8 @@ const updateAppointmentMutation = async (
       referencesStore.resources
     );
     if (!companyCabinetCode) {
-      await calendarStore.refresh();
+      await fetchCalendar();
+      if (!isCurrent()) return;
       useAlert(t('SCHEDULING.MEDELEMENT.CABINET_REQUIRED'));
       return;
     }
@@ -1902,7 +2060,7 @@ const updateAppointmentMutation = async (
         patch,
       }),
     });
-    await calendarStore.refresh();
+    await fetchCalendar();
     return;
   }
 
@@ -1911,14 +2069,17 @@ const updateAppointmentMutation = async (
       ...patch,
       ...availabilityOverrides,
     });
+    if (!isCurrent()) return;
     const updatedAppointment = normalizePayload(data);
     calendarStore.syncAppointment(updatedAppointment);
-
-    if (refresh || calendarStore.currentView === 'month') {
-      await calendarStore.refresh();
-    }
+    await refreshCalendarAfterSuccessfulMutation(
+      currentPresentation.value === 'list' ||
+        refresh ||
+        calendarStore.currentView === 'month'
+    );
   } catch (error) {
     if (
+      isCurrent() &&
       openAvailabilityOverrideDialog(
         error,
         availabilityOverrides,
@@ -1927,20 +2088,22 @@ const updateAppointmentMutation = async (
             appointment,
             patch,
             { refresh },
-            confirmedOverrides
+            confirmedOverrides,
+            isCurrent
           )
       )
     ) {
       return;
     }
 
+    if (!isCurrent()) return;
     try {
-      await calendarStore.refresh();
+      await fetchCalendar();
     } catch {
       // Keep the original mutation error as the user-facing failure.
     }
 
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   }
 };
 
@@ -2016,9 +2179,47 @@ watch(
 const handleAppointmentRealtimeEvent = () => {
   window.clearTimeout(appointmentRealtimeRefreshTimer);
   appointmentRealtimeRefreshTimer = window.setTimeout(() => {
-    calendarStore.refresh();
+    fetchCalendar();
   }, 100);
 };
+
+watch(currentPresentation, async (presentation, previousPresentation) => {
+  if (presentation === previousPresentation) return;
+
+  await fetchCalendar({ resetListPage: true });
+});
+
+watch(currentAccountId, async (nextAccountId, previousAccountId) => {
+  if (nextAccountId === previousAccountId) return;
+
+  pageLoadRequestId += 1;
+  appointmentMutationGeneration += 1;
+  appointmentConversationAccountGeneration += 1;
+  calendarStore.resetForAccountChange();
+  referencesStore.resetForAccountChange();
+  crmReferencesStore.resetFieldDefinitions('appointment');
+  providerCommandsStore.resetForAccountChange();
+  formStore.close();
+  formStore.reset();
+  resetAppointmentConversationDraft();
+  appointmentConversationCreateRequestId += 1;
+  appointmentContactableInboxesByContactId.value = {};
+  showAppointmentConversationPanel.value = false;
+  appointmentDeleteDialogRef.value?.close();
+  availabilityOverrideDialogRef.value?.close();
+  pendingAvailabilityOverride.value = null;
+  availabilityOverrideReason.value = '';
+  providerCommandDialogRef.value?.close();
+  pendingProviderAction.value = null;
+  patientCandidates.value = [];
+  selectedPatientToken.value = '';
+  filterDialogRef.value?.close();
+  customFieldFilters.value = {};
+  appointmentFilterDraft.customFieldFilters = {};
+  if (nextAccountId) {
+    await loadPage();
+  }
+});
 
 onBeforeUnmount(() => {
   emitter.off(
@@ -2026,9 +2227,16 @@ onBeforeUnmount(() => {
     handleAppointmentRealtimeEvent
   );
   window.clearTimeout(appointmentRealtimeRefreshTimer);
+  pageDisposed = true;
+  appointmentMutationGeneration += 1;
   appointmentConversationDisposed = true;
+  appointmentConversationAccountGeneration += 1;
   appointmentConversationDraft.contextRequestId += 1;
   appointmentConversationCreateRequestId += 1;
+  pageLoadRequestId += 1;
+  calendarStore.invalidateRequests();
+  formStore.invalidateAccountRequests();
+  providerCommandsStore.resetForAccountChange();
 });
 
 onMounted(async () => {
@@ -2038,8 +2246,9 @@ onMounted(async () => {
   );
   calendarStore.hydratePreferences();
   currentPresentation.value = 'calendar';
-  await loadPage();
-  await consumeAppointmentPrefillQuery();
+  if (await loadPage()) {
+    await consumeAppointmentPrefillQuery();
+  }
 });
 </script>
 
@@ -2054,15 +2263,15 @@ onMounted(async () => {
       show-view-switcher
       @previous="
         calendarStore.shiftAnchor(-1);
-        fetchCalendar();
+        fetchCalendar({ resetListPage: true });
       "
       @next="
         calendarStore.shiftAnchor(1);
-        fetchCalendar();
+        fetchCalendar({ resetListPage: true });
       "
       @today="
         calendarStore.setAnchorDate(new Date().toISOString());
-        fetchCalendar();
+        fetchCalendar({ resetListPage: true });
       "
       @select-date="handleAnchorDateSelect"
     >
@@ -2080,7 +2289,7 @@ onMounted(async () => {
           :model-value="calendarStore.selectedResourceIds"
           @update:model-value="
             calendarStore.setSelectedResources($event);
-            fetchCalendar();
+            fetchCalendar({ resetListPage: true });
           "
         />
         <Button
@@ -2172,6 +2381,16 @@ onMounted(async () => {
             })
           "
           @select-appointment="openEditAppointment($event)"
+        />
+        <PaginationFooter
+          v-if="
+            currentPresentation === 'list' &&
+            calendarStore.listTotal > calendarStore.listPerPage
+          "
+          :current-page="calendarStore.listPage"
+          :items-per-page="calendarStore.listPerPage"
+          :total-items="calendarStore.listTotal"
+          @update:current-page="handleListPageChange"
         />
       </div>
     </div>

@@ -10,6 +10,7 @@ class Scheduling::CalendarViewService
     @statuses = Array(filters[:statuses]).compact_blank
     @payment_statuses = Array(filters[:payment_statuses]).compact_blank
     @include_slots = ActiveModel::Type::Boolean.new.cast(options[:include_slots])
+    configure_appointment_pagination(options)
     @duration_min = options[:duration_min].presence&.to_i
     @custom_attribute_filters = options[:custom_attribute_filters]
   end
@@ -30,18 +31,47 @@ class Scheduling::CalendarViewService
       appointments: appointments,
       payments: payments,
       expenses: expenses,
-      slots: slots
+      slots: slots,
+      meta: appointment_meta
     }
   end
 
   private
 
+  def configure_appointment_pagination(options)
+    @paginate_appointments = ActiveModel::Type::Boolean.new.cast(options[:paginate_appointments])
+    @appointment_page = options.fetch(:appointment_page, 1)
+    @appointments_per_page = options.fetch(:appointments_per_page, 25)
+  end
+
   def appointments
     @appointments ||= begin
+      scope = filtered_appointments_scope
+      scope = scope.offset((@appointment_page - 1) * @appointments_per_page).limit(@appointments_per_page) if @paginate_appointments
+      scope.to_a
+    end
+  end
+
+  def appointment_meta
+    return {} unless @paginate_appointments
+
+    {
+      count: appointment_count,
+      page: @appointment_page,
+      per_page: @appointments_per_page
+    }
+  end
+
+  def appointment_count
+    @appointment_count ||= filtered_appointments_scope.reorder(nil).count
+  end
+
+  def filtered_appointments_scope
+    @filtered_appointments_scope ||= begin
       scope = appointment_custom_field_filter_set.apply(base_appointments_scope)
       scope = scope.where(status: @statuses) if @statuses.present?
       scope = scope.where(payment_status: @payment_statuses) if @payment_statuses.present?
-      scope.to_a
+      scope
     end
   end
 

@@ -19,7 +19,9 @@ export const useSchedulingReferencesStore = defineStore(
     state: () => ({
       breakRulesByResource: {},
       holidays: [],
+      resourceLoadRequestId: 0,
       resources: [],
+      serviceLoadRequestId: 0,
       services: [],
       timeOffs: [],
       ui: {
@@ -42,19 +44,49 @@ export const useSchedulingReferencesStore = defineStore(
     },
 
     actions: {
+      resetForAccountChange() {
+        this.resourceLoadRequestId += 1;
+        this.serviceLoadRequestId += 1;
+        this.resources = [];
+        this.services = [];
+        this.ui.error = null;
+        this.ui.isLoadingResources = false;
+        this.ui.isLoadingServices = false;
+      },
+
       async loadResources(params = { include_inactive: true }) {
+        const accountId = String(
+          SchedulingResourcesAPI.accountIdFromRoute || ''
+        );
+        const requestId = this.resourceLoadRequestId + 1;
+        this.resourceLoadRequestId = requestId;
         this.ui.isLoadingResources = true;
         this.ui.error = null;
 
         try {
           const { data } = await SchedulingResourcesAPI.get(params);
+          if (
+            requestId !== this.resourceLoadRequestId ||
+            String(SchedulingResourcesAPI.accountIdFromRoute || '') !==
+              accountId
+          ) {
+            return this.resources;
+          }
           this.resources = normalizePayload(data);
           return this.resources;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (
+            requestId === this.resourceLoadRequestId &&
+            String(SchedulingResourcesAPI.accountIdFromRoute || '') ===
+              accountId
+          ) {
+            this.ui.error = extractSchedulingError(error);
+          }
           throw error;
         } finally {
-          this.ui.isLoadingResources = false;
+          if (requestId === this.resourceLoadRequestId) {
+            this.ui.isLoadingResources = false;
+          }
         }
       },
 
@@ -247,18 +279,36 @@ export const useSchedulingReferencesStore = defineStore(
       },
 
       async loadServices(params = { include_inactive: true }) {
+        const accountId = String(
+          SchedulingServicesAPI.accountIdFromRoute || ''
+        );
+        const requestId = this.serviceLoadRequestId + 1;
+        this.serviceLoadRequestId = requestId;
         this.ui.isLoadingServices = true;
         this.ui.error = null;
 
         try {
           const { data } = await SchedulingServicesAPI.get(params);
+          if (
+            requestId !== this.serviceLoadRequestId ||
+            String(SchedulingServicesAPI.accountIdFromRoute || '') !== accountId
+          ) {
+            return this.services;
+          }
           this.services = normalizePayload(data);
           return this.services;
         } catch (error) {
-          this.ui.error = extractSchedulingError(error);
+          if (
+            requestId === this.serviceLoadRequestId &&
+            String(SchedulingServicesAPI.accountIdFromRoute || '') === accountId
+          ) {
+            this.ui.error = extractSchedulingError(error);
+          }
           throw error;
         } finally {
-          this.ui.isLoadingServices = false;
+          if (requestId === this.serviceLoadRequestId) {
+            this.ui.isLoadingServices = false;
+          }
         }
       },
 

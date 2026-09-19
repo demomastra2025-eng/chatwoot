@@ -283,7 +283,21 @@ export const useSchedulingAppointmentFormStore = defineStore(
     },
 
     actions: {
+      invalidateContactRequests() {
+        this.ui.contactSearchRequestId += 1;
+        this.contacts = [];
+        this.contactsMeta = {};
+        this.ui.isCreatingContact = false;
+        this.ui.isLoadingContacts = false;
+      },
+
+      invalidateAccountRequests() {
+        this.invalidateContactRequests();
+        this.ui.isSaving = false;
+      },
+
       reset() {
+        this.invalidateAccountRequests();
         this.form = createDefaultForm();
         this.mode = 'create';
         this.recordId = null;
@@ -504,6 +518,8 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       async loadContact(contactId) {
+        this.ui.contactSearchRequestId += 1;
+        const requestId = this.ui.contactSearchRequestId;
         this.ui.isLoadingContacts = true;
 
         try {
@@ -512,6 +528,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             limit: 1,
           });
           const contact = normalizePayload(data)[0] || null;
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           if (!contact) return null;
 
           this.contacts = [
@@ -521,14 +538,19 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.applyContact(contact);
           return contact;
         } catch (error) {
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isLoadingContacts = false;
+          if (requestId === this.ui.contactSearchRequestId) {
+            this.ui.isLoadingContacts = false;
+          }
         }
       },
 
       async createInlineContact(contact) {
+        this.ui.contactSearchRequestId += 1;
+        const requestId = this.ui.contactSearchRequestId;
         this.ui.isCreatingContact = true;
 
         try {
@@ -545,19 +567,25 @@ export const useSchedulingAppointmentFormStore = defineStore(
             resource_id: toNumeric(contact.resourceId),
           });
           const { data } = await SchedulingContactsAPI.create(payload);
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           const createdContact = normalizePayload(data);
           this.contacts = [createdContact, ...this.contacts];
           this.applyContact(createdContact);
           return createdContact;
         } catch (error) {
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isCreatingContact = false;
+          if (requestId === this.ui.contactSearchRequestId) {
+            this.ui.isCreatingContact = false;
+          }
         }
       },
 
       async updateInlineContact(contactId, contact) {
+        this.ui.contactSearchRequestId += 1;
+        const requestId = this.ui.contactSearchRequestId;
         this.ui.isCreatingContact = true;
 
         try {
@@ -577,6 +605,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             contactId,
             payload
           );
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           const updatedContact = normalizePayload(data);
           this.contacts = [
             updatedContact,
@@ -585,10 +614,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
           this.applyContact(updatedContact);
           return updatedContact;
         } catch (error) {
+          if (requestId !== this.ui.contactSearchRequestId) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isCreatingContact = false;
+          if (requestId === this.ui.contactSearchRequestId) {
+            this.ui.isCreatingContact = false;
+          }
         }
       },
 
@@ -741,7 +773,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         return appointment;
       },
 
-      async submit(calendarStore, availabilityOverrides = {}) {
+      async submit(
+        calendarStore,
+        availabilityOverrides = {},
+        shouldApplyResponse = () => true
+      ) {
         this.ui.isSaving = true;
         this.ui.error = null;
 
@@ -755,21 +791,20 @@ export const useSchedulingAppointmentFormStore = defineStore(
               ? await SchedulingAppointmentsAPI.update(this.recordId, payload)
               : await SchedulingAppointmentsAPI.create(payload);
           const appointment = normalizePayload(response.data);
+          if (!shouldApplyResponse()) return null;
           calendarStore.syncAppointment(appointment);
-          if (calendarStore.currentView === 'month') {
-            await calendarStore.refresh();
-          }
           this.close();
           return appointment;
         } catch (error) {
+          if (!shouldApplyResponse()) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (shouldApplyResponse()) this.ui.isSaving = false;
         }
       },
 
-      async cancel(calendarStore) {
+      async cancel(calendarStore, shouldApplyResponse = () => true) {
         if (!this.recordId) return null;
 
         this.ui.isSaving = true;
@@ -780,21 +815,20 @@ export const useSchedulingAppointmentFormStore = defineStore(
             this.recordId
           );
           const appointment = normalizePayload(data);
+          if (!shouldApplyResponse()) return null;
           calendarStore.syncAppointment(appointment);
-          if (calendarStore.currentView === 'month') {
-            await calendarStore.refresh();
-          }
           this.close();
           return appointment;
         } catch (error) {
+          if (!shouldApplyResponse()) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (shouldApplyResponse()) this.ui.isSaving = false;
         }
       },
 
-      async destroy(calendarStore) {
+      async destroy(calendarStore, shouldApplyResponse = () => true) {
         if (!this.recordId) return null;
 
         this.ui.isSaving = true;
@@ -802,19 +836,18 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
         try {
           await SchedulingAppointmentsAPI.delete(this.recordId);
+          if (!shouldApplyResponse()) return null;
           calendarStore.removeAppointment(this.recordId);
-          if (calendarStore.currentView === 'month') {
-            await calendarStore.refresh();
-          }
           const deletedAppointmentId = this.recordId;
           this.close();
           this.reset();
           return deletedAppointmentId;
         } catch (error) {
+          if (!shouldApplyResponse()) return null;
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isSaving = false;
+          if (shouldApplyResponse()) this.ui.isSaving = false;
         }
       },
     },

@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useSchedulingReferencesStore } from './references';
 
 const {
+  currentAccount,
   createServiceMock,
   createResourceMock,
   createHolidayMock,
@@ -29,6 +30,7 @@ const {
   deleteTimeOffMock,
   deleteWorkdayOverrideMock,
 } = vi.hoisted(() => ({
+  currentAccount: { id: '1' },
   createHolidayMock: vi.fn(),
   createResourceMock: vi.fn(),
   createServiceMock: vi.fn(),
@@ -57,6 +59,9 @@ const {
 
 vi.mock('dashboard/api/scheduling/resources', () => ({
   default: {
+    get accountIdFromRoute() {
+      return currentAccount.id;
+    },
     create: createResourceMock,
     delete: deleteResourceMock,
     get: getResourcesMock,
@@ -72,6 +77,9 @@ vi.mock('dashboard/api/scheduling/resources', () => ({
 
 vi.mock('dashboard/api/scheduling/services', () => ({
   default: {
+    get accountIdFromRoute() {
+      return currentAccount.id;
+    },
     create: createServiceMock,
     delete: deleteServiceMock,
     get: getServicesMock,
@@ -100,6 +108,45 @@ describe('useSchedulingReferencesStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    currentAccount.id = '1';
+  });
+
+  it('does not publish stale resources and services after an account reset', async () => {
+    const store = useSchedulingReferencesStore();
+    let resolveOldResources;
+    let resolveOldServices;
+    getResourcesMock
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveOldResources = resolve;
+          })
+      )
+      .mockResolvedValueOnce({
+        data: { payload: [{ id: 2, name: 'B resource' }] },
+      });
+    getServicesMock
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveOldServices = resolve;
+          })
+      )
+      .mockResolvedValueOnce({
+        data: { payload: [{ id: 2, name: 'B service' }] },
+      });
+
+    const oldLoads = Promise.all([store.loadResources(), store.loadServices()]);
+    currentAccount.id = '2';
+    store.resetForAccountChange();
+    await Promise.all([store.loadResources(), store.loadServices()]);
+    resolveOldResources({ data: { payload: [{ id: 1, name: 'A resource' }] } });
+    resolveOldServices({ data: { payload: [{ id: 1, name: 'A service' }] } });
+    await oldLoads;
+
+    expect(store.resources).toEqual([{ id: 2, name: 'B resource' }]);
+    expect(store.services).toEqual([{ id: 2, name: 'B service' }]);
+    expect(store.ui.error).toBe(null);
   });
 
   it('clears stale errors when saving a resource succeeds', async () => {

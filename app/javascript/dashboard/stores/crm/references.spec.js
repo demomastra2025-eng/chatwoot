@@ -35,6 +35,9 @@ const {
 
 vi.mock('dashboard/api/crm/fieldDefinitions', () => ({
   default: {
+    get accountIdFromRoute() {
+      return currentAccount.id;
+    },
     get: getFieldDefinitionsMock,
   },
 }));
@@ -102,6 +105,28 @@ describe('useCrmReferencesStore', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     currentAccount.id = '1';
+  });
+
+  it('does not publish stale field definitions after an account reset', async () => {
+    const store = useCrmReferencesStore();
+    const oldRequest = deferred();
+    getFieldDefinitionsMock
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce({
+        data: { payload: [{ id: 2, name: 'B field' }] },
+      });
+
+    const oldLoad = store.loadFieldDefinitions('appointment');
+    currentAccount.id = '2';
+    store.resetFieldDefinitions('appointment');
+    await store.loadFieldDefinitions('appointment');
+    oldRequest.resolve({ data: { payload: [{ id: 1, name: 'A field' }] } });
+    await oldLoad;
+
+    expect(store.appointmentFieldDefinitions).toEqual([
+      { id: 2, name: 'B field' },
+    ]);
+    expect(store.ui.error).toBe(null);
   });
 
   it('loads task types with nested outcomes and updates an outcome in place', async () => {

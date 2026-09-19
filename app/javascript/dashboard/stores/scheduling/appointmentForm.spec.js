@@ -7,6 +7,7 @@ import { useSchedulingAppointmentFormStore } from './appointmentForm';
 
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
+    cancel: vi.fn(),
     create: vi.fn(),
     createConversation: vi.fn(),
     delete: vi.fn(),
@@ -50,6 +51,84 @@ describe('useSchedulingAppointmentFormStore', () => {
         confirm_slot_conflict: true,
       })
     );
+  });
+
+  it('returns a successful month-view save without performing a fallible reload', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      currentView: 'month',
+      refresh: vi.fn().mockRejectedValue(new Error('reload failed')),
+      syncAppointment: vi.fn(),
+    };
+    store.openCreate({}, { resourceId: 3 });
+    SchedulingAppointmentsAPI.create.mockResolvedValue({
+      data: { payload: { id: 17, resource_id: 3 } },
+    });
+
+    const appointment = await store.submit(calendarStore);
+
+    expect(appointment.id).toBe(17);
+    expect(calendarStore.syncAppointment).toHaveBeenCalledWith(appointment);
+    expect(calendarStore.refresh).not.toHaveBeenCalled();
+    expect(store.ui.error).toBe(null);
+  });
+
+  it('returns a successful month-view cancellation without performing a fallible reload', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      currentView: 'month',
+      refresh: vi.fn().mockRejectedValue(new Error('reload failed')),
+      syncAppointment: vi.fn(),
+    };
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.cancel.mockResolvedValue({
+      data: { payload: { id: 11, resource_id: 3, status: 'cancelled' } },
+    });
+
+    const appointment = await store.cancel(calendarStore);
+
+    expect(appointment.id).toBe(11);
+    expect(calendarStore.syncAppointment).toHaveBeenCalledWith(appointment);
+    expect(calendarStore.refresh).not.toHaveBeenCalled();
+    expect(store.ui.error).toBe(null);
+  });
+
+  it('does not publish a save completed after its page context expires', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = { syncAppointment: vi.fn() };
+    store.openCreate({}, { resourceId: 3 });
+    SchedulingAppointmentsAPI.create.mockResolvedValue({
+      data: { payload: { id: 17, resource_id: 3 } },
+    });
+
+    const appointment = await store.submit(calendarStore, {}, () => false);
+
+    expect(appointment).toBeNull();
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a cancellation completed after its page context expires', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = { syncAppointment: vi.fn() };
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.cancel.mockResolvedValue({
+      data: { payload: { id: 11, resource_id: 3, status: 'cancelled' } },
+    });
+
+    const appointment = await store.cancel(calendarStore, () => false);
+
+    expect(appointment).toBeNull();
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
   });
 
   it('keeps the saved price when editing an appointment without changing service/resource', () => {
@@ -392,6 +471,28 @@ describe('useSchedulingAppointmentFormStore', () => {
     await firstSearch;
 
     expect(store.contacts).toEqual([{ id: 2, fullName: 'Иван Иванов' }]);
+    expect(store.ui.isLoadingContacts).toBe(false);
+  });
+
+  it('discards a pending contact search when the form account state resets', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    let resolveSearch;
+    SchedulingContactsAPI.get.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveSearch = resolve;
+        })
+    );
+
+    const search = store.searchContacts('Аккаунт A');
+    store.reset();
+    resolveSearch({
+      data: { payload: [{ id: 1, full_name: 'Контакт аккаунта A' }] },
+    });
+    await search;
+
+    expect(store.contacts).toEqual([]);
+    expect(store.contactsMeta).toEqual({});
     expect(store.ui.isLoadingContacts).toBe(false);
   });
 
@@ -911,8 +1012,8 @@ describe('useSchedulingAppointmentFormStore', () => {
   it('deletes a cancelled appointment and resets the form state', async () => {
     const store = useSchedulingAppointmentFormStore();
     const calendarStore = {
-      currentView: 'week',
-      refresh: vi.fn(),
+      currentView: 'month',
+      refresh: vi.fn().mockRejectedValue(new Error('reload failed')),
       removeAppointment: vi.fn(),
     };
 
@@ -936,5 +1037,23 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.isOpen).toBe(false);
     expect(store.recordId).toBe(null);
     expect(store.mode).toBe('create');
+  });
+
+  it('does not publish a deletion completed after its page context expires', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = { removeAppointment: vi.fn() };
+    SchedulingAppointmentsAPI.delete.mockResolvedValue({});
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'cancelled',
+    });
+
+    const deletedId = await store.destroy(calendarStore, () => false);
+
+    expect(deletedId).toBeNull();
+    expect(calendarStore.removeAppointment).not.toHaveBeenCalled();
   });
 });
