@@ -72,7 +72,11 @@ import {
   isFilterableCustomFieldDefinition,
   normalizeCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
-import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
+import {
+  buildLocalizedDateSearchAliases,
+  buildLocalizedNumberSearchAlias,
+  resolveCustomFieldEntries,
+} from 'dashboard/stores/crm/customFieldFormatter';
 import {
   DEFAULT_STAGE_COLOR,
   resolveStageDisplayColor,
@@ -133,7 +137,13 @@ const DEALS_PREFERENCES_STORAGE_KEY = 'crm-deals-page-preferences';
 const MANUAL_BOARD_SORT_KEY = 'position';
 
 const deals = ref([]);
-const dealsMeta = ref({});
+const dealsMeta = ref({
+  count: 0,
+  hasMore: false,
+  page: 1,
+  perPage: 25,
+  totalCount: 0,
+});
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const pendingStageEntry = ref(null);
@@ -189,7 +199,6 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
-const DEALS_PAGE_SIZE = 100;
 const BOARD_DEALS_PER_STAGE = 8;
 
 const filters = reactive({
@@ -256,6 +265,7 @@ const ui = reactive({
 let dealsRequestGeneration = 0;
 let contactSearchGeneration = 0;
 let companySearchGeneration = 0;
+let suppressNextListSearchReload = false;
 
 const closeDealTitleEditor = () => {
   editingDealTitleId.value = null;
@@ -818,7 +828,31 @@ const searchableDealCustomFieldTerms = deal =>
     entry.displayValue,
   ]);
 
+const customFieldSearchAliases = computed(() => {
+  const search = normalizeFilterText(listQuickFilters.q);
+  if (!search) {
+    return {
+      checked: false,
+      dateAlias: '',
+      datetimeAlias: '',
+      numericAlias: '',
+    };
+  }
+
+  const yesLabel = normalizeFilterText(customFieldFilterLabels.value.yesLabel);
+  return {
+    checked: yesLabel.includes(search),
+    numericAlias: buildLocalizedNumberSearchAlias(
+      listQuickFilters.q,
+      localeCode.value
+    ),
+    ...buildLocalizedDateSearchAliases(listQuickFilters.q, localeCode.value),
+  };
+});
+
 const quickFilteredDeals = computed(() => {
+  if (currentPresentation.value === 'list') return deals.value;
+
   const search = normalizeFilterText(listQuickFilters.q);
 
   return deals.value.filter(deal => {
@@ -856,13 +890,15 @@ const resolveDealSortValue = computed(() =>
   })
 );
 
-const sortedListDeals = computed(() =>
-  sortListRecords(
+const sortedListDeals = computed(() => {
+  if (currentPresentation.value === 'list') return filteredListDeals.value;
+
+  return sortListRecords(
     filteredListDeals.value,
     listSort.value,
     resolveDealSortValue.value
-  )
-);
+  );
+});
 
 const defaultDealsPreferences = () => ({
   boardSort: {
@@ -976,6 +1012,8 @@ const persistDealsPreferences = () => {
 };
 
 const paginatedListDeals = computed(() => {
+  if (currentPresentation.value === 'list') return sortedListDeals.value;
+
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
   return sortedListDeals.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
 });
@@ -1021,7 +1059,7 @@ const stripedDealRowIds = computed(
 );
 
 const shouldShowListPagination = computed(
-  () => sortedListDeals.value.length > LIST_PAGE_SIZE
+  () => Number(dealsMeta.value.totalCount || 0) > LIST_PAGE_SIZE
 );
 const hasMoreDeals = computed(() => Boolean(dealsMeta.value.hasMore));
 const stageCounts = computed(() => dealsMeta.value.stageCounts || {});
@@ -1031,9 +1069,12 @@ const dealListRowClass = row => [
   stripedDealRowIds.value.has(Number(row.id)) ? 'bg-n-surface-1/70' : '',
 ];
 
-const handleListSortChange = sortState => {
+const handleListSortChange = async sortState => {
   listCurrentPage.value = 1;
   listSort.value = sortState;
+  // Declared with the server-backed loader below; this handler runs after setup.
+  // eslint-disable-next-line no-use-before-define
+  await loadDeals();
 };
 
 const currentUserId = computed(() => {
@@ -2182,6 +2223,7 @@ const toggleArchived = async deal => {
 
 const buildDealsFetchParams = page => {
   const isBoard = currentPresentation.value === 'board';
+  const isList = currentPresentation.value === 'list';
 
   return compactPayload({
     ai_only: filters.aiOnly || undefined,
@@ -2197,9 +2239,15 @@ const buildDealsFetchParams = page => {
     next_action: filters.nextAction || undefined,
     owner_id: filters.ownerId || undefined,
     page,
-    per_page: isBoard ? BOARD_DEALS_PER_STAGE : DEALS_PAGE_SIZE,
+    per_page: isBoard ? BOARD_DEALS_PER_STAGE : LIST_PAGE_SIZE,
     pipeline_id: filters.pipelineId || undefined,
     q: listQuickFilters.q || undefined,
+    q_checked: customFieldSearchAliases.value.checked ? true : undefined,
+    q_date_alias: customFieldSearchAliases.value.dateAlias || undefined,
+    q_datetime_alias: customFieldSearchAliases.value.datetimeAlias || undefined,
+    q_numeric_alias: customFieldSearchAliases.value.numericAlias || undefined,
+    sort_by: isList ? listSort.value.key || undefined : undefined,
+    sort_direction: isList ? listSort.value.direction || undefined : undefined,
     stage_id: filters.stageId || undefined,
     team_id: filters.teamId || undefined,
   });
@@ -2212,7 +2260,12 @@ async function loadDeals({ append = false, page = null } = {}) {
     dealsRequestGeneration += 1;
   }
   const requestGeneration = dealsRequestGeneration;
-  const nextPage = page || (append ? Number(dealsMeta.value.page || 1) + 1 : 1);
+  const isList = currentPresentation.value === 'list';
+  let nextPage = page || 1;
+  if (!page && isList) nextPage = listCurrentPage.value;
+  if (!page && !isList && append) {
+    nextPage = Number(dealsMeta.value.page || 1) + 1;
+  }
 
   if (append) {
     ui.isLoadMoreFailed = false;
@@ -2221,7 +2274,6 @@ async function loadDeals({ append = false, page = null } = {}) {
     ui.isLoading = true;
     ui.isLoadMoreFailed = false;
     ui.isLoadingMore = false;
-    listCurrentPage.value = 1;
     ui.error = null;
   }
 
@@ -2231,6 +2283,17 @@ async function loadDeals({ append = false, page = null } = {}) {
 
     const nextDeals = normalizePayload(data);
     dealsMeta.value = normalizeMeta(data);
+    if (isList) {
+      const maxPage = Math.max(
+        1,
+        Math.ceil(Number(dealsMeta.value.totalCount || 0) / LIST_PAGE_SIZE)
+      );
+      if (listCurrentPage.value > maxPage) {
+        listCurrentPage.value = maxPage;
+        await loadDeals();
+        return;
+      }
+    }
     deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
     syncSelectedDeal(deals.value);
   } catch (error) {
@@ -2252,8 +2315,21 @@ async function loadDeals({ append = false, page = null } = {}) {
 
 const loadMoreDeals = () => loadDeals({ append: true });
 
+const handleListPageChange = async page => {
+  if (listCurrentPage.value === page) return;
+
+  // Declared with the debounced reload helper below; UI handlers run after setup.
+  // eslint-disable-next-line no-use-before-define
+  scheduleDealsReload.cancel?.();
+  listCurrentPage.value = page;
+  await loadDeals();
+};
+
 function applyDealMutation(deal) {
   upsertDeal(deal);
+  if (currentPresentation.value === 'list') return loadDeals();
+
+  return undefined;
 }
 
 const handleDealWaitingUpdated = deal => {
@@ -2501,6 +2577,8 @@ const applyFilters = async () => {
 };
 
 const resetFilters = async () => {
+  scheduleDealsReload.cancel?.();
+  suppressNextListSearchReload = Boolean(listQuickFilters.q);
   const defaults = defaultDealsPreferences();
   Object.assign(filters, {
     ...defaults.filters,
@@ -2563,6 +2641,10 @@ watch(
 watch(
   () => listQuickFilters.q,
   () => {
+    if (suppressNextListSearchReload) {
+      suppressNextListSearchReload = false;
+      return;
+    }
     listCurrentPage.value = 1;
     if (!hasRestoredPreferences.value) return;
 
@@ -2571,6 +2653,8 @@ watch(
 );
 
 watch(filteredListDeals, rows => {
+  if (currentPresentation.value === 'list') return;
+
   if (!rows.length) {
     listCurrentPage.value = 1;
     return;
@@ -3069,6 +3153,7 @@ onBeforeRouteLeave(() => {
 onBeforeUnmount(() => {
   emitter.off(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
   scheduleDealsReload.cancel?.();
+  dealsRequestGeneration += 1;
 });
 
 const handleDealUiActionQuery = async () => {
@@ -3117,6 +3202,54 @@ onMounted(async () => {
     ui.error = error;
     useAlert(formatErrorMessage(error));
   }
+});
+
+watch(accountId, async nextAccountId => {
+  scheduleDealsReload.cancel?.();
+  dealsRequestGeneration += 1;
+  contactSearchGeneration += 1;
+  companySearchGeneration += 1;
+  suppressNextListSearchReload = false;
+  hasRestoredPreferences.value = false;
+  deals.value = [];
+  dealsMeta.value = {
+    count: 0,
+    hasMore: false,
+    page: 1,
+    perPage: LIST_PAGE_SIZE,
+    totalCount: 0,
+  };
+  listCurrentPage.value = 1;
+  selectedDealIds.value = [];
+  closeDrawer();
+  closeDealTitleEditor();
+  restoreDealsPreferences();
+  await nextTick();
+  if (
+    Number(accountId.value) !== Number(nextAccountId) ||
+    !canViewDeals.value
+  ) {
+    return;
+  }
+
+  await Promise.all([
+    store.dispatch('agents/get'),
+    store.dispatch('teams/get'),
+    loadPipelineReferences(),
+    referencesStore.loadTaskStatuses(),
+    referencesStore.loadTaskTypes(),
+    referencesStore.loadFieldDefinitions('deal'),
+    referencesStore.loadFieldDefinitions('task'),
+  ]);
+  if (Number(accountId.value) !== Number(nextAccountId)) return;
+
+  ensurePipelineFilterSelection();
+  applyDealListFilterQuery();
+  resetForm();
+  hasRestoredPreferences.value = true;
+  persistDealsPreferences();
+  await loadDeals();
+  await handleDealUiActionQuery();
 });
 
 watch(
@@ -3470,12 +3603,12 @@ watch(
               v-if="shouldShowListPagination"
               class="!border-t !border-n-weak !bg-transparent before:!hidden"
               :current-page="listCurrentPage"
-              :total-items="sortedListDeals.length"
+              :total-items="dealsMeta.totalCount"
               :items-per-page="LIST_PAGE_SIZE"
-              @update:current-page="listCurrentPage = $event"
+              @update:current-page="handleListPageChange"
             />
             <div
-              v-if="hasMoreDeals"
+              v-if="currentPresentation === 'board' && hasMoreDeals"
               class="flex justify-center border-t border-n-weak bg-n-surface-1/70 px-4 py-3"
             >
               <Button

@@ -539,6 +539,143 @@ RSpec.describe 'CRM Deals API', type: :request do
       'total_pages' => 2
     )
     expect(meta.dig('stage_counts', stage.id.to_s)).to eq(3)
+
+    get path,
+        params: { page: 2, limit: 2, pipeline_id: pipeline.id },
+        headers: headers,
+        as: :json
+
+    expect(response.parsed_body.fetch('payload').size).to eq(1)
+    expect(response.parsed_body.fetch('meta')).to include(
+      'page' => 2,
+      'per_page' => 2,
+      'total_count' => 3
+    )
+  end
+
+  it 'searches and sorts list pages on the server with a stable id tie-breaker' do
+    pipeline = create(:crm_pipeline, account: account, name: 'Enterprise Sales')
+    stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified')
+    owner = create(:user, account: account, name: 'Aruzhan Owner')
+    company = create(:company, account: account, name: 'Needle Industries')
+    matching_deals = Array.new(3) do
+      create(
+        :crm_deal,
+        account: account,
+        amount_minor: 125_000,
+        company: company,
+        currency: 'KZT',
+        owner: owner,
+        pipeline: pipeline,
+        stage: stage,
+        title: 'Same title'
+      )
+    end
+    create(:crm_deal, account: account, title: 'Unrelated')
+
+    get path,
+        params: {
+          page: 1,
+          per_page: 2,
+          q: 'Needle Industries',
+          sort_by: 'title',
+          sort_direction: 'asc'
+        },
+        headers: headers,
+        as: :json
+
+    first_page_ids = response.parsed_body.fetch('payload').pluck('id')
+
+    expect(response).to have_http_status(:ok)
+    expect(first_page_ids).to eq(matching_deals.first(2).map(&:id))
+    expect(response.parsed_body['meta']).to include(
+      'has_more' => true,
+      'page' => 1,
+      'per_page' => 2,
+      'total_count' => 3
+    )
+
+    get path,
+        params: {
+          page: 2,
+          per_page: 2,
+          q: 'Aruzhan Owner',
+          sort_by: 'title',
+          sort_direction: 'asc'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_deals.last.id])
+    expect(first_page_ids & response.parsed_body.fetch('payload').pluck('id')).to be_empty
+  end
+
+  it 'searches active deal custom-field labels and values' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'deal',
+      key: 'segment',
+      label: 'Customer segment',
+      field_type: 'select',
+      options: [{ 'label' => 'Strategic', 'value' => 'strategic' }]
+    )
+    matching_deal = create(
+      :crm_deal,
+      account: account,
+      custom_attributes: { 'segment' => 'strategic' }
+    )
+    create(:crm_deal, account: account, custom_attributes: {})
+
+    get path,
+        params: { q: 'Strategic', page: 1, per_page: 25 },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([matching_deal.id])
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(1)
+  end
+
+  it 'does not duplicate or skip deals across stable id-sorted pages' do
+    expected_ids = create_list(:crm_deal, 51, account: account, title: 'Scale deal').pluck(:id).sort
+    actual_ids = (1..3).flat_map do |page_number|
+      get path,
+          params: {
+            page: page_number,
+            per_page: 25,
+            q: 'Scale deal',
+            sort_by: 'id',
+            sort_direction: 'asc'
+          },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      response.parsed_body.fetch('payload').pluck('id')
+    end
+
+    expect(actual_ids).to eq(expected_ids)
+    expect(actual_ids.uniq).to eq(actual_ids)
+  end
+
+  it 'supports every deal list sort key accepted by persisted list state' do
+    first_owner = create(:user, account: account, name: 'Alpha Owner')
+    second_owner = create(:user, account: account, name: 'Zulu Owner')
+    first_deal = create(:crm_deal, account: account, amount_minor: 100, currency: 'KZT', owner: first_owner)
+    second_deal = create(:crm_deal, account: account, amount_minor: 200, currency: 'KZT', owner: second_owner)
+    first_deal.update_columns(updated_at: 2.days.ago)
+    second_deal.update_columns(updated_at: 1.day.ago)
+
+    %w[amountMinor owner updatedAt].each do |sort_key|
+      get path,
+          params: { sort_by: sort_key, sort_direction: 'asc' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.fetch('payload').pluck('id')).to eq([first_deal.id, second_deal.id])
+    end
   end
 
   it 'loads one board page for every stage in the pipeline' do

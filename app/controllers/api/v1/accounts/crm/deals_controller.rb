@@ -68,7 +68,14 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     authorize ::Crm::Deal
 
     deals = filtered_deals
-    paginated_deals = board_mode? ? board_page(deals) : deals.offset(page_offset).limit(per_page_param)
+    list_page = ::Crm::Deals::ListOrderService.new(
+      scope: deals,
+      page: page_param,
+      per_page: per_page_param,
+      sort_by: params[:sort_by],
+      sort_direction: params[:sort_direction]
+    )
+    paginated_deals = board_mode? ? board_page(deals) : list_page.perform
 
     render_payload(
       paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
@@ -306,10 +313,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def filter_by_query(scope)
-    return scope if params[:q].blank?
-
-    query = "%#{params[:q].to_s.strip}%"
-    scope.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: query)
+    ::Crm::Deals::SearchQuery.new(scope: scope, params: params).perform
   end
 
   def filtered_deals
