@@ -55,6 +55,53 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           ))
         end
 
+        authorized_emergency_cases = [
+          'У меня сильная боль в груди.',
+          'У меня сильные боли в груди.',
+          'Я не умираю, но у меня сильные боли в груди.',
+          'Я не умираю, но у меня сильная боль в груди.',
+          'Я не умираю, но у меня сильное кровотечение.',
+          'Я не умираю, но не могу дышать.',
+          'Я задыхаюсь.',
+          'Пациент без сознания.',
+          'Она потеряла сознание.',
+          'Я хочу покончить с собой.'
+        ]
+        denied_emergency_cases = [
+          'У меня нет сильных болей в груди.',
+          'У меня не сильные боли в груди.',
+          'Сильных болей в груди нет.',
+          'У меня нет сильной боли в груди.',
+          'У меня не сильная боль в груди.',
+          'Сильной боли в груди нет.',
+          'Я не умираю, просто хочу уточнить информацию.',
+          'Я не задыхаюсь.',
+          'Я не хочу покончить с собой.',
+          'Я не пытаюсь убить себя.'
+        ]
+
+        authorized_emergency_cases.each do |content|
+          it "authorizes: #{content}", :emergency_language_matrix do
+            create_triggering_message.call(content)
+
+            result = tool.perform(tool_context)
+
+            expect(result).to be_a(RubyLLM::Tool::Halt)
+            expect(run_context.context[:pending_human_handoff]).to be_present
+          end
+        end
+
+        denied_emergency_cases.each do |content|
+          it "denies: #{content}", :emergency_language_matrix do
+            create_triggering_message.call(content)
+
+            result = tool.perform(tool_context)
+
+            expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+            expect(run_context.context).not_to have_key(:pending_human_handoff)
+          end
+        end
+
         it 'blocks a family information request without consent' do
           create_triggering_message.call('Подскажите порядок для меня и ребёнка. Ничего не записывайте.')
 
