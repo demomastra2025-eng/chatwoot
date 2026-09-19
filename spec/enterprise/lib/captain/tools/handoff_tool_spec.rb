@@ -235,6 +235,24 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
           expect(run_context.context[:pending_human_handoff]).to be_present
         end
 
+        it 'blocks a naturally phrased negated bleeding emergency' do
+          create_triggering_message.call('У меня нет сильного кровотечения.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks a negated chest pain emergency' do
+          create_triggering_message.call('У меня не сильная боль в груди.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
         it 'fails closed when the response fence is absent' do
           create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming,
                            content: 'Соедините меня с сотрудником.')
