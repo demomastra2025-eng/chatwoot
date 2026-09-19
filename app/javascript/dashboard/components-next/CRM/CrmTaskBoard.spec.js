@@ -72,6 +72,25 @@ describe('CrmTaskBoard', () => {
     ]);
   });
 
+  it('shows authoritative bucket totals and requests the next bucket page', async () => {
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const wrapper = mountBoard({
+      bucketMeta: {
+        today: { count: 26, hasMore: true, page: 1, perPage: 25 },
+      },
+      tasks: [{ dueAt: now.toISOString(), id: 1, title: 'Today' }],
+    });
+
+    expect(wrapper.text()).toContain('26');
+    const loadMore = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CRM.TASKS.LOAD_MORE');
+    await loadMore.trigger('click');
+
+    expect(wrapper.emitted('loadMore')).toEqual([['today']]);
+  });
+
   it('shows week, month, and future columns only when they have tasks', () => {
     const now = new Date();
     const dueInDays = days =>

@@ -7,6 +7,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
 
   def index
     authorize ::Crm::Task
+    normalize_time_bucket_as_of!
 
     scope = filtered_tasks
     total_count = scope.count
@@ -19,8 +20,9 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
         count: total_count,
         page: list_page.page,
         per_page: list_page.per_page,
-        has_more: (list_page.page * list_page.per_page) < total_count
-      }
+        has_more: (list_page.page * list_page.per_page) < total_count,
+        as_of: params[:time_bucket].present? ? params[:as_of] : nil
+      }.compact
     )
   end
 
@@ -149,6 +151,16 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   end
 
   private
+
+  def normalize_time_bucket_as_of!
+    return if params[:time_bucket].blank?
+
+    timezone = Current.account.workspace_working_hours_timezone
+    parsed_as_of = Time.zone.parse(params[:as_of].to_s) if params[:as_of].present?
+    params[:as_of] = (parsed_as_of || Time.current).in_time_zone(timezone).iso8601(6)
+  rescue ArgumentError, TypeError
+    params[:as_of] = Time.current.in_time_zone(timezone).iso8601(6)
+  end
 
   def bootstrap_defaults!
     ::Crm::Bootstrap::AccountService.new(account: Current.account).perform

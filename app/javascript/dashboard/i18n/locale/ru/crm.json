@@ -439,6 +439,7 @@
         "personal": "Личная",
         "sales": "Продажи"
       },
+      "LOAD_MORE": "Загрузить ещё",
       "NEW_TASK": "Новая задача",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow-up по диалогу #{conversationId}",

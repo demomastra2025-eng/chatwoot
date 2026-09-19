@@ -25,6 +25,44 @@ const formatLocalDate = date => {
   return `${year}-${month}-${day}`;
 };
 
+const workspaceDateForBucket = (workspaceDate, bucket) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(workspaceDate);
+  if (!match) return null;
+
+  const [, year, month, day] = match.map(Number);
+  const source = new Date(Date.UTC(year, month - 1, day));
+  if (
+    source.getUTCFullYear() !== year ||
+    source.getUTCMonth() !== month - 1 ||
+    source.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const dayOffsets = {
+    overdue: -1,
+    today: 0,
+    tomorrow: 1,
+    nextWeek: 2,
+    thisMonth: 8,
+  };
+  if (bucket !== 'future') {
+    source.setUTCDate(source.getUTCDate() + (dayOffsets[bucket] ?? 0));
+    return source.toISOString().slice(0, 10);
+  }
+
+  const targetYear = month === 12 ? year + 1 : year;
+  const targetMonth = month === 12 ? 1 : month + 1;
+  const lastTargetDay = new Date(
+    Date.UTC(targetYear, targetMonth, 0)
+  ).getUTCDate();
+  return new Date(
+    Date.UTC(targetYear, targetMonth - 1, Math.min(day, lastTargetDay))
+  )
+    .toISOString()
+    .slice(0, 10);
+};
+
 export const taskDueDate = task => {
   if (task?.allDay && task?.dueOn) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueOn);
@@ -70,6 +108,15 @@ export const visibleTaskTimeBuckets = groups =>
 export const taskDeadlineForBucket = (bucket, now = new Date()) => {
   if (bucket === 'unscheduled') {
     return { allDay: false, dueAt: null, dueOn: null, startAt: null };
+  }
+
+  if (typeof now === 'string') {
+    return {
+      allDay: true,
+      dueAt: null,
+      dueOn: workspaceDateForBucket(now, bucket),
+      startAt: null,
+    };
   }
 
   const today = startOfLocalDay(now);
@@ -119,7 +166,9 @@ export const groupTasksByTime = (tasks, now = new Date()) => {
   );
 
   (tasks || []).forEach(task => {
-    const bucket = taskTimeBucket(task, now);
+    const bucket = TASK_TIME_BUCKETS.includes(task.boardTimeBucket)
+      ? task.boardTimeBucket
+      : taskTimeBucket(task, now);
     if (bucket) groups[bucket].push(task);
   });
 

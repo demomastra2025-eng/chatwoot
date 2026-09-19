@@ -1,4 +1,5 @@
 class Crm::Tasks::FilterService
+  TIME_BUCKETS = %w[overdue today tomorrow nextWeek thisMonth future unscheduled].freeze
   EXACT_FIELDS = %i[
     status_id activity_type task_type_id task_outcome_id outcome assignee_id team_id priority deal_id context_kind
   ].freeze
@@ -27,6 +28,8 @@ class Crm::Tasks::FilterService
   def perform
     filtered_scope = EXACT_FIELDS.reduce(base_scope) { |result, field| filter_by_exact(result, field) }
     filtered_scope = filter_by_due_range(filtered_scope)
+    filtered_scope = filter_by_calendar_range(filtered_scope)
+    filtered_scope = filter_by_time_bucket(filtered_scope)
     filtered_scope = filter_by_state(filtered_scope)
     filtered_scope = filter_by_query(filtered_scope)
     apply_custom_attribute_filters(filtered_scope)
@@ -64,11 +67,121 @@ class Crm::Tasks::FilterService
     )
   end
 
+  def filter_by_calendar_range(scope)
+    from = parse_datetime(:calendar_from)
+    to = parse_datetime(:calendar_to)
+    return scope if from.blank? && to.blank?
+
+    raise ArgumentError, 'calendar_from and calendar_to must be provided together' if from.blank? || to.blank?
+
+    scope.where(
+      calendar_overlap_clause,
+      from: from,
+      to: to,
+      from_date: parse_date(:calendar_from_date) || workspace_date(from),
+      to_date: parse_date(:calendar_to_date) || workspace_date(to)
+    )
+  end
+
+  def filter_by_time_bucket(scope)
+    bucket = params[:time_bucket].to_s
+    return scope if bucket.blank?
+    return scope.none unless TIME_BUCKETS.include?(bucket)
+    return scope.where(due_at: nil, due_on: nil) if bucket == 'unscheduled'
+
+    boundaries = time_bucket_boundaries
+    case bucket
+    when 'overdue'
+      scope.where(
+        'crm_tasks.due_at < :now OR crm_tasks.due_on < :today',
+        now: boundaries[:now],
+        today: boundaries[:today]
+      )
+    when 'today'
+      due_bucket_scope(scope, boundaries[:now], boundaries[:tomorrow], boundaries[:today], boundaries[:tomorrow_date])
+    when 'tomorrow'
+      due_bucket_scope(
+        scope,
+        boundaries[:tomorrow],
+        boundaries[:day_after_tomorrow],
+        boundaries[:tomorrow_date],
+        boundaries[:day_after_tomorrow_date]
+      )
+    when 'nextWeek'
+      due_bucket_scope(
+        scope,
+        boundaries[:day_after_tomorrow],
+        boundaries[:next_week],
+        boundaries[:day_after_tomorrow_date],
+        boundaries[:next_week_date]
+      )
+    when 'thisMonth'
+      due_bucket_scope(
+        scope,
+        boundaries[:next_week],
+        boundaries[:next_month],
+        boundaries[:next_week_date],
+        boundaries[:next_month_date]
+      )
+    when 'future'
+      scope.where(
+        'crm_tasks.due_at >= :next_month OR crm_tasks.due_on >= :next_month_date',
+        next_month: boundaries[:next_month],
+        next_month_date: boundaries[:next_month_date]
+      )
+    end
+  end
+
+  def due_bucket_scope(scope, from, to, from_date, to_date)
+    scope.where(
+      <<~SQL.squish,
+        (crm_tasks.due_at >= :from AND crm_tasks.due_at < :to) OR
+        (crm_tasks.due_on >= :from_date AND crm_tasks.due_on < :to_date)
+      SQL
+      from: from,
+      to: to,
+      from_date: from_date,
+      to_date: to_date
+    )
+  end
+
+  def time_bucket_boundaries
+    timezone = account.workspace_working_hours_timezone
+    now = (parse_datetime(:as_of) || Time.current).in_time_zone(timezone)
+    today = now.to_date
+    tomorrow_date = today + 1.day
+    day_after_tomorrow_date = today + 2.days
+    next_week_date = today + 8.days
+    next_month_date = today.advance(months: 1)
+
+    {
+      now: now,
+      today: today,
+      tomorrow: tomorrow_date.in_time_zone(timezone),
+      tomorrow_date: tomorrow_date,
+      day_after_tomorrow: day_after_tomorrow_date.in_time_zone(timezone),
+      day_after_tomorrow_date: day_after_tomorrow_date,
+      next_week: next_week_date.in_time_zone(timezone),
+      next_week_date: next_week_date,
+      next_month: next_month_date.in_time_zone(timezone),
+      next_month_date: next_month_date
+    }
+  end
+
   def parse_datetime(field_name)
     value = params[field_name]
     return if value.blank?
 
     Time.zone.parse(value.to_s) || raise(ArgumentError, "#{field_name} must be a valid datetime")
+  end
+
+  def parse_date(field_name)
+    value = params[field_name]
+    return if value.blank?
+
+    Date.iso8601(value.to_s)
+  rescue Date::Error
+    raise ArgumentError, "#{field_name} must be a valid date"
   end
 
   def workspace_date(value)
@@ -86,6 +199,22 @@ class Crm::Tasks::FilterService
     <<~SQL.squish
       (crm_tasks.due_at >= :from AND crm_tasks.due_at < :to) OR
       (crm_tasks.due_on >= :from_date AND crm_tasks.due_on < :to_date)
+    SQL
+  end
+
+  def calendar_overlap_clause
+    <<~SQL.squish
+      (
+        crm_tasks.due_on IS NULL AND
+        COALESCE(crm_tasks.start_at, crm_tasks.due_at) < :to AND
+        CASE
+          WHEN crm_tasks.due_at IS NULL OR crm_tasks.due_at <= COALESCE(crm_tasks.start_at, crm_tasks.due_at)
+            THEN COALESCE(crm_tasks.start_at, crm_tasks.due_at) + INTERVAL '1 hour'
+          ELSE crm_tasks.due_at
+        END >= :from
+      ) OR (
+        crm_tasks.due_on >= :from_date AND crm_tasks.due_on < :to_date
+      )
     SQL
   end
 

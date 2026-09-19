@@ -439,6 +439,7 @@
         "personal": "Personal",
         "sales": "Sales"
       },
+      "LOAD_MORE": "Load more",
       "NEW_TASK": "New task",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow up conversation #{conversationId}",

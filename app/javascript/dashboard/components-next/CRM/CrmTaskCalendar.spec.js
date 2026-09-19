@@ -101,4 +101,49 @@ describe('CrmTaskCalendar', () => {
     const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
     expect(calendar.props('appointments')).toEqual([]);
   });
+
+  it.each([
+    ['completed', { completedAt: '2026-09-04T09:00:00.000Z' }],
+    ['cancelled', { cancelledAt: '2026-09-04T09:00:00.000Z' }],
+  ])('renders %s tasks when that state is selected', (taskState, state) => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        tasks: [
+          {
+            ...state,
+            dueAt: '2026-09-04T11:00:00.000Z',
+            id: 44,
+            title: 'Terminal task',
+          },
+        ],
+        taskState,
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    expect(calendar.props('appointments')).toHaveLength(1);
+  });
+
+  it('renders archived tasks when the archived filter is selected', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        archived: true,
+        tasks: [
+          {
+            archivedAt: '2026-09-04T09:00:00.000Z',
+            dueAt: '2026-09-04T11:00:00.000Z',
+            id: 45,
+            title: 'Archived task',
+          },
+        ],
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    expect(calendar.props('appointments')).toHaveLength(1);
+  });
 });

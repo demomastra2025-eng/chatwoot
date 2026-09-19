@@ -18,6 +18,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  archived: {
+    type: Boolean,
+    default: false,
+  },
   fieldDefinitions: {
     type: Array,
     default: () => [],
@@ -30,6 +34,10 @@ const props = defineProps({
   tasks: {
     type: Array,
     default: () => [],
+  },
+  taskState: {
+    type: String,
+    default: 'active',
   },
   view: {
     type: String,
@@ -109,9 +117,20 @@ const isOverdue = task => {
   return dueDate < today;
 };
 
+const matchesTaskState = task => {
+  if (props.taskState === 'completed') return Boolean(task.completedAt);
+  if (props.taskState === 'cancelled') return Boolean(task.cancelledAt);
+  if (props.taskState === 'all') return true;
+
+  return !task.completedAt && !task.cancelledAt;
+};
+
 const calendarTasks = computed(() =>
   props.tasks
-    .filter(task => !task.archivedAt && !task.completedAt && !task.cancelledAt)
+    .filter(
+      task =>
+        Boolean(task.archivedAt) === props.archived && matchesTaskState(task)
+    )
     .map(task => {
       const range = resolveTaskRange(task);
       if (!range) {

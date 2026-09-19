@@ -92,6 +92,7 @@ import {
   sortListRecords,
 } from 'dashboard/routes/dashboard/crm/listSort';
 import {
+  TASK_TIME_BUCKETS,
   taskDeadlineForBucket,
   taskDueDate,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
@@ -116,6 +117,10 @@ const MANUAL_BOARD_SORT_KEY = 'position';
 
 const tasks = ref([]);
 const tasksMeta = ref({ count: 0, hasMore: false, page: 1, perPage: 25 });
+const boardBucketMeta = ref({});
+const boardBucketLoading = ref({});
+const boardAsOf = ref(null);
+const isLoadingMoreTasks = ref(false);
 const dealOptions = ref([]);
 const currentPresentation = ref('board');
 const currentCalendarView = ref('week');
@@ -150,6 +155,8 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
+const BOARD_PAGE_SIZE = 25;
+const CALENDAR_PAGE_SIZE = 100;
 const LEGACY_TASK_ACTIVITY_TYPES = [
   'task',
   'call',
@@ -1165,12 +1172,17 @@ const removeTask = taskId => {
   tasks.value = tasks.value.filter(task => Number(task.id) !== Number(taskId));
 };
 
+const effectiveTaskState = () =>
+  currentPresentation.value === 'board' ? 'active' : filters.taskState;
+const effectiveArchivedFilter = () =>
+  currentPresentation.value === 'board' ? false : filters.archived;
+
 const taskMatchesRealtimeFilters = task => {
-  if (!taskMatchesStateFilter(task, filters.taskState)) return false;
+  if (!taskMatchesStateFilter(task, effectiveTaskState())) return false;
   if (filters.activityType && task.activityType !== filters.activityType) {
     return false;
   }
-  if (Boolean(task.archivedAt) !== Boolean(filters.archived)) return false;
+  if (Boolean(task.archivedAt) !== effectiveArchivedFilter()) return false;
   if (
     filters.assigneeId &&
     Number(task.assigneeId) !== Number(filters.assigneeId)
@@ -1200,7 +1212,7 @@ const taskMatchesRealtimeFilters = task => {
   );
 };
 
-const applyTaskRealtimeState = task => {
+const applyTaskRealtimeState = (task, boardTimeBucket = null) => {
   if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
   if (currentPresentation.value === 'list') {
     if (tasks.value.some(item => Number(item.id) === Number(task.id))) {
@@ -1210,11 +1222,33 @@ const applyTaskRealtimeState = task => {
     return;
   }
 
-  if (taskMatchesRealtimeFilters(task)) {
-    upsertTask(task);
-  } else {
-    removeTask(task.id);
+  let visibleTask = task;
+  if (currentPresentation.value === 'board') {
+    const existingTask = tasks.value.find(
+      item => Number(item.id) === Number(task.id)
+    );
+    const hasDeadlineUpdate = ['allDay', 'dueAt', 'dueOn'].some(field =>
+      Object.prototype.hasOwnProperty.call(task, field)
+    );
+    const deadlineIsUnchanged =
+      !hasDeadlineUpdate ||
+      (existingTask?.dueAt === task.dueAt &&
+        existingTask?.dueOn === task.dueOn &&
+        existingTask?.allDay === task.allDay);
+    const authoritativeBucket =
+      boardTimeBucket ||
+      (deadlineIsUnchanged ? existingTask?.boardTimeBucket : null);
+    visibleTask = authoritativeBucket
+      ? { ...task, boardTimeBucket: authoritativeBucket }
+      : null;
   }
+
+  if (visibleTask && taskMatchesRealtimeFilters(visibleTask)) {
+    upsertTask(visibleTask);
+  } else if (visibleTask) {
+    removeTask(visibleTask.id);
+  }
+  scheduleTaskListReload();
 };
 
 const runTaskMutation = async (request, expectedTask) => {
@@ -1422,99 +1456,132 @@ const toggleArchived = async task => {
   }
 };
 
-const fetchTaskPages = async ({
-  accumulatedTasks = [],
-  loadGeneration,
-  page = 1,
-  query,
-}) => {
-  const { data } = await CrmTasksAPI.get({
+const buildTaskQuery = () =>
+  compactPayload({
+    activity_type: filters.activityType || undefined,
+    archived: effectiveArchivedFilter(),
+    assignee_id: filters.assigneeId || undefined,
+    custom_attribute_filters: customFieldFilters.value,
+    deal_id: filters.dealId || undefined,
+    due_from: filters.dateRange.from || undefined,
+    due_to: filters.dateRange.to || undefined,
+    outcome: filters.outcome || undefined,
+    q:
+      currentPresentation.value === 'list'
+        ? listQuickFilters.q || undefined
+        : undefined,
+    q_checked:
+      currentPresentation.value === 'list' &&
+      customFieldSearchAliases.value.checked
+        ? true
+        : undefined,
+    q_date_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.dateAlias || undefined
+        : undefined,
+    q_datetime_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.datetimeAlias || undefined
+        : undefined,
+    q_numeric_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.numericAlias || undefined
+        : undefined,
+    sort_by:
+      currentPresentation.value === 'list'
+        ? listSort.value.key || undefined
+        : undefined,
+    sort_direction:
+      currentPresentation.value === 'list'
+        ? listSort.value.direction || undefined
+        : undefined,
+    task_state: effectiveTaskState(),
+  });
+
+const withCalendarRange = query => {
+  const { from, to } = buildCalendarRange(
+    currentCalendarView.value,
+    calendarAnchorDate.value
+  );
+  const calendarTo = new Date(to.getTime() + 1);
+
+  return {
     ...query,
-    page,
-    per_page: 500,
+    calendar_from: from.toISOString(),
+    calendar_from_date: format(from, 'yyyy-MM-dd'),
+    calendar_to: calendarTo.toISOString(),
+    calendar_to_date: format(calendarTo, 'yyyy-MM-dd'),
+  };
+};
+
+const fetchBoardTaskBuckets = async ({ loadGeneration, query }) => {
+  const snapshotBucket = 'today';
+  const snapshotResponse = await CrmTasksAPI.get({
+    ...query,
+    page: 1,
+    per_page: BOARD_PAGE_SIZE,
+    sort_by: 'dueAt',
+    sort_direction: 'asc',
+    time_bucket: snapshotBucket,
   });
   if (loadGeneration !== taskLoadGeneration.value) return null;
 
-  const loadedTasks = [...accumulatedTasks, ...normalizePayload(data)];
-  if (!data?.meta?.has_more) return loadedTasks;
+  const asOf = snapshotResponse.data?.meta?.as_of;
+  if (!asOf) throw new Error('CRM task board snapshot is missing');
+  boardAsOf.value = asOf;
 
-  return fetchTaskPages({
-    accumulatedTasks: loadedTasks,
-    loadGeneration,
-    page: page + 1,
-    query,
-  });
+  const remainingBuckets = TASK_TIME_BUCKETS.filter(
+    timeBucket => timeBucket !== snapshotBucket
+  );
+  const remainingResponses = await Promise.all(
+    remainingBuckets.map(timeBucket =>
+      CrmTasksAPI.get({
+        ...query,
+        as_of: asOf,
+        page: 1,
+        per_page: BOARD_PAGE_SIZE,
+        sort_by: 'dueAt',
+        sort_direction: 'asc',
+        time_bucket: timeBucket,
+      })
+    )
+  );
+  if (loadGeneration !== taskLoadGeneration.value) return null;
+
+  const responsesByBucket = new Map([
+    [snapshotBucket, snapshotResponse],
+    ...remainingBuckets.map((timeBucket, index) => [
+      timeBucket,
+      remainingResponses[index],
+    ]),
+  ]);
+
+  boardBucketMeta.value = Object.fromEntries(
+    TASK_TIME_BUCKETS.map(timeBucket => [
+      timeBucket,
+      normalizeMeta(responsesByBucket.get(timeBucket).data),
+    ])
+  );
+  return TASK_TIME_BUCKETS.flatMap(timeBucket =>
+    normalizePayload(responsesByBucket.get(timeBucket).data).map(task => ({
+      ...task,
+      boardTimeBucket: timeBucket,
+    }))
+  );
 };
 
 const loadTasks = async () => {
   taskLoadGeneration.value += 1;
   const loadGeneration = taskLoadGeneration.value;
   const realtimeSequenceAtStart = taskRealtimeSequence;
+  boardBucketLoading.value = {};
+  boardAsOf.value = null;
+  isLoadingMoreTasks.value = false;
   ui.isLoading = true;
   ui.error = null;
 
   try {
-    const query = compactPayload({
-      activity_type: filters.activityType || undefined,
-      archived: filters.archived,
-      assignee_id: filters.assigneeId || undefined,
-      custom_attribute_filters: customFieldFilters.value,
-      deal_id: filters.dealId || undefined,
-      due_from: filters.dateRange.from || undefined,
-      due_to: filters.dateRange.to || undefined,
-      outcome: filters.outcome || undefined,
-      q:
-        currentPresentation.value === 'list'
-          ? listQuickFilters.q || undefined
-          : undefined,
-      q_checked:
-        currentPresentation.value === 'list' &&
-        customFieldSearchAliases.value.checked
-          ? true
-          : undefined,
-      q_date_alias:
-        currentPresentation.value === 'list'
-          ? customFieldSearchAliases.value.dateAlias || undefined
-          : undefined,
-      q_datetime_alias:
-        currentPresentation.value === 'list'
-          ? customFieldSearchAliases.value.datetimeAlias || undefined
-          : undefined,
-      q_numeric_alias:
-        currentPresentation.value === 'list'
-          ? customFieldSearchAliases.value.numericAlias || undefined
-          : undefined,
-      sort_by:
-        currentPresentation.value === 'list'
-          ? listSort.value.key || undefined
-          : undefined,
-      sort_direction:
-        currentPresentation.value === 'list'
-          ? listSort.value.direction || undefined
-          : undefined,
-      task_state:
-        currentPresentation.value === 'list' ? filters.taskState : undefined,
-    });
-
-    if (currentPresentation.value === 'calendar') {
-      const { from, to } = buildCalendarRange(
-        currentCalendarView.value,
-        calendarAnchorDate.value
-      );
-      const calendarTo = new Date(to.getTime() + 1);
-      const selectedFrom = query.due_from ? new Date(query.due_from) : null;
-      const selectedTo = query.due_to ? new Date(query.due_to) : null;
-
-      query.due_from = new Date(
-        Math.max(from.getTime(), selectedFrom?.getTime() || from.getTime())
-      ).toISOString();
-      query.due_to = new Date(
-        Math.min(
-          calendarTo.getTime(),
-          selectedTo?.getTime() || calendarTo.getTime()
-        )
-      ).toISOString();
-    }
+    const query = buildTaskQuery();
 
     let loadedTasks;
     if (currentPresentation.value === 'list') {
@@ -1536,24 +1603,49 @@ const loadTasks = async () => {
         await loadTasks();
         return;
       }
-    } else {
-      loadedTasks = await fetchTaskPages({ loadGeneration, query });
-      tasksMeta.value = {
-        count: loadedTasks?.length || 0,
-        hasMore: false,
+    } else if (currentPresentation.value === 'calendar') {
+      const { data } = await CrmTasksAPI.get({
+        ...withCalendarRange(query),
         page: 1,
-        perPage: loadedTasks?.length || 0,
+        per_page: CALENDAR_PAGE_SIZE,
+        sort_by: 'dueAt',
+        sort_direction: 'asc',
+      });
+      if (loadGeneration !== taskLoadGeneration.value) return;
+
+      loadedTasks = normalizePayload(data);
+      tasksMeta.value = normalizeMeta(data);
+      boardBucketMeta.value = {};
+    } else {
+      loadedTasks = await fetchBoardTaskBuckets({ loadGeneration, query });
+      if (!loadedTasks || loadGeneration !== taskLoadGeneration.value) return;
+
+      tasksMeta.value = {
+        count: Object.values(boardBucketMeta.value).reduce(
+          (total, meta) => total + Number(meta.count || 0),
+          0
+        ),
+        hasMore: Object.values(boardBucketMeta.value).some(
+          meta => meta.hasMore
+        ),
+        page: 1,
+        perPage: BOARD_PAGE_SIZE,
       };
     }
     if (!loadedTasks) return;
 
-    tasks.value = loadedTasks
-      .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
-      .filter(
-        task =>
-          currentPresentation.value === 'list' ||
-          taskMatchesRealtimeFilters(task)
-      );
+    tasks.value = [
+      ...new Map(
+        loadedTasks
+          .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
+          .filter(
+            task =>
+              currentPresentation.value === 'list' ||
+              taskMatchesRealtimeFilters(task)
+          )
+          .map(task => [Number(task.id), task])
+      ).values(),
+    ];
     pendingTaskRealtimeUpdates.forEach(update => {
       if (update.sequence <= realtimeSequenceAtStart) return;
 
@@ -1574,6 +1666,112 @@ const handleListPageChange = async page => {
   scheduleTaskListReload.cancel?.();
   listCurrentPage.value = page;
   await loadTasks();
+};
+
+const mergeTaskPage = loadedTasks => {
+  const tasksById = new Map(tasks.value.map(task => [Number(task.id), task]));
+  loadedTasks.forEach(task => {
+    const newest = rememberTaskSnapshot(pendingTaskRealtimeUpdates, task);
+    tasksById.set(Number(newest.id), newest);
+  });
+  tasks.value = [...tasksById.values()];
+  syncSelectedTask(tasks.value);
+};
+
+const loadMoreCalendarTasks = async () => {
+  if (
+    currentPresentation.value !== 'calendar' ||
+    !tasksMeta.value.hasMore ||
+    isLoadingMoreTasks.value
+  ) {
+    return;
+  }
+
+  const loadGeneration = taskLoadGeneration.value;
+  isLoadingMoreTasks.value = true;
+  try {
+    const { data } = await CrmTasksAPI.get({
+      ...withCalendarRange(buildTaskQuery()),
+      page: Number(tasksMeta.value.page || 1) + 1,
+      per_page: CALENDAR_PAGE_SIZE,
+      sort_by: 'dueAt',
+      sort_direction: 'asc',
+    });
+    if (
+      loadGeneration !== taskLoadGeneration.value ||
+      currentPresentation.value !== 'calendar'
+    ) {
+      return;
+    }
+
+    mergeTaskPage(normalizePayload(data));
+    tasksMeta.value = normalizeMeta(data);
+  } catch (error) {
+    if (loadGeneration === taskLoadGeneration.value) {
+      useAlert(formatErrorMessage(error));
+    }
+  } finally {
+    if (loadGeneration === taskLoadGeneration.value) {
+      isLoadingMoreTasks.value = false;
+    }
+  }
+};
+
+const loadMoreBoardBucket = async timeBucket => {
+  const currentMeta = boardBucketMeta.value[timeBucket];
+  if (
+    currentPresentation.value !== 'board' ||
+    !currentMeta?.hasMore ||
+    !boardAsOf.value ||
+    boardBucketLoading.value[timeBucket]
+  ) {
+    return;
+  }
+
+  const loadGeneration = taskLoadGeneration.value;
+  boardBucketLoading.value = {
+    ...boardBucketLoading.value,
+    [timeBucket]: true,
+  };
+  try {
+    const { data } = await CrmTasksAPI.get({
+      ...buildTaskQuery(),
+      as_of: boardAsOf.value,
+      page: Number(currentMeta.page || 1) + 1,
+      per_page: BOARD_PAGE_SIZE,
+      sort_by: 'dueAt',
+      sort_direction: 'asc',
+      time_bucket: timeBucket,
+    });
+    if (
+      loadGeneration !== taskLoadGeneration.value ||
+      currentPresentation.value !== 'board'
+    ) {
+      return;
+    }
+
+    mergeTaskPage(
+      normalizePayload(data).map(task => ({
+        ...task,
+        boardTimeBucket: timeBucket,
+      }))
+    );
+    boardBucketMeta.value = {
+      ...boardBucketMeta.value,
+      [timeBucket]: normalizeMeta(data),
+    };
+  } catch (error) {
+    if (loadGeneration === taskLoadGeneration.value) {
+      useAlert(formatErrorMessage(error));
+    }
+  } finally {
+    if (loadGeneration === taskLoadGeneration.value) {
+      boardBucketLoading.value = {
+        ...boardBucketLoading.value,
+        [timeBucket]: false,
+      };
+    }
+  }
 };
 
 const refreshTaskFromRealtime = async payload => {
@@ -1629,13 +1827,8 @@ const refreshTaskFromRealtime = async payload => {
     const remembered = pendingTaskRealtimeUpdates.get(taskId);
     if (remembered?.sequence > realtimeSequence) return;
 
-    if (currentPresentation.value === 'list') {
-      await loadTasks();
-    } else {
-      taskLoadGeneration.value += 1;
-      ui.isLoading = false;
-      removeTask(taskId);
-    }
+    removeTask(taskId);
+    await loadTasks();
     if (Number(selectedTask.value?.id) === taskId) closeDrawer();
     if (Number(editingTaskTitleId.value) === taskId) closeTaskTitleEditor();
   } finally {
@@ -1650,7 +1843,7 @@ const handleCrmTaskRealtimeEvent = payload => refreshTaskFromRealtime(payload);
 const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
   if (!canManageTasks.value || !task) return;
 
-  const deadline = taskDeadlineForBucket(bucket);
+  const deadline = taskDeadlineForBucket(bucket, boardAsOf.value?.slice(0, 10));
 
   try {
     const updatedTask = await runTaskMutation(() =>
@@ -1663,7 +1856,7 @@ const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
         start_at: deadline.startAt,
       })
     );
-    applyTaskRealtimeState(updatedTask);
+    applyTaskRealtimeState(updatedTask, bucket);
     syncTaskRangeInDrawer(updatedTask);
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
   } catch (error) {
@@ -2593,21 +2786,36 @@ watch(
           />
         </div>
 
-        <CrmTaskCalendar
+        <div
           v-else-if="currentPresentation === 'calendar'"
-          class="min-h-0 flex-1"
-          :anchor-date="calendarAnchorDate"
-          :assignee-names="assigneeNameById"
-          :can-manage="canManageTasks"
-          :deal-names="dealNameById"
-          :field-definitions="taskFieldDefinitions"
-          :tasks="tasks"
-          :view="currentCalendarView"
-          @create-task="openCalendarCreateDrawer"
-          @move-task="updateTaskCalendarRange"
-          @resize-task="updateTaskCalendarRange"
-          @select-task="openEditDrawer"
-        />
+          class="flex min-h-0 flex-1 flex-col"
+        >
+          <CrmTaskCalendar
+            class="min-h-0 flex-1"
+            :anchor-date="calendarAnchorDate"
+            :archived="filters.archived"
+            :assignee-names="assigneeNameById"
+            :can-manage="canManageTasks"
+            :deal-names="dealNameById"
+            :field-definitions="taskFieldDefinitions"
+            :tasks="tasks"
+            :task-state="filters.taskState"
+            :view="currentCalendarView"
+            @create-task="openCalendarCreateDrawer"
+            @move-task="updateTaskCalendarRange"
+            @resize-task="updateTaskCalendarRange"
+            @select-task="openEditDrawer"
+          />
+          <div v-if="tasksMeta.hasMore" class="flex justify-center pt-3">
+            <Button
+              ghost
+              sm
+              :is-loading="isLoadingMoreTasks"
+              :label="$t('CRM.TASKS.LOAD_MORE')"
+              @click="loadMoreCalendarTasks"
+            />
+          </div>
+        </div>
 
         <CrmTaskBoard
           v-else
@@ -2615,10 +2823,13 @@ watch(
           :task-type-resolver="taskTypeResolver"
           :assignees="assigneeOptions"
           :can-manage="canManageTasks"
+          :bucket-loading="boardBucketLoading"
+          :bucket-meta="boardBucketMeta"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
           :tasks="tasks"
           @change-due-date="updateTaskDeadlineFromBoard"
+          @load-more="loadMoreBoardBucket"
           @select-task="openEditDrawer"
         />
       </div>

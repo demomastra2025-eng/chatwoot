@@ -24,6 +24,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  bucketLoading: {
+    type: Object,
+    default: () => ({}),
+  },
+  bucketMeta: {
+    type: Object,
+    default: () => ({}),
+  },
   dealNames: {
     type: Object,
     default: () => ({}),
@@ -38,7 +46,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['changeDueDate', 'selectTask']);
+const emit = defineEmits(['changeDueDate', 'loadMore', 'selectTask']);
 const { locale, t } = useI18n();
 const assigneeNameById = computed(() =>
   props.assignees.reduce((result, assignee) => {
@@ -54,15 +62,20 @@ const groupedTasks = ref(groupTasksByTime(props.tasks));
 const visibleBucketKeys = ref(visibleTaskTimeBuckets(groupedTasks.value));
 
 watch(
-  () => props.tasks,
-  tasks => {
+  [() => props.tasks, () => props.bucketMeta],
+  ([tasks]) => {
     groupedTasks.value = groupTasksByTime(tasks);
-    visibleBucketKeys.value = visibleTaskTimeBuckets(groupedTasks.value);
+    const visibleFromTasks = visibleTaskTimeBuckets(groupedTasks.value);
+    visibleBucketKeys.value = Object.keys(groupedTasks.value).filter(
+      key =>
+        visibleFromTasks.includes(key) ||
+        Number(props.bucketMeta[key]?.count || 0) > 0
+    );
   },
   { deep: true }
 );
 
-const bucketMeta = computed(() => ({
+const bucketDisplayMeta = computed(() => ({
   future: {
     color: '#E7E8EA',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.FUTURE'),
@@ -95,8 +108,13 @@ const bucketMeta = computed(() => ({
 
 const boardColumns = computed(() =>
   visibleBucketKeys.value.map(key => ({
-    ...bucketMeta.value[key],
+    ...bucketDisplayMeta.value[key],
+    hasMore: Boolean(props.bucketMeta[key]?.hasMore),
     key,
+    loading: Boolean(props.bucketLoading[key]),
+    totalCount: Number(
+      props.bucketMeta[key]?.count || groupedTasks.value[key].length
+    ),
     tasks: groupedTasks.value[key],
   }))
 );
@@ -148,7 +166,7 @@ const activityTypeMeta = task =>
             <span
               class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
             >
-              {{ column.tasks.length }}
+              {{ column.totalCount }}
             </span>
           </div>
           <div
@@ -231,6 +249,15 @@ const activityTypeMeta = task =>
             </article>
           </template>
         </Draggable>
+        <button
+          v-if="column.hasMore"
+          type="button"
+          class="mx-3 mb-3 rounded-md border border-n-weak bg-n-surface-1 px-3 py-2 text-xs font-medium text-n-slate-11 hover:bg-n-alpha-black2 disabled:cursor-wait disabled:opacity-60"
+          :disabled="column.loading"
+          @click="emit('loadMore', column.key)"
+        >
+          {{ $t('CRM.TASKS.LOAD_MORE') }}
+        </button>
       </section>
     </div>
   </div>

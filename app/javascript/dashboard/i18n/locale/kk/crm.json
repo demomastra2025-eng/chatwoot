@@ -404,6 +404,7 @@
         "personal": "Жеке",
         "sales": "Сату"
       },
+      "LOAD_MORE": "Тағы жүктеу",
       "NEW_TASK": "Жаңа міндет",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Диалог бойынша follow-up #{conversationId}",

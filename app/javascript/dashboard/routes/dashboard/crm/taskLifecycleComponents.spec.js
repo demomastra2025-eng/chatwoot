@@ -85,7 +85,23 @@ const initialTask = {
   customAttributes: { nested: { value: 'original' } },
   externalRef: 'provider-ref',
 };
-const response = payload => ({ data: { payload } });
+const response = payload => {
+  const count = Array.isArray(payload)
+    ? payload.length
+    : Number(Boolean(payload));
+  return {
+    data: {
+      meta: {
+        as_of: '2026-09-19T10:00:00.000000Z',
+        count,
+        has_more: false,
+        page: 1,
+        per_page: 25,
+      },
+      payload,
+    },
+  };
+};
 const deferred = () => {
   let resolve;
   const promise = new Promise(done => {
@@ -175,7 +191,7 @@ afterEach(() => {
 });
 
 describe.each(['page', 'panel'])('%s task concurrency', kind => {
-  it('uses bounded server pagination for list view and complete paging elsewhere', async () => {
+  it('uses bounded server pagination for the page list and complete paging in the deal panel', async () => {
     const { state } = await mountEditor(kind);
     if (kind === 'page') state.currentPresentation = 'list';
     CrmTasksAPI.get.mockReset();
@@ -218,6 +234,274 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       );
     }
   });
+
+  if (kind === 'page') {
+    it('loads one bounded page per board time bucket and appends only the requested bucket', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'board';
+      const dueAt = new Date();
+      dueAt.setHours(12, 0, 0, 0);
+      CrmTasksAPI.get.mockReset().mockImplementation(params => {
+        const isToday = params.time_bucket === 'today';
+        const payload = isToday
+          ? [
+              {
+                ...initialTask,
+                dueAt: dueAt.toISOString(),
+                id: params.page === 2 ? 8 : 7,
+              },
+            ]
+          : [];
+        return Promise.resolve({
+          data: {
+            payload,
+            meta: {
+              as_of: '2026-09-19T10:00:00.000000Z',
+              count: isToday ? 2 : 0,
+              has_more: isToday && params.page === 1,
+              page: params.page,
+              per_page: 25,
+            },
+          },
+        });
+      });
+
+      await state.loadTasks();
+
+      expect(CrmTasksAPI.get).toHaveBeenCalledTimes(7);
+      expect(
+        CrmTasksAPI.get.mock.calls.map(([params]) => params.time_bucket)
+      ).toEqual(
+        expect.arrayContaining([
+          'overdue',
+          'today',
+          'tomorrow',
+          'nextWeek',
+          'thisMonth',
+          'future',
+          'unscheduled',
+        ])
+      );
+      expect(
+        CrmTasksAPI.get.mock.calls.every(
+          ([params]) => params.page === 1 && params.per_page === 25
+        )
+      ).toBe(true);
+      expect(
+        CrmTasksAPI.get.mock.calls
+          .slice(1)
+          .every(([params]) => params.as_of === '2026-09-19T10:00:00.000000Z')
+      ).toBe(true);
+
+      await state.loadMoreBoardBucket('today');
+
+      expect(CrmTasksAPI.get).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          as_of: '2026-09-19T10:00:00.000000Z',
+          page: 2,
+          per_page: 25,
+          time_bucket: 'today',
+        })
+      );
+      expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
+    });
+
+    it('loads and incrementally extends only the visible calendar range', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'calendar';
+      state.filters.dateRange = {
+        from: '2026-09-08T00:00:00Z',
+        to: '2026-09-12T00:00:00Z',
+      };
+      CrmTasksAPI.get.mockReset();
+      CrmTasksAPI.get
+        .mockResolvedValueOnce({
+          data: {
+            payload: [
+              {
+                ...structuredClone(initialTask),
+                dueAt: '2026-09-10T11:00:00Z',
+                startAt: '2026-09-10T10:00:00Z',
+              },
+            ],
+            meta: { count: 2, has_more: true, page: 1, per_page: 100 },
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            payload: [
+              {
+                ...initialTask,
+                dueAt: '2026-09-11T11:00:00Z',
+                id: 8,
+                startAt: '2026-09-11T10:00:00Z',
+              },
+            ],
+            meta: { count: 2, has_more: false, page: 2, per_page: 100 },
+          },
+        });
+
+      await state.loadTasks();
+
+      expect(CrmTasksAPI.get).toHaveBeenCalledTimes(1);
+      expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendar_from: expect.any(String),
+          calendar_from_date: expect.any(String),
+          calendar_to: expect.any(String),
+          calendar_to_date: expect.any(String),
+          due_from: '2026-09-08T00:00:00Z',
+          due_to: '2026-09-12T00:00:00Z',
+          page: 1,
+          per_page: 100,
+        })
+      );
+
+      await state.loadMoreCalendarTasks();
+
+      expect(CrmTasksAPI.get).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, per_page: 100 })
+      );
+      expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
+      expect(state.tasksMeta.hasMore).toBe(false);
+    });
+
+    it('keeps the selected task state in bounded calendar requests', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'calendar';
+      state.filters.taskState = 'completed';
+      CrmTasksAPI.get.mockReset().mockResolvedValueOnce({
+        data: {
+          payload: [
+            {
+              ...structuredClone(initialTask),
+              completedAt: '2026-09-19T09:00:00Z',
+            },
+          ],
+          meta: { count: 1, has_more: false, page: 1, per_page: 100 },
+        },
+      });
+
+      await state.loadTasks();
+
+      expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({ task_state: 'completed' })
+      );
+      expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
+    });
+
+    it('drops a late calendar page after the presentation reloads', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'calendar';
+      CrmTasksAPI.get.mockReset().mockResolvedValueOnce({
+        data: {
+          payload: [structuredClone(initialTask)],
+          meta: { count: 2, has_more: true, page: 1, per_page: 100 },
+        },
+      });
+      await state.loadTasks();
+
+      const pendingPage = deferred();
+      CrmTasksAPI.get.mockReturnValueOnce(pendingPage.promise);
+      const loadingMore = state.loadMoreCalendarTasks();
+      state.currentPresentation = 'list';
+      CrmTasksAPI.get.mockResolvedValue({
+        data: {
+          payload: [],
+          meta: { count: 0, has_more: false, page: 1, per_page: 25 },
+        },
+      });
+      await state.loadTasks();
+      pendingPage.resolve({
+        data: {
+          payload: [{ ...initialTask, id: 8 }],
+          meta: { count: 2, has_more: false, page: 2, per_page: 100 },
+        },
+      });
+      await loadingMore;
+
+      expect(state.tasks).toEqual([]);
+    });
+
+    it('does not let a stale board load overwrite newer calendar metadata', async () => {
+      const { state } = await mountEditor(kind);
+      const pendingBuckets = deferred();
+      CrmTasksAPI.get.mockReset();
+      CrmTasksAPI.get
+        .mockResolvedValueOnce(response([structuredClone(initialTask)]))
+        .mockReturnValue(pendingBuckets.promise);
+
+      const boardLoad = state.loadTasks();
+      await flushPromises();
+      expect(CrmTasksAPI.get).toHaveBeenCalledTimes(7);
+
+      state.currentPresentation = 'calendar';
+      CrmTasksAPI.get.mockResolvedValueOnce({
+        data: {
+          payload: [structuredClone(initialTask)],
+          meta: { count: 150, has_more: true, page: 1, per_page: 100 },
+        },
+      });
+      await state.loadTasks();
+
+      pendingBuckets.resolve(response([]));
+      await boardLoad;
+
+      expect(state.tasksMeta).toMatchObject({
+        count: 150,
+        hasMore: true,
+        page: 1,
+        perPage: 100,
+      });
+    });
+
+    it('uses the server workspace date when a board drag changes the deadline', async () => {
+      const { state } = await mountEditor(kind);
+      state.boardAsOf = '2026-09-20T01:00:00.000000+14:00';
+      CrmTasksAPI.reschedule.mockResolvedValueOnce(
+        response({
+          ...initialTask,
+          allDay: true,
+          dueOn: '2026-09-20',
+          lockVersion: 2,
+        })
+      );
+
+      await state.updateTaskDeadlineFromBoard({
+        bucket: 'today',
+        task: state.tasks[0],
+      });
+
+      expect(CrmTasksAPI.reschedule).toHaveBeenCalledWith(
+        initialTask.id,
+        expect.objectContaining({ all_day: true, due_on: '2026-09-20' })
+      );
+    });
+
+    it('uses active unarchived filters when board restores terminal preferences', async () => {
+      const { state } = await mountEditor(kind);
+      state.filters.taskState = 'completed';
+      state.filters.archived = true;
+      CrmTasksAPI.get.mockReset().mockResolvedValue(
+        response([
+          {
+            ...structuredClone(initialTask),
+            completedAt: null,
+          },
+        ])
+      );
+
+      await state.loadTasks();
+
+      expect(
+        CrmTasksAPI.get.mock.calls.every(
+          ([params]) =>
+            params.task_state === 'active' && params.archived === false
+        )
+      ).toBe(true);
+      expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
+    });
+  }
 
   it('normalizes the scoped refresh response without losing custom-attribute keys', async () => {
     const { state } = await mountEditor(kind);
@@ -289,11 +573,16 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     const { state } = await mountEditor(kind);
     await open(kind, state);
     CrmTasksAPI.show.mockRejectedValueOnce({ response: { status: 404 } });
+    CrmTasksAPI.get.mockClear().mockResolvedValue(response([]));
 
     await publishTaskId(initialTask.id);
 
     expect(state.tasks).toEqual([]);
     expect(state.selectedTask).toBeNull();
+    if (kind === 'page') {
+      expect(CrmTasksAPI.get).toHaveBeenCalledTimes(7);
+      expect(state.boardBucketMeta.today.count).toBe(0);
+    }
   });
 
   it('does not publish a stale list or leave loading active after realtime access loss', async () => {
@@ -302,6 +591,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     CrmTasksAPI.get.mockReturnValueOnce(pending.promise);
     const loading = state.loadTasks();
     CrmTasksAPI.show.mockRejectedValueOnce({ response: { status: 404 } });
+    CrmTasksAPI.get.mockResolvedValue(response([]));
 
     await publishTaskId(initialTask.id);
     expect(state.ui.isLoading).toBe(false);
@@ -796,7 +1086,7 @@ it.each(['page', 'panel'])(
       },
     ];
     taskFieldDefinitions.push(...definitions);
-    CrmTasksAPI.get.mockResolvedValueOnce(
+    CrmTasksAPI.get.mockResolvedValue(
       response([
         {
           ...initialTask,
@@ -847,7 +1137,7 @@ it('does not apply a mutation response from the previous account', async () => {
   const pending = deferred();
   const updating = state.runTaskMutation(() => pending.promise);
   const rejected = expect(updating).rejects.toThrow('STALE_RECORD');
-  CrmTasksAPI.get.mockResolvedValueOnce(response([]));
+  CrmTasksAPI.get.mockResolvedValue(response([]));
   state.accountId = 2;
   await flushPromises();
   pending.resolve(response({ ...initialTask, lockVersion: 2 }));

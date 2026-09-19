@@ -78,6 +78,21 @@ describe('taskDeadlineForBucket', () => {
       startAt: null,
     });
   });
+
+  it('uses the workspace date instead of the browser date', () => {
+    expect(taskDeadlineForBucket('today', '2026-09-20').dueOn).toBe(
+      '2026-09-20'
+    );
+    expect(taskDeadlineForBucket('tomorrow', '2026-09-20').dueOn).toBe(
+      '2026-09-21'
+    );
+  });
+
+  it('clamps a future workspace deadline to the last day of the next month', () => {
+    expect(taskDeadlineForBucket('future', '2026-01-31').dueOn).toBe(
+      '2026-02-28'
+    );
+  });
 });
 
 describe('groupTasksByTime', () => {
@@ -92,6 +107,16 @@ describe('groupTasksByTime', () => {
 
     expect(Object.keys(groups)).toEqual(TASK_TIME_BUCKETS);
     expect(groups.today.map(task => task.id)).toEqual([1, 2]);
+  });
+
+  it('keeps the authoritative server bucket across browser timezone boundaries', () => {
+    const groups = groupTasksByTime(
+      [{ boardTimeBucket: 'today', dueAt: at(27), id: 1 }],
+      now
+    );
+
+    expect(groups.today.map(task => task.id)).toEqual([1]);
+    expect(groups.tomorrow).toEqual([]);
   });
 });
 

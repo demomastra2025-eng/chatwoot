@@ -62,6 +62,110 @@ RSpec.describe 'CRM Tasks enforced access boundary', type: :request do
     expect(response.parsed_body.dig('meta', 'per_page')).to eq(500)
   end
 
+  it 'returns timed tasks that overlap the calendar viewport' do
+    spanning_task = create(
+      :crm_task,
+      account: account,
+      assignee: viewer,
+      start_at: Time.zone.parse('2026-09-01 09:00:00'),
+      due_at: Time.zone.parse('2026-09-30 18:00:00')
+    )
+    create(
+      :crm_task,
+      account: account,
+      assignee: viewer,
+      start_at: Time.zone.parse('2026-10-01 09:00:00'),
+      due_at: Time.zone.parse('2026-10-01 10:00:00')
+    )
+
+    get path,
+        params: {
+          calendar_from: '2026-09-07T00:00:00Z',
+          calendar_from_date: '2026-09-07',
+          calendar_to: '2026-09-14T00:00:00Z',
+          calendar_to_date: '2026-09-14',
+          task_state: 'active'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to eq([spanning_task.id])
+  end
+
+  it 'filters and independently paginates workspace task time buckets' do
+    travel_to(Time.zone.parse('2026-09-19 10:00:00')) do
+      as_of = Time.current.iso8601(6)
+      normalized_as_of = Time.current.in_time_zone(account.workspace_working_hours_timezone).iso8601(6)
+      records = {
+        'overdue' => create(:crm_task, account: account, assignee: viewer, due_at: 1.hour.ago),
+        'today' => create(:crm_task, account: account, assignee: viewer, due_at: 1.hour.from_now),
+        'tomorrow' => create(:crm_task, account: account, assignee: viewer, all_day: true, due_on: Date.current + 1.day),
+        'nextWeek' => create(:crm_task, account: account, assignee: viewer, all_day: true, due_on: Date.current + 3.days),
+        'thisMonth' => create(:crm_task, account: account, assignee: viewer, all_day: true, due_on: Date.current + 10.days),
+        'future' => create(:crm_task, account: account, assignee: viewer, all_day: true, due_on: Date.current + 2.months),
+        'unscheduled' => create(:crm_task, account: account, assignee: viewer, due_at: nil, due_on: nil)
+      }
+      second_today = create(:crm_task, account: account, assignee: viewer, all_day: true, due_on: Date.current)
+
+      records.each do |bucket, task|
+        get path,
+            params: { as_of: as_of, page: 1, per_page: 1, task_state: 'active', time_bucket: bucket },
+            headers: headers,
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        returned_ids = response.parsed_body.fetch('payload').pluck('id')
+        if bucket == 'today'
+          expect(returned_ids).to all(be_in([task.id, second_today.id]))
+        else
+          expect(returned_ids).to eq([task.id])
+        end
+        expected_count = bucket == 'today' ? 2 : 1
+        expect(response.parsed_body.fetch('meta')).to include(
+          'count' => expected_count,
+          'has_more' => (bucket == 'today'),
+          'page' => 1,
+          'per_page' => 1,
+          'as_of' => normalized_as_of
+        )
+      end
+
+      expect(second_today).to be_persisted
+    end
+  end
+
+  it 'uses the same server snapshot across bucket requests processed at different times' do
+    snapshot = Time.zone.parse('2026-09-19 10:00:00')
+    boundary_task = create(:crm_task, account: account, assignee: viewer, due_at: snapshot + 30.seconds)
+
+    travel_to(snapshot + 1.minute) do
+      get path,
+          params: { as_of: snapshot.iso8601(6), task_state: 'active', time_bucket: 'overdue' },
+          headers: headers,
+          as: :json
+      expect(response.parsed_body.fetch('payload').pluck('id')).not_to include(boundary_task.id)
+
+      get path,
+          params: { as_of: snapshot.iso8601(6), task_state: 'active', time_bucket: 'today' },
+          headers: headers,
+          as: :json
+      expect(response.parsed_body.fetch('payload').pluck('id')).to include(boundary_task.id)
+    end
+  end
+
+  it 'returns the bucket snapshot in the workspace timezone' do
+    travel_to(Time.utc(2026, 9, 19, 20, 0, 0)) do
+      get path,
+          params: { task_state: 'active', time_bucket: 'today' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('meta', 'as_of')).to eq('2026-09-20T01:00:00.000000+05:00')
+    end
+  end
+
   it 'filters and stably sorts a bounded list page on the server' do
     deadline = 1.day.from_now
     active_first = create(:crm_task, account: account, assignee: viewer, title: 'Same', due_at: deadline)
