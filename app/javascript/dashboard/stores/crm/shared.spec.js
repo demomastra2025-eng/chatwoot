@@ -23,4 +23,28 @@ describe('formatCrmErrorMessage', () => {
     );
     expect(t).toHaveBeenCalledWith(translationKey);
   });
+
+  it('always returns a string for a native request error', () => {
+    const t = vi.fn(key => `translated:${key}`);
+
+    expect(formatCrmErrorMessage(new Error('Reload failed'), t)).toBe(
+      'Reload failed'
+    );
+  });
+
+  it('prefers the CRM response code over Axios transport metadata', () => {
+    const t = vi.fn(key => `translated:${key}`);
+    const error = {
+      code: 'ERR_BAD_REQUEST',
+      message: 'Request failed with status code 409',
+      response: {
+        data: { code: 'STALE_RECORD' },
+        status: 409,
+      },
+    };
+
+    expect(formatCrmErrorMessage(error, t)).toBe(
+      'translated:CRM.ERRORS.STALE_RECORD'
+    );
+  });
 });

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertTaskEditCurrent,
   buildTaskReschedulePayload,
+  canRollbackOptimisticTask,
   changedTaskDetails,
   cloneTaskDraft,
   preferNewerRealtimeTask,
@@ -112,6 +113,37 @@ describe('task lifecycle payload helpers', () => {
         3
       )
     ).toBe(responseTask);
+  });
+
+  it('rolls back a schedule only while the optimistic task is still current', () => {
+    const optimisticTask = {
+      ...task,
+      boardTimeBucket: 'tomorrow',
+      id: 1,
+      lockVersion: 4,
+    };
+
+    expect(
+      canRollbackOptimisticTask({ ...optimisticTask }, optimisticTask)
+    ).toBe(true);
+    expect(
+      canRollbackOptimisticTask(
+        { ...optimisticTask, lockVersion: 5 },
+        optimisticTask
+      )
+    ).toBe(false);
+    expect(
+      canRollbackOptimisticTask(
+        { ...optimisticTask, dueAt: '2026-09-06T10:30:00.000Z' },
+        optimisticTask
+      )
+    ).toBe(false);
+    expect(
+      canRollbackOptimisticTask({ ...optimisticTask }, optimisticTask, {
+        ...optimisticTask,
+        lockVersion: 5,
+      })
+    ).toBe(false);
   });
 
   it('detects assignment, schedule and detail changes independently', () => {

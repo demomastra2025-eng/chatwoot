@@ -11,7 +11,10 @@ const { runtime, referencesStore } = vi.hoisted(() => ({
         active: true,
         default: true,
         name: 'Sales',
-        stages: [{ id: 100, active: true, name: 'New', position: 1 }],
+        stages: [
+          { id: 100, active: true, name: 'New', position: 1 },
+          { id: 200, active: true, name: 'Qualified', position: 2 },
+        ],
       },
     ],
     taskFieldDefinitions: [],
@@ -37,7 +40,7 @@ vi.mock('vue-router', () => ({
 }));
 vi.mock('dashboard/api/crm/deals', () => ({
   default: new Proxy(
-    { get: vi.fn() },
+    { get: vi.fn(), transitionStage: vi.fn(), update: vi.fn() },
     { get: (target, key) => target[key] || vi.fn() }
   ),
 }));
@@ -130,6 +133,38 @@ beforeEach(() => {
 
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+});
+
+it('exposes a localized string when the initial load fails', async () => {
+  CrmDealsAPI.get.mockRejectedValueOnce({
+    code: 'ERR_BAD_REQUEST',
+    message: 'Request failed with status code 409',
+    response: { data: { code: 'STALE_RECORD' }, status: 409 },
+  });
+
+  const { state } = await mountPage();
+
+  expect(state.ui.error).toBe('CRM.ERRORS.STALE_RECORD');
+});
+
+it('rolls a rejected board move back with its stage counts', async () => {
+  const { state } = await mountPage();
+  CrmDealsAPI.transitionStage.mockRejectedValueOnce({
+    response: { data: { code: 'STALE_RECORD' }, status: 409 },
+  });
+
+  await state.handleDealStageChange({
+    deal: state.deals[0],
+    position: 1,
+    stageId: 200,
+  });
+
+  expect(CrmDealsAPI.transitionStage).toHaveBeenCalledWith(
+    1,
+    expect.objectContaining({ lock_version: 1, stage_id: 200 })
+  );
+  expect(state.deals[0]).toMatchObject({ id: 1, stageId: 100 });
+  expect(state.dealsMeta.stageCounts).toMatchObject({ 100: 1, 200: 0 });
 });
 
 it('requests one bounded list page with server search and sort', async () => {

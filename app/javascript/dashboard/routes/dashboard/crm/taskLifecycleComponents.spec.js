@@ -103,11 +103,13 @@ const response = payload => {
   };
 };
 const deferred = () => {
+  let reject;
   let resolve;
-  const promise = new Promise(done => {
+  const promise = new Promise((done, fail) => {
+    reject = fail;
     resolve = done;
   });
-  return { promise, resolve };
+  return { promise, reject, resolve };
 };
 const publishTaskId = async taskId => {
   emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, {
@@ -500,6 +502,55 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
         )
       ).toBe(true);
       expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
+    });
+
+    it('rolls back a failed board move even when the recovery reload fails', async () => {
+      const { state } = await mountEditor(kind);
+      const previousTask = { ...state.tasks[0] };
+      CrmTasksAPI.reschedule.mockRejectedValueOnce({
+        response: { data: { code: 'STALE_RECORD' }, status: 409 },
+      });
+      CrmTasksAPI.get.mockReset().mockRejectedValue(new Error('reload failed'));
+
+      await state.updateTaskDeadlineFromBoard({
+        bucket: 'tomorrow',
+        task: state.tasks[0],
+      });
+
+      expect(state.tasks[0]).toMatchObject({
+        allDay: previousTask.allDay,
+        boardTimeBucket: previousTask.boardTimeBucket,
+        dueAt: previousTask.dueAt,
+        dueOn: previousTask.dueOn,
+        lockVersion: previousTask.lockVersion,
+        startAt: previousTask.startAt,
+      });
+    });
+
+    it('does not restore stale board state after newer realtime and failed reload', async () => {
+      const { state } = await mountEditor(kind);
+      const pendingMutation = deferred();
+      CrmTasksAPI.reschedule.mockReturnValueOnce(pendingMutation.promise);
+
+      const moving = state.updateTaskDeadlineFromBoard({
+        bucket: 'tomorrow',
+        task: state.tasks[0],
+      });
+      await flushPromises();
+
+      state.applyTaskRealtimeState({
+        ...structuredClone(initialTask),
+        dueAt: '2026-09-22T11:00:00Z',
+        lockVersion: 2,
+        startAt: '2026-09-22T10:00:00Z',
+      });
+      CrmTasksAPI.get.mockReset().mockRejectedValue(new Error('reload failed'));
+      pendingMutation.reject({
+        response: { data: { code: 'STALE_RECORD' }, status: 409 },
+      });
+      await moving;
+
+      expect(state.tasks).toEqual([]);
     });
   }
 

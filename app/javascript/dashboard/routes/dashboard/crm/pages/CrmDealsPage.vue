@@ -2303,7 +2303,7 @@ async function loadDeals({ append = false, page = null } = {}) {
       ui.isLoadMoreFailed = true;
       useAlert(formatErrorMessage(error));
     } else {
-      ui.error = error;
+      ui.error = formatErrorMessage(error);
     }
   } finally {
     if (requestGeneration === dealsRequestGeneration) {
@@ -3199,7 +3199,7 @@ onMounted(async () => {
     await loadDeals();
     await handleDealUiActionQuery();
   } catch (error) {
-    ui.error = error;
+    ui.error = formatErrorMessage(error);
     useAlert(formatErrorMessage(error));
   }
 });

@@ -14,19 +14,29 @@ export const normalizePayload = data => normalizeRecord(data?.payload || []);
 export const normalizeMeta = data =>
   camelcaseKeys(data?.meta || {}, { deep: true });
 
+const normalizeErrorMessage = (value, fallback = '') => {
+  if (typeof value === 'string') return value;
+  if (typeof value?.message === 'string') return value.message;
+  return fallback;
+};
+
 export const extractCrmError = error => {
   const payload = camelcaseKeys(error?.response?.data || {}, { deep: true });
+  const fallbackMessage = normalizeErrorMessage(
+    parseAPIErrorResponse(error),
+    normalizeErrorMessage(error)
+  );
 
   return {
     code: payload.code || 'UNKNOWN_ERROR',
     details: payload.details || null,
-    message: payload.error || parseAPIErrorResponse(error),
+    message: normalizeErrorMessage(payload.error, fallbackMessage),
     status: error?.response?.status || 500,
   };
 };
 
 const resolveCrmErrorPayload = error => {
-  if (error?.code && error?.message) {
+  if (!error?.response && error?.code && typeof error.message === 'string') {
     return error;
   }
 

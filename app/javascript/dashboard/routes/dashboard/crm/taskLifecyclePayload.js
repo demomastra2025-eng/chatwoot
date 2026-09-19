@@ -21,6 +21,37 @@ export const newerTaskSnapshot = (candidate, current) => {
   return candidate;
 };
 
+const taskScheduleSnapshot = task => ({
+  allDay: Boolean(task?.allDay),
+  boardTimeBucket: task?.boardTimeBucket || null,
+  dueAt: task?.dueAt || null,
+  dueOn: task?.dueOn || null,
+  startAt: task?.startAt || null,
+});
+
+export const canRollbackOptimisticTask = (
+  currentTask,
+  optimisticTask,
+  authoritativeTask = null
+) => {
+  if (!currentTask || !optimisticTask) return false;
+
+  const optimisticVersion = taskLockVersion(optimisticTask);
+  const authoritativeVersion = taskLockVersion(authoritativeTask);
+  const authoritativeIsNewer =
+    optimisticVersion !== null &&
+    authoritativeVersion !== null &&
+    authoritativeVersion > optimisticVersion;
+
+  return (
+    !authoritativeIsNewer &&
+    Number(currentTask.id) === Number(optimisticTask.id) &&
+    taskLockVersion(currentTask) === optimisticVersion &&
+    JSON.stringify(taskScheduleSnapshot(currentTask)) ===
+      JSON.stringify(taskScheduleSnapshot(optimisticTask))
+  );
+};
+
 // Keep accepted HTTP/Cable/list versions independently of an in-flight GET.
 // Removed/filtered records stay here until the owning account/deal is reset.
 export const rememberTaskSnapshot = (snapshots, task, sequence = 0) => {

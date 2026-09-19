@@ -99,6 +99,7 @@ import {
 import {
   assertTaskEditCurrent,
   buildTaskFormSavePayload,
+  canRollbackOptimisticTask,
   cloneTaskDraft,
   rememberTaskSnapshot,
 } from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
@@ -1654,7 +1655,7 @@ const loadTasks = async () => {
     syncSelectedTask(tasks.value);
   } catch (error) {
     if (loadGeneration !== taskLoadGeneration.value) return;
-    ui.error = error;
+    ui.error = formatErrorMessage(error);
   } finally {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
@@ -1840,19 +1841,55 @@ const refreshTaskFromRealtime = async payload => {
 
 const handleCrmTaskRealtimeEvent = payload => refreshTaskFromRealtime(payload);
 
+const reconcileFailedOptimisticTask = ({ optimisticTask, previousTask }) => {
+  const taskId = Number(optimisticTask.id);
+  const displayedTask = tasks.value.find(item => Number(item.id) === taskId);
+  const authoritativeTask = pendingTaskRealtimeUpdates.get(taskId)?.task;
+
+  if (
+    canRollbackOptimisticTask(displayedTask, optimisticTask, authoritativeTask)
+  ) {
+    upsertTask(previousTask);
+    syncTaskRangeInDrawer(previousTask);
+    return;
+  }
+
+  if (
+    currentPresentation.value === 'board' &&
+    canRollbackOptimisticTask(displayedTask, optimisticTask)
+  ) {
+    // A newer authoritative deadline has no server-classified board bucket yet.
+    // Hide the stale optimistic card until the recovery reload can classify it.
+    removeTask(taskId);
+  }
+};
+
 const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
   if (!canManageTasks.value || !task) return;
 
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const deadline = taskDeadlineForBucket(bucket, boardAsOf.value?.slice(0, 10));
+  const previousTask = { ...currentTask };
+  const optimisticTask = {
+    ...currentTask,
+    allDay: deadline.allDay,
+    boardTimeBucket: bucket,
+    dueAt: deadline.dueAt,
+    dueOn: deadline.dueOn,
+    startAt: deadline.startAt,
+  };
+  upsertTask(optimisticTask);
+  syncTaskRangeInDrawer(optimisticTask);
 
   try {
     const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.reschedule(task.id, {
+      CrmTasksAPI.reschedule(currentTask.id, {
         all_day: deadline.allDay,
         due_at: deadline.dueAt,
         due_on: deadline.dueOn,
         idempotency_key: crypto.randomUUID(),
-        lock_version: task.lockVersion,
+        lock_version: currentTask.lockVersion,
         start_at: deadline.startAt,
       })
     );
@@ -1860,8 +1897,14 @@ const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
     syncTaskRangeInDrawer(updatedTask);
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
   } catch (error) {
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
+
     useAlert(formatErrorMessage(error));
-    await loadTasks();
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original mutation error as the surfaced failure.
+    }
   }
 };
 
@@ -2265,8 +2308,7 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
     applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
-    upsertTask(previousTask);
-    syncTaskRangeInDrawer(previousTask);
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
 
     try {
       await loadTasks();
@@ -2325,8 +2367,7 @@ const updateTaskCalendarRange = async ({ allDay, task, startsAt, endsAt }) => {
     applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
-    upsertTask(previousTask);
-    syncTaskRangeInDrawer(previousTask);
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
 
     try {
       await loadTasks();
@@ -2394,7 +2435,7 @@ onMounted(async () => {
     await loadTasks();
     await handleTaskUiActionQuery();
   } catch (error) {
-    ui.error = error;
+    ui.error = formatErrorMessage(error);
     useAlert(formatErrorMessage(error));
   }
 });
