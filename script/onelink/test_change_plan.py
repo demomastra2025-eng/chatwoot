@@ -5,10 +5,12 @@ import tempfile
 import unittest
 
 from script.onelink.change_plan import (
+    IMMUTABLE_RELEASE_SIDECAR_ROOTS,
     changed_files,
     classify,
     existing_files_with_suffixes,
     related_specs,
+    unsupported_release_sidecars,
     validate_migrations,
 )
 
@@ -117,6 +119,34 @@ class ChangePlanTest(unittest.TestCase):
 
         self.assertTrue(plan["sidecar"])
         self.assertTrue(plan["high_risk"])
+
+    def test_ai_voice_sidecar_is_covered_by_immutable_release(self):
+        self.assertEqual(IMMUTABLE_RELEASE_SIDECAR_ROOTS, ("services/onelink-ai-voice/",))
+        self.assertEqual(
+            unsupported_release_sidecars(
+                [
+                    "services/onelink-ai-voice/src/index.js",
+                    "services/onelink-ai-voice/Dockerfile",
+                ]
+            ),
+            [],
+        )
+
+    def test_unmanaged_sidecars_remain_blocked(self):
+        self.assertEqual(
+            unsupported_release_sidecars(
+                [
+                    "enterprise/media-server/src/index.js",
+                    "services/onelink-ai-voice-pipecat/app.py",
+                    "services/weixin-personal-gateway/app.py",
+                ]
+            ),
+            [
+                "enterprise/media-server/src/index.js",
+                "services/onelink-ai-voice-pipecat/app.py",
+                "services/weixin-personal-gateway/app.py",
+            ],
+        )
 
     def test_related_specs_maps_app_and_lib_files(self):
         with tempfile.TemporaryDirectory() as directory:

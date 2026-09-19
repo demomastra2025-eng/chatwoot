@@ -24,6 +24,10 @@ CURRENT="${ROOT}/current"
 ENV_FILE="${ROOT}/.env.development"
 LOCK_FILE="${ROOT}/runtime/deploy.lock"
 SERVICE=onelink-chatwoot-dev.service
+VOICE_SERVICE=onelink-ai-voice-dev.service
+VOICE_READY_URL=http://127.0.0.1:8082/ready
+VOICE_START_SCRIPT=${ROOT}/runtime/start-onelink-ai-voice-dev
+VOICE_START_BACKUP=${ROOT}/runtime/start-onelink-ai-voice-dev.rollback.$$
 RELEASE="${RELEASES}/onelink-dev-${SHA:0:12}"
 GATE_SCRIPT=/usr/local/sbin/onelink-dev-release-gate
 CONTRACT_MANIFEST=/usr/local/share/onelink-dev-medelement-contract-manifest.json
@@ -45,6 +49,7 @@ DEPLOY_SUCCEEDED=0
 log() { printf '[onelink-dev-deploy] %s\n' "$*"; }
 cleanup() {
   rm -rf "${TMP_RELEASE}"
+  rm -f "${VOICE_START_BACKUP}"
   if ((RELEASE_CREATED == 1 && DEPLOY_SUCCEEDED == 0)) && [[ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" != "${RELEASE}" ]]; then
     rm -rf "${RELEASE}"
   fi
@@ -117,6 +122,9 @@ PY
     cd "${TMP_RELEASE}"
     bundle check || bundle install --jobs 4 --retry 3
     pnpm install --frozen-lockfile --prefer-offline
+    cd services/onelink-ai-voice
+    npm ci --omit=dev
+    npm test
   )
   mv "${TMP_RELEASE}" "${RELEASE}"
   RELEASE_CREATED=1
@@ -171,21 +179,59 @@ mv -Tf "${CURRENT}.next" "${CURRENT}"
 
 rollback() {
   local reason="$1"
-  local current_target
+  local current_target rollback_failed=false rollback_code voice_pid voice_cwd previous_sha current_sha
   echo "DEV verification failed: ${reason}" >&2
   current_target="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
   if [[ "${current_target}" == "${RELEASE}" && -n "${PREVIOUS}" && -d "${PREVIOUS}" ]]; then
     ln -s "${PREVIOUS}" "${CURRENT}.rollback"
     mv -Tf "${CURRENT}.rollback" "${CURRENT}"
-    systemctl restart "${SERVICE}"
-    echo "rolled back DEV to ${PREVIOUS}" >&2
+    if [[ -f "${VOICE_START_BACKUP}" ]]; then
+      install -o root -g root -m 0755 "${VOICE_START_BACKUP}" "${VOICE_START_SCRIPT}"
+    fi
+    systemctl restart "${SERVICE}" || rollback_failed=true
+    systemctl restart "${VOICE_SERVICE}" || rollback_failed=true
+
+    [[ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" == "${PREVIOUS}" ]] || rollback_failed=true
+    [[ "$(systemctl is-active "${SERVICE}" 2>/dev/null || true)" == active ]] || rollback_failed=true
+    [[ "$(systemctl is-active "${VOICE_SERVICE}" 2>/dev/null || true)" == active ]] || rollback_failed=true
+
+    rollback_code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' http://127.0.0.1:3002/api/v1/profile || true)"
+    [[ "${rollback_code}" == 401 || "${rollback_code}" == 200 ]] || rollback_failed=true
+    rollback_code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "${VOICE_READY_URL}" || true)"
+    [[ "${rollback_code}" == 200 ]] || rollback_failed=true
+
+    voice_pid="$(systemctl show "${VOICE_SERVICE}" -p MainPID --value 2>/dev/null || true)"
+    voice_cwd=""
+    [[ "${voice_pid}" =~ ^[1-9][0-9]*$ ]] && voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
+    [[ "${voice_cwd}" == "${PREVIOUS}/services/onelink-ai-voice" ]] || rollback_failed=true
+    previous_sha="$(cat "${PREVIOUS}/.git_sha" 2>/dev/null || true)"
+    current_sha="$(cat "${CURRENT}/.git_sha" 2>/dev/null || true)"
+    [[ "${previous_sha}" =~ ^[0-9a-f]{40}$ && "${current_sha}" == "${previous_sha}" ]] || \
+      rollback_failed=true
+
+    if [[ "${rollback_failed}" == false ]]; then
+      echo "rolled back and verified DEV runtime at ${PREVIOUS}" >&2
+    else
+      echo "DEV rollback verification failed; operator intervention required" >&2
+    fi
   elif [[ "${current_target}" != "${RELEASE}" ]]; then
     echo "skipped rollback because current changed concurrently to ${current_target:-missing}" >&2
+    rollback_failed=true
+  else
+    echo "DEV rollback target is unavailable" >&2
+    rollback_failed=true
   fi
+  [[ "${rollback_failed}" == false ]] || exit 70
   exit 1
 }
 
+cp -a "${VOICE_START_SCRIPT}" "${VOICE_START_BACKUP}" || rollback "backing up AI voice start script"
+install -o root -g root -m 0755 \
+  "${CURRENT}/deployment/start-onelink-ai-voice-dev.sh" "${VOICE_START_SCRIPT}" || \
+  rollback "installing exact AI voice start script"
+
 systemctl restart "${SERVICE}" || rollback "systemd restart"
+systemctl restart "${VOICE_SERVICE}" || rollback "AI voice systemd restart"
 health_deadline=$((SECONDS + 600))
 while ((SECONDS < health_deadline)); do
   remaining=$((health_deadline - SECONDS))
@@ -201,7 +247,8 @@ done
 [[ "${code:-}" == 401 || "${code:-}" == 200 ]] || rollback "Rails health check HTTP ${code:-000}"
 
 for unit in onelink-chatwoot-dev-workers.service \
-  onelink-chatwoot-dev-communication-thread-realtime-worker.service; do
+  onelink-chatwoot-dev-communication-thread-realtime-worker.service \
+  "${VOICE_SERVICE}"; do
   unit_deadline=$((SECONDS + 180))
   while ((SECONDS < unit_deadline)); do
     [[ "$(systemctl is-active "${unit}" || true)" == active ]] && break
@@ -209,6 +256,19 @@ for unit in onelink-chatwoot-dev-workers.service \
   done
   [[ "$(systemctl is-active "${unit}" || true)" == active ]] || rollback "${unit} is not active"
 done
+
+voice_deadline=$((SECONDS + 180))
+while ((SECONDS < voice_deadline)); do
+  voice_code="$(curl -sS -o /dev/null --max-time 3 -w '%{http_code}' "${VOICE_READY_URL}" || true)"
+  [[ "${voice_code}" == 200 ]] && break
+  sleep 2
+done
+[[ "${voice_code:-}" == 200 ]] || rollback "AI voice health check HTTP ${voice_code:-000}"
+voice_pid="$(systemctl show "${VOICE_SERVICE}" -p MainPID --value)"
+[[ "${voice_pid}" =~ ^[1-9][0-9]*$ ]] || rollback "AI voice MainPID is unavailable"
+voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
+[[ "${voice_cwd}" == "${RELEASE}/services/onelink-ai-voice" ]] || \
+  rollback "AI voice runtime source mismatch: ${voice_cwd:-missing}"
 
 for asset in /vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js; do
   code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "https://dev.one-link.kz${asset}" || true)"

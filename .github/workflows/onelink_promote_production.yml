@@ -13,6 +13,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/demomastra2025-eng/chatwoot
+  VOICE_IMAGE_NAME: ghcr.io/demomastra2025-eng/onelink-ai-voice
 
 concurrency:
   group: onelink-production-promotion
@@ -111,6 +112,7 @@ jobs:
       packages: read
     outputs:
       image_ref: ${{ steps.image.outputs.image_ref }}
+      voice_image_ref: ${{ steps.image.outputs.voice_image_ref }}
       sha: ${{ steps.input.outputs.sha }}
     steps:
       - name: Validate requested SHA
@@ -167,11 +169,17 @@ jobs:
                 run.data.head_branch === 'onelink-dev' &&
                 run.data.head_sha === process.env.REQUESTED_SHA &&
                 run.data.path === '.github/workflows/onelink_release.yml' &&
-                typeof payload?.image === 'string' &&
-                /^ghcr\.io\/demomastra2025-eng\/chatwoot@sha256:[0-9a-f]{64}$/.test(payload.image)
+                payload?.runtime?.kind === 'bare-metal-source-release' &&
+                payload?.runtime?.app_sha === process.env.REQUESTED_SHA &&
+                payload?.runtime?.voice_sha === process.env.REQUESTED_SHA &&
+                typeof payload?.promotion_artifacts?.app_image === 'string' &&
+                /^ghcr\.io\/demomastra2025-eng\/chatwoot@sha256:[0-9a-f]{64}$/.test(payload.promotion_artifacts.app_image) &&
+                typeof payload?.promotion_artifacts?.voice_image === 'string' &&
+                /^ghcr\.io\/demomastra2025-eng\/onelink-ai-voice@sha256:[0-9a-f]{64}$/.test(payload.promotion_artifacts.voice_image)
               ) {
                 core.info(`DEV proof found in deployment ${deployment.id}`);
-                core.setOutput('image_ref', payload.image);
+                core.setOutput('image_ref', payload.promotion_artifacts.app_image);
+                core.setOutput('voice_image_ref', payload.promotion_artifacts.voice_image);
                 return;
               }
             }
@@ -185,24 +193,31 @@ jobs:
         id: image
         env:
           IMAGE_REF: ${{ steps.dev-proof.outputs.image_ref }}
+          VOICE_IMAGE_REF: ${{ steps.dev-proof.outputs.voice_image_ref }}
           REQUESTED_SHA: ${{ steps.input.outputs.sha }}
         run: |
-          docker pull "$IMAGE_REF"
-          embedded_sha="$(docker run --rm --entrypoint cat "$IMAGE_REF" /app/.git_sha | tr -d '\r\n')"
-          [[ "$embedded_sha" == "$REQUESTED_SHA" ]]
+          for image in "$IMAGE_REF" "$VOICE_IMAGE_REF"; do
+            docker pull "$image"
+            embedded_sha="$(docker run --rm --entrypoint cat "$image" /app/.git_sha | tr -d '\r\n')"
+            [[ "$embedded_sha" == "$REQUESTED_SHA" ]]
+          done
           echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+          echo "voice_image_ref=$VOICE_IMAGE_REF" >> "$GITHUB_OUTPUT"
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Verify keyless signature and GitHub provenance
         env:
           IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          VOICE_IMAGE_REF: ${{ steps.image.outputs.voice_image_ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          cosign verify \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp \
-              '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
-            "$IMAGE_REF"
-          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
+          for image in "$IMAGE_REF" "$VOICE_IMAGE_REF"; do
+            cosign verify \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp \
+                '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
+              "$image"
+            gh attestation verify "oci://$image" --repo "$GITHUB_REPOSITORY"
+          done
   promote:
     needs: resolve
     runs-on: ubuntu-24.04
@@ -220,6 +235,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           DEPLOY_IMAGE: ${{ needs.resolve.outputs.image_ref }}
+          DEPLOY_VOICE_IMAGE: ${{ needs.resolve.outputs.voice_image_ref }}
           DEPLOY_SHA: ${{ needs.resolve.outputs.sha }}
         with:
           script: |
@@ -230,7 +246,10 @@ jobs:
               environment: 'production',
               auto_merge: false,
               required_contexts: [],
-              payload: { image: process.env.DEPLOY_IMAGE }
+              payload: {
+                image: process.env.DEPLOY_IMAGE,
+                voice_image: process.env.DEPLOY_VOICE_IMAGE
+              }
             });
             core.setOutput('id', deployment.data.id);
       - name: Install restricted SSH credentials
@@ -251,6 +270,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.ONELINK_PROD_DEPLOY_USER }}
           RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+          VOICE_IMAGE_REF: ${{ needs.resolve.outputs.voice_image_ref }}
         run: |
           [[ -n "$DEPLOY_HOST" ]] || { echo 'ONELINK_PROD_DEPLOY_HOST is empty.' >&2; exit 64; }
           [[ -n "$DEPLOY_USER" ]] || { echo 'ONELINK_PROD_DEPLOY_USER is empty.' >&2; exit 64; }
@@ -265,7 +285,7 @@ jobs:
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/onelink-production \
             -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
             -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-            "$DEPLOY_USER@$DEPLOY_HOST" "promote $RELEASE_SHA $IMAGE_REF"
+            "$DEPLOY_USER@$DEPLOY_HOST" "promote $RELEASE_SHA $IMAGE_REF $VOICE_IMAGE_REF"
       - name: Publish deployment result
         if: always() && steps.deployment.outputs.id
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

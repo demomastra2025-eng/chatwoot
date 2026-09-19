@@ -57,6 +57,7 @@ SIDECAR_ROOTS = (
     "services/onelink-ai-voice-pipecat/",
     "services/weixin-personal-gateway/",
 )
+IMMUTABLE_RELEASE_SIDECAR_ROOTS = ("services/onelink-ai-voice/",)
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"
     r"change_column_null|change_column_default|remove_index|rename_table)\b"
@@ -159,6 +160,15 @@ def validate_migrations(paths: Iterable[str]) -> list[str]:
     return violations
 
 
+def unsupported_release_sidecars(paths: Iterable[str]) -> list[str]:
+    return sorted(
+        path
+        for path in paths
+        if path.startswith(SIDECAR_ROOTS)
+        and not path.startswith(IMMUTABLE_RELEASE_SIDECAR_ROOTS)
+    )
+
+
 def emit_github_output(path: Path, plan: dict[str, bool], files: list[str]) -> None:
     with path.open("a", encoding="utf-8") as output:
         for key, value in sorted(plan.items()):
@@ -213,11 +223,11 @@ def main() -> int:
                 print(f"  - {violation}", file=sys.stderr)
             return 2
     if args.validate_release_surface:
-        sidecar_files = [path for path in files if path.startswith(SIDECAR_ROOTS)]
+        sidecar_files = unsupported_release_sidecars(files)
         if sidecar_files:
             print(
-                "This release changes embedded sidecars that require their own immutable "
-                "images and rollout workflow:",
+                "This release changes sidecars that are not covered by the immutable "
+                "release workflow:",
                 file=sys.stderr,
             )
             for path in sidecar_files:
