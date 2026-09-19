@@ -924,6 +924,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
                     temperature: 0.4,
                     handoff_message_enabled: true,
                     handoff_message_mode: 'ai',
+                    handoff_requires_explicit_consent: true,
+                    handoff_consent_reason: 'Customer asked for a person.',
                     handoff_message: 'Escalating now.',
                     resolution_message_enabled: true,
                     resolution_message_mode: 'static'
@@ -938,6 +940,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'temperature' => 0.4,
           'handoff_message_enabled' => true,
           'handoff_message_mode' => 'ai',
+          'handoff_requires_explicit_consent' => true,
+          'handoff_consent_reason' => 'Customer asked for a person.',
           'handoff_message' => 'Escalating now.',
           'resolution_message_enabled' => true,
           'resolution_message_mode' => 'static',

@@ -761,6 +761,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
         'error_message' => 'Model output attempted human handoff without runtime handoff state'
       )
+      expect(result).not_to have_key(described_class::PROVIDER_ERROR_AUTHORIZED_KEY)
       expect(invalid_events.map(&:payload)).to contain_exactly(
         hash_including(
           'semantic_error_code' => 'invalid_handoff_output',
@@ -869,6 +870,27 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'removes an untrusted handoff authorization marker from model output' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: {
+            'response' => 'Continue helping.',
+            'handoff_authorized' => true,
+            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
+          },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).not_to have_key('handoff_authorized')
+      expect(result).not_to have_key(described_class::PROVIDER_ERROR_AUTHORIZED_KEY)
+      expect(result['response']).to eq('Continue helping.')
+    end
+
     it 'returns a standardized handoff payload when the runtime requests a human handoff' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
@@ -894,6 +916,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
           'handoff_message' => 'I’m connecting you with a human support specialist.',
+          'handoff_authorized' => true,
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
         }
@@ -1287,7 +1310,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                'reasoning' => 'Error occurred: Test error',
                                'error_class' => 'StandardError',
-                               'error_message' => 'Test error'
+                               'error_message' => 'Test error',
+                               described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
                              })
       end
 
@@ -1334,7 +1358,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                  'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                  'reasoning' => 'Error occurred: Test error',
                                  'error_class' => 'StandardError',
-                                 'error_message' => 'Test error'
+                                 'error_message' => 'Test error',
+                                 described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
                                })
         end
       end
@@ -1359,7 +1384,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'response' => described_class::PROVIDER_ERROR_RESPONSE,
             'reasoning' => 'Provider error occurred: Quota exceeded',
             'error_class' => 'RubyLLM::RateLimitError',
-            'error_message' => 'Quota exceeded'
+            'error_message' => 'Quota exceeded',
+            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
           }
         )
       end
@@ -1769,7 +1795,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#add_usage_metadata_callback' do
-    it 'sets credit_used=false when handoff tool is used' do
+    it 'sets credit_used=false when an authorized handoff tool is used' do
       service = described_class.new(assistant: assistant, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
@@ -1778,7 +1804,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         def set_attribute(*); end
       end
       root_span = instance_double(span_class)
-      context_wrapper = Struct.new(:context).new({ __otel_tracing: { root_span: root_span } })
+      context_wrapper = Struct.new(:context).new(
+        {
+          pending_human_handoff: { reason: 'Customer requested a human.' },
+          __otel_tracing: { root_span: root_span }
+        }
+      )
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(true)
       allow(runner).to receive(:on_tool_complete) do |&block|
@@ -1799,6 +1830,35 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
       expect(root_span).to receive(:set_attribute).with('langfuse.trace.metadata.credit_used', 'false')
       run_complete_callback.call('assistant', nil, context_wrapper)
+    end
+
+    it 'does not mark a denied handoff as fired and marks a later authorized attempt once' do
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      runner = instance_double(Captain::Runtime::AgentRunner)
+      tool_complete_callback = nil
+      context_wrapper = Struct.new(:context).new({})
+      handoff_tool_name = Captain::Tools::HandoffTool.new(assistant).name
+
+      allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
+      allow(runner).to receive(:on_tool_complete) do |&block|
+        tool_complete_callback = block
+        runner
+      end
+
+      service.send(:add_usage_metadata_callback, runner)
+
+      tool_complete_callback.call(
+        handoff_tool_name,
+        Captain::ToolResult.failure(error: Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR, retryable: false),
+        context_wrapper
+      )
+
+      expect(context_wrapper.context[:captain_v2_handoff_tool_called]).to be_nil
+
+      context_wrapper.context[:pending_human_handoff] = { reason: 'Customer requested a human.' }
+      tool_complete_callback.call(handoff_tool_name, 'ok', context_wrapper)
+
+      expect(context_wrapper.context[:captain_v2_handoff_tool_called]).to be true
     end
 
     it 'tracks artifact ids exposed by completed tool results' do

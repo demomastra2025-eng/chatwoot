@@ -31,6 +31,171 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#perform' do
     context 'when conversation exists' do
+      context 'when explicit consent is required' do
+        let(:create_triggering_message) do
+          lambda do |content, **attributes|
+            message = create(
+              :message,
+              account: account,
+              inbox: inbox,
+              conversation: conversation,
+              message_type: :incoming,
+              content: content,
+              **attributes
+            )
+            run_context.context[:state][:captain_response_fence] = { last_message_id: message.id }
+            message
+          end
+        end
+
+        before do
+          assistant.update!(config: assistant.config.merge(
+            'handoff_requires_explicit_consent' => true,
+            'handoff_consent_reason' => 'Запрос пользователя на помощь сотрудника.'
+          ))
+        end
+
+        it 'blocks a family information request without consent' do
+          create_triggering_message.call('Подскажите порядок для меня и ребёнка. Ничего не записывайте.')
+
+          result = tool.perform(
+            tool_context, reason: 'Family request', status_reason: 'needs_human', message: 'Connecting you.'
+          )
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks a new scheduling constraint after a handoff question' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Хотите, передам вопрос сотруднику?')
+          create_triggering_message.call('Покажите только варианты позже 17:00.')
+
+          result = tool.perform(tool_context, reason: 'Lookup failed')
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'allows a direct request for a human and normalizes internal fields' do
+          create_triggering_message.call('Соедините меня с сотрудником.')
+
+          result = tool.perform(
+            tool_context, reason: 'Model supplied reason', status_reason: 'needs_human', message: 'Передаю сотруднику.'
+          )
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to include(
+            reason: assistant.handoff_consent_reason_value,
+            message: 'Передаю сотруднику.'
+          )
+          expect(run_context.context[:pending_human_handoff]).not_to have_key(:status_reason)
+        end
+
+        it 'blocks a negated handoff request' do
+          create_triggering_message.call('Не соединяйте меня с сотрудником.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks an informational question about contacting a doctor' do
+          create_triggering_message.call('Как связаться с врачом?')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'allows a standalone affirmative answer to the immediately preceding handoff offer' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Хотите, передам вопрос сотруднику?')
+          create_triggering_message.call('Да, пожалуйста')
+
+          result = tool.perform(tool_context, reason: 'Model supplied reason')
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff][:reason]).to eq(assistant.handoff_consent_reason_value)
+        end
+
+        it 'blocks an affirmative answer after a negated transfer statement' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Я не могу соединить вас с оператором.')
+          create_triggering_message.call('Да')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks an affirmative answer when another public message followed the handoff offer' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Хотите, передам вопрос сотруднику?')
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming,
+                           private: false, content: 'Сначала уточните удобное время.')
+          create_triggering_message.call('Да')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'allows a conservative emergency request without separate consent' do
+          create_triggering_message.call('Сейчас сильная боль в груди, не могу дышать.')
+
+          result = tool.perform(tool_context, reason: 'Emergency')
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff][:reason]).to eq(assistant.handoff_consent_reason_value)
+        end
+
+        it 'allows a polite direct request phrased with a negative question' do
+          create_triggering_message.call('Не могли бы вы соединить меня с оператором?')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to be_present
+        end
+
+        it 'blocks a negated emergency statement' do
+          create_triggering_message.call('Я не умираю, просто хочу уточнить информацию.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'fails closed when the response fence is absent' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming,
+                           content: 'Соедините меня с сотрудником.')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'uses chronological order when message ids were inserted out of order' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Хотите, передам вопрос сотруднику?', created_at: 1.minute.ago)
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Старое служебное сообщение.', created_at: 2.minutes.ago)
+          create_triggering_message.call('Да')
+
+          result = tool.perform(tool_context)
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to be_present
+        end
+      end
+
       context 'with reason provided' do
         it 'stores pending handoff context and halts the runtime' do
           reason = 'Customer needs specialized support'

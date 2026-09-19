@@ -382,6 +382,7 @@ class Captain::Assistant < ApplicationRecord
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
                  :auto_reply_on_last_incoming, :use_audio_transcriptions,
+                 :handoff_requires_explicit_consent, :handoff_consent_reason,
                  :context_access, :tool_access
 
   before_validation :initialize_context_access_config, on: :create
@@ -755,6 +756,14 @@ class Captain::Assistant < ApplicationRecord
 
   def handoff_message_mode_value
     message_mode_value('handoff_message_mode')
+  end
+
+  def handoff_requires_explicit_consent?
+    ActiveModel::Type::Boolean.new.cast(config['handoff_requires_explicit_consent'])
+  end
+
+  def handoff_consent_reason_value
+    config['handoff_consent_reason'].presence || 'Customer explicitly requested human assistance.'
   end
 
   def resolution_message_enabled?

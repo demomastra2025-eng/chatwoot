@@ -9,6 +9,7 @@ class Captain::Assistant::AgentRunnerService
   include Captain::Assistant::TracePayloadHelper
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
+  PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
@@ -259,6 +260,8 @@ class Captain::Assistant::AgentRunnerService
 
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
+    response.delete('handoff_authorized')
+    response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
@@ -322,7 +325,8 @@ class Captain::Assistant::AgentRunnerService
       'response' => PROVIDER_ERROR_RESPONSE,
       'reasoning' => "Error occurred: #{message}",
       'error_class' => error.class.name,
-      'error_message' => message
+      'error_message' => message,
+      PROVIDER_ERROR_AUTHORIZED_KEY => true
     }
   end
 
@@ -333,6 +337,7 @@ class Captain::Assistant::AgentRunnerService
       'error_class' => error.class.name,
       'error_message' => error.message
     }
+    response[PROVIDER_ERROR_AUTHORIZED_KEY] = true if error.is_a?(RubyLLM::Error)
     response['handoff_tool_called'] = true if handoff_tool_called
     response
   end
@@ -935,7 +940,7 @@ class Captain::Assistant::AgentRunnerService
     # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, tool_result, context_wrapper|
       track_completed_tool_usage(tool_name, tool_result, context_wrapper)
-      track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
+      track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
     end
 
     if ChatwootApp.otel_enabled?
@@ -1154,9 +1159,11 @@ class Captain::Assistant::AgentRunnerService
     []
   end
 
-  def track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
+  def track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
     return unless context_wrapper&.context
     return unless tool_name.to_s == handoff_tool_name
+    return if Captain::ToolResult.error?(Captain::ToolResult.normalize(tool_result))
+    return if context_wrapper.context[:pending_human_handoff].blank?
 
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
     @handoff_tool_called = true
@@ -1255,6 +1262,7 @@ class Captain::Assistant::AgentRunnerService
       'handoff_reason' => reason,
       'handoff_status_reason' => status_reason,
       'handoff_message' => message,
+      'handoff_authorized' => true,
       'agent_name' => agent_name
     }
     response['handoff_tool_called'] = true if handoff_tool_called

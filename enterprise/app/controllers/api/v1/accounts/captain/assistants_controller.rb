@@ -4,6 +4,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :feature_faq, :feature_memory, :feature_citation, :feature_web,
     :welcome_message, :handoff_message, :resolution_message,
     :handoff_message_enabled, :handoff_message_mode,
+    :handoff_requires_explicit_consent, :handoff_consent_reason,
     :resolution_message_enabled, :resolution_message_mode,
     :temperature,
     :auto_reply_on_last_incoming,
