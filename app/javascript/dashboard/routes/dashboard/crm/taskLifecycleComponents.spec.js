@@ -1311,6 +1311,27 @@ describe('page async drawer scope', () => {
     expect(state.ui.isTimelineLoading).toBe(false);
   });
 
+  it('shows a retryable history error and clears it after a successful retry', async () => {
+    const { state } = await mountEditor('page');
+    CrmTasksAPI.timeline.mockRejectedValueOnce(
+      new Error('task history unavailable')
+    );
+
+    await state.openEditDrawer(initialTask);
+
+    expect(state.timelineItems).toEqual([]);
+    expect(state.ui.timelineError).toBe('task history unavailable');
+    expect(state.ui.isTimelineLoading).toBe(false);
+
+    CrmTasksAPI.timeline.mockResolvedValueOnce(
+      response([{ id: 'restored-task-history' }])
+    );
+    await state.loadTimeline(initialTask.id);
+
+    expect(state.ui.timelineError).toBeNull();
+    expect(state.timelineItems).toEqual([{ id: 'restored-task-history' }]);
+  });
+
   it('invalidates history even when returning to the same account and task', async () => {
     const { state } = await mountEditor('page');
     const previous = deferred();

@@ -63,7 +63,7 @@ vi.mock('dashboard/api/companies', () => ({
   default: { get: vi.fn() },
 }));
 vi.mock('dashboard/api/contacts', () => ({
-  default: { get: vi.fn() },
+  default: { get: vi.fn(), getCommunicationThreads: vi.fn() },
 }));
 vi.mock('dashboard/api/conversations', () => ({
   default: { create: vi.fn(), get: vi.fn() },
@@ -102,6 +102,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
 
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import ConversationAPI from 'dashboard/api/conversations';
+import ContactAPI from 'dashboard/api/contacts';
 import { useAlert } from 'dashboard/composables';
 import CrmDealsPage from './pages/CrmDealsPage.vue';
 
@@ -161,6 +162,9 @@ beforeEach(() => {
   CrmDealsAPI.timeline.mockReset().mockResolvedValue(response([]));
   CrmDealsAPI.update.mockReset();
   ConversationAPI.create.mockReset();
+  ContactAPI.getCommunicationThreads
+    .mockReset()
+    .mockResolvedValue(response([{ id: 41, timestamp: 1 }]));
   useAlert.mockClear();
 });
 
@@ -352,6 +356,50 @@ it('keeps the newest timeline when same-deal requests finish in reverse', async 
 
   expect(state.timelineItems).toEqual([{ id: 'current-history' }]);
   expect(state.ui.isTimelineLoading).toBe(false);
+});
+
+it('shows a retryable timeline error instead of confirmed-empty history', async () => {
+  const { state } = await mountPage();
+  state.selectedDeal = deal(1);
+  state.drawerOpen = true;
+  CrmDealsAPI.timeline.mockRejectedValueOnce(new Error('timeline unavailable'));
+
+  await state.loadTimeline(1);
+
+  expect(state.timelineItems).toEqual([]);
+  expect(state.ui.timelineError).toBe('timeline unavailable');
+  expect(state.ui.isTimelineLoading).toBe(false);
+
+  CrmDealsAPI.timeline.mockResolvedValueOnce(
+    response([{ id: 'restored-history' }])
+  );
+  await state.loadTimeline(1);
+
+  expect(state.ui.timelineError).toBeNull();
+  expect(state.timelineItems).toEqual([{ id: 'restored-history' }]);
+});
+
+it('keeps a failed conversation-context lookup out of the empty placeholder', async () => {
+  const { state } = await mountPage();
+  ContactAPI.getCommunicationThreads.mockRejectedValueOnce(
+    new Error('context unavailable')
+  );
+
+  await state.loadDealConversationContext(9);
+
+  expect(state.dealConversationDraft.contextError).toBe(
+    'CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'
+  );
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe('');
+  expect(state.dealConversationDraft.contactableInboxes).toEqual([]);
+
+  ContactAPI.getCommunicationThreads.mockResolvedValueOnce(
+    response([{ id: 42, timestamp: 2 }])
+  );
+  await state.loadDealConversationContext(9);
+
+  expect(state.dealConversationDraft.contextError).toBeNull();
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(42);
 });
 
 it('stops conversation creation after the deal editor closes', async () => {

@@ -229,6 +229,7 @@ const ui = reactive({
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
+  timelineError: null,
 });
 let taskUiActionGeneration = 0;
 const taskLoadGeneration = ref(0);
@@ -978,6 +979,7 @@ const resetTimeline = () => {
   timelineLoadGeneration += 1;
   timelineItems.value = [];
   ui.isTimelineLoading = false;
+  ui.timelineError = null;
 };
 
 const resetTaskConflict = () => {
@@ -1027,12 +1029,16 @@ const loadTimeline = async taskId => {
     Number(selectedTask.value?.id) === Number(taskId);
   if (!isCurrent()) return;
   ui.isTimelineLoading = true;
+  ui.timelineError = null;
 
   try {
     const { data } = await CrmTasksAPI.timeline(taskId, { limit: 50 });
     if (isCurrent()) timelineItems.value = normalizePayload(data);
   } catch (error) {
-    if (isCurrent()) throw error;
+    if (isCurrent()) {
+      timelineItems.value = [];
+      ui.timelineError = formatErrorMessage(error);
+    }
   } finally {
     if (isCurrent()) ui.isTimelineLoading = false;
   }
@@ -3213,12 +3219,14 @@ watch(
         <CrmTimelineFeed
           v-if="selectedTask"
           :items="timelineItems"
+          :error="ui.timelineError"
           :is-loading="ui.isTimelineLoading"
           :is-saving-comment="ui.isSavingComment"
           :can-manage-comments="canManageTasks"
           :empty-message="$t('CRM.TIMELINE.EMPTY')"
           @create-comment="saveComment"
           @delete-comment="deleteComment"
+          @retry="loadTimeline(selectedTask.id)"
         />
       </div>
 

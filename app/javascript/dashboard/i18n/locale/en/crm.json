@@ -68,6 +68,8 @@
       "CLOSING_REASONS": "Closing reason: {reasons}",
       "TRANSITION_REASON": "Transition reason: {reason}",
       "LOADING": "Loading history...",
+      "LOAD_ERROR": "Unable to load history",
+      "LOAD_ERROR_DESCRIPTION": "Try again to load the latest events and comments.",
       "POST_COMMENT": "Post comment",
       "TITLE": "History",
       "UNKNOWN_CONTACT": "Unknown contact",

@@ -67,6 +67,8 @@
       "CLOSING_REASONS": "Жабу себебі: {reasons}",
       "TRANSITION_REASON": "Ауыстыру себебі: {reason}",
       "LOADING": "Тарих жүктелуде...",
+      "LOAD_ERROR": "Тарихты жүктеу мүмкін болмады",
+      "LOAD_ERROR_DESCRIPTION": "Соңғы оқиғалар мен пікірлерді жүктеу үшін қайта көріңіз.",
       "POST_COMMENT": "Пікірді жариялау",
       "TITLE": "Тарих",
       "UNKNOWN_CONTACT": "Белгісіз контакт",

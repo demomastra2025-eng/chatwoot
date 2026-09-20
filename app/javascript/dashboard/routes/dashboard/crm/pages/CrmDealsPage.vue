@@ -203,6 +203,7 @@ const showLinkedConversationPanel = ref(false);
 const dealConversationDraft = reactive({
   contactId: '',
   contactableInboxes: [],
+  contextError: null,
   communicationThreadDisplayId: '',
   isCreating: false,
   isLoadingInboxes: false,
@@ -279,6 +280,7 @@ const ui = reactive({
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
+  timelineError: null,
 });
 let dealsRequestGeneration = 0;
 let dealsPageInitializationGeneration = 0;
@@ -1639,6 +1641,7 @@ const ensureSelectedLookups = async deal => {
 const resetDealConversationDraft = () => {
   dealConversationDraft.contactId = primaryDealContactId.value || '';
   dealConversationDraft.contactableInboxes = [];
+  dealConversationDraft.contextError = null;
   dealConversationDraft.communicationThreadDisplayId = '';
   dealConversationDraft.isCreating = false;
   dealConversationDraft.isLoadingInboxes = false;
@@ -1664,6 +1667,7 @@ const setDealConversationContact = contactId => {
       ? normalizedContactId
       : '';
   dealConversationDraft.contactableInboxes = [];
+  dealConversationDraft.contextError = null;
   dealConversationDraft.communicationThreadDisplayId = '';
   dealConversationDraft.isLoadingCommunicationThread = false;
   dealConversationDraft.isLoadingInboxes = false;
@@ -1675,6 +1679,7 @@ const loadDealContactCommunicationThreads = async (contactId, requestId) => {
   const cachedThreads = communicationThreadsByContactId.value[contactId];
   if (cachedThreads) {
     if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.contextError = null;
       dealConversationDraft.communicationThreadDisplayId =
         cachedThreads[0]?.id || '';
     }
@@ -1698,6 +1703,7 @@ const loadDealContactCommunicationThreads = async (contactId, requestId) => {
       };
     }
     if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.contextError = null;
       dealConversationDraft.communicationThreadDisplayId =
         communicationThreads[0]?.id || '';
     }
@@ -1705,9 +1711,11 @@ const loadDealContactCommunicationThreads = async (contactId, requestId) => {
   } catch {
     if (isCurrentDealConversationRequest(contactId, requestId)) {
       dealConversationDraft.communicationThreadDisplayId = '';
-      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'));
+      dealConversationDraft.contextError = t(
+        'CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'
+      );
     }
-    return [];
+    return null;
   } finally {
     if (isCurrentDealConversationRequest(contactId, requestId)) {
       dealConversationDraft.isLoadingCommunicationThread = false;
@@ -1724,6 +1732,7 @@ const loadDealConversationInboxes = async (contactId, requestId) => {
 
   const cachedInboxes = contactableInboxesByContactId.value[contactId];
   if (cachedInboxes) {
+    dealConversationDraft.contextError = null;
     dealConversationDraft.contactableInboxes = cachedInboxes;
     return;
   }
@@ -1739,12 +1748,15 @@ const loadDealConversationInboxes = async (contactId, requestId) => {
       [contactId]: contactableInboxes,
     };
     if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.contextError = null;
       dealConversationDraft.contactableInboxes = contactableInboxes;
     }
   } catch {
     if (isCurrentDealConversationRequest(contactId, requestId)) {
       dealConversationDraft.contactableInboxes = [];
-      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
+      dealConversationDraft.contextError = t(
+        'CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'
+      );
     }
   } finally {
     if (isCurrentDealConversationRequest(contactId, requestId)) {
@@ -1763,6 +1775,7 @@ const loadDealConversationContextForRequest = async (
   );
 
   if (
+    communicationThreads &&
     !communicationThreads.length &&
     isCurrentDealConversationRequest(activeContactId, requestId)
   ) {
@@ -1878,11 +1891,16 @@ const loadTimeline = async dealId => {
     timelineGeneration === dealTimelineGeneration &&
     Number(selectedDeal.value?.id) === Number(dealId);
   ui.isTimelineLoading = true;
+  ui.timelineError = null;
 
   try {
     const { data } = await CrmDealsAPI.timeline(dealId, { limit: 50 });
     if (!isCurrentEditor()) return;
     timelineItems.value = normalizePayload(data);
+  } catch (error) {
+    if (!isCurrentEditor()) return;
+    timelineItems.value = [];
+    ui.timelineError = formatErrorMessage(error);
   } finally {
     if (isCurrentEditor()) ui.isTimelineLoading = false;
   }
@@ -1893,6 +1911,7 @@ const openCreateDrawer = async prefill => {
   const editorGeneration = dealEditorGeneration;
   ui.isSaving = false;
   ui.isTimelineLoading = false;
+  ui.timelineError = null;
   closeDealTitleEditor();
   selectedDeal.value = null;
   dealEditSnapshot.value = null;
@@ -1925,6 +1944,7 @@ const openEditDrawer = async deal => {
   const editorGeneration = dealEditorGeneration;
   ui.isSaving = false;
   ui.isTimelineLoading = false;
+  ui.timelineError = null;
   closeDealTitleEditor();
   resetDealConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
@@ -1957,6 +1977,7 @@ const closeDrawer = () => {
   dealEditorGeneration += 1;
   ui.isSaving = false;
   ui.isTimelineLoading = false;
+  ui.timelineError = null;
   closeDealTitleEditor();
   resetDealConflict();
   pendingStageEntry.value = null;
@@ -4419,6 +4440,7 @@ watch(
                   <div v-show="dealActivityTab === 'history'" role="tabpanel">
                     <CrmTimelineFeed
                       :items="timelineItems"
+                      :error="ui.timelineError"
                       :is-loading="ui.isTimelineLoading"
                       :is-saving-comment="ui.isSavingComment"
                       :can-manage-comments="canManageDeals"
@@ -4427,6 +4449,7 @@ watch(
                       :show-header="false"
                       @create-comment="saveComment"
                       @delete-comment="deleteComment"
+                      @retry="loadTimeline(selectedDeal.id)"
                     />
                   </div>
 
@@ -4463,6 +4486,7 @@ watch(
             :conversation-display-id="linkedConversationDisplayId"
             :contacts="dealConversationContacts"
             :contactable-inboxes="dealConversationDraft.contactableInboxes"
+            :context-load-error="dealConversationDraft.contextError"
             :selected-contact-id="dealConversationDraft.contactId"
             :can-manage="canManageDeals"
             :is-creating-conversation="dealConversationDraft.isCreating"
@@ -4474,6 +4498,9 @@ watch(
             @add-contact="openCreateNewContactDialog"
             @close="closeDrawer"
             @create-conversation="createDealConversation"
+            @retry-context="
+              loadDealConversationContext(dealConversationDraft.contactId)
+            "
             @select-contact="loadDealConversationContext"
           />
         </div>
