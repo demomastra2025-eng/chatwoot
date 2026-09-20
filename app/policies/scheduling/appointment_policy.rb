@@ -29,16 +29,24 @@ class Scheduling::AppointmentPolicy < ApplicationPolicy
       return relation if access_scope == 'all'
       return relation.none unless %w[own team].include?(access_scope)
 
-      scoped = relation.left_joins(:contact, :resource)
-      own_sql = 'contacts.owner_id = :user_id OR scheduling_resources.user_id = :user_id'
-      return scoped.where(own_sql, user_id: user.id).distinct if access_scope == 'own'
+      contact_ids = account.contacts.where(owner_id: user.id).select(:id)
+      resource_ids = account.scheduling_resources.where(user_id: user.id).select(:id)
+      own_scope = relation.where(contact_id: contact_ids).or(relation.where(resource_id: resource_ids))
+      return own_scope if access_scope == 'own'
 
-      team_ids = TeamMember.joins(:team).where(user_id: user.id, teams: { account_id: account.id }).pluck(:team_id)
-      scoped.where(
-        "(#{own_sql}) OR scheduling_appointments.team_id IN (:team_ids)",
-        user_id: user.id,
-        team_ids: team_ids
-      ).distinct
+      team_ids = TeamMember.joins(:team)
+                           .where(user_id: user.id, teams: { account_id: account.id })
+                           .distinct
+                           .pluck(:team_id)
+                           .sort
+      own_scope.or(relation.where(team_id: team_ids))
+    end
+
+    def self.intersection(user_context, relation, capabilities:)
+      Array(capabilities).reduce(relation) do |effective_scope, capability|
+        capability_scope = new(user_context, relation, capability: capability.to_s).resolve
+        effective_scope.where(id: capability_scope.select(:id))
+      end
     end
 
     private

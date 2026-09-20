@@ -60,6 +60,75 @@ RSpec.describe Scheduling::AppointmentPolicy, type: :policy do
     expect(policy.manage_finance?).to be(false)
   end
 
+  it 'intersects view and view_reports scopes for reporting' do
+    bootstrap_roles!
+    role = account_user.reload.access_role
+    role.grants.find_by!(resource: 'appointments', capability: 'view').update!(access_scope: 'all')
+    role.grants.create!(account: account, resource: 'appointments', capability: 'view_reports', access_scope: 'own')
+
+    report_scope = described_class::Scope.intersection(
+      user_context,
+      account.scheduling_appointments,
+      capabilities: %w[view view_reports]
+    )
+
+    expect(report_scope).to contain_exactly(contact_owned_appointment, specialist_owned_appointment)
+  end
+
+  it 'fails report intersection closed when either capability is none' do
+    bootstrap_roles!
+    role = account_user.reload.access_role
+    role.grants.find_by!(resource: 'appointments', capability: 'view').update!(access_scope: 'none')
+    role.grants.create!(account: account, resource: 'appointments', capability: 'view_reports', access_scope: 'all')
+
+    report_scope = described_class::Scope.intersection(
+      user_context,
+      account.scheduling_appointments,
+      capabilities: %w[view view_reports]
+    )
+
+    expect(report_scope).to be_empty
+  end
+
+  it 'account-qualifies Contact and Resource ownership for own and team scopes' do
+    foreign_account = create(:account)
+    create(:account_user, account: foreign_account, user: agent, role: :agent)
+    foreign_contact = create(:contact, account: foreign_account, owner: agent)
+    foreign_resource = create(:scheduling_resource, account: foreign_account, user: agent)
+    corrupt_contact = create(:scheduling_appointment, account: account)
+    corrupt_resource = create(:scheduling_appointment, account: account)
+    corrupt_contact.update_columns(contact_id: foreign_contact.id) # rubocop:disable Rails/SkipsModelValidations
+    corrupt_resource.update_columns(resource_id: foreign_resource.id) # rubocop:disable Rails/SkipsModelValidations
+    bootstrap_roles!
+    grant = account_user.reload.access_role.grants.find_by!(resource: 'appointments', capability: 'view')
+
+    %w[own team].each do |access_scope|
+      grant.update!(access_scope: access_scope)
+      scope = described_class::Scope.new(
+        user_context,
+        account.scheduling_appointments.where(id: [corrupt_contact.id, corrupt_resource.id]),
+        capability: 'view'
+      ).resolve
+      expect(scope).to be_empty
+    end
+  end
+
+  it 'normalizes Team ids in deterministic order before building a team scope' do
+    first_team = create(:team, account: account)
+    second_team = create(:team, account: account)
+    create(:team_member, team: second_team, user: agent)
+    create(:team_member, team: first_team, user: agent)
+
+    sql = described_class::Scope.apply(
+      account.scheduling_appointments,
+      access_scope: 'team',
+      user: agent,
+      account: account
+    ).to_sql
+
+    expect(sql).to include("team_id\" IN (#{first_team.id}, #{second_team.id})")
+  end
+
   private
 
   def resolved_scope

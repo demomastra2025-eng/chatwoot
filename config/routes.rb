@@ -199,6 +199,12 @@ Rails.application.routes.draw do
 
           namespace :scheduling do
             resource :calendar, only: [:show], controller: 'calendar'
+            resources :reports, only: [] do
+              collection do
+                get :meetings_by_specialist
+                get :meetings_by_specialist_details
+              end
+            end
             resources :resources, only: [:index, :show, :create, :update, :destroy] do
               resource :schedule, only: [:show, :update], controller: 'resource_schedule'
               resource :work_rules, only: [:show, :update], controller: 'resource_work_rules'
