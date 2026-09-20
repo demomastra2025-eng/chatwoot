@@ -50,6 +50,53 @@ RSpec.describe Crm::Reports::DealsWithoutNextActionQuery do
     expect(query.drill_down_rows.first.keys).not_to include(:task_id, :task)
   end
 
+  it 'uses one materialized SQL snapshot for detail rows and their total count' do
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    sql = []
+    subscriber = ActiveSupport::Notifications.subscribe('sql.active_record') do |event|
+      sql << event.payload[:sql] if event.payload[:sql].include?('matching_deals AS MATERIALIZED')
+    end
+
+    query = build_query
+    expect(query.pagination_meta[:total_count]).to eq(1)
+    expect(query.drill_down_rows.size).to eq(1)
+    expect(sql.one?).to be(true)
+
+    empty_page = build_query(page: 2, per_page: 1)
+    expect(empty_page.drill_down_rows).to be_empty
+    expect(empty_page.pagination_meta[:total_count]).to eq(1)
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'keeps the detail snapshot narrow, tenant-scoped, and anchored before execution' do
+    captured_at = Time.utc(2026, 5, 1, 10)
+    safe_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    corrupt_catalog_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    foreign_account = create(:account)
+    foreign_owner = create(:user, account: foreign_account)
+    foreign_team = create(:team, account: foreign_account)
+    foreign_pipeline = create(:crm_pipeline, account: foreign_account)
+    foreign_stage = create(:crm_stage, account: foreign_account, pipeline: foreign_pipeline)
+    safe_deal.update_columns(owner_id: foreign_owner.id, team_id: foreign_team.id) # rubocop:disable Rails/SkipsModelValidations
+    corrupt_catalog_deal.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      pipeline_id: foreign_pipeline.id, stage_id: foreign_stage.id
+    )
+    query = travel_to(captured_at) do
+      described_class.new(account: account, deals_scope: account.crm_deals, tasks_scope: account.crm_tasks)
+    end
+    sql = query.send(:details_sql)
+
+    expect(sql).not_to include('crm_deals.*', 'description', 'custom_attributes', 'closing_reasons')
+    expect(sql.scan("account_id = #{account.id}").size).to be >= 4
+    expect(query.drill_down_rows).to contain_exactly(include(deal_id: safe_deal.id, owner: nil, team: nil))
+    expect(query.pagination_meta[:total_count]).to eq(1)
+    expect(query.aggregate_rows).to eq([{ no_action_count: 1 }])
+    travel_to(captured_at + 1.hour) do
+      expect(query.meta[:generated_at]).to eq('2026-05-01T10:00:00.000000Z')
+    end
+  end
+
   it 'excludes archived and closed deals while ignoring archived and terminal tasks' do
     visible = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
     archived = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, archived_at: generated_at)
@@ -78,5 +125,7 @@ RSpec.describe Crm::Reports::DealsWithoutNextActionQuery do
       .to raise_error(Crm::Error, 'pipeline_id is invalid')
     expect { build_query(per_page: 101).pagination_meta }
       .to raise_error(Crm::Error, 'per_page must not exceed 100')
+    expect { build_query(page: 10_001).pagination_meta }
+      .to raise_error(Crm::Error, 'page must not exceed 10000')
   end
 end
