@@ -630,25 +630,30 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
-  it 'blocks the third scheduling service search before tool execution' do
+  it 'blocks scheduling service searches beyond their dedicated budget before tool execution' do
     allow(Llm::EventBus).to receive(:publish)
     search_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'account__search_scheduling_services')
     search_wrapper = described_class.new(search_tool, context_wrapper)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
 
-    expect(search_wrapper.call(result: 'first search')).to eq('first search')
-    expect(search_wrapper.call(result: 'second search')).to eq('second search')
-    blocked = search_wrapper.call(result: 'third search')
+    allowed.times do |index|
+      expect(search_wrapper.call(result: "search #{index}")).to eq("search #{index}")
+    end
+    blocked = search_wrapper.call(result: 'over budget')
 
     expect(blocked).to be_a(RubyLLM::Tool::Halt)
     expect_tool_error(blocked, 'Scheduling service search budget exceeded. Use the available service results.', retryable: false)
-    expect(search_tool.calls).to eq(2)
+    expect(search_tool.calls).to eq(allowed)
     expect(events.last[2]).to include(
       success: false,
-      data: include(code: 'tool_budget_exceeded', allowed: 2, attempted: 3),
+      data: include(code: 'tool_budget_exceeded', allowed: allowed, attempted: allowed + 1),
       audit: include(failure_reason: 'tool_budget_exceeded')
     )
     expect(Llm::EventBus).to have_received(:publish)
-      .with('captain.scheduling_tool_budget_blocked', hash_including(tool_name: 'search_scheduling_services', allowed: 2, attempted: 3))
+      .with(
+        'captain.scheduling_tool_budget_blocked',
+        hash_including(tool_name: 'search_scheduling_services', allowed: allowed, attempted: allowed + 1)
+      )
   end
 
   it 'shares the scheduling service budget across canonical and account-prefixed names' do
@@ -656,15 +661,17 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     prefixed_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'account__search_scheduling_services')
     canonical_wrapper = described_class.new(canonical_tool, context_wrapper)
     prefixed_wrapper = described_class.new(prefixed_tool, context_wrapper)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
 
-    expect(canonical_wrapper.call(result: 'first search')).to eq('first search')
-    expect(prefixed_wrapper.call(result: 'second search')).to eq('second search')
-    blocked = canonical_wrapper.call(result: 'third search')
+    allowed.times do |index|
+      wrapper = index.even? ? canonical_wrapper : prefixed_wrapper
+      expect(wrapper.call(result: "search #{index}")).to eq("search #{index}")
+    end
+    blocked = canonical_wrapper.call(result: 'over budget')
 
     expect(blocked).to be_a(RubyLLM::Tool::Halt)
-    expect(canonical_tool.calls).to eq(1)
-    expect(prefixed_tool.calls).to eq(1)
-    expect(context_wrapper.context.dig(:captain_v2_tool_request_counts, :by_tool, 'search_scheduling_services')).to eq(3)
+    expect(canonical_tool.calls + prefixed_tool.calls).to eq(allowed)
+    expect(context_wrapper.context.dig(:captain_v2_tool_request_counts, :by_tool, 'search_scheduling_services')).to eq(allowed + 1)
   end
 
   it 'reports the global limit when the scheduling tool has not exceeded its own budget' do
@@ -691,12 +698,13 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
     search_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'search_scheduling_services')
     search_wrapper = described_class.new(search_tool, shadow_context)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
 
-    3.times { |index| expect(search_wrapper.call(result: "search #{index}")).to eq("search #{index}") }
+    (allowed + 1).times { |index| expect(search_wrapper.call(result: "search #{index}")).to eq("search #{index}") }
 
-    expect(search_tool.calls).to eq(3)
+    expect(search_tool.calls).to eq(allowed + 1)
     expect(Llm::EventBus).to have_received(:publish)
-      .with('captain.scheduling_tool_budget_blocked', hash_including(allowed: 2, attempted: 3, enforced: false))
+      .with('captain.scheduling_tool_budget_blocked', hash_including(allowed: allowed, attempted: allowed + 1, enforced: false))
   end
 
   it 'halts the whole run after the global request budget across different tools' do

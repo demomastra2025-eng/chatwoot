@@ -1,0 +1,1713 @@
+{
+  "ignored_warnings": [
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "02fcd8cc0c1a0a47a679933780087af895519999717028b93c1023ee6671c719",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/contacts/phone_identity_lock.rb",
+      "line": 12,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"#{\"cfm\"}:#{account_id}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Contacts::PhoneIdentityLock",
+        "method": "self.acquire!"
+      },
+      "user_input": "Digest::SHA256.digest(\"#{\"cfm\"}:#{account_id}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "0330a6a1bcec3f48283c4fb8cfaa62c59ca908dfcf1e658238f630c221cc067a",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 353,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"LOWER(#{json_text_expression(scope, key)}) LIKE ?\", \"%#{value.to_s.downcase}%\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_text_filter_to_relation"
+      },
+      "user_input": "json_text_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Format Validation",
+      "warning_code": 30,
+      "fingerprint": "054b0d91defbe47593f75697373cf41ad751fba2491d2ffa7de570ac16add5a5",
+      "check_name": "ValidationRegex",
+      "message": "Insufficient validation for `phone_number` using `/\\+[1-9]\\d{1,14}\\z/`. Use `\\A` and `\\z` as anchors",
+      "file": "app/models/contact.rb",
+      "line": 72,
+      "link": "https://brakemanscanner.org/docs/warning_types/format_validation/",
+      "code": null,
+      "render_path": null,
+      "location": {
+        "type": "model",
+        "model": "Contact"
+      },
+      "user_input": null,
+      "confidence": "High",
+      "cwe_id": [
+        777
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "08c4d5f8b16f49d05dda6660c154c237c866f652bccc845655483d901ecf1109",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/integrations/webhooks_controller.rb",
+      "line": 13,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Integrations::WebhooksController",
+        "method": "permitted_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "0a3eab0ca3124528f59c67c3f1c1d40642a6631465ea55e9633efd00d6e5fadc",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "enterprise/app/services/voice/outbound_call_builder.rb",
+      "line": 58,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_contact_phone}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Voice::OutboundCallBuilder",
+        "method": "lock_call_identity!"
+      },
+      "user_input": "Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_contact_phone}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Dangerous Send",
+      "warning_code": 23,
+      "fingerprint": "0a50e6b71fa05f9f5189685275dd21c654f5407ad175d455a54387a3b09b0dcd",
+      "check_name": "Send",
+      "message": "User controlled method execution",
+      "file": "app/builders/v2/reports/outgoing_messages_count_builder.rb",
+      "line": 11,
+      "link": "https://brakemanscanner.org/docs/warning_types/dangerous_send/",
+      "code": "send(\"build_by_#{params[:group_by]}\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V2::Reports::OutgoingMessagesCountBuilder",
+        "method": "build"
+      },
+      "user_input": "params[:group_by]",
+      "confidence": "High",
+      "cwe_id": [
+        77
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "0b3a0f24d88165520636f023ae896de5e0a6b14fc3dbabe938185eb7d0b02db1",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 364,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_numeric_expression(scope, key)} = ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_numeric_filter_to_relation"
+      },
+      "user_input": "safe_numeric_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "100cacacacfde599fce7ff4d0f54548eef0c975aefab161be511d3e67ad141bb",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/profiles_controller.rb",
+      "line": 62,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:profile).permit(:account_id, :auto_offline)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::ProfilesController",
+        "method": "auto_offline_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "122a2e7746e1ec0bf13747119139653e92a7565377442badb7e00d2b2dd43ffb",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/platform/api/v1/agent_bots_controller.rb",
+      "line": 43,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:name, :description, :account_id, :outgoing_url, :avatar, :avatar_url)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Platform::Api::V1::AgentBotsController",
+        "method": "agent_bot_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "1251ee63b8215d5bd934908ba5cde866ccface1d32e21e06d45d28be80b5e593",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 396,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_datetime_expression(scope, key)} > ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_datetime_filter_to_relation"
+      },
+      "user_input": "safe_datetime_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "165a020fe3abe04e326fc44af585a168c6e47dd75c8c7b381c00e5adafc107a6",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 379,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_date_expression(scope, key)} = ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_date_filter_to_relation"
+      },
+      "user_input": "safe_date_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "1c1dff22216006f2bf6a4fd3a50f52091e9f9d22e2ebd5e201d10530c5402d8c",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/conversations/directional_message_timestamp_preloader.rb",
+      "line": 54,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"messages.conversation_id, #{directional_side_sql}, messages.created_at DESC, messages.id DESC\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Conversations::DirectionalMessageTimestampPreloader",
+        "method": "latest_directional_messages"
+      },
+      "user_input": "directional_side_sql",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "1c25e5c0744b72159b0d730fc51a03d485cf1b0571771880ad15dd98b06eb639",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/telephony/terminal_native_sip_handoff_service.rb",
+      "line": 197,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"#{call_session.account_id}:#{call_session.inbox_id}:#{call_session.number_binding_id}:#{call_session.provider}:#{normalized_phone(call_session.from_number)}:#{normalized_phone(call_session.to_number)}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Telephony::TerminalNativeSipHandoffService",
+        "method": "with_handoff_lock"
+      },
+      "user_input": "Digest::SHA256.digest(\"#{call_session.account_id}:#{call_session.inbox_id}:#{call_session.number_binding_id}:#{call_session.provider}:#{normalized_phone(call_session.from_number)}:#{normalized_phone(call_session.to_number)}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "20adfd0ea662a1eedcdf34f90e29d3ec3016fefa88c97aa86b5e06c413cca87e",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 366,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_numeric_expression(scope, key)} > ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_numeric_filter_to_relation"
+      },
+      "user_input": "safe_numeric_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "21451d5b27aa8777fe99f1732649b0ab4f6471955ff16384cc72cf1bbea3abc6",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/lead_forms/submissions_controller.rb",
+      "line": 50,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.except(:controller, :action, :lead_form_token).permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::LeadForms::SubmissionsController",
+        "method": "submission_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "25266d02d53bb7a505aca34fcb56d16ed120639ccdecde42ed5ba553294a88ae",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "enterprise/app/controllers/api/v1/accounts/captain/assistant_responses_controller.rb",
+      "line": 90,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:id, :assistant_id, :page, :document_id, :account_id, :status, :search)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Captain::AssistantResponsesController",
+        "method": "permitted_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "25e9d4ab57609df0910b4a3c60a58db7ddca56fd9b5de2b2cdf96e20bde82515",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 302,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"EXISTS (SELECT 1 FROM jsonb_array_elements_text(COALESCE(#{json_value_expression(scope, key)}, '[]'::jsonb)) AS elem(value) WHERE elem.value IN (?))\", values)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_discrete_filter_to_relation"
+      },
+      "user_input": "json_value_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "265cefee3786501bbd46922c7d647d01289c390bbb2bf9661787bec9c638eff6",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "enterprise/app/controllers/api/v1/accounts/captain/mcp_servers_controller.rb",
+      "line": 150,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:mcp_server][:server_config].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Captain::McpServersController",
+        "method": "mcp_server_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "275ce51012e6ffcdb337177624d0af58ae97c765f31b9617c202d945190777ed",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/profiles_controller.rb",
+      "line": 72,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:profile).permit(:email, :name, :display_name, :avatar, :message_signature, :account_id, :ui_settings => ({}))",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::ProfilesController",
+        "method": "profile_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "292bb660a8fc66593f448528444dc70598dde112358fc3a5cbc2a5e7d24bad39",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "enterprise/app/models/company.rb",
+      "line": 54,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "select(\"#{table_name}.*\", \"#{effective_contacts_count_sql} AS effective_contacts_count\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Company",
+        "method": "with_effective_contacts_count"
+      },
+      "user_input": "effective_contacts_count_sql",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "31cd89f0af2f54aed328de79d7658691d3434075d9192880f0c7d5ac06f58b83",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/accounts/contacts_controller.rb",
+      "line": 60,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::ContactsController",
+        "method": "export"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "329f5957abd449590ef39e3fe66fddb36a7289bebc86b31db23d6ca955e44ac3",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 351,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"LOWER(#{json_text_expression(scope, key)}) = LOWER(?)\", value.to_s)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_text_filter_to_relation"
+      },
+      "user_input": "json_text_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "33e17ba2d89d0fa2f6f71dd010b834d29dd23119cdf7023353761c29a155f869",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "enterprise/app/services/voice/inbound_call_builder.rb",
+      "line": 74,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_from_number}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Voice::InboundCallBuilder",
+        "method": "lock_call_identity!"
+      },
+      "user_input": "Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_from_number}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "3685d04d66b1109db5ce0987aae4f7035ed7116c241985a532665229f5521b68",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/telephony/events_ingestion_service.rb",
+      "line": 1506,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_call_phone(phone_number)}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Telephony::EventsIngestionService",
+        "method": "lock_call_contact_identity!"
+      },
+      "user_input": "Digest::SHA256.digest(\"voice-contact:#{account.id}:#{normalized_call_phone(phone_number)}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "40cd8d43bf8b398bc6547922f514ced4bbd68a6a7146a5a2b17ac42afbe5cb6a",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/finders/communication_thread_finder.rb",
+      "line": 60,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "relation.joins(\"LEFT JOIN LATERAL (#{last_message_activity_subquery_sql(conversation_scope)}) sort_thread_messages ON TRUE\\n\".squish)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "CommunicationThreadFinder",
+        "method": "self.with_last_message_activity_sort"
+      },
+      "user_input": "last_message_activity_subquery_sql(conversation_scope)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Remote Code Execution",
+      "warning_code": 24,
+      "fingerprint": "41f61f511c2ab0265cdbe9a5d980d21911e0aa3e780912632b8cb440fc1225fb",
+      "check_name": "UnsafeReflection",
+      "message": "Unsafe reflection method `safe_constantize` called on parameter value",
+      "file": "app/controllers/api/v1/accounts/touch_plans_controller.rb",
+      "line": 82,
+      "link": "https://brakemanscanner.org/docs/warning_types/remote_code_execution/",
+      "code": "params.require(:remindable_type).to_s.safe_constantize",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::TouchPlansController",
+        "method": "load_remindable!"
+      },
+      "user_input": "params.require(:remindable_type).to_s",
+      "confidence": "High",
+      "cwe_id": [
+        470
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "458dcbec591afe9b9bc540ceff2beca62a55f142f9c7fa5bdcd71e4b54970554",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/communication_threads/unread_count_repair_service.rb",
+      "line": 73,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"communication-thread:#{account.id}:#{contact_id}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "CommunicationThreads::UnreadCountRepairService",
+        "method": "lock_contact_thread!"
+      },
+      "user_input": "Digest::SHA256.digest(\"communication-thread:#{account.id}:#{contact_id}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "5179a3bf976a522cf9b79f5606312947e18b84d5e3b360f54d0be41475411461",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "enterprise/app/controllers/api/v1/accounts/captain/documents_controller.rb",
+      "line": 152,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:assistant_id, :page, :id, :account_id)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Captain::DocumentsController",
+        "method": "permitted_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "54412cb49e116bc1c5c252ef3d4cc0c3333e7ed4f1b894b6f1441102a35166fb",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/conversations/directional_message_timestamp_preloader.rb",
+      "line": 51,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Message.where(:account_id => account.id, :conversation_id => conversation_ids, :private => false, :message_type => (MESSAGE_TYPES)).select(\"DISTINCT ON (messages.conversation_id, #{directional_side_sql}) messages.conversation_id, messages.created_at, #{directional_side_sql} AS direction_side\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Conversations::DirectionalMessageTimestampPreloader",
+        "method": "latest_directional_messages"
+      },
+      "user_input": "directional_side_sql",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "56cb812afedebed977625f95d4692eb12c4a51a8bacdb88ae3406861f0065246",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/accounts/conversations_controller.rb",
+      "line": 84,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::ConversationsController",
+        "method": "filter"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "5a6c26ac9f4ab45c43197a325cbdbf12eb5e1ef48dd1ee00ce66731cc9815a31",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 381,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_date_expression(scope, key)} > ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_date_filter_to_relation"
+      },
+      "user_input": "safe_date_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "5e29170dd31c62cec7bc0bb08acba4b3603bcdaaab303c753de73daf9deb21ce",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/accounts/agents_controller.rb",
+      "line": 83,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:agent).permit(:email, :name, :role, :availability, :auto_offline)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::AgentsController",
+        "method": "new_agent_params"
+      },
+      "user_input": ":role",
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "HTTP Verb Confusion",
+      "warning_code": 118,
+      "fingerprint": "66e1f9b4a5ed5a8f04fb147d2431cee97a9702a2e47f554b981abafc3371aeb2",
+      "check_name": "VerbConfusion",
+      "message": "Potential HTTP verb confusion. `HEAD` is routed like `GET` but `request.get?` will return `false`",
+      "file": "enterprise/app/controllers/api/v1/accounts/mcp_controller.rb",
+      "line": 18,
+      "link": "https://brakemanscanner.org/docs/warning_types/http_verb_confusion/",
+      "code": "return render_endpoint_metadata if request.get?",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::McpController",
+        "method": "handle"
+      },
+      "user_input": "request.get?",
+      "confidence": "Weak",
+      "cwe_id": [
+        352
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "68c0a1bc3db2bf5fa8f9d2505b9b4464edd9c59bf1e3a286777c9545195b9bad",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/scheduling/appointment_dialog_count_service.rb",
+      "line": 69,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "dialog_scope.except(:select, :order, :limit, :offset).reselect(\"#{table_name}.id\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Scheduling::AppointmentDialogCountService",
+        "method": "status_count_sql"
+      },
+      "user_input": "table_name",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "6ea7fb131de013b9c3d27428f3844c3241823a3108affc126a38a5247a25e71c",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/reports/funnels_service.rb",
+      "line": 211,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"DATE_TRUNC('#{group_by}', #{column_sql})::date\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::Reports::FunnelsService",
+        "method": "period_sql"
+      },
+      "user_input": "group_by",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "7213584780b2f5f6fbe011349f3f081b496ea758bc6738b961183622dba37625",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/models/reminder.rb",
+      "line": 1114,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "self.class.connection.execute(\"SELECT pg_advisory_xact_lock(#{(Digest::SHA256.hexdigest(\"reminder-open-duplicate:#{account_id}:#{fingerprint}\").first(16).to_i(16) % ((2 ** 63) - 1))})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Reminder",
+        "method": "with_open_duplicate_lock"
+      },
+      "user_input": "(Digest::SHA256.hexdigest(\"reminder-open-duplicate:#{account_id}:#{fingerprint}\").first(16).to_i(16) % ((2 ** 63) - 1))",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "76f60a60eff990cb8e71c591b16d2c91f41e7c4d22e13af3973a619e4496adce",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/reports/manager_effectiveness_service.rb",
+      "line": 264,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"COALESCE(SUM(CASE WHEN crm_stages.outcome = #{quoted(outcome)} AND crm_deals.currency = #{quoted(currency)} THEN COALESCE(crm_deals.amount_minor, 0) ELSE 0 END), 0)\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::Reports::ManagerEffectivenessService",
+        "method": "outcome_currency_amount_sum_sql"
+      },
+      "user_input": "quoted(outcome)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "77672758c60b3acc1d1bffa59307e169399d5db91390e9e97df494b58f529eeb",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/telephony/ai_voice/assistant_assignment_lock.rb",
+      "line": 9,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "connection.execute(\"SELECT pg_advisory_xact_lock(#{lock_id_for(inbox_id)})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Telephony::AiVoice::AssistantAssignmentLock",
+        "method": "self.acquire!"
+      },
+      "user_input": "lock_id_for(inbox_id)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "7c3831be71108413f609c7387f228db1efb2b6a5649e180f4d7524a0409e7060",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "enterprise/app/controllers/api/v1/accounts/captain/custom_tools_controller.rb",
+      "line": 117,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:test_payload].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Captain::CustomToolsController",
+        "method": "test_payload_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "7cb5295d627359537a6b90d75457dd14130d6b76089e55455a1a7c09a3128cb0",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/search_service.rb",
+      "line": 225,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "query.where(\"#{column_name} >= ?\", cap_since_time(params[:since])).where(\"#{column_name} <= ?\", cap_until_time(params[:until]))",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "SearchService",
+        "method": "apply_time_filter"
+      },
+      "user_input": "column_name",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "7cb53c399b49a8286ca87dd262392815239bb86d9bd9ff4c8f3d9cb2aa9579af",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 368,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_numeric_expression(scope, key)} < ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_numeric_filter_to_relation"
+      },
+      "user_input": "safe_numeric_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "850ba0a130e707b296b1e1ac3073cb341d5b739e7dded572e31b0662149de69a",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/webhooks/meta_lead_forms_controller.rb",
+      "line": 15,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Webhooks::MetaLeadFormsController",
+        "method": "events"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "85b0df69b0fd03069385ebe461b840dec6a6cc12a94a9499a6208302c2a64143",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/profiles_controller.rb",
+      "line": 58,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.require(:profile).permit(:account_id, :availability)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::ProfilesController",
+        "method": "availability_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "8f77a2efac8fd0be3b651f2a6022bbafd46b6ec6f6602ec286eff25388ab73e2",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/reports/manager_effectiveness_service.rb",
+      "line": 281,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"SUM(CASE WHEN COALESCE(telephony_call_sessions.duration_seconds, 0) >= #{call_duration_threshold_seconds} THEN 1 ELSE 0 END)\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::Reports::ManagerEffectivenessService",
+        "method": "long_call_count_sql"
+      },
+      "user_input": "call_duration_threshold_seconds",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "9cab1409d535a065d848067b6f9305e98d5b99cc66f3cbd73f11fd5daf8f6fdc",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 306,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{json_text_expression(scope, key)} IN (?)\", values)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_discrete_filter_to_relation"
+      },
+      "user_input": "json_text_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "File Access",
+      "warning_code": 16,
+      "fingerprint": "9f834c3de0e584315bd262da0487081f3ed79e0e87d8bc5c0d2baf46ca98031a",
+      "check_name": "FileAccess",
+      "message": "Parameter value used in file name",
+      "file": "enterprise/app/controllers/api/v1/accounts/whatsapp_calls_controller.rb",
+      "line": 767,
+      "link": "https://brakemanscanner.org/docs/warning_types/file_access/",
+      "code": "Pathname.new(params[:file_path].to_s.strip)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::WhatsappCallsController",
+        "method": "sanitized_audio_file_path"
+      },
+      "user_input": "params[:file_path].to_s.strip",
+      "confidence": "High",
+      "cwe_id": [
+        22
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "a89639c2cfd85a7acde84f1f256296b6fe691255738f10a7a3144e9f9fe84132",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/reports/manager_effectiveness_service.rb",
+      "line": 250,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"SUM(CASE WHEN crm_stages.outcome = #{quoted(outcome)} THEN 1 ELSE 0 END)\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::Reports::ManagerEffectivenessService",
+        "method": "outcome_count_sql"
+      },
+      "user_input": "quoted(outcome)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "b0192fad29d86c9292bd72fcdc014143dd4e2c70d8fb3258fdcbbb8c08e35ace",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/api/v1/accounts/telephony/webphone_controller.rb",
+      "line": 126,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:sip_profile_id, :sipProfileId, :account_id, :accountId, :inbox_id, :inboxId, :user_id, :userId, :profile_kind, :profileKind, :internal_extension, :internalExtension, :sip_username, :sipUsername, :sip_host, :sipHost, :agent_aor, :agentAor, :credentials_ref, :credentialsRef, :password_secret_ref, :passwordSecretRef, :availability_mode, :availabilityMode, :enabled, :status, :registration_config_version, :registrationConfigVersion, :registration_instance_id, :registrationInstanceId, :session_key, :sessionKey, :janus_session_id, :janusSessionId, :janus_handle_id, :janusHandleId, :janus_unique_id, :janusUniqueId, :janus_master_id, :janusMasterId, :presence_sequence, :presenceSequence)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Telephony::WebphoneController",
+        "method": "presence_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "b590473d9e741b7045c138fcacd37dcaf97927d2ab2592bd4293ccfa9a71c41e",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/integrations/medelement/conflict_entity_preloader.rb",
+      "line": 90,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{field} IN (?)\", values)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Integrations::Medelement::ConflictEntityPreloader",
+        "method": "records_by"
+      },
+      "user_input": "field",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "b7f74ec40dbacd4810a613bbc0b549277acdc194da14803ce61bc6392db724ab",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 398,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_datetime_expression(scope, key)} < ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_datetime_filter_to_relation"
+      },
+      "user_input": "safe_datetime_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "bacfa31ba50de96562edac30e1015b5be3392cdc10ee6a98f70e207b630a6a96",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 299,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{json_text_expression(scope, key)} IN (?)\", values.map do\n value.to_s\n end)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_discrete_filter_to_relation"
+      },
+      "user_input": "json_text_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "bb9434d2eae95f5f221dd053770a06b3a6cd0ed69fa0e53ea4e02773c7f62331",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/filter_service.rb",
+      "line": 187,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "base_relation.where((\"\" + \" #{build_condition_query(model_filters, query_hash, current_index).strip}\"), { \"value_#{current_index}\" => filter_values(query_hash) }.with_indifferent_access)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "FilterService",
+        "method": "query_builder"
+      },
+      "user_input": "build_condition_query(model_filters, query_hash, current_index)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "c17350c1d3d9342147d970456ee408f7bedfedd5eee0944d381cff5aae8d665d",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/accounts/communication_threads_controller.rb",
+      "line": 51,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::CommunicationThreadsController",
+        "method": "filter"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "c1f6dbc969bc26fbd76394c73a854e0976f06bc49465950ca96cbca6bfd058fb",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/conversations/communication_thread_resolver.rb",
+      "line": 43,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"communication-thread:#{account_id}:#{contact_id}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Conversations::CommunicationThreadResolver",
+        "method": "lock_contact_thread!"
+      },
+      "user_input": "Digest::SHA256.digest(\"communication-thread:#{account_id}:#{contact_id}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "c2c1af85ea8750360d02d054d2c7b78a886d7c16391cb75897467ec51985b8ce",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/accounts/contacts_controller.rb",
+      "line": 76,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::ContactsController",
+        "method": "filter"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Remote Code Execution",
+      "warning_code": 24,
+      "fingerprint": "c730bca4abacdb828526a464044eb447aa916b3c55fb41d01077c5bdb334f2ae",
+      "check_name": "UnsafeReflection",
+      "message": "Unsafe reflection method `safe_constantize` called on parameter value",
+      "file": "app/controllers/api/v1/accounts/touches_controller.rb",
+      "line": 123,
+      "link": "https://brakemanscanner.org/docs/warning_types/remote_code_execution/",
+      "code": "params.require(:remindable_type).to_s.safe_constantize",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::TouchesController",
+        "method": "load_remindable!"
+      },
+      "user_input": "params.require(:remindable_type).to_s",
+      "confidence": "High",
+      "cwe_id": [
+        470
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "ca626aac7670fe9ffc0b27d07c93ec2b212a9af27f31526a13aabc8fdb37bd92",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/builders/conversation_builder.rb",
+      "line": 24,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:custom_attributes].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "ConversationBuilder",
+        "method": "conversation_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Cross-Site Scripting",
+      "warning_code": 2,
+      "fingerprint": "cbd4e7d7d0286485bd52bdfeb10318dbeabcff68c75755b64573497b84f2d1ac",
+      "check_name": "CrossSiteScripting",
+      "message": "Unescaped model attribute",
+      "file": "app/views/layouts/portal.html.erb",
+      "line": 158,
+      "link": "https://brakemanscanner.org/docs/warning_types/cross_site_scripting",
+      "code": "Portal.find_by(:custom_domain => request.host).channel_web_widget.web_widget_script",
+      "render_path": [
+        {
+          "type": "controller",
+          "class": "DashboardController",
+          "method": "render_hc_if_custom_domain",
+          "line": 67,
+          "file": "app/controllers/dashboard_controller.rb",
+          "rendered": {
+            "name": "layouts/portal",
+            "file": "app/views/layouts/portal.html.erb"
+          }
+        }
+      ],
+      "location": {
+        "type": "template",
+        "template": "layouts/portal"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        79
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "cfbe623c9168d82995f5d7b5445fa35d69f583a6eab84fc0940273cd90977e07",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/integrations/medelement/provider_commands/create_service.rb",
+      "line": 86,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ApplicationRecord.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"medelement-provider-command:#{account.id}:#{idempotency_key}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Integrations::Medelement::ProviderCommands::CreateService",
+        "method": "acquire_idempotency_lock!"
+      },
+      "user_input": "Digest::SHA256.digest(\"medelement-provider-command:#{account.id}:#{idempotency_key}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "d07da33456594cc783a5a4dbf87238b9758f27dbe0436163cae58b2f82aa1886",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "enterprise/app/controllers/api/v1/accounts/captain/inboxes_controller.rb",
+      "line": 40,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:assistant_id, :id, :account_id, :inbox_id)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::Captain::InboxesController",
+        "method": "permitted_params"
+      },
+      "user_input": ":account_id",
+      "confidence": "High",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "d275ceca495b66a896c9aa804ffd695655beed8888a268bccaed044e5914a17c",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 343,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where((\"#{json_text_expression(scope, key)} IS NOT NULL\" or if (field_type == \"multiselect\") then\n  \"jsonb_array_length(COALESCE(#{json_value_expression(scope, key)}, '[]'::jsonb)) > 0\"\nelse\n  \"NULLIF(BTRIM(#{json_text_expression(scope, key)}), '') IS NOT NULL\"\nend))",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_presence_filter_to_relation"
+      },
+      "user_input": "json_text_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Unmaintained Dependency",
+      "warning_code": 120,
+      "fingerprint": "d84924377155b41e094acae7404ec2e521629d86f97b0ff628e3d1b263f8101c",
+      "check_name": "EOLRails",
+      "message": "Support for Rails 7.2.3.2 ended on 2026-08-09",
+      "file": "Gemfile.lock",
+      "line": 743,
+      "link": "https://brakemanscanner.org/docs/warning_types/unmaintained_dependency/",
+      "code": null,
+      "render_path": null,
+      "location": null,
+      "user_input": null,
+      "confidence": "High",
+      "cwe_id": [
+        1104
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 105,
+      "fingerprint": "d9de1107420edd671f6b4d10c7c1b1b1404f57e9ea4919d45de6f1f2ba29c799",
+      "check_name": "PermitAttributes",
+      "message": "Potentially dangerous key allowed for mass assignment",
+      "file": "app/controllers/platform/api/v1/account_users_controller.rb",
+      "line": 27,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit(:user_id, :role)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Platform::Api::V1::AccountUsersController",
+        "method": "account_user_params"
+      },
+      "user_input": ":role",
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Dangerous Send",
+      "warning_code": 23,
+      "fingerprint": "db48feb0c8df7ac23364c4d30ca44c5d8caad02afa2f8ce2e76c73d9af3d5895",
+      "check_name": "Send",
+      "message": "User controlled method execution",
+      "file": "app/builders/v2/report_builder.rb",
+      "line": 18,
+      "link": "https://brakemanscanner.org/docs/warning_types/dangerous_send/",
+      "code": "send(params[:metric])",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "V2::ReportBuilder",
+        "method": "timeseries"
+      },
+      "user_input": "params[:metric]",
+      "confidence": "High",
+      "cwe_id": [
+        77
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "e0a3c56dd017736886526498db9951fe708e81a054229a90ebba05b34a1b484e",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/telephony/events_ingestion_service.rb",
+      "line": 1787,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "ActiveRecord::Base.connection.execute(\"SELECT pg_advisory_xact_lock(#{Digest::SHA256.digest(\"#{call_session.account_id}:#{call_session.inbox_id}:#{call_session.provider}:#{call_session.canonical_logical_call_session.external_call_ref}\").unpack1(\"q>\")})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Telephony::EventsIngestionService",
+        "method": "with_native_sip_voice_group_lock"
+      },
+      "user_input": "Digest::SHA256.digest(\"#{call_session.account_id}:#{call_session.inbox_id}:#{call_session.provider}:#{call_session.canonical_logical_call_session.external_call_ref}\").unpack1(\"q>\")",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "e0ecbf66d26ea88a9aee9f900c86a5fbb2cbdb8204058147cf20578d7f263aec",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 394,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_datetime_expression(scope, key)} = ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_datetime_filter_to_relation"
+      },
+      "user_input": "safe_datetime_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "e17ecad480631a4cbf4df3663e1f4a55626751c364cfb9cc80d4ea8291e4d7f9",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/telephony/ai_voice/fish_audio_client.rb",
+      "line": 54,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "connection.delete(\"/model/#{provider_model_id}\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Telephony::AiVoice::FishAudioClient",
+        "method": "delete_model"
+      },
+      "user_input": "provider_model_id",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "e191037c6f16016dffd629cba8ecfda215b6b5c01401b5ea804dede5d6bf96bf",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/finders/communication_thread_finder.rb",
+      "line": 539,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"communication_threads.*, (#{self.class.waiting_since_sort_sql(accessible_conversations)}) AS thread_waiting_since_sort_at\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "CommunicationThreadFinder",
+        "method": "with_waiting_since_sort"
+      },
+      "user_input": "self.class.waiting_since_sort_sql(accessible_conversations)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "e27ebe1ed628eeb8312a19c262edb2e29cf24d09436e0ff0bc1a995a256ffa8f",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/controllers/api/v1/accounts/communication_threads_controller.rb",
+      "line": 67,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params.permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Api::V1::Accounts::CommunicationThreadsController",
+        "method": "filter_sidebar_unread_counts"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "f1aae00b1ad2db11eceeff295f704e7ee9b63b52135003be6cdecfad7de2256c",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/automation_rules/touch_action_service.rb",
+      "line": 154,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Reminder.connection.execute(\"SELECT pg_advisory_xact_lock(#{(Digest::SHA256.hexdigest(\"automation-touch-event:#{\"#{account.id}:#{rule.id}:#{entity_kind}:#{record.id}:#{trigger_message.id}:#{action_key}:#{action_signature}\"}\").first(16).to_i(16) % ((2 ** 63) - 1))})\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "AutomationRules::TouchActionService",
+        "method": "lock_automation_event!"
+      },
+      "user_input": "(Digest::SHA256.hexdigest(\"automation-touch-event:#{\"#{account.id}:#{rule.id}:#{entity_kind}:#{record.id}:#{trigger_message.id}:#{action_key}:#{action_signature}\"}\").first(16).to_i(16) % ((2 ** 63) - 1))",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "f5ec6b6d346e82bad0af27ef15e8e28a66911de2ca23f4a17ae29c77901e57e2",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/communication_threads/filter_service.rb",
+      "line": 175,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "Arel.sql(\"communication_threads.*, (#{CommunicationThreadFinder.waiting_since_sort_sql(base_relation)}) AS thread_waiting_since_sort_at\")",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "CommunicationThreads::FilterService",
+        "method": "with_waiting_since_sort"
+      },
+      "user_input": "CommunicationThreadFinder.waiting_since_sort_sql(base_relation)",
+      "confidence": "Medium",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "f6d4347109014e6ad57b24969071a88b22c930c1e7532ae1f3abd34022fcf777",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/search_service.rb",
+      "line": 224,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "query.where(\"#{column_name} >= ?\", cap_since_time(params[:since]))",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "SearchService",
+        "method": "apply_time_filter"
+      },
+      "user_input": "column_name",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "Mass Assignment",
+      "warning_code": 70,
+      "fingerprint": "f8e15b22647d123238b56872e2b32b6cdb1dbf8f0a4dc794af222dd81f1b8233",
+      "check_name": "MassAssignment",
+      "message": "Specify exact keys allowed for mass assignment instead of using `permit!` which allows any keys",
+      "file": "app/builders/conversation_builder.rb",
+      "line": 23,
+      "link": "https://brakemanscanner.org/docs/warning_types/mass_assignment/",
+      "code": "params[:additional_attributes].permit!",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "ConversationBuilder",
+        "method": "conversation_params"
+      },
+      "user_input": null,
+      "confidence": "Medium",
+      "cwe_id": [
+        915
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    },
+    {
+      "warning_type": "SQL Injection",
+      "warning_code": 0,
+      "fingerprint": "fa0377c3de0071eaec5b166928cb867afff0cd69ba97418eeec90ddcae1876d5",
+      "check_name": "SQL",
+      "message": "Possible SQL injection",
+      "file": "app/services/crm/custom_field_filter_set.rb",
+      "line": 383,
+      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
+      "code": "scope.where(\"#{safe_date_expression(scope, key)} < ?\", value)",
+      "render_path": null,
+      "location": {
+        "type": "method",
+        "class": "Crm::CustomFieldFilterSet",
+        "method": "apply_date_filter_to_relation"
+      },
+      "user_input": "safe_date_expression(scope, key)",
+      "confidence": "Weak",
+      "cwe_id": [
+        89
+      ],
+      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
+    }
+  ],
+  "updated": "2026-09-20T04:52:39.679999+00:00"
+}

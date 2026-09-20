@@ -50,7 +50,7 @@ RSpec.describe 'Super Admin Users API', type: :request do
         header_texts = doc.css('table thead th').map { |header| header.text.squish }
 
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('New user')
+        expect(doc.at_css('a[href="/super_admin/users/new"]')).to be_present
         expect(response.body).to include(CGI.escapeHTML(user.name))
         expect(header_texts).not_to include('MFA')
       end

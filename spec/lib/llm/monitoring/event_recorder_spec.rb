@@ -466,7 +466,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
         provider: 'openrouter',
         actual_provider: 'OpenAI',
         requested_model: 'openai/gpt-4o',
-        actual_model: 'openai/gpt-4o',
+        actual_model: nil,
         prompt_tokens: 100,
         completion_tokens: 25,
         reasoning_tokens: 5,

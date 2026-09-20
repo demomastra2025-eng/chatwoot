@@ -3,7 +3,8 @@ require 'rails_helper'
 RSpec.describe Captain::Llm::FaqGeneratorService do
   let(:content) { 'Sample content for FAQ generation' }
   let(:language) { 'english' }
-  let(:service) { described_class.new(content, language) }
+  let(:account) { create(:account) }
+  let(:service) { described_class.new(content, language, account_id: account.id) }
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:sample_faqs) do
     [
@@ -18,7 +19,9 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+    allow(service).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_params).and_return(mock_chat)
     allow(mock_chat).to receive(:model).and_return('openai/gpt-5.4')
     allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
@@ -102,8 +105,6 @@ RSpec.describe Captain::Llm::FaqGeneratorService do
   end
 
   describe '#model' do
-    let(:account) { create(:account) }
-
     it 'resolves FAQ generation through the account assistant model instead of a global OpenAI-only default' do
       account_service = described_class.new(content, language, account_id: account.id)
 
