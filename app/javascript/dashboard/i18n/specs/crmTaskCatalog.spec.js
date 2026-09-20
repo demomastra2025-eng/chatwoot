@@ -5,6 +5,23 @@ import kk from '../locale/kk/crm.json';
 import ru from '../locale/ru/crm.json';
 
 const locales = { en, kk, ru };
+const flattenLeaves = (value, prefix = '') =>
+  Object.entries(value).reduce((result, [key, child]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (child && typeof child === 'object' && !Array.isArray(child)) {
+      return { ...result, ...flattenLeaves(child, path) };
+    }
+
+    result[path] = child;
+    return result;
+  }, {});
+
+const interpolationTokens = value =>
+  typeof value === 'string'
+    ? [...value.matchAll(/\{([^{}]+)\}/g)].map(([, token]) => token).sort()
+    : [];
+
 const catalogKeys = [
   'ACTIVATE',
   'ACTIVE',
@@ -25,6 +42,23 @@ const catalogKeys = [
 ];
 
 describe('CRM task catalog locales', () => {
+  it.each(['ru', 'kk'])(
+    'keeps the complete CRM key and interpolation contract for %s',
+    locale => {
+      const englishLeaves = flattenLeaves(en.CRM);
+      const localeLeaves = flattenLeaves(locales[locale].CRM);
+
+      expect(Object.keys(localeLeaves).sort()).toEqual(
+        Object.keys(englishLeaves).sort()
+      );
+      Object.entries(englishLeaves).forEach(([key, englishValue]) => {
+        expect(interpolationTokens(localeLeaves[key]), key).toEqual(
+          interpolationTokens(englishValue)
+        );
+      });
+    }
+  );
+
   it.each(Object.entries(locales))(
     'defines every task catalog label for %s',
     (_locale, messages) => {
