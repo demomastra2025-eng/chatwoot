@@ -96,6 +96,26 @@ RSpec.describe Crm::TaskPolicy, type: :policy do
     expect(report_scope).to contain_exactly(own_task, team_task, outside_task)
   end
 
+  it 'reports the effective legacy report scope in shadow telemetry' do
+    custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+    account_user = agent.account_users.find_by!(account: account)
+    account_user.update!(custom_role: custom_role)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    events = []
+    subscriber = ActiveSupport::Notifications.subscribe(AccessControl::ModeAwareDecision::EVENT_NAME) do |*args|
+      events << ActiveSupport::Notifications::Event.new(*args).payload
+    end
+
+    described_class::Scope.new(agent_context, account.crm_tasks, capability: 'view').resolve.load
+    described_class::Scope.new(agent_context, account.crm_tasks, capability: 'view_reports').resolve.load
+
+    expect(events.find { |event| event[:decision_kind] == 'scope' && event[:capability] == 'view' }).to include(legacy_scope: 'all')
+    expect(events.find { |event| event[:decision_kind] == 'scope' && event[:capability] == 'view_reports' }).to include(legacy_scope: 'none')
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
   def enforce_access_roles!
     AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
     AccessControl::ModeTransition.call(account: account, to: :shadow)

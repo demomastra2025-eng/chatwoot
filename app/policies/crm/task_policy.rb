@@ -24,7 +24,7 @@ class Crm::TaskPolicy < Crm::BasePolicy
         capability: capability
       )
       instrument_shadow_scope(mode_resolution)
-      return account_scope unless mode_resolution.authoritative_source == 'access_role'
+      return legacy_scope(account_scope) unless mode_resolution.authoritative_source == 'access_role'
 
       self.class.apply(
         account_scope,
@@ -59,6 +59,20 @@ class Crm::TaskPolicy < Crm::BasePolicy
 
     attr_reader :capability
 
+    def legacy_scope(account_scope)
+      legacy_scope_allowed? ? account_scope : account_scope.none
+    end
+
+    def legacy_scope_allowed?
+      permissions = Array(account_user.permissions)
+      return ::Crm::TaskPolicy.legacy_view_allowed?(account_user) if capability == 'view'
+      return permissions.include?('administrator') || permissions.include?('report_manage') if capability == 'view_reports'
+
+      permissions.include?('administrator') ||
+        (account_user.custom_role_id.blank? && permissions.include?('agent')) ||
+        permissions.include?('crm_task_manage')
+    end
+
     def missing_account_user_scope(account_scope)
       return account_scope if account.blank?
 
@@ -68,7 +82,8 @@ class Crm::TaskPolicy < Crm::BasePolicy
     def instrument_shadow_scope(mode_resolution)
       return unless mode_resolution.mode == 'shadow'
 
-      AccessControl::ModeAwareDecision.instrument_shadow_scope(mode_resolution: mode_resolution, legacy_scope: 'all')
+      legacy_scope = legacy_scope_allowed? ? 'all' : 'none'
+      AccessControl::ModeAwareDecision.instrument_shadow_scope(mode_resolution: mode_resolution, legacy_scope: legacy_scope)
     end
   end
 
@@ -82,6 +97,10 @@ class Crm::TaskPolicy < Crm::BasePolicy
 
   def timeline?
     task_access?(:view)
+  end
+
+  def view_reports?
+    task_access?(:view_reports, record_scoped: false)
   end
 
   def create?
@@ -120,7 +139,7 @@ class Crm::TaskPolicy < Crm::BasePolicy
   private
 
   def task_access?(capability, record_scoped: true)
-    legacy_allowed = capability == :view ? self.class.legacy_view_allowed?(account_user) : task_manage_access?
+    legacy_allowed = legacy_task_access?(capability)
     return legacy_allowed if account_user.blank?
 
     mode_resolution = AccessControl::ModeResolver.call(
@@ -129,20 +148,28 @@ class Crm::TaskPolicy < Crm::BasePolicy
       capability: capability.to_s
     )
     access_scope = mode_resolution.access_role_resolution&.scope || 'none'
-    access_role_allowed = if record_scoped
-                            Scope.apply(
-                              account.crm_tasks,
-                              access_scope: access_scope,
-                              user: user,
-                              account: account
-                            ).exists?(id: record.id)
-                          else
-                            access_scope != 'none'
-                          end
     AccessControl::ModeAwareDecision.call(
       mode_resolution: mode_resolution,
       legacy_allowed: legacy_allowed,
-      access_role_allowed: access_role_allowed
+      access_role_allowed: task_access_role_allowed?(access_scope, record_scoped)
     )
+  end
+
+  def task_access_role_allowed?(access_scope, record_scoped)
+    return access_scope != 'none' unless record_scoped
+
+    Scope.apply(
+      account.crm_tasks,
+      access_scope: access_scope,
+      user: user,
+      account: account
+    ).exists?(id: record.id)
+  end
+
+  def legacy_task_access?(capability)
+    return self.class.legacy_view_allowed?(account_user) if capability == :view
+    return administrator_access? || has_permission?('report_manage') if capability == :view_reports
+
+    task_manage_access?
   end
 end
