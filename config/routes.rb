@@ -271,6 +271,8 @@ Rails.application.routes.draw do
                 get :task_lifecycle_details
                 get :task_results
                 get :task_result_details
+                get :deals_without_next_action
+                get :deals_without_next_action_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do

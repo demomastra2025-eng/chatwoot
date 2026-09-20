@@ -68,4 +68,42 @@ RSpec.describe Crm::DealPolicy, type: :policy do
     expect(described_class::Scope.owner_ids(agent_context, access_scope: 'team')).to contain_exactly(agent.id, teammate.id)
     expect(described_class::Scope.owner_ids(agent_context, access_scope: 'all')).to include(agent.id, teammate.id, outsider.id)
   end
+
+  it 'intersects view and view_reports across none, own, team, and all scopes' do
+    teammate = create(:user, account: account)
+    outsider = create(:user, account: account)
+    team = create(:team, account: account)
+    create(:team_member, team: team, user: agent)
+    own_deal = create(:crm_deal, account: account, owner: agent)
+    team_deal = create(:crm_deal, account: account, owner: teammate, team: team)
+    outside_deal = create(:crm_deal, account: account, owner: outsider)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    grants = agent.account_users.find_by!(account: account).access_role.grants.where(resource: 'deals')
+    grants.find_by!(capability: 'view').update!(access_scope: 'all')
+    report_grant = grants.find_or_create_by!(account: account, capability: 'view_reports') do |grant|
+      grant.access_scope = 'none'
+    end
+
+    report_grant.update!(access_scope: 'none')
+    expect(report_scope).to be_empty
+
+    report_grant.update!(access_scope: 'own')
+    expect(report_scope).to contain_exactly(own_deal)
+
+    report_grant.update!(access_scope: 'team')
+    expect(report_scope).to contain_exactly(own_deal, team_deal)
+
+    report_grant.update!(access_scope: 'all')
+    expect(report_scope).to contain_exactly(own_deal, team_deal, outside_deal)
+  end
+
+  def report_scope
+    described_class::Scope.intersection(
+      agent_context,
+      account.crm_deals,
+      capabilities: %w[view view_reports]
+    )
+  end
 end

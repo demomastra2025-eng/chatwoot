@@ -1,8 +1,9 @@
 class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseController
   TASK_REPORT_ACTIONS = %i[task_lifecycle task_lifecycle_details task_results task_result_details].freeze
+  DUAL_REPORT_ACTIONS = %i[deals_without_next_action deals_without_next_action_details].freeze
 
   before_action :ensure_crm_deals_enabled!, except: TASK_REPORT_ACTIONS
-  before_action :ensure_crm_tasks_enabled!, only: TASK_REPORT_ACTIONS
+  before_action :ensure_crm_tasks_enabled!, only: TASK_REPORT_ACTIONS + DUAL_REPORT_ACTIONS
 
   def deals
     authorize ::Crm::Deal, :view_reports?
@@ -99,6 +100,10 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     query = task_results_query
     render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
   end
+
+  def deals_without_next_action = render_deals_without_next_action
+
+  def deals_without_next_action_details = render_deals_without_next_action(details: true)
 
   alias funnels deals
 
@@ -205,5 +210,15 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     params.permit(
       :from_date, :to_date, :as_of_date, :task_type_id, :task_outcome_id, :lifecycle_type, :reliability, :page, :per_page
     )
+  end
+
+  def render_deals_without_next_action(details: false)
+    authorize ::Crm::Deal, :view_reports?
+    authorize ::Crm::Task, :view_reports?
+    query = ::Crm::Reports::DealsWithoutNextActionQuery.new(
+      account: Current.account, deals_scope: report_deals_scope, tasks_scope: report_tasks_scope,
+      params: params.permit(:pipeline_id, :stage_id, :owner_id, :team_id, :page, :per_page)
+    )
+    render_payload({ rows: details ? query.drill_down_rows : query.aggregate_rows }, meta: details ? query.pagination_meta : query.meta)
   end
 end
