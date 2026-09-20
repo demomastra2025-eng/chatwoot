@@ -27,6 +27,20 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     render_payload(report.perform, meta: report.meta)
   end
 
+  def stage_transitions
+    authorize ::Crm::Deal, :view_reports?
+
+    query = stage_transitions_query
+    render_payload({ rows: query.aggregate_rows }, meta: query.meta)
+  end
+
+  def stage_transition_details
+    authorize ::Crm::Deal, :view_reports?
+
+    query = stage_transitions_query
+    render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
+  end
+
   alias funnels deals
 
   private
@@ -61,5 +75,26 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
 
   def manager_effectiveness_report_params
     params.permit(:since, :until, :currency, :pipeline_id, :call_duration_threshold_seconds)
+  end
+
+  def stage_transitions_query
+    ::Crm::Reports::StageTransitionsQuery.new(
+      account: Current.account,
+      deals_scope: report_deals_scope,
+      params: stage_transition_report_params
+    )
+  end
+
+  def stage_transition_report_params
+    params.permit(
+      :from_date,
+      :to_date,
+      :from_pipeline_id,
+      :from_stage_id,
+      :pipeline_id,
+      :stage_id,
+      :page,
+      :per_page
+    )
   end
 end

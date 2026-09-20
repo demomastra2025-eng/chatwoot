@@ -261,6 +261,8 @@ Rails.application.routes.draw do
                 get :deals
                 get :funnels
                 get :manager_effectiveness
+                get :stage_transitions
+                get :stage_transition_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
