@@ -402,6 +402,28 @@ it('keeps a failed conversation-context lookup out of the empty placeholder', as
   expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(42);
 });
 
+it('does not cache an older same-contact conversation-context response', async () => {
+  const { state } = await mountPage();
+  const older = deferred();
+  const newer = deferred();
+  ContactAPI.getCommunicationThreads
+    .mockImplementationOnce(() => older.promise)
+    .mockImplementationOnce(() => newer.promise);
+
+  const olderLoad = state.loadDealConversationContext(9);
+  const newerLoad = state.loadDealConversationContext(9);
+
+  newer.resolve(response([{ id: 42, timestamp: 2 }]));
+  await newerLoad;
+  older.resolve(response([{ id: 41, timestamp: 1 }]));
+  await olderLoad;
+
+  await state.loadDealConversationContext(9);
+
+  expect(ContactAPI.getCommunicationThreads).toHaveBeenCalledTimes(2);
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(42);
+});
+
 it('stops conversation creation after the deal editor closes', async () => {
   const { state } = await mountPage();
   const pending = deferred();

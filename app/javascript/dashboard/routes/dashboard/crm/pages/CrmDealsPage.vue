@@ -821,6 +821,24 @@ const advancedDealFieldDefinitions = computed(() =>
 );
 
 const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
+const hasActiveDealFilters = computed(
+  () =>
+    hasListSearchQuery.value ||
+    Boolean(
+      filters.aiOnly ||
+        filters.archived ||
+        filters.companyId ||
+        filters.contactId ||
+        filters.dateRange.from ||
+        filters.dateRange.to ||
+        filters.nextAction ||
+        filters.ownerId ||
+        filters.stageId ||
+        filters.teamId ||
+        filters.showInactive ||
+        Object.keys(customFieldFilters.value).length
+    )
+);
 
 const normalizeFilterText = value =>
   String(value || '')
@@ -1696,7 +1714,10 @@ const loadDealContactCommunicationThreads = async (contactId, requestId) => {
       (a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)
     );
 
-    if (communicationThreads.length) {
+    if (
+      communicationThreads.length &&
+      isCurrentDealConversationRequest(contactId, requestId)
+    ) {
       communicationThreadsByContactId.value = {
         ...communicationThreadsByContactId.value,
         [contactId]: communicationThreads,
@@ -1743,11 +1764,11 @@ const loadDealConversationInboxes = async (contactId, requestId) => {
     const contactableInboxes = buildContactableInboxesList(
       await fetchContactableInboxes(contactId)
     );
-    contactableInboxesByContactId.value = {
-      ...contactableInboxesByContactId.value,
-      [contactId]: contactableInboxes,
-    };
     if (isCurrentDealConversationRequest(contactId, requestId)) {
+      contactableInboxesByContactId.value = {
+        ...contactableInboxesByContactId.value,
+        [contactId]: contactableInboxes,
+      };
       dealConversationDraft.contextError = null;
       dealConversationDraft.contactableInboxes = contactableInboxes;
     }
@@ -3787,6 +3808,7 @@ watch(
             :can-reorder="!hasListSearchQuery"
             :deals="boardDeals"
             :field-definitions="dealFieldDefinitions"
+            :filtered="hasActiveDealFilters"
             :has-more="hasMoreDeals"
             :is-loading-more="ui.isLoadingMore"
             :load-more-failed="ui.isLoadMoreFailed"
