@@ -265,6 +265,8 @@ Rails.application.routes.draw do
                 get :stage_transition_details
                 get :stage_durations
                 get :stage_duration_details
+                get :conversions
+                get :conversion_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
