@@ -61,6 +61,9 @@ vi.mock('dashboard/api/crm/pipelines', () => ({
 
 vi.mock('dashboard/api/crm/taskStatuses', () => ({
   default: {
+    get accountIdFromRoute() {
+      return currentAccount.id;
+    },
     create: saveTaskStatusMock,
     deleteTaskStatus: vi.fn(),
     get: getTaskStatusesMock,
@@ -398,6 +401,53 @@ describe('useCrmReferencesStore', () => {
 
     expect(store.pipelines).toEqual([{ id: 8, name: 'Account B' }]);
     expect(store.ui.error).toBeNull();
+  });
+
+  it('keeps task statuses from the current account when old loading finishes last', async () => {
+    const store = useCrmReferencesStore();
+    const oldRequest = deferred();
+    getTaskStatusesMock
+      .mockReturnValueOnce(oldRequest.promise)
+      .mockResolvedValueOnce({
+        data: { payload: [{ id: 8, name: 'Account B status' }] },
+      });
+
+    const oldLoad = store.loadTaskStatuses();
+    currentAccount.id = '2';
+    await store.loadTaskStatuses();
+    oldRequest.resolve({
+      data: { payload: [{ id: 7, name: 'Account A status' }] },
+    });
+    await oldLoad;
+
+    expect(store.taskStatuses).toEqual([{ id: 8, name: 'Account B status' }]);
+    expect(store.ui.isLoadingTaskStatuses).toBe(false);
+  });
+
+  it('does not publish a stale task status error or clear current loading', async () => {
+    const store = useCrmReferencesStore();
+    const staleRequest = deferred();
+    const currentRequest = deferred();
+    getTaskStatusesMock
+      .mockReturnValueOnce(staleRequest.promise)
+      .mockReturnValueOnce(currentRequest.promise);
+
+    const staleLoad = store.loadTaskStatuses();
+    const staleExpectation = expect(staleLoad).rejects.toThrow('stale failure');
+    const currentLoad = store.loadTaskStatuses();
+    staleRequest.reject(new Error('stale failure'));
+    await staleExpectation;
+
+    expect(store.ui.error).toBeNull();
+    expect(store.ui.isLoadingTaskStatuses).toBe(true);
+
+    currentRequest.resolve({
+      data: { payload: [{ id: 9, name: 'Current status' }] },
+    });
+    await currentLoad;
+
+    expect(store.taskStatuses).toEqual([{ id: 9, name: 'Current status' }]);
+    expect(store.ui.isLoadingTaskStatuses).toBe(false);
   });
 
   it('does not publish an error from a stale request for the current account', async () => {

@@ -281,6 +281,7 @@ const ui = reactive({
   isTimelineLoading: false,
 });
 let dealsRequestGeneration = 0;
+let dealsPageInitializationGeneration = 0;
 let contactSearchGeneration = 0;
 let companySearchGeneration = 0;
 let suppressNextListSearchReload = false;
@@ -381,7 +382,8 @@ const archiveTooltip = computed(() =>
     ? t('CRM.GENERAL.UNARCHIVE')
     : t('CRM.GENERAL.ARCHIVE')
 );
-const dealUiActionQueryInFlight = ref(false);
+let dealUiActionGeneration = 0;
+let isComponentUnmounted = false;
 
 const activePipelines = computed(() =>
   referencesStore.pipelines.filter(pipeline => pipeline.active !== false)
@@ -412,13 +414,7 @@ const selectedPipeline = computed(
 );
 const isPipelineSelectionPending = ref(true);
 
-const loadPipelineReferences = async () => {
-  try {
-    return await referencesStore.loadPipelines();
-  } finally {
-    isPipelineSelectionPending.value = false;
-  }
-};
+const loadPipelineReferences = () => referencesStore.loadPipelines();
 
 const stageDisplayName = stage =>
   stage?.code === 'new'
@@ -1894,6 +1890,7 @@ const loadTimeline = async dealId => {
 
 const openCreateDrawer = async prefill => {
   dealEditorGeneration += 1;
+  const editorGeneration = dealEditorGeneration;
   ui.isSaving = false;
   ui.isTimelineLoading = false;
   closeDealTitleEditor();
@@ -1913,16 +1910,19 @@ const openCreateDrawer = async prefill => {
   showLinkedConversationPanel.value = false;
   resetDealConversationDraft();
   await Promise.all([loadContacts(''), loadCompanies('')]);
+  if (editorGeneration !== dealEditorGeneration) return false;
 
   if (dealPrefill) {
     showLinkedConversationPanel.value = canOpenLinkedConversation.value;
   }
 
   captureFormBaseline();
+  return true;
 };
 
 const openEditDrawer = async deal => {
   dealEditorGeneration += 1;
+  const editorGeneration = dealEditorGeneration;
   ui.isSaving = false;
   ui.isTimelineLoading = false;
   closeDealTitleEditor();
@@ -1939,13 +1939,18 @@ const openEditDrawer = async deal => {
   showLinkedConversationPanel.value = true;
   resetDealConversationDraft();
   await Promise.all([loadContacts(''), loadCompanies('')]);
+  if (editorGeneration !== dealEditorGeneration) return false;
   await ensureSelectedLookups(deal);
+  if (editorGeneration !== dealEditorGeneration) return false;
   resetDealConversationDraft();
   if (!canOpenLinkedConversation.value) {
     await loadDealConversationContext(dealConversationDraft.contactId);
+    if (editorGeneration !== dealEditorGeneration) return false;
   }
   await loadTimeline(deal.id);
+  if (editorGeneration !== dealEditorGeneration) return false;
   captureFormBaseline();
+  return true;
 };
 
 const closeDrawer = () => {
@@ -2489,7 +2494,7 @@ async function loadDeals({
   page = null,
   syncSelected = true,
 } = {}) {
-  if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return;
+  if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return false;
 
   if (!append) {
     dealsRequestGeneration += 1;
@@ -2514,7 +2519,7 @@ async function loadDeals({
 
   try {
     const { data } = await CrmDealsAPI.get(buildDealsFetchParams(nextPage));
-    if (requestGeneration !== dealsRequestGeneration) return;
+    if (requestGeneration !== dealsRequestGeneration) return false;
 
     const nextDeals = normalizePayload(data);
     dealsMeta.value = normalizeMeta(data);
@@ -2525,16 +2530,16 @@ async function loadDeals({
       );
       if (listCurrentPage.value > maxPage) {
         listCurrentPage.value = maxPage;
-        await loadDeals({ syncSelected });
-        return;
+        return loadDeals({ syncSelected });
       }
     }
     deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
     if (typeof syncSelected !== 'function' || syncSelected()) {
       syncSelectedDeal(deals.value);
     }
+    return true;
   } catch (error) {
-    if (requestGeneration !== dealsRequestGeneration) return;
+    if (requestGeneration !== dealsRequestGeneration) return false;
 
     if (append) {
       ui.isLoadMoreFailed = true;
@@ -2542,6 +2547,7 @@ async function loadDeals({
     } else {
       ui.error = formatErrorMessage(error);
     }
+    return false;
   } finally {
     if (requestGeneration === dealsRequestGeneration) {
       ui.isLoading = false;
@@ -3236,7 +3242,8 @@ const deleteComment = async comment => {
   }
 };
 
-const clearDealPrefillQuery = async () => {
+const clearDealPrefillQuery = async isCurrent => {
+  if (!isCurrent()) return;
   const nextQuery = { ...route.query };
   crmPrefillKeys.forEach(key => {
     delete nextQuery[key];
@@ -3245,11 +3252,12 @@ const clearDealPrefillQuery = async () => {
   await router.replace({ query: nextQuery });
 };
 
-const consumeDealPrefillQuery = async () => {
+const consumeDealPrefillQuery = async isCurrent => {
   if (queryValue('action') !== 'new') return;
+  if (!isCurrent()) return;
 
   if (!canManageDeals.value) {
-    await clearDealPrefillQuery();
+    await clearDealPrefillQuery(isCurrent);
     return;
   }
 
@@ -3285,6 +3293,7 @@ const consumeDealPrefillQuery = async () => {
     title: queryValue('title') || buildPrefillDealTitle(),
     winProbability: decimalQueryValue('winProbability'),
   });
+  if (!isCurrent()) return;
 
   if (
     contactId &&
@@ -3293,6 +3302,7 @@ const consumeDealPrefillQuery = async () => {
     )
   ) {
     const response = await ContactAPI.show(contactId);
+    if (!isCurrent()) return;
     const contact = normalizePayload(response.data);
     contactOptions.value = [
       ...contactOptions.value,
@@ -3311,31 +3321,35 @@ const consumeDealPrefillQuery = async () => {
     )
   ) {
     const response = await CompanyAPI.show(companyId);
+    if (!isCurrent()) return;
     upsertCompanyOption(normalizePayload(response.data));
   }
 
-  await clearDealPrefillQuery();
+  await clearDealPrefillQuery(isCurrent);
 };
 
-const consumeDealOpenQuery = async () => {
+const consumeDealOpenQuery = async isCurrent => {
   const dealId = numericQueryValue('dealId');
   if (!dealId) return false;
+  if (!isCurrent()) return true;
 
   try {
     let deal = deals.value.find(record => Number(record.id) === Number(dealId));
     if (!deal) {
       const { data } = await CrmDealsAPI.show(dealId);
+      if (!isCurrent()) return true;
       deal = normalizePayload(data);
       if (currentPresentation.value !== 'board') {
         upsertDeal(deal);
       }
     }
 
+    if (!isCurrent()) return true;
     await openEditDrawer(deal);
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   } finally {
-    await clearDealPrefillQuery();
+    await clearDealPrefillQuery(isCurrent);
   }
 
   return true;
@@ -3456,6 +3470,9 @@ onBeforeRouteLeave(() => {
 });
 
 onBeforeUnmount(() => {
+  isComponentUnmounted = true;
+  dealUiActionGeneration += 1;
+  dealsPageInitializationGeneration += 1;
   dealEditorGeneration += 1;
   ui.isSaving = false;
   resetDealConflict();
@@ -3466,31 +3483,44 @@ onBeforeUnmount(() => {
 
 const handleDealUiActionQuery = async () => {
   if (!hasRestoredPreferences.value || !canViewDeals.value) return;
-  if (dealUiActionQueryInFlight.value) return;
+  dealUiActionGeneration += 1;
+  const generation = dealUiActionGeneration;
+  const requestAccountId = Number(accountId.value);
+  const querySnapshot = JSON.stringify(route.query);
+  const isCurrent = () =>
+    generation === dealUiActionGeneration &&
+    Number(accountId.value) === requestAccountId &&
+    JSON.stringify(route.query) === querySnapshot &&
+    !isComponentUnmounted;
 
-  dealUiActionQueryInFlight.value = true;
-  try {
-    if (await consumeDealOpenQuery()) return;
-    await consumeDealPrefillQuery();
-  } finally {
-    dealUiActionQueryInFlight.value = false;
-  }
+  if (await consumeDealOpenQuery(isCurrent)) return;
+  if (isCurrent()) await consumeDealPrefillQuery(isCurrent);
 };
 
-onMounted(async () => {
-  if (!canViewDeals.value) return;
+const initializeDealsPage = async ({ reloadDirectory = false } = {}) => {
+  dealsPageInitializationGeneration += 1;
+  const generation = dealsPageInitializationGeneration;
+  const requestAccountId = Number(accountId.value);
+  const isCurrent = () =>
+    generation === dealsPageInitializationGeneration &&
+    Number(accountId.value) === requestAccountId;
+
+  dealsRequestGeneration += 1;
+  ui.error = null;
+  ui.isLoading = true;
+  isPipelineSelectionPending.value = true;
+  let listLoadStarted = false;
 
   try {
-    emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
-    restoreDealsPreferences();
-
-    if (!agents.value.length) {
-      await store.dispatch('agents/get');
+    if (reloadDirectory || !agents.value.length) {
+      await store.dispatch('agents/get', { throwOnError: true });
     }
+    if (!isCurrent()) return;
 
-    if (!teams.value.length) {
+    if (reloadDirectory || !teams.value.length) {
       await store.dispatch('teams/get');
     }
+    if (!isCurrent()) return;
 
     await Promise.all([
       loadPipelineReferences(),
@@ -3499,20 +3529,37 @@ onMounted(async () => {
       referencesStore.loadFieldDefinitions('deal'),
       referencesStore.loadFieldDefinitions('task'),
     ]);
+    if (!isCurrent()) return;
+
     ensurePipelineFilterSelection();
     applyDealListFilterQuery();
     resetForm();
     hasRestoredPreferences.value = true;
     persistDealsPreferences();
-    await loadDeals();
+    listLoadStarted = true;
+    const listLoadCommitted = await loadDeals();
+    if (!isCurrent() || !listLoadCommitted || ui.error) return;
     await handleDealUiActionQuery();
   } catch (error) {
-    ui.error = formatErrorMessage(error);
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) ui.error = formatErrorMessage(error);
+  } finally {
+    if (isCurrent()) {
+      if (!listLoadStarted) ui.isLoading = false;
+      isPipelineSelectionPending.value = false;
+    }
   }
+};
+
+onMounted(async () => {
+  if (!canViewDeals.value) return;
+  emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
+  restoreDealsPreferences();
+  await initializeDealsPage();
 });
 
 watch(accountId, async nextAccountId => {
+  dealUiActionGeneration += 1;
+  dealsPageInitializationGeneration += 1;
   scheduleDealsReload.cancel?.();
   dealsRequestGeneration += 1;
   contactSearchGeneration += 1;
@@ -3540,24 +3587,7 @@ watch(accountId, async nextAccountId => {
     return;
   }
 
-  await Promise.all([
-    store.dispatch('agents/get'),
-    store.dispatch('teams/get'),
-    loadPipelineReferences(),
-    referencesStore.loadTaskStatuses(),
-    referencesStore.loadTaskTypes(),
-    referencesStore.loadFieldDefinitions('deal'),
-    referencesStore.loadFieldDefinitions('task'),
-  ]);
-  if (Number(accountId.value) !== Number(nextAccountId)) return;
-
-  ensurePipelineFilterSelection();
-  applyDealListFilterQuery();
-  resetForm();
-  hasRestoredPreferences.value = true;
-  persistDealsPreferences();
-  await loadDeals();
-  await handleDealUiActionQuery();
+  await initializeDealsPage({ reloadDirectory: true });
 });
 
 watch(
@@ -3715,7 +3745,7 @@ watch(
             v-else-if="ui.error"
             :title="$t('CRM.ERRORS.LOAD_TITLE')"
             :description="formatErrorMessage(ui.error)"
-            @retry="loadDeals"
+            @retry="initializeDealsPage"
           />
 
           <SchedulingEmptyState

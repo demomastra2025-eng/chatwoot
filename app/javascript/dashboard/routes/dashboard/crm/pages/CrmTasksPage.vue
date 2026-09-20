@@ -230,8 +230,9 @@ const ui = reactive({
   isSavingComment: false,
   isTimelineLoading: false,
 });
-const taskUiActionQueryInFlight = ref(false);
+let taskUiActionGeneration = 0;
 const taskLoadGeneration = ref(0);
+let taskPageInitializationGeneration = 0;
 let taskRealtimeSequence = 0;
 const pendingTaskRealtimeUpdates = new Map();
 const pendingTaskDeadlineIds = reactive(new Set());
@@ -1738,7 +1739,7 @@ const loadTasks = async () => {
         page: listCurrentPage.value,
         per_page: LIST_PAGE_SIZE,
       });
-      if (loadGeneration !== taskLoadGeneration.value) return;
+      if (loadGeneration !== taskLoadGeneration.value) return false;
 
       loadedTasks = normalizePayload(data);
       tasksMeta.value = normalizeMeta(data);
@@ -1748,8 +1749,7 @@ const loadTasks = async () => {
       );
       if (listCurrentPage.value > maxPage) {
         listCurrentPage.value = maxPage;
-        await loadTasks();
-        return;
+        return loadTasks();
       }
     } else if (currentPresentation.value === 'calendar') {
       const { data } = await CrmTasksAPI.get({
@@ -1759,14 +1759,16 @@ const loadTasks = async () => {
         sort_by: 'dueAt',
         sort_direction: 'asc',
       });
-      if (loadGeneration !== taskLoadGeneration.value) return;
+      if (loadGeneration !== taskLoadGeneration.value) return false;
 
       loadedTasks = normalizePayload(data);
       tasksMeta.value = normalizeMeta(data);
       boardBucketMeta.value = {};
     } else {
       loadedTasks = await fetchBoardTaskBuckets({ loadGeneration, query });
-      if (!loadedTasks || loadGeneration !== taskLoadGeneration.value) return;
+      if (!loadedTasks || loadGeneration !== taskLoadGeneration.value) {
+        return false;
+      }
 
       tasksMeta.value = {
         count: Object.values(boardBucketMeta.value).reduce(
@@ -1780,7 +1782,7 @@ const loadTasks = async () => {
         perPage: BOARD_PAGE_SIZE,
       };
     }
-    if (!loadedTasks) return;
+    if (!loadedTasks) return false;
 
     tasks.value = [
       ...new Map(
@@ -1800,9 +1802,11 @@ const loadTasks = async () => {
       applyTaskRealtimeState(update.task);
     });
     syncSelectedTask(tasks.value);
+    return true;
   } catch (error) {
-    if (loadGeneration !== taskLoadGeneration.value) return;
+    if (loadGeneration !== taskLoadGeneration.value) return false;
     ui.error = formatErrorMessage(error);
+    return false;
   } finally {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
@@ -2089,7 +2093,8 @@ const deleteComment = async comment => {
   }
 };
 
-const clearTaskPrefillQuery = async () => {
+const clearTaskPrefillQuery = async isCurrent => {
+  if (!isCurrent()) return;
   const nextQuery = { ...route.query };
   crmPrefillKeys.forEach(key => {
     delete nextQuery[key];
@@ -2098,11 +2103,12 @@ const clearTaskPrefillQuery = async () => {
   await router.replace({ query: nextQuery });
 };
 
-const consumeTaskPrefillQuery = async () => {
+const consumeTaskPrefillQuery = async isCurrent => {
   if (queryValue('action') !== 'new') return;
+  if (!isCurrent()) return;
 
   if (!canManageTasks.value) {
-    await clearTaskPrefillQuery();
+    await clearTaskPrefillQuery(isCurrent);
     return;
   }
 
@@ -2126,26 +2132,29 @@ const consumeTaskPrefillQuery = async () => {
     statusId: numericQueryValue('statusId') || form.statusId,
     title: queryValue('title') || buildPrefillTaskTitle(),
   });
-  await clearTaskPrefillQuery();
+  await clearTaskPrefillQuery(isCurrent);
 };
 
-const consumeTaskOpenQuery = async () => {
+const consumeTaskOpenQuery = async isCurrent => {
   const taskId = numericQueryValue('taskId');
   if (!taskId) return false;
+  if (!isCurrent()) return true;
 
   try {
     let task = tasks.value.find(record => Number(record.id) === Number(taskId));
     if (!task) {
       const { data } = await CrmTasksAPI.show(taskId);
+      if (!isCurrent()) return true;
       task = normalizePayload(data);
       upsertTask(task);
     }
 
+    if (!isCurrent()) return true;
     await openEditDrawer(task);
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   } finally {
-    await clearTaskPrefillQuery();
+    await clearTaskPrefillQuery(isCurrent);
   }
 
   return true;
@@ -2553,28 +2562,39 @@ const jumpCalendarToToday = async () => {
 
 const handleTaskUiActionQuery = async () => {
   if (!hasRestoredPreferences.value || !canViewTasks.value) return;
-  if (taskUiActionQueryInFlight.value) return;
+  taskUiActionGeneration += 1;
+  const generation = taskUiActionGeneration;
+  const requestAccountId = Number(accountId.value);
+  const querySnapshot = JSON.stringify(route.query);
+  const isCurrent = () =>
+    generation === taskUiActionGeneration &&
+    Number(accountId.value) === requestAccountId &&
+    JSON.stringify(route.query) === querySnapshot &&
+    !isComponentUnmounted;
 
-  taskUiActionQueryInFlight.value = true;
-  try {
-    if (await consumeTaskOpenQuery()) return;
-    await consumeTaskPrefillQuery();
-  } finally {
-    taskUiActionQueryInFlight.value = false;
-  }
+  if (await consumeTaskOpenQuery(isCurrent)) return;
+  if (isCurrent()) await consumeTaskPrefillQuery(isCurrent);
 };
 
-onMounted(async () => {
-  taskRealtimeLifecycleGeneration += 1;
-  if (!canViewTasks.value) return;
+const initializeTasksPage = async ({ reloadAgents = false } = {}) => {
+  taskPageInitializationGeneration += 1;
+  const generation = taskPageInitializationGeneration;
+  const requestAccountId = Number(accountId.value);
+  const isCurrent = () =>
+    generation === taskPageInitializationGeneration &&
+    Number(accountId.value) === requestAccountId &&
+    !isComponentUnmounted;
+
+  taskLoadGeneration.value += 1;
+  ui.error = null;
+  ui.isLoading = true;
+  let listLoadStarted = false;
 
   try {
-    emitter.on(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
-    restoreTasksPreferences();
-
-    if (!agents.value.length) {
-      await store.dispatch('agents/get');
+    if (reloadAgents || !agents.value.length) {
+      await store.dispatch('agents/get', { throwOnError: true });
     }
+    if (!isCurrent()) return;
 
     await Promise.all([
       referencesStore.loadTaskStatuses(),
@@ -2582,18 +2602,33 @@ onMounted(async () => {
       referencesStore.loadFieldDefinitions('task'),
       loadDealOptions(),
     ]);
+    if (!isCurrent()) return;
+
     resetForm();
     hasRestoredPreferences.value = true;
     persistTasksPreferences();
-    await loadTasks();
+    listLoadStarted = true;
+    const listLoadCommitted = await loadTasks();
+    if (!isCurrent() || !listLoadCommitted || ui.error) return;
     await handleTaskUiActionQuery();
   } catch (error) {
-    ui.error = formatErrorMessage(error);
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) ui.error = formatErrorMessage(error);
+  } finally {
+    if (isCurrent() && !listLoadStarted) ui.isLoading = false;
   }
+};
+
+onMounted(async () => {
+  taskRealtimeLifecycleGeneration += 1;
+  if (!canViewTasks.value) return;
+  emitter.on(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  restoreTasksPreferences();
+  await initializeTasksPage();
 });
 
 onBeforeUnmount(() => {
+  taskUiActionGeneration += 1;
+  taskPageInitializationGeneration += 1;
   taskEditorGeneration += 1;
   taskCompletionGeneration += 1;
   taskCompletionTaskId = null;
@@ -2611,6 +2646,8 @@ onBeforeUnmount(() => {
 });
 
 watch(accountId, async nextAccountId => {
+  taskUiActionGeneration += 1;
+  taskPageInitializationGeneration += 1;
   scheduleTaskListReload.cancel();
   suppressNextListSearchReload = false;
   hasRestoredPreferences.value = false;
@@ -2630,9 +2667,9 @@ watch(accountId, async nextAccountId => {
   await nextTick();
   if (Number(accountId.value) !== Number(nextAccountId)) return;
 
-  hasRestoredPreferences.value = true;
-  persistTasksPreferences();
-  if (canViewTasks.value) await loadTasks();
+  if (canViewTasks.value) {
+    await initializeTasksPage({ reloadAgents: true });
+  }
 });
 
 watch(
@@ -2789,7 +2826,7 @@ watch(
           v-else-if="ui.error"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
           :description="formatErrorMessage(ui.error)"
-          @retry="loadTasks"
+          @retry="initializeTasksPage"
         />
 
         <SchedulingEmptyState

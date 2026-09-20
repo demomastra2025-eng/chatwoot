@@ -2,7 +2,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
-  runtime: { accountId: null },
+  runtime: { accountId: null, routeQuery: {}, routerReplace: vi.fn() },
   referencesStore: {
     dealFieldDefinitions: [],
     pipelines: [
@@ -35,8 +35,12 @@ vi.mock('vue-i18n', () => ({
 }));
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
-  useRoute: () => ({ query: {}, params: { accountId: 1 } }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), resolve: vi.fn() }),
+  useRoute: () => ({ query: runtime.routeQuery, params: { accountId: 1 } }),
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: runtime.routerReplace,
+    resolve: vi.fn(),
+  }),
 }));
 vi.mock('dashboard/api/crm/deals', () => ({
   default: new Proxy(
@@ -129,6 +133,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   runtime.accountId.value = 1;
+  Object.keys(runtime.routeQuery).forEach(
+    key => delete runtime.routeQuery[key]
+  );
+  runtime.routerReplace.mockReset().mockResolvedValue(undefined);
+  referencesStore.loadFieldDefinitions.mockResolvedValue([]);
+  referencesStore.loadPipelines.mockResolvedValue(referencesStore.pipelines);
+  referencesStore.loadTaskStatuses.mockResolvedValue([]);
+  referencesStore.loadTaskTypes.mockResolvedValue([]);
   CrmDealsAPI.get.mockResolvedValue(
     response([deal(1)], {
       count: 1,
@@ -160,6 +172,125 @@ it('exposes a localized string when the initial load fails', async () => {
   const { state } = await mountPage();
 
   expect(state.ui.error).toBe('CRM.ERRORS.STALE_RECORD');
+});
+
+it('retries the complete page bootstrap after a reference request fails', async () => {
+  referencesStore.loadPipelines.mockRejectedValueOnce(
+    new Error('pipelines unavailable')
+  );
+
+  const { state, wrapper } = await mountPage();
+
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.ui.error).toBe('pipelines unavailable');
+  expect(wrapper.findComponent({ name: 'SchedulingErrorState' }).exists()).toBe(
+    true
+  );
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  await state.initializeDealsPage();
+
+  expect(referencesStore.loadPipelines).toHaveBeenCalledTimes(2);
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(state.ui.error).toBeNull();
+  expect(state.deals.map(item => item.id)).toEqual([1]);
+});
+
+it('does not publish an obsolete bootstrap failure after a retry succeeds', async () => {
+  const { state } = await mountPage();
+  const obsolete = deferred();
+  referencesStore.loadPipelines
+    .mockReturnValueOnce(obsolete.promise)
+    .mockResolvedValueOnce(referencesStore.pipelines);
+
+  const firstRetry = state.initializeDealsPage();
+  await flushPromises();
+  await state.initializeDealsPage();
+  obsolete.reject(new Error('obsolete bootstrap failed'));
+  await firstRetry;
+
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.ui.error).toBeNull();
+  expect(state.deals.map(item => item.id)).toEqual([1]);
+});
+
+it('keeps loading owned by a newer list request', async () => {
+  const { state } = await mountPage();
+  const bootstrapList = deferred();
+  const currentList = deferred();
+  CrmDealsAPI.get
+    .mockReset()
+    .mockReturnValueOnce(bootstrapList.promise)
+    .mockReturnValueOnce(currentList.promise);
+
+  const bootstrap = state.initializeDealsPage();
+  await flushPromises();
+  const current = state.loadDeals();
+  bootstrapList.resolve(response([deal(11)]));
+  await bootstrap;
+
+  expect(state.ui.isLoading).toBe(true);
+  currentList.resolve(response([deal(22)]));
+  await current;
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.deals.map(item => item.id)).toEqual([22]);
+});
+
+it('only opens the newest route-query deal when lookups finish in reverse', async () => {
+  const { state } = await mountPage();
+  const obsolete = deferred();
+  const current = deferred();
+  CrmDealsAPI.show
+    .mockReturnValueOnce(obsolete.promise)
+    .mockReturnValueOnce(current.promise);
+
+  runtime.routeQuery.dealId = '11';
+  const firstAction = state.handleDealUiActionQuery();
+  runtime.routeQuery.dealId = '22';
+  const secondAction = state.handleDealUiActionQuery();
+  current.resolve(response(deal(22)));
+  await secondAction;
+  obsolete.resolve(response(deal(11)));
+  await firstAction;
+
+  expect(state.selectedDeal.id).toBe(22);
+  expect(runtime.routerReplace).toHaveBeenCalledTimes(1);
+});
+
+it('does not publish a pending route-query deal after an account switch', async () => {
+  const { state, wrapper } = await mountPage();
+  const obsolete = deferred();
+  const accountBootstrap = deferred();
+  CrmDealsAPI.show.mockReturnValueOnce(obsolete.promise);
+  referencesStore.loadPipelines.mockReturnValueOnce(accountBootstrap.promise);
+
+  runtime.routeQuery.dealId = '11';
+  const action = state.handleDealUiActionQuery();
+  runtime.accountId.value = 2;
+  await flushPromises();
+  obsolete.resolve(response(deal(11)));
+  await action;
+
+  expect(state.selectedDeal).toBeNull();
+  expect(state.drawerOpen).toBe(false);
+  expect(runtime.routerReplace).not.toHaveBeenCalled();
+  wrapper.unmount();
+  accountBootstrap.resolve(referencesStore.pipelines);
+});
+
+it('does not publish a pending route-query deal after unmount', async () => {
+  const { state, wrapper } = await mountPage();
+  const obsolete = deferred();
+  CrmDealsAPI.show.mockReturnValueOnce(obsolete.promise);
+
+  runtime.routeQuery.dealId = '11';
+  const action = state.handleDealUiActionQuery();
+  wrapper.unmount();
+  obsolete.resolve(response(deal(11)));
+  await action;
+
+  expect(state.selectedDeal).toBeNull();
+  expect(runtime.routerReplace).not.toHaveBeenCalled();
 });
 
 it('renders a filtered-empty list without a create action', async () => {

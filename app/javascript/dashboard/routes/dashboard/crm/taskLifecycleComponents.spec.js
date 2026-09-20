@@ -2,7 +2,25 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
-const { taskFieldDefinitions } = vi.hoisted(() => ({
+const { referencesStore, runtime, taskFieldDefinitions } = vi.hoisted(() => ({
+  referencesStore: {
+    loadFieldDefinitions: vi.fn(),
+    loadTaskStatuses: vi.fn(),
+    loadTaskTypes: vi.fn(),
+    taskFieldDefinitions: [],
+    taskStatuses: [
+      { id: 1, code: 'todo', category: 'open', default: true },
+      { id: 2, code: 'done', category: 'done' },
+    ],
+    taskTypes: [
+      { id: 10, code: 'task', name: 'Task', active: true, default: true },
+    ],
+  },
+  runtime: {
+    accountId: null,
+    routeQuery: {},
+    routerReplace: vi.fn(),
+  },
   taskFieldDefinitions: [],
 }));
 
@@ -10,8 +28,8 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({ locale: { value: 'en' }, t: key => key }),
 }));
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {}, params: { accountId: 1 } }),
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRoute: () => ({ query: runtime.routeQuery, params: { accountId: 1 } }),
+  useRouter: () => ({ push: vi.fn(), replace: runtime.routerReplace }),
 }));
 vi.mock('dashboard/api/crm/tasks', () => ({
   default: Object.fromEntries(
@@ -35,30 +53,18 @@ vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({ checkPermissions: () => true }),
 }));
 vi.mock('dashboard/composables/store', () => ({
-  useMapGetter: key =>
-    ref(
-      {
-        getCurrentAccountId: 1,
-        getCurrentUser: { id: 1 },
-        'agents/getAgents': [{ id: 1, name: 'Test agent' }],
-      }[key]
-    ),
+  useMapGetter: key => {
+    const values = {
+      getCurrentAccountId: runtime.accountId,
+      getCurrentUser: ref({ id: 1 }),
+      'agents/getAgents': ref([{ id: 1, name: 'Test agent' }]),
+    };
+    return values[key] || ref(null);
+  },
   useStore: () => ({ dispatch: vi.fn() }),
 }));
 vi.mock('dashboard/stores/crm/references', () => ({
-  useCrmReferencesStore: () => ({
-    taskStatuses: [
-      { id: 1, code: 'todo', category: 'open', default: true },
-      { id: 2, code: 'done', category: 'done' },
-    ],
-    taskTypes: [
-      { id: 10, code: 'task', name: 'Task', active: true, default: true },
-    ],
-    taskFieldDefinitions,
-    loadTaskStatuses: vi.fn(),
-    loadTaskTypes: vi.fn(),
-    loadFieldDefinitions: vi.fn(),
-  }),
+  useCrmReferencesStore: () => referencesStore,
 }));
 
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
@@ -173,7 +179,19 @@ const open = (kind, state) =>
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  runtime.accountId ||= ref(1);
+  runtime.accountId.value = 1;
+  Object.keys(runtime.routeQuery).forEach(
+    key => delete runtime.routeQuery[key]
+  );
+  runtime.routerReplace.mockReset().mockResolvedValue(undefined);
   taskFieldDefinitions.splice(0);
+  referencesStore.taskFieldDefinitions = taskFieldDefinitions;
+  referencesStore.loadFieldDefinitions.mockResolvedValue([]);
+  referencesStore.loadTaskStatuses.mockResolvedValue(
+    referencesStore.taskStatuses
+  );
+  referencesStore.loadTaskTypes.mockResolvedValue(referencesStore.taskTypes);
   CrmTasksAPI.get
     .mockReset()
     .mockResolvedValue(response([structuredClone(initialTask)]));
@@ -215,6 +233,129 @@ it('renders a filtered-empty task list without a create action', async () => {
   const emptyState = wrapper.findComponent({ name: 'SchedulingEmptyState' });
   expect(emptyState.props('description')).toBe('CRM.TASKS.LIST.EMPTY_FILTERED');
   expect(emptyState.props('actionLabel')).toBe('');
+});
+
+it('retries the complete task page bootstrap after references fail', async () => {
+  referencesStore.loadTaskStatuses.mockRejectedValueOnce(
+    new Error('statuses unavailable')
+  );
+
+  const { state, wrapper } = await mountEditor('page');
+
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.ui.error).toBe('statuses unavailable');
+  expect(wrapper.findComponent({ name: 'SchedulingErrorState' }).exists()).toBe(
+    true
+  );
+  expect(CrmTasksAPI.get).not.toHaveBeenCalled();
+
+  await state.initializeTasksPage();
+
+  expect(referencesStore.loadTaskStatuses).toHaveBeenCalledTimes(2);
+  expect(CrmTasksAPI.get).toHaveBeenCalled();
+  expect(state.ui.error).toBeNull();
+  expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
+});
+
+it('ignores an obsolete task bootstrap failure after retry succeeds', async () => {
+  const { state } = await mountEditor('page');
+  const obsolete = deferred();
+  referencesStore.loadTaskStatuses
+    .mockReturnValueOnce(obsolete.promise)
+    .mockResolvedValueOnce(referencesStore.taskStatuses);
+
+  const firstRetry = state.initializeTasksPage();
+  await flushPromises();
+  await state.initializeTasksPage();
+  obsolete.reject(new Error('obsolete bootstrap failed'));
+  await firstRetry;
+
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.ui.error).toBeNull();
+  expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
+});
+
+it('keeps task loading owned by a newer list request', async () => {
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  const bootstrapList = deferred();
+  const currentList = deferred();
+  CrmTasksAPI.get
+    .mockReset()
+    .mockReturnValueOnce(bootstrapList.promise)
+    .mockReturnValueOnce(currentList.promise);
+
+  const bootstrap = state.initializeTasksPage();
+  await flushPromises();
+  const current = state.loadTasks();
+  bootstrapList.resolve(response([{ ...initialTask, id: 11 }]));
+  await bootstrap;
+
+  expect(state.ui.isLoading).toBe(true);
+  currentList.resolve(response([{ ...initialTask, id: 22 }]));
+  await current;
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.tasks.map(task => task.id)).toEqual([22]);
+});
+
+it('only opens the newest route-query task when lookups finish in reverse', async () => {
+  const { state } = await mountEditor('page');
+  const obsolete = deferred();
+  const current = deferred();
+  CrmTasksAPI.show
+    .mockReset()
+    .mockReturnValueOnce(obsolete.promise)
+    .mockReturnValueOnce(current.promise);
+
+  runtime.routeQuery.taskId = '11';
+  const firstAction = state.handleTaskUiActionQuery();
+  runtime.routeQuery.taskId = '22';
+  const secondAction = state.handleTaskUiActionQuery();
+  current.resolve(response({ ...initialTask, id: 22 }));
+  await secondAction;
+  obsolete.resolve(response({ ...initialTask, id: 11 }));
+  await firstAction;
+
+  expect(state.selectedTask.id).toBe(22);
+  expect(runtime.routerReplace).toHaveBeenCalledTimes(1);
+});
+
+it('does not publish a pending route-query task after an account switch', async () => {
+  const { state, wrapper } = await mountEditor('page');
+  const obsolete = deferred();
+  const accountBootstrap = deferred();
+  CrmTasksAPI.show.mockReset().mockReturnValueOnce(obsolete.promise);
+  referencesStore.loadTaskStatuses.mockReturnValueOnce(
+    accountBootstrap.promise
+  );
+
+  runtime.routeQuery.taskId = '11';
+  const action = state.handleTaskUiActionQuery();
+  runtime.accountId.value = 2;
+  await flushPromises();
+  obsolete.resolve(response({ ...initialTask, id: 11 }));
+  await action;
+
+  expect(state.selectedTask).toBeNull();
+  expect(state.drawerOpen).toBe(false);
+  expect(runtime.routerReplace).not.toHaveBeenCalled();
+  wrapper.unmount();
+  accountBootstrap.resolve(referencesStore.taskStatuses);
+});
+
+it('does not publish a pending route-query task after unmount', async () => {
+  const { state, wrapper } = await mountEditor('page');
+  const obsolete = deferred();
+  CrmTasksAPI.show.mockReset().mockReturnValueOnce(obsolete.promise);
+
+  runtime.routeQuery.taskId = '11';
+  const action = state.handleTaskUiActionQuery();
+  wrapper.unmount();
+  obsolete.resolve(response({ ...initialTask, id: 11 }));
+  await action;
+
+  expect(state.selectedTask).toBeNull();
+  expect(runtime.routerReplace).not.toHaveBeenCalled();
 });
 
 describe.each(['page', 'panel'])('%s task concurrency', kind => {

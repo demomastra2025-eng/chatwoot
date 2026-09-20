@@ -15,8 +15,8 @@ describe('#actions', () => {
       await actions.get({ commit });
       expect(commit.mock.calls).toEqual([
         [types.default.SET_AGENT_FETCHING_STATUS, true],
-        [types.default.SET_AGENT_FETCHING_STATUS, false],
         [types.default.SET_AGENTS, agentList],
+        [types.default.SET_AGENT_FETCHING_STATUS, false],
       ]);
     });
     it('sends correct actions if API is error', async () => {
@@ -35,6 +35,48 @@ describe('#actions', () => {
       await expect(
         actions.get({ commit }, { throwOnError: true })
       ).rejects.toBe(error);
+    });
+
+    it('does not publish agents from a stale account request', async () => {
+      const deferred = () => {
+        let resolve;
+        const promise = new Promise(resolvePromise => {
+          resolve = resolvePromise;
+        });
+        return { promise, resolve };
+      };
+      const accountARequest = deferred();
+      const accountBRequest = deferred();
+      const accountAAgents = [{ id: 1, name: 'Account A agent' }];
+      const accountBAgents = [{ id: 2, name: 'Account B agent' }];
+      axios.get
+        .mockReturnValueOnce(accountARequest.promise)
+        .mockReturnValueOnce(accountBRequest.promise);
+
+      window.history.pushState({}, '', '/app/accounts/1/settings/agents');
+      const accountAPromise = actions.get({ commit });
+      window.history.pushState({}, '', '/app/accounts/2/settings/agents');
+      const accountBPromise = actions.get({ commit });
+
+      accountBRequest.resolve({ data: accountBAgents });
+      await accountBPromise;
+      accountARequest.resolve({ data: accountAAgents });
+      await accountAPromise;
+
+      expect(commit).toHaveBeenCalledWith(
+        types.default.SET_AGENTS,
+        accountBAgents
+      );
+      expect(commit).not.toHaveBeenCalledWith(
+        types.default.SET_AGENTS,
+        accountAAgents
+      );
+      expect(
+        commit.mock.calls.filter(
+          ([type, value]) =>
+            type === types.default.SET_AGENT_FETCHING_STATUS && value === false
+        )
+      ).toHaveLength(1);
     });
   });
 

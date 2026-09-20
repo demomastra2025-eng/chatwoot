@@ -2,6 +2,10 @@ import * as MutationHelpers from 'shared/helpers/vuex/mutationHelpers';
 import * as types from '../mutation-types';
 import AgentAPI from '../../api/agents';
 
+let latestGetGeneration = 0;
+
+const currentRouteAccountId = () => String(AgentAPI.accountIdFromRoute || '');
+
 export const state = {
   records: [],
   uiFlags: {
@@ -42,16 +46,25 @@ export const getters = {
 
 export const actions = {
   get: async ({ commit }, { throwOnError = false } = {}) => {
+    latestGetGeneration += 1;
+    const generation = latestGetGeneration;
+    const accountId = currentRouteAccountId();
+    const isCurrent = () =>
+      generation === latestGetGeneration &&
+      currentRouteAccountId() === accountId;
+
     commit(types.default.SET_AGENT_FETCHING_STATUS, true);
     try {
       const response = await AgentAPI.get();
-      commit(types.default.SET_AGENT_FETCHING_STATUS, false);
-      commit(types.default.SET_AGENTS, response.data);
+      if (isCurrent()) commit(types.default.SET_AGENTS, response.data);
       return response.data;
     } catch (error) {
-      commit(types.default.SET_AGENT_FETCHING_STATUS, false);
       if (throwOnError) throw error;
       return false;
+    } finally {
+      if (isCurrent()) {
+        commit(types.default.SET_AGENT_FETCHING_STATUS, false);
+      }
     }
   },
   create: async ({ commit }, agentInfo) => {

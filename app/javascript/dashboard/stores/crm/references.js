@@ -15,9 +15,12 @@ import {
 
 const pipelineLoadRequests = new WeakMap();
 const pipelinePublicationStates = new WeakMap();
+const taskStatusPublicationStates = new WeakMap();
 
 const pipelineAccountId = () =>
   String(CrmPipelinesAPI.accountIdFromRoute || '');
+const taskStatusAccountId = () =>
+  String(CrmTaskStatusesAPI.accountIdFromRoute || '');
 
 const publicationStateFor = (store, accountId) => {
   const current = pipelinePublicationStates.get(store);
@@ -358,18 +361,48 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
 
     async loadTaskStatuses(params = {}) {
+      const accountId = taskStatusAccountId();
+      const previousState = taskStatusPublicationStates.get(this);
+      const state =
+        previousState?.accountId === accountId
+          ? previousState
+          : { accountId, latestGeneration: 0 };
+      if (state !== previousState) {
+        taskStatusPublicationStates.set(this, state);
+        this.taskStatuses = [];
+      }
+      state.latestGeneration += 1;
+      const generation = state.latestGeneration;
       this.ui.isLoadingTaskStatuses = true;
       this.ui.error = null;
 
       try {
         const { data } = await CrmTaskStatusesAPI.get(params);
+        if (
+          taskStatusPublicationStates.get(this) !== state ||
+          taskStatusAccountId() !== accountId ||
+          generation !== state.latestGeneration
+        ) {
+          return this.taskStatuses;
+        }
         this.taskStatuses = normalizePayload(data);
         return this.taskStatuses;
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        if (
+          taskStatusPublicationStates.get(this) === state &&
+          taskStatusAccountId() === accountId &&
+          generation === state.latestGeneration
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingTaskStatuses = false;
+        if (
+          taskStatusPublicationStates.get(this) === state &&
+          generation === state.latestGeneration
+        ) {
+          this.ui.isLoadingTaskStatuses = false;
+        }
       }
     },
 
