@@ -95,6 +95,15 @@ describe('task lifecycle payload helpers', () => {
     ).toThrow('STALE_RECORD');
   });
 
+  it('sends a key-level custom attribute delta for task retries', () => {
+    expect(
+      changedTaskDetails(
+        { custom_attributes: { cleared: 'x', local: 1, remote: 1 } },
+        { custom_attributes: { local: 2, remote: 1 } }
+      )
+    ).toEqual({ custom_attributes: { cleared: null, local: 2 } });
+  });
+
   it('does not let an older mutation response overwrite realtime state', () => {
     const responseTask = { id: 1, title: 'HTTP response' };
     const realtimeTask = { id: 1, title: 'Realtime update' };

@@ -32,6 +32,7 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
+import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
 import CrmDealLifecycleActions from 'dashboard/components-next/CRM/CrmDealLifecycleActions.vue';
@@ -116,6 +117,12 @@ import {
   createLatestRequestGuard,
   runLatestRequestRetries,
 } from 'dashboard/routes/dashboard/crm/helpers/latestRequestGuard';
+import {
+  assertCrmEditCurrent,
+  changedDraftPayload,
+  isStaleCrmError,
+  rebaseSnapshotLockVersion,
+} from 'dashboard/routes/dashboard/crm/conflictDraft';
 
 const CrmDealConversationPanel = defineAsyncComponent(
   () => import('dashboard/components-next/CRM/CrmDealConversationPanel.vue')
@@ -146,6 +153,16 @@ const dealsMeta = ref({
 });
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
+const dealEditSnapshot = ref(null);
+const dealConflict = reactive({
+  active: false,
+  hasAuthoritative: false,
+  isReloading: false,
+  reloadFailed: false,
+});
+let dealConflictGeneration = 0;
+let dealEditorGeneration = 0;
+let dealTimelineGeneration = 0;
 const pendingStageEntry = ref(null);
 const stageRuleOverrideReason = ref('');
 const closingReasonDialogRef = ref(null);
@@ -1312,6 +1329,16 @@ const captureFormBaseline = () => {
   formBaselineSnapshot.value = JSON.stringify(formSnapshotPayload());
 };
 
+const resetDealConflict = () => {
+  dealConflictGeneration += 1;
+  Object.assign(dealConflict, {
+    active: false,
+    hasAuthoritative: false,
+    isReloading: false,
+    reloadFailed: false,
+  });
+};
+
 const isDealFormDirty = computed(
   () => JSON.stringify(formSnapshotPayload()) !== formBaselineSnapshot.value
 );
@@ -1321,7 +1348,12 @@ const shouldShowDealSaveAction = computed(
 );
 
 const disableDealSave = computed(
-  () => ui.isSaving || !form.title.trim() || !form.pipelineId || !form.stageId
+  () =>
+    ui.isSaving ||
+    (dealConflict.active && !dealConflict.hasAuthoritative) ||
+    !form.title.trim() ||
+    !form.pipelineId ||
+    !form.stageId
 );
 
 const primaryContactOptions = computed(() =>
@@ -1499,9 +1531,10 @@ const buildPrefillDealTitle = () => {
 const upsertDeal = deal => {
   const existingIndex = deals.value.findIndex(item => item.id === deal.id);
   const existingDeal = existingIndex === -1 ? null : deals.value[existingIndex];
+  const nextDeal = isDealVersionNewer(existingDeal, deal) ? existingDeal : deal;
   const nextDeals =
-    existingIndex === -1 ? [deal, ...deals.value] : [...deals.value];
-  if (existingIndex !== -1) nextDeals.splice(existingIndex, 1, deal);
+    existingIndex === -1 ? [nextDeal, ...deals.value] : [...deals.value];
+  if (existingIndex !== -1) nextDeals.splice(existingIndex, 1, nextDeal);
   deals.value =
     currentPresentation.value === 'board'
       ? sortDealsForBoard(nextDeals, {
@@ -1513,7 +1546,7 @@ const upsertDeal = deal => {
   const nextStageCounts = stageCountsAfterDealMove(
     dealsMeta.value.stageCounts,
     existingDeal,
-    deal
+    nextDeal
   );
   if (nextStageCounts !== dealsMeta.value.stageCounts) {
     dealsMeta.value = {
@@ -1521,6 +1554,8 @@ const upsertDeal = deal => {
       stageCounts: nextStageCounts,
     };
   }
+
+  return nextDeal;
 };
 
 const mergeDealsById = (currentDeals, nextDeals) => {
@@ -1838,19 +1873,32 @@ const ensureSelectedFilterLookups = async () => {
 };
 
 const loadTimeline = async dealId => {
+  const editorGeneration = dealEditorGeneration;
+  dealTimelineGeneration += 1;
+  const timelineGeneration = dealTimelineGeneration;
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    timelineGeneration === dealTimelineGeneration &&
+    Number(selectedDeal.value?.id) === Number(dealId);
   ui.isTimelineLoading = true;
 
   try {
     const { data } = await CrmDealsAPI.timeline(dealId, { limit: 50 });
+    if (!isCurrentEditor()) return;
     timelineItems.value = normalizePayload(data);
   } finally {
-    ui.isTimelineLoading = false;
+    if (isCurrentEditor()) ui.isTimelineLoading = false;
   }
 };
 
 const openCreateDrawer = async prefill => {
+  dealEditorGeneration += 1;
+  ui.isSaving = false;
+  ui.isTimelineLoading = false;
   closeDealTitleEditor();
   selectedDeal.value = null;
+  dealEditSnapshot.value = null;
+  resetDealConflict();
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
   const dealPrefill = prefill?.currentTarget ? null : prefill;
@@ -1873,12 +1921,19 @@ const openCreateDrawer = async prefill => {
 };
 
 const openEditDrawer = async deal => {
+  dealEditorGeneration += 1;
+  ui.isSaving = false;
+  ui.isTimelineLoading = false;
   closeDealTitleEditor();
+  resetDealConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedDeal.value = deal;
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
   populateFormFromDeal(deal);
+  // Declared with the save boundary below; this handler only runs after setup.
+  // eslint-disable-next-line no-use-before-define
+  dealEditSnapshot.value = buildDealEditSnapshot(deal);
   drawerOpen.value = true;
   showLinkedConversationPanel.value = true;
   resetDealConversationDraft();
@@ -1893,13 +1948,18 @@ const openEditDrawer = async deal => {
 };
 
 const closeDrawer = () => {
+  dealEditorGeneration += 1;
+  ui.isSaving = false;
+  ui.isTimelineLoading = false;
   closeDealTitleEditor();
+  resetDealConflict();
   pendingStageEntry.value = null;
   stageRuleOverrideReason.value = '';
   pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   showLinkedConversationPanel.value = false;
   selectedDeal.value = null;
+  dealEditSnapshot.value = null;
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
   timelineItems.value = [];
@@ -2000,7 +2060,7 @@ const syncSelectedDeal = records => {
 };
 
 const buildPayload = () => {
-  return compactPayload({
+  const payload = compactPayload({
     amount_minor: majorAmountToMinor(form.amount),
     company_id: form.companyId ? Number(form.companyId) : undefined,
     contact_ids: form.contactIds.map(Number),
@@ -2030,13 +2090,116 @@ const buildPayload = () => {
         ? undefined
         : Number(form.winProbability),
   });
+
+  if (selectedDeal.value) {
+    Object.assign(payload, {
+      amount_minor:
+        form.amount === '' || form.amount === null
+          ? null
+          : majorAmountToMinor(form.amount),
+      company_id: form.companyId ? Number(form.companyId) : null,
+      contact_ids: form.contactIds.map(Number),
+      description: form.description || null,
+      expected_close_on: form.expectedCloseOn || null,
+      external_ref: form.externalRef || null,
+      originating_communication_thread_id: form.originatingCommunicationThreadId
+        ? Number(form.originatingCommunicationThreadId)
+        : null,
+      originating_conversation_id: form.originatingConversationId
+        ? Number(form.originatingConversationId)
+        : null,
+      owner_id: form.ownerId ? Number(form.ownerId) : null,
+      primary_contact_id: form.primaryContactId
+        ? Number(form.primaryContactId)
+        : null,
+      team_id: form.teamId ? Number(form.teamId) : null,
+      win_probability:
+        form.winProbability === '' || form.winProbability === null
+          ? null
+          : Number(form.winProbability),
+    });
+  }
+
+  return payload;
+};
+
+const buildDealEditSnapshot = deal => ({
+  deal: JSON.parse(JSON.stringify(deal)),
+  payload: JSON.parse(JSON.stringify(buildPayload())),
+});
+
+const rebaseDealEditSnapshot = (deal, payloadKeys = []) => {
+  if (
+    !dealEditSnapshot.value ||
+    Number(selectedDeal.value?.id) !== Number(deal?.id)
+  )
+    return;
+
+  dealEditSnapshot.value = rebaseSnapshotLockVersion(
+    dealEditSnapshot.value,
+    'deal',
+    deal
+  );
+  if (!payloadKeys.length) return;
+
+  const currentPayload = buildPayload();
+  payloadKeys.forEach(key => {
+    dealEditSnapshot.value.payload[key] = JSON.parse(
+      JSON.stringify(currentPayload[key])
+    );
+  });
+};
+
+const reloadDealConflict = async () => {
+  const dealId = Number(selectedDeal.value?.id);
+  if (!dealId || dealConflict.isReloading) return false;
+  dealConflictGeneration += 1;
+  const generation = dealConflictGeneration;
+
+  dealConflict.active = true;
+  dealConflict.isReloading = true;
+  dealConflict.reloadFailed = false;
+
+  try {
+    const response = await CrmDealsAPI.show(dealId);
+    if (
+      generation !== dealConflictGeneration ||
+      Number(selectedDeal.value?.id) !== dealId ||
+      !dealConflict.active
+    )
+      return false;
+    const deal = normalizePayload(response.data);
+    const authoritativeDeal = isDealVersionNewer(selectedDeal.value, deal)
+      ? selectedDeal.value
+      : deal;
+    selectedDeal.value = authoritativeDeal;
+    dealEditSnapshot.value = rebaseSnapshotLockVersion(
+      dealEditSnapshot.value,
+      'deal',
+      authoritativeDeal
+    );
+    dealConflict.hasAuthoritative = true;
+    return true;
+  } catch {
+    if (generation !== dealConflictGeneration) return false;
+    dealConflict.hasAuthoritative = false;
+    dealConflict.reloadFailed = true;
+    return true;
+  } finally {
+    if (generation === dealConflictGeneration) dealConflict.isReloading = false;
+  }
 };
 
 const saveDealContactLink = async contactId => {
   const normalizedContactId = Number(contactId);
+  const editorGeneration = dealEditorGeneration;
+  const editorDealId = Number(selectedDeal.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    Number(selectedDeal.value?.id) === editorDealId;
 
   if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) {
-    return;
+    return false;
   }
 
   const contactIds = [
@@ -2049,28 +2212,37 @@ const saveDealContactLink = async contactId => {
     stage_id: _stageId,
     ...payload
   } = buildPayload();
-  const response = await CrmDealsAPI.update(selectedDeal.value.id, {
+  const response = await CrmDealsAPI.update(editorDealId, {
     ...payload,
     contact_ids: contactIds,
     lock_version: selectedDeal.value.lockVersion,
     primary_contact_id: primaryContactId ? Number(primaryContactId) : undefined,
   });
-  const updatedDeal = normalizePayload(response.data);
-
   // Defined with the board loader below; this handler only runs after setup.
   // eslint-disable-next-line no-use-before-define
-  await applyDealMutation(updatedDeal);
+  const updatedDeal = await applyDealMutation(normalizePayload(response.data), {
+    syncSelected: isCurrentEditor,
+  });
+  if (!isCurrentEditor()) return false;
   selectedDeal.value = updatedDeal;
   populateFormFromDeal(updatedDeal);
   captureFormBaseline();
+  dealEditSnapshot.value = buildDealEditSnapshot(updatedDeal);
   await Promise.allSettled([
     ensureSelectedLookups(updatedDeal),
     loadTimeline(updatedDeal.id),
   ]);
+  return isCurrentEditor();
 };
 
 const createDealConversation = async ({ contactId, inbox }) => {
   if (!canManageDeals.value || !selectedDeal.value || !inbox) return;
+
+  const editorGeneration = dealEditorGeneration;
+  const editorDealId = Number(selectedDeal.value.id);
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    Number(selectedDeal.value?.id) === editorDealId;
 
   const normalizedContactId = Number(contactId);
   if (!Number.isFinite(normalizedContactId) || normalizedContactId <= 0) {
@@ -2087,15 +2259,19 @@ const createDealConversation = async ({ contactId, inbox }) => {
       source_id: inbox.sourceId || undefined,
     });
     await ConversationAPI.create(conversationPayload);
-    await saveDealContactLink(normalizedContactId);
+    if (!isCurrentEditor()) return;
+    const contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
+    if (!contactLinkIsCurrent || !isCurrentEditor()) return;
     showLinkedConversationPanel.value = true;
     await loadDealConversationContextWithRetry(normalizedContactId);
+    if (!isCurrentEditor()) return;
 
     useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
   } catch (error) {
+    if (!isCurrentEditor()) return;
     useAlert(formatErrorMessage(error));
   } finally {
-    dealConversationDraft.isCreating = false;
+    if (isCurrentEditor()) dealConversationDraft.isCreating = false;
   }
 };
 
@@ -2119,6 +2295,13 @@ const saveDeal = async () => {
   }
 
   ui.isSaving = true;
+  const editorGeneration = dealEditorGeneration;
+  const editorDealId = Number(selectedDeal.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    (editorDealId
+      ? Number(selectedDeal.value?.id) === editorDealId
+      : !selectedDeal.value);
 
   try {
     const wasEditingDeal = !!selectedDeal.value;
@@ -2126,47 +2309,84 @@ const saveDeal = async () => {
     let deal;
 
     if (selectedDeal.value) {
+      assertCrmEditCurrent(dealEditSnapshot.value?.deal, selectedDeal.value);
       const currentStageId = selectedDeal.value.stageId;
-      const {
-        closing_reasons: _closingReasons,
-        stage_id: _stageId,
-        ...updatePayload
-      } = payload;
-      const response = await CrmDealsAPI.update(
-        selectedDeal.value.id,
-        updatePayload
+      const stageChangedByDraft =
+        Number(payload.stage_id) !==
+        Number(dealEditSnapshot.value?.payload?.stage_id);
+      const updatePayload = changedDraftPayload(
+        dealEditSnapshot.value?.payload,
+        payload,
+        ['closing_reasons', 'lock_version', 'stage_id']
       );
-      deal = normalizePayload(response.data);
+      updatePayload.lock_version = selectedDeal.value.lockVersion;
 
-      if (Number(form.stageId) !== Number(currentStageId) && form.stageId) {
+      if (Object.keys(updatePayload).length > 1) {
+        const response = await CrmDealsAPI.update(
+          selectedDeal.value.id,
+          updatePayload
+        );
+        if (!isCurrentEditor()) return;
+        deal = normalizePayload(response.data);
+      } else {
+        deal = selectedDeal.value;
+      }
+
+      if (
+        stageChangedByDraft &&
+        Number(form.stageId) !== Number(currentStageId) &&
+        form.stageId
+      ) {
         const transitionResponse = await CrmDealsAPI.transitionStage(deal.id, {
           closing_reasons: form.closingReasons,
           lock_version: deal.lockVersion,
           stage_id: Number(form.stageId),
         });
+        if (!isCurrentEditor()) return;
         deal = normalizePayload(transitionResponse.data);
       }
     } else {
       const response = await CrmDealsAPI.create(payload);
+      if (!isCurrentEditor()) return;
       deal = normalizePayload(response.data);
     }
 
+    const mutationDeal = deal;
     // Defined with the board loader below; this handler only runs after setup.
     // eslint-disable-next-line no-use-before-define
-    await applyDealMutation(deal);
+    deal = await applyDealMutation(deal, { syncSelected: isCurrentEditor });
+    if (!isCurrentEditor()) return;
+
+    if (isDealVersionNewer(deal, mutationDeal)) {
+      dealEditSnapshot.value = rebaseSnapshotLockVersion(
+        dealEditSnapshot.value,
+        'deal',
+        selectedDeal.value
+      );
+      dealConflict.active = true;
+      dealConflict.hasAuthoritative = true;
+      dealConflict.reloadFailed = false;
+      useAlert(t('CRM.ERRORS.STALE_RECORD'));
+      return;
+    }
+
     selectedDeal.value = deal;
+    resetDealConflict();
     pendingCreateCustomFieldDefaultsHydration.value = false;
     populateFormFromDeal(deal);
+    dealEditSnapshot.value = buildDealEditSnapshot(deal);
     captureFormBaseline();
     await Promise.allSettled([
       ensureSelectedLookups(deal),
       loadTimeline(deal.id),
     ]);
+    if (!isCurrentEditor()) return;
 
     if (!canOpenLinkedConversation.value && primaryDealContactId.value) {
       showLinkedConversationPanel.value = true;
       resetDealConversationDraft();
       await loadDealConversationContext(primaryDealContactId.value);
+      if (!isCurrentEditor()) return;
     }
 
     useAlert(
@@ -2177,6 +2397,15 @@ const saveDeal = async () => {
     pendingStageEntry.value = null;
     stageRuleOverrideReason.value = '';
   } catch (error) {
+    if (!isCurrentEditor()) return;
+    if (selectedDeal.value && isStaleCrmError(error)) {
+      dealConflict.active = true;
+      dealConflict.hasAuthoritative = false;
+      const conflictIsCurrent = await reloadDealConflict();
+      if (conflictIsCurrent) useAlert(formatErrorMessage(error));
+      return;
+    }
+
     if (currentPresentation.value === 'board') {
       try {
         // Declared with the board loader below; this handler runs after setup.
@@ -2188,7 +2417,7 @@ const saveDeal = async () => {
     }
     useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -2204,12 +2433,13 @@ const toggleArchived = async deal => {
     const updatedDeal = normalizePayload(response.data);
     // Defined with the board loader below; this handler only runs after setup.
     // eslint-disable-next-line no-use-before-define
-    await applyDealMutation(updatedDeal);
+    const acceptedDeal = await applyDealMutation(updatedDeal);
     if (
       selectedDeal.value &&
-      Number(selectedDeal.value.id) === Number(updatedDeal.id)
+      Number(selectedDeal.value.id) === Number(acceptedDeal.id)
     ) {
-      selectedDeal.value = updatedDeal;
+      selectedDeal.value = acceptedDeal;
+      rebaseDealEditSnapshot(acceptedDeal);
     }
     useAlert(
       deal.archivedAt
@@ -2253,7 +2483,11 @@ const buildDealsFetchParams = page => {
   });
 };
 
-async function loadDeals({ append = false, page = null } = {}) {
+async function loadDeals({
+  append = false,
+  page = null,
+  syncSelected = true,
+} = {}) {
   if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return;
 
   if (!append) {
@@ -2290,12 +2524,14 @@ async function loadDeals({ append = false, page = null } = {}) {
       );
       if (listCurrentPage.value > maxPage) {
         listCurrentPage.value = maxPage;
-        await loadDeals();
+        await loadDeals({ syncSelected });
         return;
       }
     }
     deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
-    syncSelectedDeal(deals.value);
+    if (typeof syncSelected !== 'function' || syncSelected()) {
+      syncSelectedDeal(deals.value);
+    }
   } catch (error) {
     if (requestGeneration !== dealsRequestGeneration) return;
 
@@ -2325,17 +2561,28 @@ const handleListPageChange = async page => {
   await loadDeals();
 };
 
-function applyDealMutation(deal) {
-  upsertDeal(deal);
-  if (currentPresentation.value === 'list') return loadDeals();
+async function applyDealMutation(deal, { syncSelected = true } = {}) {
+  dealsRequestGeneration += 1;
+  ui.isLoading = false;
+  ui.isLoadingMore = false;
+  const acceptedDeal = upsertDeal(deal);
+  if (currentPresentation.value === 'list') {
+    await loadDeals({ syncSelected });
+  }
 
-  return undefined;
+  return (
+    deals.value.find(item => Number(item.id) === Number(deal.id)) ||
+    acceptedDeal
+  );
 }
 
-const handleDealWaitingUpdated = deal => {
-  applyDealMutation(deal);
-  selectedDeal.value = deal;
-  loadTimeline(deal.id);
+const handleDealWaitingUpdated = async deal => {
+  const acceptedDeal = await applyDealMutation(deal);
+  if (Number(selectedDeal.value?.id) === Number(acceptedDeal.id)) {
+    selectedDeal.value = acceptedDeal;
+    rebaseDealEditSnapshot(acceptedDeal);
+  }
+  loadTimeline(acceptedDeal.id);
 };
 
 const handlePresentationChange = async presentation => {
@@ -2404,8 +2651,9 @@ const saveDealTitle = async deal => {
       lock_version: currentDeal.lockVersion,
       title: nextTitle,
     });
-    const updatedDeal = normalizePayload(response.data);
-    await applyDealMutation(updatedDeal);
+    const updatedDeal = await applyDealMutation(
+      normalizePayload(response.data)
+    );
 
     if (
       selectedDeal.value &&
@@ -2413,6 +2661,7 @@ const saveDealTitle = async deal => {
     ) {
       selectedDeal.value = updatedDeal;
       form.title = updatedDeal.title;
+      rebaseDealEditSnapshot(updatedDeal, ['title']);
     }
   } catch (error) {
     try {
@@ -2699,6 +2948,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     stageId: nextStageId,
   };
   const mutationToken = Symbol(`deal-stage-mutation-${currentDeal.id}`);
+  const editorGeneration = dealEditorGeneration;
   dealStageMutationTokens.set(currentDeal.id, mutationToken);
   upsertDeal(optimisticDeal);
 
@@ -2730,15 +2980,34 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     const displayedDeal = deals.value.find(
       item => Number(item.id) === Number(currentDeal.id)
     );
-    if (isDealVersionNewer(displayedDeal, updatedDeal)) return;
-    applyDealMutation(updatedDeal);
+    if (isDealVersionNewer(displayedDeal, updatedDeal)) {
+      if (
+        dealEditorGeneration === editorGeneration &&
+        Number(selectedDeal.value?.id) === Number(displayedDeal.id)
+      ) {
+        selectedDeal.value = displayedDeal;
+        form.stageId = displayedDeal.stageId;
+        rebaseDealEditSnapshot(displayedDeal, ['closing_reasons', 'stage_id']);
+      }
+      return;
+    }
+    const acceptedDeal = await applyDealMutation(updatedDeal, {
+      syncSelected: () =>
+        dealEditorGeneration === editorGeneration &&
+        Number(selectedDeal.value?.id) === Number(currentDeal.id),
+    });
+    if (dealStageMutationTokens.get(currentDeal.id) !== mutationToken) {
+      return;
+    }
 
     if (
+      dealEditorGeneration === editorGeneration &&
       selectedDeal.value &&
-      Number(selectedDeal.value.id) === updatedDeal.id
+      Number(selectedDeal.value.id) === acceptedDeal.id
     ) {
-      selectedDeal.value = updatedDeal;
-      form.stageId = updatedDeal.stageId;
+      selectedDeal.value = acceptedDeal;
+      form.stageId = acceptedDeal.stageId;
+      rebaseDealEditSnapshot(acceptedDeal, ['closing_reasons', 'stage_id']);
     }
   } catch (error) {
     const isLatestMutation =
@@ -2804,6 +3073,11 @@ const overridePendingStageEntry = async () => {
     return;
   }
 
+  const editorGeneration = dealEditorGeneration;
+  const editorDealId = Number(selectedDeal.value.id);
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    Number(selectedDeal.value?.id) === editorDealId;
   ui.isSaving = true;
   try {
     const response = await CrmDealsAPI.transitionStage(selectedDeal.value.id, {
@@ -2813,18 +3087,24 @@ const overridePendingStageEntry = async () => {
       position: pendingStageEntry.value.position,
       stage_id: pendingStageEntry.value.stageId,
     });
-    const updatedDeal = normalizePayload(response.data);
-    await applyDealMutation(updatedDeal);
+    const updatedDeal = await applyDealMutation(
+      normalizePayload(response.data),
+      {
+        syncSelected: isCurrentEditor,
+      }
+    );
+    if (!isCurrentEditor()) return;
     selectedDeal.value = updatedDeal;
     populateFormFromDeal(updatedDeal);
     captureFormBaseline();
+    dealEditSnapshot.value = buildDealEditSnapshot(updatedDeal);
     pendingStageEntry.value = null;
     stageRuleOverrideReason.value = '';
     useAlert(t('CRM.DEALS.STAGE_ENTRY.OVERRIDE_SUCCESS'));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -2872,6 +3152,11 @@ const performDealLifecycleAction = async action => {
   }
 
   const deal = selectedDeal.value;
+  const editorGeneration = dealEditorGeneration;
+  const editorDealId = Number(deal.id);
+  const isCurrentEditor = () =>
+    editorGeneration === dealEditorGeneration &&
+    Number(selectedDeal.value?.id) === editorDealId;
   let closingReasons = [];
   if (action === 'closeLost') {
     const targetStage = lifecycleStageByOutcome('lost');
@@ -2889,17 +3174,24 @@ const performDealLifecycleAction = async action => {
   ui.isSaving = true;
   try {
     const response = await callDealLifecycleApi(action, deal.id, payload);
-    const updatedDeal = normalizePayload(response.data);
-    await applyDealMutation(updatedDeal);
+    const updatedDeal = await applyDealMutation(
+      normalizePayload(response.data),
+      {
+        syncSelected: isCurrentEditor,
+      }
+    );
+    if (!isCurrentEditor()) return;
     selectedDeal.value = updatedDeal;
     populateFormFromDeal(updatedDeal);
     captureFormBaseline();
+    dealEditSnapshot.value = buildDealEditSnapshot(updatedDeal);
     await loadTimeline(updatedDeal.id);
+    if (!isCurrentEditor()) return;
     useAlert(lifecycleSuccessMessage(action));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -3151,6 +3443,9 @@ onBeforeRouteLeave(() => {
 });
 
 onBeforeUnmount(() => {
+  dealEditorGeneration += 1;
+  ui.isSaving = false;
+  resetDealConflict();
   emitter.off(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
   scheduleDealsReload.cancel?.();
   dealsRequestGeneration += 1;
@@ -3720,6 +4015,16 @@ watch(
 
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <div class="crm-deal-drawer-form">
+                <CrmConflictNotice
+                  v-if="dealConflict.active"
+                  :is-reloading="dealConflict.isReloading"
+                  :is-retrying="ui.isSaving"
+                  :reload-failed="dealConflict.reloadFailed"
+                  :retry-ready="dealConflict.hasAuthoritative"
+                  @reload="reloadDealConflict"
+                  @retry="saveDeal"
+                />
+
                 <div
                   v-if="pendingStageEntry"
                   class="grid gap-2 rounded-xl border border-n-amber-6 bg-n-amber-2 p-3 text-sm text-n-slate-12"

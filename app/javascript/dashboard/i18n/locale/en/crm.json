@@ -121,6 +121,14 @@
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
       "VALIDATION_ERROR": "Please fix the form errors and try again."
     },
+    "CONFLICT": {
+      "TITLE": "This record changed elsewhere",
+      "DESCRIPTION": "Load the latest server version before saving your changes again.",
+      "DRAFT_PRESERVED": "Your unsaved changes are preserved.",
+      "RELOAD_FAILED": "The latest version could not be loaded. Your draft is still preserved.",
+      "RELOAD_ACTION": "Load latest version",
+      "RETRY_ACTION": "Retry save"
+    },
     "DEALS": {
       "CREATE_TITLE": "Create deal",
       "CREATE_TASK": "Create task for deal",

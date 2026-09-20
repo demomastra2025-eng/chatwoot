@@ -30,6 +30,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
+import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
@@ -103,6 +104,10 @@ import {
   cloneTaskDraft,
   rememberTaskSnapshot,
 } from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
+import {
+  isStaleCrmError,
+  rebaseSnapshotLockVersion,
+} from 'dashboard/routes/dashboard/crm/conflictDraft';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
@@ -133,6 +138,16 @@ const cancelDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const selectedTask = ref(null);
 const taskEditSnapshot = ref(null);
+const taskConflict = reactive({
+  active: false,
+  hasAuthoritative: false,
+  isReloading: false,
+  reloadFailed: false,
+});
+let taskConflictGeneration = 0;
+let taskEditorGeneration = 0;
+let taskCompletionGeneration = 0;
+let taskCompletionTaskId = null;
 const taskTitleEditSnapshot = ref(null);
 const timelineItems = ref([]);
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
@@ -248,6 +263,7 @@ const doneStatus = computed(() =>
 );
 const isTaskFormDisabled = computed(
   () =>
+    (taskConflict.active && !taskConflict.hasAuthoritative) ||
     !form.title.trim() ||
     !form.statusId ||
     !form.contextKind ||
@@ -962,6 +978,16 @@ const resetTimeline = () => {
   ui.isTimelineLoading = false;
 };
 
+const resetTaskConflict = () => {
+  taskConflictGeneration += 1;
+  Object.assign(taskConflict, {
+    active: false,
+    hasAuthoritative: false,
+    isReloading: false,
+    reloadFailed: false,
+  });
+};
+
 const loadDealOptions = async () => {
   if (isComponentUnmounted) return;
   dealOptionsLoadGeneration += 1;
@@ -1018,8 +1044,11 @@ const openTaskSettings = () => {
 };
 
 const openCreateDrawer = async prefill => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
   selectedTask.value = null;
   taskEditSnapshot.value = null;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
   resetTimeline();
@@ -1093,6 +1122,9 @@ const buildPayload = () => {
 };
 
 const openEditDrawer = async task => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
   resetTimeline();
@@ -1127,6 +1159,9 @@ const openEditDrawer = async task => {
 };
 
 const closeDrawer = () => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   selectedTask.value = null;
@@ -1171,6 +1206,46 @@ const upsertTask = task => {
 
 const removeTask = taskId => {
   tasks.value = tasks.value.filter(task => Number(task.id) !== Number(taskId));
+};
+
+const reloadTaskConflict = async () => {
+  const taskId = Number(selectedTask.value?.id);
+  if (!taskId || taskConflict.isReloading) return false;
+  taskConflictGeneration += 1;
+  const generation = taskConflictGeneration;
+
+  taskConflict.active = true;
+  taskConflict.isReloading = true;
+  taskConflict.reloadFailed = false;
+
+  try {
+    const response = await CrmTasksAPI.show(taskId);
+    if (
+      generation !== taskConflictGeneration ||
+      Number(selectedTask.value?.id) !== taskId ||
+      !taskConflict.active
+    )
+      return false;
+    const task = normalizePayload(response.data);
+    upsertTask(task);
+    const authoritativeTask =
+      pendingTaskRealtimeUpdates.get(taskId)?.task || task;
+    selectedTask.value = authoritativeTask;
+    taskEditSnapshot.value = rebaseSnapshotLockVersion(
+      taskEditSnapshot.value,
+      'task',
+      authoritativeTask
+    );
+    taskConflict.hasAuthoritative = true;
+    return true;
+  } catch {
+    if (generation !== taskConflictGeneration) return false;
+    taskConflict.hasAuthoritative = false;
+    taskConflict.reloadFailed = true;
+    return true;
+  } finally {
+    if (generation === taskConflictGeneration) taskConflict.isReloading = false;
+  }
 };
 
 const effectiveTaskState = () =>
@@ -1252,7 +1327,11 @@ const applyTaskRealtimeState = (task, boardTimeBucket = null) => {
   scheduleTaskListReload();
 };
 
-const runTaskMutation = async (request, expectedTask) => {
+const runTaskMutation = async (
+  request,
+  expectedTask,
+  isCurrentEditor = () => true
+) => {
   const accountAtStart = accountId.value;
   if (expectedTask) {
     assertTaskEditCurrent(
@@ -1270,10 +1349,11 @@ const runTaskMutation = async (request, expectedTask) => {
     responseTask,
     taskRealtimeSequence
   );
+  if (expectedTask) assertTaskEditCurrent(responseTask, newest);
+  if (!isCurrentEditor()) return newest;
   applyTaskRealtimeState(newest);
   if (Number(selectedTask.value?.id) === Number(newest.id))
     selectedTask.value = newest;
-  if (expectedTask) assertTaskEditCurrent(responseTask, newest);
   return newest;
 };
 
@@ -1308,6 +1388,13 @@ const saveTask = async () => {
   if (!canManageTasks.value || ui.isSaving) return;
 
   ui.isSaving = true;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
 
   try {
     const payload = buildPayload();
@@ -1322,13 +1409,20 @@ const saveTask = async () => {
         requested: payload,
         form: draft,
       });
-      task = await runTaskMutation(() =>
-        CrmTasksAPI.saveForm(currentTask.id, savePayload)
+      task = await runTaskMutation(
+        () => CrmTasksAPI.saveForm(currentTask.id, savePayload),
+        currentTask,
+        isCurrentEditor
       );
     } else {
-      task = await runTaskMutation(() => CrmTasksAPI.create(payload));
+      task = await runTaskMutation(
+        () => CrmTasksAPI.create(payload),
+        null,
+        isCurrentEditor
+      );
     }
 
+    if (!isCurrentEditor()) return;
     applyTaskRealtimeState(task);
     useAlert(
       selectedTask.value
@@ -1337,44 +1431,76 @@ const saveTask = async () => {
     );
     closeDrawer();
   } catch (error) {
+    if (!isCurrentEditor()) return;
+    if (selectedTask.value && isStaleCrmError(error)) {
+      taskConflict.active = true;
+      taskConflict.hasAuthoritative = false;
+      const conflictIsCurrent = await reloadTaskConflict();
+      if (conflictIsCurrent) useAlert(formatErrorMessage(error));
+      return;
+    }
     useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
 const openTaskCompletionDialog = task => {
   if (!canManageTasks.value || !doneStatus.value || task?.archivedAt) return;
 
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = Number(task.id);
   completionDialogRef.value?.open(task);
+};
+
+const invalidateTaskCompletionDialog = () => {
+  if (taskCompletionTaskId === null) return;
+
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = null;
+  ui.isSaving = false;
 };
 
 const saveTaskCompletion = async ({ task, note, taskOutcomeId }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const completionGeneration = taskCompletionGeneration;
+  const completionTaskId = Number(task.id);
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    completionGeneration === taskCompletionGeneration &&
+    taskCompletionTaskId === completionTaskId &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
 
   ui.isSaving = true;
 
   try {
-    const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.complete(
-        currentTask.id,
-        compactPayload({
-          idempotency_key: crypto.randomUUID(),
-          lock_version: currentTask.lockVersion,
-          outcome_note: note,
-          task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
-        })
-      )
+    await runTaskMutation(
+      () =>
+        CrmTasksAPI.complete(
+          currentTask.id,
+          compactPayload({
+            idempotency_key: crypto.randomUUID(),
+            lock_version: currentTask.lockVersion,
+            outcome_note: note,
+            task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
+          })
+        ),
+      currentTask,
+      isCurrentEditor
     );
-    applyTaskRealtimeState(updatedTask);
+    if (!isCurrentEditor()) return;
     completionDialogRef.value?.close();
     closeDrawer();
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -1394,24 +1520,34 @@ const openTaskCancelDialog = task => {
 const saveTaskCancellation = async ({ task, reason }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
   ui.isSaving = true;
 
   try {
-    const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.cancel(currentTask.id, {
-        cancellation_reason: reason,
-        idempotency_key: crypto.randomUUID(),
-        lock_version: currentTask.lockVersion,
-      })
+    await runTaskMutation(
+      () =>
+        CrmTasksAPI.cancel(currentTask.id, {
+          cancellation_reason: reason,
+          idempotency_key: crypto.randomUUID(),
+          lock_version: currentTask.lockVersion,
+        }),
+      currentTask,
+      isCurrentEditor
     );
-    applyTaskRealtimeState(updatedTask);
+    if (!isCurrentEditor()) return;
     cancelDialogRef.value?.close();
     closeDrawer();
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -1420,21 +1556,31 @@ const reopenTask = async task => {
     return;
   }
 
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
   ui.isSaving = true;
   try {
-    const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.reopen(task.id, {
-        idempotency_key: crypto.randomUUID(),
-        lock_version: task.lockVersion,
-      })
+    const updatedTask = await runTaskMutation(
+      () =>
+        CrmTasksAPI.reopen(task.id, {
+          idempotency_key: crypto.randomUUID(),
+          lock_version: task.lockVersion,
+        }),
+      task,
+      isCurrentEditor
     );
-    applyTaskRealtimeState(updatedTask);
+    if (!isCurrentEditor()) return;
     selectedTask.value = updatedTask;
     useAlert(t('CRM.TASKS.LIFECYCLE.REOPENED'));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
@@ -2441,6 +2587,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  taskEditorGeneration += 1;
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = null;
+  ui.isSaving = false;
+  resetTaskConflict();
   emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
   scheduleTaskListReload.cancel?.();
   isComponentUnmounted = true;
@@ -2892,6 +3043,16 @@ watch(
       @confirm="saveTask"
     >
       <div class="grid gap-4">
+        <CrmConflictNotice
+          v-if="taskConflict.active"
+          :is-reloading="taskConflict.isReloading"
+          :is-retrying="ui.isSaving"
+          :reload-failed="taskConflict.reloadFailed"
+          :retry-ready="taskConflict.hasAuthoritative"
+          @reload="reloadTaskConflict"
+          @retry="saveTask"
+        />
+
         <div
           v-if="form.originatingConversationId"
           class="rounded-2xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
@@ -3084,6 +3245,7 @@ watch(
       ref="completionDialogRef"
       :is-loading="ui.isSaving"
       :task-types="referencesStore.taskTypes"
+      @close="invalidateTaskCompletionDialog"
       @confirm="saveTaskCompletion"
     />
 

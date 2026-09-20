@@ -47,7 +47,10 @@ vi.mock('dashboard/composables/store', () => ({
 }));
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => ({
-    taskStatuses: [{ id: 1, code: 'todo', category: 'open', default: true }],
+    taskStatuses: [
+      { id: 1, code: 'todo', category: 'open', default: true },
+      { id: 2, code: 'done', category: 'done' },
+    ],
     taskTypes: [
       { id: 10, code: 'task', name: 'Task', active: true, default: true },
     ],
@@ -64,6 +67,7 @@ import { useAlert } from 'dashboard/composables';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
+import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import CrmTasksPage from './pages/CrmTasksPage.vue';
 
 const initialTask = {
@@ -142,6 +146,12 @@ const mountEditor = async (kind, extraProps = {}) => {
       global: {
         mocks: { $t: key => key },
         stubs: {
+          CrmTaskCompletionDialog: {
+            name: 'CrmTaskCompletionDialog',
+            emits: ['close', 'confirm'],
+            template: '<div />',
+            methods: { open() {}, close() {} },
+          },
           Dialog: {
             name: 'Dialog',
             template: '<div />',
@@ -168,6 +178,9 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue(response([structuredClone(initialTask)]));
   CrmTasksAPI.timeline.mockReset().mockResolvedValue(response([]));
+  CrmTasksAPI.show
+    .mockReset()
+    .mockResolvedValue(response(structuredClone(initialTask)));
   CrmTasksAPI.update
     .mockReset()
     .mockResolvedValue(response({ ...initialTask, lockVersion: 2 }));
@@ -703,7 +716,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     expect(CrmTasksAPI.get).toHaveBeenCalledTimes(listRequestsBeforeEvent);
   });
 
-  it('keeps the draft in a second editor and blocks stale writes before HTTP', async () => {
+  it('rebases a stale draft and retries without overwriting unrelated changes', async () => {
     const first = await mountEditor(kind);
     const second = await mountEditor(kind);
     await open(kind, first.state);
@@ -717,12 +730,177 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     });
     await second.state.saveTask();
     expect(second.state.form.title).toBe('My draft');
-    expect(second.state.taskEditSnapshot.task.lockVersion).toBe(1);
+    expect(second.state.taskEditSnapshot.task).toMatchObject({
+      assigneeId: 1,
+      lockVersion: 2,
+      title: 'Original',
+    });
     expect(second.state.selectedTask.lockVersion).toBe(2);
+    expect(second.state.taskConflict).toMatchObject({
+      active: true,
+      hasAuthoritative: true,
+      reloadFailed: false,
+    });
     expect(CrmTasksAPI.update).not.toHaveBeenCalled();
     expect(CrmTasksAPI.assign).not.toHaveBeenCalled();
     expect(CrmTasksAPI.reschedule).not.toHaveBeenCalled();
     expect(useAlert).toHaveBeenCalled();
+
+    await second.state.saveTask();
+
+    expect(CrmTasksAPI.saveForm).toHaveBeenCalledExactlyOnceWith(7, {
+      title: 'My draft',
+      lock_version: 2,
+      idempotency_key: expect.any(String),
+    });
+  });
+
+  it('keeps the stale draft when the authoritative reload fails', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'Unsaved draft';
+    state.selectedTask = { ...state.selectedTask, lockVersion: 2 };
+    CrmTasksAPI.show.mockRejectedValueOnce(new Error('reload failed'));
+
+    await state.saveTask();
+
+    expect(state.form.title).toBe('Unsaved draft');
+    expect(state.taskEditSnapshot.task.lockVersion).toBe(1);
+    expect(state.taskConflict).toMatchObject({
+      active: true,
+      hasAuthoritative: false,
+      reloadFailed: true,
+    });
+    expect(CrmTasksAPI.saveForm).not.toHaveBeenCalled();
+  });
+
+  it('ignores a conflict reload that finishes after the editor closes', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'Unsaved draft';
+    state.selectedTask = { ...state.selectedTask, lockVersion: 2 };
+    const reload = deferred();
+    CrmTasksAPI.show.mockReturnValueOnce(reload.promise);
+    useAlert.mockClear();
+
+    const saving = state.saveTask();
+    await flushPromises();
+    expect(state.taskConflict.isReloading).toBe(true);
+
+    if (kind === 'panel') state.closeTaskDialog();
+    else state.closeDrawer();
+    state.selectedTask = { ...initialTask, id: 8, title: 'Reopened task' };
+    reload.resolve(response({ ...initialTask, lockVersion: 2 }));
+    await saving;
+
+    expect(state.selectedTask).toMatchObject({ id: 8, title: 'Reopened task' });
+    expect(state.taskEditSnapshot).toBeNull();
+    expect(state.taskConflict).toMatchObject({
+      active: false,
+      hasAuthoritative: false,
+      isReloading: false,
+    });
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a pending conflict reload when the editor unmounts', async () => {
+    const { state, wrapper } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'Unsaved draft';
+    state.selectedTask = { ...state.selectedTask, lockVersion: 2 };
+    const reload = deferred();
+    CrmTasksAPI.show.mockReturnValueOnce(reload.promise);
+    useAlert.mockClear();
+
+    const saving = state.saveTask();
+    await flushPromises();
+    wrapper.unmount();
+    wrappers.splice(wrappers.indexOf(wrapper), 1);
+    reload.resolve(response({ ...initialTask, lockVersion: 2 }));
+    await saving;
+
+    expect(state.taskConflict).toMatchObject({
+      active: false,
+      hasAuthoritative: false,
+      isReloading: false,
+    });
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late stale mutation after reopening another task', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'Unsaved draft';
+    const mutation = deferred();
+    CrmTasksAPI.saveForm.mockReturnValueOnce(mutation.promise);
+    CrmTasksAPI.show.mockClear();
+    useAlert.mockClear();
+
+    const saving = state.saveTask();
+    await flushPromises();
+    if (kind === 'panel') state.closeTaskDialog();
+    else state.closeDrawer();
+    state.selectedTask = { ...initialTask, id: 8, title: 'Reopened task' };
+    mutation.reject({
+      response: { data: { code: 'STALE_RECORD' }, status: 409 },
+    });
+    await saving;
+
+    expect(CrmTasksAPI.show).not.toHaveBeenCalled();
+    expect(state.selectedTask).toMatchObject({ id: 8, title: 'Reopened task' });
+    expect(state.taskConflict.active).toBe(false);
+    expect(state.ui.isSaving).toBe(false);
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late successful mutation after reopening the same task', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'First draft';
+    const mutation = deferred();
+    CrmTasksAPI.saveForm.mockReturnValueOnce(mutation.promise);
+    useAlert.mockClear();
+
+    const saving = state.saveTask();
+    await flushPromises();
+    if (kind === 'panel') state.closeTaskDialog();
+    else state.closeDrawer();
+    state.selectedTask = { ...initialTask, title: 'Reopened draft' };
+    state.form.title = 'Reopened draft';
+    mutation.resolve(
+      response({ ...initialTask, lockVersion: 2, title: 'Late success' })
+    );
+    await saving;
+
+    expect(state.selectedTask.title).toBe('Reopened draft');
+    expect(state.form.title).toBe('Reopened draft');
+    expect(state.taskConflict.active).toBe(false);
+    expect(state.ui.isSaving).toBe(false);
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late stale mutation after unmount', async () => {
+    const { state, wrapper } = await mountEditor(kind);
+    await open(kind, state);
+    state.form.title = 'Unsaved draft';
+    const mutation = deferred();
+    CrmTasksAPI.saveForm.mockReturnValueOnce(mutation.promise);
+    CrmTasksAPI.show.mockClear();
+    useAlert.mockClear();
+
+    const saving = state.saveTask();
+    await flushPromises();
+    wrapper.unmount();
+    wrappers.splice(wrappers.indexOf(wrapper), 1);
+    mutation.reject({
+      response: { data: { code: 'STALE_RECORD' }, status: 409 },
+    });
+    await saving;
+
+    expect(CrmTasksAPI.show).not.toHaveBeenCalled();
+    expect(state.taskConflict.active).toBe(false);
+    expect(state.ui.isSaving).toBe(false);
+    expect(useAlert).not.toHaveBeenCalled();
   });
 
   it('sends only title with the original lock and preserves unowned external_ref', async () => {
@@ -776,6 +954,56 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     );
   });
 
+  it('ignores a late task completion after the result dialog closes', async () => {
+    const extraProps =
+      kind === 'panel'
+        ? {
+            statuses: [
+              { id: 1, code: 'todo', category: 'open', default: true },
+              { id: 2, code: 'done', category: 'done' },
+            ],
+          }
+        : {};
+    const { state, wrapper } = await mountEditor(kind, extraProps);
+    const pending = deferred();
+    if (kind === 'panel') {
+      state.openTaskResultDialog(state.tasks[0]);
+    } else {
+      state.openTaskCompletionDialog(state.tasks[0]);
+    }
+    CrmTasksAPI.complete.mockReturnValueOnce(pending.promise);
+    useAlert.mockClear();
+
+    const payload = {
+      task: state.tasks[0],
+      note: 'Done',
+      taskOutcomeId: '',
+    };
+    const saving =
+      kind === 'panel'
+        ? state.saveTaskResult(payload)
+        : state.saveTaskCompletion(payload);
+    await flushPromises();
+    if (kind === 'panel') {
+      state.invalidateTaskResultDialog();
+    } else {
+      state.invalidateTaskCompletionDialog();
+    }
+    pending.resolve(
+      response({
+        ...initialTask,
+        lockVersion: 2,
+        completedAt: '2026-09-09T12:00:00Z',
+      })
+    );
+    await saving;
+
+    expect(state.tasks[0].completedAt).toBeUndefined();
+    expect(wrapper.emitted('updated')).toBeUndefined();
+    expect(state.ui.isSaving).toBe(false);
+    expect(useAlert).not.toHaveBeenCalled();
+  });
+
   it('preserves the draft on a server-side conflict', async () => {
     const { state } = await mountEditor(kind);
     await open(kind, state);
@@ -812,6 +1040,12 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     expect(state.tasks.find(task => task.id === 7)).toMatchObject({
       lockVersion: 3,
       assigneeId: 4,
+    });
+    expect(state.form.title).toBe('My title');
+    expect(state.selectedTask).toMatchObject({ lockVersion: 3, assigneeId: 4 });
+    expect(state.taskConflict).toMatchObject({
+      active: true,
+      hasAuthoritative: true,
     });
   });
 
@@ -945,6 +1179,28 @@ describe('page async drawer scope', () => {
     expect(state.timelineItems).toEqual([]);
     expect(state.dealOptions).toEqual([]);
   });
+});
+
+it('propagates completion dialog close events to its parent', async () => {
+  const wrapper = shallowMount(CrmTaskCompletionDialog, {
+    props: { taskTypes: [] },
+    global: {
+      mocks: { $t: key => key },
+      stubs: {
+        Dialog: {
+          name: 'Dialog',
+          emits: ['close', 'confirm'],
+          template: '<div />',
+        },
+      },
+    },
+  });
+  wrappers.push(wrapper);
+
+  wrapper.findComponent({ name: 'Dialog' }).vm.$emit('close');
+  await flushPromises();
+
+  expect(wrapper.emitted('close')).toHaveLength(1);
 });
 
 it('requests the selected list page with server search and stable sort params', async () => {

@@ -19,7 +19,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['confirm']);
+const emit = defineEmits(['close', 'confirm']);
 const { t } = useI18n();
 
 const dialogRef = ref(null);
@@ -93,6 +93,14 @@ const close = () => {
   confirmedWithoutNote.value = false;
 };
 
+const handleClose = () => {
+  selectedTask.value = null;
+  note.value = '';
+  outcomeId.value = '';
+  confirmedWithoutNote.value = false;
+  emit('close');
+};
+
 const confirm = () => {
   if (isDisabled.value) return;
 
@@ -115,6 +123,7 @@ defineExpose({ close, open });
     :confirm-button-label="confirmLabel"
     :disable-confirm-button="isDisabled"
     :is-loading="props.isLoading"
+    @close="handleClose"
     @confirm="confirm"
   >
     <div class="grid gap-4">

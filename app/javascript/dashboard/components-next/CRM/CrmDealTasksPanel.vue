@@ -19,6 +19,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -30,6 +31,10 @@ import {
   rememberTaskSnapshot,
 } from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
 import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
+import {
+  isStaleCrmError,
+  rebaseSnapshotLockVersion,
+} from 'dashboard/routes/dashboard/crm/conflictDraft';
 import {
   buildDefaultCustomAttributes,
   reconcileCustomAttributesForDefinitions,
@@ -90,11 +95,30 @@ const resultDialogRef = ref(null);
 const waitingDialogRef = ref(null);
 const selectedTask = ref(null);
 const taskEditSnapshot = ref(null);
+const taskConflict = reactive({
+  active: false,
+  hasAuthoritative: false,
+  isReloading: false,
+  reloadFailed: false,
+});
+let taskConflictGeneration = 0;
+let taskEditorGeneration = 0;
+let taskResultGeneration = 0;
+let taskResultTaskId = null;
 const tasks = ref([]);
 const ui = reactive({
   isLoading: false,
   isSaving: false,
 });
+const resetTaskConflict = () => {
+  taskConflictGeneration += 1;
+  Object.assign(taskConflict, {
+    active: false,
+    hasAuthoritative: false,
+    isReloading: false,
+    reloadFailed: false,
+  });
+};
 const form = reactive({
   activityType: 'task',
   assigneeId: '',
@@ -329,6 +353,7 @@ const isTaskReadOnly = computed(
 const isTaskFormDisabled = computed(
   () =>
     isTaskReadOnly.value ||
+    (taskConflict.active && !taskConflict.hasAuthoritative) ||
     !form.title.trim() ||
     !form.statusId ||
     !hasDeal.value ||
@@ -399,6 +424,46 @@ const upsertTask = task => {
   tasks.value = nextTasks;
 };
 
+const reloadTaskConflict = async () => {
+  const taskId = Number(selectedTask.value?.id);
+  if (!taskId || taskConflict.isReloading) return false;
+  taskConflictGeneration += 1;
+  const generation = taskConflictGeneration;
+
+  taskConflict.active = true;
+  taskConflict.isReloading = true;
+  taskConflict.reloadFailed = false;
+
+  try {
+    const response = await CrmTasksAPI.show(taskId);
+    if (
+      generation !== taskConflictGeneration ||
+      Number(selectedTask.value?.id) !== taskId ||
+      !taskConflict.active
+    )
+      return false;
+    const task = normalizePayload(response.data);
+    upsertTask(task);
+    const authoritativeTask =
+      pendingTaskRealtimeUpdates.get(taskId)?.task || task;
+    selectedTask.value = authoritativeTask;
+    taskEditSnapshot.value = rebaseSnapshotLockVersion(
+      taskEditSnapshot.value,
+      'task',
+      authoritativeTask
+    );
+    taskConflict.hasAuthoritative = true;
+    return true;
+  } catch {
+    if (generation !== taskConflictGeneration) return false;
+    taskConflict.hasAuthoritative = false;
+    taskConflict.reloadFailed = true;
+    return true;
+  } finally {
+    if (generation === taskConflictGeneration) taskConflict.isReloading = false;
+  }
+};
+
 const applyTaskRealtimeUpdate = task => {
   if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
   if (Number(selectedTask.value?.id) === Number(task.id))
@@ -423,7 +488,11 @@ const applyTaskRealtimeUpdate = task => {
   }
 };
 
-const runTaskMutation = async (request, expectedTask) => {
+const runTaskMutation = async (
+  request,
+  expectedTask,
+  isCurrentEditor = () => true
+) => {
   const dealAtStart = props.deal?.id;
   if (expectedTask) {
     assertTaskEditCurrent(
@@ -441,8 +510,9 @@ const runTaskMutation = async (request, expectedTask) => {
     responseTask,
     taskRealtimeSequence
   );
-  applyTaskRealtimeUpdate(newest);
   if (expectedTask) assertTaskEditCurrent(responseTask, newest);
+  if (!isCurrentEditor()) return newest;
+  applyTaskRealtimeUpdate(newest);
   return newest;
 };
 
@@ -544,6 +614,9 @@ const buildPayload = () => {
 const openCreateTaskDialog = () => {
   if (!canCreateTask.value) return;
 
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   selectedTask.value = null;
   taskEditSnapshot.value = null;
   resetForm();
@@ -629,6 +702,9 @@ const fillFormFromTask = task => {
 const openTaskDialog = task => {
   if (!canOpenTaskDialog(task)) return;
 
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   selectedTask.value = task;
   fillFormFromTask(task);
   taskEditSnapshot.value = cloneTaskDraft({ task, payload: buildPayload() });
@@ -636,6 +712,9 @@ const openTaskDialog = task => {
 };
 
 const closeTaskDialog = () => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   taskDialogRef.value?.close();
   selectedTask.value = null;
   taskEditSnapshot.value = null;
@@ -712,6 +791,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  taskEditorGeneration += 1;
+  taskResultGeneration += 1;
+  taskResultTaskId = null;
+  ui.isSaving = false;
+  resetTaskConflict();
   emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
   taskRealtimeLifecycleGeneration += 1;
   taskRealtimeRequestSequences.clear();
@@ -724,6 +808,13 @@ const saveTask = async () => {
   if (isTaskReadOnly.value || isTaskFormDisabled.value || ui.isSaving) return;
 
   ui.isSaving = true;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
 
   try {
     const payload = buildPayload();
@@ -741,14 +832,22 @@ const saveTask = async () => {
         includeStatus: true,
         preserveAllDay: true,
       });
-      task = await runTaskMutation(() =>
-        CrmTasksAPI.saveForm(currentTask.id, savePayload)
+      task = await runTaskMutation(
+        () => CrmTasksAPI.saveForm(currentTask.id, savePayload),
+        currentTask,
+        isCurrentEditor
       );
     } else {
-      task = await runTaskMutation(() => CrmTasksAPI.create(payload));
+      task = await runTaskMutation(
+        () => CrmTasksAPI.create(payload),
+        null,
+        isCurrentEditor
+      );
+      if (!isCurrentEditor()) return;
       emit('created', task);
     }
 
+    if (!isCurrentEditor()) return;
     applyTaskRealtimeUpdate(task);
     if (wasEditing) {
       emit('updated', task);
@@ -760,49 +859,80 @@ const saveTask = async () => {
     );
     closeTaskDialog();
   } catch (error) {
+    if (!isCurrentEditor()) return;
+    if (selectedTask.value && isStaleCrmError(error)) {
+      taskConflict.active = true;
+      taskConflict.hasAuthoritative = false;
+      const conflictIsCurrent = await reloadTaskConflict();
+      if (conflictIsCurrent) useAlert(formatCrmErrorMessage(error, t));
+      return;
+    }
     useAlert(formatCrmErrorMessage(error, t));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
 const openTaskResultDialog = task => {
   if (!canSetTaskResult(task)) return;
 
+  taskResultGeneration += 1;
+  taskResultTaskId = Number(task.id);
+  ui.isSaving = false;
   resultDialogRef.value?.open(task);
 };
 
+const invalidateTaskResultDialog = () => {
+  if (taskResultTaskId === null) return;
+
+  taskResultGeneration += 1;
+  taskResultTaskId = null;
+  ui.isSaving = false;
+};
+
 const closeTaskResultDialog = () => {
+  invalidateTaskResultDialog();
   resultDialogRef.value?.close();
 };
 
 const saveTaskResult = async ({ task, note, taskOutcomeId }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const resultGeneration = taskResultGeneration;
+  const resultTaskId = Number(task.id);
+  const isCurrentResultDialog = () =>
+    resultGeneration === taskResultGeneration &&
+    taskResultTaskId === resultTaskId &&
+    Number(props.deal?.id) === Number(currentTask.dealId);
 
   ui.isSaving = true;
 
   try {
-    const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.complete(
-        currentTask.id,
-        compactPayload({
-          idempotency_key: crypto.randomUUID(),
-          lock_version: currentTask.lockVersion,
-          outcome_note: note,
-          task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
-        })
-      )
+    const updatedTask = await runTaskMutation(
+      () =>
+        CrmTasksAPI.complete(
+          currentTask.id,
+          compactPayload({
+            idempotency_key: crypto.randomUUID(),
+            lock_version: currentTask.lockVersion,
+            outcome_note: note,
+            task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
+          })
+        ),
+      currentTask,
+      isCurrentResultDialog
     );
 
+    if (!isCurrentResultDialog()) return;
     applyTaskRealtimeUpdate(updatedTask);
     emit('updated', updatedTask);
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
     closeTaskResultDialog();
   } catch (error) {
+    if (!isCurrentResultDialog()) return;
     useAlert(formatCrmErrorMessage(error, t));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentResultDialog()) ui.isSaving = false;
   }
 };
 
@@ -827,6 +957,8 @@ const taskDateSummary = task => {
 watch(
   () => props.deal?.id,
   () => {
+    taskResultGeneration += 1;
+    taskResultTaskId = null;
     taskRealtimeLifecycleGeneration += 1;
     taskRealtimeRequestSequences.clear();
     taskLoadGeneration.value += 1;
@@ -1057,6 +1189,16 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     @confirm="saveTask"
   >
     <div class="crm-task-dialog-form">
+      <CrmConflictNotice
+        v-if="taskConflict.active"
+        :is-reloading="taskConflict.isReloading"
+        :is-retrying="ui.isSaving"
+        :reload-failed="taskConflict.reloadFailed"
+        :retry-ready="taskConflict.hasAuthoritative"
+        @reload="reloadTaskConflict"
+        @retry="saveTask"
+      />
+
       <Input
         class="crm-task-dialog-control"
         custom-input-class="!rounded-md !bg-n-alpha-black2 !px-2 !py-1"
@@ -1175,6 +1317,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     ref="resultDialogRef"
     :is-loading="ui.isSaving"
     :task-types="taskTypes"
+    @close="invalidateTaskResultDialog"
     @confirm="saveTaskResult"
   />
 </template>

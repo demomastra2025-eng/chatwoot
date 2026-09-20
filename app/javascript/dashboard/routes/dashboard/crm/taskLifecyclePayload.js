@@ -1,3 +1,5 @@
+import { changedDraftPayload } from 'dashboard/routes/dashboard/crm/conflictDraft';
+
 const normalizedId = value => {
   if (value === '' || value === null || value === undefined) return null;
   return Number(value);
@@ -95,13 +97,7 @@ const commandFields = new Set([
 ]);
 
 export const changedTaskDetails = (baseline, requested) =>
-  Object.fromEntries(
-    Object.entries(requested).filter(
-      ([key, value]) =>
-        !commandFields.has(key) &&
-        JSON.stringify(value) !== JSON.stringify(baseline[key])
-    )
-  );
+  changedDraftPayload(baseline, requested, [...commandFields]);
 
 export const preferNewerRealtimeTask = (
   responseTask,
