@@ -105,6 +105,7 @@ import {
   rememberTaskSnapshot,
 } from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
 import {
+  createCrmConflictStateMachine,
   isStaleCrmError,
   rebaseSnapshotLockVersion,
 } from 'dashboard/routes/dashboard/crm/conflictDraft';
@@ -140,13 +141,12 @@ const cancelDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const selectedTask = ref(null);
 const taskEditSnapshot = ref(null);
-const taskConflict = reactive({
-  active: false,
-  hasAuthoritative: false,
-  isReloading: false,
-  reloadFailed: false,
-});
-let taskConflictGeneration = 0;
+const {
+  markStale: markTaskConflictStale,
+  reload: reloadConflict,
+  reset: resetTaskConflict,
+  state: taskConflict,
+} = createCrmConflictStateMachine();
 let taskEditorGeneration = 0;
 let taskCompletionGeneration = 0;
 let taskCompletionTaskId = null;
@@ -995,16 +995,6 @@ const resetTimeline = () => {
   ui.timelineError = null;
 };
 
-const resetTaskConflict = () => {
-  taskConflictGeneration += 1;
-  Object.assign(taskConflict, {
-    active: false,
-    hasAuthoritative: false,
-    isReloading: false,
-    reloadFailed: false,
-  });
-};
-
 const loadDealOptions = async () => {
   if (isComponentUnmounted) return;
   dealOptionsLoadGeneration += 1;
@@ -1229,44 +1219,28 @@ const removeTask = taskId => {
   tasks.value = tasks.value.filter(task => Number(task.id) !== Number(taskId));
 };
 
-const reloadTaskConflict = async () => {
+const reloadTaskConflict = () => {
   const taskId = Number(selectedTask.value?.id);
-  if (!taskId || taskConflict.isReloading) return false;
-  taskConflictGeneration += 1;
-  const generation = taskConflictGeneration;
-
-  taskConflict.active = true;
-  taskConflict.isReloading = true;
-  taskConflict.reloadFailed = false;
-
-  try {
-    const response = await CrmTasksAPI.show(taskId);
-    if (
-      generation !== taskConflictGeneration ||
-      Number(selectedTask.value?.id) !== taskId ||
-      !taskConflict.active
-    )
-      return false;
-    const task = normalizePayload(response.data);
-    upsertTask(task);
-    const authoritativeTask =
-      pendingTaskRealtimeUpdates.get(taskId)?.task || task;
-    selectedTask.value = authoritativeTask;
-    taskEditSnapshot.value = rebaseSnapshotLockVersion(
-      taskEditSnapshot.value,
-      'task',
-      authoritativeTask
-    );
-    taskConflict.hasAuthoritative = true;
-    return true;
-  } catch {
-    if (generation !== taskConflictGeneration) return false;
-    taskConflict.hasAuthoritative = false;
-    taskConflict.reloadFailed = true;
-    return true;
-  } finally {
-    if (generation === taskConflictGeneration) taskConflict.isReloading = false;
-  }
+  return reloadConflict({
+    recordId: taskId,
+    isCurrentRecord: requestedId =>
+      Number(selectedTask.value?.id) === requestedId,
+    loadAuthoritative: async requestedId => {
+      const response = await CrmTasksAPI.show(requestedId);
+      return normalizePayload(response.data);
+    },
+    applyAuthoritative: (task, requestedId) => {
+      upsertTask(task);
+      const authoritativeTask =
+        pendingTaskRealtimeUpdates.get(requestedId)?.task || task;
+      selectedTask.value = authoritativeTask;
+      taskEditSnapshot.value = rebaseSnapshotLockVersion(
+        taskEditSnapshot.value,
+        'task',
+        authoritativeTask
+      );
+    },
+  });
 };
 
 const effectiveTaskState = () =>
@@ -1454,8 +1428,7 @@ const saveTask = async () => {
   } catch (error) {
     if (!isCurrentEditor()) return;
     if (selectedTask.value && isStaleCrmError(error)) {
-      taskConflict.active = true;
-      taskConflict.hasAuthoritative = false;
+      markTaskConflictStale();
       const conflictIsCurrent = await reloadTaskConflict();
       if (conflictIsCurrent) useAlert(formatErrorMessage(error));
       return;

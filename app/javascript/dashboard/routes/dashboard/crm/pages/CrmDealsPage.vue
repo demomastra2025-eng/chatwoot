@@ -120,6 +120,7 @@ import {
 import {
   assertCrmEditCurrent,
   changedDraftPayload,
+  createCrmConflictStateMachine,
   isStaleCrmError,
   rebaseSnapshotLockVersion,
 } from 'dashboard/routes/dashboard/crm/conflictDraft';
@@ -154,13 +155,12 @@ const dealsMeta = ref({
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
 const dealEditSnapshot = ref(null);
-const dealConflict = reactive({
-  active: false,
-  hasAuthoritative: false,
-  isReloading: false,
-  reloadFailed: false,
-});
-let dealConflictGeneration = 0;
+const {
+  markStale: markDealConflictStale,
+  reload: reloadConflict,
+  reset: resetDealConflict,
+  state: dealConflict,
+} = createCrmConflictStateMachine();
 let dealEditorGeneration = 0;
 let dealTimelineGeneration = 0;
 const pendingStageEntry = ref(null);
@@ -1346,16 +1346,6 @@ const captureFormBaseline = () => {
   formBaselineSnapshot.value = JSON.stringify(formSnapshotPayload());
 };
 
-const resetDealConflict = () => {
-  dealConflictGeneration += 1;
-  Object.assign(dealConflict, {
-    active: false,
-    hasAuthoritative: false,
-    isReloading: false,
-    reloadFailed: false,
-  });
-};
-
 const isDealFormDirty = computed(
   () => JSON.stringify(formSnapshotPayload()) !== formBaselineSnapshot.value
 );
@@ -2198,44 +2188,28 @@ const rebaseDealEditSnapshot = (deal, payloadKeys = []) => {
   });
 };
 
-const reloadDealConflict = async () => {
+const reloadDealConflict = () => {
   const dealId = Number(selectedDeal.value?.id);
-  if (!dealId || dealConflict.isReloading) return false;
-  dealConflictGeneration += 1;
-  const generation = dealConflictGeneration;
-
-  dealConflict.active = true;
-  dealConflict.isReloading = true;
-  dealConflict.reloadFailed = false;
-
-  try {
-    const response = await CrmDealsAPI.show(dealId);
-    if (
-      generation !== dealConflictGeneration ||
-      Number(selectedDeal.value?.id) !== dealId ||
-      !dealConflict.active
-    )
-      return false;
-    const deal = normalizePayload(response.data);
-    const authoritativeDeal = isDealVersionNewer(selectedDeal.value, deal)
-      ? selectedDeal.value
-      : deal;
-    selectedDeal.value = authoritativeDeal;
-    dealEditSnapshot.value = rebaseSnapshotLockVersion(
-      dealEditSnapshot.value,
-      'deal',
-      authoritativeDeal
-    );
-    dealConflict.hasAuthoritative = true;
-    return true;
-  } catch {
-    if (generation !== dealConflictGeneration) return false;
-    dealConflict.hasAuthoritative = false;
-    dealConflict.reloadFailed = true;
-    return true;
-  } finally {
-    if (generation === dealConflictGeneration) dealConflict.isReloading = false;
-  }
+  return reloadConflict({
+    recordId: dealId,
+    isCurrentRecord: requestedId =>
+      Number(selectedDeal.value?.id) === requestedId,
+    loadAuthoritative: async requestedId => {
+      const response = await CrmDealsAPI.show(requestedId);
+      return normalizePayload(response.data);
+    },
+    applyAuthoritative: deal => {
+      const authoritativeDeal = isDealVersionNewer(selectedDeal.value, deal)
+        ? selectedDeal.value
+        : deal;
+      selectedDeal.value = authoritativeDeal;
+      dealEditSnapshot.value = rebaseSnapshotLockVersion(
+        dealEditSnapshot.value,
+        'deal',
+        authoritativeDeal
+      );
+    },
+  });
 };
 
 const saveDealContactLink = async contactId => {
@@ -2447,8 +2421,7 @@ const saveDeal = async () => {
   } catch (error) {
     if (!isCurrentEditor()) return;
     if (selectedDeal.value && isStaleCrmError(error)) {
-      dealConflict.active = true;
-      dealConflict.hasAuthoritative = false;
+      markDealConflictStale();
       const conflictIsCurrent = await reloadDealConflict();
       if (conflictIsCurrent) useAlert(formatErrorMessage(error));
       return;

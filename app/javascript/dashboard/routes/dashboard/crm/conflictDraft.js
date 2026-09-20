@@ -1,4 +1,65 @@
 import { extractCrmError } from 'dashboard/stores/crm/shared';
+import { reactive } from 'vue';
+
+const initialConflictState = () => ({
+  active: false,
+  hasAuthoritative: false,
+  isReloading: false,
+  reloadFailed: false,
+});
+
+export const createCrmConflictStateMachine = () => {
+  const state = reactive(initialConflictState());
+  let generation = 0;
+
+  const reset = () => {
+    generation += 1;
+    Object.assign(state, initialConflictState());
+  };
+
+  const markStale = () => {
+    state.active = true;
+    state.hasAuthoritative = false;
+  };
+
+  const reload = async ({
+    applyAuthoritative,
+    isCurrentRecord,
+    loadAuthoritative,
+    recordId: requestedRecordId,
+  }) => {
+    const recordId = Number(requestedRecordId);
+    if (!recordId || state.isReloading) return false;
+
+    generation += 1;
+    const requestGeneration = generation;
+    markStale();
+    state.isReloading = true;
+    state.reloadFailed = false;
+
+    const isCurrent = () =>
+      requestGeneration === generation &&
+      isCurrentRecord(recordId) &&
+      state.active;
+
+    try {
+      const authoritative = await loadAuthoritative(recordId);
+      if (!isCurrent()) return false;
+      applyAuthoritative(authoritative, recordId);
+      state.hasAuthoritative = true;
+      return true;
+    } catch {
+      if (!isCurrent()) return false;
+      state.hasAuthoritative = false;
+      state.reloadFailed = true;
+      return true;
+    } finally {
+      if (requestGeneration === generation) state.isReloading = false;
+    }
+  };
+
+  return { markStale, reload, reset, state };
+};
 
 export const isStaleCrmError = error =>
   extractCrmError(error).code === 'STALE_RECORD';

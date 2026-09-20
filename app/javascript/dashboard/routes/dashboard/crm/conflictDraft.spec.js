@@ -4,9 +4,20 @@ import {
   assertCrmEditCurrent,
   changedDraftPayload,
   changedObjectKeys,
+  createCrmConflictStateMachine,
   isStaleCrmError,
   rebaseSnapshotLockVersion,
 } from './conflictDraft';
+
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+};
 
 describe('CRM conflict draft helpers', () => {
   it('retries only fields changed by the local draft', () => {
@@ -81,5 +92,54 @@ describe('CRM conflict draft helpers', () => {
         },
       })
     ).toBe(true);
+  });
+
+  it('publishes only the current authoritative conflict reload', async () => {
+    const pending = deferred();
+    let recordId = 7;
+    const applyAuthoritative = vi.fn();
+    const machine = createCrmConflictStateMachine();
+
+    machine.markStale();
+    const reload = machine.reload({
+      applyAuthoritative,
+      isCurrentRecord: requestedId => recordId === requestedId,
+      loadAuthoritative: () => pending.promise,
+      recordId,
+    });
+    recordId = 8;
+    machine.reset();
+    pending.resolve({ id: 7, lockVersion: 2 });
+
+    await expect(reload).resolves.toBe(false);
+    expect(applyAuthoritative).not.toHaveBeenCalled();
+    expect(machine.state).toMatchObject({
+      active: false,
+      hasAuthoritative: false,
+      isReloading: false,
+      reloadFailed: false,
+    });
+  });
+
+  it('keeps a conflict retryable after an authoritative reload failure', async () => {
+    const machine = createCrmConflictStateMachine();
+
+    machine.markStale();
+    await expect(
+      machine.reload({
+        applyAuthoritative: vi.fn(),
+        isCurrentRecord: requestedId => requestedId === 7,
+        loadAuthoritative: vi
+          .fn()
+          .mockRejectedValue(new Error('reload failed')),
+        recordId: 7,
+      })
+    ).resolves.toBe(true);
+    expect(machine.state).toMatchObject({
+      active: true,
+      hasAuthoritative: false,
+      isReloading: false,
+      reloadFailed: true,
+    });
   });
 });
