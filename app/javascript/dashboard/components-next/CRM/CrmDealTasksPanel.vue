@@ -18,6 +18,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
@@ -123,6 +124,7 @@ const resetTaskConflict = () => {
 };
 const form = reactive({
   activityType: 'task',
+  allDay: false,
   assigneeId: '',
   contextKind: 'sales',
   customAttributes: {},
@@ -387,6 +389,7 @@ const buildCreateTaskTitle = () =>
 const resetForm = () => {
   Object.assign(form, {
     activityType: 'task',
+    allDay: false,
     assigneeId: props.deal?.ownerId || '',
     contextKind: 'sales',
     customAttributes: buildDefaultCustomAttributes(
@@ -614,21 +617,30 @@ const buildPayload = () => {
   const payload = compactPayload({
     activity_type: form.activityType || 'task',
     task_type_id: taskType?.id ? Number(taskType.id) : undefined,
+    all_day: form.allDay,
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
     context_kind: form.contextKind,
     custom_attributes: form.customAttributes,
     deal_id: Number(props.deal.id),
     description: form.description || undefined,
-    due_at: form.dueAt || undefined,
+    due_at: form.allDay ? undefined : form.dueAt || undefined,
+    due_on: form.allDay ? form.dueAt || undefined : undefined,
     lock_version: selectedTask.value?.lockVersion,
     outcome: form.outcome || undefined,
     outcome_note: form.outcomeNote || undefined,
     priority: form.priority || undefined,
-    start_at: form.startAt || undefined,
+    start_at: form.allDay ? undefined : form.startAt || undefined,
     status_id: form.statusId ? Number(form.statusId) : undefined,
     team_id: form.teamId ? Number(form.teamId) : undefined,
     title: form.title.trim(),
   });
+
+  if (form.allDay) {
+    payload.due_at = null;
+    payload.start_at = null;
+  } else {
+    payload.due_on = null;
+  }
 
   if (selectedTask.value) {
     payload.description = form.description || null;
@@ -705,10 +717,18 @@ const clearWaiting = async () => {
   }
 };
 
+const taskDueInputValue = task => {
+  if (task.allDay) return task.dueOn || '';
+  if (!task.dueAt) return '';
+
+  return task.dueAt.slice(0, 16);
+};
+
 const fillFormFromTask = task => {
   const contextKind = task.contextKind || (task.dealId ? 'sales' : 'personal');
   Object.assign(form, {
     activityType: task.activityType || 'task',
+    allDay: Boolean(task.allDay),
     assigneeId: task.assigneeId ?? '',
     contextKind,
     customAttributes: taskCustomAttributesForContext(
@@ -716,7 +736,7 @@ const fillFormFromTask = task => {
       contextKind
     ),
     description: task.description || '',
-    dueAt: task.dueAt ? task.dueAt.slice(0, 16) : '',
+    dueAt: taskDueInputValue(task),
     outcome: task.outcome || '',
     outcomeNote: task.outcomeNote || '',
     priority: task.priority || 'medium',
@@ -725,6 +745,21 @@ const fillFormFromTask = task => {
     teamId: task.teamId ?? '',
     title: task.title || '',
   });
+};
+
+const updateAllDay = enabled => {
+  form.allDay = enabled;
+
+  if (enabled) {
+    const dueDate = form.dueAt ? new Date(form.dueAt) : new Date();
+    form.dueAt = format(dueDate, 'yyyy-MM-dd');
+    form.startAt = '';
+    return;
+  }
+
+  // A date-only deadline has no implied wall-clock time. Require an explicit
+  // timed value instead of inventing noon and shifting it across timezones.
+  form.dueAt = '';
 };
 
 const openTaskDialog = task => {
@@ -846,9 +881,8 @@ const saveTask = async () => {
         snapshot: taskEditSnapshot.value,
         currentTask: selectedTask.value,
         requested: payload,
-        form: { ...draft, allDay: false },
+        form: draft,
         includeStatus: true,
-        preserveAllDay: true,
       });
       task = await runTaskMutation(
         () => CrmTasksAPI.saveForm(currentTask.id, savePayload),
@@ -1257,7 +1291,18 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       </div>
 
       <div class="crm-task-dialog-grid">
+        <div class="flex items-center gap-3 md:col-span-2">
+          <Switch
+            :model-value="form.allDay"
+            :disabled="isTaskReadOnly"
+            @update:model-value="updateAllDay"
+          />
+          <span class="text-sm font-medium text-n-slate-12">
+            {{ $t('CRM.TASKS.FORM.ALL_DAY') }}
+          </span>
+        </div>
         <SchedulingDateTimeField
+          v-if="!form.allDay"
           class="crm-task-dialog-control"
           input-class="!rounded-md !bg-n-alpha-black2 !px-2 !py-1"
           :label="$t('CRM.TASKS.FORM.START_AT')"
@@ -1272,7 +1317,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
           :label="$t('CRM.TASKS.FORM.DUE_AT')"
           :model-value="form.dueAt"
           :disabled="isTaskReadOnly"
-          type="datetime"
+          :type="form.allDay ? 'date' : 'datetime'"
           @update:model-value="form.dueAt = $event"
         />
       </div>

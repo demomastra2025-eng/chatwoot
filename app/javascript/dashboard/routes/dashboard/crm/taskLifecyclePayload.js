@@ -180,7 +180,6 @@ export const buildTaskFormSavePayload = ({
   requested,
   form,
   includeStatus = false,
-  preserveAllDay = false,
 }) => {
   const task = snapshot?.task;
   if (!task) assertTaskEditCurrent(null, currentTask);
@@ -188,7 +187,7 @@ export const buildTaskFormSavePayload = ({
   if (taskAssignmentChanged(task, form.assigneeId)) {
     changes.assignee_id = normalizedId(form.assigneeId);
   }
-  if (!(preserveAllDay && task.allDay) && taskScheduleChanged(task, form)) {
+  if (taskScheduleChanged(task, form)) {
     Object.assign(changes, taskScheduleAttributes(form));
   }
   if (requested.schedule_timezone !== snapshot.payload.schedule_timezone) {

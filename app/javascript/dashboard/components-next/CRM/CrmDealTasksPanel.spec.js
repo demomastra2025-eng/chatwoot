@@ -130,3 +130,24 @@ describe('CrmDealTasksPanel load states', () => {
     }
   );
 });
+
+describe('CrmDealTasksPanel all-day form', () => {
+  it('shows a date-only due field and hides the timed start field', async () => {
+    const wrapper = mountPanel({ canManageTasks: true });
+    await flushPromises();
+    const state = wrapper.vm.$.setupState;
+    state.openCreateTaskDialog();
+    state.updateAllDay(true);
+    await flushPromises();
+
+    const taskDialog = wrapper.findAllComponents({ name: 'Dialog' })[0];
+    const fields = taskDialog.findAllComponents({
+      name: 'SchedulingDateTimeField',
+    });
+    expect(wrapper.findComponent({ name: 'Switch' }).props('modelValue')).toBe(
+      true
+    );
+    expect(fields).toHaveLength(1);
+    expect(fields[0].props('type')).toBe('date');
+  });
+});

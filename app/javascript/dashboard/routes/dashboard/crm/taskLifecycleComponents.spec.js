@@ -201,6 +201,9 @@ beforeEach(() => {
   CrmTasksAPI.show
     .mockReset()
     .mockResolvedValue(response(structuredClone(initialTask)));
+  CrmTasksAPI.create
+    .mockReset()
+    .mockResolvedValue(response({ ...initialTask, lockVersion: 1 }));
   CrmTasksAPI.update
     .mockReset()
     .mockResolvedValue(response({ ...initialTask, lockVersion: 2 }));
@@ -223,6 +226,123 @@ beforeEach(() => {
 });
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+});
+
+describe('deal task panel all-day schedule', () => {
+  it('creates a date-only task without inventing a timestamp', async () => {
+    const { state } = await mountEditor('panel');
+    state.openCreateTaskDialog();
+    state.form.title = 'All-day follow-up';
+    state.updateAllDay(true);
+    state.form.dueAt = '2026-09-24';
+
+    CrmTasksAPI.create.mockResolvedValueOnce(
+      response({
+        ...initialTask,
+        allDay: true,
+        dueAt: null,
+        dueOn: '2026-09-24',
+        title: 'All-day follow-up',
+      })
+    );
+
+    await state.saveTask();
+
+    expect(CrmTasksAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        all_day: true,
+        due_at: null,
+        due_on: '2026-09-24',
+        start_at: null,
+      })
+    );
+  });
+
+  it('preserves an all-day deadline when editing unrelated fields', async () => {
+    const allDayTask = {
+      ...initialTask,
+      allDay: true,
+      dueAt: null,
+      dueOn: '2026-09-25',
+    };
+    CrmTasksAPI.get.mockReset().mockResolvedValue(response([allDayTask]));
+    CrmTasksAPI.saveForm.mockResolvedValueOnce(
+      response({ ...allDayTask, lockVersion: 2, title: 'Renamed' })
+    );
+    const { state } = await mountEditor('panel');
+    state.openTaskDialog(state.tasks[0]);
+
+    expect(state.form).toMatchObject({
+      allDay: true,
+      dueAt: '2026-09-25',
+      startAt: '',
+    });
+    state.form.title = 'Renamed';
+    await state.saveTask();
+
+    expect(CrmTasksAPI.saveForm).toHaveBeenCalledWith(
+      allDayTask.id,
+      expect.not.objectContaining({
+        all_day: expect.anything(),
+        due_at: expect.anything(),
+        due_on: expect.anything(),
+        start_at: expect.anything(),
+      })
+    );
+  });
+
+  it('clears the opposite schedule fields when toggling all-day and timed', async () => {
+    const timedTask = {
+      ...initialTask,
+      dueAt: '2026-09-26T10:30:00.000Z',
+      startAt: '2026-09-26T09:30:00.000Z',
+    };
+    CrmTasksAPI.get.mockReset().mockResolvedValue(response([timedTask]));
+    const { state } = await mountEditor('panel');
+    state.openTaskDialog(state.tasks[0]);
+
+    state.updateAllDay(true);
+    expect(state.form).toMatchObject({
+      allDay: true,
+      dueAt: '2026-09-26',
+      startAt: '',
+    });
+    await state.saveTask();
+    expect(CrmTasksAPI.saveForm).toHaveBeenLastCalledWith(
+      timedTask.id,
+      expect.objectContaining({
+        all_day: true,
+        due_at: null,
+        due_on: '2026-09-26',
+        start_at: null,
+      })
+    );
+
+    CrmTasksAPI.get.mockReset().mockResolvedValue(
+      response([
+        {
+          ...initialTask,
+          allDay: true,
+          dueOn: '2026-09-27',
+        },
+      ])
+    );
+    const second = await mountEditor('panel');
+    second.state.openTaskDialog(second.state.tasks[0]);
+    second.state.updateAllDay(false);
+    second.state.form.dueAt = '2026-09-27T15:45';
+    await second.state.saveTask();
+
+    expect(CrmTasksAPI.saveForm).toHaveBeenLastCalledWith(
+      initialTask.id,
+      expect.objectContaining({
+        all_day: false,
+        due_at: '2026-09-27T15:45',
+        due_on: null,
+        start_at: null,
+      })
+    );
+  });
 });
 
 it('renders a filtered-empty task list without a create action', async () => {
@@ -954,6 +1074,54 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
         lockVersion: 2,
         title: 'Current realtime',
       });
+    });
+
+    it('preserves an all-day draft across realtime conflict reload and retry', async () => {
+      const { state } = await mountEditor(kind);
+      await open(kind, state);
+      state.updateAllDay(true);
+      state.form.dueAt = '2026-09-28';
+      const authoritative = {
+        ...initialTask,
+        lockVersion: 2,
+        title: 'Current realtime',
+      };
+
+      await publish(authoritative);
+      await state.saveTask();
+
+      expect(state.form).toMatchObject({
+        allDay: true,
+        dueAt: '2026-09-28',
+        startAt: '',
+      });
+      expect(state.taskConflict).toMatchObject({
+        active: true,
+        hasAuthoritative: true,
+      });
+      expect(CrmTasksAPI.saveForm).not.toHaveBeenCalled();
+
+      CrmTasksAPI.saveForm.mockResolvedValueOnce(
+        response({
+          ...authoritative,
+          allDay: true,
+          dueAt: null,
+          dueOn: '2026-09-28',
+          lockVersion: 3,
+        })
+      );
+      await state.saveTask();
+
+      expect(CrmTasksAPI.saveForm).toHaveBeenCalledExactlyOnceWith(
+        initialTask.id,
+        expect.objectContaining({
+          all_day: true,
+          due_at: null,
+          due_on: '2026-09-28',
+          lock_version: 2,
+          start_at: null,
+        })
+      );
     });
   }
 
