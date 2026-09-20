@@ -234,6 +234,7 @@ const taskUiActionQueryInFlight = ref(false);
 const taskLoadGeneration = ref(0);
 let taskRealtimeSequence = 0;
 const pendingTaskRealtimeUpdates = new Map();
+const pendingTaskDeadlineIds = reactive(new Set());
 let taskRealtimeLifecycleGeneration = 0;
 const taskRealtimeRequestSequences = new Map();
 let taskListReloadGeneration = 0;
@@ -2015,6 +2016,10 @@ const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
 
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const taskId = Number(currentTask.id);
+  if (pendingTaskDeadlineIds.has(taskId)) return;
+  pendingTaskDeadlineIds.add(taskId);
+
   const deadline = taskDeadlineForBucket(bucket, boardAsOf.value?.slice(0, 10));
   const previousTask = { ...currentTask };
   const optimisticTask = {
@@ -2051,6 +2056,8 @@ const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
     } catch {
       // Keep the original mutation error as the surfaced failure.
     }
+  } finally {
+    pendingTaskDeadlineIds.delete(taskId);
   }
 };
 
@@ -3019,6 +3026,7 @@ watch(
           :bucket-meta="boardBucketMeta"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
+          :pending-task-ids="pendingTaskDeadlineIds"
           :tasks="tasks"
           @change-due-date="updateTaskDeadlineFromBoard"
           @load-more="loadMoreBoardBucket"

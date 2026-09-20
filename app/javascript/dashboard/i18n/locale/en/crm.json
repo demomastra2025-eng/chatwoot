@@ -188,6 +188,7 @@
         "EMPTY_PIPELINE_DESCRIPTION": "Add at least one stage so the board can render columns for this pipeline.",
         "EMPTY_PIPELINE_TITLE": "This pipeline has no stages yet",
         "EMPTY_COLUMN": "No deals in this stage",
+        "MOVE_TO_STAGE": "Move “{title}” to another stage",
         "SORT": {
           "LABEL": "Sort by",
           "ORDER": "Order",
@@ -386,6 +387,7 @@
         "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
         "EMPTY_STATUS_TITLE": "No task statuses yet",
         "OVERDUE_BADGE": "Overdue",
+        "MOVE_TO_BUCKET": "Move “{title}” to another due date",
         "TIME_BUCKETS": {
           "FUTURE": "Future",
           "LATER": "Later",

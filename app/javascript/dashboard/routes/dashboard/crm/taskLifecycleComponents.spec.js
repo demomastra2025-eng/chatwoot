@@ -493,6 +493,32 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       );
     });
 
+    it('ignores another deadline intent while the same task mutation is pending', async () => {
+      const { state } = await mountEditor(kind);
+      const pendingReschedule = deferred();
+      CrmTasksAPI.reschedule.mockReturnValueOnce(pendingReschedule.promise);
+
+      const moving = state.updateTaskDeadlineFromBoard({
+        bucket: 'today',
+        task: state.tasks[0],
+      });
+      await flushPromises();
+      await state.updateTaskDeadlineFromBoard({
+        bucket: 'tomorrow',
+        task: state.tasks[0],
+      });
+
+      expect(CrmTasksAPI.reschedule).toHaveBeenCalledTimes(1);
+      expect(state.pendingTaskDeadlineIds.has(initialTask.id)).toBe(true);
+
+      pendingReschedule.resolve(
+        response({ ...initialTask, lockVersion: 2, dueOn: '2026-09-20' })
+      );
+      await moving;
+
+      expect(state.pendingTaskDeadlineIds.has(initialTask.id)).toBe(false);
+    });
+
     it('uses active unarchived filters when board restores terminal preferences', async () => {
       const { state } = await mountEditor(kind);
       state.filters.taskState = 'completed';

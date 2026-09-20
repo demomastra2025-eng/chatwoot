@@ -1,12 +1,14 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useMediaQuery } from '@vueuse/core';
 import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import { buildTaskTypeResolver } from './taskTypeMetadata';
 import {
   groupTasksByTime,
+  TASK_TIME_BUCKETS,
   taskDueDate,
   visibleTaskTimeBuckets,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
@@ -40,6 +42,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  pendingTaskIds: {
+    type: Set,
+    default: () => new Set(),
+  },
   tasks: {
     type: Array,
     default: () => [],
@@ -48,6 +54,7 @@ const props = defineProps({
 
 const emit = defineEmits(['changeDueDate', 'loadMore', 'selectTask']);
 const { locale, t } = useI18n();
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const assigneeNameById = computed(() =>
   props.assignees.reduce((result, assignee) => {
     result[Number(assignee.value)] = assignee.label;
@@ -126,6 +133,20 @@ const handleColumnChange = (event, bucket) => {
   emit('changeDueDate', { bucket, task });
 };
 
+const taskBucket = task =>
+  TASK_TIME_BUCKETS.find(bucket =>
+    groupedTasks.value[bucket].some(item => Number(item.id) === Number(task.id))
+  );
+
+const handleBucketSelect = (event, task) => {
+  const bucket = event.target.value;
+  if (!TASK_TIME_BUCKETS.includes(bucket) || bucket === taskBucket(task)) {
+    return;
+  }
+
+  emit('changeDueDate', { bucket, task });
+};
+
 const fallbackTaskTypeResolver = computed(() => buildTaskTypeResolver([], t));
 
 const formatDateLabel = task => {
@@ -178,7 +199,7 @@ const activityTypeMeta = task =>
         <Draggable
           :list="groupedTasks[column.key]"
           :disabled="!canManage"
-          animation="180"
+          :animation="prefersReducedMotion ? 0 : 180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
           ghost-class="crm-task-board-card-ghost"
           group="crm-task-time-buckets"
@@ -187,7 +208,7 @@ const activityTypeMeta = task =>
         >
           <template #item="{ element: task }">
             <article
-              class="cursor-grab rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing"
+              class="cursor-grab rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing motion-reduce:transition-none"
               @click="emit('selectTask', task)"
             >
               <div class="flex items-start justify-between gap-2">
@@ -240,6 +261,27 @@ const activityTypeMeta = task =>
                   {{ formatDateLabel(task) }}
                 </span>
               </div>
+
+              <select
+                v-if="canManage"
+                data-test="move-task-bucket"
+                class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                :aria-label="
+                  t('CRM.TASKS.BOARD.MOVE_TO_BUCKET', { title: task.title })
+                "
+                :disabled="pendingTaskIds.has(Number(task.id))"
+                :value="taskBucket(task)"
+                @click.stop
+                @change.stop="handleBucketSelect($event, task)"
+              >
+                <option
+                  v-for="bucket in TASK_TIME_BUCKETS"
+                  :key="bucket"
+                  :value="bucket"
+                >
+                  {{ bucketDisplayMeta[bucket].label }}
+                </option>
+              </select>
 
               <CrmCustomFieldsSummary
                 class="mt-2"

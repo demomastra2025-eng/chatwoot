@@ -1515,6 +1515,14 @@ const handleEventClick = ({ event, e }) => {
   emit('selectAppointment', event.appointment);
 };
 
+const handleEventKeydown = (keyboardEvent, event) => {
+  if (!['Enter', ' '].includes(keyboardEvent.key)) return;
+
+  keyboardEvent.preventDefault();
+  keyboardEvent.stopPropagation();
+  emit('selectAppointment', event.appointment);
+};
+
 const autoScrollTimeline = async () => {
   if (!isTimelineView.value || !isVueCalReady.value) {
     return;
@@ -1720,6 +1728,8 @@ onMounted(() => {
             <template v-else-if="view !== 'month'">
               <div
                 class="scheduling-vue-cal__event-card"
+                role="button"
+                tabindex="0"
                 :class="{
                   'scheduling-vue-cal__event-card--muted':
                     isMutedAppointmentCard(event),
@@ -1730,6 +1740,8 @@ onMounted(() => {
                   '--appointment-accent': event.resourceColor || '#2563eb',
                 }"
                 :title="eventTitle(event)"
+                :aria-label="eventTitle(event)"
+                @keydown="handleEventKeydown($event, event)"
               >
                 <div class="scheduling-vue-cal__event-header">
                   <span
@@ -1782,11 +1794,15 @@ onMounted(() => {
 
             <template v-else-if="!event.background">
               <div
-                class="truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                class="scheduling-vue-cal__month-event truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                role="button"
+                tabindex="0"
                 :style="{
                   backgroundColor: `${event.resourceColor || '#2563eb'}22`,
                   color: event.resourceColor || '#2563eb',
                 }"
+                :aria-label="eventTitle(event)"
+                @keydown="handleEventKeydown($event, event)"
               >
                 {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
                 {{ event.clientName }}
@@ -2567,6 +2583,19 @@ onMounted(() => {
   border-color: rgb(var(--ruby-7) / 0.3);
   background: rgb(var(--ruby-4) / 0.88);
   color: rgb(var(--ruby-11));
+}
+
+.scheduling-vue-cal__event-card:focus-visible,
+.scheduling-vue-cal__month-event:focus-visible {
+  outline: 2px solid rgb(var(--brand-color));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scheduling-vue-cal :deep(.vuecal__event:not(.vuecal__event--background)),
+  .scheduling-vue-cal__event-card {
+    transition: none;
+  }
 }
 
 .scheduling-vue-cal__event-header {

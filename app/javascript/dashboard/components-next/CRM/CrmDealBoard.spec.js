@@ -81,6 +81,57 @@ describe('CrmDealBoard', () => {
     ]);
   });
 
+  it('moves a deal with a native keyboard and touch stage selector', async () => {
+    const deal = { id: 1, stageId: 1, title: 'First deal' };
+    const wrapper = mountBoard(
+      { canManage: true, canReorder: false, deals: [deal] },
+      {
+        Draggable: {
+          props: ['list'],
+          template:
+            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+        },
+      }
+    );
+
+    const selector = wrapper.find('[data-test="move-deal-stage"]');
+    expect(selector.element.tagName).toBe('SELECT');
+    expect(selector.attributes('aria-label')).toBe(
+      'CRM.DEALS.BOARD.MOVE_TO_STAGE'
+    );
+
+    await selector.setValue('2');
+
+    expect(wrapper.emitted('changeStage')).toEqual([
+      [{ deal, position: null, stageId: 2 }],
+    ]);
+    expect(wrapper.emitted('selectDeal')).toBeUndefined();
+  });
+
+  it('disables only the selector for a deal with a pending stage mutation', () => {
+    const wrapper = mountBoard(
+      {
+        canManage: true,
+        deals: [
+          { id: 1, stageId: 1, title: 'Pending deal' },
+          { id: 2, stageId: 1, title: 'Ready deal' },
+        ],
+        pendingDealIds: new Set([1]),
+      },
+      {
+        Draggable: {
+          props: ['list'],
+          template:
+            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+        },
+      }
+    );
+
+    const selectors = wrapper.findAll('[data-test="move-deal-stage"]');
+    expect(selectors[0].attributes('disabled')).toBeDefined();
+    expect(selectors[1].attributes('disabled')).toBeUndefined();
+  });
+
   it('truncates long company names and renders the owner as read-only text', () => {
     const wrapper = mountBoard(
       {

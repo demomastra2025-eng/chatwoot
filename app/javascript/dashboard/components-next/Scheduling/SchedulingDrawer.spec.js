@@ -62,4 +62,119 @@ describe('SchedulingDrawer', () => {
 
     expect(wrapper.emitted('update:modelValue')).toContainEqual([false]);
   });
+
+  it('moves focus into the dialog, traps it, and restores the trigger', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const wrapper = mount(SchedulingDrawer, {
+      attachTo: document.body,
+      props: {
+        modelValue: false,
+        title: 'Appointment',
+      },
+      global: {
+        stubs: {
+          Button: true,
+          Teleport: true,
+          Transition: false,
+        },
+      },
+      slots: {
+        default: '<input data-testid="drawer-input" />',
+      },
+    });
+
+    await wrapper.setProps({ modelValue: true });
+    await nextTick();
+
+    const dialog = wrapper.find('[role="dialog"]');
+    const input = wrapper.find('[data-testid="drawer-input"]');
+    input.element.getClientRects = () => [{}];
+    expect(dialog.attributes('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(dialog.element);
+
+    await dialog.trigger('keydown', { key: 'Tab' });
+    expect(document.activeElement).toBe(input.element);
+
+    await wrapper.setProps({ modelValue: false });
+    await nextTick();
+    expect(document.activeElement).toBe(trigger);
+
+    wrapper.unmount();
+    trigger.remove();
+  });
+
+  it('skips hidden and aria-disabled controls while trapping focus', async () => {
+    const wrapper = mount(SchedulingDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: 'Appointment' },
+      global: {
+        stubs: { Button: true, Teleport: true, Transition: false },
+      },
+      slots: {
+        default: `
+          <div hidden><button data-testid="hidden-control">Hidden</button></div>
+          <button data-testid="disabled-control" aria-disabled="true">Disabled</button>
+          <button data-testid="visible-control">Visible</button>
+        `,
+      },
+    });
+    await nextTick();
+
+    const dialog = wrapper.find('[role="dialog"]');
+    wrapper.findAll('button').forEach(button => {
+      button.element.getClientRects = () => [{}];
+    });
+    await dialog.trigger('keydown', { key: 'Tab' });
+
+    expect(document.activeElement).toBe(
+      wrapper.find('[data-testid="visible-control"]').element
+    );
+    wrapper.unmount();
+  });
+
+  it('restores the opener when the drawer unmounts during close', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+    const wrapper = mount(SchedulingDrawer, {
+      attachTo: document.body,
+      props: { modelValue: true, title: 'Appointment' },
+      global: {
+        stubs: { Button: true, Teleport: true, Transition: false },
+      },
+    });
+    await nextTick();
+
+    wrapper.setProps({ modelValue: false });
+    wrapper.unmount();
+
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
+  it('closes only the drawer whose panel receives Escape', async () => {
+    const mountOpenDrawer = () =>
+      mount(SchedulingDrawer, {
+        attachTo: document.body,
+        props: { modelValue: true, title: 'Appointment' },
+        global: {
+          stubs: { Button: true, Teleport: true, Transition: false },
+        },
+      });
+    const parentDrawer = mountOpenDrawer();
+    const childDrawer = mountOpenDrawer();
+    await nextTick();
+
+    await childDrawer.find('[role="dialog"]').trigger('keydown', {
+      key: 'Escape',
+    });
+
+    expect(childDrawer.emitted('update:modelValue')).toEqual([[false]]);
+    expect(parentDrawer.emitted('update:modelValue')).toBeUndefined();
+    childDrawer.unmount();
+    parentDrawer.unmount();
+  });
 });

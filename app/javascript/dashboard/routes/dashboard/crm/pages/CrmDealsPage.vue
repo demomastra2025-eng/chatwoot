@@ -190,6 +190,7 @@ const formBaselineSnapshot = ref('');
 const customFieldFilters = ref({});
 const customFieldFilterDraft = ref({});
 const dealStageMutationTokens = new Map();
+const pendingDealStageIds = reactive(new Set());
 const listSort = ref({
   direction: '',
   key: '',
@@ -2930,13 +2931,24 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     return;
   }
 
+  const dealId = Number(currentDeal.id);
+  if (pendingDealStageIds.has(dealId)) return;
+  pendingDealStageIds.add(dealId);
+
   const stageChanging = Number(currentDeal.stageId) !== nextStageId;
-  const targetStage = findStageById(nextStageId);
-  const closingReasons = stageChanging
-    ? await collectClosingReasonsForStage({ deal: currentDeal, targetStage })
-    : [];
+  let closingReasons;
+  try {
+    const targetStage = findStageById(nextStageId);
+    closingReasons = stageChanging
+      ? await collectClosingReasonsForStage({ deal: currentDeal, targetStage })
+      : [];
+  } catch (error) {
+    pendingDealStageIds.delete(dealId);
+    throw error;
+  }
 
   if (isStageReasonSelectionCancelled(closingReasons)) {
+    pendingDealStageIds.delete(dealId);
     deals.value = [...deals.value];
     return;
   }
@@ -3061,6 +3073,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     if (dealStageMutationTokens.get(currentDeal.id) === mutationToken) {
       dealStageMutationTokens.delete(currentDeal.id);
     }
+    pendingDealStageIds.delete(dealId);
   }
 };
 
@@ -3727,6 +3740,7 @@ watch(
             :is-loading-more="ui.isLoadingMore"
             :load-more-failed="ui.isLoadMoreFailed"
             :owners="ownerOptions"
+            :pending-deal-ids="pendingDealStageIds"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
             :stage-counts="stageCounts"
             :stages="visibleBoardStages"

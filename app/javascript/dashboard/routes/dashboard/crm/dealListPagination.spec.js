@@ -240,6 +240,35 @@ it('rolls a rejected board move back with its stage counts', async () => {
   expect(state.dealsMeta.stageCounts).toMatchObject({ 100: 1, 200: 0 });
 });
 
+it('ignores another stage intent while the same deal mutation is pending', async () => {
+  const { state } = await mountPage();
+  const original = state.deals[0];
+  const pendingTransition = deferred();
+  CrmDealsAPI.transitionStage.mockReturnValueOnce(pendingTransition.promise);
+
+  const moving = state.handleDealStageChange({
+    deal: original,
+    position: null,
+    stageId: 200,
+  });
+  await flushPromises();
+  await state.handleDealStageChange({
+    deal: state.deals[0],
+    position: null,
+    stageId: 100,
+  });
+
+  expect(CrmDealsAPI.transitionStage).toHaveBeenCalledTimes(1);
+  expect(state.pendingDealStageIds.has(original.id)).toBe(true);
+
+  pendingTransition.resolve(
+    response({ ...original, lockVersion: 2, stageId: 200 })
+  );
+  await moving;
+
+  expect(state.pendingDealStageIds.has(original.id)).toBe(false);
+});
+
 it('keeps the newest list stage after a pending board move', async () => {
   const { state } = await mountPage();
   const original = state.deals[0];

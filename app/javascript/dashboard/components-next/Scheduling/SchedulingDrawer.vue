@@ -1,7 +1,6 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
 import { vOnClickOutside } from '@vueuse/components';
-import { useEventListener } from '@vueuse/core';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 
@@ -59,6 +58,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['close', 'confirm', 'update:modelValue']);
+const panelRef = ref(null);
+const titleId = useId();
+let focusGeneration = 0;
+let previouslyFocusedElement = null;
 
 const clickOutsideIgnore = [
   '[data-modal-safe-interaction]',
@@ -94,20 +97,24 @@ const clickOutsideClass = computed(() => [
 const panelTransitionClasses = computed(() => {
   if (isCentered.value) {
     return {
-      enterActive: 'transition-all duration-200 ease-out',
+      enterActive:
+        'transition-all duration-200 ease-out motion-reduce:transition-none',
       enterFrom: 'scale-[0.98] opacity-0',
       enterTo: 'scale-100 opacity-100',
-      leaveActive: 'transition-all duration-150 ease-in',
+      leaveActive:
+        'transition-all duration-150 ease-in motion-reduce:transition-none',
       leaveFrom: 'scale-100 opacity-100',
       leaveTo: 'scale-[0.98] opacity-0',
     };
   }
 
   return {
-    enterActive: 'transition-transform duration-200 ease-out',
+    enterActive:
+      'transition-transform duration-200 ease-out motion-reduce:transition-none',
     enterFrom: 'translate-x-full',
     enterTo: 'translate-x-0',
-    leaveActive: 'transition-transform duration-150 ease-in',
+    leaveActive:
+      'transition-transform duration-150 ease-in motion-reduce:transition-none',
     leaveFrom: 'translate-x-0',
     leaveTo: 'translate-x-full',
   };
@@ -119,6 +126,105 @@ const close = () => {
 };
 
 const confirm = () => emit('confirm');
+const focusableSelector = [
+  'button:not([disabled])',
+  '[href]',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+const isRenderedFocusableElement = element => {
+  if (
+    element.matches('[aria-disabled="true"]') ||
+    element.closest(
+      '[hidden], [inert], [aria-hidden="true"], [aria-disabled="true"]'
+    )
+  ) {
+    return false;
+  }
+
+  return element.getClientRects().length > 0;
+};
+
+const focusPanel = async generation => {
+  await nextTick();
+  if (generation !== focusGeneration || !props.modelValue) return;
+  panelRef.value?.focus({ preventScroll: true });
+};
+
+const restoreFocus = async generation => {
+  await nextTick();
+  if (generation !== focusGeneration || props.modelValue) return;
+  if (previouslyFocusedElement?.isConnected) {
+    previouslyFocusedElement.focus({ preventScroll: true });
+  }
+  previouslyFocusedElement = null;
+};
+
+const handlePanelKeydown = event => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+    return;
+  }
+  if (event.key !== 'Tab') return;
+
+  const focusableElements = Array.from(
+    panelRef.value?.querySelectorAll(focusableSelector) || []
+  ).filter(isRenderedFocusableElement);
+  if (!focusableElements.length) {
+    event.preventDefault();
+    panelRef.value?.focus({ preventScroll: true });
+    return;
+  }
+
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements.at(-1);
+  if (
+    event.shiftKey &&
+    (document.activeElement === firstElement ||
+      document.activeElement === panelRef.value)
+  ) {
+    event.preventDefault();
+    lastElement.focus();
+  } else if (
+    !event.shiftKey &&
+    (document.activeElement === lastElement ||
+      document.activeElement === panelRef.value)
+  ) {
+    event.preventDefault();
+    firstElement.focus();
+  }
+};
+
+watch(
+  () => props.modelValue,
+  isOpen => {
+    focusGeneration += 1;
+    const generation = focusGeneration;
+    if (isOpen) {
+      if (!previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement = document.activeElement;
+      }
+      focusPanel(generation);
+    } else {
+      restoreFocus(generation);
+    }
+  },
+  { immediate: true }
+);
+
+onBeforeUnmount(() => {
+  focusGeneration += 1;
+  if (previouslyFocusedElement?.isConnected) {
+    previouslyFocusedElement.focus({ preventScroll: true });
+  }
+  previouslyFocusedElement = null;
+});
+
 const handleOutsideTrigger = () => {
   if (!props.closeOnOutside) {
     return;
@@ -126,21 +232,15 @@ const handleOutsideTrigger = () => {
 
   close();
 };
-
-useEventListener(document, 'keydown', event => {
-  if (event.key === 'Escape' && props.modelValue) {
-    close();
-  }
-});
 </script>
 
 <template>
   <Teleport to="body">
     <Transition
-      enter-active-class="transition-opacity duration-200 ease-out"
+      enter-active-class="transition-opacity duration-200 ease-out motion-reduce:transition-none"
       enter-from-class="opacity-0"
       enter-to-class="opacity-100"
-      leave-active-class="transition-opacity duration-150 ease-in"
+      leave-active-class="transition-opacity duration-150 ease-in motion-reduce:transition-none"
       leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
@@ -155,18 +255,27 @@ useEventListener(document, 'keydown', event => {
         >
           <div v-if="modelValue" :class="clickOutsideClass">
             <aside
+              ref="panelRef"
               v-on-click-outside="[
                 handleOutsideTrigger,
                 { ignore: clickOutsideIgnore },
               ]"
               class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"
               :class="[widthClass, panelClass]"
+              role="dialog"
+              aria-modal="true"
+              :aria-labelledby="titleId"
+              tabindex="-1"
+              @keydown="handlePanelKeydown"
             >
               <header
                 class="flex items-start justify-between gap-4 border-b border-n-weak bg-n-surface-1 px-6 py-4"
               >
                 <div class="flex flex-col gap-1">
-                  <h3 class="mb-0 text-lg font-semibold text-n-slate-12">
+                  <h3
+                    :id="titleId"
+                    class="mb-0 text-lg font-semibold text-n-slate-12"
+                  >
                     {{ title }}
                   </h3>
                   <p v-if="description" class="mb-0 text-sm text-n-slate-11">
@@ -178,6 +287,7 @@ useEventListener(document, 'keydown', event => {
                   variant="ghost"
                   color="slate"
                   icon="i-lucide-x"
+                  :aria-label="$t('SCHEDULING.GENERAL.CANCEL')"
                   @click="close"
                 />
               </header>

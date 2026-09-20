@@ -1,4 +1,6 @@
 <script setup>
+import { onMounted, ref } from 'vue';
+
 import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
@@ -22,11 +24,17 @@ defineProps({
 });
 
 defineEmits(['reload', 'retry']);
+
+const noticeRef = ref(null);
+
+onMounted(() => noticeRef.value?.focus({ preventScroll: true }));
 </script>
 
 <template>
   <section
+    ref="noticeRef"
     role="alert"
+    tabindex="-1"
     data-test="crm-conflict-notice"
     class="grid gap-3 rounded-xl border border-n-amber-6 bg-n-amber-2 p-3 text-sm text-n-slate-12"
   >

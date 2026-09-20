@@ -8,6 +8,7 @@ import {
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useMediaQuery } from '@vueuse/core';
 import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
@@ -46,6 +47,10 @@ const props = defineProps({
   owners: {
     type: Array,
     default: () => [],
+  },
+  pendingDealIds: {
+    type: Set,
+    default: () => new Set(),
   },
   showSortToggle: {
     type: Boolean,
@@ -87,6 +92,7 @@ const { locale, t } = useI18n();
 const boardColumns = ref({});
 const boardScrollContainer = ref(null);
 const canDragDeals = computed(() => props.canManage && props.canReorder);
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const ownerNameById = computed(() =>
   props.owners.reduce((result, owner) => {
     result[Number(owner.value)] = owner.label;
@@ -322,6 +328,12 @@ const handleColumnChange = (event, stageId) => {
   const deal = boardColumns.value[Number(stageId)][event.added.newIndex];
   emitStageChange(deal, stageId, resolveBoardPosition(event.added.newIndex));
 };
+
+const handleStageSelect = (event, deal) => {
+  const stageId = Number(event.target.value);
+  event.target.value = String(deal.stageId);
+  emitStageChange(deal, stageId, null);
+};
 </script>
 
 <template>
@@ -379,7 +391,7 @@ const handleColumnChange = (event, stageId) => {
           :list="boardColumns[column.stageId]"
           :disabled="!canDragDeals"
           :sort="canDragDeals && sortKey === 'position'"
-          animation="180"
+          :animation="prefersReducedMotion ? 0 : 180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
           ghost-class="crm-deal-board-card-ghost"
           group="crm-deal-board"
@@ -388,7 +400,7 @@ const handleColumnChange = (event, stageId) => {
         >
           <template #item="{ element }">
             <article
-              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
+              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md motion-reduce:transition-none"
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
@@ -454,6 +466,27 @@ const handleColumnChange = (event, stageId) => {
               >
                 {{ nextActionLabel(element) }}
               </p>
+
+              <select
+                v-if="canManage && stages.length > 1"
+                data-test="move-deal-stage"
+                class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                :aria-label="
+                  t('CRM.DEALS.BOARD.MOVE_TO_STAGE', { title: element.title })
+                "
+                :disabled="pendingDealIds.has(Number(element.id))"
+                :value="String(element.stageId)"
+                @click.stop
+                @change.stop="handleStageSelect($event, element)"
+              >
+                <option
+                  v-for="stage in stages"
+                  :key="stage.id"
+                  :value="String(stage.id)"
+                >
+                  {{ stage.name }}
+                </option>
+              </select>
 
               <CrmCustomFieldsSummary
                 class="mt-2"

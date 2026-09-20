@@ -162,6 +162,29 @@ describe('SchedulingVueCalCalendar', () => {
     ).toBe(true);
   });
 
+  it('opens an appointment from the keyboard-focusable event card', async () => {
+    const appointment = {
+      id: 48,
+      clientName: 'Keyboard customer',
+      endsAt: '2026-03-09T10:30:00.000Z',
+      resourceId: 12,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({ appointments: [appointment] });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCard = wrapper.find('.scheduling-vue-cal__event-card');
+    expect(eventCard.attributes('role')).toBe('button');
+    expect(eventCard.attributes('tabindex')).toBe('0');
+
+    await eventCard.trigger('keydown', { key: 'Enter' });
+
+    expect(wrapper.emitted('selectAppointment')).toEqual([[appointment]]);
+  });
+
   it('renders time and client name in a single event summary row', async () => {
     const wrapper = mountCalendar({
       appointments: [

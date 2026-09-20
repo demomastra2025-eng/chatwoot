@@ -129,6 +129,55 @@ describe('CrmTaskBoard', () => {
     expect(wrapper.emitted('selectTask')).toEqual([[task]]);
   });
 
+  it('moves a task with a native keyboard and touch due-date selector', async () => {
+    const task = {
+      boardTimeBucket: 'today',
+      dueAt: new Date().toISOString(),
+      id: 1,
+      title: 'Follow up',
+    };
+    const wrapper = mountBoard({ canManage: true, tasks: [task] });
+
+    const selector = wrapper.find('[data-test="move-task-bucket"]');
+    expect(selector.element.tagName).toBe('SELECT');
+    expect(selector.findAll('option')).toHaveLength(7);
+    expect(selector.attributes('aria-label')).toBe(
+      'CRM.TASKS.BOARD.MOVE_TO_BUCKET'
+    );
+
+    await selector.setValue('tomorrow');
+
+    expect(wrapper.emitted('changeDueDate')).toEqual([
+      [{ bucket: 'tomorrow', task }],
+    ]);
+    expect(wrapper.emitted('selectTask')).toBeUndefined();
+  });
+
+  it('disables only the selector for a task with a pending deadline mutation', () => {
+    const wrapper = mountBoard({
+      canManage: true,
+      pendingTaskIds: new Set([1]),
+      tasks: [
+        {
+          boardTimeBucket: 'today',
+          dueAt: new Date().toISOString(),
+          id: 1,
+          title: 'Pending task',
+        },
+        {
+          boardTimeBucket: 'tomorrow',
+          dueAt: new Date(Date.now() + 86400000).toISOString(),
+          id: 2,
+          title: 'Ready task',
+        },
+      ],
+    });
+
+    const selectors = wrapper.findAll('[data-test="move-task-bucket"]');
+    expect(selectors[0].attributes('disabled')).toBeDefined();
+    expect(selectors[1].attributes('disabled')).toBeUndefined();
+  });
+
   it('renders the task assignee as read-only text', () => {
     const wrapper = mountBoard({
       assignees: [{ label: 'Alex Assignee', value: 7 }],
