@@ -1,4 +1,4 @@
-class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseController
+class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseController # rubocop:disable Metrics/ClassLength
   TASK_REPORT_ACTIONS = %i[task_lifecycle task_lifecycle_details task_results task_result_details].freeze
   DUAL_REPORT_ACTIONS = %i[deals_without_next_action deals_without_next_action_details].freeze
 
@@ -104,6 +104,10 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
   def deals_without_next_action = render_deals_without_next_action
 
   def deals_without_next_action_details = render_deals_without_next_action(details: true)
+
+  def deal_workload = render_deal_workload
+
+  def deal_workload_details = render_deal_workload(details: true)
 
   alias funnels deals
 
@@ -218,6 +222,19 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     query = ::Crm::Reports::DealsWithoutNextActionQuery.new(
       account: Current.account, deals_scope: report_deals_scope, tasks_scope: report_tasks_scope,
       params: params.permit(:pipeline_id, :stage_id, :owner_id, :team_id, :page, :per_page)
+    )
+    render_payload({ rows: details ? query.drill_down_rows : query.aggregate_rows }, meta: details ? query.pagination_meta : query.meta)
+  end
+
+  def render_deal_workload(details: false)
+    authorize ::Crm::Deal, :view_reports?
+    query = ::Crm::Reports::DealWorkloadQuery.new(
+      account: Current.account,
+      deals_scope: report_deals_scope,
+      params: params.permit(
+        :dimension, :owner_id, :team_id, :pipeline_id, :stage_id, :page, :per_page,
+        :from, :to, :as_of, :from_date, :to_date, :as_of_date
+      )
     )
     render_payload({ rows: details ? query.drill_down_rows : query.aggregate_rows }, meta: details ? query.pagination_meta : query.meta)
   end
