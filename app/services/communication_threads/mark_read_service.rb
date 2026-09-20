@@ -1,5 +1,5 @@
 class CommunicationThreads::MarkReadService
-  attr_reader :last_seen_at
+  attr_reader :last_seen_at, :read_state_changed, :sidebar_counts_refresh_required
 
   def initialize(communication_thread:, current_user:, current_account:, accessible_links:)
     @communication_thread = communication_thread
@@ -9,24 +9,13 @@ class CommunicationThreads::MarkReadService
   end
 
   def perform
-    return communication_thread.reload unless mark_read_required?
+    return communication_thread.reload unless change_or_repair_required?
 
-    conversations.each do |conversation|
-      conversation.skip_communication_thread_realtime = true
-      Notification::MarkConversationReadService.new(
-        user: current_user,
-        account: current_account,
-        conversation: conversation
-      ).perform
-      Conversations::MarkReadService.new(
-        conversation: conversation,
-        user: current_user,
-        refresh_communication_thread: false
-      ).perform
-    end
+    mark_personalized_read_state! if read_state_changed
 
     refresh_communication_thread!
     updated_thread = communication_thread.reload
+    @sidebar_counts_refresh_required ||= aggregate_unread_cleared?(updated_thread)
     @last_seen_at = conversations.filter_map { |conversation| conversation.last_seen_at_for(current_user) }.max
     enqueue_realtime_update(updated_thread)
     updated_thread
@@ -46,7 +35,35 @@ class CommunicationThreads::MarkReadService
 
   private
 
-  attr_reader :communication_thread, :current_user, :current_account, :accessible_links
+  attr_reader :communication_thread, :current_user, :current_account, :accessible_links, :aggregate_was_unread
+
+  def change_or_repair_required?
+    unread_messages_changed = unread_messages_exist?
+    @aggregate_was_unread = communication_thread.unread_count.positive?
+    @read_state_changed = unread_messages_changed || unread_notifications_exist?
+    @sidebar_counts_refresh_required = unread_messages_changed
+    read_state_changed || aggregate_was_unread
+  end
+
+  def aggregate_unread_cleared?(updated_thread)
+    aggregate_was_unread && updated_thread.unread_count.zero?
+  end
+
+  def mark_personalized_read_state!
+    conversations.each do |conversation|
+      conversation.skip_communication_thread_realtime = true
+      Notification::MarkConversationReadService.new(
+        user: current_user,
+        account: current_account,
+        conversation: conversation
+      ).perform
+      Conversations::MarkReadService.new(
+        conversation: conversation,
+        user: current_user,
+        refresh_communication_thread: false
+      ).perform
+    end
+  end
 
   def conversations
     @conversations ||= accessible_links.includes(:conversation).filter_map(&:conversation)
@@ -61,10 +78,6 @@ class CommunicationThreads::MarkReadService
       conversation_ids: conversation_ids,
       user: current_user
     ).perform.unread_counts.present?
-  end
-
-  def mark_read_required?
-    communication_thread.unread_count.positive? || unread_messages_exist? || unread_notifications_exist?
   end
 
   def unread_notifications_exist?

@@ -216,17 +216,122 @@ RSpec.describe CommunicationThreadFinder do
       expect(counts).to include('open' => 1, 'pending' => 1, 'resolved' => 1, 'snoozed' => 0)
       expect(sql.grep(/thread_status_memberships/).size).to eq(1)
     end
+  end
 
-    it 'returns only faceted unread counts for lightweight sidebar refreshes' do
-      thread, = create_thread_with_conversation(unread_count: 1)
-      thread.update!(status: :pending)
+  describe '#perform_sidebar_unread_counts' do
+    let(:second_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
+    let(:inaccessible_inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
+    let(:first_team) { create(:team, account: account) }
+    let(:second_team) { create(:team, account: account) }
+    let(:first_pipeline) { create(:crm_pipeline, account: account) }
+    let(:second_pipeline) { create(:crm_pipeline, account: account) }
+    let(:first_stage) { create(:crm_stage, account: account, pipeline: first_pipeline) }
+    let(:second_stage) { create(:crm_stage, account: account, pipeline: second_pipeline) }
 
-      counts = described_class.new(user, status: 'all', assignee_type: 'all').perform_sidebar_unread_counts
+    before do
+      create(:inbox_member, user: user, inbox: second_inbox)
+      first_thread, first_conversation = create_thread_with_conversation(unread_count: 1)
+      second_thread, second_conversation = create_thread_with_conversation(unread_count: 1, target_inbox: second_inbox)
+      read_thread, read_conversation = create_thread_with_conversation(unread_count: 0)
+      inaccessible_thread, inaccessible_conversation = create_thread_with_conversation(
+        unread_count: 1,
+        target_inbox: inaccessible_inbox
+      )
+      first_thread_second_conversation = create(
+        :conversation,
+        account: account,
+        inbox: second_inbox,
+        contact: first_conversation.contact,
+        status: :open
+      )
+      create(
+        :communication_thread_conversation,
+        account: account,
+        communication_thread: first_thread,
+        conversation: first_thread_second_conversation,
+        inbox: second_inbox,
+        contact_inbox: first_thread_second_conversation.contact_inbox
+      )
 
-      expect(counts).to include(
+      first_thread.update!(status: :open, assignee: user, team: first_team)
+      first_conversation.update!(status: :pending)
+      first_conversation.update_labels('vip')
+      second_thread.update!(status: :resolved, assignee: user, team: second_team)
+      second_conversation.update!(status: :resolved)
+      second_conversation.update_labels('priority')
+      read_thread.update!(status: :snoozed, assignee: user, team: first_team)
+      read_conversation.update!(status: :snoozed)
+      read_conversation.update_labels('read')
+      inaccessible_thread.update!(status: :open, assignee: user, team: first_team)
+      inaccessible_conversation.update_labels('inaccessible')
+
+      create(:crm_deal, account: account, pipeline: first_pipeline, stage: first_stage,
+                        originating_communication_thread: first_thread)
+      create(:crm_deal, account: account, pipeline: second_pipeline, stage: second_stage,
+                        originating_communication_thread: second_thread)
+      create(:crm_deal, account: account, pipeline: first_pipeline, stage: first_stage,
+                        originating_communication_thread: read_thread)
+      create(:crm_deal, account: account, pipeline: first_pipeline, stage: first_stage,
+                        originating_communication_thread: inaccessible_thread)
+      create(:scheduling_appointment, account: account, conversation: first_conversation,
+                                      contact: first_conversation.contact, status: 'confirmed')
+      create(:scheduling_appointment, account: account, conversation: second_conversation,
+                                      contact: second_conversation.contact, status: 'scheduled')
+      create(:scheduling_appointment, account: account, conversation: read_conversation,
+                                      contact: read_conversation.contact, status: 'completed')
+      create(:scheduling_appointment, account: account, conversation: inaccessible_conversation,
+                                      contact: inaccessible_conversation.contact, status: 'cancelled')
+    end
+
+    it 'returns every authorized unread facet while evaluating the unread base scope once' do
+      sql_queries = []
+      subscriber = lambda do |*, payload|
+        next if payload[:name] == 'SCHEMA' || payload[:cached]
+
+        sql_queries << payload[:sql].to_s.squish
+      end
+      counts = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+        described_class.new(user, status: 'all', assignee_type: 'all').perform_sidebar_unread_counts
+      end
+
+      expect(counts).to eq(
+        all: 2,
+        statuses: { 'open' => 1, 'pending' => 1, 'snoozed' => 0, 'resolved' => 1 },
+        inboxes: { inbox.id.to_s => 1, second_inbox.id.to_s => 2 },
+        teams: { first_team.id.to_s => 1, second_team.id.to_s => 1 },
+        labels: { 'vip' => 1, 'priority' => 1 },
+        pipelines: { first_pipeline.id.to_s => 1, second_pipeline.id.to_s => 1 },
+        stages: { first_stage.id.to_s => 1, second_stage.id.to_s => 1 },
+        appointment_statuses: { 'confirmed' => 1, 'scheduled' => 1, 'any' => 2 }
+      )
+      expect(sql_queries.grep(/conversation_user_read_states/).size).to eq(1)
+      expect(sql_queries.size).to be <= 13
+    end
+
+    it 'preserves status-overlap and facet-specific filter semantics' do
+      filtered_counts = described_class.new(
+        user,
+        {
+          status: 'pending',
+          assignee_type: 'me',
+          inbox_id: inbox.id,
+          team_id: first_team.id,
+          labels: ['vip'],
+          crm_pipeline_id: first_pipeline.id,
+          crm_stage_id: first_stage.id,
+          appointment_status: 'confirmed'
+        }
+      ).perform_sidebar_unread_counts
+
+      expect(filtered_counts).to eq(
         all: 1,
-        statuses: include('pending' => 1),
-        inboxes: include(inbox.id.to_s => 1)
+        statuses: { 'open' => 1, 'pending' => 1, 'snoozed' => 0, 'resolved' => 0 },
+        inboxes: { inbox.id.to_s => 1, second_inbox.id.to_s => 1 },
+        teams: { first_team.id.to_s => 1 },
+        labels: { 'vip' => 1 },
+        pipelines: { first_pipeline.id.to_s => 1 },
+        stages: { first_stage.id.to_s => 1 },
+        appointment_statuses: { 'confirmed' => 1, 'any' => 1 }
       )
     end
   end
@@ -245,16 +350,16 @@ RSpec.describe CommunicationThreadFinder do
     thread
   end
 
-  def create_thread_with_conversation(unread_count: 0)
+  def create_thread_with_conversation(unread_count: 0, target_inbox: inbox)
     contact = create(:contact, account: account)
-    conversation = create(:conversation, account: account, inbox: inbox, contact: contact)
+    conversation = create(:conversation, account: account, inbox: target_inbox, contact: contact)
     thread = create(:communication_thread, account: account, contact: contact, unread_count: unread_count)
     create(
       :communication_thread_conversation,
       account: account,
       communication_thread: thread,
       conversation: conversation,
-      inbox: inbox,
+      inbox: target_inbox,
       contact_inbox: conversation.contact_inbox
     )
     [thread, conversation]

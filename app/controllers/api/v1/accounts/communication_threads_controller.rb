@@ -179,6 +179,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       id: @communication_thread.display_id,
       unread_count: channel_read_states.sum { |state| state[:unread_count] },
       agent_last_seen_at: service.last_seen_at&.to_i,
+      read_state_changed: service.read_state_changed,
+      sidebar_counts_refresh_required: service.sidebar_counts_refresh_required,
       channels: channel_read_states
     }
   end

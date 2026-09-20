@@ -27,6 +27,8 @@ RSpec.describe CommunicationThreads::MarkReadService do
       expect(conversation.reload.agent_last_seen_at).to be > message.created_at
       expect(updated_thread.unread_count).to eq(0)
       expect(service.last_seen_at).to be_within(0.001.seconds).of(conversation.agent_last_seen_at)
+      expect(service.read_state_changed).to be(true)
+      expect(service.sidebar_counts_refresh_required).to be(true)
       expect(service.channel_read_states).to contain_exactly(
         a_hash_including(conversation_id: conversation.display_id, unread_count: 0)
       )
@@ -44,13 +46,16 @@ RSpec.describe CommunicationThreads::MarkReadService do
       allow(Conversations::MarkReadService).to receive(:new)
       allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
 
-      described_class.new(
+      service = described_class.new(
         communication_thread: thread,
         current_user: user,
         current_account: account,
         accessible_links: links
-      ).perform
+      )
+      service.perform
 
+      expect(service.read_state_changed).to be(false)
+      expect(service.sidebar_counts_refresh_required).to be(false)
       expect(Notification::MarkConversationReadService).not_to have_received(:new)
       expect(Conversations::MarkReadService).not_to have_received(:new)
       expect(CommunicationThreads::RealtimeUpdateJob).not_to have_received(:perform_later)
@@ -61,14 +66,36 @@ RSpec.describe CommunicationThreads::MarkReadService do
       thread.update!(unread_count: 1)
       allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
 
-      updated_thread = described_class.new(
+      service = described_class.new(
         communication_thread: thread,
         current_user: user,
         current_account: account,
         accessible_links: links
-      ).perform
+      )
+      updated_thread = service.perform
 
       expect(updated_thread.unread_count).to eq(0)
+      expect(service.read_state_changed).to be(false)
+      expect(service.sidebar_counts_refresh_required).to be(true)
+      expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
+    end
+
+    it 'does not request sidebar counts when the aggregate remains unread for another reader' do
+      create(:message, account: account, conversation: conversation, message_type: :incoming, created_at: 1.minute.ago)
+      Conversations::RecordUserReadStateService.new(conversation: conversation, user: user).perform(last_seen_at: Time.current)
+      allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
+
+      service = described_class.new(
+        communication_thread: thread.reload,
+        current_user: user,
+        current_account: account,
+        accessible_links: links
+      )
+      updated_thread = service.perform
+
+      expect(updated_thread.unread_count).to eq(1)
+      expect(service.read_state_changed).to be(false)
+      expect(service.sidebar_counts_refresh_required).to be(false)
       expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
     end
 
@@ -81,13 +108,16 @@ RSpec.describe CommunicationThreads::MarkReadService do
       allow(Conversations::MarkReadService).to receive(:new).and_return(conversation_service)
       allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
 
-      described_class.new(
+      service = described_class.new(
         communication_thread: thread,
         current_user: user,
         current_account: account,
         accessible_links: links
-      ).perform
+      )
+      service.perform
 
+      expect(service.read_state_changed).to be(true)
+      expect(service.sidebar_counts_refresh_required).to be(false)
       expect(notification_service).to have_received(:perform)
       expect(conversation_service).to have_received(:perform)
       expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once

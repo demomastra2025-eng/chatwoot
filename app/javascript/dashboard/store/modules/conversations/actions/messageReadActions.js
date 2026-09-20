@@ -27,7 +27,10 @@ const shouldUseCommunicationThreadApi = (state, { id, conversationType }) => {
 
 const pendingCommunicationThreadReadRequests = new Map();
 
-const executeCommunicationThreadRead = async ({ commit, dispatch }, data) => {
+const executeCommunicationThreadRead = async (
+  { commit, dispatch, state },
+  data
+) => {
   try {
     const { data: communicationThread } =
       await CommunicationThreadApi.markMessageRead(data);
@@ -43,7 +46,12 @@ const executeCommunicationThreadRead = async ({ commit, dispatch }, data) => {
       unreadPayload.channels = communicationThread.channels;
     }
     commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, unreadPayload);
-    dispatch('fetchSidebarUnreadCounts');
+    if (communicationThread.sidebar_counts_refresh_required !== false) {
+      dispatch('fetchRealtimeSidebarUnreadCounts', {
+        ...(state?.conversationFilters || {}),
+        communicationThreadMode: true,
+      });
+    }
   } catch (error) {
     // Keep read state unchanged when the request fails.
   }

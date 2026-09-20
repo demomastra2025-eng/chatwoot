@@ -1132,10 +1132,70 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(first_conversation.reload.unread_incoming_messages_count).to eq(0)
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(0)
       expect(thread.reload.unread_count).to eq(0)
-      expect(response.parsed_body['unread_count']).to eq(0)
+      expect(response.parsed_body).to include(
+        'unread_count' => 0,
+        'read_state_changed' => true,
+        'sidebar_counts_refresh_required' => true
+      )
       expect(response.parsed_body['channels']).to contain_exactly(
         a_hash_including('conversation_id' => first_conversation.display_id, 'unread_count' => 0),
         a_hash_including('conversation_id' => second_conversation.display_id, 'unread_count' => 0)
+      )
+    end
+
+    it 'returns an explicit no-op result while preserving local unread state fields' do
+      conversation = create(:conversation, account: account, agent_last_seen_at: 1.minute.ago)
+      create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 2.minutes.ago
+      )
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/update_last_seen",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body).to include(
+        'id' => thread.display_id,
+        'unread_count' => 0,
+        'read_state_changed' => false,
+        'sidebar_counts_refresh_required' => false,
+        'agent_last_seen_at' => nil
+      )
+      expect(response.parsed_body['channels']).to contain_exactly(
+        a_hash_including('conversation_id' => conversation.display_id, 'unread_count' => 0)
+      )
+    end
+
+    it 'requests sidebar count reconciliation when only a stale aggregate unread count is repaired' do
+      conversation = create(:conversation, account: account, agent_last_seen_at: 1.minute.ago)
+      create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 2.minutes.ago
+      )
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+      thread.update!(unread_count: 1)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/update_last_seen",
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body).to include(
+        'unread_count' => 0,
+        'read_state_changed' => false,
+        'sidebar_counts_refresh_required' => true
       )
     end
   end

@@ -92,22 +92,36 @@ describe('conversation actions', () => {
   });
 
   describe('#markCommunicationThreadRead', () => {
-    it('marks the thread read without committing a full thread update that would retrigger scroll/read loop', async () => {
+    it('marks the thread read and refreshes sidebar counts only through the lightweight thread endpoint', async () => {
       const commit = vi.fn();
-      const dispatch = vi.fn();
+      const state = {
+        conversationFilters: {
+          communicationThreadMode: true,
+          status: 'open',
+        },
+      };
+      const dispatch = vi.fn((actionName, payload) =>
+        actions[actionName]({ commit, dispatch, state }, payload)
+      );
       vi.spyOn(Date, 'now').mockReturnValue(1712345678000);
       vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
         data: {
           id: 7,
           unread_count: 0,
+          read_state_changed: true,
+          sidebar_counts_refresh_required: true,
           messages: [],
           channels: [{ conversation_id: 11, inbox_id: 101 }],
           meta: { sender: { id: 42 } },
         },
       });
+      const sidebarUnreadCounts = vi
+        .spyOn(CommunicationThreadApi, 'sidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts: { all: 0 } } });
+      const meta = vi.spyOn(CommunicationThreadApi, 'meta');
 
       await actions.markCommunicationThreadRead(
-        { commit, dispatch },
+        { commit, dispatch, state },
         { id: 7 }
       );
 
@@ -125,7 +139,111 @@ describe('conversation actions', () => {
         types.UPDATE_CONVERSATION,
         expect.anything()
       );
-      expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledWith(
+        'fetchRealtimeSidebarUnreadCounts',
+        {
+          communicationThreadMode: true,
+          status: 'open',
+        }
+      );
+      expect(sidebarUnreadCounts).toHaveBeenCalledOnce();
+      expect(meta).not.toHaveBeenCalled();
+    });
+
+    it('commits repeated no-op responses without refreshing sidebar metadata', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345678,
+          unread_count: 0,
+          read_state_changed: false,
+          sidebar_counts_refresh_required: false,
+          channels: [{ conversation_id: 11, inbox_id: 101 }],
+        },
+      });
+      const meta = vi.spyOn(CommunicationThreadApi, 'meta');
+
+      await actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+      await actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+
+      expect(commit).toHaveBeenCalledTimes(2);
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(meta).not.toHaveBeenCalled();
+    });
+
+    it('uses the lightweight refresh for an aggregate-only unread repair', async () => {
+      const commit = vi.fn();
+      const state = { conversationFilters: { status: 'open' } };
+      const dispatch = vi.fn((actionName, payload) =>
+        actions[actionName]({ commit, dispatch, state }, payload)
+      );
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345678,
+          unread_count: 0,
+          read_state_changed: false,
+          sidebar_counts_refresh_required: true,
+        },
+      });
+      const sidebarUnreadCounts = vi
+        .spyOn(CommunicationThreadApi, 'sidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts: { all: 0 } } });
+      const meta = vi.spyOn(CommunicationThreadApi, 'meta');
+
+      await actions.markCommunicationThreadRead(
+        { commit, dispatch, state },
+        { id: 7 }
+      );
+
+      expect(dispatch).toHaveBeenCalledOnce();
+      expect(dispatch).toHaveBeenCalledWith(
+        'fetchRealtimeSidebarUnreadCounts',
+        { communicationThreadMode: true, status: 'open' }
+      );
+      expect(sidebarUnreadCounts).toHaveBeenCalledOnce();
+      expect(meta).not.toHaveBeenCalled();
+    });
+
+    it('falls back to a lightweight refresh when an older response omits the refresh signal', async () => {
+      const commit = vi.fn();
+      const state = { conversationFilters: { status: 'open' } };
+      const dispatch = vi.fn((actionName, payload) =>
+        actions[actionName]({ commit, dispatch, state }, payload)
+      );
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345678,
+          unread_count: 0,
+        },
+      });
+      const sidebarUnreadCounts = vi
+        .spyOn(CommunicationThreadApi, 'sidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts: { all: 0 } } });
+      const meta = vi.spyOn(CommunicationThreadApi, 'meta');
+
+      await actions.markCommunicationThreadRead(
+        { commit, dispatch, state },
+        { id: 7 }
+      );
+
+      expect(dispatch).toHaveBeenCalledOnce();
+      expect(dispatch).toHaveBeenCalledWith(
+        'fetchRealtimeSidebarUnreadCounts',
+        { communicationThreadMode: true, status: 'open' }
+      );
+      expect(sidebarUnreadCounts).toHaveBeenCalledOnce();
+      expect(meta).not.toHaveBeenCalled();
     });
 
     it('coalesces concurrent read requests for the same thread', async () => {
@@ -150,12 +268,24 @@ describe('conversation actions', () => {
 
       expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(1);
       resolveRequest({
-        data: { id: 7, agent_last_seen_at: 1712345678, unread_count: 0 },
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345678,
+          unread_count: 0,
+          read_state_changed: true,
+          sidebar_counts_refresh_required: true,
+        },
       });
       await Promise.all([firstCall, secondCall]);
 
       expect(commit).toHaveBeenCalledTimes(1);
       expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledWith(
+        'fetchRealtimeSidebarUnreadCounts',
+        {
+          communicationThreadMode: true,
+        }
+      );
     });
   });
 
