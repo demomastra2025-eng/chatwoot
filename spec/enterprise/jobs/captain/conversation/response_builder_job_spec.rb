@@ -797,6 +797,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     it 'continues with a public response when a strict handoff lacks backend authorization' do
       assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      original_status = conversation.status
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
           'response' => 'Продолжу помогать здесь.',
@@ -804,9 +805,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         }
       )
 
-      described_class.perform_now(conversation, assistant)
+      expect(conversation).not_to receive(:bot_handoff!)
+      public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+      private_message = change { conversation.messages.outgoing.where(private: true).count }.by(0)
+      expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_message)
 
       expect(conversation.reload.captain_handoff_applied_at).to be_nil
+      expect(conversation.status).to eq(original_status)
       expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
     end
 
@@ -826,6 +831,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         }
       )
 
+      expect(conversation).to receive(:bot_handoff!).once.and_call_original
       public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
       private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
       expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)

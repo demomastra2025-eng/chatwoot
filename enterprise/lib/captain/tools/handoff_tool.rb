@@ -1,4 +1,5 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
+  AUTHORIZED_CONTEXT_KEY = :captain_v2_handoff_authorized_tool_call
   CONSENT_REQUIRED_ERROR = (
     'Handoff requires an explicit request for a human or direct consent to the latest handoff question.'
   ).freeze
@@ -40,7 +41,14 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
                      conversation_id: conversation.id,
                      reason: 'explicit_consent_required'
                    })
-    tool_failure(CONSENT_REQUIRED_ERROR)
+    Captain::ToolResult.failure(
+      error: CONSENT_REQUIRED_ERROR,
+      retryable: true,
+      audit: {
+        failure_stage: 'authorization',
+        failure_reason: 'handoff_not_authorized'
+      }
+    )
   end
 
   def handoff_authorized?(conversation, state)
@@ -58,6 +66,7 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
       message: message.presence,
       timestamp: Time.current
     }.compact
+    tool_context.context[AUTHORIZED_CONTEXT_KEY] = true
   end
 
   # TODO: Future enhancement - Add team assignment capability
