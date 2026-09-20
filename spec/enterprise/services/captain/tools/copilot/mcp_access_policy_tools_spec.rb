@@ -129,7 +129,7 @@ RSpec.describe 'Captain MCP access policy copilot tools' do
       expect(account.mcp_access).to include(
         'enabled' => true,
         'max_risk_level' => 'custom',
-        'require_confirmation_for_mutations' => false,
+        'require_confirmation_for_mutations' => true,
         'allowed_groups' => [],
         'blocked_groups' => []
       )

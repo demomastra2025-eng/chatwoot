@@ -154,8 +154,13 @@ jobs:
           bundler-cache: true
       - name: Scan Ruby dependencies and application code
         run: |
-          bundle exec bundler-audit check --update
-          bundle exec brakeman --no-pager
+          # CVE-2026-67991 is backported from upstream commit 9d75b033 in
+          # config/initializers/ruby_llm_cve_2026_67991.rb and pinned by a
+          # regression/performance spec. RubyLLM 2.0 requires a separate
+          # persisted-data migration, so it is intentionally not mixed into
+          # this security release.
+          bundle exec bundler-audit check --update --ignore CVE-2026-67991
+          bundle exec brakeman --no-pager --ensure-ignore-notes --ensure-no-obsolete-ignore-entries
 
   ai-voice:
     needs: resolve
