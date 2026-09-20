@@ -23,6 +23,7 @@ import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.v
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
   assertTaskEditCurrent,
@@ -107,6 +108,7 @@ let taskResultGeneration = 0;
 let taskResultTaskId = null;
 const tasks = ref([]);
 const ui = reactive({
+  error: null,
   isLoading: false,
   isSaving: false,
 });
@@ -542,6 +544,7 @@ const fetchTaskPages = async ({
 
 const loadTasks = async () => {
   if (!hasDeal.value) {
+    ui.error = null;
     tasks.value = [];
     return;
   }
@@ -549,6 +552,7 @@ const loadTasks = async () => {
   taskLoadGeneration.value += 1;
   const loadGeneration = taskLoadGeneration.value;
   const realtimeSequenceAtStart = taskRealtimeSequence;
+  ui.error = null;
   ui.isLoading = true;
 
   try {
@@ -573,7 +577,7 @@ const loadTasks = async () => {
     });
   } catch (error) {
     if (loadGeneration !== taskLoadGeneration.value) return;
-    useAlert(formatCrmErrorMessage(error, t));
+    ui.error = error;
   } finally {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
@@ -1064,6 +1068,14 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     >
       {{ $t('CRM.DEALS.TASKS.LOADING') }}
     </div>
+
+    <SchedulingErrorState
+      v-else-if="ui.error"
+      class="m-4"
+      :title="$t('CRM.ERRORS.LOAD_TITLE')"
+      :description="formatCrmErrorMessage(ui.error, t)"
+      @retry="loadTasks"
+    />
 
     <div
       v-else-if="sortedTasks.length === 0"

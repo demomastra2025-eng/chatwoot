@@ -11,6 +11,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
@@ -89,9 +90,11 @@ const scrollContainer = ref(null);
 const isCreating = ref(false);
 const savingDealKey = ref('');
 const ui = reactive({
+  error: null,
   isInitializing: false,
 });
 const forms = reactive({});
+let sidebarInitializationGeneration = 0;
 const metaAdReferralExpanded = ref(false);
 
 const currentDealSourceContext = computed(() =>
@@ -183,7 +186,7 @@ const accordionItems = computed(() => {
   return items;
 });
 const headerButtons = computed(() =>
-  isCreating.value
+  ui.error || ui.isInitializing || isCreating.value
     ? []
     : [
         {
@@ -419,13 +422,10 @@ const setDealForms = () => {
 };
 
 const loadCompanies = async () => {
-  if (!companiesEnabled.value) {
-    companyOptions.value = [];
-    return;
-  }
+  if (!companiesEnabled.value) return [];
 
   const response = await CompanyAPI.get();
-  companyOptions.value = normalizePayload(response.data).map(company => ({
+  return normalizePayload(response.data).map(company => ({
     label: company.name,
     value: company.id,
   }));
@@ -438,8 +438,7 @@ const fetchDealsByParams = async params => {
   return normalizePayload(response.data);
 };
 
-const loadDeals = async () => {
-  const context = currentDealSourceContext.value;
+const loadDeals = async context => {
   const lookupParams = buildCrmDealLookupParams(context);
   const originLookupParams = buildCrmDealOriginLookupParams(context);
   const shouldFetchOrigin =
@@ -451,24 +450,34 @@ const loadDeals = async () => {
     shouldFetchOrigin ? fetchDealsByParams(originLookupParams) : [],
   ]);
 
-  deals.value = sortCrmDealsForContext(
+  return sortCrmDealsForContext(
     mergeUniqueCrmDeals(lookupDeals, originDeals),
     context
   );
 };
 
 const initializeSidebar = async () => {
+  sidebarInitializationGeneration += 1;
+  const generation = sidebarInitializationGeneration;
+  const context = currentDealSourceContext.value;
+  const isCurrent = () => generation === sidebarInitializationGeneration;
+
+  ui.error = null;
+  ui.isInitializing = false;
+  deals.value = [];
+  companyOptions.value = [];
+  resetForms();
+  isCreating.value = false;
+  openDealKeys.value = [];
   if (!props.currentChat?.id || !canManageDeals.value) return;
 
   ui.isInitializing = true;
-  isCreating.value = false;
-  openDealKeys.value = [];
 
   try {
     if (!agents.value.length) await store.dispatch('agents/get');
     if (!teams.value.length) await store.dispatch('teams/get');
 
-    await Promise.all([
+    const [, , , , , nextCompanyOptions] = await Promise.all([
       referencesStore.loadPipelines(),
       referencesStore.loadTaskStatuses(),
       referencesStore.loadTaskTypes(),
@@ -476,17 +485,22 @@ const initializeSidebar = async () => {
       referencesStore.loadFieldDefinitions('task'),
       loadCompanies(),
     ]);
-    await loadDeals();
+    if (!isCurrent()) return;
 
+    const nextDeals = await loadDeals(context);
+    if (!isCurrent()) return;
+
+    companyOptions.value = nextCompanyOptions;
+    deals.value = nextDeals;
     isCreating.value = deals.value.length === 0;
     setDealForms();
     openDealKeys.value = [
       isCreating.value ? NEW_DEAL_KEY : dealKey(deals.value[0]),
     ];
   } catch (error) {
-    useAlert(formatCrmErrorMessage(error, t));
+    if (isCurrent()) ui.error = error;
   } finally {
-    ui.isInitializing = false;
+    if (isCurrent()) ui.isInitializing = false;
   }
 };
 
@@ -743,6 +757,14 @@ watch(dealFieldDefinitions, definitions => {
       <div v-if="ui.isInitializing" class="flex justify-center py-12">
         <Spinner class="!h-8 !w-8" />
       </div>
+
+      <SchedulingErrorState
+        v-else-if="ui.error"
+        class="m-3"
+        :title="$t('CRM.ERRORS.LOAD_TITLE')"
+        :description="formatCrmErrorMessage(ui.error, t)"
+        @retry="initializeSidebar"
+      />
 
       <div v-else class="border-t border-n-weak">
         <div

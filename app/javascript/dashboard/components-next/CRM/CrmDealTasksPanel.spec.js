@@ -23,6 +23,7 @@ vi.mock('dashboard/composables', () => ({
 }));
 
 import CrmDealTasksPanel from './CrmDealTasksPanel.vue';
+import CrmTasksAPI from 'dashboard/api/crm/tasks';
 
 const deal = {
   id: 1,
@@ -64,5 +65,27 @@ describe('CrmDealTasksPanel waiting controls', () => {
 
     const waitingDialog = wrapper.findComponent({ name: 'Dialog' });
     expect(waitingDialog.props('disableConfirmButton')).toBe(true);
+  });
+});
+
+describe('CrmDealTasksPanel load states', () => {
+  it('shows a retryable error instead of the confirmed-empty state', async () => {
+    CrmTasksAPI.get.mockRejectedValueOnce(new Error('Network unavailable'));
+    const wrapper = mountPanel({ canManageTasks: true });
+    await flushPromises();
+
+    const errorState = wrapper.findComponent({ name: 'SchedulingErrorState' });
+    expect(errorState.exists()).toBe(true);
+    expect(wrapper.text()).not.toContain('CRM.DEALS.TASKS.EMPTY_TITLE');
+
+    CrmTasksAPI.get.mockResolvedValueOnce({ data: { payload: [] } });
+    await wrapper.vm.$.setupState.loadTasks();
+    await flushPromises();
+
+    expect(wrapper.vm.$.setupState.ui.error).toBeNull();
+    expect(
+      wrapper.findComponent({ name: 'SchedulingErrorState' }).exists()
+    ).toBe(false);
+    expect(wrapper.text()).toContain('CRM.DEALS.TASKS.EMPTY_TITLE');
   });
 });

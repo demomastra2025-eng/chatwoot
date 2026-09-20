@@ -3757,8 +3757,16 @@ watch(
             v-else-if="deals.length === 0"
             icon="i-lucide-briefcase-business"
             title=""
-            :description="$t('CRM.DEALS.EMPTY_DESCRIPTION')"
-            :action-label="canManageDeals ? $t('CRM.DEALS.NEW_DEAL') : ''"
+            :description="
+              hasListSearchQuery && currentPresentation === 'list'
+                ? $t('CRM.DEALS.LIST.EMPTY_FILTERED')
+                : $t('CRM.DEALS.EMPTY_DESCRIPTION')
+            "
+            :action-label="
+              canManageDeals && !hasListSearchQuery
+                ? $t('CRM.DEALS.NEW_DEAL')
+                : ''
+            "
             @action="openCreateDrawer()"
           />
 

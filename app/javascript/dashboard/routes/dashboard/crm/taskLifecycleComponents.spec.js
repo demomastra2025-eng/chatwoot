@@ -205,6 +205,18 @@ afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
 });
 
+it('renders a filtered-empty task list without a create action', async () => {
+  const { state, wrapper } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'missing task';
+  state.tasks = [];
+  await flushPromises();
+
+  const emptyState = wrapper.findComponent({ name: 'SchedulingEmptyState' });
+  expect(emptyState.props('description')).toBe('CRM.TASKS.LIST.EMPTY_FILTERED');
+  expect(emptyState.props('actionLabel')).toBe('');
+});
+
 describe.each(['page', 'panel'])('%s task concurrency', kind => {
   it('uses bounded server pagination for the page list and complete paging in the deal panel', async () => {
     const { state } = await mountEditor(kind);

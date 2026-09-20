@@ -2796,8 +2796,16 @@ watch(
           v-else-if="tasks.length === 0 && currentPresentation === 'list'"
           icon="i-lucide-list-todo"
           title=""
-          :description="$t('CRM.TASKS.EMPTY_DESCRIPTION')"
-          :action-label="canManageTasks ? $t('CRM.TASKS.NEW_TASK') : ''"
+          :description="
+            hasListSearchQuery
+              ? $t('CRM.TASKS.LIST.EMPTY_FILTERED')
+              : $t('CRM.TASKS.EMPTY_DESCRIPTION')
+          "
+          :action-label="
+            canManageTasks && !hasListSearchQuery
+              ? $t('CRM.TASKS.NEW_TASK')
+              : ''
+          "
           @action="openCreateDrawer"
         />
 

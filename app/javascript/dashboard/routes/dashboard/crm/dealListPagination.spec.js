@@ -162,6 +162,18 @@ it('exposes a localized string when the initial load fails', async () => {
   expect(state.ui.error).toBe('CRM.ERRORS.STALE_RECORD');
 });
 
+it('renders a filtered-empty list without a create action', async () => {
+  const { state, wrapper } = await mountPage();
+  state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'missing deal';
+  state.deals = [];
+  await flushPromises();
+
+  const emptyState = wrapper.findComponent({ name: 'SchedulingEmptyState' });
+  expect(emptyState.props('description')).toBe('CRM.DEALS.LIST.EMPTY_FILTERED');
+  expect(emptyState.props('actionLabel')).toBe('');
+});
+
 it('does not publish an old timeline after the deal drawer closes', async () => {
   const { state } = await mountPage();
   const pending = deferred();
