@@ -1,5 +1,5 @@
 class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseController
-  TASK_REPORT_ACTIONS = %i[task_lifecycle task_lifecycle_details].freeze
+  TASK_REPORT_ACTIONS = %i[task_lifecycle task_lifecycle_details task_results task_result_details].freeze
 
   before_action :ensure_crm_deals_enabled!, except: TASK_REPORT_ACTIONS
   before_action :ensure_crm_tasks_enabled!, only: TASK_REPORT_ACTIONS
@@ -83,6 +83,20 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     authorize ::Crm::Task, :view_reports?
 
     query = task_lifecycle_query
+    render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
+  end
+
+  def task_results
+    authorize ::Crm::Task, :view_reports?
+
+    query = task_results_query
+    render_payload({ rows: query.aggregate_rows }, meta: query.meta)
+  end
+
+  def task_result_details
+    authorize ::Crm::Task, :view_reports?
+
+    query = task_results_query
     render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
   end
 
@@ -177,5 +191,19 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
 
   def task_lifecycle_report_params
     params.permit(:from_date, :to_date, :as_of_date, :lifecycle_type, :deadline_state, :page, :per_page)
+  end
+
+  def task_results_query
+    ::Crm::Reports::TaskResultsQuery.new(
+      account: Current.account,
+      tasks_scope: report_tasks_scope,
+      params: task_results_report_params
+    )
+  end
+
+  def task_results_report_params
+    params.permit(
+      :from_date, :to_date, :as_of_date, :task_type_id, :task_outcome_id, :lifecycle_type, :reliability, :page, :per_page
+    )
   end
 end

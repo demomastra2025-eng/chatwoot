@@ -49,6 +49,10 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
     meta.merge(page: page, per_page: per_page, total_count: total_count)
   end
 
+  def fact_relation
+    @fact_relation ||= Crm::Event.unscoped.from("(#{facts_sql}) crm_events")
+  end
+
   private
 
   attr_reader :zone, :lifecycle_type, :deadline_state
@@ -146,7 +150,7 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
 
   def relation
     @relation ||= begin
-      scope = Crm::Event.unscoped.from("(#{facts_sql}) crm_events")
+      scope = fact_relation
       scope = scope.where(lifecycle_type: lifecycle_type) if lifecycle_type.present?
       scope = scope.where(deadline_state: deadline_state) if deadline_state.present?
       scope
@@ -180,6 +184,9 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
         END AS deadline_kind,
         events.after_data->>'due_at' AS due_at,
         events.after_data->>'due_on' AS due_on,
+        events.after_data->>'task_type_id' AS task_type_id_snapshot,
+        events.after_data->>'task_outcome_id' AS task_outcome_id_snapshot,
+        events.after_data->>'outcome' AS legacy_outcome_snapshot,
         CASE
           WHEN NOT (#{valid_terminal_at_sql}) THEN 'unknown'
           WHEN events.after_data->>'all_day' = 'true'

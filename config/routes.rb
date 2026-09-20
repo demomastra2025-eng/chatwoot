@@ -269,6 +269,8 @@ Rails.application.routes.draw do
                 get :conversion_details
                 get :task_lifecycle
                 get :task_lifecycle_details
+                get :task_results
+                get :task_result_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
