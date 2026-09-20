@@ -18,6 +18,7 @@ const { referencesStore, runtime, taskFieldDefinitions } = vi.hoisted(() => ({
   },
   runtime: {
     accountId: null,
+    dispatch: vi.fn(),
     routeQuery: {},
     routerReplace: vi.fn(),
   },
@@ -61,7 +62,7 @@ vi.mock('dashboard/composables/store', () => ({
     };
     return values[key] || ref(null);
   },
-  useStore: () => ({ dispatch: vi.fn() }),
+  useStore: () => ({ dispatch: runtime.dispatch }),
 }));
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => referencesStore,
@@ -185,6 +186,7 @@ beforeEach(() => {
     key => delete runtime.routeQuery[key]
   );
   runtime.routerReplace.mockReset().mockResolvedValue(undefined);
+  runtime.dispatch.mockReset().mockResolvedValue(undefined);
   taskFieldDefinitions.splice(0);
   referencesStore.taskFieldDefinitions = taskFieldDefinitions;
   referencesStore.loadFieldDefinitions.mockResolvedValue([]);
@@ -249,9 +251,14 @@ it('retries the complete task page bootstrap after references fail', async () =>
   );
   expect(CrmTasksAPI.get).not.toHaveBeenCalled();
 
-  await state.initializeTasksPage();
+  runtime.dispatch.mockClear();
+  wrapper.findComponent({ name: 'SchedulingErrorState' }).vm.$emit('retry');
+  await flushPromises();
 
   expect(referencesStore.loadTaskStatuses).toHaveBeenCalledTimes(2);
+  expect(runtime.dispatch).toHaveBeenCalledWith('agents/get', {
+    throwOnError: true,
+  });
   expect(CrmTasksAPI.get).toHaveBeenCalled();
   expect(state.ui.error).toBeNull();
   expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);

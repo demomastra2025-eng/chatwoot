@@ -2,7 +2,12 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
-  runtime: { accountId: null, routeQuery: {}, routerReplace: vi.fn() },
+  runtime: {
+    accountId: null,
+    dispatch: vi.fn(),
+    routeQuery: {},
+    routerReplace: vi.fn(),
+  },
   referencesStore: {
     dealFieldDefinitions: [],
     pipelines: [
@@ -88,7 +93,7 @@ vi.mock('dashboard/composables/store', async () => {
       };
       return values[key] || { __v_isRef: true, value: null };
     },
-    useStore: () => ({ dispatch: vi.fn() }),
+    useStore: () => ({ dispatch: runtime.dispatch }),
   };
 });
 vi.mock('dashboard/stores/crm/references', () => ({
@@ -137,6 +142,7 @@ beforeEach(() => {
     key => delete runtime.routeQuery[key]
   );
   runtime.routerReplace.mockReset().mockResolvedValue(undefined);
+  runtime.dispatch.mockReset().mockResolvedValue(undefined);
   referencesStore.loadFieldDefinitions.mockResolvedValue([]);
   referencesStore.loadPipelines.mockResolvedValue(referencesStore.pipelines);
   referencesStore.loadTaskStatuses.mockResolvedValue([]);
@@ -188,9 +194,15 @@ it('retries the complete page bootstrap after a reference request fails', async 
   );
   expect(CrmDealsAPI.get).not.toHaveBeenCalled();
 
-  await state.initializeDealsPage();
+  runtime.dispatch.mockClear();
+  wrapper.findComponent({ name: 'SchedulingErrorState' }).vm.$emit('retry');
+  await flushPromises();
 
   expect(referencesStore.loadPipelines).toHaveBeenCalledTimes(2);
+  expect(runtime.dispatch).toHaveBeenCalledWith('agents/get', {
+    throwOnError: true,
+  });
+  expect(runtime.dispatch).toHaveBeenCalledWith('teams/get');
   expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
   expect(state.ui.error).toBeNull();
   expect(state.deals.map(item => item.id)).toEqual([1]);

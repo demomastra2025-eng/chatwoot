@@ -3745,7 +3745,7 @@ watch(
             v-else-if="ui.error"
             :title="$t('CRM.ERRORS.LOAD_TITLE')"
             :description="formatErrorMessage(ui.error)"
-            @retry="initializeDealsPage"
+            @retry="initializeDealsPage({ reloadDirectory: true })"
           />
 
           <SchedulingEmptyState

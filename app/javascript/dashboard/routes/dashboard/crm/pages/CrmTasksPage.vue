@@ -2826,7 +2826,7 @@ watch(
           v-else-if="ui.error"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
           :description="formatErrorMessage(ui.error)"
-          @retry="initializeTasksPage"
+          @retry="initializeTasksPage({ reloadAgents: true })"
         />
 
         <SchedulingEmptyState
