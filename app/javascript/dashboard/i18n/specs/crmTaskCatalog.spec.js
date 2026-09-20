@@ -31,6 +31,8 @@ describe('CRM task catalog locales', () => {
       const crm = messages.CRM;
 
       expect(crm.GENERAL.EDIT).toBeTruthy();
+      expect(crm.TASKS.LOADING_MORE).toBeTruthy();
+      expect(crm.TASKS.RETRY_LOAD).toBeTruthy();
       expect(crm.TASKS.OUTCOME.other).toBeTruthy();
       expect(crm.SETTINGS.TASK_SETTINGS.TITLE).toBeTruthy();
       catalogKeys.forEach(key => {

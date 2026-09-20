@@ -453,6 +453,8 @@
         "sales": "Продажи"
       },
       "LOAD_MORE": "Загрузить ещё",
+      "LOADING_MORE": "Загружаем ещё...",
+      "RETRY_LOAD": "Повторить загрузку",
       "NEW_TASK": "Новая задача",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow-up по диалогу #{conversationId}",

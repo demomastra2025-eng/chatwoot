@@ -453,6 +453,8 @@
         "sales": "Sales"
       },
       "LOAD_MORE": "Load more",
+      "LOADING_MORE": "Loading more...",
+      "RETRY_LOAD": "Retry loading",
       "NEW_TASK": "New task",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow up conversation #{conversationId}",

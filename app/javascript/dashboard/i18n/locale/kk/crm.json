@@ -418,6 +418,8 @@
         "sales": "Сату"
       },
       "LOAD_MORE": "Тағы жүктеу",
+      "LOADING_MORE": "Қосымша жүктелуде...",
+      "RETRY_LOAD": "Жүктеуді қайталау",
       "NEW_TASK": "Жаңа міндет",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Диалог бойынша follow-up #{conversationId}",
