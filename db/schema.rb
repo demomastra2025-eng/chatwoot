@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_18_190000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_20_220000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1623,6 +1623,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_18_190000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "entered_at"], name: "index_crm_stage_visits_on_account_id_and_entered_at"
+    t.index ["account_id", "exited_at"], name: "index_crm_stage_visits_on_account_id_and_exited_at", where: "(exited_at IS NOT NULL)"
     t.index ["account_id"], name: "index_crm_stage_visits_on_account_id"
     t.index ["correlation_id"], name: "index_crm_stage_visits_on_correlation_id"
     t.index ["deal_id"], name: "index_crm_stage_visits_on_active_deal", unique: true, where: "(exited_at IS NULL)"

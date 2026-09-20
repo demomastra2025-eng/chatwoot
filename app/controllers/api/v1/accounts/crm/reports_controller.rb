@@ -41,6 +41,20 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
   end
 
+  def stage_durations
+    authorize ::Crm::Deal, :view_reports?
+
+    query = stage_durations_query
+    render_payload({ rows: query.aggregate_rows }, meta: query.meta)
+  end
+
+  def stage_duration_details
+    authorize ::Crm::Deal, :view_reports?
+
+    query = stage_durations_query
+    render_payload({ rows: query.drill_down_rows }, meta: query.pagination_meta)
+  end
+
   alias funnels deals
 
   private
@@ -96,5 +110,17 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
       :page,
       :per_page
     )
+  end
+
+  def stage_durations_query
+    ::Crm::Reports::StageDurationsQuery.new(
+      account: Current.account,
+      deals_scope: report_deals_scope,
+      params: stage_duration_report_params
+    )
+  end
+
+  def stage_duration_report_params
+    params.permit(:from_date, :to_date, :pipeline_id, :stage_id, :page, :per_page)
   end
 end

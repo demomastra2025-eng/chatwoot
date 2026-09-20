@@ -263,6 +263,8 @@ Rails.application.routes.draw do
                 get :manager_effectiveness
                 get :stage_transitions
                 get :stage_transition_details
+                get :stage_durations
+                get :stage_duration_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do

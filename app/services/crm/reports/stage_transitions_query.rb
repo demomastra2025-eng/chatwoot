@@ -1,8 +1,5 @@
-# rubocop:disable Metrics/ClassLength
-class Crm::Reports::StageTransitionsQuery
-  MAX_WINDOW_DAYS = 366
-  DEFAULT_PER_PAGE = 25
-  MAX_PER_PAGE = 100
+class Crm::Reports::StageTransitionsQuery < Crm::Reports::StageVisitsQuery
+  QUERY_KIND = 'stage_transitions'.freeze
   FILTER_KEYS = %i[from_pipeline_id from_stage_id pipeline_id stage_id].freeze
   FILTER_COLUMNS = {
     from_pipeline_id: 'from_pipeline_id',
@@ -14,19 +11,6 @@ class Crm::Reports::StageTransitionsQuery
     from_pipeline_id from_pipeline_name from_stage_id from_stage_name from_stage_outcome
     to_pipeline_id to_pipeline_name to_stage_id to_stage_name to_stage_outcome
   ].freeze
-
-  attr_reader :account, :deals_scope, :params, :timezone, :from_time, :to_time
-
-  def initialize(account:, deals_scope:, params: {})
-    @account = account
-    @deals_scope = deals_scope
-    @params = params.to_h.symbolize_keys
-    @timezone = account.workspace_working_hours_timezone
-    @zone = ActiveSupport::TimeZone[timezone]
-    validate_zone!
-    normalize_window!
-    normalize_filters!
-  end
 
   def aggregate_rows
     relation.group(*GROUP_COLUMNS).pluck(
@@ -40,7 +24,7 @@ class Crm::Reports::StageTransitionsQuery
   end
 
   def drill_down_rows
-    paginated_relation.map { |transition| drill_down_payload(transition) }
+    paginated_relation(relation, order: { entered_at: :desc, id: :desc }).map { |transition| drill_down_payload(transition) }
   end
 
   def total_count
@@ -49,17 +33,10 @@ class Crm::Reports::StageTransitionsQuery
 
   def meta
     earliest_reliable_since = relation.minimum(:transition_reliable_since)
-    {
-      timezone: timezone,
-      from: from_time.utc.iso8601(6),
-      to: to_time.utc.iso8601(6),
-      reliable_since: earliest_reliable_since&.utc&.iso8601(6),
-      coverage: overall_coverage(earliest_reliable_since),
-      unknown_before: earliest_reliable_since&.utc&.iso8601(6),
-      query_fingerprint: query_fingerprint,
-      definition_version: 1,
-      source: 'crm_stage_visits'
-    }
+    base_meta(
+      reliable_since: earliest_reliable_since,
+      coverage: overall_coverage(earliest_reliable_since)
+    )
   end
 
   def pagination_meta
@@ -71,69 +48,6 @@ class Crm::Reports::StageTransitionsQuery
   end
 
   private
-
-  attr_reader :zone, :filters
-
-  def normalize_window!
-    from_date = parse_date!(:from_date)
-    to_date = parse_date!(:to_date)
-    days = (to_date - from_date).to_i + 1
-    raise_validation!('to_date must be on or after from_date') if days < 1
-    raise_validation!("date window must not exceed #{MAX_WINDOW_DAYS} days") if days > MAX_WINDOW_DAYS
-
-    @from_time = zone.local(from_date.year, from_date.month, from_date.day)
-    exclusive_date = to_date + 1.day
-    @to_time = zone.local(exclusive_date.year, exclusive_date.month, exclusive_date.day)
-  end
-
-  def parse_date!(key)
-    value = params[key]
-    raise_validation!("#{key} is required") if value.blank?
-    raise_validation!("#{key} must use YYYY-MM-DD") unless value.to_s.match?(/\A\d{4}-\d{2}-\d{2}\z/)
-
-    Date.iso8601(value.to_s)
-  rescue Date::Error
-    raise_validation!("#{key} must be a valid date")
-  end
-
-  def normalize_filters!
-    @filters = FILTER_KEYS.index_with { |key| parse_optional_id!(key) }.compact
-    validate_filter_records!
-  end
-
-  def parse_optional_id!(key)
-    value = params[key]
-    return if value.blank?
-
-    raise_validation!("#{key} must be a positive integer") unless value.to_s.match?(/\A[1-9]\d*\z/)
-
-    value.to_i
-  end
-
-  def validate_filter_records!
-    validate_ids!(:pipeline, %i[from_pipeline_id pipeline_id], account.crm_pipelines)
-    validate_ids!(:stage, %i[from_stage_id stage_id], account.crm_stages)
-    validate_stage_pipeline_pair!(:from_stage_id, :from_pipeline_id)
-    validate_stage_pipeline_pair!(:stage_id, :pipeline_id)
-  end
-
-  def validate_ids!(label, keys, scope)
-    requested_ids = filters.values_at(*keys).compact.uniq
-    return if requested_ids.empty? || scope.where(id: requested_ids).count == requested_ids.length
-
-    raise_validation!("#{label} filter is invalid")
-  end
-
-  def validate_stage_pipeline_pair!(stage_key, pipeline_key)
-    return if filters[stage_key].blank? || filters[pipeline_key].blank?
-    return if account.crm_stages.exists?(id: filters[stage_key], pipeline_id: filters[pipeline_key])
-
-    raise_validation!("#{stage_key} does not belong to #{pipeline_key}")
-  end
-
-  def validate_zone!
-    raise_validation!('workspace timezone is invalid') if zone.blank?
-  end
 
   def filtered_sql # rubocop:disable Metrics/MethodLength
     <<~SQL.squish
@@ -181,22 +95,16 @@ class Crm::Reports::StageTransitionsQuery
           ELSE 'exact'
         END AS coverage
       FROM transitions
-      WHERE #{filter_predicates.join(' AND ')}
+      WHERE #{transition_filter_predicates.join(' AND ')}
     SQL
   end
 
-  def visible_deals_sql
-    deals_scope.reselect(:id).to_sql
-  end
-
-  def filter_predicates
-    predicates = [
+  def transition_filter_predicates
+    [
       "entered_at >= #{connection.quote(from_time.utc)}",
-      "entered_at < #{connection.quote(to_time.utc)}"
+      "entered_at < #{connection.quote(to_time.utc)}",
+      *filter_predicates
     ]
-    predicates + filters.map do |key, value|
-      "#{FILTER_COLUMNS.fetch(key)} = #{connection.quote(value)}"
-    end
   end
 
   def aggregate_payload(values)
@@ -241,47 +149,10 @@ class Crm::Reports::StageTransitionsQuery
     }
   end
 
-  def paginated_relation
-    relation.order(entered_at: :desc, id: :desc).offset((page - 1) * per_page).limit(per_page)
-  end
-
-  def page
-    @page ||= parse_positive_integer!(:page, default: 1)
-  end
-
-  def per_page
-    @per_page ||= parse_positive_integer!(:per_page, default: DEFAULT_PER_PAGE, max: MAX_PER_PAGE)
-  end
-
-  def parse_positive_integer!(key, default:, max: nil)
-    value = params[key].presence || default
-    raise_validation!("#{key} must be a positive integer") unless value.to_s.match?(/\A[1-9]\d*\z/)
-
-    parsed = value.to_i
-    raise_validation!("#{key} must not exceed #{max}") if max && parsed > max
-
-    parsed
-  end
-
   def overall_coverage(earliest_reliable_since)
     return 'unknown_before' if earliest_reliable_since.blank? || from_time < earliest_reliable_since
     return 'estimated' if relation.exists?(reliability: 'estimated')
 
     'exact'
   end
-
-  def query_fingerprint
-    @query_fingerprint ||= Digest::SHA256.hexdigest(
-      [account.id, visible_deals_sql, from_time.utc.iso8601(6), to_time.utc.iso8601(6), filters.sort].to_json
-    )
-  end
-
-  def connection
-    ActiveRecord::Base.connection
-  end
-
-  def raise_validation!(message)
-    raise Crm::Error.new(code: 'INVALID_REPORT_QUERY', message: message, status: :unprocessable_content)
-  end
 end
-# rubocop:enable Metrics/ClassLength
