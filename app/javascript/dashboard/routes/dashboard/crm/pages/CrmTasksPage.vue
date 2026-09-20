@@ -9,6 +9,7 @@ import {
   watch,
 } from 'vue';
 import { format } from 'date-fns';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 import { useDebounceFn, useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
@@ -94,6 +95,7 @@ import {
 } from 'dashboard/routes/dashboard/crm/listSort';
 import {
   TASK_TIME_BUCKETS,
+  formatTaskDueDate,
   taskDeadlineForBucket,
   taskDueDate,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
@@ -254,7 +256,15 @@ let suppressNextListSearchReload = false;
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
+const getAccount = useMapGetter('accounts/getAccount');
 const currentUser = useMapGetter('getCurrentUser');
+const workspaceTimezone = computed(() => {
+  const account =
+    typeof getAccount.value === 'function'
+      ? getAccount.value(Number(accountId.value))
+      : null;
+  return account?.settings?.workspace_timezone || 'Asia/Almaty';
+});
 
 const canManageTasks = computed(() =>
   checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
@@ -598,7 +608,8 @@ const calendarLabel = computed(() =>
   formatCalendarTitle(
     currentCalendarView.value,
     calendarAnchorDate.value,
-    locale.value
+    locale.value,
+    workspaceTimezone.value
   )
 );
 
@@ -648,15 +659,15 @@ const normalizeFilterText = value =>
     .toLowerCase();
 
 const isTaskOverdue = task => {
-  if (task.archivedAt || task.completedAt) return false;
+  if (task.archivedAt || task.cancelledAt || task.completedAt) return false;
 
   const dueDate = taskDueDate(task);
   if (!dueDate) return false;
   if (!task.allDay) return dueDate < new Date();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return dueDate < today;
+  const today = utcToZonedTime(new Date(), workspaceTimezone.value);
+  const todayKey = format(today, 'yyyy-MM-dd');
+  return task.dueOn < todayKey;
 };
 
 const taskCustomFieldEntries = task =>
@@ -927,11 +938,6 @@ const resetForm = () => {
 };
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
-
-const formatDate = value => {
-  if (!value) return t('CRM.GENERAL.EMPTY_VALUE');
-  return format(new Date(value), 'MMM d, yyyy HH:mm');
-};
 
 const crmPrefillKeys = [
   'action',
@@ -1642,16 +1648,19 @@ const buildTaskQuery = () =>
 const withCalendarRange = query => {
   const { from, to } = buildCalendarRange(
     currentCalendarView.value,
-    calendarAnchorDate.value
+    calendarAnchorDate.value,
+    workspaceTimezone.value
   );
   const calendarTo = new Date(to.getTime() + 1);
+  const zonedFrom = utcToZonedTime(from, workspaceTimezone.value);
+  const zonedTo = utcToZonedTime(calendarTo, workspaceTimezone.value);
 
   return {
     ...query,
     calendar_from: from.toISOString(),
-    calendar_from_date: format(from, 'yyyy-MM-dd'),
+    calendar_from_date: format(zonedFrom, 'yyyy-MM-dd'),
     calendar_to: calendarTo.toISOString(),
-    calendar_to_date: format(calendarTo, 'yyyy-MM-dd'),
+    calendar_to_date: format(zonedTo, 'yyyy-MM-dd'),
   };
 };
 
@@ -2500,7 +2509,10 @@ const updateTaskCalendarRange = async ({ allDay, task, startsAt, endsAt }) => {
   let dueOn = null;
   let startAt = startsAt;
   if (allDay) {
-    dueOn = format(new Date(startsAt), 'yyyy-MM-dd');
+    dueOn = format(
+      utcToZonedTime(new Date(startsAt), workspaceTimezone.value),
+      'yyyy-MM-dd'
+    );
     dueAt = null;
     startAt = null;
   }
@@ -2547,13 +2559,16 @@ const shiftCalendar = async direction => {
   calendarAnchorDate.value = shiftAnchorDate(
     currentCalendarView.value,
     calendarAnchorDate.value,
-    direction
+    direction,
+    workspaceTimezone.value
   );
   await loadTasks();
 };
 
 const selectCalendarDate = async value => {
-  calendarAnchorDate.value = value || new Date();
+  calendarAnchorDate.value = value
+    ? zonedTimeToUtc(value, workspaceTimezone.value)
+    : new Date();
   await loadTasks();
 };
 
@@ -2976,7 +2991,9 @@ watch(
                   v-if="canManageTasks"
                   class="!w-auto"
                   :type="row.allDay ? 'date' : 'datetime'"
-                  :display-label="formatDate(taskDueDate(row))"
+                  :display-label="
+                    formatTaskDueDate(row, $t('CRM.GENERAL.EMPTY_VALUE'))
+                  "
                   :model-value="taskDueInputValue(row)"
                   hide-icon
                   input-class="!h-auto !w-auto !justify-start !gap-1 !rounded-none !bg-transparent !px-0 !py-0 !text-sm !font-normal !text-n-slate-12 !outline-transparent hover:!outline-transparent focus-visible:!outline-transparent data-[state=open]:!outline-transparent"
@@ -2986,7 +3003,7 @@ watch(
                   "
                 />
                 <span v-else class="text-sm text-n-slate-12">
-                  {{ formatDate(taskDueDate(row)) }}
+                  {{ formatTaskDueDate(row, $t('CRM.GENERAL.EMPTY_VALUE')) }}
                 </span>
                 <span
                   v-if="isTaskOverdue(row)"
@@ -3047,6 +3064,7 @@ watch(
             :tasks="tasks"
             :task-state="filters.taskState"
             :view="currentCalendarView"
+            :workspace-timezone="workspaceTimezone"
             @create-task="openCalendarCreateDrawer"
             @move-task="updateTaskCalendarRange"
             @resize-task="updateTaskCalendarRange"

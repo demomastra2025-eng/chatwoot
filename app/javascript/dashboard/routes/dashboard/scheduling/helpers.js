@@ -351,33 +351,51 @@ export const shiftAnchorDate = (view, anchorDate, direction, timezone) => {
   return timezone ? zonedTimeToUtc(shiftedDate, timezone) : shiftedDate;
 };
 
-export const formatCalendarTitle = (view, anchorDate, locale) => {
-  const { from, to } = buildCalendarRange(view, anchorDate);
+export const formatCalendarTitle = (view, anchorDate, locale, timezone) => {
+  const range = buildCalendarRange(view, anchorDate, timezone);
+  const calendarOptions = options =>
+    timezone ? { ...options, timeZone: timezone } : options;
 
   if (view === 'day') {
-    return formatLocalizedDate(from, locale, {
-      day: 'numeric',
-      month: 'long',
-      weekday: 'long',
-      year: 'numeric',
-    });
+    return formatLocalizedDate(
+      toDate(anchorDate),
+      locale,
+      calendarOptions({
+        day: 'numeric',
+        month: 'long',
+        weekday: 'long',
+        year: 'numeric',
+      })
+    );
   }
 
   if (view === 'month') {
-    return formatLocalizedDate(from, locale, {
-      month: 'long',
-      year: 'numeric',
-    });
+    return formatLocalizedDate(
+      toDate(anchorDate),
+      locale,
+      calendarOptions({
+        month: 'long',
+        year: 'numeric',
+      })
+    );
   }
 
-  return `${formatLocalizedDate(from, locale, {
-    day: 'numeric',
-    month: 'short',
-  })} - ${formatLocalizedDate(to, locale, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })}`;
+  return `${formatLocalizedDate(
+    range.from,
+    locale,
+    calendarOptions({
+      day: 'numeric',
+      month: 'short',
+    })
+  )} - ${formatLocalizedDate(
+    range.to,
+    locale,
+    calendarOptions({
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+  )}`;
 };
 
 export const buildDayListForView = (view, anchorDate) => {

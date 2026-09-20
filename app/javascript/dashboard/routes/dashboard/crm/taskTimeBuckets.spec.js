@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TASK_TIME_BUCKETS,
+  formatTaskDueDate,
   groupTasksByTime,
   taskDeadlineForBucket,
   taskTimeBucket,
@@ -51,6 +52,17 @@ describe('taskTimeBucket', () => {
         new Date(2026, 7, 26, 18, 0, 0)
       )
     ).toBe('today');
+  });
+});
+
+describe('formatTaskDueDate', () => {
+  it('keeps all-day dueOn date-only while retaining time for timed tasks', () => {
+    expect(formatTaskDueDate({ allDay: true, dueOn: '2026-09-23' })).toBe(
+      'Sep 23, 2026'
+    );
+    expect(
+      formatTaskDueDate({ dueAt: new Date(2026, 8, 23, 13, 30).toISOString() })
+    ).toBe('Sep 23, 2026 13:30');
   });
 });
 

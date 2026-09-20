@@ -57,7 +57,7 @@ describe('CrmTaskCalendar', () => {
     expect(appointments[0].customAttributes).toEqual({ task_type: 'call' });
   });
 
-  it('places an all-day task in the fixed calendar strip above the timeline', () => {
+  it('places an all-day task in the workspace date strip', () => {
     const wrapper = shallowMount(CrmTaskCalendar, {
       props: {
         anchorDate: '2026-09-04T00:00:00.000Z',
@@ -70,6 +70,7 @@ describe('CrmTaskCalendar', () => {
           },
         ],
         view: 'week',
+        workspaceTimezone: 'Asia/Almaty',
       },
     });
 
@@ -77,9 +78,34 @@ describe('CrmTaskCalendar', () => {
     const [appointment] = calendar.props('appointments');
 
     expect(calendar.props('allDayEvents')).toBe(true);
+    expect(calendar.props('workspaceTimezone')).toBe('Asia/Almaty');
     expect(appointment.allDay).toBe(true);
-    expect(new Date(appointment.startsAt).getHours()).toBe(0);
-    expect(new Date(appointment.endsAt).getHours()).toBe(23);
+    expect(appointment.startsAt).toBe('2026-09-03T19:00:00.000Z');
+    expect(appointment.endsAt).toBe('2026-09-04T18:59:59.999Z');
+  });
+
+  it('uses workspace-local day boundaries across a DST fallback', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-10-25T00:00:00.000Z',
+        tasks: [
+          {
+            allDay: true,
+            dueOn: '2026-10-25',
+            id: 46,
+            title: 'DST follow-up',
+          },
+        ],
+        view: 'week',
+        workspaceTimezone: 'Europe/Berlin',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    const [appointment] = calendar.props('appointments');
+
+    expect(appointment.startsAt).toBe('2026-10-24T22:00:00.000Z');
+    expect(appointment.endsAt).toBe('2026-10-25T22:59:59.999Z');
   });
 
   it('does not render cancelled tasks as calendar appointments', () => {
@@ -100,6 +126,39 @@ describe('CrmTaskCalendar', () => {
 
     const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
     expect(calendar.props('appointments')).toEqual([]);
+  });
+
+  it('does not mark terminal tasks overdue when terminal tasks are visible', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2000-01-01T00:00:00.000Z',
+        taskState: 'all',
+        tasks: [
+          {
+            cancelledAt: '2000-01-02T00:00:00.000Z',
+            dueAt: '2000-01-01T11:00:00.000Z',
+            id: 47,
+            title: 'Cancelled call',
+          },
+          {
+            completedAt: '2000-01-02T00:00:00.000Z',
+            dueAt: '2000-01-01T12:00:00.000Z',
+            id: 48,
+            title: 'Completed call',
+          },
+        ],
+        view: 'week',
+      },
+    });
+
+    const appointments = wrapper
+      .findComponent(SchedulingVueCalCalendar)
+      .props('appointments');
+
+    expect(appointments).toHaveLength(2);
+    expect(appointments.every(appointment => appointment.hideStatus)).toBe(
+      true
+    );
   });
 
   it.each([

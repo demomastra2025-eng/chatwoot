@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import SchedulingVueCalCalendar from 'dashboard/components-next/Scheduling/SchedulingVueCalCalendar.vue';
 import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
@@ -43,6 +44,10 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  workspaceTimezone: {
+    type: String,
+    default: 'Asia/Almaty',
+  },
 });
 
 const emit = defineEmits([
@@ -70,10 +75,12 @@ const resolveTaskRange = task => {
     const dueDate = taskDueDate(task);
     if (!dueDate) return null;
 
-    const startsAt = new Date(dueDate);
-    const endsAt = new Date(dueDate);
-    startsAt.setHours(0, 0, 0, 0);
-    endsAt.setHours(23, 59, 59, 999);
+    const startsAt = zonedTimeToUtc(dueDate, props.workspaceTimezone);
+    const nextDay = new Date(dueDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const endsAt = new Date(
+      zonedTimeToUtc(nextDay, props.workspaceTimezone).getTime() - 1
+    );
     return { endsAt, startsAt };
   }
 
@@ -108,13 +115,19 @@ const buildTaskSubtitle = task => {
 };
 
 const isOverdue = task => {
+  if (task.archivedAt || task.cancelledAt || task.completedAt) return false;
+
   const dueDate = taskDueDate(task);
   if (!dueDate) return false;
   if (!task.allDay) return dueDate < new Date();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return dueDate < today;
+  const today = utcToZonedTime(new Date(), props.workspaceTimezone);
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  return task.dueOn < todayKey;
 };
 
 const matchesTaskState = task => {
@@ -201,6 +214,7 @@ const handleResizeTask = payload => {
     :slots="[]"
     :time-offs="[]"
     :view="view"
+    :workspace-timezone="workspaceTimezone"
     :work-rules="[]"
     :workday-overrides="[]"
     @create-appointment="handleCreateTask"

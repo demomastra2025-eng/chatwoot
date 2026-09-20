@@ -32,7 +32,10 @@ import {
   cloneTaskDraft,
   rememberTaskSnapshot,
 } from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
-import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
+import {
+  formatTaskDueDate,
+  taskDueDate,
+} from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 import {
   createCrmConflictStateMachine,
   isStaleCrmError,
@@ -970,7 +973,9 @@ const formatDate = value => {
 const taskDateSummary = task => {
   const dueDate = taskDueDate(task);
   if (dueDate) {
-    return t('CRM.DEALS.TASKS.DUE_AT', { date: formatDate(dueDate) });
+    return t('CRM.DEALS.TASKS.DUE_AT', {
+      date: formatTaskDueDate(task),
+    });
   }
 
   if (task.startAt) {

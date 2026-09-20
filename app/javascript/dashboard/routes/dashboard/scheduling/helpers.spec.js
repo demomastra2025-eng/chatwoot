@@ -6,6 +6,7 @@ import {
   canCreateAppointmentConversation,
   collapseLegacyWorkIntervals,
   deriveVisibleMinuteWindow,
+  formatCalendarTitle,
   getServicePriceForResource,
   isAppointmentProviderOwned,
   isCurrentScheduleRequest,
@@ -224,6 +225,17 @@ describe('scheduling helpers', () => {
 
     expect(from.toISOString()).toBe('2026-03-08T19:00:00.000Z');
     expect(to.toISOString()).toBe('2026-03-09T18:59:59.999Z');
+  });
+
+  it('formats calendar titles in the Workspace timezone', () => {
+    const anchor = '2026-09-03T19:00:00.000Z';
+
+    expect(formatCalendarTitle('day', anchor, 'en', 'Asia/Almaty')).toContain(
+      'September 4, 2026'
+    );
+    expect(formatCalendarTitle('month', anchor, 'en', 'Asia/Almaty')).toBe(
+      'September 2026'
+    );
   });
 
   it('preserves legacy split shifts as one work interval plus gap breaks', () => {

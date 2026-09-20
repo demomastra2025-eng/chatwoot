@@ -215,6 +215,33 @@ describe('SchedulingVueCalCalendar', () => {
     expect(subtitle.text()).toContain('Dr. Sam');
   });
 
+  it('omits synthetic times from all-day event text and accessible names', async () => {
+    const wrapper = mountCalendar({
+      allDayEvents: true,
+      appointments: [
+        {
+          allDay: true,
+          id: 49,
+          clientName: 'All-day follow-up',
+          endsAt: '2026-03-09T23:59:59.999Z',
+          startsAt: '2026-03-09T00:00:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCard = wrapper.find('.scheduling-vue-cal__event-card');
+    expect(eventCard.text()).toContain('All-day follow-up');
+    expect(eventCard.find('.scheduling-vue-cal__event-time').exists()).toBe(
+      false
+    );
+    expect(eventCard.attributes('aria-label')).toContain('All-day follow-up');
+    expect(eventCard.attributes('aria-label')).not.toMatch(/\d{2}:\d{2}/);
+  });
+
   it('uses an optional appointment title while retaining the client in the subtitle', async () => {
     const wrapper = mountCalendar({
       appointments: [

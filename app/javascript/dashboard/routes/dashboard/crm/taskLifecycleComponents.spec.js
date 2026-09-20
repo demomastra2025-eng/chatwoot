@@ -18,6 +18,7 @@ const { referencesStore, runtime, taskFieldDefinitions } = vi.hoisted(() => ({
   },
   runtime: {
     accountId: null,
+    accountTimezone: 'Asia/Almaty',
     dispatch: vi.fn(),
     routeQuery: {},
     routerReplace: vi.fn(),
@@ -58,6 +59,9 @@ vi.mock('dashboard/composables/store', () => ({
     const values = {
       getCurrentAccountId: runtime.accountId,
       getCurrentUser: ref({ id: 1 }),
+      'accounts/getAccount': ref(() => ({
+        settings: { workspace_timezone: runtime.accountTimezone },
+      })),
       'agents/getAgents': ref([{ id: 1, name: 'Test agent' }]),
     };
     return values[key] || ref(null);
@@ -182,6 +186,7 @@ beforeEach(() => {
   localStorage.clear();
   runtime.accountId ||= ref(1);
   runtime.accountId.value = 1;
+  runtime.accountTimezone = 'Asia/Almaty';
   Object.keys(runtime.routeQuery).forEach(
     key => delete runtime.routeQuery[key]
   );
@@ -684,6 +689,39 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       );
       expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
       expect(state.tasksMeta.hasMore).toBe(false);
+    });
+
+    it('interprets a picked browser-local date in the Workspace timezone', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'calendar';
+      state.currentCalendarView = 'day';
+      CrmTasksAPI.get.mockReset().mockResolvedValue(response([]));
+
+      await state.selectCalendarDate(new Date(2026, 8, 4));
+
+      expect(state.calendarAnchorDate.toISOString()).toBe(
+        '2026-09-03T19:00:00.000Z'
+      );
+      expect(state.calendarLabel).toContain('September 4, 2026');
+      expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendar_from: '2026-09-03T19:00:00.000Z',
+          calendar_from_date: '2026-09-04',
+          calendar_to: '2026-09-04T19:00:00.000Z',
+          calendar_to_date: '2026-09-05',
+        })
+      );
+    });
+
+    it('does not mark a cancelled task overdue in the list', async () => {
+      const { state } = await mountEditor(kind);
+
+      expect(
+        state.isTaskOverdue({
+          cancelledAt: '2000-01-02T00:00:00.000Z',
+          dueAt: '2000-01-01T00:00:00.000Z',
+        })
+      ).toBe(false);
     });
 
     it('keeps a failed calendar page retryable until the retry succeeds', async () => {

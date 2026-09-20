@@ -1158,7 +1158,7 @@ const customFieldSummaryTitle = appointment => {
 
 const eventTitle = event => {
   return [
-    formatEventTimeRange(event),
+    event.allDay ? '' : formatEventTimeRange(event),
     event.hideStatus ? '' : resolveEventStatusLabel(event),
     event.resourceName,
     event.clientName,
@@ -1767,9 +1767,12 @@ onMounted(() => {
                           isCancelledAppointmentCard(event),
                       }"
                     >
-                      <span class="scheduling-vue-cal__event-time">{{
-                        formatEventTimeRange(event)
-                      }}</span>
+                      <span
+                        v-if="!event.allDay"
+                        class="scheduling-vue-cal__event-time"
+                      >
+                        {{ formatEventTimeRange(event) }}
+                      </span>
                     </div>
 
                     <div class="scheduling-vue-cal__event-title">
@@ -1804,7 +1807,9 @@ onMounted(() => {
                 :aria-label="eventTitle(event)"
                 @keydown="handleEventKeydown($event, event)"
               >
-                {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
+                <template v-if="!event.allDay">
+                  {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
+                </template>
                 {{ event.clientName }}
                 <span v-if="event.resourceName" class="ml-1">
                   {{ event.resourceName }}

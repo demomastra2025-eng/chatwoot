@@ -1,3 +1,5 @@
+import { format } from 'date-fns';
+
 const startOfLocalDay = value => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
@@ -84,6 +86,13 @@ export const taskDueDate = task => {
 
   const date = task?.dueAt ? new Date(task.dueAt) : null;
   return date && !Number.isNaN(date.getTime()) ? date : null;
+};
+
+export const formatTaskDueDate = (task, emptyValue = '') => {
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return emptyValue;
+
+  return format(dueDate, task?.allDay ? 'MMM d, yyyy' : 'MMM d, yyyy HH:mm');
 };
 
 export const TASK_TIME_BUCKETS = [

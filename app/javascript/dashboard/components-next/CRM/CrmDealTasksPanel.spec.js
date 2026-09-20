@@ -2,7 +2,9 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('vue-i18n', () => ({
-  useI18n: () => ({ t: key => key }),
+  useI18n: () => ({
+    t: (key, params = {}) => (params.date ? `${key}:${params.date}` : key),
+  }),
 }));
 
 vi.mock('dashboard/api/crm/tasks', () => ({
@@ -132,6 +134,27 @@ describe('CrmDealTasksPanel load states', () => {
 });
 
 describe('CrmDealTasksPanel all-day form', () => {
+  it('renders all-day dueOn without a synthetic time', async () => {
+    CrmTasksAPI.get.mockResolvedValueOnce({
+      data: {
+        payload: [
+          {
+            allDay: true,
+            dealId: deal.id,
+            dueOn: '2026-09-23',
+            id: 7,
+            title: 'All-day follow up',
+          },
+        ],
+      },
+    });
+    const wrapper = mountPanel({ canManageTasks: true });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('CRM.DEALS.TASKS.DUE_AT:Sep 23, 2026');
+    expect(wrapper.text()).not.toContain('00:00');
+  });
+
   it('shows a date-only due field and hides the timed start field', async () => {
     const wrapper = mountPanel({ canManageTasks: true });
     await flushPromises();
