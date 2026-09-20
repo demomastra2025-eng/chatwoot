@@ -59,6 +59,13 @@ class Captain::Tools::HandoffConsentPolicy
     emergency_signal?(content) || explicit_consent?(content, incoming_message)
   end
 
+  def emergency?
+    incoming_message = triggering_incoming_message
+    return false if incoming_message.blank?
+
+    emergency_signal?(normalized_content(incoming_message))
+  end
+
   private
 
   attr_reader :assistant, :conversation, :state

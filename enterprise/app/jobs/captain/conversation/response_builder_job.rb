@@ -11,6 +11,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   DOCUMENT_PARSE_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   DEFAULT_HANDOFF_PRIVATE_NOTE = 'Captain transferred the conversation to a human agent.'.freeze
+  EMERGENCY_HANDOFF_PRIVATE_NOTE = 'Captain detected an emergency and transferred the conversation to a human agent.'.freeze
+  EMERGENCY_CONTACT_NUMBERS = %w[103 112].freeze
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -159,8 +161,11 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @conversation.with_captain_control_lock do
       @conversation.with_lock do
         ensure_response_fence_current!(stage: 'response_persistence')
+        # These exits intentionally stop the full response persistence method after the cancellation cleanup.
+        # rubocop:disable Rails/TransactionExitStatement
         return process_cancelled_response unless current_buffer_state_valid?
         return process_cancelled_response if response_cancelled?
+        # rubocop:enable Rails/TransactionExitStatement
 
         ActiveRecord::Base.transaction do
           create_messages(attachment_ids: attachment_ids)
@@ -309,9 +314,21 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
-    return provider_error_handoff_requested? || authorized_v2_handoff_requested? if @assistant.handoff_requires_explicit_consent?
+    if @assistant.handoff_requires_explicit_consent?
+      return deterministic_emergency_handoff_requested? || provider_error_handoff_requested? || authorized_v2_handoff_requested?
+    end
 
     v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
+  end
+
+  def deterministic_emergency_handoff_requested?
+    return @deterministic_emergency_handoff_requested if defined?(@deterministic_emergency_handoff_requested)
+
+    @deterministic_emergency_handoff_requested = Captain::Tools::HandoffConsentPolicy.new(
+      assistant: @assistant,
+      conversation: @conversation,
+      state: { captain_response_fence: response_fence }
+    ).emergency?
   end
 
   def authorized_v2_handoff_requested?
@@ -363,6 +380,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_action_name
+    return 'emergency_handoff' if deterministic_emergency_handoff_requested?
     return 'v2_handoff' if v2_handoff_tool_fired?
 
     provider_error_handoff_requested? ? 'provider_error_handoff' : 'handoff'
@@ -399,14 +417,34 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_action(action)
-    reason = action == 'provider_error_handoff' ? provider_error_note_content : handoff_activity_reason
-    result = bot_handoff_with_activity_reason(reason) do
-      case action
-      when 'handoff', 'v2_handoff' then create_handoff_notifications
-      when 'provider_error_handoff' then create_provider_error_handoff_notifications
-      end
+    result = bot_handoff_with_activity_reason(
+      handoff_reason_for(action),
+      **handoff_context_for(action)
+    ) do
+      create_action_notifications(action)
     end
     result == :applied
+  end
+
+  def handoff_reason_for(action)
+    return provider_error_note_content if action == 'provider_error_handoff'
+    return EMERGENCY_HANDOFF_PRIVATE_NOTE if action == 'emergency_handoff'
+
+    handoff_activity_reason
+  end
+
+  def handoff_context_for(action)
+    return { status_reason: nil, reason_type: :inference } if action == 'emergency_handoff'
+
+    { status_reason: handoff_status_reason, reason_type: nil }
+  end
+
+  def create_action_notifications(action)
+    case action
+    when 'handoff', 'v2_handoff' then create_handoff_notifications
+    when 'provider_error_handoff' then create_provider_error_handoff_notifications
+    when 'emergency_handoff' then create_emergency_handoff_notifications
+    end
   end
 
   def create_handoff_notifications
@@ -423,8 +461,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     send_out_of_office_message_if_applicable
   end
 
-  def bot_handoff_with_activity_reason(reason = handoff_activity_reason, &)
-    status_reason = handoff_status_reason
+  def create_emergency_handoff_notifications
+    create_private_note(EMERGENCY_HANDOFF_PRIVATE_NOTE)
+    create_outgoing_message(emergency_handoff_message_content, preserve_waiting_since: true)
+    send_out_of_office_message_if_applicable
+  end
+
+  def emergency_handoff_message_content
+    response = @response['response'].to_s.strip
+    return response if EMERGENCY_CONTACT_NUMBERS.all? { |number| response.match?(/\b#{number}\b/) }
+
+    I18n.with_locale(@assistant.account.locale) { I18n.t('conversations.captain.emergency_handoff') }
+  end
+
+  def bot_handoff_with_activity_reason(reason = handoff_activity_reason, status_reason: handoff_status_reason, reason_type: nil, &)
     source = status_reason.present? ? 'captain' : 'system'
     handoff = lambda do
       @conversation.bot_handoff!(
@@ -439,7 +489,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     @conversation.with_captain_activity_context(
       reason: reason,
-      reason_type: v2_handoff_tool_fired? ? :tool : :inference,
+      reason_type: reason_type || (v2_handoff_tool_fired? ? :tool : :inference),
       &handoff
     )
   end
