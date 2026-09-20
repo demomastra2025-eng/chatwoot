@@ -166,6 +166,7 @@ class Captain::Assistant::AgentRunnerService
     source_context = context.presence || fallback_context
     source_context.deep_dup.tap do |retry_context|
       retry_context.delete(:captain_v2_handoff_tool_called)
+      retry_context.delete(Captain::Tools::HandoffTool::AUTHORIZED_CONTEXT_KEY)
       retry_context.delete(:captain_v2_completed_tool_names)
       retry_context.delete(:captain_v2_completed_tool_results)
     end
@@ -252,7 +253,7 @@ class Captain::Assistant::AgentRunnerService
       return response_cancellation_response(result.context[:pending_response_cancellation], result.context[:current_agent])
     end
 
-    if result.context&.dig(:pending_human_handoff).present?
+    if authorized_handoff_pending?(result.context, handoff_tool_called)
       return human_handoff_response(result.context[:pending_human_handoff],
                                     result.context[:current_agent],
                                     handoff_tool_called: handoff_tool_called)
@@ -756,6 +757,10 @@ class Captain::Assistant::AgentRunnerService
     context&.dig(:captain_v2_handoff_tool_called) || false
   end
 
+  def authorized_handoff_pending?(context, handoff_tool_called)
+    handoff_tool_called && context&.dig(:pending_human_handoff).present?
+  end
+
   def blank_public_response?(response)
     return false if response['response'] == 'conversation_handoff'
     return false if response['response'] == PROVIDER_ERROR_RESPONSE
@@ -939,8 +944,8 @@ class Captain::Assistant::AgentRunnerService
 
     # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, tool_result, context_wrapper|
-      track_completed_tool_usage(tool_name, tool_result, context_wrapper)
       track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
+      track_completed_tool_usage(tool_name, tool_result, context_wrapper)
     end
 
     if ChatwootApp.otel_enabled?
@@ -1162,6 +1167,9 @@ class Captain::Assistant::AgentRunnerService
   def track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
     return unless context_wrapper&.context
     return unless tool_name.to_s == handoff_tool_name
+
+    handoff_authorized = context_wrapper.context.delete(Captain::Tools::HandoffTool::AUTHORIZED_CONTEXT_KEY)
+    return unless handoff_authorized
     return if Captain::ToolResult.error?(Captain::ToolResult.normalize(tool_result))
     return if context_wrapper.context[:pending_human_handoff].blank?
 

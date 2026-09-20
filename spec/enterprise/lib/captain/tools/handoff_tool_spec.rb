@@ -11,6 +11,15 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   let(:run_context) { Captain::Runtime::RunContext.new({ state: { conversation: { id: conversation.id } } }) }
   let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
 
+  def expect_consent_denied(result)
+    expect(result).to include(
+      success: false,
+      error: described_class::CONSENT_REQUIRED_ERROR,
+      retryable: true,
+      audit: include(failure_stage: 'authorization', failure_reason: 'handoff_not_authorized')
+    )
+  end
+
   describe '#description' do
     it 'returns the correct description' do
       expect(tool.description).to eq('Hand off the current conversation to a human team')
@@ -97,7 +106,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
             result = tool.perform(tool_context)
 
-            expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+            expect_consent_denied(result)
             expect(run_context.context).not_to have_key(:pending_human_handoff)
           end
         end
@@ -109,7 +118,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             tool_context, reason: 'Family request', status_reason: 'needs_human', message: 'Connecting you.'
           )
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -120,7 +129,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context, reason: 'Lookup failed')
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -137,6 +146,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             message: 'Передаю сотруднику.'
           )
           expect(run_context.context[:pending_human_handoff]).not_to have_key(:status_reason)
+          expect(run_context.context[described_class::AUTHORIZED_CONTEXT_KEY]).to be true
         end
 
         it 'blocks a negated handoff request' do
@@ -144,8 +154,24 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
+          expect(run_context.context).not_to have_key(described_class::AUTHORIZED_CONTEXT_KEY)
+        end
+
+        it 'blocks a negated operator transfer request without mutating the conversation' do
+          create_triggering_message.call('Не передавайте оператору.')
+          original_status = conversation.status
+
+          expect do
+            result = tool.perform(tool_context)
+
+            expect_consent_denied(result)
+          end.not_to change(Message, :count)
+
+          expect(conversation.reload.status).to eq(original_status)
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+          expect(run_context.context).not_to have_key(described_class::AUTHORIZED_CONTEXT_KEY)
         end
 
         it 'blocks a negated request to speak with an operator' do
@@ -153,7 +179,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -162,7 +188,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -180,7 +206,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -202,8 +228,20 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
+        end
+
+        it 'blocks an affirmative answer after a statement that was not a handoff offer' do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing,
+                           sender: assistant, content: 'Врач принимает сегодня до 18:00.')
+          create_triggering_message.call('Да')
+
+          result = tool.perform(tool_context)
+
+          expect_consent_denied(result)
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
+          expect(run_context.context).not_to have_key(described_class::AUTHORIZED_CONTEXT_KEY)
         end
 
         it 'blocks an affirmative answer when another public message followed the handoff offer' do
@@ -215,7 +253,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -242,7 +280,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -251,7 +289,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -260,7 +298,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -287,7 +325,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -296,7 +334,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 
@@ -306,7 +344,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           result = tool.perform(tool_context)
 
-          expect(result).to eq("ERROR: #{described_class::CONSENT_REQUIRED_ERROR}")
+          expect_consent_denied(result)
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
 

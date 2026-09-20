@@ -614,8 +614,16 @@ class Captain::Runtime::ToolWrapper
   end
 
   def mutation_retry_allowed?(entry, normalized_args)
+    return true if retryable_authorization_denial?(entry)
+
     idempotency_key = normalized_args[:idempotency_key].presence
     entry[:retryable] == true && idempotency_key.present? && entry[:idempotency_key] == idempotency_key
+  end
+
+  def retryable_authorization_denial?(entry)
+    entry[:retryable] == true &&
+      entry[:failure_stage] == 'authorization' &&
+      entry[:failure_reason] == 'handoff_not_authorized'
   end
 
   def track_mutating_tool_execution(normalized_args)
@@ -631,7 +639,10 @@ class Captain::Runtime::ToolWrapper
     entry = mutating_tool_executions[@tool.name.to_s]
     return if entry.blank?
 
-    entry[:retryable] = Captain::ToolResult.normalize(result)[:retryable] == true
+    normalized_result = Captain::ToolResult.normalize(result)
+    entry[:retryable] = normalized_result[:retryable] == true
+    entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
+    entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
   rescue StandardError
     entry[:retryable] = false
   end

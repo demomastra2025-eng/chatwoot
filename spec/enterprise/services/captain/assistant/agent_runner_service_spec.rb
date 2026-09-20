@@ -1804,12 +1804,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         def set_attribute(*); end
       end
       root_span = instance_double(span_class)
-      context_wrapper = Struct.new(:context).new(
-        {
-          pending_human_handoff: { reason: 'Customer requested a human.' },
-          __otel_tracing: { root_span: root_span }
-        }
-      )
+      context = {
+        pending_human_handoff: { reason: 'Customer requested a human.' },
+        __otel_tracing: { root_span: root_span }
+      }
+      context[Captain::Tools::HandoffTool::AUTHORIZED_CONTEXT_KEY] = true
+      context_wrapper = Struct.new(:context).new(context)
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(true)
       allow(runner).to receive(:on_tool_complete) do |&block|
@@ -1832,12 +1832,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       run_complete_callback.call('assistant', nil, context_wrapper)
     end
 
-    it 'does not mark a denied handoff as fired and marks a later authorized attempt once' do
+    it 'allows two denied handoff attempts through the runtime wrapper without marking or halting' do
       service = described_class.new(assistant: assistant, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
-      context_wrapper = Struct.new(:context).new({})
-      handoff_tool_name = Captain::Tools::HandoffTool.new(assistant).name
+      assistant.update!(config: assistant.config.merge(
+        'handoff_requires_explicit_consent' => true,
+        'handoff_consent_reason' => 'Customer requested a human.'
+      ))
+      conversation.update!(status: :pending)
+      denied_message = create(
+        :message, account: account, inbox: inbox, conversation: conversation,
+                  message_type: :incoming, content: 'Не передавайте оператору.'
+      )
+      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
       allow(runner).to receive(:on_tool_complete) do |&block|
@@ -1846,19 +1854,60 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
 
       service.send(:add_usage_metadata_callback, runner)
-
-      tool_complete_callback.call(
-        handoff_tool_name,
-        Captain::ToolResult.failure(error: Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR, retryable: false),
-        context_wrapper
+      run_context = Captain::Runtime::RunContext.new(
+        {
+          state: {
+            account_id: account.id,
+            assistant_id: assistant.id,
+            conversation: { id: conversation.id },
+            captain_response_fence: {
+              control_generation: conversation.current_captain_control_generation,
+              last_message_id: denied_message.id
+            }
+          }
+        },
+        callbacks: { tool_complete: [tool_complete_callback] }
       )
+      handoff_tool = Captain::Tools::HandoffTool.new(assistant)
+      wrapper = Captain::Runtime::ToolWrapper.new(handoff_tool, run_context)
+
+      first_result = wrapper.call(reason: 'Model supplied reason')
+      second_result = wrapper.call(reason: 'Model supplied reason')
+
+      expect(first_result).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
+      expect(second_result).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
+      expect(run_context.context[:captain_v2_completed_tool_names]).to eq([handoff_tool.name, handoff_tool.name])
+      expect(run_context.context[:captain_v2_handoff_tool_called]).to be_nil
+      expect(run_context.context[:pending_human_handoff]).to be_nil
+      expect(run_context.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_nil
+    end
+
+    it 'does not infer handoff authorization from the completed tool name and a pending payload' do
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      runner = instance_double(Captain::Runtime::AgentRunner)
+      tool_complete_callback = nil
+      context_wrapper = Struct.new(:context).new({ pending_human_handoff: { reason: 'stale payload' } })
+
+      allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
+      allow(runner).to receive(:on_tool_complete) do |&block|
+        tool_complete_callback = block
+        runner
+      end
+
+      service.send(:add_usage_metadata_callback, runner)
+      tool_complete_callback.call(Captain::Tools::HandoffTool.new(assistant).name, 'ok', context_wrapper)
 
       expect(context_wrapper.context[:captain_v2_handoff_tool_called]).to be_nil
-
-      context_wrapper.context[:pending_human_handoff] = { reason: 'Customer requested a human.' }
-      tool_complete_callback.call(handoff_tool_name, 'ok', context_wrapper)
-
-      expect(context_wrapper.context[:captain_v2_handoff_tool_called]).to be true
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'Продолжу помогать здесь.' },
+        context: context_wrapper.context.merge(current_agent: 'assistant_agent'),
+        error: nil
+      )
+      expect(service.send(:process_agent_result, result)).to include(
+        'response' => 'Продолжу помогать здесь.',
+        'handoff_tool_called' => false
+      )
     end
 
     it 'tracks artifact ids exposed by completed tool results' do

@@ -1,0 +1,12 @@
+en:
+  conversations:
+    captain:
+      emergency_handoff: 'Call 103 or 112 immediately for emergency help. I am transferring your conversation to a human agent.'
+ru:
+  conversations:
+    captain:
+      emergency_handoff: 'Немедленно позвоните 103 или 112 для экстренной помощи. Передаю ваш диалог сотруднику.'
+kk:
+  conversations:
+    captain:
+      emergency_handoff: 'Шұғыл көмек алу үшін дереу 103 немесе 112 нөміріне қоңырау шалыңыз. Диалогты қызметкерге жіберемін.'

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "name": "captain_deterministic_emergency_handoff_e2e",
+  "base_sha": "f6c76a029088de6d46a1878dbc044e699d89ad97",
+  "target_sha_source": "EXPECTED_SHA",
+  "harness": "script/onelink/captain_deterministic_emergency_handoff_e2e.rb",
+  "environment": "DEV only",
+  "production_allowed": false,
+  "runtime_guards": [
+    "Rails.env.development?",
+    "database name contains dev and does not contain prod",
+    "Rails.root resolves to /srv/onelink-dev/current",
+    "/srv/onelink-dev/current/.git_sha equals EXPECTED_SHA"
+  ],
+  "transaction_mode": "requires_new with forced ActiveRecord::Rollback",
+  "external_isolation": [
+    "Rails dispatcher replaced by an in-process recorder",
+    "Llm::EventBus instrumentation replaced by an in-process recorder",
+    "ActiveJob uses an isolated test adapter and asserts no enqueued jobs",
+    "all original runtime objects are restored in ensure"
+  ],
+  "result_contains_customer_ids": false,
+  "required_env": [
+    "EXPECTED_SHA",
+    "ACCOUNT_ID",
+    "ASSISTANT_ID"
+  ],
+  "optional_env": {
+    "INBOX_ID": "linked inbox id; defaults to the assistant's first linked inbox",
+    "INCIDENT_TEXT": "defaults to the exact chest-pain incident",
+    "REQUIRE_NO_HANDOFF_TOOL": "defaults to true; must remain true for deterministic omission-path acceptance"
+  },
+  "acceptance_case": {
+    "id": "emergency_without_handoff_tool",
+    "input": "У меня сильные боли в груди. Помогите.",
+    "preconditions": [
+      "runtime SHA equals EXPECTED_SHA",
+      "all DEV-only runtime guards pass before customer record lookup",
+      "assistant belongs to ACCOUNT_ID",
+      "assistant has handoff_requires_explicit_consent enabled",
+      "inbox is linked to assistant"
+    ],
+    "expected": {
+      "handoff_tool_steps": 0,
+      "conversation_status": "open",
+      "captain_control_state": "human",
+      "captain_handoff_applied": true,
+      "public_messages": 1,
+      "private_messages": 1,
+      "public_contains": [
+        "103",
+        "112"
+      ],
+      "private_note_source": "Captain::Conversation::ResponseBuilderJob::EMERGENCY_HANDOFF_PRIVATE_NOTE",
+      "replay_exact_once": true,
+      "persisted": false,
+      "synthetic_rows_rolled_back": true,
+      "usage_rolled_back": true,
+      "external_jobs_blocked": true
+    }
+  },
+  "result_status": "PASS_ROLLED_BACK"
+}

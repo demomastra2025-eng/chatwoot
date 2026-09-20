@@ -797,6 +797,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
     it 'continues with a public response when a strict handoff lacks backend authorization' do
       assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      original_status = conversation.status
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
           'response' => 'Продолжу помогать здесь.',
@@ -804,9 +805,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         }
       )
 
-      described_class.perform_now(conversation, assistant)
+      expect(conversation).not_to receive(:bot_handoff!)
+      public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+      private_message = change { conversation.messages.outgoing.where(private: true).count }.by(0)
+      expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_message)
 
       expect(conversation.reload.captain_handoff_applied_at).to be_nil
+      expect(conversation.status).to eq(original_status)
       expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
     end
 
@@ -826,12 +831,144 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         }
       )
 
+      expect(conversation).to receive(:bot_handoff!).once.and_call_original
       public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
       private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
       expect { described_class.perform_now(conversation, assistant) }.to public_message.and(private_note)
 
       expect(conversation.reload.captain_handoff_applied_at).to be_present
       expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Передаю сотруднику.')
+    end
+
+    context 'with deterministic emergency handoff enabled' do
+      before do
+        assistant.update!(config: assistant.config.merge(
+          'handoff_requires_explicit_consent' => true,
+          'handoff_message_enabled' => true,
+          'handoff_message_mode' => 'ai'
+        ))
+      end
+
+      it 'hands off an exact chest-pain emergency when the provider returns a public response without calling the tool', :aggregate_failures do
+        incoming = conversation.messages.incoming.last
+        incoming.update!(content: 'У меня сильные боли в груди. Помогите.')
+        safety_response = 'Срочно вызывайте 103 или 112. Не откладывайте звонок.'
+        expect(agent_runner_service).to receive(:generate_response).once.and_return(
+          {
+            'response' => safety_response,
+            'handoff_tool_called' => false,
+            'handoff_status_reason' => 'provider-controlled-status-reason'
+          }
+        )
+        expect(conversation).to receive(:bot_handoff!).with(
+          hash_including(status_reason: nil, source: 'system')
+        ).once.and_call_original
+
+        public_message = change { conversation.messages.outgoing.where(private: false).count }.by(1)
+        private_note = change { conversation.messages.outgoing.where(private: true).count }.by(1)
+        expect do
+          described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+        end.to public_message.and(private_note)
+
+        conversation.reload
+        expect(conversation.status).to eq('open')
+        expect(conversation.captain_control_state).to eq('human')
+        expect(conversation.captain_handoff_applied_at).to be_present
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(safety_response)
+        expect(conversation.messages.outgoing.where(private: true).last.content).to eq(
+          described_class::EMERGENCY_HANDOFF_PRIVATE_NOTE
+        )
+
+        counts_after_handoff = [
+          conversation.messages.outgoing.where(private: false).count,
+          conversation.messages.outgoing.where(private: true).count
+        ]
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+        expect(
+          [
+            conversation.reload.messages.outgoing.where(private: false).count,
+            conversation.messages.outgoing.where(private: true).count
+          ]
+        ).to eq(counts_after_handoff)
+      end
+
+      it 'uses a localized emergency fallback with both contact numbers when the provider response omits them' do
+        account.update!(locale: 'ru')
+        incoming = conversation.messages.incoming.last
+        incoming.update!(content: 'У меня сильные боли в груди. Помогите.')
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'Пожалуйста, ожидайте ответа.',
+            'handoff_tool_called' => false
+          }
+        )
+
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(
+          I18n.with_locale(:ru) { I18n.t('conversations.captain.emergency_handoff') }
+        )
+        expect(conversation.messages.outgoing.where(private: false).last.content).to include('103', '112')
+      end
+
+      [
+        'У меня нет сильных болей в груди.',
+        'У меня не сильные боли в груди.',
+        'Сильных болей в груди нет.'
+      ].each do |content|
+        it "does not hand off a negated chest-pain statement: #{content}" do
+          incoming = conversation.messages.incoming.last
+          incoming.update!(content: content)
+          allow(agent_runner_service).to receive(:generate_response).and_return(
+            {
+              'response' => 'Продолжу помогать здесь.',
+              'handoff_tool_called' => false
+            }
+          )
+
+          expect do
+            described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+          end.not_to(change { conversation.messages.outgoing.where(private: true).count })
+
+          expect(conversation.reload.status).to eq('pending')
+          expect(conversation.captain_handoff_applied_at).to be_nil
+          expect(conversation.messages.outgoing.where(private: false).last.content).to eq('Продолжу помогать здесь.')
+        end
+      end
+
+      it 'does not synthesize a handoff for a non-emergency direct request when the tool was not called' do
+        incoming = conversation.messages.incoming.last
+        incoming.update!(content: 'Соедините меня с сотрудником.')
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'Уточню ваш вопрос здесь.',
+            'handoff_tool_called' => false
+          }
+        )
+
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.captain_handoff_applied_at).to be_nil
+        expect(conversation.messages.outgoing.where(private: true)).to be_empty
+      end
+    end
+
+    it 'keeps the no-tool emergency response on the legacy path when explicit consent gating is disabled' do
+      incoming = conversation.messages.incoming.last
+      incoming.update!(content: 'У меня сильные боли в груди. Помогите.')
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'Срочно вызывайте 103 или 112.',
+          'handoff_tool_called' => false
+        }
+      )
+
+      described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(conversation.messages.outgoing.where(private: true)).to be_empty
     end
 
     it 'cancels an untrusted provider-error sentinel in strict mode without handing off' do
