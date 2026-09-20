@@ -466,25 +466,34 @@ const reloadTaskConflict = async () => {
   }
 };
 
+const closeTaskDialog = () => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
+  taskDialogRef.value?.close();
+  selectedTask.value = null;
+  taskEditSnapshot.value = null;
+  resetForm();
+};
+
 const applyTaskRealtimeUpdate = task => {
   if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
-  if (Number(selectedTask.value?.id) === Number(task.id))
-    selectedTask.value = task;
-  if (Number(task.dealId) !== Number(props.deal?.id)) {
+  const belongsToCurrentDeal =
+    Number(task.dealId) === Number(props.deal?.id) &&
+    !task.archivedAt &&
+    !task.cancelledAt;
+
+  if (!belongsToCurrentDeal) {
     tasks.value = tasks.value.filter(
       item => Number(item.id) !== Number(task.id)
     );
+    if (Number(selectedTask.value?.id) === Number(task.id)) {
+      closeTaskDialog();
+    }
     return;
   }
 
-  if (task.archivedAt || task.cancelledAt) {
-    tasks.value = tasks.value.filter(
-      item => Number(item.id) !== Number(task.id)
-    );
-  } else {
-    upsertTask(task);
-  }
-
+  upsertTask(task);
   if (Number(selectedTask.value?.id) === Number(task.id)) {
     selectedTask.value = task;
   }
@@ -546,7 +555,7 @@ const loadTasks = async () => {
   if (!hasDeal.value) {
     ui.error = null;
     tasks.value = [];
-    return;
+    return true;
   }
 
   taskLoadGeneration.value += 1;
@@ -560,7 +569,7 @@ const loadTasks = async () => {
       loadGeneration,
       query: { archived: false, deal_id: props.deal.id },
     });
-    if (!loadedTasks) return;
+    if (!loadedTasks) return false;
 
     tasks.value = loadedTasks
       .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
@@ -575,9 +584,24 @@ const loadTasks = async () => {
 
       applyTaskRealtimeUpdate(update.task);
     });
+    const selectedTaskId = Number(selectedTask.value?.id);
+    const selectedTaskStillVisible = tasks.value.some(
+      task => Number(task.id) === selectedTaskId
+    );
+    const selectedTaskRefreshSequence =
+      taskRealtimeRequestSequences.get(selectedTaskId);
+    if (
+      selectedTaskId &&
+      !selectedTaskStillVisible &&
+      !(selectedTaskRefreshSequence > realtimeSequenceAtStart)
+    ) {
+      closeTaskDialog();
+    }
+    return true;
   } catch (error) {
-    if (loadGeneration !== taskLoadGeneration.value) return;
+    if (loadGeneration !== taskLoadGeneration.value) return false;
     ui.error = error;
+    return false;
   } finally {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
@@ -713,16 +737,6 @@ const openTaskDialog = task => {
   fillFormFromTask(task);
   taskEditSnapshot.value = cloneTaskDraft({ task, payload: buildPayload() });
   taskDialogRef.value?.open();
-};
-
-const closeTaskDialog = () => {
-  taskEditorGeneration += 1;
-  ui.isSaving = false;
-  resetTaskConflict();
-  taskDialogRef.value?.close();
-  selectedTask.value = null;
-  taskEditSnapshot.value = null;
-  resetForm();
 };
 
 const refreshTaskFromRealtime = async payload => {

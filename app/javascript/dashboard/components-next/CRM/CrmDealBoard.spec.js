@@ -57,6 +57,37 @@ describe('CrmDealBoard', () => {
     expect(wrapper.find('.crm-deal-board-add-button').exists()).toBe(false);
   });
 
+  it('distinguishes confirmed empty stages from filtered empty stages', () => {
+    const emptyBoard = mountBoard();
+    const filteredBoard = mountBoard({ filtered: true });
+
+    expect(emptyBoard.text()).toContain('No deals in this stage');
+    expect(filteredBoard.text()).toContain(
+      'No deals match the current quick filters.'
+    );
+  });
+
+  it('does not claim a stage is empty while unloaded deals remain', () => {
+    const wrapper = mountBoard({ stageCounts: { 1: 3 } });
+    const emptyStages = wrapper.findAll('[data-test="empty-deal-stage"]');
+
+    expect(emptyStages).toHaveLength(1);
+    expect(emptyStages[0].text()).toBe('No deals in this stage');
+  });
+
+  it('shows an incremental busy state before a manual retry state', () => {
+    const loadingBoard = mountBoard({
+      hasMore: true,
+      isLoadingMore: true,
+      loadMoreFailed: true,
+    });
+
+    expect(
+      loadingBoard.find('[data-test="deal-board-loading-more"]').text()
+    ).toBe('Loading more...');
+    expect(loadingBoard.find('button').exists()).toBe(false);
+  });
+
   it('exposes a native button for opening a deal with the keyboard', async () => {
     const wrapper = mountBoard(
       {

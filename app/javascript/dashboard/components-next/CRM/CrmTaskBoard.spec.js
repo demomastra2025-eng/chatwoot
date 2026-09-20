@@ -91,6 +91,60 @@ describe('CrmTaskBoard', () => {
     expect(wrapper.emitted('loadMore')).toEqual([['today']]);
   });
 
+  it('distinguishes confirmed empty buckets from filtered empty buckets', () => {
+    const emptyBoard = mountBoard();
+    const filteredBoard = mountBoard({ filtered: true });
+
+    expect(emptyBoard.text()).toContain('CRM.TASKS.BOARD.EMPTY_COLUMN');
+    expect(filteredBoard.text()).toContain('CRM.TASKS.LIST.EMPTY_FILTERED');
+  });
+
+  it('does not claim a bucket is empty while unloaded tasks remain', () => {
+    const wrapper = mountBoard({
+      bucketMeta: { today: { count: 3, hasMore: true, page: 1, perPage: 25 } },
+    });
+    const emptyBuckets = wrapper.findAll('[data-test="empty-task-bucket"]');
+
+    expect(emptyBuckets).toHaveLength(1);
+    expect(emptyBuckets[0].text()).toBe('CRM.TASKS.BOARD.EMPTY_COLUMN');
+  });
+
+  it('turns a failed incremental bucket load into a manual retry', async () => {
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const wrapper = mountBoard({
+      bucketLoadFailed: { today: true },
+      bucketMeta: {
+        today: { count: 26, hasMore: true, page: 1, perPage: 25 },
+      },
+      tasks: [{ dueAt: now.toISOString(), id: 1, title: 'Today' }],
+    });
+
+    const retry = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CRM.TASKS.RETRY_LOAD');
+    await retry.trigger('click');
+
+    expect(wrapper.emitted('loadMore')).toEqual([['today']]);
+  });
+
+  it('announces an incremental bucket load as busy', () => {
+    const wrapper = mountBoard({
+      bucketLoading: { today: true },
+      bucketMeta: {
+        today: { count: 26, hasMore: true, page: 1, perPage: 25 },
+      },
+    });
+
+    const loadMore = wrapper
+      .findAll('button')
+      .find(button => button.text() === 'CRM.TASKS.LOADING_MORE');
+
+    expect(loadMore.attributes('aria-live')).toBe('polite');
+    expect(loadMore.attributes('aria-busy')).toBe('true');
+    expect(loadMore.attributes('disabled')).toBeDefined();
+  });
+
   it('shows week, month, and future columns only when they have tasks', () => {
     const now = new Date();
     const dueInDays = days =>

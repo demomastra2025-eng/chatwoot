@@ -249,6 +249,7 @@
         "TITLE": "Complete the stage requirements"
       },
       "LOAD_MORE": "Load more",
+      "LOADING_MORE": "Loading more...",
       "LIFECYCLE": {
         "SAVE_CHANGES_FIRST": "Save the deal changes first.",
         "CLOSE_WON": {

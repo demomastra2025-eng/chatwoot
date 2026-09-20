@@ -25,6 +25,15 @@ vi.mock('dashboard/composables', () => ({
 import CrmDealTasksPanel from './CrmDealTasksPanel.vue';
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
 
+const DialogStub = {
+  name: 'Dialog',
+  props: ['disableConfirmButton'],
+  setup(_, { expose }) {
+    expose({ close: vi.fn(), open: vi.fn() });
+  },
+  template: '<div><slot /></div>',
+};
+
 const deal = {
   id: 1,
   lockVersion: 0,
@@ -39,6 +48,7 @@ const mountPanel = props =>
     },
     global: {
       mocks: { $t: key => key },
+      stubs: { Dialog: DialogStub },
     },
   });
 
@@ -88,4 +98,35 @@ describe('CrmDealTasksPanel load states', () => {
     ).toBe(false);
     expect(wrapper.text()).toContain('CRM.DEALS.TASKS.EMPTY_TITLE');
   });
+
+  it.each([
+    ['reassigned', { dealId: 2 }],
+    ['archived', { archivedAt: '2026-09-20T10:00:00Z' }],
+    ['cancelled', { cancelledAt: '2026-09-20T10:00:00Z' }],
+  ])(
+    'closes a selected task after it is %s in realtime',
+    async (_state, change) => {
+      const task = {
+        assigneeId: 1,
+        dealId: deal.id,
+        id: 7,
+        lockVersion: 1,
+        title: 'Follow up',
+      };
+      CrmTasksAPI.get.mockResolvedValueOnce({ data: { payload: [task] } });
+      const wrapper = mountPanel({ canManageTasks: true });
+      await flushPromises();
+      const state = wrapper.vm.$.setupState;
+      state.openTaskDialog(task);
+
+      state.applyTaskRealtimeUpdate({
+        ...task,
+        ...change,
+        lockVersion: 2,
+      });
+
+      expect(state.tasks).toEqual([]);
+      expect(state.selectedTask).toBeNull();
+    }
+  );
 });

@@ -481,6 +481,31 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
     });
 
+    it('keeps a failed board page retryable until the retry succeeds', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'board';
+      state.boardAsOf = '2026-09-19T10:00:00.000000Z';
+      state.boardBucketMeta = {
+        today: { count: 2, hasMore: true, page: 1, perPage: 25 },
+      };
+      CrmTasksAPI.get.mockReset().mockRejectedValueOnce(new Error('offline'));
+
+      await state.loadMoreBoardBucket('today');
+
+      expect(state.boardBucketLoadFailed.today).toBe(true);
+
+      CrmTasksAPI.get.mockResolvedValueOnce({
+        data: {
+          payload: [{ ...initialTask, id: 8 }],
+          meta: { count: 2, has_more: false, page: 2, per_page: 25 },
+        },
+      });
+      await state.loadMoreBoardBucket('today');
+
+      expect(state.boardBucketLoadFailed.today).toBe(false);
+      expect(state.tasks.map(task => task.id)).toContain(8);
+    });
+
     it('loads and incrementally extends only the visible calendar range', async () => {
       const { state } = await mountEditor(kind);
       state.currentPresentation = 'calendar';
@@ -539,6 +564,28 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       );
       expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
       expect(state.tasksMeta.hasMore).toBe(false);
+    });
+
+    it('keeps a failed calendar page retryable until the retry succeeds', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'calendar';
+      state.tasksMeta = { count: 2, hasMore: true, page: 1, perPage: 100 };
+      CrmTasksAPI.get.mockReset().mockRejectedValueOnce(new Error('offline'));
+
+      await state.loadMoreCalendarTasks();
+
+      expect(state.calendarLoadMoreFailed).toBe(true);
+
+      CrmTasksAPI.get.mockResolvedValueOnce({
+        data: {
+          payload: [{ ...initialTask, id: 8 }],
+          meta: { count: 2, has_more: false, page: 2, per_page: 100 },
+        },
+      });
+      await state.loadMoreCalendarTasks();
+
+      expect(state.calendarLoadMoreFailed).toBe(false);
+      expect(state.tasks.map(task => task.id)).toContain(8);
     });
 
     it('keeps the selected task state in bounded calendar requests', async () => {
@@ -703,6 +750,19 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       expect(state.tasks.map(task => task.id)).toEqual([initialTask.id]);
     });
 
+    it('ignores list-only search and terminal preferences in board empty states', async () => {
+      const { state } = await mountEditor(kind);
+      state.currentPresentation = 'board';
+      state.listQuickFilters.q = 'list only';
+      state.filters.archived = true;
+      state.filters.taskState = 'completed';
+
+      expect(state.hasActiveBoardTaskFilters).toBe(false);
+
+      state.filters.assigneeId = 1;
+      expect(state.hasActiveBoardTaskFilters).toBe(true);
+    });
+
     it('rolls back a failed board move even when the recovery reload fails', async () => {
       const { state } = await mountEditor(kind);
       const previousTask = { ...state.tasks[0] };
@@ -834,6 +894,68 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       expect(state.boardBucketMeta.today.count).toBe(0);
     }
   });
+
+  if (kind === 'panel') {
+    it('closes a stale editor after a non-404 realtime fallback reload', async () => {
+      const { state } = await mountEditor(kind);
+      await open(kind, state);
+      CrmTasksAPI.show.mockRejectedValueOnce(new Error('temporary failure'));
+      CrmTasksAPI.get.mockClear().mockResolvedValue(response([]));
+
+      await publishTaskId(initialTask.id);
+
+      expect(state.tasks).toEqual([]);
+      expect(state.selectedTask).toBeNull();
+    });
+
+    it('lets the winning reload close a stale editor when the fallback reload is superseded', async () => {
+      const { state } = await mountEditor(kind);
+      await open(kind, state);
+      const supersededReload = deferred();
+      CrmTasksAPI.show.mockRejectedValueOnce(new Error('temporary failure'));
+      CrmTasksAPI.get
+        .mockClear()
+        .mockReturnValueOnce(supersededReload.promise)
+        .mockResolvedValueOnce(response([]));
+
+      await publishTaskId(initialTask.id);
+      await state.loadTasks();
+      supersededReload.resolve(response([structuredClone(initialTask)]));
+      await flushPromises();
+
+      expect(state.tasks).toEqual([]);
+      expect(state.selectedTask).toBeNull();
+    });
+
+    it('keeps the editor while a newer realtime refresh is still authoritative', async () => {
+      const { state } = await mountEditor(kind);
+      await open(kind, state);
+      const fallbackReload = deferred();
+      const newerRealtime = deferred();
+      CrmTasksAPI.show
+        .mockRejectedValueOnce(new Error('temporary failure'))
+        .mockReturnValueOnce(newerRealtime.promise);
+      CrmTasksAPI.get.mockClear().mockReturnValueOnce(fallbackReload.promise);
+
+      await publishTaskId(initialTask.id);
+      await publishTaskId(initialTask.id);
+      fallbackReload.resolve(response([]));
+      await flushPromises();
+
+      expect(state.selectedTask).toMatchObject({ id: initialTask.id });
+
+      newerRealtime.resolve(
+        response({ ...initialTask, lockVersion: 2, title: 'Current realtime' })
+      );
+      await flushPromises();
+
+      expect(state.selectedTask).toMatchObject({
+        id: initialTask.id,
+        lockVersion: 2,
+        title: 'Current realtime',
+      });
+    });
+  }
 
   it('does not publish a stale list or leave loading active after realtime access loss', async () => {
     const { state } = await mountEditor(kind);

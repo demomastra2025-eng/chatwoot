@@ -32,6 +32,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  filtered: {
+    type: Boolean,
+    default: false,
+  },
   hasMore: {
     type: Boolean,
     default: false,
@@ -218,7 +222,7 @@ const handleBoardScroll = event => {
   const element = event.currentTarget;
   const isScrollingDown = element.scrollTop > lastBoardScrollTop;
   lastBoardScrollTop = element.scrollTop;
-  if (!props.hasMore || props.isLoadingMore) return;
+  if (!props.hasMore || props.isLoadingMore || props.loadMoreFailed) return;
   if (!isScrollingDown) return;
 
   const distanceToBottom =
@@ -496,10 +500,29 @@ const handleStageSelect = (event, deal) => {
             </article>
           </template>
         </Draggable>
+        <p
+          v-if="columnDealCount(column) === 0"
+          class="mx-3 mb-3 rounded-md border border-dashed border-n-weak px-3 py-4 text-center text-xs text-n-slate-10"
+          data-test="empty-deal-stage"
+        >
+          {{
+            filtered
+              ? $t('CRM.DEALS.LIST.EMPTY_FILTERED')
+              : $t('CRM.DEALS.BOARD.EMPTY_COLUMN')
+          }}
+        </p>
       </section>
     </div>
     <div
-      v-if="loadMoreFailed && hasMore"
+      v-if="isLoadingMore && hasMore"
+      class="sticky left-0 flex justify-center py-3 text-sm text-n-slate-10"
+      aria-live="polite"
+      data-test="deal-board-loading-more"
+    >
+      {{ $t('CRM.DEALS.LOADING_MORE') }}
+    </div>
+    <div
+      v-else-if="loadMoreFailed && hasMore"
       class="sticky left-0 flex justify-center py-3"
     >
       <button

@@ -125,8 +125,10 @@ const tasks = ref([]);
 const tasksMeta = ref({ count: 0, hasMore: false, page: 1, perPage: 25 });
 const boardBucketMeta = ref({});
 const boardBucketLoading = ref({});
+const boardBucketLoadFailed = ref({});
 const boardAsOf = ref(null);
 const isLoadingMoreTasks = ref(false);
+const calendarLoadMoreFailed = ref(false);
 const dealOptions = ref([]);
 const currentPresentation = ref('board');
 const currentCalendarView = ref('week');
@@ -514,6 +516,17 @@ const updateFormActivityType = value => {
 };
 
 const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
+const hasActiveBoardTaskFilters = computed(() =>
+  Boolean(
+    filters.activityType ||
+      filters.assigneeId ||
+      filters.dateRange.from ||
+      filters.dateRange.to ||
+      filters.dealId ||
+      filters.outcome ||
+      Object.keys(customFieldFilters.value).length
+  )
+);
 
 const viewOptions = computed(() => [
   {
@@ -1730,8 +1743,10 @@ const loadTasks = async () => {
   const loadGeneration = taskLoadGeneration.value;
   const realtimeSequenceAtStart = taskRealtimeSequence;
   boardBucketLoading.value = {};
+  boardBucketLoadFailed.value = {};
   boardAsOf.value = null;
   isLoadingMoreTasks.value = false;
+  calendarLoadMoreFailed.value = false;
   ui.isLoading = true;
   ui.error = null;
 
@@ -1846,6 +1861,7 @@ const loadMoreCalendarTasks = async () => {
   }
 
   const loadGeneration = taskLoadGeneration.value;
+  calendarLoadMoreFailed.value = false;
   isLoadingMoreTasks.value = true;
   try {
     const { data } = await CrmTasksAPI.get({
@@ -1864,9 +1880,9 @@ const loadMoreCalendarTasks = async () => {
 
     mergeTaskPage(normalizePayload(data));
     tasksMeta.value = normalizeMeta(data);
-  } catch (error) {
+  } catch {
     if (loadGeneration === taskLoadGeneration.value) {
-      useAlert(formatErrorMessage(error));
+      calendarLoadMoreFailed.value = true;
     }
   } finally {
     if (loadGeneration === taskLoadGeneration.value) {
@@ -1887,6 +1903,10 @@ const loadMoreBoardBucket = async timeBucket => {
   }
 
   const loadGeneration = taskLoadGeneration.value;
+  boardBucketLoadFailed.value = {
+    ...boardBucketLoadFailed.value,
+    [timeBucket]: false,
+  };
   boardBucketLoading.value = {
     ...boardBucketLoading.value,
     [timeBucket]: true,
@@ -1918,9 +1938,12 @@ const loadMoreBoardBucket = async timeBucket => {
       ...boardBucketMeta.value,
       [timeBucket]: normalizeMeta(data),
     };
-  } catch (error) {
+  } catch {
     if (loadGeneration === taskLoadGeneration.value) {
-      useAlert(formatErrorMessage(error));
+      boardBucketLoadFailed.value = {
+        ...boardBucketLoadFailed.value,
+        [timeBucket]: true,
+      };
     }
   } finally {
     if (loadGeneration === taskLoadGeneration.value) {
@@ -3056,12 +3079,20 @@ watch(
             @resize-task="updateTaskCalendarRange"
             @select-task="openEditDrawer"
           />
-          <div v-if="tasksMeta.hasMore" class="flex justify-center pt-3">
+          <div
+            v-if="tasksMeta.hasMore"
+            class="flex justify-center pt-3"
+            aria-live="polite"
+          >
             <Button
               ghost
               sm
               :is-loading="isLoadingMoreTasks"
-              :label="$t('CRM.TASKS.LOAD_MORE')"
+              :label="
+                calendarLoadMoreFailed
+                  ? $t('CRM.TASKS.RETRY_LOAD')
+                  : $t('CRM.TASKS.LOAD_MORE')
+              "
               @click="loadMoreCalendarTasks"
             />
           </div>
@@ -3073,10 +3104,12 @@ watch(
           :task-type-resolver="taskTypeResolver"
           :assignees="assigneeOptions"
           :can-manage="canManageTasks"
+          :bucket-load-failed="boardBucketLoadFailed"
           :bucket-loading="boardBucketLoading"
           :bucket-meta="boardBucketMeta"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
+          :filtered="hasActiveBoardTaskFilters"
           :pending-task-ids="pendingTaskDeadlineIds"
           :tasks="tasks"
           @change-due-date="updateTaskDeadlineFromBoard"

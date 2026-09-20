@@ -30,6 +30,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  bucketLoadFailed: {
+    type: Object,
+    default: () => ({}),
+  },
   bucketMeta: {
     type: Object,
     default: () => ({}),
@@ -41,6 +45,10 @@ const props = defineProps({
   fieldDefinitions: {
     type: Array,
     default: () => [],
+  },
+  filtered: {
+    type: Boolean,
+    default: false,
   },
   pendingTaskIds: {
     type: Set,
@@ -118,6 +126,7 @@ const boardColumns = computed(() =>
     ...bucketDisplayMeta.value[key],
     hasMore: Boolean(props.bucketMeta[key]?.hasMore),
     key,
+    loadFailed: Boolean(props.bucketLoadFailed[key]),
     loading: Boolean(props.bucketLoading[key]),
     totalCount: Number(
       props.bucketMeta[key]?.count || groupedTasks.value[key].length
@@ -291,14 +300,33 @@ const activityTypeMeta = task =>
             </article>
           </template>
         </Draggable>
+        <p
+          v-if="column.totalCount === 0"
+          class="mx-3 mb-3 rounded-md border border-dashed border-n-weak px-3 py-4 text-center text-xs text-n-slate-10"
+          data-test="empty-task-bucket"
+        >
+          {{
+            filtered
+              ? $t('CRM.TASKS.LIST.EMPTY_FILTERED')
+              : $t('CRM.TASKS.BOARD.EMPTY_COLUMN')
+          }}
+        </p>
         <button
           v-if="column.hasMore"
           type="button"
           class="mx-3 mb-3 rounded-md border border-n-weak bg-n-surface-1 px-3 py-2 text-xs font-medium text-n-slate-11 hover:bg-n-alpha-black2 disabled:cursor-wait disabled:opacity-60"
+          aria-live="polite"
+          :aria-busy="column.loading"
           :disabled="column.loading"
           @click="emit('loadMore', column.key)"
         >
-          {{ $t('CRM.TASKS.LOAD_MORE') }}
+          {{
+            column.loading
+              ? $t('CRM.TASKS.LOADING_MORE')
+              : column.loadFailed
+                ? $t('CRM.TASKS.RETRY_LOAD')
+                : $t('CRM.TASKS.LOAD_MORE')
+          }}
         </button>
       </section>
     </div>
