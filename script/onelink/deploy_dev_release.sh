@@ -25,6 +25,10 @@ ENV_FILE="${ROOT}/.env.development"
 LOCK_FILE="${ROOT}/runtime/deploy.lock"
 SERVICE=onelink-chatwoot-dev.service
 VOICE_SERVICE=onelink-ai-voice-dev.service
+WORKER_SERVICES=(
+  onelink-chatwoot-dev-workers.service
+  onelink-chatwoot-dev-communication-thread-realtime-worker.service
+)
 VOICE_READY_URL=http://127.0.0.1:8082/ready
 VOICE_START_SCRIPT=${ROOT}/runtime/start-onelink-ai-voice-dev
 VOICE_START_BACKUP=${ROOT}/runtime/start-onelink-ai-voice-dev.rollback.$$
@@ -191,10 +195,14 @@ rollback() {
     fi
     systemctl restart "${SERVICE}" || rollback_failed=true
     systemctl restart "${VOICE_SERVICE}" || rollback_failed=true
+    systemctl restart "${WORKER_SERVICES[@]}" || rollback_failed=true
 
     [[ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" == "${PREVIOUS}" ]] || rollback_failed=true
     [[ "$(systemctl is-active "${SERVICE}" 2>/dev/null || true)" == active ]] || rollback_failed=true
     [[ "$(systemctl is-active "${VOICE_SERVICE}" 2>/dev/null || true)" == active ]] || rollback_failed=true
+    for unit in "${WORKER_SERVICES[@]}"; do
+      [[ "$(systemctl is-active "${unit}" 2>/dev/null || true)" == active ]] || rollback_failed=true
+    done
 
     rollback_code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' http://127.0.0.1:3002/api/v1/profile || true)"
     [[ "${rollback_code}" == 401 || "${rollback_code}" == 200 ]] || rollback_failed=true
@@ -247,9 +255,9 @@ while ((SECONDS < health_deadline)); do
 done
 [[ "${code:-}" == 401 || "${code:-}" == 200 ]] || rollback "Rails health check HTTP ${code:-000}"
 
-for unit in onelink-chatwoot-dev-workers.service \
-  onelink-chatwoot-dev-communication-thread-realtime-worker.service \
-  "${VOICE_SERVICE}"; do
+systemctl restart "${WORKER_SERVICES[@]}" || rollback "DEV worker systemd restart"
+
+for unit in "${WORKER_SERVICES[@]}" "${VOICE_SERVICE}"; do
   unit_deadline=$((SECONDS + 180))
   while ((SECONDS < unit_deadline)); do
     [[ "$(systemctl is-active "${unit}" || true)" == active ]] && break
