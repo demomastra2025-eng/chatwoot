@@ -23,6 +23,7 @@ class AutomationEvent < ApplicationRecord
   enum :status, STATUSES.index_with(&:itself), validate: true
 
   before_validation :assign_event_uuid, on: :create
+  after_create_commit :enqueue_publication
 
   validates :event_uuid, :dedupe_key, :event_name, :subject_type, :subject_id, :producer, :trace_id, presence: true
   validates :event_uuid, uniqueness: true
@@ -50,6 +51,14 @@ class AutomationEvent < ApplicationRecord
 
   def assign_event_uuid
     self.event_uuid ||= SecureRandom.uuid
+  end
+
+  def enqueue_publication
+    return unless AutomationRules::PublishEventJob.enabled?
+
+    AutomationRules::Events::WakeupService.enqueue_one!(id)
+  rescue StandardError => e
+    Rails.logger.error("Failed to enqueue Automation event #{id}: #{e.class}: #{e.message}")
   end
 
   def lease_is_complete

@@ -153,6 +153,7 @@ class Message < ApplicationRecord
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
+  after_create :capture_automation_create_event
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
@@ -469,6 +470,17 @@ class Message < ApplicationRecord
     else
       update_waiting_since
     end
+  end
+
+  def capture_automation_create_event
+    return if runtime_events_suppressed?
+
+    AutomationRules::Events::CaptureService.capture_model_event!(
+      record: self,
+      event_name: MESSAGE_CREATED,
+      payload_snapshot: AutomationRules::Events::MatchingSnapshot.for(self),
+      producer: 'message_model'
+    )
   end
 
   def dispatch_update_event

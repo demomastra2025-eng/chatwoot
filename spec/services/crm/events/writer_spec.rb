@@ -34,6 +34,8 @@ RSpec.describe Crm::Events::Writer do
       after_data: { 'stage_id' => 20 }
     )
     expect(event.meta.dig('changes', 'title')).to eq(['Private old title', 'Private new title'])
+    expect(event.meta.dig('automation_matching_snapshot', 'snapshot_version')).to eq(1)
+    expect(event.meta.dig('automation_matching_snapshot', 'matcher_data', 'deal', 'title')).to eq(deal.title)
     expect(event.before_data).not_to have_key('title')
     expect(event.correlation_id).to be_present
     expect(event.causation_id).to be_present

@@ -31,6 +31,7 @@ class TriggerScheduledItemsJob < ApplicationJob
     # Job to execute due touches
     Reminders::MaterializeDueEnrollmentsJob.perform_later
     Reminders::ProcessPendingRemindersJob.perform_later
+    AutomationRules::ReplayEventsJob.perform_later if AutomationRules::PublishEventJob.enabled?
   end
 end
 

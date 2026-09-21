@@ -105,6 +105,7 @@ class Crm::Event < ApplicationRecord
   end
 
   def attempt_listener_dispatch
+    AutomationRules::Events::CrmEventAdapter.new(self).capture!
     dispatch_automation_event
     self.published_at = Time.current
     self.publication_error = nil

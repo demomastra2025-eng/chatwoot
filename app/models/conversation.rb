@@ -132,6 +132,8 @@ class Conversation < ApplicationRecord
   before_create :determine_conversation_status
   before_create :ensure_waiting_since
 
+  after_create :capture_automation_create_event
+  after_update :capture_automation_update_events
   after_update_commit :execute_after_update_commit_callbacks
   after_create_commit :notify_conversation_creation
   after_create_commit :load_attributes_created_by_db_triggers
@@ -383,6 +385,38 @@ class Conversation < ApplicationRecord
     return if runtime_events_suppressed?
 
     dispatcher_dispatch(CONVERSATION_CREATED)
+  end
+
+  def capture_automation_create_event
+    capture_automation_event(CONVERSATION_CREATED)
+  end
+
+  def capture_automation_update_events
+    return if runtime_events_suppressed?
+
+    capture_automation_status_events
+    capture_automation_event(CONVERSATION_TRANSFERRED_TO_AI, ai_transfer_changed_attributes) if ai_transfer_state_entered?
+    capture_automation_event(CONVERSATION_UPDATED, previous_changes) if previous_changes.keys.present? && allowed_keys?
+  end
+
+  def capture_automation_status_events
+    return unless saved_change_to_status?
+
+    capture_automation_event(CONVERSATION_OPENED, status_change) if open?
+    capture_automation_event(CONVERSATION_RESOLVED, status_change) if resolved?
+    capture_automation_event(CONVERSATION_PENDING, status_change) if pending?
+  end
+
+  def capture_automation_event(event_name, changed_attributes = {})
+    return if runtime_events_suppressed?
+
+    AutomationRules::Events::CaptureService.capture_model_event!(
+      record: self,
+      event_name: event_name,
+      payload_snapshot: AutomationRules::Events::MatchingSnapshot.for(self),
+      changes_snapshot: changed_attributes || {},
+      producer: 'conversation_model'
+    )
   end
 
   def notify_conversation_updation

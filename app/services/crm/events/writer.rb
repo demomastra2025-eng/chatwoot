@@ -29,7 +29,7 @@ class Crm::Events::Writer
   def self.record!(account:, eventable:, actor:, event_type:, **options)
     assert_known_options!(options)
     attributes = base_attributes(eventable: eventable, actor: actor, event_type: event_type)
-                 .merge(audit_attributes(options))
+                 .merge(audit_attributes(eventable, options))
                  .merge(execution_attributes(actor, options))
     create_event!(account, attributes)
   end
@@ -46,9 +46,11 @@ class Crm::Events::Writer
   end
   private_class_method :base_attributes
 
-  def self.audit_attributes(options)
-    meta = options.fetch(:meta, {})
+  def self.audit_attributes(eventable, options)
+    meta = options.fetch(:meta, {}).to_h.deep_stringify_keys
     changes = meta.to_h.with_indifferent_access[:changes].to_h
+    matching_snapshot = AutomationRules::Events::MatchingSnapshot.for_crm(eventable)
+    meta['automation_matching_snapshot'] = matching_snapshot if matching_snapshot.present?
     {
       meta: meta,
       before_data: options[:before_data] || snapshot_changes(changes, 0),
