@@ -2,13 +2,10 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useRoute } from 'vue-router';
-import { emitter } from 'shared/helpers/mitt';
+
 import { useConversationLabels } from 'dashboard/composables/useConversationLabels';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
-import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
-import { CMD_AI_ASSIST } from 'dashboard/helper/commandbar/events';
-import { REPLY_EDITOR_MODES } from 'dashboard/components/widgets/WootWriter/constants';
 
 import wootConstants from 'dashboard/constants/globals';
 
@@ -23,11 +20,6 @@ import {
   ICON_PRIORITY_LOW,
   ICON_PRIORITY_MEDIUM,
   ICON_PRIORITY_NONE,
-  ICON_AI_ASSIST,
-  ICON_AI_SUMMARY,
-  ICON_AI_SHORTEN,
-  ICON_AI_EXPAND,
-  ICON_AI_GRAMMAR,
 } from 'dashboard/helper/commandbar/icons';
 
 import {
@@ -81,60 +73,6 @@ const createPriorityOptions = (t, currentPriority) => {
   ].filter(item => item.key !== currentPriority);
 };
 
-const createNonDraftMessageAIAssistActions = (t, replyMode) => {
-  if (replyMode === REPLY_EDITOR_MODES.REPLY) {
-    return [
-      {
-        label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.REPLY_SUGGESTION'),
-        key: 'reply_suggestion',
-        icon: ICON_AI_ASSIST,
-      },
-    ];
-  }
-  return [
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.SUMMARIZE'),
-      key: 'summarize',
-      icon: ICON_AI_SUMMARY,
-    },
-  ];
-};
-
-const createDraftMessageAIAssistActions = t => {
-  return [
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.CONFIDENT'),
-      key: 'confident',
-      icon: ICON_AI_ASSIST,
-    },
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.FIX_SPELLING_GRAMMAR'),
-      key: 'fix_spelling_grammar',
-      icon: ICON_AI_GRAMMAR,
-    },
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.PROFESSIONAL'),
-      key: 'professional',
-      icon: ICON_AI_EXPAND,
-    },
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.CASUAL'),
-      key: 'casual',
-      icon: ICON_AI_SHORTEN,
-    },
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.MAKE_FRIENDLY'),
-      key: 'friendly',
-      icon: ICON_AI_ASSIST,
-    },
-    {
-      label: t('INTEGRATION_SETTINGS.OPEN_AI.OPTIONS.STRAIGHTFORWARD'),
-      key: 'straightforward',
-      icon: ICON_AI_ASSIST,
-    },
-  ];
-};
-
 export function useConversationHotKeys() {
   const { t } = useI18n();
   const store = useStore();
@@ -147,26 +85,17 @@ export function useConversationHotKeys() {
     removeLabelFromConversation,
   } = useConversationLabels();
 
-  const { captainTasksEnabled } = useCaptain();
   const { agentsList } = useAgentsList();
 
   const currentChat = useMapGetter('getSelectedChat');
-  const replyMode = useMapGetter('draftMessages/getReplyEditorMode');
+
   const contextMenuChatId = useMapGetter('getContextMenuChatId');
   const teams = useMapGetter('teams/getTeams');
-  const getDraftMessage = useMapGetter('draftMessages/get');
-
-  const conversationId = computed(() => currentChat.value?.id);
   const conversationType = computed(() =>
     currentChat.value?.is_communication_thread
       ? 'communication_thread'
       : 'conversation'
   );
-  const draftKey = computed(
-    () => `draft-${conversationId.value}-${replyMode.value}`
-  );
-
-  const draftMessage = computed(() => getDraftMessage.value(draftKey.value));
 
   const hasAnAssignedTeam = computed(() => !!currentChat.value?.meta?.team);
 
@@ -346,31 +275,6 @@ export function useConversationHotKeys() {
     );
   });
 
-  const AIAssistActions = computed(() => {
-    const aiOptions = draftMessage.value
-      ? createDraftMessageAIAssistActions(t)
-      : createNonDraftMessageAIAssistActions(t, replyMode.value);
-    const options = aiOptions.map(item => ({
-      id: `ai-assist-${item.key}`,
-      title: item.label,
-      parent: 'ai_assist',
-      section: t('COMMAND_BAR.SECTIONS.AI_ASSIST'),
-      priority: item,
-      icon: item.icon,
-      handler: () => emitter.emit(CMD_AI_ASSIST, item.key),
-    }));
-    return [
-      {
-        id: 'ai_assist',
-        title: t('COMMAND_BAR.COMMANDS.AI_ASSIST'),
-        section: t('COMMAND_BAR.SECTIONS.AI_ASSIST'),
-        icon: ICON_AI_ASSIST,
-        children: options.map(option => option.id),
-      },
-      ...options,
-    ];
-  });
-
   const isConversationOrInboxRoute = computed(() => {
     return isAConversationRoute(route.name) || isAInboxViewRoute(route.name);
   });
@@ -390,9 +294,6 @@ export function useConversationHotKeys() {
       ...labelActions.value,
       ...assignPriorityActions.value,
     ];
-    if (captainTasksEnabled.value) {
-      return [...defaultConversationHotKeys, ...AIAssistActions.value];
-    }
     return defaultConversationHotKeys;
   });
 

@@ -6,7 +6,7 @@ import Editor from './Editor.vue';
 const wootEditorStub = {
   name: 'WootEditor',
   props: ['modelValue', 'overrideLineBreaks', 'disabled'],
-  emits: ['input', 'focus', 'blur', 'executeCopilotAction'],
+  emits: ['input', 'focus', 'blur'],
   template: '<div data-testid="woot-editor" />',
 };
 

@@ -307,8 +307,6 @@ describe('MessagesView', () => {
   describe('currentChat watcher', () => {
     it('refreshes chat-scoped state when direct and thread ids collide', () => {
       const context = {
-        fetchSuggestions: vi.fn(),
-        messageSentSinceOpened: true,
         resetReplyEditorHeight: vi.fn(),
         conversationHistoryGeneration: 0,
         hasUserScrolled: true,
@@ -320,8 +318,6 @@ describe('MessagesView', () => {
         { id: 987 }
       );
 
-      expect(context.fetchSuggestions).toHaveBeenCalled();
-      expect(context.messageSentSinceOpened).toBe(false);
       expect(context.resetReplyEditorHeight).toHaveBeenCalled();
       expect(context.conversationHistoryGeneration).toBe(1);
       expect(context.hasUserScrolled).toBe(false);
@@ -330,7 +326,6 @@ describe('MessagesView', () => {
     it('preserves manual scroll state for updates to the active chat', () => {
       const context = {
         fetchAllAttachmentsFromCurrentChat: vi.fn(),
-        fetchSuggestions: vi.fn(),
         resetReplyEditorHeight: vi.fn(),
         conversationHistoryGeneration: 0,
         hasUserScrolled: true,
@@ -351,7 +346,6 @@ describe('MessagesView', () => {
       const context = {
         $nextTick: callback => callback(),
         fetchAllAttachmentsFromCurrentChat: vi.fn(),
-        fetchSuggestions: vi.fn(),
         resetReplyEditorHeight: vi.fn(),
         fetchPreviousMessages: vi.fn(),
         isNearConversationBottom: vi.fn(() => false),

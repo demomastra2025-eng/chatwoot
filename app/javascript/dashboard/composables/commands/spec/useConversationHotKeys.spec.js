@@ -3,7 +3,7 @@ import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useRoute } from 'vue-router';
 import { useConversationLabels } from 'dashboard/composables/useConversationLabels';
-import { useCaptain } from 'dashboard/composables/useCaptain';
+
 import { useAgentsList } from 'dashboard/composables/useAgentsList';
 import { REPLY_EDITOR_MODES } from 'dashboard/components/widgets/WootWriter/constants';
 import {
@@ -18,7 +18,7 @@ vi.mock('dashboard/composables/store');
 vi.mock('vue-i18n');
 vi.mock('vue-router');
 vi.mock('dashboard/composables/useConversationLabels');
-vi.mock('dashboard/composables/useCaptain');
+
 vi.mock('dashboard/composables/useAgentsList');
 
 describe('useConversationHotKeys', () => {
@@ -49,7 +49,7 @@ describe('useConversationHotKeys', () => {
       addLabelToConversation: vi.fn(),
       removeLabelFromConversation: vi.fn(),
     });
-    useCaptain.mockReturnValue({ captainTasksEnabled: { value: true } });
+
     useAgentsList.mockReturnValue({
       agentsList: { value: [] },
       assignableAgents: { value: mockAssignableAgents },
@@ -65,23 +65,6 @@ describe('useConversationHotKeys', () => {
   it('should generate conversation hot keys', () => {
     const { conversationHotKeys } = useConversationHotKeys();
     expect(conversationHotKeys.value.length).toBeGreaterThan(0);
-  });
-
-  it('should include AI assist actions when captain tasks is enabled', () => {
-    const { conversationHotKeys } = useConversationHotKeys();
-    const aiAssistAction = conversationHotKeys.value.find(
-      action => action.id === 'ai_assist'
-    );
-    expect(aiAssistAction).toBeDefined();
-  });
-
-  it('should not include AI assist actions when captain tasks is disabled', () => {
-    useCaptain.mockReturnValue({ captainTasksEnabled: { value: false } });
-    const { conversationHotKeys } = useConversationHotKeys();
-    const aiAssistAction = conversationHotKeys.value.find(
-      action => action.id === 'ai_assist'
-    );
-    expect(aiAssistAction).toBeUndefined();
   });
 
   it('should dispatch actions when handlers are called', () => {
