@@ -86,27 +86,29 @@ RSpec.describe TelegramPersonal::IncomingMessageService do
     end
 
     it 'marks imported history messages and preserves provider timestamp' do
-      described_class.new(
-        inbox: channel.inbox,
-        params: {
-          message_id: '401',
-          message_created_at: '2026-04-08T10:15:30Z',
-          imported_history: true,
-          chat_id: '23',
-          peer_user_id: '23',
-          sender_id: '23',
-          chat_type: 'private',
-          text: 'history hello',
-          first_name: 'Sojan',
-          username: 'sojan'
-        }
-      ).perform
+      Time.use_zone('Australia/Sydney') do
+        described_class.new(
+          inbox: channel.inbox,
+          params: {
+            message_id: '401',
+            message_created_at: '2026-04-08T10:15:30Z',
+            imported_history: true,
+            chat_id: '23',
+            peer_user_id: '23',
+            sender_id: '23',
+            chat_type: 'private',
+            text: 'history hello',
+            first_name: 'Sojan',
+            username: 'sojan'
+          }
+        ).perform
 
-      message = channel.inbox.messages.last
+        message = channel.inbox.messages.last
 
-      expect(message.content_attributes['imported_history']).to eq(true)
-      expect(message.content_attributes['external_created_at']).to eq('2026-04-08T10:15:30Z')
-      expect(message.created_at.iso8601).to eq('2026-04-08T10:15:30Z')
+        expect(message.content_attributes['imported_history']).to eq(true)
+        expect(message.content_attributes['external_created_at']).to eq('2026-04-08T10:15:30Z')
+        expect(message.created_at.utc.iso8601).to eq('2026-04-08T10:15:30Z')
+      end
     end
 
     it 'keeps imported incoming and outgoing history in the same conversation for one peer' do

@@ -294,7 +294,7 @@ class TelegramPersonal::IncomingMessageService
     {}.tap do |attrs|
       attrs[:external_echo] = true if outgoing_echo?
       attrs[:voice_note] = true if voice_note?
-      attrs[:external_created_at] = provider_message_time.iso8601 if provider_message_time.present?
+      attrs[:external_created_at] = provider_message_time.utc.iso8601 if provider_message_time.present?
       attrs[:imported_history] = true if imported_history?
       attrs.merge!(history_media_content_attributes)
       attrs[:in_reply_to_external_id] = params[:reply_to_message_id].to_s if params[:reply_to_message_id].present?
