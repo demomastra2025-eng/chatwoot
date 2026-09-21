@@ -151,13 +151,11 @@ class ChangePlanTest(unittest.TestCase):
                 [
                     "enterprise/media-server/src/index.js",
                     "services/onelink-ai-voice-pipecat/app.py",
-                    "services/weixin-personal-gateway/app.py",
                 ]
             ),
             [
                 "enterprise/media-server/src/index.js",
                 "services/onelink-ai-voice-pipecat/app.py",
-                "services/weixin-personal-gateway/app.py",
             ],
         )
 

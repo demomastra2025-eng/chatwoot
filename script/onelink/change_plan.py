@@ -55,7 +55,6 @@ SIDECAR_ROOTS = (
     "enterprise/media-server/",
     "services/onelink-ai-voice/",
     "services/onelink-ai-voice-pipecat/",
-    "services/weixin-personal-gateway/",
 )
 IMMUTABLE_RELEASE_SIDECAR_ROOTS = ("services/onelink-ai-voice/",)
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
