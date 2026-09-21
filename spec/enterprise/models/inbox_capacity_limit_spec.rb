@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe InboxCapacityLimit, type: :model do
+RSpec.describe InboxCapacityLimit, locale: :en, type: :model do
   let(:account) { create(:account) }
   let(:policy) { create(:agent_capacity_policy, account: account) }
   let(:inbox) { create(:inbox, account: account) }

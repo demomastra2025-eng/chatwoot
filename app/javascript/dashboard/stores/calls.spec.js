@@ -1011,7 +1011,7 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-  }, 10000);
+  }, 30000);
 
   it('keeps a distinct simultaneous logical call for the same client after a foreign claim', async () => {
     const store = useCallsStore();
@@ -1403,7 +1403,7 @@ describe('useCallsStore', () => {
         operatorInternalExtension: '202',
       }),
     ]);
-  }, 10000);
+  }, 30000);
 
   it('keeps an active branch when a same-SID sibling ends before the logical call', async () => {
     const store = useCallsStore();

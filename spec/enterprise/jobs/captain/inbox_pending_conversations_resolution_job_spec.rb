@@ -189,11 +189,13 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     it 'adds the correct activity message after resolution' do
       described_class.perform_now(inbox)
 
-      expected_content = I18n.t(
-        'conversations.activity.captain.resolved_with_reason',
-        user_name: captain_assistant.name,
-        reason: 'no outstanding questions'
-      )
+      expected_content = I18n.with_locale(inbox.account.locale) do
+        I18n.t(
+          'conversations.activity.captain.resolved_with_reason',
+          user_name: captain_assistant.name,
+          reason: 'no outstanding questions'
+        )
+      end
       expect(Conversations::ActivityMessageJob)
         .to have_been_enqueued.with(
           resolvable_pending_conversation,
@@ -316,11 +318,13 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
     it 'adds the correct activity message after handoff' do
       described_class.perform_now(inbox)
 
-      expected_content = I18n.t(
-        'conversations.activity.captain.open_with_reason',
-        user_name: captain_assistant.name,
-        reason: 'pending clarification from customer'
-      )
+      expected_content = I18n.with_locale(inbox.account.locale) do
+        I18n.t(
+          'conversations.activity.captain.open_with_reason',
+          user_name: captain_assistant.name,
+          reason: 'pending clarification from customer'
+        )
+      end
       expect(Conversations::ActivityMessageJob)
         .to have_been_enqueued.with(
           resolvable_pending_conversation,

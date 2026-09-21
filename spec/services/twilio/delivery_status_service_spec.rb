@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-describe Twilio::DeliveryStatusService do
+describe Twilio::DeliveryStatusService, locale: :en do
   let!(:account) { create(:account) }
   let!(:twilio_channel) do
     create(:channel_twilio_sms, account: account, account_sid: 'ACxxx',

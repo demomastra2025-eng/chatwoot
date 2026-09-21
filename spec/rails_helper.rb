@@ -3,6 +3,9 @@ ENV['RAILS_ENV'] ||= 'test'
 
 if ENV['RAILS_ENV'] == 'test'
   ENV['NODE_ENV'] ||= 'test'
+  ENV['EVOLUTION_API_URL'] ||= 'https://evolution.example.test'
+  ENV['EVOLUTION_API_KEY'] ||= 'test-api-key'
+  ENV['FRONTEND_URL'] ||= 'https://app.example.test'
 
   postgres_database = ENV.fetch('POSTGRES_DATABASE', nil)
   unsafe_test_database = postgres_database.to_s.empty? ||
@@ -49,6 +52,12 @@ rescue ActiveRecord::PendingMigrationError => e
   exit 1
 end
 RSpec.configure do |config|
+  # Keep request-local locale changes isolated without changing the production
+  # default locale contract for the test environment.
+  config.around do |example|
+    I18n.with_locale(example.metadata.fetch(:locale, I18n.default_locale)) { example.run }
+  end
+
   config.include FactoryBot::Syntax::Methods
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [Rails.root.join('spec/fixtures').to_s]

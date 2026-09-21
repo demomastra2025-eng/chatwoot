@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe 'Inbox Member API', type: :request do
+RSpec.describe 'Inbox Member API', locale: :en, type: :request do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
 

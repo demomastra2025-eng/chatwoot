@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe 'Webhooks API', type: :request do
+RSpec.describe 'Webhooks API', locale: :en, type: :request do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:webhook) { create(:webhook, account: account, inbox: inbox, url: 'https://hello.com', name: 'My Webhook') }

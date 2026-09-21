@@ -606,7 +606,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: false))
       end
 
       it 'returns generic error message on timeout' do
@@ -615,7 +615,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: true))
       end
 
       it 'returns generic error message on HTTP 404' do
@@ -624,7 +624,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: HTTP request failed with status 404')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 404', retryable: false))
       end
 
       it 'returns generic error message on HTTP 500' do
@@ -633,7 +633,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: HTTP request failed with status 500')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 500', retryable: true))
       end
 
       it 'returns generic error message when a hostname resolves to mixed public and private IPs' do
@@ -643,7 +643,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: false))
         expect(WebMock).not_to have_requested(:get, 'https://example.com/data')
       end
 

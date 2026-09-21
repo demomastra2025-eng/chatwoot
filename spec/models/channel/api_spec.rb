@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe Channel::Api do
+RSpec.describe Channel::Api, locale: :en do
   # This validation happens in ApplicationRecord
   describe 'length validations' do
     let(:channel_api) { create(:channel_api) }

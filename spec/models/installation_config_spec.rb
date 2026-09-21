@@ -15,7 +15,7 @@ RSpec.describe InstallationConfig do
       config = described_class.create!(name: 'LEGACY_INSTALLATION_CONFIG')
       legacy_payload = { value: 'legacy-value' }.with_indifferent_access.to_yaml
 
-      quoted_payload = described_class.connection.quote(legacy_payload)
+      quoted_payload = described_class.connection.quote(legacy_payload.to_json)
       described_class.connection.execute(
         "UPDATE installation_configs SET serialized_value = #{quoted_payload} WHERE id = #{config.id}"
       )

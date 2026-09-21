@@ -200,7 +200,8 @@ RSpec.describe Api::V1::Accounts::InboxCsatTemplatesController, type: :request d
         allow(mock_service).to receive(:create_template).and_return({
                                                                       success: true,
                                                                       template_name: "customer_satisfaction_survey_#{whatsapp_inbox.id}",
-                                                                      template_id: '987654321'
+                                                                      template_id: '987654321',
+                                                                      language: 'en'
                                                                     })
 
         post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/csat_template",

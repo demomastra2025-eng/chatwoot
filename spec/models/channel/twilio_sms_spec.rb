@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe Channel::TwilioSms do
+RSpec.describe Channel::TwilioSms, locale: :en do
   describe '#validations' do
     context 'with phone number blank' do
       let!(:sms_channel) { create(:channel_twilio_sms, medium: :sms, phone_number: nil) }

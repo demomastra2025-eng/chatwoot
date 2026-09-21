@@ -40,7 +40,7 @@ RSpec.describe '/api/v1/widget/integrations/dyte', type: :request do
 
           expect(response).to have_http_status(:unprocessable_content)
           response_body = response.parsed_body
-          expect(response_body['error']).to eq('Invalid message type. Action not permitted')
+          expect(response_body['error']).to eq(I18n.t('errors.dyte.invalid_message_type'))
         end
       end
 

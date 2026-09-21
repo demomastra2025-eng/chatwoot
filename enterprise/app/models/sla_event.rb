@@ -65,8 +65,9 @@ class SlaEvent < ApplicationRecord
     notify_users = conversation.conversation_participants.map(&:user)
     # Add all admins from the account to notify list
     notify_users += account.administrators
-    # Ensure conversation assignee is notified
-    notify_users += [conversation.assignee] if conversation.assignee.present?
+    # Assignment is communication-thread canonical; keep the child conversation as a legacy fallback.
+    assignee = conversation.communication_thread&.assignee || conversation.assignee
+    notify_users << assignee if assignee.present?
 
     notification_type = {
       'frt' => 'sla_missed_first_response',

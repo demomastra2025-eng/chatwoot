@@ -157,7 +157,8 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       touch_plan = create(:reminder_group, account: account, name: 'Conversation nurture', entity_kinds: ['conversation'],
                                            touches: [conversation_touch_definition])
 
-      touches = operation.apply_touch_plan(touch_plan_name: 'conversation nurture')
+      result = operation.apply_touch_plan(touch_plan_name: 'conversation nurture')
+      touches = result.touches
 
       expect(touches.size).to eq(1)
       expect(touches.first.remindable).to eq(conversation)

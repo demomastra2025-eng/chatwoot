@@ -1117,7 +1117,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: 'Search appointments by client, status, payment status, contact, or specialist',
+          description: 'Search appointments by client, exact normalized IIN, status, payment status, contact, or specialist',
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

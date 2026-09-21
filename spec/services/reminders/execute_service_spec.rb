@@ -669,8 +669,8 @@ RSpec.describe Reminders::ExecuteService do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       inbox = whatsapp_channel.inbox
-      contact = create(:contact, account: account)
-      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      contact = create(:contact, :with_phone_number, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number.delete('+'))
       conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
 
       touch = nil
@@ -764,8 +764,8 @@ RSpec.describe Reminders::ExecuteService do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       inbox = whatsapp_channel.inbox
-      contact = create(:contact, account: account)
-      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      contact = create(:contact, :with_phone_number, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number.delete('+'))
       conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
       template_params = {
         name: 'sample_shipping_confirmation',
@@ -804,8 +804,10 @@ RSpec.describe Reminders::ExecuteService do
           validate_provider_config: false
         )
       end
-      let(:contact) { create(:contact, account: account) }
-      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox) }
+      let(:contact) { create(:contact, :with_phone_number, account: account) }
+      let(:contact_inbox) do
+        create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: contact.phone_number.delete('+'))
+      end
       let(:conversation) do
         create(
           :conversation,

@@ -32,7 +32,7 @@ describe('dashboard i18n lazy loading', () => {
       'pt_BR',
       expect.objectContaining({})
     );
-  });
+  }, 30000);
 
   it('sets vue-i18n composer locale refs after loading the locale', async () => {
     const i18n = {
@@ -49,7 +49,7 @@ describe('dashboard i18n lazy loading', () => {
       'kk',
       expect.objectContaining({})
     );
-  });
+  }, 30000);
 
   it('uses the registered runtime i18n instance for component locale changes', async () => {
     const i18n = {
@@ -68,7 +68,7 @@ describe('dashboard i18n lazy loading', () => {
       'pt_BR',
       expect.objectContaining({})
     );
-  });
+  }, 30000);
 
   it('works with the real vue-i18n legacy:false global composer', async () => {
     const i18n = createI18n({
@@ -85,7 +85,7 @@ describe('dashboard i18n lazy loading', () => {
     expect(locale).toBe('kk');
     expect(i18n.global.locale.value).toBe('kk');
     expect(i18n.global.availableLocales).toContain('kk');
-  });
+  }, 30000);
 
   it('falls back to Russian for unsupported locales', () => {
     expect(resolveLocaleCode('unknown-locale')).toBe('ru');

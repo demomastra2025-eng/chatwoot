@@ -897,6 +897,7 @@ class Telephony::EventsIngestionService
   end
 
   def next_answered_at(call_session, status)
+    return resolved_answered_at if post_finalize_recording_event? && call_session.answered_at.blank? && resolved_answered_at.present?
     return call_session.answered_at if stale_event?(call_session)
 
     resolved_answered_at || call_session.answered_at || (event_time if status == 'in_progress' || ai_answer_event?)

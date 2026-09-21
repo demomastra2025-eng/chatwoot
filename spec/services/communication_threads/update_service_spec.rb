@@ -60,7 +60,61 @@ RSpec.describe CommunicationThreads::UpdateService do
         assignee_id: assignee.id,
         team_id: team.id
       )
-      expect(conversation.messages.activity.pluck(:content)).to include(*expected_routing_activity_contents(actor, assignee, team))
+      expected_contents = expected_routing_activity_contents(actor, assignee, team)
+      expect(conversation.messages.activity.where(content: expected_contents).pluck(:content)).to match_array(expected_contents)
+    ensure
+      Current.user = nil
+    end
+
+    it 'publishes a routing activity once when the requested status is unchanged' do
+      actor = create(:user, account: account)
+      conversation = create(:conversation, account: account, status: :pending, priority: :low)
+      link = conversation.communication_thread_conversation
+      params = ActionController::Parameters.new(status: 'pending', priority: 'urgent').permit!
+      expected_content = I18n.t(
+        'conversations.activity.priority.updated', old_priority: 'low', new_priority: 'urgent', user_name: actor.name
+      )
+      Current.user = actor
+
+      perform_enqueued_jobs do
+        described_class.new(
+          communication_thread: conversation.reload.communication_thread,
+          params: params,
+          accessible_links: CommunicationThreadConversation.where(id: link.id),
+          actor: actor
+        ).perform
+      end
+
+      expect(conversation.reload).to have_attributes(status: 'pending', priority: 'urgent')
+      expect(conversation.messages.activity.where(content: expected_content).count).to eq(1)
+    ensure
+      Current.user = nil
+    end
+
+    it 'does not enqueue routing activities when status validation rolls back' do
+      account.update!(
+        conversation_status_reason_config: {
+          'resolved' => { options: ['Resolved'], required: true }
+        }
+      )
+      actor = create(:user, account: account)
+      conversation = create(:conversation, account: account, status: :open, priority: :low)
+      link = conversation.communication_thread_conversation
+      params = ActionController::Parameters.new(status: 'resolved', priority: 'urgent').permit!
+      clear_enqueued_jobs
+      Current.user = actor
+
+      expect do
+        described_class.new(
+          communication_thread: conversation.reload.communication_thread,
+          params: params,
+          accessible_links: CommunicationThreadConversation.where(id: link.id),
+          actor: actor
+        ).perform
+      end.to raise_error(Conversations::StatusReasonConfig::Error)
+
+      expect(enqueued_jobs).to be_empty
+      expect(conversation.reload).to have_attributes(status: 'open', priority: 'low')
     ensure
       Current.user = nil
     end

@@ -16,8 +16,10 @@ RSpec.describe Captain::RewriteService do
     allow(Llm::Config).to receive(:initialize!)
     allow(Llm::Config).to receive(:context).and_return(mock_context)
     allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
     allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
-    allow(mock_chat).to receive(:with_instructions)
+    allow(mock_chat).to receive(:with_headers).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
     # Stub captain enabled check to allow specs to test base functionality
     # without enterprise module interference

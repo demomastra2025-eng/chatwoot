@@ -62,7 +62,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       lock_held = false
     end
     allow(Whatsapp::CloudMediaDownload).to receive(:prepare) do
-      expect(lock_held).to be(true)
+      expect(lock_held).to be(false)
       prepared
     end
     allow(prepared).to receive(:download!) do
@@ -82,7 +82,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
     expect(prepared).to have_received(:close)
   end
 
-  it 'keeps a non-media message in the original single locked phase' do
+  it 'verifies the route before and during non-media message dispatch' do
     text_params = params.deep_dup
     message = text_params.dig(:entry, 0, :changes, 0, :value, :messages, 0)
     message[:type] = 'text'
@@ -100,7 +100,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       lock_held = false
     end
     allow(Whatsapp::CloudMediaDownload).to receive(:prepare) do
-      expect(lock_held).to be(true)
+      expect(lock_held).to be(false)
       nil
     end
     allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new) do |**options|
@@ -111,7 +111,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
 
     described_class.perform_now(text_params, verification_context)
 
-    expect(lock_calls).to eq(1)
+    expect(lock_calls).to eq(2)
     expect(process_service).to have_received(:perform).once
   end
 
@@ -165,7 +165,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
     expect(Whatsapp::IncomingMessageWhatsappCloudService).not_to have_received(:new)
   end
 
-  it 'keeps account updates in the original single locked phase' do
+  it 'verifies the route before and during account update dispatch' do
     account_params = params.deep_dup
     account_params.dig(:entry, 0, :changes, 0)[:field] = 'account_update'
     job = described_class.new
@@ -181,11 +181,11 @@ RSpec.describe Webhooks::WhatsappEventsJob do
 
     job.dispatch_authenticated_change(channel, account_params, verification_context)
 
-    expect(lock_calls).to eq(1)
+    expect(lock_calls).to eq(2)
     expect(job).to have_received(:handle_account_updates).with(account_params)
   end
 
-  it 'keeps lifecycle events in the original single locked phase' do
+  it 'verifies the route before and during lifecycle event dispatch' do
     lifecycle_params = params.deep_dup
     lifecycle_field = Whatsapp::LifecycleWebhookService::FIELDS.first
     lifecycle_params.dig(:entry, 0, :changes, 0)[:field] = lifecycle_field
@@ -203,7 +203,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
 
     job.dispatch_authenticated_change(channel, lifecycle_params, verification_context)
 
-    expect(lock_calls).to eq(1)
+    expect(lock_calls).to eq(2)
     expect(job).to have_received(:handle_lifecycle_updates).with(channel, lifecycle_field, lifecycle_params)
   end
 

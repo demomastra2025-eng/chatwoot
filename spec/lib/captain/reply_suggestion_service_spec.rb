@@ -21,10 +21,18 @@ RSpec.describe Captain::ReplySuggestionService do
     allow(Llm::Config).to receive(:initialize!)
     allow(Llm::Config).to receive(:context).and_return(mock_context)
     allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(Llm::SafetyPolicy).to receive(:check!).and_return(true)
     allow(mock_chat).to receive(:model).and_return('gpt-5.4-mini')
+    allow(mock_chat).to receive(:with_headers).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_params).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:with_tool).and_return(mock_chat)
     allow(mock_chat).to receive(:on_end_message).and_return(mock_chat)
-    allow(mock_chat).to receive(:with_instructions) { |msg| captured_messages << { role: 'system', content: msg } }
+    allow(mock_chat).to receive(:with_instructions) do |msg|
+      captured_messages << { role: 'system', content: msg }
+      mock_chat
+    end
     allow(mock_chat).to receive(:add_message) { |args| captured_messages << args }
     allow(mock_chat).to receive(:ask) do |msg|
       captured_messages << { role: 'user', content: msg }

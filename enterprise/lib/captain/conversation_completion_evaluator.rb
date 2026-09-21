@@ -69,6 +69,10 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
     @api_key ||= system_api_key.presence || openai_hook&.settings&.dig('api_key')
   end
 
+  def openai_hook
+    @openai_hook ||= account.hooks.find_by(app_id: 'openai')
+  end
+
   def resolved_model
     model.presence || task_model
   end

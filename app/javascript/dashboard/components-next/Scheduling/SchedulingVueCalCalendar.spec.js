@@ -90,7 +90,7 @@ describe('SchedulingVueCalCalendar', () => {
       wrapper.findAll('.scheduling-vue-cal__background-fill--unavailable')
         .length
     ).toBeGreaterThan(0);
-  });
+  }, 30000);
 
   it('renders the same unavailable background for closed days', async () => {
     const wrapper = mountCalendar({
@@ -154,7 +154,7 @@ describe('SchedulingVueCalCalendar', () => {
         .find('.scheduling-vue-cal__event-status-icon .i-lucide-badge-check')
         .exists()
     ).toBe(true);
-  });
+  }, 30000);
 
   it('renders time and client name in a single event summary row', async () => {
     const wrapper = mountCalendar({

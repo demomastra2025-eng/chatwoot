@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe WorkingHour do
+RSpec.describe WorkingHour, locale: :en do
   context 'when on monday 10am' do
     before do
       Time.zone = 'UTC'
@@ -30,7 +30,7 @@ RSpec.describe WorkingHour do
   context 'when on friday 12:30pm' do
     before do
       Time.zone = 'UTC'
-      create(:working_hour)
+      create(:inbox, timezone: 'UTC')
       travel_to '10.09.2021 12:30'.to_datetime
     end
 

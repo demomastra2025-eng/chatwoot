@@ -35,7 +35,7 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
 
     expect(channel.inbox.conversations.count).to eq(1)
     expect(second_conversation.id).to eq(first_conversation.id)
-    expect(second_conversation.reload.last_activity_at.iso8601).to eq('2026-04-14T10:05:00Z')
+    expect(second_conversation.reload.last_activity_at).to eq(Time.zone.parse('2026-04-14T10:05:00Z'))
     expect(second_conversation.additional_attributes).to include(
       'chat_id' => '23',
       'peer_user_id' => '23',
@@ -58,7 +58,8 @@ RSpec.describe TelegramPersonal::ConversationSyncService do
       account: channel.account,
       inbox: channel.inbox,
       contact: contact_inbox.contact,
-      status: :open
+      status: :open,
+      last_activity_at: 5.minutes.ago
     )
 
     resolved_conversation = described_class.new(

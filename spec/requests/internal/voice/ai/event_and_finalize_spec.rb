@@ -906,7 +906,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
-  it 'keeps native activity source ids monotonic after control event history is trimmed' do
+  it 'keeps control event sequences monotonic after observability history is trimmed' do
     metadata = call_session.metadata.deep_dup
     metadata['ai_voice'] = {
       'control_event_sequence' => 100,
@@ -930,11 +930,8 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     end
 
     expect(call_session.reload.metadata.dig('ai_voice', 'control_event_sequence')).to eq(102)
-    source_ids = [
-      "ai_voice_event:#{call_session.external_call_ref}:ai_speaking:101",
-      "ai_voice_event:#{call_session.external_call_ref}:ai_speaking:102"
-    ]
-    expect(conversation.messages.activity.where(source_id: source_ids).count).to eq(2)
+    expect(call_session.metadata.dig('ai_voice', 'control_events').last(2).pluck('sequence')).to eq([101, 102])
+    expect(conversation.messages.activity.where('source_id LIKE ?', "ai_voice_event:#{call_session.external_call_ref}:ai_speaking:%")).not_to exist
   end
 
   it 'marks media-not-established lifecycle as a failed terminal call without pretending media existed' do

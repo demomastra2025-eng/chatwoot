@@ -5,6 +5,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account) }
+  let(:admin_headers) { admin.create_new_auth_token }
 
   describe 'GET /api/v2/accounts/{account.id}/reports' do
     context 'when authenticated and authorized' do
@@ -37,7 +38,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
             responses = [0, -8, 9].map do |offset|
               get "/api/v2/accounts/#{account.id}/reports",
                   params: base_params.merge(timezone_offset: offset),
-                  headers: admin.create_new_auth_token, as: :json
+                  headers: admin_headers, as: :json
               response.parsed_body
             end
 
@@ -91,7 +92,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
             summaries = [-8, 0, 9].map do |offset|
               get "/api/v2/accounts/#{account.id}/reports/summary",
                   params: summary_params.merge(timezone_offset: offset),
-                  headers: admin.create_new_auth_token, as: :json
+                  headers: admin_headers, as: :json
               response.parsed_body
             end
 
@@ -104,12 +105,12 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
           Time.use_zone('UTC') do
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: 0),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             utc_summary = response.parsed_body
 
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: -8),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             pst_summary = response.parsed_body
 
             expect(utc_summary['incoming_messages_count']).to eq(pst_summary['incoming_messages_count'])
@@ -121,12 +122,12 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
           Time.use_zone('UTC') do
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: 0),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             utc_summary = response.parsed_body
 
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: 9),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             jst_summary = response.parsed_body
 
             expect(utc_summary['resolutions_count']).to eq(jst_summary['resolutions_count'])
@@ -137,12 +138,12 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
           Time.use_zone('UTC') do
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: 0),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             utc_summary = response.parsed_body
 
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: summary_params.merge(timezone_offset: -8),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             pst_summary = response.parsed_body
 
             expect(utc_summary['previous']['conversations_count']).to eq(pst_summary['previous']['conversations_count']) if utc_summary['previous']
@@ -165,12 +166,12 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
 
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: jst_params.merge(timezone_offset: 9),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             jst_summary = response.parsed_body
 
             get "/api/v2/accounts/#{account.id}/reports/summary",
                 params: utc_params.merge(timezone_offset: 0),
-                headers: admin.create_new_auth_token, as: :json
+                headers: admin_headers, as: :json
             utc_summary = response.parsed_body
 
             expect(jst_summary['resolutions_count']).to eq(0)
@@ -225,7 +226,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns the inbox label matrix' do
         get "/api/v2/accounts/#{account.id}/reports/inbox_label_matrix",
             params: { since: 1.week.ago.to_i.to_s, until: Time.current.to_i.to_s },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
 
@@ -238,7 +239,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'filters by inbox_ids and label_ids' do
         get "/api/v2/accounts/#{account.id}/reports/inbox_label_matrix",
             params: { inbox_ids: [inbox_one.id], label_ids: [label_one.id] },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
 
@@ -276,7 +277,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns the first response time distribution' do
         get "/api/v2/accounts/#{account.id}/reports/first_response_time_distribution",
             params: { since: 1.week.ago.to_i.to_s, until: Time.current.to_i.to_s },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
 
@@ -288,7 +289,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns correct counts in buckets' do
         get "/api/v2/accounts/#{account.id}/reports/first_response_time_distribution",
             params: { since: 1.week.ago.to_i.to_s, until: Time.current.to_i.to_s },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         body = response.parsed_body
         expect(body['Channel::WebWidget']['0-1h']).to eq(1)
@@ -339,7 +340,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns unprocessable_entity for invalid group_by' do
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'invalid', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
       end
@@ -347,7 +348,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns outgoing message counts grouped by agent' do
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'agent', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
         data = response.parsed_body
@@ -362,7 +363,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns outgoing message counts grouped by team' do
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'team', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
         data = response.parsed_body
@@ -375,7 +376,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
       it 'returns outgoing message counts grouped by inbox' do
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'inbox', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
         data = response.parsed_body
@@ -395,7 +396,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
 
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'label', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         expect(response).to have_http_status(:success)
         data = response.parsed_body
@@ -413,7 +414,7 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
 
         get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
             params: { group_by: 'agent', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
+            headers: admin_headers, as: :json
 
         data = response.parsed_body
         agent_entry = data.find { |e| e['id'] == agent.id }

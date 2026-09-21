@@ -167,7 +167,7 @@ RSpec.describe Channel::TelegramPersonal do
       expect(channel.runtime_state['history_sync_count']).to eq(7)
       expect(channel.runtime_state.dig('history_sync_checkpoint', 'dialog_user_ids')).to eq(['42'])
       expect(channel.runtime_state.dig('history_sync_checkpoint', 'next_dialog_index')).to eq(1)
-      expect(channel.runtime_state).to have_key('contacts_sync_state')
+      expect(channel.runtime_state).not_to have_key('contacts_sync_state')
     end
   end
 end

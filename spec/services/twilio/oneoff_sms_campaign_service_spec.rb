@@ -98,7 +98,7 @@ describe Twilio::OneoffSmsCampaignService do
       ).and_return(twilio_message)
 
       expect(Rails.logger).to receive(:error).with(
-        "[Twilio Campaign #{campaign.id}] Failed to send to #{contact_error.phone_number}: #{error.message}"
+        "[Twilio Campaign #{campaign.id}] Delivery failed for contact=#{contact_error.id}: #{error.class.name}"
       )
 
       sms_campaign_service.perform

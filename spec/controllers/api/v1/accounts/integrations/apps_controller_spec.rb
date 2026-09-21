@@ -28,7 +28,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(apps['action']).to be_nil
       end
 
-      it 'will not return sensitive information for openai app for agents' do
+      it 'does not list the hidden openai app for agents' do
         openai = create(:integrations_hook, :openai, account: account)
         get api_v1_account_integrations_apps_url(account),
             headers: agent.create_new_auth_token,
@@ -37,7 +37,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(response).to have_http_status(:success)
 
         app = response.parsed_body['payload'].find { |int_app| int_app['id'] == openai.app.id }
-        expect(app['hooks'].first['settings']).to be_nil
+        expect(app).to be_nil
       end
 
       it 'returns all active apps with sensitive information if user is an admin' do
@@ -77,7 +77,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         end
       end
 
-      it 'will return sensitive information for openai app for admins' do
+      it 'does not list the hidden openai app for admins' do
         openai = create(:integrations_hook, :openai, account: account)
         get api_v1_account_integrations_apps_url(account),
             headers: admin.create_new_auth_token,
@@ -86,7 +86,7 @@ RSpec.describe 'Integration Apps API', type: :request do
         expect(response).to have_http_status(:success)
 
         app = response.parsed_body['payload'].find { |int_app| int_app['id'] == openai.app.id }
-        expect(app['hooks'].first['settings']).not_to be_nil
+        expect(app).to be_nil
       end
     end
   end

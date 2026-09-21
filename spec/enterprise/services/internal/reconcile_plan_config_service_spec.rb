@@ -7,6 +7,7 @@ RSpec.describe Internal::ReconcilePlanConfigService do
     context 'when pricing plan is community' do
       before do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('community')
+        Redis::Alfred.delete(Redis::Alfred::CHATWOOT_INSTALLATION_CONFIG_RESET_WARNING)
       end
 
       it 'disables the premium features for accounts' do
@@ -29,7 +30,7 @@ RSpec.describe Internal::ReconcilePlanConfigService do
       end
 
       it 'will not create a premium config reset warning if config is not modified' do
-        create(:installation_config, name: 'INSTALLATION_NAME', value: 'Chatwoot')
+        create(:installation_config, name: 'INSTALLATION_NAME', value: 'OneLink')
         service.perform
         expect(Redis::Alfred.get(Redis::Alfred::CHATWOOT_INSTALLATION_CONFIG_RESET_WARNING)).to be_nil
       end
@@ -38,7 +39,7 @@ RSpec.describe Internal::ReconcilePlanConfigService do
         create(:installation_config, name: 'INSTALLATION_NAME', value: 'custom-name')
         create(:installation_config, name: 'LOGO', value: '/custom-path/logo.svg')
         service.perform
-        expect(InstallationConfig.find_by(name: 'INSTALLATION_NAME').value).to eq('Chatwoot')
+        expect(InstallationConfig.find_by(name: 'INSTALLATION_NAME').value).to eq('OneLink')
         expect(InstallationConfig.find_by(name: 'LOGO').value).to eq('/brand-assets/logo.svg')
       end
     end

@@ -831,12 +831,16 @@ RSpec.describe ConversationReplyMailer do
     end
 
     context 'when support_email is malformed' do
-      let(:account) { create(:account, support_email: 'Smith Smith') }
+      let(:account) { create(:account) }
       let(:conversation) { create(:conversation, assignee: agent, account: account).reload }
       let(:message) { create(:message, message_type: :outgoing, conversation: conversation, account: account, inbox: conversation.inbox) }
       let(:mail) { described_class.reply_with_summary(message.conversation, message.id).deliver_now }
 
       before do
+        # Build a malformed persisted legacy value that current validation rejects.
+        # rubocop:disable Rails/SkipsModelValidations
+        account.update_column(:support_email, 'Smith Smith')
+        # rubocop:enable Rails/SkipsModelValidations
         account.enable_features('inbound_emails')
         account.domain = 'example.com'
         account.save!(validate: false)

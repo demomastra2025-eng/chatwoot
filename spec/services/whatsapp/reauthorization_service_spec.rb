@@ -34,7 +34,7 @@ RSpec.describe Whatsapp::ReauthorizationService do
     setup_service = instance_double(Whatsapp::WebhookSetupService)
     allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(setup_service)
     allow(setup_service).to receive(:perform)
-    stub_request(:get, 'https://graph.facebook.com/v22.0/waba-1/message_templates')
+    stub_request(:get, 'https://graph.facebook.com/v25.0/waba-1/message_templates')
       .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
   end
 
@@ -142,7 +142,7 @@ RSpec.describe Whatsapp::ReauthorizationService do
       )
     )
     allow(Whatsapp::WabaLock).to receive(:with_locks).and_yield
-    stub_request(:get, 'https://graph.facebook.com/v22.0/waba-destination/message_templates')
+    stub_request(:get, 'https://graph.facebook.com/v25.0/waba-destination/message_templates')
       .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
 
     service = described_class.new(

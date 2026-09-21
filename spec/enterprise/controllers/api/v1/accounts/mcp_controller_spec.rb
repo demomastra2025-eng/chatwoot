@@ -375,7 +375,11 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(json_response.dig(:result, :isError)).to be(true)
-      expect(json_response.dig(:result, :structuredContent)).to include(error: 'Resource could not be found')
+      expect(json_response.dig(:result, :structuredContent)).to include(
+        code: 'openapi_http_error',
+        message: 'Resource could not be found',
+        status: 404
+      )
       expect(response.body).not_to include('Internal Server Error')
       expect(response.body).not_to include('AutomationRule')
     end

@@ -1,6 +1,17 @@
 require 'rails_helper'
 
 RSpec.describe 'SwitchLocale Concern', type: :controller do
+  around do |example|
+    previous_available_locales = I18n.available_locales
+    previous_default_locale = I18n.default_locale
+    I18n.available_locales = LANGUAGES_CONFIG.map { |_index, language| language[:iso_639_1_code].to_sym }
+    I18n.default_locale = :en
+    I18n.with_locale(:en) { example.run }
+  ensure
+    I18n.available_locales = previous_available_locales
+    I18n.default_locale = previous_default_locale
+  end
+
   controller(ApplicationController) do
     include SwitchLocale
 

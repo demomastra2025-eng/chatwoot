@@ -422,7 +422,7 @@ describe ReportingEventListener do
       context 'when business hours enabled for inbox' do
         let(:resolved_time) { Time.zone.parse('March 20, 2022 12:00') }
         let(:reopened_time) { Time.zone.parse('March 21, 2022 14:00') }
-        let!(:business_hours_inbox) { create(:inbox, working_hours_enabled: true, account: account) }
+        let!(:business_hours_inbox) { create(:inbox, working_hours_enabled: true, timezone: 'UTC', account: account) }
         let!(:business_hours_conversation) do
           create(:conversation, account: account, inbox: business_hours_inbox, assignee: user, updated_at: reopened_time)
         end

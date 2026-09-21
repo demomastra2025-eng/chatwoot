@@ -3,10 +3,10 @@ require 'rails_helper'
 RSpec.describe V2::Reports::LabelSummaryBuilder do
   include ActiveJob::TestHelper
 
-  let_it_be(:account) { create(:account) }
-  let_it_be(:label_1) { create(:label, title: 'label_1', account: account) }
-  let_it_be(:label_2) { create(:label, title: 'label_2', account: account) }
-  let_it_be(:label_3) { create(:label, title: 'label_3', account: account) }
+  let(:account) { create(:account) }
+  let!(:label_1) { create(:label, title: 'label_1', account: account) }
+  let!(:label_2) { create(:label, title: 'label_2', account: account) }
+  let!(:label_3) { create(:label, title: 'label_3', account: account) }
 
   let(:params) do
     {
@@ -85,6 +85,7 @@ RSpec.describe V2::Reports::LabelSummaryBuilder do
 
     context 'when there are labeled conversations with metrics' do
       before do
+        clear_enqueued_jobs
         travel_to(Time.zone.today) do
           user = create(:user, account: account)
           inbox = create(:inbox, account: account)
