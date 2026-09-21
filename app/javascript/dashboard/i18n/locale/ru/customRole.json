@@ -110,6 +110,7 @@
       "REPORT_MANAGE": "Управление отчетами",
       "KNOWLEDGE_BASE_MANAGE": "Управление базой знаний",
       "CAPTAIN_MANAGE": "Управление AI-агентами",
+      "AUTOMATION_MANAGE": "Управление автоматизацией",
       "SCHEDULING_OVERRIDE": "Подтверждать конфликты расписания"
     },
     "FORM": {

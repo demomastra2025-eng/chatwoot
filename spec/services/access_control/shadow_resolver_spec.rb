@@ -22,6 +22,16 @@ RSpec.describe AccessControl::ShadowResolver do
       expect(result).to have_attributes(status: 'resolved', scope: 'none', reason: 'missing_grant')
     end
 
+    it 'recognizes schema-independent Automation management without bootstrapping a grant' do
+      account = create(:account)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      account_user = create(:account_user, account: account, role: :administrator)
+
+      result = described_class.call(account_user: account_user, resource: 'automation_rules', capability: 'manage')
+
+      expect(result).to have_attributes(status: 'resolved', scope: 'none', reason: 'missing_grant')
+    end
+
     it 'is unresolved when no access role is assigned' do
       account_user = create(:account_user)
 

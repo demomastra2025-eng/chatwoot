@@ -49,6 +49,18 @@ RSpec.describe AccessRoleGrant do
       expect(grant.errors[:capability]).to include('is not supported for this resource')
     end
 
+    it 'allows only account-wide scopes for Automation management' do
+      grant.resource = 'automation_rules'
+      grant.capability = 'manage'
+      grant.access_scope = 'team'
+
+      expect(grant).not_to be_valid
+      expect(grant.errors[:access_scope]).to include('is not supported for this resource')
+
+      grant.access_scope = 'all'
+      expect(grant).to be_valid
+    end
+
     it 'allows only one grant per role, resource and capability' do
       existing = create(:access_role_grant)
       duplicate = build(

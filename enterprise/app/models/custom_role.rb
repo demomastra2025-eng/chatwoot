@@ -25,6 +25,7 @@
 # - 'report_manage': Can manage reports.
 # - 'knowledge_base_manage': Can manage knowledge base portals.
 # - 'captain_manage': Can manage AI agents.
+# - 'automation_manage': Can manage automation rules.
 
 class CustomRole < ApplicationRecord
   include AccessControl::AccountLockable
@@ -52,6 +53,7 @@ class CustomRole < ApplicationRecord
     report_manage
     knowledge_base_manage
     captain_manage
+    automation_manage
     scheduling_override
   ].freeze
 
