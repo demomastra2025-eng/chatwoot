@@ -4,50 +4,58 @@ require 'rails_helper'
 
 RSpec.describe WorkingHour, locale: :en do
   context 'when on monday 10am' do
+    let(:inbox) { create(:inbox, timezone: 'UTC') }
+
     before do
       Time.zone = 'UTC'
-      create(:working_hour)
+      inbox
       travel_to '26.10.2020 10:00'.to_datetime
     end
 
     it 'is considered working hour' do
-      expect(described_class.today.open_now?).to be true
+      expect(inbox.working_hours.today.open_now?).to be true
     end
   end
 
   context 'when on sunday 1pm' do
+    let(:inbox) { create(:inbox, timezone: 'UTC') }
+
     before do
       Time.zone = 'UTC'
-      create(:working_hour, day_of_week: 0, closed_all_day: true)
+      inbox
       travel_to '01.11.2020 13:00'.to_datetime
     end
 
     it 'is considered out of office' do
-      expect(described_class.today.closed_now?).to be true
+      expect(inbox.working_hours.today.closed_now?).to be true
     end
   end
 
   context 'when on friday 12:30pm' do
+    let(:inbox) { create(:inbox, timezone: 'UTC') }
+
     before do
       Time.zone = 'UTC'
-      create(:inbox, timezone: 'UTC')
+      inbox
       travel_to '10.09.2021 12:30'.to_datetime
     end
 
     it 'is considered to be in business hours' do
-      expect(described_class.today.open_now?).to be true
+      expect(inbox.working_hours.today.open_now?).to be true
     end
   end
 
   context 'when on friday 17:30pm' do
+    let(:inbox) { create(:inbox, timezone: 'UTC') }
+
     before do
       Time.zone = 'UTC'
-      create(:working_hour)
+      inbox
       travel_to '10.09.2021 17:30'.to_datetime
     end
 
     it 'is considered out of office' do
-      expect(described_class.today.closed_now?).to be true
+      expect(inbox.working_hours.today.closed_now?).to be true
     end
   end
 
@@ -61,11 +69,11 @@ RSpec.describe WorkingHour, locale: :en do
     end
 
     it 'updates open hour and close hour' do
-      expect(described_class.today.open_all_day?).to be true
-      expect(described_class.today.open_hour).to be 0
-      expect(described_class.today.open_minutes).to be 0
-      expect(described_class.today.close_hour).to be 23
-      expect(described_class.today.close_minutes).to be 59
+      expect(inbox.working_hours.today.open_all_day?).to be true
+      expect(inbox.working_hours.today.open_hour).to be 0
+      expect(inbox.working_hours.today.open_minutes).to be 0
+      expect(inbox.working_hours.today.close_hour).to be 23
+      expect(inbox.working_hours.today.close_minutes).to be 59
     end
   end
 
@@ -99,7 +107,7 @@ RSpec.describe WorkingHour, locale: :en do
     end
 
     it 'is considered working hour' do
-      expect(described_class.today.open_now?).to be true
+      expect(inbox.working_hours.today.open_now?).to be true
     end
   end
 end
