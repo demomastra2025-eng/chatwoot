@@ -15,9 +15,6 @@ import {
   prepareWhatsAppMessagePayload,
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
-import { useCopilotReply } from 'dashboard/composables/useCopilotReply';
-import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
-
 import ContactSelector from './ContactSelector.vue';
 import InboxSelector from './InboxSelector.vue';
 import EmailOptions from './EmailOptions.vue';
@@ -25,7 +22,6 @@ import MessageEditor from './MessageEditor.vue';
 import ActionButtons from './ActionButtons.vue';
 import InboxEmptyState from './InboxEmptyState.vue';
 import AttachmentPreviews from './AttachmentPreviews.vue';
-import CopilotReplyBottomPanel from 'dashboard/components/widgets/WootWriter/CopilotReplyBottomPanel.vue';
 
 const props = defineProps({
   contacts: { type: Array, default: () => [] },
@@ -55,8 +51,6 @@ const emit = defineEmits([
 ]);
 
 const DEFAULT_FORMATTING = 'Context::Default';
-
-const copilot = useCopilotReply();
 
 const showContactsDropdown = ref(false);
 const showInboxesDropdown = ref(false);
@@ -225,7 +219,6 @@ const stripMessageFormatting = channelType => {
 
 const handleInboxAction = ({ value, action, channelType, medium, ...rest }) => {
   v$.value.$reset();
-  copilot.reset(false);
 
   // Strip unsupported formatting when changing the target inbox
   if (channelType) {
@@ -252,7 +245,6 @@ const removeSignatureFromMessage = () => {
 
 const removeTargetInbox = value => {
   v$.value.$reset();
-  copilot.reset(false);
   removeSignatureFromMessage();
 
   stripMessageFormatting(DEFAULT_FORMATTING);
@@ -262,7 +254,6 @@ const removeTargetInbox = value => {
 };
 
 const clearSelectedContact = () => {
-  copilot.reset(false);
   removeSignatureFromMessage();
   emit('clearSelectedContact');
   state.message = '';
@@ -294,7 +285,6 @@ const handleAttachFile = files => {
 };
 
 const clearForm = () => {
-  copilot.reset(false);
   Object.assign(state, {
     message: '',
     subject: '',
@@ -358,24 +348,6 @@ const shouldShowMessageEditor = computed(() => {
     !inboxTypes.value.isTwilioWhatsapp
   );
 });
-
-const isCopilotActive = computed(() => copilot.isActive?.value ?? false);
-
-const onSubmitCopilotReply = () => {
-  const acceptedMessage = copilot.accept();
-  state.message = acceptedMessage;
-};
-
-useKeyboardEvents({
-  '$mod+Enter': {
-    action: () => {
-      if (isCopilotActive.value && !copilot.isButtonDisabled.value) {
-        onSubmitCopilotReply();
-      }
-    },
-    allowOnFocusedInput: true,
-  },
-});
 </script>
 
 <template>
@@ -435,7 +407,6 @@ useKeyboardEvents({
         :has-errors="validationStates.isMessageInvalid"
         :channel-type="inboxChannelType"
         :medium="targetInbox?.medium || ''"
-        :copilot="copilot"
       />
 
       <AttachmentPreviews
@@ -445,15 +416,7 @@ useKeyboardEvents({
       />
     </div>
 
-    <CopilotReplyBottomPanel
-      v-if="isCopilotActive && !inboxTypes.isVoice"
-      :is-generating-content="copilot.isButtonDisabled.value"
-      class="h-[3.25rem] !px-4 !py-2"
-      @submit="onSubmitCopilotReply"
-      @cancel="copilot.reset"
-    />
     <ActionButtons
-      v-else
       :attached-files="state.attachedFiles"
       :is-whatsapp-inbox="inboxTypes.isWhatsapp"
       :is-whatsapp-reply-window-open="isWhatsappReplyWindowOpen"

@@ -1,15 +1,13 @@
 <script>
 import { ref, provide, useTemplateRef } from 'vue';
 import { useElementSize } from '@vueuse/core';
-// composable
-import { useLabelSuggestions } from 'dashboard/composables/useLabelSuggestions';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { useAlert } from 'dashboard/composables';
 
 // components
 import ReplyBox from './ReplyBox.vue';
 import MessageList from 'next/message/MessageList.vue';
-import ConversationLabelSuggestion from './conversation/LabelSuggestion.vue';
+
 import Banner from 'dashboard/components/ui/Banner.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -30,7 +28,7 @@ import {
   scrollConversationPanelToBottom,
   scrollElementIntoConversationPanel,
 } from './helpers/scrollTopCalculationHelper';
-import { LocalStorage } from 'shared/helpers/localStorage';
+
 import {
   filterDuplicateSourceMessages,
   getUnreadIncomingMessages,
@@ -47,8 +45,6 @@ import {
 // constants
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { REPLY_POLICY } from 'shared/constants/links';
-import wootConstants from 'dashboard/constants/globals';
-import { LOCAL_STORAGE_KEYS } from 'dashboard/constants/localStorage';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 
 export default {
@@ -56,7 +52,6 @@ export default {
     MessageList,
     ReplyBox,
     Banner,
-    ConversationLabelSuggestion,
     Spinner,
     Icon,
     ResizableEditorWrapper,
@@ -71,18 +66,9 @@ export default {
     const { height: containerHeight } = useElementSize(messagesViewRef);
     const { height: topBannerHeight } = useElementSize(topBannerRef);
 
-    const {
-      captainTasksEnabled,
-      isLabelSuggestionFeatureEnabled,
-      getLabelSuggestions,
-    } = useLabelSuggestions();
-
     provide('contextMenuElementTarget', conversationPanelRef);
 
     return {
-      captainTasksEnabled,
-      getLabelSuggestions,
-      isLabelSuggestionFeatureEnabled,
       conversationPanelRef,
       resizableEditorWrapperRef,
       messagesViewRef,
@@ -98,8 +84,7 @@ export default {
       conversationPanel: null,
       hasUserScrolled: false,
       isProgrammaticScroll: false,
-      messageSentSinceOpened: false,
-      labelSuggestions: [],
+
       isCancellingCaptainResponse: false,
       conversationHistoryGeneration: 0,
       openedUnreadMessageIds: [],
@@ -115,19 +100,8 @@ export default {
       currentChat: 'getSelectedChat',
       currentUserId: 'getCurrentUserID',
       listLoadingStatus: 'getAllMessagesLoaded',
-      currentAccountId: 'getCurrentAccountId',
     }),
-    isOpen() {
-      return this.currentChat?.status === wootConstants.STATUS_TYPE.OPEN;
-    },
-    shouldShowLabelSuggestions() {
-      return (
-        this.isOpen &&
-        this.captainTasksEnabled &&
-        this.isLabelSuggestionFeatureEnabled &&
-        !this.messageSentSinceOpened
-      );
-    },
+
     inboxId() {
       return this.currentChat.inbox_id;
     },
@@ -357,8 +331,7 @@ export default {
       }
       this.conversationHistoryGeneration += 1;
       this.hasUserScrolled = false;
-      this.fetchSuggestions();
-      this.messageSentSinceOpened = false;
+
       this.openedUnreadMessageIds = [];
       this.openedUnreadMessageCount = 0;
       this.openedFirstUnreadMessageId = null;
@@ -370,16 +343,10 @@ export default {
 
   created() {
     emitter.on(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);
-    // when a message is sent we set the flag to true this hides the label suggestions,
-    // until the chat is changed and the flag is reset in the watch for currentChat
-    emitter.on(BUS_EVENTS.MESSAGE_SENT, () => {
-      this.messageSentSinceOpened = true;
-    });
   },
 
   mounted() {
     this.addScrollListener();
-    this.fetchSuggestions();
   },
 
   unmounted() {
@@ -389,47 +356,6 @@ export default {
   },
 
   methods: {
-    async fetchSuggestions() {
-      // start empty, this ensures that the label suggestions are not shown
-      this.labelSuggestions = [];
-
-      if (this.isLabelSuggestionDismissed()) {
-        return;
-      }
-
-      // Early exit if conversation already has labels - no need to suggest more
-      const existingLabels = this.currentChat?.labels || [];
-      if (existingLabels.length > 0) return;
-
-      if (!this.captainTasksEnabled || !this.isLabelSuggestionFeatureEnabled) {
-        return;
-      }
-
-      this.labelSuggestions = await this.getLabelSuggestions();
-
-      // once the labels are fetched, we need to scroll to bottom
-      // but we need to wait for the DOM to be updated
-      // so we use the nextTick method
-      this.$nextTick(() => {
-        // this param is added to route, telling the UI to navigate to the message
-        // it is triggered by the SCROLL_TO_MESSAGE method
-        // see setActiveChat on ConversationView.vue for more info
-        const { messageId } = this.$route.query;
-
-        // only trigger the scroll to bottom if the user has not scrolled
-        // and there's no active messageId that is selected in view
-        if (!messageId && !this.hasUserScrolled) {
-          this.scrollToBottom();
-        }
-      });
-    },
-    isLabelSuggestionDismissed() {
-      return LocalStorage.getFlag(
-        LOCAL_STORAGE_KEYS.DISMISSED_LABEL_SUGGESTIONS,
-        this.currentAccountId,
-        this.currentChat.id
-      );
-    },
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);
     },
@@ -530,16 +456,6 @@ export default {
       if (!this.conversationPanel) return false;
 
       this.isProgrammaticScroll = true;
-
-      const labelSuggestions =
-        this.conversationPanel.querySelector('.label-suggestion');
-      if (labelSuggestions) {
-        return scrollElementIntoConversationPanel(
-          this.conversationPanel,
-          labelSuggestions,
-          { block: 'end' }
-        );
-      }
 
       return scrollConversationPanelToBottom(this.conversationPanel);
     },
@@ -755,14 +671,6 @@ export default {
             {{ unreadMessageLabel }}
           </span>
         </li>
-      </template>
-      <template #after>
-        <ConversationLabelSuggestion
-          v-if="shouldShowLabelSuggestions"
-          :suggested-labels="labelSuggestions"
-          :chat-labels="currentChat.labels"
-          :conversation-id="currentChat.id"
-        />
       </template>
     </MessageList>
     <div class="flex relative flex-col bg-n-surface-1">

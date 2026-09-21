@@ -40,7 +40,7 @@ export const FEATURE_FLAGS = {
   CONTACT_CHATWOOT_SUPPORT_TEAM: 'contact_chatwoot_support_team',
   CAPTAIN_CUSTOM_TOOLS: 'custom_tools',
   CAPTAIN_V2: 'captain_integration_v2',
-  CAPTAIN_TASKS: 'captain_tasks',
+
   QUOTED_EMAIL_REPLY: 'quoted_email_reply',
   COMPANIES: 'companies',
   ADVANCED_SEARCH: 'advanced_search',

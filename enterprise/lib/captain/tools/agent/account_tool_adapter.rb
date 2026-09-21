@@ -75,7 +75,11 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def delegate_class
-    definition&.assistant_tool_class || raise(ArgumentError, "No delegate tool class registered for #{tool_id}")
+    account_tool_class || raise(ArgumentError, "No delegate tool class registered for #{tool_id}")
+  end
+
+  def account_tool_class
+    definition&.assistant_tool_class
   end
 
   def schema_delegate

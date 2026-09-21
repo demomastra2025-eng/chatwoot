@@ -209,7 +209,29 @@ RSpec.describe Captain::ToolRegistry do
 
   describe '.resolve_assistant_tool_class' do
     it 'uses the explicit registry mapping for assistant tools' do
-      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Copilot::FaqLookupService)
+      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Account::FaqLookupService)
+    end
+
+    it 'uses neutral account-tool ownership outside the Automation-owned compatibility boundary' do
+      automation_tool_ids = %w[
+        list_automation_rules
+        get_automation_rule
+        create_automation_rule
+        update_automation_rule
+        set_automation_rule_status
+        delete_automation_rule
+      ]
+
+      described_class.definitions.each do |definition|
+        tool_class = definition.assistant_tool_class
+        next if tool_class.blank? || tool_class == Captain::Tools::SearchDocumentationService
+
+        if automation_tool_ids.include?(definition.id)
+          expect(tool_class.to_s).to start_with('Captain::Tools::Copilot::')
+        else
+          expect(tool_class.to_s).to start_with('Captain::Tools::Account::')
+        end
+      end
     end
   end
 
