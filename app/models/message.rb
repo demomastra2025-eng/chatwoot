@@ -153,11 +153,14 @@ class Message < ApplicationRecord
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
+  after_create :capture_automation_create_event
   after_create_commit :execute_after_create_commit_callbacks
+  after_commit :clear_automation_capture_state, on: :create
 
   after_update_commit :dispatch_update_event
   after_commit :refresh_communication_thread, on: [:update, :destroy], if: :communication_thread_refresh_required?
   after_commit :reindex_for_search, if: :should_index?, on: [:create, :update]
+  after_rollback :clear_automation_capture_state, on: :create
 
   def channel_token
     @token ||= inbox.channel.try(:page_access_token)
@@ -469,6 +472,23 @@ class Message < ApplicationRecord
     else
       update_waiting_since
     end
+  end
+
+  def capture_automation_create_event
+    return if runtime_events_suppressed?
+
+    @automation_create_occurrence_id ||= SecureRandom.uuid
+    AutomationRules::Events::CaptureService.capture_model_event!(
+      record: self,
+      event_name: MESSAGE_CREATED,
+      payload_snapshot: AutomationRules::Events::MatchingSnapshot.for(self),
+      producer: 'message_model',
+      occurrence_id: @automation_create_occurrence_id
+    )
+  end
+
+  def clear_automation_capture_state
+    @automation_create_occurrence_id = nil
   end
 
   def dispatch_update_event

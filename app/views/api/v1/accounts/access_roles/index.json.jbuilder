@@ -5,8 +5,10 @@ json.data @access_roles do |access_role|
 end
 
 json.meta do
-  json.resources AccessRoleGrant::RESOURCE_CAPABILITIES
+  serialized_resources = AccessControl::SystemRoleCatalog::BOOTSTRAP_RESOURCES
+  json.resources AccessRoleGrant::RESOURCE_CAPABILITIES.slice(*serialized_resources)
   json.access_scopes AccessRoleGrant::ACCESS_SCOPES
+  json.resource_access_scopes AccessRoleGrant::RESOURCE_ACCESS_SCOPES.slice(*serialized_resources)
   json.mutations_enabled AccessControl::AccessRoleMutator.mutations_enabled_for?(account: Current.account)
   json.legacy_mutations_enabled AccessControl::AccessRoleMutator.legacy_mutations_enabled_for?(account: Current.account)
   json.assignments_enabled AccessControl::AccessRoleAssigner.assignments_enabled_for?(account: Current.account)

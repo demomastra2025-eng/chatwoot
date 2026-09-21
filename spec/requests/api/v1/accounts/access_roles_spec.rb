@@ -45,8 +45,9 @@ RSpec.describe 'Access Roles API', type: :request do
         'access_scope' => 'all'
       )
       expect(payload.fetch('meta')).to eq(
-        'resources' => AccessRoleGrant::RESOURCE_CAPABILITIES,
+        'resources' => AccessRoleGrant::RESOURCE_CAPABILITIES.slice(*AccessControl::SystemRoleCatalog::BOOTSTRAP_RESOURCES),
         'access_scopes' => AccessRoleGrant::ACCESS_SCOPES,
+        'resource_access_scopes' => AccessRoleGrant::RESOURCE_ACCESS_SCOPES.slice(*AccessControl::SystemRoleCatalog::BOOTSTRAP_RESOURCES),
         'mutations_enabled' => false,
         'legacy_mutations_enabled' => true,
         'assignments_enabled' => false,

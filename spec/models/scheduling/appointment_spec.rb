@@ -169,6 +169,60 @@ RSpec.describe Scheduling::Appointment do
       Current.reset
     end
 
+    it 'preserves coalesced changes and provider provenance until legacy commit dispatch' do
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      appointment.mark_medelement_provider_reconciled!
+      described_class.transaction do
+        appointment.update!(client_name: 'Provider Client')
+        appointment.update!(status: 'cancelled')
+      end
+
+      updated_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(updated_event.last[:changed_attributes].keys).to include('client_name', 'status')
+      expect(updated_event.last[:medelement_provider_reconciled]).to be(true)
+    end
+
+    it 'clears create-transaction update state before a later update' do
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      created_appointment = nil
+      described_class.transaction do
+        created_appointment = create(:scheduling_appointment)
+        created_appointment.mark_medelement_provider_reconciled!
+        created_appointment.update!(client_name: 'Updated During Create')
+      end
+
+      durable_events = AutomationEvent.where(
+        subject_type: described_class.base_class.name,
+        subject_id: created_appointment.id
+      )
+      created_event = durable_events.find_by!(event_name: 'appointment_created')
+      expect(created_event).to be_present
+      transient_state = %i[
+        @updated_changes_for_commit @medelement_provider_reconciled
+        @automation_create_occurrence_id @automation_update_occurrence_id
+      ].map { |name| created_appointment.instance_variable_get(name) }
+      expect(transient_state).to all(be_nil)
+
+      captured_events.clear
+      created_appointment.update!(status: 'cancelled')
+
+      updated_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(updated_event.last[:changed_attributes].keys).to contain_exactly('status')
+      expect(updated_event.last[:medelement_provider_reconciled]).to be(false)
+
+      durable_update = durable_events.find_by!(event_name: 'appointment_updated')
+      expect(durable_update.changes_snapshot.keys).to contain_exactly('status')
+      expect(durable_update.dedupe_key.split(':').last).not_to eq(created_event.dedupe_key.split(':').last)
+    end
+
     it 'dispatches appointment.completed when status changes to completed' do
       captured_events = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|

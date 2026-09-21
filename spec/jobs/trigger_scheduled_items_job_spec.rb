@@ -35,6 +35,16 @@ RSpec.describe TriggerScheduledItemsJob do
     described_class.perform_now
   end
 
+  it 'only enqueues the new Automation replay class after fleet activation' do
+    allow(AutomationRules::ReplayEventsJob).to receive(:perform_later)
+
+    with_modified_env(AUTOMATION_DURABLE_EVENT_PUBLICATION_ENABLED: 'false') { described_class.perform_now }
+    expect(AutomationRules::ReplayEventsJob).not_to have_received(:perform_later)
+
+    with_modified_env(AUTOMATION_DURABLE_EVENT_PUBLICATION_ENABLED: 'true') { described_class.perform_now }
+    expect(AutomationRules::ReplayEventsJob).to have_received(:perform_later).once
+  end
+
   context 'when unexecuted Scheduled campaign jobs' do
     let!(:twilio_sms) { create(:channel_twilio_sms, account: account) }
     let!(:twilio_inbox) { create(:inbox, channel: twilio_sms, account: account) }

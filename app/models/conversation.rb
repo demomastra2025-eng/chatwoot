@@ -132,12 +132,17 @@ class Conversation < ApplicationRecord
   before_create :determine_conversation_status
   before_create :ensure_waiting_since
 
+  after_create :capture_automation_create_event
+  after_update :capture_automation_updated_changes_for_commit
+  before_commit :capture_automation_update_events, on: :update
   after_update_commit :execute_after_update_commit_callbacks
   after_create_commit :notify_conversation_creation
   after_create_commit :load_attributes_created_by_db_triggers
   after_create_commit :sync_contact_owner_from_assignee
   after_create_commit :ensure_communication_thread, if: :communication_threads_enabled?
   after_create_commit :auto_create_crm_deal_from_channel_contact
+  after_commit :clear_automation_updated_changes
+  after_rollback :clear_automation_updated_changes
 
   delegate :auto_resolve_after, to: :account
 
@@ -385,6 +390,72 @@ class Conversation < ApplicationRecord
     dispatcher_dispatch(CONVERSATION_CREATED)
   end
 
+  def capture_automation_create_event
+    @automation_create_occurrence_id ||= SecureRandom.uuid
+    capture_automation_event(CONVERSATION_CREATED, {}, @automation_create_occurrence_id)
+  end
+
+  def capture_automation_update_events
+    return if runtime_events_suppressed?
+
+    changed_attributes = automation_updated_changes
+    return if changed_attributes.blank?
+
+    @automation_update_occurrence_id ||= SecureRandom.uuid
+    capture_automation_status_events(changed_attributes)
+    if ai_transfer_state_entered?(changed_attributes)
+      capture_automation_event(
+        CONVERSATION_TRANSFERRED_TO_AI,
+        { 'status' => changed_attributes['status'] },
+        @automation_update_occurrence_id
+      )
+    end
+    return unless automation_allowed_keys?(changed_attributes)
+
+    capture_automation_event(CONVERSATION_UPDATED, changed_attributes, @automation_update_occurrence_id)
+  end
+
+  def capture_automation_status_events(changed_attributes)
+    status_change = changed_attributes['status']
+    return if status_change.blank?
+
+    changes = { 'status' => status_change }
+    capture_automation_event(CONVERSATION_OPENED, changes, @automation_update_occurrence_id) if open?
+    capture_automation_event(CONVERSATION_RESOLVED, changes, @automation_update_occurrence_id) if resolved?
+    capture_automation_event(CONVERSATION_PENDING, changes, @automation_update_occurrence_id) if pending?
+  end
+
+  def capture_automation_event(event_name, changed_attributes, occurrence_id)
+    return if runtime_events_suppressed?
+
+    AutomationRules::Events::CaptureService.capture_model_event!(
+      record: self,
+      event_name: event_name,
+      payload_snapshot: AutomationRules::Events::MatchingSnapshot.for(self),
+      changes_snapshot: changed_attributes || {},
+      producer: 'conversation_model',
+      occurrence_id: occurrence_id
+    )
+  end
+
+  def capture_automation_updated_changes_for_commit
+    @automation_updated_changes ||= {}
+    saved_changes.each do |attribute, (previous_value, current_value)|
+      original_value = @automation_updated_changes.key?(attribute) ? @automation_updated_changes.dig(attribute, 0) : previous_value
+      @automation_updated_changes[attribute] = [original_value, current_value]
+    end
+  end
+
+  def automation_updated_changes
+    (@automation_updated_changes.presence || previous_changes).except('updated_at', :updated_at)
+  end
+
+  def clear_automation_updated_changes
+    @automation_updated_changes = nil
+    @automation_update_occurrence_id = nil
+    @automation_create_occurrence_id = nil
+  end
+
   def notify_conversation_updation
     return if runtime_events_suppressed?
     return unless previous_changes.keys.present? && allowed_keys?
@@ -402,6 +473,14 @@ class Conversation < ApplicationRecord
       previous_changes.keys.intersect?(list_of_keys) ||
       (previous_changes['additional_attributes'].present? && previous_changes['additional_attributes'][1].keys.intersect?(%w[conversation_language]))
     )
+  end
+
+  def automation_allowed_keys?(changes)
+    return true if changes.keys.intersect?(list_of_keys)
+
+    additional_attributes = changes['additional_attributes']
+    additional_attributes.is_a?(Array) && additional_attributes[1].is_a?(Hash) &&
+      additional_attributes[1].keys.intersect?(%w[conversation_language call_status])
   end
 
   def load_attributes_created_by_db_triggers
@@ -436,12 +515,12 @@ class Conversation < ApplicationRecord
     dispatcher_dispatch(CONVERSATION_TRANSFERRED_TO_AI, ai_transfer_changed_attributes)
   end
 
-  def ai_transfer_state_entered?
-    ai_pending_state_entered?
+  def ai_transfer_state_entered?(changes = previous_changes)
+    ai_pending_state_entered?(changes)
   end
 
-  def ai_pending_state_entered?
-    saved_change_to_status? && pending? && ai_pending_handler_present?
+  def ai_pending_state_entered?(changes = previous_changes)
+    changes['status'].present? && pending? && ai_pending_handler_present?
   end
 
   def ai_pending_handler_present?

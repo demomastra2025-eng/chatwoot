@@ -1,6 +1,25 @@
 require 'rails_helper'
 
 RSpec.describe AutomationEvent do
+  it 'keeps the committed envelope retryable with persisted backoff when the wakeup queue is unavailable' do
+    allow(AutomationRules::PublishEventJob).to receive(:perform_later!).and_raise(StandardError, 'queue unavailable')
+
+    event = with_modified_env(AUTOMATION_DURABLE_EVENT_PUBLICATION_ENABLED: 'true') { create(:automation_event) }
+
+    expect(event.reload).to have_attributes(status: 'retrying')
+    expect(event.next_attempt_at).to be > Time.current
+    expect(event.last_error).to include('StandardError: queue unavailable')
+  end
+
+  it 'captures while avoiding any new worker-class wakeup before fleet activation' do
+    allow(AutomationRules::Events::WakeupService).to receive(:enqueue_one!)
+
+    event = with_modified_env(AUTOMATION_DURABLE_EVENT_PUBLICATION_ENABLED: 'false') { create(:automation_event) }
+
+    expect(event).to be_persisted
+    expect(AutomationRules::Events::WakeupService).not_to have_received(:enqueue_one!)
+  end
+
   it 'builds a valid event from the factory' do
     expect(build(:automation_event)).to be_valid
   end

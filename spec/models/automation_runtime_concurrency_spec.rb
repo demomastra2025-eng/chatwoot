@@ -25,6 +25,26 @@ RSpec.describe 'Automation runtime uniqueness under concurrent writers' do
     expect(AutomationEvent.where(account: account, dedupe_key: 'same-event').count).to eq(1)
   end
 
+  it 'returns the same winner to concurrent idempotent capture callers' do
+    conversation = create(:conversation, account: account)
+    AutomationEvent.where(account: account).delete_all
+    envelope = {
+      account: account,
+      event_name: 'conversation_updated',
+      subject: conversation,
+      payload_snapshot: { snapshot_version: 1 },
+      producer: 'concurrency_spec',
+      provenance: { source: 'spec' },
+      dedupe_key: 'concurrent-capture'
+    }
+
+    results = race_create { AutomationRules::Events::CaptureService.capture!(**envelope) }
+
+    expect(results).to all(be_a(AutomationEvent))
+    expect(results.map(&:id).uniq.one?).to be(true)
+    expect(AutomationEvent.where(account: account, dedupe_key: 'concurrent-capture').count).to eq(1)
+  end
+
   it 'allows only one selected rule per event and first-match group' do
     group = create(:automation_rule_group, account: account)
     rules = [0, 1].map { |position| create(:automation_rule, account: account, automation_rule_group: group, position: position) }

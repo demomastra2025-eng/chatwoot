@@ -27,7 +27,8 @@
         "CONVERSATIONS": "Диалоги",
         "APPOINTMENTS": "Записи",
         "DEALS": "Сделки",
-        "TASKS": "Задачи"
+        "TASKS": "Задачи",
+        "AUTOMATION_RULES": "Правила автоматизации"
       },
       "CAPABILITIES": {
         "VIEW": "Просмотр",
@@ -44,7 +45,8 @@
         "VIEW_REPORTS": "Просмотр отчётов",
         "VIEW_FINANCE": "Просмотр финансов",
         "MANAGE_FINANCE": "Управление финансами",
-        "OVERRIDE_SCHEDULE": "Подтверждение конфликтов расписания"
+        "OVERRIDE_SCHEDULE": "Подтверждение конфликтов расписания",
+        "MANAGE": "Управление"
       },
       "SCOPES": {
         "NONE": "Нет",
@@ -110,6 +112,7 @@
       "REPORT_MANAGE": "Управление отчетами",
       "KNOWLEDGE_BASE_MANAGE": "Управление базой знаний",
       "CAPTAIN_MANAGE": "Управление AI-агентами",
+      "AUTOMATION_MANAGE": "Управление автоматизацией",
       "SCHEDULING_OVERRIDE": "Подтверждать конфликты расписания"
     },
     "FORM": {

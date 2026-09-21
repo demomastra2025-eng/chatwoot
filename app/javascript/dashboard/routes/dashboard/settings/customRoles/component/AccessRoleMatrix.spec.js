@@ -5,10 +5,15 @@ import AccessRoleMatrix from './AccessRoleMatrix.vue';
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key =>
-      key === 'CUSTOM_ROLE.ACCESS_MATRIX.SYSTEM_ROLES.EMPLOYEE'
-        ? 'Localized employee'
-        : key,
+    t: key => {
+      const translations = {
+        'CUSTOM_ROLE.ACCESS_MATRIX.SYSTEM_ROLES.EMPLOYEE': 'Localized employee',
+        'CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES':
+          'Localized automation rules',
+        'CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.MANAGE': 'Localized manage',
+      };
+      return translations[key] || key;
+    },
   }),
 }));
 
@@ -68,6 +73,31 @@ describe('AccessRoleMatrix', () => {
     expect(
       wrapper.findAll('[data-testid="access-role-resource-contacts"]')
     ).toHaveLength(1);
+  });
+
+  it('renders localized Automation resource and manage capability labels', () => {
+    const wrapper = mountComponent({
+      roles: [
+        {
+          ...roles[0],
+          grants: [
+            {
+              resource: 'automation_rules',
+              capability: 'manage',
+              access_scope: 'all',
+            },
+          ],
+        },
+      ],
+      resources: { automation_rules: ['manage'] },
+    });
+    const automationGroup = wrapper.get(
+      '[data-testid="access-role-resource-automation_rules"]'
+    );
+
+    expect(automationGroup.text()).toContain('Localized automation rules');
+    expect(automationGroup.text()).toContain('Localized manage');
+    expect(automationGroup.text()).not.toContain('automation_rules');
   });
 
   it('filters roles by the localized system role name', () => {

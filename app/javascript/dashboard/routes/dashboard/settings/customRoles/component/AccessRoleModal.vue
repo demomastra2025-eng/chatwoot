@@ -24,6 +24,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  resourceAccessScopes: {
+    type: Object,
+    default: () => ({}),
+  },
 });
 
 const emit = defineEmits(['close', 'stale']);
@@ -42,6 +46,7 @@ const resourceLabels = computed(() => ({
   appointments: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.APPOINTMENTS'),
   deals: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.DEALS'),
   tasks: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TASKS'),
+  automation_rules: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES'),
 }));
 
 const capabilityLabels = computed(() => ({
@@ -64,6 +69,7 @@ const capabilityLabels = computed(() => ({
   override_schedule: t(
     'CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.OVERRIDE_SCHEDULE'
   ),
+  manage: t('CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.MANAGE'),
 }));
 
 const scopeLabels = computed(() => ({
@@ -85,12 +91,18 @@ const resourceGroups = computed(() =>
   }))
 );
 
-const availableScopes = computed(() => {
+const defaultAvailableScopes = computed(() => {
   const scopes = props.accessScopes.length
     ? props.accessScopes
     : ['none', 'own', 'team', 'all'];
   return scopes.includes('none') ? scopes : ['none', ...scopes];
 });
+
+const availableScopesFor = resource => {
+  const scopes = props.resourceAccessScopes[resource];
+  if (!scopes?.length) return defaultAvailableScopes.value;
+  return scopes.includes('none') ? scopes : ['none', ...scopes];
+};
 
 const isInvalid = computed(
   () => name.value.trim().length < 2 || !description.value.trim()
@@ -275,7 +287,7 @@ const submit = async () => {
                 :aria-label="`${group.label}: ${item.label}`"
               >
                 <option
-                  v-for="scope in availableScopes"
+                  v-for="scope in availableScopesFor(group.resource)"
                   :key="scope"
                   :value="scope"
                 >

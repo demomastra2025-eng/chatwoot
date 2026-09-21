@@ -106,6 +106,46 @@ describe('AccessRoleModal', () => {
     expect(wrapper.emitted('close')).toHaveLength(1);
   });
 
+  it('uses resource-specific scopes and round-trips Automation manage', async () => {
+    const wrapper = mountComponent({
+      mode: 'edit',
+      resources: { automation_rules: ['manage'] },
+      resourceAccessScopes: { automation_rules: ['none', 'all'] },
+      selectedRole: {
+        ...role,
+        grants: [
+          {
+            resource: 'automation_rules',
+            capability: 'manage',
+            access_scope: 'all',
+          },
+        ],
+      },
+    });
+    const select = wrapper.get('select');
+
+    expect(
+      select.findAll('option').map(option => option.element.value)
+    ).toEqual(['none', 'all']);
+    expect(select.element.value).toBe('all');
+
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'customRole/updateAccessRole',
+      expect.objectContaining({
+        grants: [
+          {
+            resource: 'automation_rules',
+            capability: 'manage',
+            access_scope: 'all',
+          },
+        ],
+      })
+    );
+  });
+
   it('previews a clone and creates only copied metadata and normalized grants', async () => {
     const sourceRole = {
       ...role,

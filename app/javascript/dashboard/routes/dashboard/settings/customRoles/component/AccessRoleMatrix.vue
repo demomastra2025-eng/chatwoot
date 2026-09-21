@@ -67,6 +67,7 @@ const translations = computed(() => ({
     appointments: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.APPOINTMENTS'),
     deals: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.DEALS'),
     tasks: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TASKS'),
+    automation_rules: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES'),
   },
   capabilities: {
     view: t('CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.VIEW'),
@@ -90,6 +91,7 @@ const translations = computed(() => ({
     override_schedule: t(
       'CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.OVERRIDE_SCHEDULE'
     ),
+    manage: t('CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.MANAGE'),
   },
   scopes: {
     none: t('CUSTOM_ROLE.ACCESS_MATRIX.SCOPES.NONE'),

@@ -27,7 +27,8 @@
         "CONVERSATIONS": "Conversations",
         "APPOINTMENTS": "Appointments",
         "DEALS": "Deals",
-        "TASKS": "Tasks"
+        "TASKS": "Tasks",
+        "AUTOMATION_RULES": "Automation rules"
       },
       "CAPABILITIES": {
         "VIEW": "View",
@@ -44,7 +45,8 @@
         "VIEW_REPORTS": "View reports",
         "VIEW_FINANCE": "View finance",
         "MANAGE_FINANCE": "Manage finance",
-        "OVERRIDE_SCHEDULE": "Override schedule conflicts"
+        "OVERRIDE_SCHEDULE": "Override schedule conflicts",
+        "MANAGE": "Manage"
       },
       "SCOPES": {
         "NONE": "None",
@@ -113,6 +115,7 @@
       "REPORT_MANAGE": "Manage reports",
       "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base",
       "CAPTAIN_MANAGE": "Manage AI agents",
+      "AUTOMATION_MANAGE": "Manage automation rules",
       "SCHEDULING_OVERRIDE": "Override scheduling conflicts"
     },
     "FORM": {

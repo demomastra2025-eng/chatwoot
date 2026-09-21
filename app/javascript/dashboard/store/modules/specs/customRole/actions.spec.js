@@ -39,6 +39,7 @@ describe('#actions', () => {
             records: accessRoleCatalog.data,
             resources: accessRoleCatalog.meta.resources,
             accessScopes: accessRoleCatalog.meta.access_scopes,
+            resourceAccessScopes: accessRoleCatalog.meta.resource_access_scopes,
             mutationsEnabled: accessRoleCatalog.meta.mutations_enabled,
             legacyMutationsEnabled:
               accessRoleCatalog.meta.legacy_mutations_enabled,
@@ -151,6 +152,7 @@ describe('#actions', () => {
             records: newerCatalog.data,
             resources: newerCatalog.meta.resources,
             accessScopes: newerCatalog.meta.access_scopes,
+            resourceAccessScopes: newerCatalog.meta.resource_access_scopes,
             mutationsEnabled: newerCatalog.meta.mutations_enabled,
             legacyMutationsEnabled: newerCatalog.meta.legacy_mutations_enabled,
             assignmentsEnabled: newerCatalog.meta.assignments_enabled,
