@@ -23,10 +23,14 @@ class Conversations::StatusTransitionService
     pending_attributes = conversation.attributes.slice(*conversation.changed_attribute_names_to_save.excluding('status'))
     conversation.restore_attributes
 
-    conversation.with_captain_control_lock do
-      conversation.with_lock do
-        conversation.assign_attributes(pending_attributes)
+    conversation.with_lock do
+      conversation.assign_attributes(pending_attributes)
+      control_owner = conversation.captain_control_owner
+
+      if control_owner.equal?(conversation)
         perform_transition
+      else
+        conversation.with_captain_control_lock { perform_transition }
       end
     end
   end

@@ -312,9 +312,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
     end
 
-    it 'locks thread ownership before the conversation and rechecks before publishing an AI response' do
-      expect(conversation).to receive(:with_captain_control_lock).ordered.and_call_original
+    it 'locks the conversation before thread ownership and rechecks before publishing an AI response' do
       expect(conversation).to receive(:with_lock).at_least(:once).ordered.and_call_original
+      expect(conversation).to receive(:with_captain_control_lock).ordered.and_call_original
 
       described_class.perform_now(conversation, assistant)
 

@@ -455,6 +455,49 @@ RSpec.describe Message do
       expect(visible_messages).not_to include(previous_message)
     end
 
+    it 'locks the conversation before its resolved communication thread' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      conversation.resolved!
+      communication_thread = conversation.reload.refresh_communication_thread!
+      message.created_at = Time.current
+      allow(conversation).to receive(:communication_thread).and_return(communication_thread)
+      expect(conversation).to receive(:with_lock).ordered.and_call_original
+      expect(communication_thread).to receive(:with_lock).ordered.and_call_original
+
+      message.send(:reopen_resolved_conversation)
+    end
+
+    it 'reopens a resolved conversation when its communication thread is already open' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      conversation.resolved!
+      communication_thread = conversation.reload.refresh_communication_thread!
+      previous_session_started_at = communication_thread.session_started_at
+      communication_thread.update!(status: :open)
+      message.created_at = Time.current
+
+      message.send(:reopen_resolved_conversation)
+
+      expect(conversation.reload).to be_open
+      expect(communication_thread.reload.session_started_at).to eq(previous_session_started_at)
+    end
+
+    it 'rechecks stale conversation state under lock before deciding whether to reopen' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      # rubocop:disable Rails/SkipsModelValidations
+      Conversation.where(id: conversation.id).update_all(status: Conversation.statuses[:resolved])
+      CommunicationThread.where(id: communication_thread.id).update_all(status: CommunicationThread.statuses[:resolved])
+      # rubocop:enable Rails/SkipsModelValidations
+
+      expect(conversation).to be_open
+      message.save!
+
+      expect(conversation.reload).to be_open
+    end
+
     it 'reopens snoozed conversation when the message is from a contact' do
       conversation.snoozed!
       message.save!

@@ -158,14 +158,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
-    @conversation.with_captain_control_lock do
-      @conversation.with_lock do
+    @conversation.with_lock do
+      @conversation.with_captain_control_lock do
         ensure_response_fence_current!(stage: 'response_persistence')
         # These exits intentionally stop the full response persistence method after the cancellation cleanup.
-        # rubocop:disable Rails/TransactionExitStatement
         return process_cancelled_response unless current_buffer_state_valid?
         return process_cancelled_response if response_cancelled?
-        # rubocop:enable Rails/TransactionExitStatement
 
         ActiveRecord::Base.transaction do
           create_messages(attachment_ids: attachment_ids)

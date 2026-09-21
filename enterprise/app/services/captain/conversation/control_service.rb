@@ -101,23 +101,42 @@ class Captain::Conversation::ControlService
     control_owner.captain_control_state == HUMAN_CONTROL
   end
 
-  def apply_handoff(status_reason:, actor:, source:, fence:, &)
+  def apply_handoff(status_reason:, actor:, source:, fence:, &callback)
     result = :already_applied
-    persist_control_owner!
 
-    control_owner.with_lock do
-      if handoff_stale?(fence)
-        result = :stale
-        next
+    with_locked_conversation_preserving_changes do
+      persist_control_owner!
+      with_control_owner_lock do
+        result = apply_handoff_under_lock(status_reason: status_reason, actor: actor, source: source, fence: fence, &callback)
       end
-      next if handoff_already_applied?
-
-      apply_handoff_transition!(status_reason: status_reason, actor: actor, source: source)
-      yield if block_given?
-      result = :applied
     end
 
     result
+  end
+
+  def with_locked_conversation_preserving_changes
+    pending_attributes = conversation.attributes.slice(*conversation.changed_attribute_names_to_save.excluding('status'))
+    conversation.restore_attributes
+    conversation.with_lock do
+      @control_owner = nil
+      conversation.assign_attributes(pending_attributes)
+      yield
+    end
+  end
+
+  def with_control_owner_lock(&)
+    return yield if control_owner.equal?(conversation)
+
+    control_owner.with_lock(&)
+  end
+
+  def apply_handoff_under_lock(status_reason:, actor:, source:, fence:)
+    return :stale if handoff_stale?(fence)
+    return :already_applied if handoff_already_applied?
+
+    apply_handoff_transition!(status_reason: status_reason, actor: actor, source: source)
+    yield if block_given?
+    :applied
   end
 
   def apply_handoff_transition!(status_reason:, actor:, source:)

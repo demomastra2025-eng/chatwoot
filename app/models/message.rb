@@ -498,7 +498,7 @@ class Message < ApplicationRecord
 
     transition_conversation_status!('open', source: 'contact') if conversation.snoozed?
 
-    reopen_resolved_conversation if conversation.resolved?
+    reopen_resolved_conversation if communication_threads_enabled? || conversation.resolved?
   end
 
   def mark_pending_conversation_as_open_for_human_response
@@ -524,17 +524,23 @@ class Message < ApplicationRecord
   end
 
   def reopen_resolved_conversation
-    communication_thread = conversation.communication_thread if communication_threads_enabled?
-    if communication_thread&.resolved?
-      communication_thread.with_lock do
-        if conversation.reload.resolved?
-          communication_thread.update!(session_started_at: created_at)
-          perform_reopen_transition
-        end
-      end
-      return
-    end
+    return perform_reopen_transition if !communication_threads_enabled? && conversation.resolved?
 
+    conversation.restore_attributes if conversation.has_changes_to_save?
+    conversation.with_lock do
+      communication_thread = conversation.communication_thread
+      if communication_thread
+        communication_thread.with_lock { reopen_locked_conversation(communication_thread) }
+      elsif conversation.resolved?
+        perform_reopen_transition
+      end
+    end
+  end
+
+  def reopen_locked_conversation(communication_thread)
+    return unless conversation.resolved?
+
+    communication_thread.update!(session_started_at: created_at) if communication_thread.resolved?
     perform_reopen_transition
   end
 
