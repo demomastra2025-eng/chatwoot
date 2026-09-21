@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_20_220000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_21_030000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1622,6 +1622,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_20_220000) do
     t.uuid "correlation_id", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "owner_id_at_terminal"
+    t.bigint "team_id_at_terminal"
+    t.integer "terminal_attribution_version"
     t.index ["account_id", "entered_at"], name: "index_crm_stage_visits_on_account_id_and_entered_at"
     t.index ["account_id", "exited_at"], name: "index_crm_stage_visits_on_account_id_and_exited_at", where: "(exited_at IS NOT NULL)"
     t.index ["account_id"], name: "index_crm_stage_visits_on_account_id"
@@ -1631,6 +1634,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_20_220000) do
     t.index ["pipeline_id"], name: "index_crm_stage_visits_on_pipeline_id"
     t.index ["stage_id"], name: "index_crm_stage_visits_on_stage_id"
     t.check_constraint "exited_at IS NULL OR exited_at >= entered_at", name: "crm_stage_visits_valid_interval"
+    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version = 1 AND (stage_outcome::text = ANY (ARRAY['won'::character varying, 'lost'::character varying]::text[]))", name: "crm_stage_visits_terminal_attribution_valid"
   end
 
   create_table "crm_stages", force: :cascade do |t|

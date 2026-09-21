@@ -30,7 +30,7 @@ class Crm::StageVisits::Tracker
   end
 
   def self.create_visit!(deal:, stage:, correlation_id:, occurred_at:, estimated:)
-    Crm::StageVisit.create!(
+    attributes = {
       account: deal.account,
       deal: deal,
       pipeline: stage.pipeline,
@@ -42,7 +42,19 @@ class Crm::StageVisits::Tracker
       stage_name: stage.name,
       stage_outcome: stage.outcome,
       correlation_id: correlation_id
-    )
+    }
+    attributes.merge!(terminal_attribution(deal)) if !estimated && !stage.outcome_open?
+
+    Crm::StageVisit.create!(attributes)
   end
   private_class_method :create_visit!
+
+  def self.terminal_attribution(deal)
+    {
+      owner_id_at_terminal: deal.owner_id,
+      team_id_at_terminal: deal.team_id,
+      terminal_attribution_version: Crm::StageVisit::TERMINAL_ATTRIBUTION_VERSION
+    }
+  end
+  private_class_method :terminal_attribution
 end

@@ -253,6 +253,29 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(reopened_deal.closed_at).to be_nil
   end
 
+  it 'captures terminal attribution when a deal is created directly in a terminal stage' do
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won')
+    owner = create(:user, account: account)
+    team = create(:team, account: account)
+
+    deal = described_class.new(
+      account: account,
+      params: {
+        title: 'Imported won deal',
+        stage_id: won_stage.id,
+        owner_id: owner.id,
+        team_id: team.id
+      }
+    ).perform
+
+    expect(deal.stage_visits.sole).to have_attributes(
+      stage_outcome: 'won',
+      owner_id_at_terminal: owner.id,
+      team_id_at_terminal: team.id,
+      terminal_attribution_version: 1
+    )
+  end
+
   it 'syncs the new deal team to incomplete linked tasks only' do
     original_team = create(:team, account: account)
     new_team = create(:team, account: account)

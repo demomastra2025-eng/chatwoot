@@ -44,15 +44,99 @@ RSpec.describe 'CRM Deal lifecycle commands', type: :request do
     payload = { stage_id: won_stage.id, lock_version: deal.lock_version, idempotency_key: 'close-1' }
     post "#{path}/#{deal.id}/close_won", params: payload, headers: headers, as: :json
     resulting_version = response.parsed_body.dig('payload', 'lock_version')
+    terminal_visit_id = deal.reload.stage_visits.find_by!(stage_id: won_stage.id).id
 
     post "#{path}/#{deal.id}/close_won", params: payload, headers: headers, as: :json
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'lock_version')).to eq(resulting_version)
+    expect(deal.reload.stage_visits.where(stage_id: won_stage.id).pluck(:id)).to eq([terminal_visit_id])
 
     post "#{path}/#{deal.id}/close_lost",
          params: payload.merge(stage_id: lost_stage.id), headers: headers, as: :json
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body['code']).to eq('IDEMPOTENCY_KEY_REUSED')
+  end
+
+  it 'seals a fresh responsible-party snapshot for each terminal occurrence', :aggregate_failures do
+    first_owner = create(:user, account: account)
+    second_owner = create(:user, account: account)
+    first_team = create(:team, account: account)
+    second_team = create(:team, account: account)
+    membership = create(:team_member, team: first_team, user: first_owner)
+    deal.update!(owner: first_owner, team: first_team)
+
+    post "#{path}/#{deal.id}/close_won",
+         params: { lock_version: deal.reload.lock_version, idempotency_key: 'won-attribution' }, headers: headers, as: :json
+    won_visit = deal.reload.stage_visits.find_by!(stage_id: won_stage.id)
+
+    membership.destroy!
+    Crm::Deals::UpsertService.new(
+      account: account,
+      deal: deal,
+      actor: administrator,
+      params: { owner_id: second_owner.id, team_id: second_team.id, lock_version: deal.lock_version }
+    ).perform
+
+    expect(won_visit.reload).to have_attributes(
+      owner_id_at_terminal: first_owner.id,
+      team_id_at_terminal: first_team.id,
+      terminal_attribution_version: 1
+    )
+
+    post "#{path}/#{deal.id}/reopen",
+         params: { stage_id: open_stage.id, lock_version: deal.reload.lock_version, idempotency_key: 'reopen-attribution' },
+         headers: headers, as: :json
+    post "#{path}/#{deal.id}/close_lost",
+         params: { lock_version: deal.reload.lock_version, idempotency_key: 'lost-attribution' }, headers: headers, as: :json
+
+    lost_visit = deal.reload.stage_visits.find_by!(stage_id: lost_stage.id)
+    expect(lost_visit).to have_attributes(
+      owner_id_at_terminal: second_owner.id,
+      team_id_at_terminal: second_team.id,
+      terminal_attribution_version: 1
+    )
+    expect(won_visit.reload).to have_attributes(
+      owner_id_at_terminal: first_owner.id,
+      team_id_at_terminal: first_team.id
+    )
+    expect(deal.events.where(event_type: 'deal_stage_changed').last.actor_id).to eq(administrator.id)
+  end
+
+  it 'rolls back the deal and visit when the correlated event cannot be sealed' do
+    allow(Crm::Events::Writer).to receive(:record!).and_raise('event failed')
+
+    post "#{path}/#{deal.id}/close_won",
+         params: { lock_version: deal.lock_version, idempotency_key: 'rollback-attribution' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:internal_server_error)
+    expect(deal.reload).to have_attributes(stage_id: open_stage.id, closed_at: nil)
+    expect(deal.stage_visits.where(stage_id: won_stage.id)).to be_empty
+  end
+
+  it 'keeps the first sealed occurrence when competing commands share a stale version' do
+    starting_version = deal.lock_version
+
+    post "#{path}/#{deal.id}/close_won",
+         params: { lock_version: starting_version, idempotency_key: 'concurrent-won' }, headers: headers, as: :json
+    post "#{path}/#{deal.id}/close_lost",
+         params: { lock_version: starting_version, idempotency_key: 'concurrent-lost' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(deal.reload.stage_id).to eq(won_stage.id)
+    expect(deal.stage_visits.where(stage_outcome: %w[won lost]).pluck(:stage_outcome)).to eq(['won'])
+  end
+
+  it 'treats a direct won-to-lost transition as a new terminal occurrence' do
+    post "#{path}/#{deal.id}/close_won",
+         params: { lock_version: deal.lock_version, idempotency_key: 'direct-won' }, headers: headers, as: :json
+    won_visit = deal.reload.stage_visits.find_by!(stage_id: won_stage.id)
+
+    post "#{path}/#{deal.id}/close_lost",
+         params: { lock_version: deal.lock_version, idempotency_key: 'direct-lost' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(won_visit.reload.exited_at).to be_present
+    expect(deal.reload.stage_visits.find_by!(stage_id: lost_stage.id).terminal_attribution_version).to eq(1)
   end
 
   it 'reopens a closed deal and keeps the previous terminal visit as history', :aggregate_failures do

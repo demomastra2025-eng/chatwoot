@@ -11,5 +11,6 @@ FactoryBot.define do
     stage_name { stage.name }
     stage_outcome { stage.outcome }
     correlation_id { SecureRandom.uuid }
+    terminal_attribution_version { nil }
   end
 end
