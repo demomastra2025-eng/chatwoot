@@ -89,7 +89,7 @@ describe Whatsapp::SendOnWhatsappService do
       end
 
       def stub_whatsapp_cloud_template_transient_failure(channel)
-        stub_request(:post, "https://graph.facebook.com/v22.0/#{channel.provider_config['phone_number_id']}/messages")
+        stub_request(:post, "https://graph.facebook.com/v25.0/#{channel.provider_config['phone_number_id']}/messages")
           .with(:body => named_template_body.to_json)
           .to_return(status: 500, body: whatsapp_cloud_transient_error_body.to_json, headers: { 'content-type' => 'application/json' })
       end
@@ -205,7 +205,7 @@ describe Whatsapp::SendOnWhatsappService do
         create(:message, message_type: :incoming, content: 'test', conversation: conversation, account: conversation.account)
         message = create(:message, message_type: :outgoing, content: 'reply', conversation: conversation, account: conversation.account)
 
-        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+        stub_request(:post, "https://graph.facebook.com/v25.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
           .with(body: {
             messaging_product: 'whatsapp', recipient_type: 'individual', recipient: contact_inbox.source_id,
             text: { body: 'reply' }, type: 'text'
@@ -457,7 +457,7 @@ describe Whatsapp::SendOnWhatsappService do
           processed_params: { 'body' => { 'last_name' => 'Dale', 'ticket_id' => '2332' } }
         }
 
-        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+        stub_request(:post, "https://graph.facebook.com/v25.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
           .with(
             :headers => {
               'Accept' => '*/*',

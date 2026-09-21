@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::WabaLock do
+  self.use_transactional_tests = false
+
   let(:waba_id) { "waba-lock-#{SecureRandom.hex(8)}" }
 
   it 'reuses a lock for nested work in the same thread and releases it afterward' do
@@ -32,23 +34,19 @@ RSpec.describe Whatsapp::WabaLock do
   it 'serializes the same WABA across independent PostgreSQL connections' do
     pool = ActiveRecord::Base.connection_pool
     owner_connection = pool.checkout
-    contender_connection = pool.checkout
     owner = described_class.new(waba_id)
     contender = described_class.new(waba_id)
 
     expect(owner.send(:acquire_lock, owner_connection)).to be(true)
     owner_held = true
-    expect(contender.send(:acquire_lock, contender_connection)).to be(false)
+    expect(acquire_on_separate_thread(contender)).to be(false)
 
     owner.send(:release_lock, owner_connection)
     owner_held = false
-    expect(contender.send(:acquire_lock, contender_connection)).to be(true)
-    contender_held = true
+    expect(acquire_on_separate_thread(contender, release: true)).to be(true)
   ensure
     owner&.send(:release_lock, owner_connection) if owner_held
-    contender&.send(:release_lock, contender_connection) if contender_held
     pool&.checkin(owner_connection) if owner_connection
-    pool&.checkin(contender_connection) if contender_connection
   end
 
   it 'acquires multiple WABA locks in a stable order' do
@@ -66,5 +64,15 @@ RSpec.describe Whatsapp::WabaLock do
 
   it 'requires a WABA ID' do
     expect { described_class.new(nil).with_lock { nil } }.to raise_error(ArgumentError, 'WABA ID is required')
+  end
+
+  def acquire_on_separate_thread(lock, release: false)
+    Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do |connection|
+        acquired = lock.send(:acquire_lock, connection)
+        lock.send(:release_lock, connection) if acquired && release
+        acquired
+      end
+    end.value
   end
 end

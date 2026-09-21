@@ -38,10 +38,10 @@ describe Integrations::Slack::IncomingMessageBuilder do
   let(:verification_params) { slack_url_verification_stub }
 
   let!(:hook) { create(:integrations_hook, account: account, reference_id: message_params[:event][:channel]) }
-  let!(:conversation) { create(:conversation, identifier: message_params[:event][:thread_ts]) }
+  let!(:conversation) { create(:conversation, account: account, identifier: message_params[:event][:thread_ts]) }
 
   before do
-    stub_request(:get, 'https://chatwoot-assets.local/sample.png').to_return(
+    stub_request(:get, 'https://files.slack.com/sample.png').to_return(
       status: 200,
       body: File.read('spec/assets/sample.png'),
       headers: {}
@@ -83,6 +83,24 @@ describe Integrations::Slack::IncomingMessageBuilder do
         builder.perform
         expect(conversation.messages.count).to eql(messages_count + 1)
         expect(conversation.messages.last.content).to eql('this is test https://one-link.kz Hey @Sojan Test again')
+      end
+
+      it 'does not bind a Slack thread to a conversation in another account' do
+        other_conversation = create(:conversation, identifier: message_params[:event][:thread_ts])
+        conversation.update!(identifier: 'different-thread')
+        builder = described_class.new(message_params)
+
+        expect { builder.perform }.not_to change(other_conversation.messages, :count)
+      end
+
+      it 'does not fetch an attachment from a non-Slack host with the bearer token' do
+        unsafe_params = message_with_attachments.deep_dup
+        unsafe_params[:event][:files][0][:url_private] = 'https://attacker.example/file.png'
+        builder = described_class.new(unsafe_params)
+        allow(builder).to receive(:resolve_slack_sender).and_return([nil, nil, nil])
+
+        expect(Down::NetHttp).not_to receive(:download)
+        builder.perform
       end
 
       it 'creates a private note' do

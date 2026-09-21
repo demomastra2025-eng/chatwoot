@@ -169,6 +169,28 @@ RSpec.describe Llm::OpenRouterRuntime do
     expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
   end
 
+  it 'falls back to the assistant budget profile for non-profile instrumentation names' do
+    chat = instance_double(RubyLLM::Chat)
+    response = instance_double(RubyLLM::Message)
+
+    expect(Llm::ChatClient).to receive(:ask).with(
+      chat,
+      'hello',
+      model: 'openai/gpt-5.4-mini',
+      account: account,
+      observability: hash_including(feature_name: 'faq_generator')
+    ).and_return(response)
+
+    expect(
+      runtime.ask(
+        chat,
+        'hello',
+        model: 'openai/gpt-5.4-mini',
+        observability: { feature_name: 'faq_generator' }
+      )
+    ).to eq(response)
+  end
+
   it 'blocks budget-exceeded chat requests before provider execution' do
     budget_account = create(:account)
     budget_runtime = described_class.new(account: budget_account)

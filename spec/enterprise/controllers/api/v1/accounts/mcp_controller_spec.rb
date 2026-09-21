@@ -81,6 +81,15 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       expect(response).to have_http_status(:not_found)
     end
+
+    it 'treats HEAD as the read-only metadata endpoint' do
+      allow_any_instance_of(Onelink::Mcp::Server).to receive(:call).and_raise('HEAD must not invoke JSON-RPC')
+
+      head "/api/v1/accounts/#{account.id}/mcp", headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(response.body).to be_empty
+    end
   end
 
   describe 'GET /api/v1/accounts/:account_id/mcp_settings' do

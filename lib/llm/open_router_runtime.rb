@@ -461,7 +461,8 @@ class Llm::OpenRouterRuntime
   def observability_feature(observability)
     return unless observability.respond_to?(:[])
 
-    observability[:feature] || observability['feature'] || observability[:feature_name] || observability['feature_name']
+    candidate = observability[:feature] || observability['feature'] || observability[:feature_name] || observability['feature_name']
+    candidate if Llm::FeatureProfile.supported?(candidate)
   end
 
   def observability_estimated_cost(observability)

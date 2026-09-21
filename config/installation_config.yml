@@ -477,6 +477,12 @@
   locked: false
   description: 'Slack client secret'
   type: secret
+- name: SLACK_SIGNING_SECRET
+  display_title: 'Slack Signing Secret'
+  value:
+  locked: false
+  description: 'Signing secret used to authenticate Slack webhook requests'
+  type: secret
 ## ------ End of Configs added for Slack ------ ##
 
 # ------- Shopify Integration Config ------- #

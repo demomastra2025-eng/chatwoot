@@ -41,9 +41,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
   def accept
     sdp_answer = params[:sdp_answer]
-    if !@call.media_server_enabled? && sdp_answer.blank?
-      return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity
-    end
+    return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity if !@call.media_server_enabled? && sdp_answer.blank?
 
     with_operator_call_lock(excluding_whatsapp_call: @call) do
       if @call.media_server_enabled?
@@ -266,12 +264,12 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
   private
 
-  def with_operator_call_lock(excluding_whatsapp_call: nil, &block)
+  def with_operator_call_lock(excluding_whatsapp_call: nil, &)
     Telephony::OperatorBusyService.new(
       account: current_account,
       user: current_user,
       excluding_whatsapp_call: excluding_whatsapp_call
-    ).with_lock(&block)
+    ).with_lock(&)
   end
 
   def render_operator_busy(error)
@@ -762,7 +760,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     raw_path = params[:file_path].to_s.strip
     return if raw_path.blank?
     return if raw_path.match?(/\A[a-z][a-z0-9+\-.]*:/i)
-    return if raw_path.include?('\\') || raw_path.include?('\0')
+    return if raw_path.include?('\\') || raw_path.include?("\0")
 
     pathname = Pathname.new(raw_path)
     return if pathname.absolute?
@@ -780,7 +778,7 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     return unless resolved_path.file?
 
     clean_path
-  rescue Errno::ENOENT, Errno::EACCES
+  rescue ArgumentError, Errno::ENOENT, Errno::EACCES
     nil
   end
 

@@ -26,6 +26,21 @@ RSpec.describe Category do
       category.update(locale: 'es')
       expect(category.errors.full_messages[0]).to eq("Locale es of category is not part of portal's [\"en\"].")
     end
+
+    it 'translates uniqueness errors using the validation-time locale' do
+      create(:category, slug: 'category_1', locale: 'en', portal: portal)
+      duplicate = build(:category, slug: 'category_1', locale: 'en', portal: portal)
+
+      I18n.with_locale(:ru) do
+        duplicate.validate
+        expect(duplicate.errors[:locale]).to include(I18n.t('errors.categories.locale.unique'))
+      end
+
+      I18n.with_locale(:en) do
+        duplicate.validate
+        expect(duplicate.errors[:locale]).to include(I18n.t('errors.categories.locale.unique'))
+      end
+    end
   end
 
   describe 'search' do

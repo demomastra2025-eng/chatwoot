@@ -51,7 +51,14 @@ module Integrations::Slack::SlackMessageHelper
 
   def process_attachments(attachments)
     attachments.each do |attachment|
-      tempfile = Down::NetHttp.download(attachment[:url_private], headers: { 'Authorization' => "Bearer #{integration_hook.access_token}" })
+      url = trusted_slack_file_url(attachment[:url_private])
+      next unless url
+
+      tempfile = Down::NetHttp.download(
+        url,
+        headers: { 'Authorization' => "Bearer #{integration_hook.access_token}" },
+        max_redirects: 0
+      )
 
       attachment_params = {
         file_type: file_type(attachment),
@@ -83,7 +90,16 @@ module Integrations::Slack::SlackMessageHelper
   end
 
   def conversation
-    @conversation ||= Conversation.where(identifier: params[:event][:thread_ts]).first
+    @conversation ||= integration_hook&.account&.conversations&.find_by(identifier: params[:event][:thread_ts])
+  end
+
+  def trusted_slack_file_url(raw_url)
+    uri = URI.parse(raw_url.to_s)
+    return unless uri.is_a?(URI::HTTPS) && uri.host == 'files.slack.com' && uri.userinfo.blank? && uri.port == 443
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    nil
   end
 
   def resolve_slack_sender

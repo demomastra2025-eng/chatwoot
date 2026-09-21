@@ -15,7 +15,7 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
   before_action :ensure_mcp_user_access_token!
 
   def handle
-    return render_endpoint_metadata if request.get?
+    return render_endpoint_metadata if request.get? || request.head?
 
     payload = parsed_jsonrpc_payload
     response_payload = mcp_server.call(payload)

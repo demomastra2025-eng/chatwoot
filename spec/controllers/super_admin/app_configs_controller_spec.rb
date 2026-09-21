@@ -79,4 +79,17 @@ RSpec.describe 'Super Admin app configs', type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
     expect(config.reload.value).to eq(3)
   end
+
+  it 'preserves the Slack signing secret when the masked field is submitted blank' do
+    config = InstallationConfig.where(name: 'SLACK_SIGNING_SECRET').first_or_initialize
+    config.update!(value: 'existing-signing-secret', locked: false)
+
+    post '/super_admin/app_config', params: {
+      config: 'slack',
+      app_config: { 'SLACK_SIGNING_SECRET' => '' }
+    }
+
+    expect(response).to redirect_to(super_admin_settings_path)
+    expect(config.reload.value).to eq('existing-signing-secret')
+  end
 end

@@ -12,7 +12,7 @@ RSpec.describe 'Session', type: :request do
              params: params,
              as: :json
         expect(response).to have_http_status(:unauthorized)
-        expect(response.body).to include('Invalid login credentials')
+        expect(response.parsed_body['errors']).to include(I18n.t('devise_token_auth.sessions.bad_credentials'))
       end
     end
 
@@ -64,7 +64,7 @@ RSpec.describe 'Session', type: :request do
              params: params,
              as: :json
         expect(response).to have_http_status(:unauthorized)
-        expect(response.body).to include('Invalid login credentials')
+        expect(response.parsed_body['errors']).to include(I18n.t('devise_token_auth.sessions.bad_credentials'))
       end
     end
 

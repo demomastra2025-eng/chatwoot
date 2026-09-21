@@ -4,7 +4,7 @@ ruby '3.4.4'
 
 ##-- base gems for rails --##
 gem 'rack-cors', '2.0.0', require: 'rack/cors'
-gem 'rails', '~> 7.1'
+gem 'rails', '~> 7.2.3', '>= 7.2.3.2'
 # Reduces boot times through caching; required in config/boot.rb
 gem 'bootsnap', require: false
 
@@ -74,14 +74,14 @@ gem 'faraday_middleware-aws-sigv4'
 gem 'dotenv-rails', '>= 3.0.0'
 gem 'foreman'
 gem 'fiddle'
-gem 'puma'
+gem 'puma', '~> 7.2', '>= 7.2.1'
 gem 'vite_rails'
 # metrics on heroku
 gem 'barnes'
 
 ##--- gems for authentication & authorization ---##
-gem 'devise', '>= 4.9.4'
-gem 'devise-secure_password', git: 'https://github.com/chatwoot/devise-secure_password', branch: 'chatwoot'
+gem 'devise', '~> 5.0', '>= 5.0.4'
+gem 'devise-secure_password', '~> 2.2', '>= 2.2.3'
 gem 'devise_token_auth', '>= 1.2.3'
 # two-factor authentication
 gem 'devise-two-factor', '>= 5.0.0'
@@ -92,7 +92,7 @@ gem 'pundit'
 # super admin
 gem 'administrate', '>= 0.20.1'
 gem 'administrate-field-active_storage', '>= 1.0.3'
-gem 'administrate-field-belongs_to_search', '>= 0.9.0'
+gem 'administrate-field-belongs_to_search', '>= 0.10.0'
 
 ##--- gems for pubsub service ---##
 # https://karolgalanciak.com/blog/2019/11/30/from-activerecord-callbacks-to-publish-slash-subscribe-pattern-and-event-driven-design/
@@ -130,9 +130,9 @@ gem 'sentry-ruby', require: false
 gem 'sentry-sidekiq', '>= 5.19.0', require: false
 
 ##-- background job processing --##
-gem 'sidekiq', '>= 7.3.1'
+gem 'sidekiq', '>= 7.3.1', '< 8.0'
 # We want cron jobs
-gem 'sidekiq-cron', '>= 1.12.0'
+gem 'sidekiq-cron', '>= 2.4.0', '< 3.0'
 # for sidekiq healthcheck
 gem 'sidekiq_alive'
 
@@ -191,7 +191,7 @@ gem 'reverse_markdown'
 
 gem 'iso-639'
 gem 'ruby-openai'
-gem 'ruby_llm', '~> 1.15'
+gem 'ruby_llm', '~> 1.16'
 gem 'ruby_llm-schema', '~> 0.4'
 gem 'ruby_llm-mcp', git: 'https://github.com/patvice/ruby_llm-mcp', ref: '4d10851994029c7d7f3246ad517b2eef483ac810'
 gem 'ruby_llm-tribunal', '~> 0.1', require: false
@@ -231,7 +231,7 @@ group :development do
   # Should install the associated chrome extension to view query logs
   gem 'meta_request', '>= 0.8.3'
 
-  gem 'tidewave'
+  gem 'tidewave', '0.2.0'
 end
 
 group :test do
@@ -259,7 +259,7 @@ group :development, :test do
   gem 'pry-rails'
   gem 'rspec_junit_formatter'
   gem 'rspec-rails', '>= 6.1.5'
-  gem 'rubocop', require: false
+  gem 'rubocop', '1.75.6', require: false
   gem 'rubocop-performance', require: false
   gem 'rubocop-rails', require: false
   gem 'rubocop-rspec', require: false

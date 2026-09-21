@@ -35,6 +35,18 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(response.parsed_body['error']).to eq('Invalid file_path')
     end
 
+    it 'rejects NUL bytes in audio paths without raising an internal error' do
+      expect(media_client).not_to receive(:inject_audio)
+
+      post path,
+           params: { file_path: "safe\0.ogg" },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body['error']).to eq('Invalid file_path')
+    end
+
     it 'passes only normalized relative ogg assets to the media server' do
       Dir.mktmpdir do |audio_root|
         FileUtils.mkdir_p(File.join(audio_root, 'prompts'))

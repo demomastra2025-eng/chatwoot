@@ -69,7 +69,7 @@ class Contact < ApplicationRecord
   validates :identifier, allow_blank: true, uniqueness: { scope: [:account_id] }
   validates :phone_number,
             allow_blank: true, uniqueness: { scope: [:account_id] },
-            format: { with: /\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
+            format: { with: /\A\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
   validate :owner_belongs_to_account, if: :owner_or_account_changed?
 
   belongs_to :account

@@ -2,7 +2,7 @@
 
 require 'rails_helper'
 
-RSpec.describe WorkingHour do
+RSpec.describe WorkingHour, locale: :en do
   context 'when on monday 10am' do
     before do
       Time.zone = 'UTC'
@@ -28,14 +28,19 @@ RSpec.describe WorkingHour do
   end
 
   context 'when on friday 12:30pm' do
+    let(:inbox) { create(:inbox, timezone: 'UTC') }
+
     before do
       Time.zone = 'UTC'
-      create(:working_hour)
+      inbox.update!(timezone: 'UTC')
+      inbox.working_hours.find_by!(day_of_week: 5).update!(
+        open_hour: 9, open_minutes: 0, close_hour: 17, close_minutes: 0, closed_all_day: false
+      )
       travel_to '10.09.2021 12:30'.to_datetime
     end
 
     it 'is considered to be in business hours' do
-      expect(described_class.today.open_now?).to be true
+      expect(inbox.working_hours.today.open_now?).to be true
     end
   end
 
