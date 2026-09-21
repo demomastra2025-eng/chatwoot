@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe 'Captain tool schema metadata' do
   it 'keeps create_touch public and assistant schemas aligned across relative, absolute, and recurring scheduling' do
     public_params = Captain::Tools::CreateTouchTool.parameters
-    assistant_params = Captain::Tools::Copilot::CreateTouchService.parameters
+    assistant_params = Captain::Tools::Account::CreateTouchService.parameters
 
     expected_create_touch_description =
       'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
@@ -23,7 +23,7 @@ RSpec.describe 'Captain tool schema metadata' do
       'set false when the touch must remain scheduled'
 
     expect(Captain::Tools::CreateTouchTool.description).to eq(expected_create_touch_description)
-    expect(Captain::Tools::Copilot::CreateTouchService.description).to eq(expected_create_touch_description)
+    expect(Captain::Tools::Account::CreateTouchService.description).to eq(expected_create_touch_description)
     expect(public_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(assistant_params[:relative_anchor].description).to eq(expected_relative_anchor_description)
     expect(public_params[:auto_cancel_on_incoming].description).to eq(expected_auto_cancel_description)
@@ -57,13 +57,13 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'documents explicit enum-like values for high-risk or filter-heavy tools' do
     create_task_public = Captain::Tools::CreateTaskTool.parameters
-    create_task_assistant = Captain::Tools::Copilot::CreateTaskService.parameters
+    create_task_assistant = Captain::Tools::Account::CreateTaskService.parameters
     update_task_public = Captain::Tools::UpdateTaskTool.parameters
-    update_task_assistant = Captain::Tools::Copilot::UpdateTaskService.parameters
-    search_tasks = Captain::Tools::Copilot::SearchTasksService.parameters
-    search_appointments = Captain::Tools::Copilot::SearchAppointmentsService.parameters
-    update_contact = Captain::Tools::Copilot::UpdateContactService.parameters
-    search_resources = Captain::Tools::Copilot::SearchSchedulingResourcesService.parameters
+    update_task_assistant = Captain::Tools::Account::UpdateTaskService.parameters
+    search_tasks = Captain::Tools::Account::SearchTasksService.parameters
+    search_appointments = Captain::Tools::Account::SearchAppointmentsService.parameters
+    update_contact = Captain::Tools::Account::UpdateContactService.parameters
+    search_resources = Captain::Tools::Account::SearchSchedulingResourcesService.parameters
 
     expect(create_task_public[:priority].description).to eq('Task priority: low, medium, high, or urgent')
     expect(create_task_assistant[:priority].description).to eq('Task priority: low, medium, high, or urgent')
@@ -87,10 +87,10 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'exposes CRM custom_attributes as JSON strings so models can pass dynamic CRM field keys' do
     tool_pairs = [
-      [Captain::Tools::CreateDealTool, Captain::Tools::Copilot::CreateDealService],
-      [Captain::Tools::UpdateDealTool, Captain::Tools::Copilot::UpdateDealService],
-      [Captain::Tools::CreateTaskTool, Captain::Tools::Copilot::CreateTaskService],
-      [Captain::Tools::UpdateTaskTool, Captain::Tools::Copilot::UpdateTaskService]
+      [Captain::Tools::CreateDealTool, Captain::Tools::Account::CreateDealService],
+      [Captain::Tools::UpdateDealTool, Captain::Tools::Account::UpdateDealService],
+      [Captain::Tools::CreateTaskTool, Captain::Tools::Account::CreateTaskService],
+      [Captain::Tools::UpdateTaskTool, Captain::Tools::Account::UpdateTaskService]
     ]
 
     tool_pairs.each do |public_tool, assistant_tool|
@@ -105,8 +105,8 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'exposes scheduling appointment custom_attributes as native objects' do
     tool_pairs = [
-      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
-      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Account::CreateAppointmentService],
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Account::UpdateAppointmentService]
     ]
 
     tool_pairs.each do |public_tool, assistant_tool|
@@ -121,8 +121,8 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'documents scheduling appointment types and the Medelement cabinet contract in both scopes' do
     tool_pairs = [
-      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
-      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Account::CreateAppointmentService],
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Account::UpdateAppointmentService]
     ]
 
     tool_pairs.each do |public_tool, assistant_tool|
@@ -137,8 +137,8 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'exposes the same optional exact appointment target for update and cancel in both scopes' do
     tool_pairs = [
-      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService],
-      [Captain::Tools::CancelAppointmentTool, Captain::Tools::Copilot::CancelAppointmentService]
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Account::UpdateAppointmentService],
+      [Captain::Tools::CancelAppointmentTool, Captain::Tools::Account::CancelAppointmentService]
     ]
 
     tool_pairs.each do |public_tool, assistant_tool|
@@ -153,10 +153,10 @@ RSpec.describe 'Captain tool schema metadata' do
       Captain::Tools::CreateTouchTool.description
     )
     expect(Captain::ToolRegistry.definition_for('search_appointments').description).to eq(
-      Captain::Tools::Copilot::SearchAppointmentsService.description
+      Captain::Tools::Account::SearchAppointmentsService.description
     )
     expect(Captain::ToolRegistry.definition_for('search_scheduling_resources').description).to eq(
-      Captain::Tools::Copilot::SearchSchedulingResourcesService.description
+      Captain::Tools::Account::SearchSchedulingResourcesService.description
     )
     expect(Captain::ToolRegistry.definition_for('resolve_conversation').description).to eq(
       Captain::Tools::ResolveConversationTool.description
@@ -165,9 +165,9 @@ RSpec.describe 'Captain tool schema metadata' do
 
   it 'requires factual explanations for resolve and handoff in both scopes' do
     resolve_public = Captain::Tools::ResolveConversationTool.parameters
-    resolve_assistant = Captain::Tools::Copilot::ResolveConversationService.parameters
+    resolve_assistant = Captain::Tools::Account::ResolveConversationService.parameters
     handoff_public = Captain::Tools::HandoffTool.parameters
-    handoff_assistant = Captain::Tools::Copilot::HandoffService.parameters
+    handoff_assistant = Captain::Tools::Account::HandoffService.parameters
 
     expect(resolve_public[:reason].required).to be(true)
     expect(resolve_assistant[:reason].required).to be(true)

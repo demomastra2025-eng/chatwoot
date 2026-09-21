@@ -20,6 +20,7 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter, type: :model do
 
     payload = JSON.parse(tool.execute(tool_context, query: 'Shared renewal'))
 
+    expect(tool.send(:delegate_class)).to eq(Captain::Tools::Account::SearchDealsService)
     expect(payload['filters']).to include('contact_id' => conversation.contact_id)
     expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(current_contact_deal.id)
   end

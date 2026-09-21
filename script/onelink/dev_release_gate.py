@@ -9,7 +9,7 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -45,6 +45,14 @@ class ContractManifest:
     required_ancestor: str
     protected_files: dict[str, str]
     contract_specs: tuple[str, ...]
+    protected_file_renames: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    def candidate_protected_files(self) -> dict[str, str | None]:
+        candidates: dict[str, str | None] = {}
+        for baseline_path in self.protected_files:
+            candidate_path, candidate_digest = self.protected_file_renames.get(baseline_path, (baseline_path, None))
+            candidates[candidate_path] = candidate_digest
+        return candidates
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -83,6 +91,7 @@ def load_contract_manifest(path: Path) -> ContractManifest:
         required_ancestor = payload["required_ancestor"]
         protected_files = payload["protected_files"]
         contract_specs = tuple(payload["contract_specs"])
+        protected_file_renames = payload.get("protected_file_renames", {})
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise GateError(f"invalid contract manifest {path}: {error}") from error
 
@@ -97,7 +106,25 @@ def load_contract_manifest(path: Path) -> ContractManifest:
             raise GateError(f"invalid protected path in contract manifest: {protected_path!r}")
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise GateError(f"invalid baseline SHA-256 for protected path: {protected_path}")
-    return ContractManifest(required_ancestor, protected_files, contract_specs)
+    if not isinstance(protected_file_renames, dict):
+        raise GateError("contract manifest protected_file_renames must be an object")
+    parsed_renames: dict[str, tuple[str, str]] = {}
+    for baseline_path, candidate in protected_file_renames.items():
+        if baseline_path not in protected_files:
+            raise GateError(f"protected file rename has no baseline entry: {baseline_path}")
+        if not isinstance(candidate, dict):
+            raise GateError(f"invalid protected file rename for baseline path: {baseline_path}")
+        candidate_path = candidate.get("candidate_path")
+        candidate_digest = candidate.get("candidate_sha256")
+        if not isinstance(candidate_path, str) or not candidate_path or candidate_path.startswith("/") or ".." in Path(candidate_path).parts:
+            raise GateError(f"invalid candidate path for protected file rename: {baseline_path}")
+        if not isinstance(candidate_digest, str) or not re.fullmatch(r"[0-9a-f]{64}", candidate_digest):
+            raise GateError(f"invalid candidate SHA-256 for protected file rename: {baseline_path}")
+        parsed_renames[baseline_path] = (candidate_path, candidate_digest)
+    candidate_paths = [parsed_renames.get(path, (path, ""))[0] for path in protected_files]
+    if len(candidate_paths) != len(set(candidate_paths)):
+        raise GateError("protected file rename candidate paths must be unique")
+    return ContractManifest(required_ancestor, protected_files, contract_specs, parsed_renames)
 
 
 def is_ancestor(repo: Path, ancestor: str, candidate: str) -> bool:
@@ -134,6 +161,18 @@ def validate_manifest_baseline(repo: Path, manifest: ContractManifest) -> None:
             raise GateError(f"contract baseline hash mismatch for protected file: {path}")
 
 
+def validate_manifest_candidate(repo: Path, candidate_sha: str, manifest: ContractManifest) -> None:
+    for path, expected_digest in manifest.candidate_protected_files().items():
+        if expected_digest is None:
+            continue
+        result = git(repo, "show", f"{candidate_sha}:{path}", check=False)
+        if result.returncode != 0:
+            raise GateError(f"renamed protected file is missing from candidate: {path}")
+        actual_digest = hashlib.sha256(result.stdout.encode()).hexdigest()
+        if actual_digest != expected_digest:
+            raise GateError(f"candidate hash mismatch for renamed protected file: {path}")
+
+
 def historical_object_ids(repo: Path, live_sha: str, path: str) -> set[str]:
     live_object_id = object_id(repo, live_sha, path)
     commits = git(repo, "log", "--first-parent", "--format=%H", live_sha, "--", path).stdout.splitlines()
@@ -159,6 +198,7 @@ def critical_revert_commits(repo: Path, live_sha: str, candidate_sha: str, manif
     paths = list(CRITICAL_PREFIXES)
     if manifest:
         paths.extend(manifest.protected_files)
+        paths.extend(manifest.candidate_protected_files())
     output = git(repo, "log", "--format=%H%x09%s", f"{live_sha}..{candidate_sha}", "--", *paths).stdout
     return [line for line in output.splitlines() if "\tRevert " in line]
 
@@ -174,15 +214,24 @@ def evaluate(
     validate_commit(repo, candidate_sha, "candidate SHA")
     if manifest:
         validate_manifest_baseline(repo, manifest)
+        validate_manifest_candidate(repo, candidate_sha, manifest)
 
     changes = change_plan(repo, live_sha, candidate_sha)
     changed_paths = {path for change in changes for path in change.paths}
-    protected_paths = set(manifest.protected_files) if manifest else set()
+    protected_paths = set(manifest.candidate_protected_files()) if manifest else set()
+    baseline_protected_paths = set(manifest.protected_files) if manifest else set()
     contract_paths = protected_paths | (set(manifest.contract_specs) if manifest else set())
     descendant = is_ancestor(repo, live_sha, candidate_sha)
     unified_descendant = not manifest or is_ancestor(repo, manifest.required_ancestor, candidate_sha)
-    critical_changes = [change for change in changes if change.critical or contract_paths.intersection(change.paths)]
-    critical_deletions = [change for change in critical_changes if change.deleted]
+    critical_changes = [
+        change for change in changes
+        if change.critical or (contract_paths | baseline_protected_paths).intersection(change.paths)
+    ]
+    renamed_baseline_paths = set(manifest.protected_file_renames) if manifest else set()
+    critical_deletions = [
+        change for change in critical_changes
+        if change.deleted and not set(change.paths).issubset(renamed_baseline_paths)
+    ]
     missing_contract_paths = sorted(path for path in contract_paths if object_id(repo, candidate_sha, path) is None)
     reverts = critical_revert_commits(repo, live_sha, candidate_sha, manifest) if descendant else []
     rollbacks = semantic_rollbacks(repo, live_sha, candidate_sha, manifest, changed_paths) if descendant and manifest else []

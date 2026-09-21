@@ -36,7 +36,7 @@ SPEC_FILES=(
   spec/services/scheduling/available_slot_search_service_spec.rb
   spec/services/scheduling/calendar_view_service_spec.rb
   spec/services/scheduling/id_list_param_parser_spec.rb
-  spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb
+  spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb
   spec/requests/api/v1/accounts/scheduling/appointments_spec.rb
 )
 RUBOCOP_FILES=(
@@ -66,7 +66,7 @@ SYNTAX_FILES=(
   "${RUBOCOP_FILES[@]}"
   enterprise/lib/captain/tools/operations/appointment_operations.rb
   spec/services/scheduling/available_slot_search_service_spec.rb
-  spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb
+  spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb
 )
 
 print_command() {

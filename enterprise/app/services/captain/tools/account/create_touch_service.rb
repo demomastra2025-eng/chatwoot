@@ -1,0 +1,67 @@
+class Captain::Tools::Account::CreateTouchService < Captain::Tools::Account::BaseAccountTool
+  def self.name
+    'create_touch'
+  end
+
+  description(
+    'Create a delayed outbound touch with free text, attachments, or an approved official WhatsApp channel template. ' \
+    'Supports relative scheduling (relative_offset_minutes + optional relative_anchor) and absolute scheduling (scheduled_at as ISO8601). ' \
+    'Recurrence (repeat_mode daily/weekly/monthly/weekdays) is available only with absolute scheduled_at and requires repeat_until_at. ' \
+    'For a fixed wall-clock time on relative touches use relative_time_mode=fixed_time_of_day with relative_time_of_day HH:MM. ' \
+    'For official WhatsApp outside the 24-hour window, use channel_template instead of free_text or AI-generated text.'
+  )
+  param :body, type: :string, desc: 'Touch message body. Required for free_text touches; optional for channel_template touches', required: false
+  param :content_kind, type: :string,
+                       desc: 'Touch content kind: free_text or channel_template. Defaults to channel_template when template_params are provided', required: false
+  param :template_params, type: :object,
+                          desc: 'Approved channel template params for WhatsApp/Twilio WhatsApp touches, including name, language, namespace, and processed_params', required: false
+  param :remindable_kind, type: :string, desc: 'Target entity: conversation, deal, task, appointment. Defaults to conversation', required: false
+  param :relative_anchor, type: :string,
+                          desc: 'Optional relative anchor: touch.created_at, conversation.created_at, conversation.last_incoming_message_at, conversation.last_activity_at, conversation.last_outgoing_message_at, conversation.waiting_since, deal.expected_close_on, task.due_at, appointment.starts_at, appointment.ends_at. Defaults to conversation.last_incoming_message_at for conversation touches, falling back to touch.created_at when no incoming customer message exists.', required: false
+  param :relative_offset_minutes, type: :number,
+                                  desc: 'Positive offset in minutes for relative scheduling. Omit when scheduled_at is provided', required: false
+  param :repeat_mode, type: :string,
+                      desc: 'Recurrence mode: once (default), daily, weekly, monthly, weekdays. ' \
+                            'Modes other than once require both absolute scheduled_at and repeat_until_at.',
+                      required: false
+  param :repeat_until_at, type: :string, desc: 'ISO8601 stop time for recurring touches, e.g. 2026-08-01T18:00:00+03:00.', required: false
+  param :scheduled_at, type: :string,
+                       desc: 'Absolute send time as ISO8601, e.g. 2026-07-10T15:00:00+03:00. ' \
+                             'Use instead of relative_offset_minutes for absolute scheduling.',
+                       required: false
+  param :relative_time_mode, type: :string,
+                             desc: 'Relative time mode: inherit_anchor_time (default) or fixed_time_of_day. ' \
+                                   'Use fixed_time_of_day with relative_time_of_day.',
+                             required: false
+  param :relative_time_of_day, type: :string, desc: 'Wall-clock time HH:MM (e.g. 10:00) when relative_time_mode is fixed_time_of_day.',
+                               required: false
+  param :timezone, type: :string, desc: 'IANA timezone, for example Asia/Almaty', required: false
+  param :target_inbox_id, type: :number, desc: 'Optional explicit target inbox/channel ID', required: false
+  param :auto_cancel_on_incoming, type: :boolean,
+                                  desc: 'Set true only when a customer reply in the same conversation should cancel this scheduled touch; set false when the touch must remain scheduled', required: false
+  param :attachment_ids, type: :array, desc: 'Optional ActiveStorage signed blob IDs to send when the touch executes', required: false
+  param :artifact_ids, type: :array,
+                       desc: 'Optional opaque artifact IDs selected from custom HTTP tool artifact_candidates; materialized now for reliable scheduled delivery', required: false
+
+  def execute(**arguments)
+    touch = touch_operations.create_touch(**arguments)
+
+    formatted_payload(::Outbound::ToolPayloadBuilder.touch_payload(action: 'create_touch', touch: touch))
+  rescue StandardError => e
+    tool_failure(e)
+  end
+
+  def active?
+    user_has_permission('outbound_manage')
+  end
+
+  private
+
+  def touch_operations
+    Captain::Tools::Operations::TouchOperations.new(
+      assistant: assistant,
+      conversation: current_conversation,
+      actor: @user
+    )
+  end
+end
