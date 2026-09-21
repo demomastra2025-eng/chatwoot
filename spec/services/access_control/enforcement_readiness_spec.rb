@@ -26,6 +26,18 @@ RSpec.describe AccessControl::EnforcementReadiness do
       expect(result.system_role_mismatches).to be_empty
     end
 
+    it 'accepts an assigned legacy Automation manager' do
+      account = create(:account)
+      custom_role = create(:custom_role, account: account, permissions: %w[automation_manage])
+      create(:account_user, account: account, role: :agent, custom_role: custom_role)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+
+      result = described_class.call(account: account)
+
+      expect(result).to be_ready
+      expect(result.compatibility_counts).to eq('matched' => 1)
+    end
+
     it 'rejects a modified system preset even when the assigned user still points to it' do
       account = create(:account)
       roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key

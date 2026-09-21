@@ -8,7 +8,7 @@ RSpec.describe AccessControl::LegacyCustomRoleMapper do
       custom_role = create(
         :custom_role,
         account: account,
-        permissions: %w[conversation_team_manage conversation_manage crm_task_view]
+        permissions: %w[conversation_team_manage conversation_manage crm_task_view automation_manage]
       )
 
       analysis = described_class.analyze(custom_role)
@@ -16,7 +16,8 @@ RSpec.describe AccessControl::LegacyCustomRoleMapper do
       expect(analysis).to be_mappable
       expect(analysis.grants).to include(
         { resource: 'conversations', capability: 'view', access_scope: 'all' },
-        { resource: 'tasks', capability: 'view', access_scope: 'all' }
+        { resource: 'tasks', capability: 'view', access_scope: 'all' },
+        { resource: 'automation_rules', capability: 'manage', access_scope: 'all' }
       )
       expect(analysis.grants).not_to include(
         { resource: 'conversations', capability: 'view', access_scope: 'team' }

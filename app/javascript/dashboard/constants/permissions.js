@@ -12,6 +12,7 @@ export const AVAILABLE_CUSTOM_ROLE_PERMISSIONS = [
   'report_manage',
   'knowledge_base_manage',
   'captain_manage',
+  'automation_manage',
   'scheduling_override',
 ];
 

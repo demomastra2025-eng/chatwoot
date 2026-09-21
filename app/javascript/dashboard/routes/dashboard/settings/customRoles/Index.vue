@@ -274,6 +274,7 @@ const confirmDeletion = () => {
         :selected-role="selectedRole"
         :resources="accessRoleCatalog.resources"
         :access-scopes="accessRoleCatalog.accessScopes"
+        :resource-access-scopes="accessRoleCatalog.resourceAccessScopes"
         @close="hideCustomRoleModal"
         @stale="rebaseSelectedRole"
       />
