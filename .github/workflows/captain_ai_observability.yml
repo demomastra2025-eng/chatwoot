@@ -173,11 +173,6 @@ jobs:
             spec/lib/llm/monitoring/trace_backfill_spec.rb \
             spec/lib/llm/release_check/runner_spec.rb \
             spec/lib/captain/base_task_service_spec.rb \
-            spec/lib/captain/rewrite_service_spec.rb \
-            spec/lib/captain/summary_service_spec.rb \
-            spec/lib/captain/reply_suggestion_service_spec.rb \
-            spec/lib/captain/follow_up_service_spec.rb \
-            spec/lib/captain/label_suggestion_service_spec.rb \
             spec/lib/captain/csat_utility_analysis_service_spec.rb \
             spec/lib/llm/structured_output_policy_spec.rb \
             spec/controllers/api/v1/accounts/captain/preferences_controller_spec.rb \

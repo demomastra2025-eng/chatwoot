@@ -135,13 +135,6 @@ Rails.application.routes.draw do
                 post :retry_failed
               end
             end
-            resource :tasks, only: [], controller: 'tasks' do
-              post :rewrite
-              post :summarize
-              post :reply_suggestion
-              post :label_suggestion
-              post :follow_up
-            end
           end
 
           resources :contact_inboxes, only: [] do
