@@ -2,6 +2,38 @@ require 'rails_helper'
 require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 
 RSpec.describe AutomationRule do
+  describe 'durable runtime definition' do
+    it 'keeps legacy independent rules valid with nullable group and position' do
+      rule = build(:automation_rule, account: create(:account))
+
+      expect(rule).to be_valid
+      expect(rule.automation_rule_group).to be_nil
+      expect(rule.position).to be_nil
+      expect(rule.definition_version).to eq(1)
+    end
+
+    it 'requires a same-account, same-event group and deterministic position' do
+      account = create(:account)
+      group = create(:automation_rule_group, account: account, event_name: 'conversation_updated')
+
+      expect(build(:automation_rule, account: account, automation_rule_group: group, position: 0)).to be_valid
+      expect(build(:automation_rule, account: account, automation_rule_group: group, position: nil)).not_to be_valid
+      expect(build(:automation_rule, account: create(:account), automation_rule_group: group, position: 0)).not_to be_valid
+      expect(build(:automation_rule, account: account, automation_rule_group: group, position: 0,
+                                     event_name: 'conversation_created')).not_to be_valid
+    end
+
+    it 'advances definition version only when durable definition fields change' do
+      rule = create(:automation_rule)
+
+      rule.update!(name: 'Renamed only')
+      expect(rule.reload.definition_version).to eq(1)
+
+      rule.update!(conditions: [])
+      expect(rule.reload.definition_version).to eq(2)
+    end
+  end
+
   describe 'lifecycle generation' do
     it 'advances only when a disabled rule is enabled again', :aggregate_failures do
       rule = create(:automation_rule)

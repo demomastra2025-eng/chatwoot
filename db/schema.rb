@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_21_030000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_21_170200) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -400,6 +400,148 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_21_030000) do
     t.index ["user_id", "user_type"], name: "user_index"
   end
 
+  create_table "automation_action_receipts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "automation_execution_id", null: false
+    t.string "action_id", null: false
+    t.integer "position", null: false
+    t.string "action_signature", null: false
+    t.string "effect_key"
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "lease_owner"
+    t.datetime "lease_expires_at"
+    t.datetime "next_attempt_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.jsonb "result", default: {}, null: false
+    t.text "last_error"
+    t.datetime "completed_at"
+    t.datetime "needs_attention_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "effect_key"], name: "idx_automation_action_receipts_on_account_effect", unique: true, where: "(effect_key IS NOT NULL)"
+    t.index ["account_id"], name: "index_automation_action_receipts_on_account_id"
+    t.index ["automation_execution_id", "action_id"], name: "idx_automation_action_receipts_on_execution_action", unique: true
+    t.index ["automation_execution_id", "position"], name: "idx_automation_action_receipts_on_execution_position", unique: true
+    t.index ["automation_execution_id"], name: "index_automation_action_receipts_on_automation_execution_id"
+    t.index ["lease_expires_at", "id"], name: "idx_automation_action_receipts_expired_lease", where: "((status)::text = 'processing'::text)"
+    t.index ["next_attempt_at", "id"], name: "idx_automation_action_receipts_ready", where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'retrying'::character varying])::text[]))"
+    t.check_constraint "\"position\" >= 0", name: "automation_action_receipts_non_negative_position"
+    t.check_constraint "attempts >= 0", name: "automation_action_receipts_non_negative_attempts"
+    t.check_constraint "btrim(action_id::text) <> ''::text", name: "automation_action_receipts_non_blank_action_id"
+    t.check_constraint "btrim(action_signature::text) <> ''::text", name: "automation_action_receipts_non_blank_signature"
+    t.check_constraint "jsonb_typeof(result) = 'object'::text", name: "automation_action_receipts_object_result"
+    t.check_constraint "status::text = 'needs_attention'::text AND needs_attention_at IS NOT NULL OR status::text <> 'needs_attention'::text AND needs_attention_at IS NULL", name: "automation_action_receipts_attention_state"
+    t.check_constraint "status::text = 'processing'::text AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL OR status::text <> 'processing'::text AND lease_owner IS NULL AND lease_expires_at IS NULL", name: "automation_action_receipts_status_lease_coherence"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'retrying'::character varying, 'succeeded'::character varying, 'skipped'::character varying, 'needs_attention'::character varying]::text[])", name: "automation_action_receipts_supported_status"
+  end
+
+  create_table "automation_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.uuid "event_uuid", default: -> { "gen_random_uuid()" }, null: false
+    t.string "dedupe_key", null: false
+    t.string "event_name", null: false
+    t.string "subject_type", null: false
+    t.bigint "subject_id", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.jsonb "payload_snapshot", default: {}, null: false
+    t.jsonb "changes_snapshot", default: {}, null: false
+    t.string "producer", null: false
+    t.jsonb "provenance", default: {}, null: false
+    t.uuid "trace_id", null: false
+    t.uuid "causation_id"
+    t.integer "depth", default: 0, null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "lease_owner"
+    t.datetime "lease_expires_at"
+    t.datetime "next_attempt_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.text "last_error"
+    t.datetime "dead_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "dead_at", "id"], name: "idx_automation_events_dead", where: "((status)::text = 'dead'::text)"
+    t.index ["account_id", "dedupe_key"], name: "idx_automation_events_on_account_dedupe", unique: true
+    t.index ["account_id", "event_uuid"], name: "idx_automation_events_on_account_uuid", unique: true
+    t.index ["account_id", "id"], name: "idx_automation_events_on_account_and_id", unique: true
+    t.index ["account_id"], name: "index_automation_events_on_account_id"
+    t.index ["event_uuid"], name: "idx_automation_events_on_uuid", unique: true
+    t.index ["lease_expires_at", "id"], name: "idx_automation_events_expired_lease", where: "((status)::text = 'processing'::text)"
+    t.index ["next_attempt_at", "id"], name: "idx_automation_events_ready", where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'retrying'::character varying])::text[]))"
+    t.check_constraint "attempts >= 0", name: "automation_events_non_negative_attempts"
+    t.check_constraint "btrim(dedupe_key::text) <> ''::text", name: "automation_events_non_blank_dedupe_key"
+    t.check_constraint "btrim(event_name::text) <> ''::text", name: "automation_events_non_blank_event_name"
+    t.check_constraint "btrim(producer::text) <> ''::text", name: "automation_events_non_blank_producer"
+    t.check_constraint "btrim(subject_type::text) <> ''::text", name: "automation_events_non_blank_subject_type"
+    t.check_constraint "causation_id IS NULL AND depth = 0 OR causation_id IS NOT NULL AND depth > 0", name: "automation_events_causation_depth_shape"
+    t.check_constraint "depth >= 0", name: "automation_events_non_negative_depth"
+    t.check_constraint "jsonb_typeof(changes_snapshot) = 'object'::text", name: "automation_events_object_changes_snapshot"
+    t.check_constraint "jsonb_typeof(payload_snapshot) = 'object'::text AND payload_snapshot <> '{}'::jsonb", name: "automation_events_object_payload_snapshot"
+    t.check_constraint "jsonb_typeof(provenance) = 'object'::text AND provenance <> '{}'::jsonb", name: "automation_events_non_blank_object_provenance"
+    t.check_constraint "schema_version > 0", name: "automation_events_positive_schema_version"
+    t.check_constraint "status::text = 'dead'::text AND dead_at IS NOT NULL OR status::text <> 'dead'::text AND dead_at IS NULL", name: "automation_events_complete_dead_state"
+    t.check_constraint "status::text = 'processing'::text AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL OR status::text <> 'processing'::text AND lease_owner IS NULL AND lease_expires_at IS NULL", name: "automation_events_status_lease_coherence"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'retrying'::character varying::text, 'completed'::character varying::text, 'dead'::character varying::text])", name: "automation_events_supported_status"
+  end
+
+  create_table "automation_executions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "automation_event_id", null: false
+    t.bigint "automation_rule_id", null: false
+    t.bigint "automation_rule_group_id"
+    t.bigint "lifecycle_generation", null: false
+    t.bigint "definition_version", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.jsonb "conditions_snapshot", null: false
+    t.jsonb "actions_snapshot", null: false
+    t.jsonb "execution_schedule_snapshot", null: false
+    t.datetime "scheduled_at", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempts", default: 0, null: false
+    t.string "lease_owner"
+    t.datetime "lease_expires_at"
+    t.datetime "next_attempt_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.text "last_error"
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.datetime "needs_attention_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "id"], name: "idx_automation_executions_on_account_and_id", unique: true
+    t.index ["account_id", "status", "created_at", "id"], name: "idx_automation_executions_history"
+    t.index ["account_id"], name: "index_automation_executions_on_account_id"
+    t.index ["automation_event_id", "automation_rule_group_id"], name: "idx_automation_executions_on_event_group_selection", unique: true, where: "(automation_rule_group_id IS NOT NULL)"
+    t.index ["automation_event_id", "automation_rule_id", "lifecycle_generation"], name: "idx_automation_executions_on_event_rule_generation", unique: true
+    t.index ["automation_event_id"], name: "index_automation_executions_on_automation_event_id"
+    t.index ["automation_rule_group_id"], name: "index_automation_executions_on_automation_rule_group_id"
+    t.index ["automation_rule_id"], name: "index_automation_executions_on_automation_rule_id"
+    t.index ["lease_expires_at", "id"], name: "idx_automation_executions_expired_lease", where: "((status)::text = 'processing'::text)"
+    t.index ["next_attempt_at", "id"], name: "idx_automation_executions_ready", where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'scheduled'::character varying, 'retrying'::character varying])::text[]))"
+    t.check_constraint "attempts >= 0", name: "automation_executions_non_negative_attempts"
+    t.check_constraint "definition_version > 0", name: "automation_executions_positive_definition_version"
+    t.check_constraint "jsonb_typeof(actions_snapshot) = 'array'::text AND jsonb_array_length(actions_snapshot) > 0", name: "automation_executions_non_blank_array_actions_snapshot"
+    t.check_constraint "jsonb_typeof(conditions_snapshot) = 'array'::text", name: "automation_executions_array_conditions_snapshot"
+    t.check_constraint "jsonb_typeof(execution_schedule_snapshot) = 'object'::text", name: "automation_executions_object_schedule_snapshot"
+    t.check_constraint "lifecycle_generation > 0", name: "automation_executions_positive_generation"
+    t.check_constraint "schema_version > 0", name: "automation_executions_positive_schema_version"
+    t.check_constraint "status::text = 'needs_attention'::text AND needs_attention_at IS NOT NULL OR status::text <> 'needs_attention'::text AND needs_attention_at IS NULL", name: "automation_executions_attention_state"
+    t.check_constraint "status::text = 'processing'::text AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL OR status::text <> 'processing'::text AND lease_owner IS NULL AND lease_expires_at IS NULL", name: "automation_executions_status_lease_coherence"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'scheduled'::character varying::text, 'processing'::character varying::text, 'retrying'::character varying::text, 'succeeded'::character varying::text, 'cancelled'::character varying::text, 'needs_attention'::character varying::text])", name: "automation_executions_supported_status"
+  end
+
+  create_table "automation_rule_groups", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "event_name", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "id", "event_name"], name: "idx_automation_rule_groups_on_account_id_event", unique: true
+    t.index ["account_id", "id"], name: "idx_automation_rule_groups_on_account_and_id", unique: true
+    t.index ["account_id"], name: "index_automation_rule_groups_on_account_id"
+    t.check_constraint "btrim(event_name::text) <> ''::text", name: "automation_rule_groups_non_blank_event"
+    t.check_constraint "btrim(name::text) <> ''::text", name: "automation_rule_groups_non_blank_name"
+  end
+
   create_table "automation_rules", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "name", null: false
@@ -412,7 +554,17 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_21_030000) do
     t.boolean "active", default: true, null: false
     t.jsonb "execution_schedule", default: {}, null: false
     t.bigint "lifecycle_generation", default: 1, null: false
+    t.bigint "automation_rule_group_id"
+    t.integer "position"
+    t.bigint "definition_version", default: 1, null: false
+    t.index ["account_id", "event_name", "active", "automation_rule_group_id", "position", "id"], name: "idx_automation_rules_runtime_lookup"
+    t.index ["account_id", "id"], name: "idx_automation_rules_on_account_and_id", unique: true
     t.index ["account_id"], name: "index_automation_rules_on_account_id"
+    t.index ["automation_rule_group_id", "position"], name: "idx_automation_rules_on_group_position", unique: true, where: "(automation_rule_group_id IS NOT NULL)"
+    t.index ["automation_rule_group_id"], name: "index_automation_rules_on_automation_rule_group_id"
+    t.check_constraint "\"position\" IS NULL OR \"position\" >= 0", name: "automation_rules_non_negative_position"
+    t.check_constraint "automation_rule_group_id IS NULL AND \"position\" IS NULL OR automation_rule_group_id IS NOT NULL AND \"position\" IS NOT NULL", name: "automation_rules_group_position_complete"
+    t.check_constraint "definition_version > 0", name: "automation_rules_positive_definition_version"
   end
 
   create_table "billing_organizations", force: :cascade do |t|
@@ -3732,6 +3884,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_21_030000) do
   add_foreign_key "assignment_quota_usages", "contacts", name: "fk_rails_assignment_quota_usages_contact", on_delete: :cascade
   add_foreign_key "assignment_quota_usages", "conversations", name: "fk_rails_assignment_quota_usages_conversation"
   add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
+  add_foreign_key "automation_action_receipts", "accounts"
+  add_foreign_key "automation_action_receipts", "automation_executions"
+  add_foreign_key "automation_action_receipts", "automation_executions", column: ["account_id", "automation_execution_id"], primary_key: ["account_id", "id"], name: "fk_automation_action_receipts_execution_account"
+  add_foreign_key "automation_events", "accounts"
+  add_foreign_key "automation_events", "automation_events", column: ["account_id", "causation_id"], primary_key: ["account_id", "event_uuid"], name: "fk_automation_events_causation_account"
+  add_foreign_key "automation_executions", "accounts"
+  add_foreign_key "automation_executions", "automation_events"
+  add_foreign_key "automation_executions", "automation_events", column: ["account_id", "automation_event_id"], primary_key: ["account_id", "id"], name: "fk_automation_executions_event_account"
+  add_foreign_key "automation_executions", "automation_rule_groups"
+  add_foreign_key "automation_executions", "automation_rule_groups", column: ["account_id", "automation_rule_group_id"], primary_key: ["account_id", "id"], name: "fk_automation_executions_group_account"
+  add_foreign_key "automation_executions", "automation_rules"
+  add_foreign_key "automation_executions", "automation_rules", column: ["account_id", "automation_rule_id"], primary_key: ["account_id", "id"], name: "fk_automation_executions_rule_account"
+  add_foreign_key "automation_rule_groups", "accounts"
+  add_foreign_key "automation_rules", "automation_rule_groups"
+  add_foreign_key "automation_rules", "automation_rule_groups", column: ["account_id", "automation_rule_group_id", "event_name"], primary_key: ["account_id", "id", "event_name"], name: "fk_automation_rules_group_account_event"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
   add_foreign_key "campaign_audience_imports", "accounts", on_delete: :cascade
@@ -4001,6 +4168,31 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.bump_automation_rule_definition_version()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF (
+    NEW.event_name IS DISTINCT FROM OLD.event_name OR
+    NEW.conditions IS DISTINCT FROM OLD.conditions OR
+    NEW.actions IS DISTINCT FROM OLD.actions OR
+    NEW.execution_schedule IS DISTINCT FROM OLD.execution_schedule OR
+    NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR
+    NEW.position IS DISTINCT FROM OLD.position
+  ) AND NEW.definition_version <= OLD.definition_version THEN
+    NEW.definition_version := OLD.definition_version + 1;
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER bump_automation_rule_definition_version BEFORE UPDATE ON \"automation_rules\" FOR EACH ROW EXECUTE FUNCTION bump_automation_rule_definition_version()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.bump_automation_rule_lifecycle_generation()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -4057,5 +4249,180 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER conversations_before_insert_row_tr BEFORE INSERT ON \"conversations\" FOR EACH ROW EXECUTE FUNCTION conversations_before_insert_row_tr()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.automation_action_signature(action_snapshot jsonb)
+ RETURNS text
+ LANGUAGE sql
+ IMMUTABLE STRICT
+AS $function$
+  SELECT encode(digest(convert_to(action_snapshot::text, 'UTF8'), 'sha256'), 'hex');
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.derive_automation_action_receipt_identity()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  action_snapshot jsonb;
+  expected_action_id text;
+  expected_signature text;
+BEGIN
+  SELECT actions_snapshot -> NEW.position
+  INTO action_snapshot
+  FROM automation_executions
+  WHERE account_id = NEW.account_id AND id = NEW.automation_execution_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'automation action receipt execution does not exist in account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF action_snapshot IS NULL THEN
+    RAISE EXCEPTION 'automation action receipt position is absent from execution snapshot' USING ERRCODE = 'check_violation';
+  END IF;
+  expected_action_id := COALESCE(NULLIF(btrim(action_snapshot ->> 'action_id'), ''), 'legacy-index:' || NEW.position);
+  expected_signature := automation_action_signature(action_snapshot);
+  IF NEW.action_id IS NOT NULL AND NEW.action_id IS DISTINCT FROM expected_action_id THEN
+    RAISE EXCEPTION 'automation action receipt id does not match execution snapshot' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.action_signature IS NOT NULL AND NEW.action_signature IS DISTINCT FROM expected_signature THEN
+    RAISE EXCEPTION 'automation action receipt signature does not match execution snapshot' USING ERRCODE = 'check_violation';
+  END IF;
+  NEW.action_id := expected_action_id;
+  NEW.action_signature := expected_signature;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER derive_automation_action_receipt_identity BEFORE INSERT ON \"automation_action_receipts\" FOR EACH ROW EXECUTE FUNCTION derive_automation_action_receipt_identity()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_automation_action_receipt_identity_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_execution_id IS DISTINCT FROM OLD.automation_execution_id OR NEW.action_id IS DISTINCT FROM OLD.action_id OR NEW.position IS DISTINCT FROM OLD.position OR NEW.action_signature IS DISTINCT FROM OLD.action_signature OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'automation action receipt identity is immutable' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_automation_action_receipt_identity_changes BEFORE UPDATE ON \"automation_action_receipts\" FOR EACH ROW EXECUTE FUNCTION prevent_automation_action_receipt_identity_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_automation_event_envelope_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.event_uuid IS DISTINCT FROM OLD.event_uuid OR NEW.dedupe_key IS DISTINCT FROM OLD.dedupe_key OR NEW.event_name IS DISTINCT FROM OLD.event_name OR NEW.subject_type IS DISTINCT FROM OLD.subject_type OR NEW.subject_id IS DISTINCT FROM OLD.subject_id OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.payload_snapshot IS DISTINCT FROM OLD.payload_snapshot OR NEW.changes_snapshot IS DISTINCT FROM OLD.changes_snapshot OR NEW.producer IS DISTINCT FROM OLD.producer OR NEW.provenance IS DISTINCT FROM OLD.provenance OR NEW.trace_id IS DISTINCT FROM OLD.trace_id OR NEW.causation_id IS DISTINCT FROM OLD.causation_id OR NEW.depth IS DISTINCT FROM OLD.depth OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'automation event envelope is immutable' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_automation_event_envelope_changes BEFORE UPDATE ON \"automation_events\" FOR EACH ROW EXECUTE FUNCTION prevent_automation_event_envelope_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_automation_event_causation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  parent_trace_id uuid;
+  parent_depth integer;
+BEGIN
+  IF NEW.causation_id IS NULL THEN
+    IF NEW.depth <> 0 THEN
+      RAISE EXCEPTION 'root automation event depth must be zero' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+  END IF;
+  SELECT trace_id, depth INTO parent_trace_id, parent_depth
+  FROM automation_events
+  WHERE account_id = NEW.account_id AND event_uuid = NEW.causation_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'automation event causation parent does not exist in account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.trace_id IS DISTINCT FROM parent_trace_id OR NEW.depth <> parent_depth + 1 THEN
+    RAISE EXCEPTION 'automation event causation must preserve trace and increment depth' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_automation_event_causation BEFORE INSERT ON \"automation_events\" FOR EACH ROW EXECUTE FUNCTION validate_automation_event_causation()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_automation_execution_snapshot_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_event_id IS DISTINCT FROM OLD.automation_event_id OR NEW.automation_rule_id IS DISTINCT FROM OLD.automation_rule_id OR NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR NEW.lifecycle_generation IS DISTINCT FROM OLD.lifecycle_generation OR NEW.definition_version IS DISTINCT FROM OLD.definition_version OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.conditions_snapshot IS DISTINCT FROM OLD.conditions_snapshot OR NEW.actions_snapshot IS DISTINCT FROM OLD.actions_snapshot OR NEW.execution_schedule_snapshot IS DISTINCT FROM OLD.execution_schedule_snapshot OR NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'automation execution snapshot is immutable' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_automation_execution_snapshot_changes BEFORE UPDATE ON \"automation_executions\" FOR EACH ROW EXECUTE FUNCTION prevent_automation_execution_snapshot_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_automation_execution_insert_contract()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  selected_group_id bigint;
+BEGIN
+  SELECT automation_rule_group_id INTO selected_group_id
+  FROM automation_rules
+  WHERE account_id = NEW.account_id AND id = NEW.automation_rule_id;
+  IF FOUND AND NEW.automation_rule_group_id IS DISTINCT FROM selected_group_id THEN
+    RAISE EXCEPTION 'automation execution group must match selected rule group' USING ERRCODE = 'check_violation';
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action WHERE jsonb_typeof(action) <> 'object') THEN
+    RAISE EXCEPTION 'automation execution actions must be objects' USING ERRCODE = 'check_violation';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action
+    WHERE action ? 'action_id' AND (jsonb_typeof(action -> 'action_id') <> 'string' OR btrim(action ->> 'action_id') = '')
+  ) THEN
+    RAISE EXCEPTION 'automation execution explicit action ids must be non-blank strings' USING ERRCODE = 'check_violation';
+  END IF;
+  IF (
+    SELECT count(action ->> 'action_id') <> count(DISTINCT action ->> 'action_id')
+    FROM jsonb_array_elements(NEW.actions_snapshot) action
+    WHERE action ? 'action_id'
+  ) THEN
+    RAISE EXCEPTION 'automation execution explicit action ids must be unique' USING ERRCODE = 'unique_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_automation_execution_insert_contract BEFORE INSERT ON \"automation_executions\" FOR EACH ROW EXECUTE FUNCTION validate_automation_execution_insert_contract()")
 
 end
