@@ -190,7 +190,7 @@ RSpec.describe Crm::Reports::TaskLifecycleQuery do
     expect(rows.fetch(missing_deadline.id)).to include(deadline_state: 'not_configured')
     expect(rows.fetch(malformed.id)).to include(lifecycle_reliability: 'unknown', deadline_state: 'unknown')
     expect(query.meta).to include(
-      coverage: 'unknown', source: 'crm_events.task_terminal_lifecycle', definition_version: 1,
+      coverage: 'unknown', source: 'crm_events.task_terminal_lifecycle', definition_version: 2,
       reliable_since: nil, unknown_before: nil, reliability_boundary: 'per_fact_only'
     )
   end
@@ -256,6 +256,158 @@ RSpec.describe Crm::Reports::TaskLifecycleQuery do
     expect(scoped_query.aggregate_rows.sum { |row| row[:lifecycle_count] }).to eq(1)
     expect(scoped_query.pagination_meta).to include(page: 1, per_page: 1, total_count: 1)
     expect(scoped_query.drill_down_rows.pluck(:task_id)).to contain_exactly(visible.id)
+  end
+
+  it 'projects terminal responsibility separately from action actor and ignores current reassignment' do
+    assignee = create(:user, account: account, name: 'Responsible')
+    actor = create(:user, account: account, name: 'Finisher')
+    team = create(:team, account: account, name: 'Terminal team')
+    replacement = create(:user, account: account)
+    task = create(:crm_task, account: account, status: status, assignee: assignee, team: team)
+    timestamp = Time.utc(2026, 3, 8, 12)
+    event = create_lifecycle_event(
+      task: task,
+      type: 'completed',
+      at: timestamp,
+      actor: actor,
+      actor_kind: 'User',
+      performed_by_type: 'Captain::Assistant',
+      performed_by_id: 991_337,
+      after_data: timed_snapshot(type: 'completed', terminal_at: timestamp, due_at: timestamp + 1.hour).merge(
+        'assignee_id' => assignee.id,
+        'team_id' => team.id,
+        'completed_by_id' => actor.id
+      )
+    )
+    task.update!(assignee: replacement, team: nil)
+
+    row = query.drill_down_rows.find { |candidate| candidate[:lifecycle_event_id] == event.id }
+
+    expect(row[:terminal_responsibility]).to eq(
+      assignee: { id: assignee.id, name: 'Responsible', state: 'current_catalog_projection' },
+      team: { id: team.id, name: team.name, state: 'current_catalog_projection' }
+    )
+    expect(row[:action_actor]).to eq(
+      terminal: { type: 'User', id: actor.id, name: 'Finisher', state: 'current_catalog_projection' },
+      event: { type: 'User', id: actor.id, state: 'persisted_typed_identity' },
+      performed_by: { type: 'Captain::Assistant', id: 991_337, state: 'persisted_typed_identity' }
+    )
+  end
+
+  it 'keeps deleted, system, customer, malformed, and legacy identities explicit without resolving actor types' do
+    former_user = create(:user, account: account)
+    task = create(:crm_task, account: account, status: status)
+    timestamp = Time.utc(2026, 3, 8, 12)
+    typed = create_lifecycle_event(
+      task: task,
+      type: 'cancelled',
+      at: timestamp,
+      actor: nil,
+      actor_kind: 'System',
+      performed_by_type: 'Contact',
+      performed_by_id: 4815,
+      after_data: timed_snapshot(type: 'cancelled', terminal_at: timestamp, due_at: timestamp + 1.hour).merge(
+        'assignee_id' => former_user.id,
+        'team_id' => 'malformed-team',
+        'cancelled_by_id' => former_user.id
+      )
+    )
+    former_user.account_users.find_by!(account: account).destroy!
+    legacy = create_lifecycle_event(
+      task: task,
+      type: 'cancelled',
+      at: timestamp + 1.hour,
+      actor: nil,
+      actor_kind: nil,
+      after_data: timed_snapshot(type: 'cancelled', terminal_at: timestamp + 1.hour, due_at: timestamp + 2.hours)
+    )
+
+    rows = query.drill_down_rows.index_by { |row| row[:lifecycle_event_id] }
+    expect(rows.fetch(typed.id)).to include(
+      terminal_responsibility: {
+        assignee: { id: former_user.id, name: nil, state: 'persisted_identity' },
+        team: { id: nil, name: nil, state: 'unknown' }
+      },
+      action_actor: {
+        terminal: { type: 'User', id: former_user.id, name: nil, state: 'persisted_identity' },
+        event: { type: 'System', id: nil, state: 'system' },
+        performed_by: { type: 'Contact', id: 4815, state: 'persisted_typed_identity' }
+      }
+    )
+    expect(rows.fetch(legacy.id)).to include(
+      terminal_responsibility: {
+        assignee: { id: nil, name: nil, state: 'unknown' },
+        team: { id: nil, name: nil, state: 'unknown' }
+      }
+    )
+  end
+
+  it 'does not treat incomplete or inconsistent typed actor envelopes as persisted identities' do
+    actor = create(:user, account: account)
+    task = create(:crm_task, account: account, status: status)
+    timestamp = Time.utc(2026, 3, 8, 12)
+    incomplete = create_lifecycle_event(
+      task: task,
+      type: 'completed',
+      at: timestamp,
+      actor: nil,
+      actor_kind: 'User',
+      performed_by_type: 'Captain::Assistant',
+      performed_by_id: nil,
+      after_data: timed_snapshot(type: 'completed', terminal_at: timestamp, due_at: timestamp + 1.hour)
+    )
+    inconsistent = create_lifecycle_event(
+      task: task,
+      type: 'cancelled',
+      at: timestamp + 1.hour,
+      actor: actor,
+      actor_kind: 'System',
+      after_data: timed_snapshot(type: 'cancelled', terminal_at: timestamp + 1.hour, due_at: timestamp + 2.hours)
+    )
+    invalid = create_lifecycle_event(
+      task: task,
+      type: 'completed',
+      at: timestamp + 2.hours,
+      actor: actor,
+      actor_kind: '',
+      performed_by_type: 'User',
+      performed_by_id: 0,
+      after_data: timed_snapshot(type: 'completed', terminal_at: timestamp + 2.hours, due_at: timestamp + 3.hours)
+    )
+    rows = query.drill_down_rows.index_by { |row| row[:lifecycle_event_id] }
+    expect(rows.fetch(incomplete.id)[:action_actor]).to include(
+      event: { type: 'User', id: nil, state: 'unknown' },
+      performed_by: { type: 'Captain::Assistant', id: nil, state: 'unknown' }
+    )
+    expect(rows.fetch(inconsistent.id)[:action_actor]).to include(
+      event: { type: 'System', id: nil, state: 'unknown' }
+    )
+    expect(rows.fetch(invalid.id)[:action_actor]).to include(
+      event: { type: '', id: nil, state: 'unknown' },
+      performed_by: { type: 'User', id: nil, state: 'unknown' }
+    )
+  end
+
+  it 'normalizes a typed actor id when its type is missing' do
+    actor = create(:user, account: account)
+    task = create(:crm_task, account: account, status: status)
+    timestamp = Time.utc(2026, 3, 8, 12)
+    event = create_lifecycle_event(
+      task: task,
+      type: 'completed',
+      at: timestamp,
+      actor: nil,
+      actor_kind: 'System',
+      performed_by_type: nil,
+      performed_by_id: actor.id,
+      after_data: timed_snapshot(type: 'completed', terminal_at: timestamp, due_at: timestamp + 1.hour)
+    )
+
+    row = query.drill_down_rows.find { |candidate| candidate[:lifecycle_event_id] == event.id }
+    expect(row[:action_actor]).to include(
+      event: { type: 'System', id: nil, state: 'system' },
+      performed_by: { type: nil, id: nil, state: 'unknown' }
+    )
   end
 
   it 'rejects invalid windows, observation dates, filters, and pagination' do
