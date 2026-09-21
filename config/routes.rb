@@ -281,6 +281,8 @@ Rails.application.routes.draw do
                 get :deals_without_next_action_details
                 get :deal_workload
                 get :deal_workload_details
+                get :deal_terminal_outcomes
+                get :deal_terminal_outcomes_details
                 get :task_workload
                 get :task_workload_details
               end
