@@ -1,8 +1,9 @@
 class CommunicationThreadPolicy < ApplicationPolicy
   class Scope < ApplicationPolicy::Scope
-    def initialize(user_context, scope, capability: 'view')
+    def initialize(user_context, scope, capability: 'view', owner_only: false)
       super(user_context, scope)
       @capability = capability
+      @owner_only = owner_only
     end
 
     def resolve
@@ -10,12 +11,25 @@ class CommunicationThreadPolicy < ApplicationPolicy
       return account_scope.none if account_user.blank?
 
       mode_resolution = access_mode_resolution
+      instrument_shadow_scope(mode_resolution)
       return account_scope if mode_resolution.authoritative_source != 'access_role'
 
       role_scope = role_scope_for(account_scope, mode_resolution)
-      return role_scope unless capability == 'view'
+      return role_scope unless capability == 'view' && !owner_only
 
       role_scope.or(participant_scope(account_scope))
+    end
+
+    def self.intersection(user_context, relation, capabilities:)
+      Array(capabilities).reduce(relation) do |effective_scope, capability|
+        capability_scope = new(
+          user_context,
+          relation,
+          capability: capability.to_s,
+          owner_only: true
+        ).resolve
+        effective_scope.where(id: capability_scope.select(:id))
+      end
     end
 
     def self.apply(account_scope, access_scope:, user:, account:)
@@ -37,10 +51,16 @@ class CommunicationThreadPolicy < ApplicationPolicy
 
     private
 
-    attr_reader :capability
+    attr_reader :capability, :owner_only
 
     def access_mode_resolution
       AccessControl::ModeResolver.call(account_user: account_user, resource: 'conversations', capability: capability)
+    end
+
+    def instrument_shadow_scope(mode_resolution)
+      return unless mode_resolution.mode == 'shadow'
+
+      AccessControl::ModeAwareDecision.instrument_shadow_scope(mode_resolution: mode_resolution, legacy_scope: 'all')
     end
 
     def role_scope_for(account_scope, mode_resolution)
@@ -69,6 +89,10 @@ class CommunicationThreadPolicy < ApplicationPolicy
 
   def reply?
     show?
+  end
+
+  def view_reports?
+    capability_allowed?('view_reports', record_scoped: false)
   end
 
   def update?
@@ -104,18 +128,24 @@ class CommunicationThreadPolicy < ApplicationPolicy
     record.communication_thread_participants.exists?(user_id: user.id)
   end
 
-  def capability_allowed?(capability)
+  def capability_allowed?(capability, record_scoped: true)
     return false if account_user.blank?
 
     mode_resolution = mode_resolution_for(capability)
-    legacy_allowed = administrator_access? || plain_agent_access? || has_permission?('conversation_manage')
-    access_role_allowed = access_role_allows?(mode_resolution)
+    legacy_allowed = legacy_capability_allowed?(capability)
+    access_role_allowed = access_role_allows?(mode_resolution, record_scoped: record_scoped)
 
     AccessControl::ModeAwareDecision.call(
       mode_resolution: mode_resolution,
       legacy_allowed: legacy_allowed,
       access_role_allowed: access_role_allowed
     )
+  end
+
+  def legacy_capability_allowed?(capability)
+    return administrator_access? || has_permission?('report_manage') if capability == 'view_reports'
+
+    administrator_access? || plain_agent_access? || has_permission?('conversation_manage')
   end
 
   def participants_management_allowed?
@@ -130,8 +160,10 @@ class CommunicationThreadPolicy < ApplicationPolicy
     )
   end
 
-  def access_role_allows?(mode_resolution)
+  def access_role_allows?(mode_resolution, record_scoped: true)
     access_scope = mode_resolution.access_role_resolution&.scope || 'none'
+    return access_scope != 'none' unless record_scoped
+
     snapshot = user_context[:thread_access_snapshot]
     return snapshot_scope_allows?(access_scope, snapshot) if snapshot
 

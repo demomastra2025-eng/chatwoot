@@ -347,6 +347,14 @@ Rails.application.routes.draw do
               resource :participants, only: [:show, :create, :destroy]
             end
           end
+          namespace :communication_threads do
+            resources :reports, only: [] do
+              collection do
+                get :workload
+                get :workload_details
+              end
+            end
+          end
 
           resources :conversations, only: [:index, :create, :show, :update, :destroy] do
             collection do
