@@ -352,6 +352,8 @@ Rails.application.routes.draw do
               collection do
                 get :workload
                 get :workload_details
+                get :collaboration_occurrences
+                get :collaboration_occurrence_details
               end
             end
           end

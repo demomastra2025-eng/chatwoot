@@ -2,10 +2,15 @@ class Api::V1::Accounts::CommunicationThreads::ReportsController < Api::V1::Acco
   before_action :ensure_communication_threads_feature_enabled!
 
   rescue_from CommunicationThreads::WorkloadQuery::InvalidQuery, with: :render_invalid_query
+  rescue_from CommunicationThreads::CollaborationOccurrencesQuery::InvalidQuery, with: :render_invalid_query
 
   def workload = render_workload
 
   def workload_details = render_workload(details: true)
+
+  def collaboration_occurrences = render_collaboration_occurrences
+
+  def collaboration_occurrence_details = render_collaboration_occurrences(details: true)
 
   private
 
@@ -15,6 +20,19 @@ class Api::V1::Accounts::CommunicationThreads::ReportsController < Api::V1::Acco
       account: Current.account,
       threads_scope: report_threads_scope,
       params: workload_params
+    )
+    rows = details ? query.drill_down_rows : query.aggregate_rows
+    meta = details ? query.pagination_meta : query.meta
+
+    render json: { payload: { rows: rows }, meta: meta }
+  end
+
+  def render_collaboration_occurrences(details: false)
+    authorize CommunicationThread, :view_reports?
+    query = CommunicationThreads::CollaborationOccurrencesQuery.new(
+      account: Current.account,
+      threads_scope: report_threads_scope,
+      params: collaboration_occurrence_params
     )
     rows = details ? query.drill_down_rows : query.aggregate_rows
     meta = details ? query.pagination_meta : query.meta
@@ -35,6 +53,10 @@ class Api::V1::Accounts::CommunicationThreads::ReportsController < Api::V1::Acco
       :dimension, :assignee_id, :team_id, :status, :priority, :unread, :page, :per_page,
       :from, :to, :as_of, :from_date, :to_date, :as_of_date, :since, :until, :start_at, :end_at
     )
+  end
+
+  def collaboration_occurrence_params
+    params.permit(:fact_kind, :from_date, :to_date, :as_of_date, :page, :per_page)
   end
 
   def ensure_communication_threads_feature_enabled!
