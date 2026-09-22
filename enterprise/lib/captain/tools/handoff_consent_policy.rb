@@ -37,7 +37,7 @@ class Captain::Tools::HandoffConsentPolicy
     нет\s+сильн[[:alpha:]]*\s+(?:бол[[:alpha:]]*\s+в\s+груди|кровотеч[[:alpha:]]*)|
     сильн[[:alpha:]]*\s+(?:бол[[:alpha:]]*\s+в\s+груди|кровотеч[[:alpha:]]*)\s+нет
   /ix
-  NEGATED_HANDOFF_OFFER_PATTERN = /не\s+(?:могу|можем).{0,30}#{TRANSFER_PATTERN}/i
+  NEGATED_HANDOFF_OFFER_PATTERN = /не\s+(?:могу|можем)[^.!?;]{0,30}#{TRANSFER_PATTERN}/i
   EMERGENCY_PATTERN = /
     (?:не\s+могу\s+дышать|без\s+сознания|потерял[аи]?\s+сознание|
     сильн[[:alpha:]]*\s+бол[[:alpha:]]*\s+в\s+груди|сильн[[:alpha:]]*\s+кровотеч|

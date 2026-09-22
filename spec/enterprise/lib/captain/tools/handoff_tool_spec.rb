@@ -15,7 +15,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
     expect(result).to include(
       success: false,
       error: described_class::CONSENT_REQUIRED_ERROR,
-      retryable: true,
+      retryable: false,
       audit: include(failure_stage: 'authorization', failure_reason: 'handoff_not_authorized')
     )
   end
@@ -219,6 +219,27 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
           expect(result).to be_a(RubyLLM::Tool::Halt)
           expect(run_context.context[:pending_human_handoff][:reason]).to eq(assistant.handoff_consent_reason_value)
+        end
+
+        it 'allows the production consent after an unrelated negation in the preceding sentence' do
+          create(
+            :message,
+            account: account,
+            inbox: inbox,
+            conversation: conversation,
+            message_type: :outgoing,
+            sender: assistant,
+            content: 'По стоимости я сейчас не могу подтвердить точную цену. Передать диалог сотруднику?'
+          )
+          create_triggering_message.call('Да пожалуйста')
+
+          result = tool.perform(tool_context, reason: 'Model supplied reason')
+
+          expect(result).to be_a(RubyLLM::Tool::Halt)
+          expect(run_context.context[:pending_human_handoff]).to include(
+            reason: assistant.handoff_consent_reason_value
+          )
+          expect(run_context.context[described_class::AUTHORIZED_CONTEXT_KEY]).to be true
         end
 
         it 'blocks an affirmative answer after a negated transfer statement' do

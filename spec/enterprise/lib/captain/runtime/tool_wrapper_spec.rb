@@ -525,6 +525,31 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'halts immediately when an executed tool returns a terminal authorization denial' do
+    mutating_tool = ToolWrapperSpecMutatingTool.new
+    mutating_wrapper = described_class.new(mutating_tool, context_wrapper)
+    denial = Captain::ToolResult.failure(
+      error: 'Explicit handoff consent is required',
+      retryable: false,
+      audit: { failure_stage: 'authorization', failure_reason: 'handoff_not_authorized' }
+    )
+    allow(mutating_tool).to receive(:perform).and_return(denial)
+
+    first_result = mutating_wrapper.call(title: 'First handoff attempt')
+    second_result = mutating_wrapper.call(title: 'Changed handoff attempt')
+
+    expect(first_result).to be_a(RubyLLM::Tool::Halt)
+    expect(second_result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(first_result, 'Explicit handoff consent is required', retryable: false)
+    expect(second_result.content).to eq(first_result.content)
+    expect(mutating_tool).to have_received(:perform).once
+    expect(events.count { |event| event.first == :start }).to eq(1)
+    expect(context_wrapper.context[:captain_v2_terminal_tool_stop]).to include(
+      tool_name: 'tool_wrapper_mutating_spec',
+      result: include(retryable: false, audit: include(failure_reason: 'handoff_not_authorized'))
+    )
+  end
+
   it 'reports model requests separately from accepted backend executions' do
     context_wrapper.context[:current_agent] = 'scenario_agent'
     context_wrapper.context[:captain_v2_bound_tool_gate] = true

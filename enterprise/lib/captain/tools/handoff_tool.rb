@@ -43,7 +43,7 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
                    })
     Captain::ToolResult.failure(
       error: CONSENT_REQUIRED_ERROR,
-      retryable: true,
+      retryable: false,
       audit: {
         failure_stage: 'authorization',
         failure_reason: 'handoff_not_authorized'

@@ -1832,7 +1832,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       run_complete_callback.call('assistant', nil, context_wrapper)
     end
 
-    it 'allows two denied handoff attempts through the runtime wrapper without marking or halting' do
+    it 'halts the run after one denied handoff even when the model changes the arguments' do
       service = described_class.new(assistant: assistant, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
@@ -1872,14 +1872,21 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       wrapper = Captain::Runtime::ToolWrapper.new(handoff_tool, run_context)
 
       first_result = wrapper.call(reason: 'Model supplied reason')
-      second_result = wrapper.call(reason: 'Model supplied reason')
+      second_result = wrapper.call(reason: 'Changed model reason', message: 'Changed handoff message')
 
-      expect(first_result).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
-      expect(second_result).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
+      expect(first_result).to be_a(RubyLLM::Tool::Halt)
+      expect(first_result.content).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
+      expect(second_result.content).to eq(first_result.content)
       expect(run_context.context[:captain_v2_completed_tool_names]).to eq([handoff_tool.name, handoff_tool.name])
       expect(run_context.context[:captain_v2_handoff_tool_called]).to be_nil
       expect(run_context.context[:pending_human_handoff]).to be_nil
-      expect(run_context.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_nil
+      expect(run_context.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to include(
+        tool_name: handoff_tool.name,
+        result: include(
+          retryable: false,
+          audit: include(failure_reason: 'handoff_not_authorized')
+        )
+      )
     end
 
     it 'does not infer handoff authorization from the completed tool name and a pending payload' do

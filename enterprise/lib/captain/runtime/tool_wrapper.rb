@@ -39,7 +39,7 @@ class Captain::Runtime::ToolWrapper
     'search_scheduling_resources' => %i[limit].freeze,
     'search_tasks' => %i[limit].freeze
   }.freeze
-  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call mutation_retry_blocked].freeze
+  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call handoff_not_authorized mutation_retry_blocked].freeze
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_TOOL = 12
   MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
@@ -171,6 +171,7 @@ class Captain::Runtime::ToolWrapper
     record_mutating_tool_result(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
+    return halt_completed_result(final_result) if terminal_failure_result?(final_result)
 
     Captain::ToolResult.render(final_result)
   end
@@ -419,6 +420,11 @@ class Captain::Runtime::ToolWrapper
   def complete_and_halt(result)
     normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, normalized_result, @context_wrapper)
+    halt_completed_result(normalized_result)
+  end
+
+  def halt_completed_result(result)
+    normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     remember_terminal_tool_stop(normalized_result)
     RubyLLM::Tool::Halt.new(Captain::ToolResult.render(normalized_result))
   end
@@ -435,7 +441,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def terminal_early_result?(result)
-    return false if result.blank?
+    terminal_failure_result?(result)
+  end
+
+  def terminal_failure_result?(result)
+    return false if result.blank? || halt_result?(result)
 
     failure_reason = Captain::ToolResult.normalize(result).dig(:audit, :failure_reason).to_s
     failure_reason.in?(TERMINAL_FAILURE_REASONS)
@@ -614,16 +624,8 @@ class Captain::Runtime::ToolWrapper
   end
 
   def mutation_retry_allowed?(entry, normalized_args)
-    return true if retryable_authorization_denial?(entry)
-
     idempotency_key = normalized_args[:idempotency_key].presence
     entry[:retryable] == true && idempotency_key.present? && entry[:idempotency_key] == idempotency_key
-  end
-
-  def retryable_authorization_denial?(entry)
-    entry[:retryable] == true &&
-      entry[:failure_stage] == 'authorization' &&
-      entry[:failure_reason] == 'handoff_not_authorized'
   end
 
   def track_mutating_tool_execution(normalized_args)
