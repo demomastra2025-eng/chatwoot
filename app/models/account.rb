@@ -80,6 +80,7 @@ class Account < ApplicationRecord
   has_many :access_roles, dependent: :destroy
   has_many :communication_thread_participant_lifecycle_facts, dependent: :delete_all
   has_many :communication_thread_manual_call_occurrences, dependent: :delete_all
+  has_many :telephony_logical_call_occurrences, dependent: :delete_all, class_name: 'Telephony::LogicalCallOccurrence'
 
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'

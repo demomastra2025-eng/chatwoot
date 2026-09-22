@@ -105,6 +105,7 @@ class Telephony::CallSession < ApplicationRecord
   has_many :events, class_name: '::Telephony::Event', dependent: :destroy
 
   before_validation :normalize_status_value
+  after_save :record_logical_call_occurrences
 
   validates :provider, presence: true
   validates :external_call_ref, presence: true, uniqueness: { scope: :account_id }
@@ -285,5 +286,12 @@ class Telephony::CallSession < ApplicationRecord
 
   def normalize_status_value
     self.status = self.class.normalize_status(status) || status
+  end
+
+  def record_logical_call_occurrences
+    Telephony::LogicalCallOccurrenceRecorder.new(
+      call_session: self,
+      allow_attempted: saved_change_to_started_at? && started_at_before_last_save.nil?
+    ).record!
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_22_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3370,6 +3370,64 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_150000) do
     t.index ["provider_model_id"], name: "index_fish_voices_on_provider_model_id", unique: true
   end
 
+  create_table "telephony_logical_call_occurrences", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "logical_call_identity", null: false
+    t.string "logical_call_ref", null: false
+    t.string "occurrence_kind", null: false
+    t.string "source_kind", null: false
+    t.bigint "source_id", null: false
+    t.string "source_ref", null: false
+    t.string "correlation_ref"
+    t.string "provider", null: false
+    t.string "direction", null: false
+    t.bigint "inbox_id_snapshot"
+    t.bigint "contact_id_snapshot"
+    t.bigint "conversation_id_snapshot"
+    t.bigint "communication_thread_id_snapshot"
+    t.string "actor_kind", default: "unknown", null: false
+    t.bigint "actor_id_snapshot"
+    t.string "actor_name_snapshot"
+    t.bigint "actor_team_id_snapshot"
+    t.string "actor_team_name_snapshot"
+    t.bigint "assistant_id_snapshot"
+    t.string "assistant_name_snapshot"
+    t.datetime "occurred_at", null: false
+    t.datetime "connected_at"
+    t.datetime "terminal_at"
+    t.integer "duration_seconds"
+    t.string "duration_source"
+    t.string "terminal_status"
+    t.string "terminal_reason"
+    t.string "reliability", default: "exact", null: false
+    t.datetime "reliable_since", null: false
+    t.integer "source_version", default: 1, null: false
+    t.integer "definition_version", default: 1, null: false
+    t.integer "revision", default: 1, null: false
+    t.bigint "supersedes_occurrence_id"
+    t.datetime "created_at", null: false
+    t.index ["account_id", "actor_kind", "actor_id_snapshot", "occurred_at", "id"], name: "idx_telephony_occurrences_actor_time"
+    t.index ["account_id", "logical_call_identity", "occurrence_kind", "source_version", "revision"], name: "idx_telephony_occurrences_logical_grain", unique: true
+    t.index ["account_id", "logical_call_identity", "occurred_at", "id"], name: "idx_telephony_occurrences_logical_time"
+    t.index ["account_id", "occurrence_kind", "occurred_at", "id"], name: "idx_telephony_occurrences_account_kind_time"
+    t.index ["account_id"], name: "index_telephony_logical_call_occurrences_on_account_id"
+    t.index ["supersedes_occurrence_id"], name: "idx_telephony_occurrences_one_successor", unique: true, where: "(supersedes_occurrence_id IS NOT NULL)"
+    t.check_constraint "actor_kind = 'ai_agent'::text OR assistant_id_snapshot IS NULL AND assistant_name_snapshot IS NULL", name: "chk_telephony_occurrences_ai_actor"
+    t.check_constraint "actor_kind = 'human'::text OR actor_id_snapshot IS NULL AND actor_team_id_snapshot IS NULL", name: "chk_telephony_occurrences_human_actor"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['human'::character varying, 'ai_agent'::character varying, 'system'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_actor_kind"
+    t.check_constraint "direction::text = ANY (ARRAY['inbound'::character varying, 'outbound'::character varying]::text[])", name: "chk_telephony_occurrences_direction"
+    t.check_constraint "duration_seconds IS NULL OR duration_seconds >= 0", name: "chk_telephony_occurrences_duration"
+    t.check_constraint "duration_source IS NULL OR duration_source::text = ANY (ARRAY['connected_to_terminal'::character varying, 'provider_reported'::character varying]::text[])", name: "chk_telephony_occurrences_duration_source"
+    t.check_constraint "occurrence_kind::text = ANY (ARRAY['attempted'::character varying, 'connected'::character varying, 'terminal'::character varying]::text[])", name: "chk_telephony_occurrences_kind"
+    t.check_constraint "reliability::text = ANY (ARRAY['exact'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_reliability"
+    t.check_constraint "revision >= 1", name: "chk_telephony_occurrences_revision"
+    t.check_constraint "source_kind::text = 'telephony_call_session'::text", name: "chk_telephony_occurrences_source_kind"
+    t.check_constraint "occurrence_kind::text = 'terminal'::text OR duration_seconds IS NULL AND duration_source IS NULL AND terminal_status IS NULL", name: "chk_telephony_occurrences_terminal_fields"
+    t.check_constraint "revision = 1 AND supersedes_occurrence_id IS NULL OR revision > 1 AND supersedes_occurrence_id IS NOT NULL", name: "chk_telephony_occurrences_supersession"
+    t.check_constraint "occurrence_kind::text = 'attempted'::text AND connected_at IS NULL AND terminal_at IS NULL OR occurrence_kind::text = 'connected'::text AND (connected_at IS NOT NULL OR reliability::text = 'unknown'::text) AND terminal_at IS NULL OR occurrence_kind::text = 'terminal'::text AND terminal_at IS NOT NULL", name: "chk_telephony_occurrences_timestamps"
+    t.check_constraint "source_version = 1 AND definition_version = 1", name: "chk_telephony_occurrences_versions"
+  end
+
   create_table "telephony_call_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "conversation_id"
@@ -4152,6 +4210,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_150000) do
   add_foreign_key "telephony_agent_bindings", "users"
   add_foreign_key "telephony_ai_voice_fish_voices", "accounts", on_delete: :cascade
   add_foreign_key "telephony_ai_voice_fish_voices", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "telephony_logical_call_occurrences", "accounts"
   add_foreign_key "telephony_call_sessions", "accounts"
   add_foreign_key "telephony_call_sessions", "contacts"
   add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
@@ -4604,5 +4663,123 @@ $function$
   SQL
 
   execute("CREATE TRIGGER prevent_thread_manual_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_manual_call_occurrence_changes()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_telephony_logical_call_occurrence_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM telephony_call_sessions
+    WHERE id = NEW.source_id
+      AND account_id = NEW.account_id
+      AND external_call_ref = NEW.source_ref
+      AND provider = NEW.provider
+      AND direction = NEW.direction
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence source must belong to account and match its immutable source snapshot'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.inbox_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM inboxes WHERE id = NEW.inbox_id_snapshot AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence inbox snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.contact_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM contacts WHERE id = NEW.contact_id_snapshot AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence contact snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.conversation_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM conversations WHERE id = NEW.conversation_id_snapshot AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence conversation snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.communication_thread_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id_snapshot AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence thread snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.actor_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id_snapshot
+  ) AND NOT (
+    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
+      SELECT 1 FROM telephony_logical_call_occurrences
+      WHERE account_id = NEW.account_id
+        AND logical_call_identity = NEW.logical_call_identity
+        AND occurrence_kind = 'connected'
+        AND source_version = NEW.source_version
+        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
+        AND actor_id_snapshot = NEW.actor_id_snapshot
+    )
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence actor snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.actor_team_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM teams WHERE id = NEW.actor_team_id_snapshot AND account_id = NEW.account_id
+  ) AND NOT (
+    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
+      SELECT 1 FROM telephony_logical_call_occurrences
+      WHERE account_id = NEW.account_id
+        AND logical_call_identity = NEW.logical_call_identity
+        AND occurrence_kind = 'connected'
+        AND source_version = NEW.source_version
+        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
+        AND actor_team_id_snapshot = NEW.actor_team_id_snapshot
+    )
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence team snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.assistant_id_snapshot IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM captain_assistants WHERE id = NEW.assistant_id_snapshot AND account_id = NEW.account_id
+  ) AND NOT (
+    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
+      SELECT 1 FROM telephony_logical_call_occurrences
+      WHERE account_id = NEW.account_id
+        AND logical_call_identity = NEW.logical_call_identity
+        AND occurrence_kind = 'connected'
+        AND source_version = NEW.source_version
+        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
+        AND assistant_id_snapshot = NEW.assistant_id_snapshot
+    )
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence assistant snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.supersedes_occurrence_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM telephony_logical_call_occurrences
+    WHERE id = NEW.supersedes_occurrence_id
+      AND account_id = NEW.account_id
+      AND logical_call_identity = NEW.logical_call_identity
+      AND occurrence_kind = NEW.occurrence_kind
+      AND source_version = NEW.source_version
+      AND revision = NEW.revision - 1
+  ) THEN
+    RAISE EXCEPTION 'telephony occurrence supersession must extend the same logical fact by one revision'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER validate_telephony_logical_call_occurrence_insert BEFORE INSERT ON \"telephony_logical_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION validate_telephony_logical_call_occurrence_insert()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_telephony_logical_call_occurrence_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' AND
+     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'telephony logical call occurrences are append-only' USING ERRCODE = 'check_violation';
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER prevent_telephony_logical_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"telephony_logical_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_telephony_logical_call_occurrence_changes()")
 
 end
