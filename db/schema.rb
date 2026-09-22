@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_21_170300) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_22_090000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1300,6 +1300,36 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_21_170300) do
     t.index ["contact_inbox_id"], name: "index_communication_thread_conversations_on_contact_inbox_id"
     t.index ["conversation_id"], name: "index_communication_thread_conversations_on_conversation_id"
     t.index ["inbox_id"], name: "index_communication_thread_conversations_on_inbox_id"
+  end
+
+  create_table "communication_thread_participant_lifecycle_facts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id", null: false
+    t.string "participant_type", default: "User", null: false
+    t.bigint "participant_id", null: false
+    t.string "actor_kind", null: false
+    t.string "actor_type", null: false
+    t.bigint "actor_id"
+    t.string "action", null: false
+    t.string "reason", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "reliable_since"
+    t.uuid "correlation_id", null: false
+    t.string "idempotency_key", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "action", "occurred_at", "id"], name: "idx_thread_participant_facts_action_time"
+    t.index ["account_id", "communication_thread_id", "occurred_at", "id"], name: "idx_thread_participant_facts_thread_time"
+    t.index ["account_id", "idempotency_key"], name: "idx_thread_participant_facts_idempotency", unique: true
+    t.index ["account_id", "participant_id", "occurred_at", "id"], name: "idx_thread_participant_facts_participant_time"
+    t.index ["account_id"], name: "idx_on_account_id_f6029513b5"
+    t.check_constraint "action::text = ANY (ARRAY['add'::character varying, 'remove'::character varying, 'clear'::character varying, 'retain'::character varying, 'promote'::character varying, 'resolve'::character varying]::text[])", name: "chk_thread_participant_facts_action"
+    t.check_constraint "actor_kind::text = 'system'::text AND actor_id IS NULL OR actor_kind::text <> 'system'::text AND actor_id IS NOT NULL", name: "chk_thread_participant_facts_actor_identity"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['system'::character varying, 'user'::character varying, 'customer'::character varying, 'captain'::character varying, 'automation'::character varying]::text[])", name: "chk_thread_participant_facts_actor_kind"
+    t.check_constraint "actor_kind::text = 'system'::text AND actor_type::text = 'System'::text OR actor_kind::text = 'user'::text AND actor_type::text = 'User'::text OR actor_kind::text = 'customer'::text AND actor_type::text = 'Contact'::text OR actor_kind::text = 'captain'::text AND actor_type::text = 'Captain::Assistant'::text OR actor_kind::text = 'automation'::text AND actor_type::text = ANY (ARRAY['AssignmentPolicy'::character varying, 'AutomationRule'::character varying, 'Inbox'::character varying]::text[])", name: "chk_thread_participant_facts_actor_type"
+    t.check_constraint "participant_type::text = 'User'::text", name: "chk_thread_participant_facts_participant_type"
+    t.check_constraint "reliable_since IS NULL OR reliable_since <= occurred_at", name: "chk_thread_participant_facts_reliable_since"
+    t.check_constraint "schema_version = 1", name: "chk_thread_participant_facts_schema_version"
   end
 
   create_table "communication_thread_participants", force: :cascade do |t|
@@ -3934,6 +3964,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_21_170300) do
   add_foreign_key "communication_thread_conversations", "contact_inboxes"
   add_foreign_key "communication_thread_conversations", "conversations"
   add_foreign_key "communication_thread_conversations", "inboxes"
+  add_foreign_key "communication_thread_participant_lifecycle_facts", "accounts"
   add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "added_by_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_added_by_account"
   add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "user_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_user_account"
   add_foreign_key "communication_thread_participants", "accounts"
@@ -4424,5 +4455,73 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER validate_automation_execution_insert_contract BEFORE INSERT ON \"automation_executions\" FOR EACH ROW EXECUTE FUNCTION validate_automation_execution_insert_contract()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_thread_participant_fact_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM communication_threads
+    WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'participant fact thread must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM account_users
+    WHERE account_id = NEW.account_id AND user_id = NEW.participant_id
+  ) THEN
+    RAISE EXCEPTION 'participant fact user must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.actor_kind = 'user' AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'participant fact user actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'customer' AND NOT EXISTS (
+    SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'participant fact customer actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'captain' AND NOT EXISTS (
+    SELECT 1 FROM captain_assistants WHERE account_id = NEW.account_id AND id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'participant fact captain actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'automation' AND (
+    (NEW.actor_type = 'AssignmentPolicy' AND NOT EXISTS (
+      SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    )) OR
+    (NEW.actor_type = 'AutomationRule' AND NOT EXISTS (
+      SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    )) OR
+    (NEW.actor_type = 'Inbox' AND NOT EXISTS (
+      SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    )) OR
+    NEW.actor_type NOT IN ('AssignmentPolicy', 'AutomationRule', 'Inbox')
+  ) THEN
+    RAISE EXCEPTION 'participant fact automation actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER validate_thread_participant_fact_insert BEFORE INSERT ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION validate_thread_participant_fact_insert()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_participant_fact_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' AND
+     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'communication thread participant lifecycle facts are append-only' USING ERRCODE = 'check_violation';
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER prevent_thread_participant_fact_changes BEFORE UPDATE OR DELETE ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_participant_fact_changes()")
 
 end

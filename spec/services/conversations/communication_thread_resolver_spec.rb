@@ -233,5 +233,22 @@ RSpec.describe Conversations::CommunicationThreadResolver do
 
       expect(thread.status).to eq('pending')
     end
+
+    it 'records participant removal as a resolution fact through the conversation status path' do
+      conversation = create(:conversation, account: account, status: :open)
+      participant = create(:user, account: account)
+      thread = described_class.new(conversation: conversation).perform
+      CommunicationThreads::ParticipationService.new(communication_thread: thread).add!(user_id: participant.id)
+
+      conversation.update!(status: :resolved)
+
+      expect(thread.reload).to be_resolved
+      expect(thread.communication_thread_participants).to be_empty
+      expect(CommunicationThreadParticipantLifecycleFact.order(:id).last).to have_attributes(
+        action: 'resolve',
+        reason: 'thread_resolved',
+        participant_id: participant.id
+      )
+    end
   end
 end

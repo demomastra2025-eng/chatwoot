@@ -42,4 +42,24 @@ FactoryBot.define do
       participant.user ||= create(:user, account: participant.account)
     end
   end
+
+  factory :communication_thread_participant_lifecycle_fact do
+    participant_type { 'User' }
+    actor_kind { 'system' }
+    actor_type { 'System' }
+    actor_id { nil }
+    action { 'add' }
+    reason { 'manual_add' }
+    occurred_at { Time.current }
+    reliable_since { occurred_at }
+    correlation_id { SecureRandom.uuid }
+    sequence(:idempotency_key) { |number| "participant-fact-#{number}" }
+    schema_version { 1 }
+
+    after(:build) do |fact|
+      fact.communication_thread ||= create(:communication_thread)
+      fact.account ||= fact.communication_thread.account
+      fact.participant_id ||= create(:user, account: fact.account).id
+    end
+  end
 end

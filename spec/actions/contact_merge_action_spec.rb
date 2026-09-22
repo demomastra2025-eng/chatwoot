@@ -115,6 +115,24 @@ describe ContactMergeAction do
         expect(base_contact.conversations.reload.pluck(:priority).uniq).to eq(['high'])
       end
 
+      it 'records correlated target-add and source-remove facts before deleting a merged source thread', :aggregate_failures do
+        participant = create(:user, account: account)
+        base_thread = create(:communication_thread, account: account, contact: base_contact)
+        source_thread = create(:communication_thread, account: account, contact: mergee_contact)
+        create(:communication_thread_participant, account: account, communication_thread: source_thread, user: participant)
+
+        contact_merge
+
+        facts = CommunicationThreadParticipantLifecycleFact.where(participant_id: participant.id).order(:id)
+        expect(facts.pluck(:communication_thread_id, :action, :reason)).to contain_exactly(
+          [base_thread.id, 'add', 'contact_merge'],
+          [source_thread.id, 'remove', 'contact_merge']
+        )
+        expect(facts.pluck(:correlation_id).uniq.one?).to be(true)
+        expect(CommunicationThread.exists?(source_thread.id)).to be(false)
+        expect(base_thread.reload.communication_thread_participants).to exist(user_id: participant.id)
+      end
+
       it 'inherits the source owner when the target contact is unassigned' do
         source_owner = create(:user, account: account)
         mergee_contact.update!(owner: source_owner)
