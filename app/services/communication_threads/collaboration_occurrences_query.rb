@@ -7,7 +7,7 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
   MAX_PAGE = 10_000
   QUERY_KIND = 'communication_thread_collaboration_occurrences'.freeze
   FACT_KINDS = %w[participant_lifecycle authored_customer_reply private_message manual_call].freeze
-  AVAILABLE_FACT_KINDS = FACT_KINDS - ['manual_call']
+  AVAILABLE_FACT_KINDS = FACT_KINDS.freeze
 
   attr_reader :account, :params, :timezone, :from_time, :to_time, :as_of_time, :fact_kind
 
@@ -50,7 +50,7 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
         source: occurrence.source,
         reliability: occurrence.reliability,
         retention: occurrence.retention,
-        actor: actor_payload(occurrence.actor_kind, occurrence.actor_type, occurrence.actor_id),
+        actor: actor_payload(occurrence.actor_kind, occurrence.actor_type, occurrence.actor_id, occurrence.actor_name),
         action: occurrence.action,
         action_actor: action_actor_payload(occurrence),
         deleted: occurrence.attributes['deleted'],
@@ -74,7 +74,7 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
       owner_definition: 'canonical_thread_owner_is_not_collaboration_actor_and_receives_no_credit_from_this_report',
       combination_definition: 'fact_kinds_are_source_specific_and_must_not_be_summed_as_employee_effectiveness',
       zero_definition: 'zero_is_returned_only_for_an_available_source_with_no_visible_retained_occurrences',
-      missing_source_definition: 'manual_call_is_unknown_not_zero_until_a_durable_actor_occurrence_fact_exists'
+      missing_source_definition: 'unrecorded_manual_call_history_outside_the_durable_native_source_coverage_is_unknown_not_zero'
     )
   end
 
@@ -83,7 +83,12 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
   end
 
   def relation
-    @relation ||= adapter.relation
+    @relation ||= begin
+      scoped_relation = adapter.relation
+      raise_invalid!('manual_call occurrence coverage is unknown for an empty window') if manual_call? && !scoped_relation.exists?
+
+      scoped_relation
+    end
   end
 
   private
@@ -94,9 +99,6 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
     @fact_kind = params[:fact_kind].to_s
     raise_invalid!('fact_kind is required') if fact_kind.blank?
     raise_invalid!('fact_kind is invalid') unless FACT_KINDS.include?(fact_kind)
-    return unless fact_kind == 'manual_call'
-
-    raise_invalid!('manual_call occurrence source is unavailable: durable actor fact is missing')
   end
 
   def normalize_window!
@@ -112,7 +114,7 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
   end
 
   def normalize_as_of!
-    if participant_lifecycle?
+    if immutable_fact?
       date = parse_date!(:as_of_date)
       raise_invalid!('as_of_date must be on or after to_date') if date < (to_time.in_time_zone(timezone).to_date - 1.day)
 
@@ -137,9 +139,17 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
     raise_invalid!('workspace timezone is invalid') if zone.blank?
   end
 
-  def adapter
+  def adapter # rubocop:disable Metrics/MethodLength
     @adapter ||= if participant_lifecycle?
                    CommunicationThreads::CollaborationOccurrences::ParticipantLifecycleAdapter.new(
+                     account: account,
+                     threads_scope: threads_scope,
+                     from_time: from_time,
+                     to_time: to_time,
+                     as_of_time: as_of_time
+                   )
+                 elsif manual_call?
+                   CommunicationThreads::CollaborationOccurrences::ManualCallAdapter.new(
                      account: account,
                      threads_scope: threads_scope,
                      from_time: from_time,
@@ -161,6 +171,14 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
     fact_kind == 'participant_lifecycle'
   end
 
+  def manual_call?
+    fact_kind == 'manual_call'
+  end
+
+  def immutable_fact?
+    participant_lifecycle? || manual_call?
+  end
+
   def grouped_counts
     relation.group(:fact_kind, :source, :reliability, :actor_kind, :actor_type, :actor_id, :action)
             .order(:fact_kind, :source, :actor_kind, :actor_type, Arel.sql('actor_id ASC NULLS FIRST'), Arel.sql('action ASC NULLS FIRST'))
@@ -175,13 +193,15 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
     relation.order(occurred_at: :desc, occurrence_id: :desc).offset((page - 1) * per_page).limit(per_page)
   end
 
-  def actor_payload(kind, type, id)
-    {
+  def actor_payload(kind, type, id, name = nil)
+    payload = {
       kind: kind,
       type: type,
       id: id,
       identity_state: id.present? ? 'persisted_raw_identity' : identity_state_without_id(kind)
     }
+    payload[:name_snapshot] = name if name.present?
+    payload
   end
 
   def identity_state_without_id(kind)
@@ -195,18 +215,11 @@ class CommunicationThreads::CollaborationOccurrencesQuery # rubocop:disable Metr
   end
 
   def source_catalog
-    [
-      adapter.metadata,
-      {
-        fact_kind: 'manual_call',
-        source: nil,
-        availability: 'unknown_missing_durable_fact',
-        reliability: 'unknown',
-        retention: 'unknown',
-        as_of_supported: false,
-        limitations: 'CallSession_binding_and_voice_call_message_actor_attribution_are_nullable_mutable_and_not_a_canonical_manual_call_fact'
-      }
-    ]
+    [adapter.metadata, manual_call_metadata].uniq { |source| source[:fact_kind] }
+  end
+
+  def manual_call_metadata
+    CommunicationThreads::CollaborationOccurrences::ManualCallAdapter.metadata
   end
 
   def window_metadata

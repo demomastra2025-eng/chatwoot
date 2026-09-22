@@ -62,4 +62,37 @@ FactoryBot.define do
       fact.participant_id ||= create(:user, account: fact.account).id
     end
   end
+
+  factory :communication_thread_manual_call_occurrence do
+    actor_type { 'User' }
+    actor_name { actor&.name || 'Manual caller' }
+    source_kind { 'telephony_call_session' }
+    occurred_at { source&.started_at || Time.current }
+    reliable_since { occurred_at }
+    schema_version { 1 }
+    created_at { occurred_at }
+
+    transient do
+      actor { nil }
+      source { nil }
+    end
+
+    after(:build) do |occurrence, evaluator|
+      occurrence.communication_thread ||= create(:communication_thread)
+      occurrence.account ||= occurrence.communication_thread.account
+      actor = evaluator.actor || create(:user, account: occurrence.account)
+      occurrence.actor_id ||= actor.id
+      source = evaluator.source || create(
+        :telephony_call_session,
+        :native_manual,
+        account: occurrence.account,
+        conversation: create(:conversation, account: occurrence.account),
+        initiator: actor,
+        direction: 'outbound',
+        started_at: occurrence.occurred_at
+      )
+      occurrence.source_id ||= source.id
+      occurrence.source_ref ||= source.external_call_ref
+    end
+  end
 end

@@ -43,6 +43,7 @@ class Voice::OutboundCallBuilder
       status = call[:status] || 'ringing'
       update_conversation!(conversation, call_sid, conference_sid, timestamp, status)
       build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
+      record_manual_call_occurrence!(conversation, call[:call_session])
       { conversation: conversation, call_sid: call_sid, call_session: call[:call_session], browser_join_supported: call[:browser_join_supported] }
     end
   end
@@ -149,6 +150,20 @@ class Voice::OutboundCallBuilder
       },
       user: user,
       timestamps: { created_at: timestamp, ringing_at: timestamp }
+    )
+  end
+
+  def record_manual_call_occurrence!(conversation, call_session)
+    return if call_session.blank? || !account.feature_enabled?('communication_threads')
+
+    communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
+    return if communication_thread.blank?
+
+    CommunicationThreadManualCallOccurrence.record!(
+      account: account,
+      communication_thread: communication_thread,
+      actor: user,
+      call_session: call_session
     )
   end
 

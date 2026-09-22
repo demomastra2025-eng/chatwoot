@@ -159,11 +159,13 @@ RSpec.describe Voice::OutboundCallBuilder do
       let!(:call_session) do
         create(
           :telephony_call_session,
+          :native_manual,
           account: account,
           conversation: existing_conversation,
           contact: contact,
           inbox: inbox,
           number_binding: inbox.telephony_number_binding,
+          initiator: user,
           external_call_ref: call_sid,
           provider: 'sipuni',
           status: 'ringing',
@@ -229,6 +231,25 @@ RSpec.describe Voice::OutboundCallBuilder do
           expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('sipuni-previous-call')
           expect(SendReplyJob).not_to have_received(:perform_later)
         end
+      end
+
+      it 'writes one durable actor occurrence for the exact native manual call source' do
+        account.enable_features!('communication_threads')
+
+        expect do
+          described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+        end.to change(CommunicationThreadManualCallOccurrence, :count).by(1)
+
+        occurrence = CommunicationThreadManualCallOccurrence.last
+        expect(occurrence).to have_attributes(
+          account_id: account.id,
+          communication_thread_id: existing_conversation.reload.communication_thread.id,
+          actor_id: user.id,
+          actor_name: user.name,
+          source_kind: 'telephony_call_session',
+          source_id: call_session.id,
+          source_ref: call_session.external_call_ref
+        )
       end
 
       it 'repairs a reusable conversation linked to a stale contact inbox before provider side effects' do

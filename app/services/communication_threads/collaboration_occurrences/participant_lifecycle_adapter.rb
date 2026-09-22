@@ -47,6 +47,7 @@ class CommunicationThreads::CollaborationOccurrences::ParticipantLifecycleAdapte
         'user' AS actor_kind,
         facts.participant_type AS actor_type,
         facts.participant_id AS actor_id,
+        NULL::varchar AS actor_name,
         facts.action,
         facts.actor_kind AS action_actor_kind,
         facts.actor_type AS action_actor_type,

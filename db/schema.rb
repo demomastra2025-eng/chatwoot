@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_22_090000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_22_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1330,6 +1330,29 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_090000) do
     t.check_constraint "participant_type::text = 'User'::text", name: "chk_thread_participant_facts_participant_type"
     t.check_constraint "reliable_since IS NULL OR reliable_since <= occurred_at", name: "chk_thread_participant_facts_reliable_since"
     t.check_constraint "schema_version = 1", name: "chk_thread_participant_facts_schema_version"
+  end
+
+  create_table "communication_thread_manual_call_occurrences", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id", null: false
+    t.string "actor_type", default: "User", null: false
+    t.bigint "actor_id", null: false
+    t.string "actor_name", null: false
+    t.string "source_kind", null: false
+    t.bigint "source_id", null: false
+    t.string "source_ref", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "reliable_since", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "actor_id", "occurred_at", "id"], name: "idx_thread_manual_calls_actor_time"
+    t.index ["account_id", "communication_thread_id", "occurred_at", "id"], name: "idx_thread_manual_calls_thread_time"
+    t.index ["account_id", "source_kind", "source_id"], name: "idx_thread_manual_calls_source_identity", unique: true
+    t.index ["account_id"], name: "idx_on_account_id_909a573d93"
+    t.check_constraint "actor_type::text = 'User'::text", name: "chk_thread_manual_calls_actor_type"
+    t.check_constraint "reliable_since <= occurred_at", name: "chk_thread_manual_calls_reliable_since"
+    t.check_constraint "schema_version = 1", name: "chk_thread_manual_calls_schema_version"
+    t.check_constraint "source_kind::text = 'telephony_call_session'::text", name: "chk_thread_manual_calls_source_kind"
   end
 
   create_table "communication_thread_participants", force: :cascade do |t|
@@ -3964,6 +3987,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_090000) do
   add_foreign_key "communication_thread_conversations", "contact_inboxes"
   add_foreign_key "communication_thread_conversations", "conversations"
   add_foreign_key "communication_thread_conversations", "inboxes"
+  add_foreign_key "communication_thread_manual_call_occurrences", "accounts"
   add_foreign_key "communication_thread_participant_lifecycle_facts", "accounts"
   add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "added_by_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_added_by_account"
   add_foreign_key "communication_thread_participants", "account_users", column: ["account_id", "user_id"], primary_key: ["account_id", "user_id"], name: "fk_thread_participants_user_account"
@@ -4523,5 +4547,62 @@ $function$
   SQL
 
   execute("CREATE TRIGGER prevent_thread_participant_fact_changes BEFORE UPDATE OR DELETE ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_participant_fact_changes()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_thread_manual_call_occurrence_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM communication_threads
+    WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'manual call occurrence thread must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM account_users
+    WHERE account_id = NEW.account_id AND user_id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'manual call occurrence actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.source_kind = 'telephony_call_session' AND NOT EXISTS (
+    SELECT 1 FROM telephony_call_sessions
+    WHERE id = NEW.source_id
+      AND account_id = NEW.account_id
+      AND external_call_ref = NEW.source_ref
+      AND direction = 'outbound'
+      AND metadata -> 'metadata' ->> 'source' = 'onelink_browser_janus_sip'
+      AND metadata -> 'metadata' ->> 'route_action' = 'operator'
+      AND metadata -> 'metadata' ->> 'chatwoot_user_id' = NEW.actor_id::text
+      AND NOT (metadata ? 'ai_voice')
+      AND NOT (metadata -> 'metadata' ? 'ai_voice')
+  ) THEN
+    RAISE EXCEPTION 'manual call occurrence source must be an outbound call session in the same account'
+      USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER validate_thread_manual_call_occurrence_insert BEFORE INSERT ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION validate_thread_manual_call_occurrence_insert()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_manual_call_occurrence_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' AND
+     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'communication thread manual call occurrences are append-only' USING ERRCODE = 'check_violation';
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER prevent_thread_manual_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_manual_call_occurrence_changes()")
 
 end

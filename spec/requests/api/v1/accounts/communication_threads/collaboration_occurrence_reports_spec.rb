@@ -60,10 +60,10 @@ RSpec.describe 'CommunicationThread Collaboration Occurrence Reports API', type:
     expect(details['meta']).to include(
       'total_count' => 1,
       'owner_definition' => 'canonical_thread_owner_is_not_collaboration_actor_and_receives_no_credit_from_this_report',
-      'missing_source_definition' => 'manual_call_is_unknown_not_zero_until_a_durable_actor_occurrence_fact_exists'
+      'missing_source_definition' => 'unrecorded_manual_call_history_outside_the_durable_native_source_coverage_is_unknown_not_zero'
     )
     expect(details.dig('meta', 'source_catalog')).to include(
-      include('fact_kind' => 'manual_call', 'availability' => 'unknown_missing_durable_fact')
+      include('fact_kind' => 'manual_call', 'availability' => 'available_recorded_occurrences_only')
     )
   end
 
@@ -148,13 +148,10 @@ RSpec.describe 'CommunicationThread Collaboration Occurrence Reports API', type:
     expect(response.parsed_body.dig('meta', 'total_count')).to eq(0)
   end
 
-  it 'rejects unavailable and unsupported source contracts instead of fabricating zero' do
+  it 'keeps empty manual-call coverage unknown and rejects unsupported temporal claims' do
     get aggregate_path, params: window.merge(fact_kind: 'manual_call'), headers: headers, as: :json
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body).to include(
-      'code' => 'INVALID_REPORT_QUERY',
-      'error' => 'manual_call occurrence source is unavailable: durable actor fact is missing'
-    )
+    expect(response.parsed_body['error']).to eq('manual_call occurrence coverage is unknown for an empty window')
 
     get aggregate_path,
         params: window.merge(fact_kind: 'private_message'),
@@ -162,5 +159,41 @@ RSpec.describe 'CommunicationThread Collaboration Occurrence Reports API', type:
         as: :json
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body['error']).to eq('as_of_date is not supported for private_message retained rows')
+  end
+
+  it 'returns a durable manual-call actor snapshot through aggregate and details endpoints' do
+    thread = create(:communication_thread, account: account)
+    caller = create(:user, account: account, name: 'Manual caller snapshot')
+    call_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: create(:conversation, account: account, contact: thread.contact),
+      initiator: caller,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 21, 6)
+    )
+    occurrence = CommunicationThreadManualCallOccurrence.record!(
+      account: account,
+      communication_thread: thread,
+      actor: caller,
+      call_session: call_session
+    )
+    manual_window = window.merge(fact_kind: 'manual_call')
+
+    get aggregate_path, params: manual_window, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'rows').sole).to include(
+      'fact_kind' => 'manual_call',
+      'occurrence_count' => 1,
+      'actor' => include('id' => caller.id)
+    )
+
+    get details_path, params: manual_window, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'rows').sole).to include(
+      'occurrence_id' => occurrence.id,
+      'actor' => include('id' => caller.id, 'name_snapshot' => 'Manual caller snapshot')
+    )
   end
 end

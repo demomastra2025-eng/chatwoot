@@ -310,12 +310,105 @@ RSpec.describe CommunicationThreads::CollaborationOccurrencesQuery do
     expect(first.id).to be < second.id
   end
 
-  it 'rejects unsupported temporal claims, unavailable calls, invalid windows, and unbounded pagination' do
+  it 'reports exact durable manual-call actor occurrences without crediting the Thread owner' do
+    caller = create(:user, account: account, name: 'Deleted later caller')
+    conversation = linked_conversation
+    call_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 21, 9),
+      external_call_ref: 'sipuni:local:analytics-manual-1'
+    )
+    occurrence = create(
+      :communication_thread_manual_call_occurrence,
+      account: account,
+      communication_thread: thread,
+      actor: caller,
+      actor_id: caller.id,
+      actor_name: caller.name,
+      source: call_session,
+      occurred_at: call_session.started_at,
+      created_at: Time.utc(2026, 9, 21, 9, 0, 1)
+    )
+
+    report = query('manual_call', { as_of_date: '2026-09-22' })
+
+    expect(report.aggregate_rows.sole).to include(
+      fact_kind: 'manual_call',
+      source: 'communication_thread_manual_call_occurrences',
+      occurrence_count: 1,
+      distinct_thread_count: 1,
+      actor: include(id: caller.id)
+    )
+    expect(report.drill_down_rows.sole).to include(
+      occurrence_id: occurrence.id,
+      communication_thread_id: thread.id,
+      reliability: 'exact_immutable_occurrence',
+      retention: 'append_only_except_account_teardown',
+      reliable_since: '2026-09-21T09:00:00.000000Z'
+    )
+    expect(report.drill_down_rows.sole.dig(:actor, :name_snapshot)).to eq('Deleted later caller')
+    expect(report.drill_down_rows.sole.dig(:actor, :id)).not_to eq(owner.id)
+    expect(report.meta.dig(:source_contract, :backfill)).to eq('none_unrecorded_history_is_unknown')
+  end
+
+  it 'applies half-open Workspace windows and as-of observation time to manual-call occurrences' do
+    caller = create(:user, account: account)
+    conversation = linked_conversation
+    inside_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 20, 19),
+      external_call_ref: 'sipuni:local:manual-window-inside'
+    )
+    boundary_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      inbox: inside_session.inbox,
+      number_binding: inside_session.number_binding,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 21, 19),
+      external_call_ref: 'sipuni:local:manual-window-boundary'
+    )
+    inside = create(
+      :communication_thread_manual_call_occurrence,
+      account: account, communication_thread: thread, actor: caller, source: inside_session,
+      occurred_at: inside_session.started_at, created_at: Time.utc(2026, 9, 21, 18, 59)
+    )
+    create(
+      :communication_thread_manual_call_occurrence,
+      account: account, communication_thread: thread, actor: caller, source: boundary_session,
+      occurred_at: boundary_session.started_at, created_at: Time.utc(2026, 9, 21, 19)
+    )
+
+    report = query('manual_call', { from_date: '2026-09-21', to_date: '2026-09-21', as_of_date: '2026-09-21' })
+
+    expect(report.drill_down_rows.pluck(:occurrence_id)).to eq([inside.id])
+    expect(report.meta).to include(
+      from: '2026-09-20T19:00:00.000000Z',
+      to: '2026-09-21T19:00:00.000000Z',
+      as_of: '2026-09-21T19:00:00.000000Z'
+    )
+  end
+
+  it 'rejects unsupported temporal claims, unknown manual-call zero, invalid windows, and unbounded pagination' do
     expect { query('authored_customer_reply', { as_of_date: '2026-09-22' }) }
       .to raise_error(described_class::InvalidQuery, 'as_of_date is not supported for authored_customer_reply retained rows')
     expect { query('participant_lifecycle') }.to raise_error(described_class::InvalidQuery, 'as_of_date is required')
-    expect { query('manual_call') }
-      .to raise_error(described_class::InvalidQuery, 'manual_call occurrence source is unavailable: durable actor fact is missing')
+    expect { query('manual_call') }.to raise_error(described_class::InvalidQuery, 'as_of_date is required')
+    expect { query('manual_call', { as_of_date: '2026-09-22' }).aggregate_rows }
+      .to raise_error(described_class::InvalidQuery, 'manual_call occurrence coverage is unknown for an empty window')
     expect { query('unknown') }.to raise_error(described_class::InvalidQuery, 'fact_kind is invalid')
     expect { query('private_message', { to_date: '2026-09-20' }) }
       .to raise_error(described_class::InvalidQuery, 'to_date must be on or after from_date')

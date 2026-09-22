@@ -57,6 +57,7 @@ class CommunicationThreads::CollaborationOccurrences::MessageAdapter # rubocop:d
         #{actor_kind_sql} AS actor_kind,
         #{actor_type_sql} AS actor_type,
         messages.sender_id AS actor_id,
+        NULL::varchar AS actor_name,
         NULL::varchar AS action,
         NULL::varchar AS action_actor_kind,
         NULL::varchar AS action_actor_type,
