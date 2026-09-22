@@ -1,4 +1,8 @@
-class CommunicationThreads::CollaborationOccurrences::MessageAdapter
+class CommunicationThreads::CollaborationOccurrences::MessageAdapter # rubocop:disable Metrics/ClassLength
+  RAILS_BLANK_STRING_CODEPOINTS = [
+    9, 10, 11, 12, 13, 32, 133, 160, 5760, *8192..8202, 8232, 8233, 8239, 8287, 12_288
+  ].freeze
+
   SOURCES = {
     'authored_customer_reply' => {
       source: 'messages.human_outgoing_public_retained_rows',
@@ -108,7 +112,7 @@ class CommunicationThreads::CollaborationOccurrences::MessageAdapter
     <<~SQL.squish
       AND (
         NOT (#{content_attribute_present_sql('automation_rule_id')})
-        AND NULLIF(messages.additional_attributes ->> 'campaign_id', '') IS NULL
+        AND NOT (#{additional_attribute_present_sql('campaign_id')})
         AND (messages.sender_type = 'User' OR (#{content_attribute_present_sql('external_echo')}))
       )
     SQL
@@ -119,18 +123,74 @@ class CommunicationThreads::CollaborationOccurrences::MessageAdapter
   end
 
   def content_attribute_present_sql(key)
-    quoted_key = Regexp.escape(key)
+    json_attribute_present_sql(
+      column: 'messages.content_attributes',
+      type_function: 'json_typeof',
+      key: key,
+      string_container: :json_object
+    )
+  end
+
+  def additional_attribute_present_sql(key)
+    json_attribute_present_sql(
+      column: 'messages.additional_attributes',
+      type_function: 'jsonb_typeof',
+      key: key,
+      string_container: :key_substring
+    )
+  end
+
+  def json_attribute_present_sql(column:, type_function:, key:, string_container:)
     <<~SQL.squish
       CASE
-        WHEN json_typeof(messages.content_attributes) = 'object'
-          THEN COALESCE(messages.content_attributes ->> #{quote(key)}, '') NOT IN ('', 'false', '[]', '{}')
-        WHEN json_typeof(messages.content_attributes) = 'string' THEN
-          COALESCE(messages.content_attributes #>> '{}', '') ~ #{quote("\"#{quoted_key}\"\\s*:")}
-          AND COALESCE(messages.content_attributes #>> '{}', '') !~
-            #{quote("\"#{quoted_key}\"\\s*:\\s*(null|false|\"\"|\\[\\]|\\{\\})\\s*[,}]")}
+        WHEN #{type_function}(#{column}) = 'object' THEN
+          #{json_object_attribute_present_sql(column, type_function, key)}
+        #{string_container_presence_sql(column, type_function, key) if string_container == :json_object}
+        #{string_key_presence_sql(column, type_function, key) if string_container == :key_substring}
         ELSE FALSE
       END
     SQL
+  end
+
+  def string_container_presence_sql(column, type_function, key)
+    decoded = "COALESCE(#{column} #>> '{}', '')"
+    decoded_jsonb = "(#{decoded})::jsonb"
+    <<~SQL.squish
+      WHEN #{type_function}(#{column}) = 'string' THEN
+        CASE WHEN pg_input_is_valid(#{decoded}, 'jsonb') THEN
+          CASE WHEN jsonb_typeof(#{decoded_jsonb}) = 'object'
+            THEN #{json_object_attribute_present_sql(decoded_jsonb, 'jsonb_typeof', key)}
+            ELSE FALSE
+          END
+        ELSE FALSE
+        END
+    SQL
+  end
+
+  def string_key_presence_sql(column, type_function, key)
+    <<~SQL.squish
+      WHEN #{type_function}(#{column}) = 'string' THEN
+        POSITION(#{quote(key)} IN COALESCE(#{column} #>> '{}', '')) > 0
+    SQL
+  end
+
+  def json_object_attribute_present_sql(column, type_function, key)
+    value = "#{column} -> #{quote(key)}"
+    <<~SQL.squish
+      CASE #{type_function}(#{value})
+        WHEN 'null' THEN FALSE
+        WHEN 'boolean' THEN (#{column} ->> #{quote(key)})::boolean
+        WHEN 'string' THEN BTRIM(#{column} ->> #{quote(key)}, #{rails_blank_string_chars_sql}) <> ''
+        WHEN 'array' THEN jsonb_array_length((#{value})::jsonb) > 0
+        WHEN 'object' THEN (#{value})::jsonb <> '{}'::jsonb
+        WHEN 'number' THEN TRUE
+        ELSE FALSE
+      END
+    SQL
+  end
+
+  def rails_blank_string_chars_sql
+    @rails_blank_string_chars_sql ||= RAILS_BLANK_STRING_CODEPOINTS.map { |codepoint| "CHR(#{codepoint})" }.join(' || ')
   end
 
   def content_attribute_truthy_sql(key)

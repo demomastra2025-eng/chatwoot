@@ -184,6 +184,89 @@ RSpec.describe CommunicationThreads::CollaborationOccurrencesQuery do
     expect(replies.meta.dig(:source_contract, :as_of_supported)).to be(false)
   end
 
+  it 'matches Message human-response blank and present semantics for persisted JSON values' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    messages = [
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: 'false' },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                       message_type: :outgoing, content_attributes: { external_echo: 'false' },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: [] },
+                       additional_attributes: { campaign_id: false }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: {} },
+                       additional_attributes: { campaign_id: [] }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: nil },
+                       additional_attributes: { campaign_id: {} }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: "\t" },
+                       additional_attributes: { campaign_id: "\n" }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                       message_type: :outgoing, content_attributes: { external_echo: "\u00A0" },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: 0 },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: {},
+                       additional_attributes: { campaign_id: 'false' })
+    ]
+    messages[6].update_columns(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+
+    expected_ids = messages.select { |message| message.send(:human_response?) }.map(&:id).sort
+    actual_ids = query('authored_customer_reply').drill_down_rows.pluck(:occurrence_id).sort
+
+    expect(actual_ids).to eq(expected_ids)
+  end
+
+  it 'matches Rails presence semantics for string-encoded JSON and safely ignores malformed containers' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    content_cases = [
+      ['{"automation_rule_id":false}', author],
+      ['{"automation_rule_id":true}', author],
+      ['{"automation_rule_id":"false"}', author],
+      ['{"automation_rule_id":"\\t\\n\\u00A0\\u2003"}', author],
+      ['{"automation_rule_id":[]}', author],
+      ['{"automation_rule_id":{"id":1}}', author],
+      ['{"external_echo":false}', nil],
+      ['{"external_echo":"false"}', nil],
+      ['{"external_echo":"\\u00A0"}', nil],
+      ['{"external_echo":0}', nil],
+      ['{"nested":{"external_echo":true}}', nil]
+    ]
+    messages = content_cases.map do |payload, sender|
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: sender,
+                                 message_type: :outgoing)
+      message.update_columns(sender_type: nil, sender_id: nil) unless sender # rubocop:disable Rails/SkipsModelValidations
+      encoded_payload = ApplicationRecord.connection.quote(payload.to_json)
+      Message.unscoped.where(id: message.id).update_all("content_attributes = #{encoded_payload}::json") # rubocop:disable Rails/SkipsModelValidations
+      message.reload
+    end
+    ['{"campaign_id":false}', '{"nested":{"campaign_id":9}}', '{not-json campaign_id', '{"other":9}'].each do |payload|
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                                 message_type: :outgoing)
+      encoded_payload = ApplicationRecord.connection.quote(payload.to_json)
+      Message.unscoped.where(id: message.id).update_all("additional_attributes = #{encoded_payload}::jsonb") # rubocop:disable Rails/SkipsModelValidations
+      messages << message.reload
+    end
+
+    expected_ids = messages.select { |message| message.send(:human_response?) }.map(&:id).sort
+    malformed = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                 message_type: :outgoing)
+    malformed.update_columns(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+    malformed_payload = ApplicationRecord.connection.quote('{not-json'.to_json)
+    Message.unscoped.where(id: malformed.id).update_all("content_attributes = #{malformed_payload}::json") # rubocop:disable Rails/SkipsModelValidations
+    actual_ids = query('authored_customer_reply').drill_down_rows.pluck(:occurrence_id).sort
+
+    expect(actual_ids).to eq(expected_ids)
+  end
+
   it 'preserves typed Captain, customer, system, deleted, and unknown sender identities without constantization' do
     conversation = linked_conversation
     rows = [
