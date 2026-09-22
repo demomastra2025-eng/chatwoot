@@ -27,7 +27,8 @@
         "CONVERSATIONS": "Диалогтар",
         "APPOINTMENTS": "Жазылулар",
         "DEALS": "Мәмілелер",
-        "TASKS": "Тапсырмалар"
+        "TASKS": "Тапсырмалар",
+        "AUTOMATION_RULES": "Автоматтандыру ережелері"
       },
       "CAPABILITIES": {
         "VIEW": "Көру",
@@ -44,7 +45,8 @@
         "VIEW_REPORTS": "Есептерді көру",
         "VIEW_FINANCE": "Қаржыны көру",
         "MANAGE_FINANCE": "Қаржыны басқару",
-        "OVERRIDE_SCHEDULE": "Кесте қайшылықтарын растау"
+        "OVERRIDE_SCHEDULE": "Кесте қайшылықтарын растау",
+        "MANAGE": "Басқару"
       },
       "SCOPES": {
         "NONE": "Жоқ",
@@ -104,6 +106,7 @@
       "REPORT_MANAGE": "Manage reports",
       "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base",
       "CAPTAIN_MANAGE": "AI агенттерін басқару",
+      "AUTOMATION_MANAGE": "Автоматтандыруды басқару",
       "SCHEDULING_OVERRIDE": "Кесте қайшылықтарын растау"
     },
     "FORM": {

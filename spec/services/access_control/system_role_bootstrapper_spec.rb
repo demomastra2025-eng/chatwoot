@@ -13,18 +13,24 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
       expect(account.access_roles.where.not(system_key: nil).count).to eq(5)
 
       administrator = result.roles_by_key.fetch('administrator')
-      expected_admin_grants = AccessRoleGrant::RESOURCE_CAPABILITIES.sum { |_, capabilities| capabilities.size }
+      expected_admin_grants = AccessControl::SystemRoleCatalog::BOOTSTRAP_RESOURCES.sum do |resource|
+        AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource).size
+      end
       expect(administrator.grants.count).to eq(expected_admin_grants)
       expect(administrator.grants.distinct.pluck(:access_scope)).to eq(['all'])
+      automation_grants = AccessRoleGrant.where(account: account, resource: 'automation_rules')
+      expect(automation_grants.pluck(:access_role_id, :capability, :access_scope)).to eq([[administrator.id, 'manage', 'all']])
 
       observer = result.roles_by_key.fetch('observer')
-      expected_observer_grants = AccessRoleGrant::RESOURCES.map { |resource| [resource, 'view', 'all'] }
+      expected_observer_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.map do |resource|
+        [resource, 'view', 'all']
+      end
       expect(observer.grants.pluck(:resource, :capability, :access_scope)).to match_array(expected_observer_grants)
     end
 
     it 'creates the canonical Department Lead matrix' do
       department_lead = roles.fetch('department_lead')
-      expected_lead_grants = AccessRoleGrant::RESOURCES.flat_map do |resource|
+      expected_lead_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.flat_map do |resource|
         capabilities = AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource)
         allowed = capabilities.reject do |capability|
           %w[configure override_schedule].include?(capability) ||
@@ -37,7 +43,7 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
 
     it 'creates the canonical Employee matrix' do
       employee = roles.fetch('employee')
-      expected_employee_grants = AccessRoleGrant::RESOURCES.flat_map do |resource|
+      expected_employee_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.flat_map do |resource|
         capabilities = AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource)
         selected = capabilities.select do |capability|
           %w[view create update_fields assign transition take complete_cancel delete_archive].include?(capability)
@@ -59,7 +65,7 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
     it 'creates the canonical Commercial Director matrix' do
       commercial_director = roles.fetch('commercial_director')
       reporting_capabilities = %w[view export view_reports]
-      expected_commercial_grants = AccessRoleGrant::RESOURCES.flat_map do |resource|
+      expected_commercial_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.flat_map do |resource|
         reporting_capabilities.map { |capability| [resource, capability, 'all'] }
       end
       expected_commercial_grants += %w[contacts deals tasks].flat_map do |resource|

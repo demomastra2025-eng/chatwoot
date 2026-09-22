@@ -258,7 +258,7 @@ class Captain::ToolCatalog
       when Captain::ToolAccess::SCOPE_AGENT
         custom_tool.tool(assistant)
       when Captain::ToolAccess::SCOPE_ASSISTANT
-        custom_tool.copilot_tool(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+        custom_tool.account_tool(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
       end
     end
 
@@ -270,7 +270,7 @@ class Captain::ToolCatalog
       when Captain::ToolAccess::SCOPE_AGENT
         Captain::Tools::McpTool.new(assistant, mcp_server, tool_definition)
       when Captain::ToolAccess::SCOPE_ASSISTANT
-        Captain::Tools::Copilot::McpTool.new(
+        Captain::Tools::Account::McpTool.new(
           assistant,
           mcp_server,
           tool_definition,

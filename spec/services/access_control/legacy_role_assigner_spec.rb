@@ -46,6 +46,18 @@ RSpec.describe AccessControl::LegacyRoleAssigner do
       expect(review_user.reload.access_role).to be_nil
     end
 
+    it 'assigns a legacy Automation manager with a matching normalized grant' do
+      automation_role = create(:custom_role, account: account, permissions: %w[automation_manage])
+      automation_user = create(:account_user, account: account, role: :agent, custom_role: automation_role)
+
+      result = described_class.call(account: account, apply: true)
+
+      expect(result.counts).to include('assigned_custom_role' => 2)
+      expect(automation_user.reload.access_role.grants).to contain_exactly(
+        have_attributes(resource: 'automation_rules', capability: 'manage', access_scope: 'all')
+      )
+    end
+
     it 'is idempotent after applying assignments' do
       described_class.call(account: account, apply: true)
 

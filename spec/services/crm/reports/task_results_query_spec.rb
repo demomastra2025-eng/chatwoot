@@ -176,6 +176,90 @@ RSpec.describe Crm::Reports::TaskResultsQuery do
     expect(filtered.drill_down_rows.pluck(:lifecycle_event_id)).to eq([second_visible.id])
   end
 
+  it 'groups result occurrences by immutable responsibility and typed action identities with details parity' do
+    first_assignee = create(:user, account: account)
+    second_assignee = create(:user, account: account)
+    actor = create(:user, account: account)
+    team = create(:team, account: account)
+    task = create(:crm_task, account: account, status: status, task_type: task_type, task_outcome: outcome)
+    common = { 'task_type_id' => task_type.id, 'task_outcome_id' => outcome.id, 'outcome' => outcome.code, 'team_id' => team.id }
+    first = create_result_event(
+      task: task,
+      snapshot: common.merge('assignee_id' => first_assignee.id, 'completed_by_id' => actor.id),
+      actor: actor,
+      actor_kind: 'User',
+      performed_by_type: 'AutomationRule',
+      performed_by_id: 77
+    )
+    second = create_result_event(
+      task: task,
+      at: Time.utc(2026, 3, 8, 13),
+      snapshot: common.merge('assignee_id' => second_assignee.id, 'completed_by_id' => nil),
+      actor: nil,
+      actor_kind: 'System'
+    )
+
+    report = query
+    rows = report.aggregate_rows
+    details = report.drill_down_rows.index_by { |row| row[:lifecycle_event_id] }
+
+    expect(rows.sum { |row| row[:occurrence_count] }).to eq(2)
+    expect(rows.pluck(:terminal_responsibility).pluck(:assignee).pluck(:id)).to contain_exactly(first_assignee.id, second_assignee.id)
+    expect(details.fetch(first.id)).to include(
+      terminal_responsibility: include(assignee: include(id: first_assignee.id), team: include(id: team.id)),
+      action_actor: {
+        terminal: include(type: 'User', id: actor.id),
+        event: { type: 'User', id: actor.id, state: 'persisted_typed_identity' },
+        performed_by: { type: 'AutomationRule', id: 77, state: 'persisted_typed_identity' }
+      }
+    )
+    expect(details.fetch(second.id)[:action_actor]).to include(
+      terminal: { type: 'User', id: nil, name: nil, state: 'unknown' },
+      event: { type: 'System', id: nil, state: 'system' }
+    )
+    expect(report.pagination_meta[:total_count]).to eq(rows.sum { |row| row[:occurrence_count] })
+  end
+
+  it 'collapses malformed typed actor ids into one unknown aggregate identity with details parity' do
+    task = create(:crm_task, account: account, status: status, task_type: task_type, task_outcome: outcome)
+    snapshot = { 'task_type_id' => task_type.id, 'task_outcome_id' => outcome.id, 'outcome' => outcome.code }
+    first = create_result_event(
+      task: task,
+      snapshot: snapshot,
+      actor: nil,
+      actor_kind: 'System',
+      performed_by_type: 'User',
+      performed_by_id: 0
+    )
+    second = create_result_event(
+      task: task,
+      at: Time.utc(2026, 3, 8, 13),
+      snapshot: snapshot,
+      actor: nil,
+      actor_kind: 'System',
+      performed_by_type: 'User',
+      performed_by_id: -1
+    )
+
+    report = query
+    rows = report.aggregate_rows
+    details = report.drill_down_rows.index_by { |row| row[:lifecycle_event_id] }
+
+    expect(rows).to contain_exactly(
+      include(
+        occurrence_count: 2,
+        action_actor: include(
+          event: { type: 'System', id: nil, state: 'system' },
+          performed_by: { type: 'User', id: nil, state: 'unknown' }
+        )
+      )
+    )
+    expect(details.values_at(first.id, second.id)).to all(
+      include(action_actor: include(performed_by: { type: 'User', id: nil, state: 'unknown' }))
+    )
+    expect(report.pagination_meta[:query_fingerprint]).to eq(report.meta[:query_fingerprint])
+  end
+
   it 'consumes retry-deduplicated canonical snapshots across reopen cycles' do
     account.enable_features!('crm_deals', 'crm_tasks')
     Crm::Bootstrap::AccountService.new(account: account).perform

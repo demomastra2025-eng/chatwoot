@@ -35,6 +35,13 @@ RSpec.describe CustomRole, type: :model do
     expect(custom_role.access_role).to be_nil
   end
 
+  it 'accepts the schema-independent Automation management permission in legacy mode' do
+    custom_role = create(:custom_role, permissions: %w[automation_manage])
+
+    expect(custom_role.permissions).to eq(%w[automation_manage])
+    expect(custom_role.access_role).to be_nil
+  end
+
   it 'materializes a supported new role in shadow mode' do
     account = create(:account)
     AccessControl::ModeTransition.call(account: account, to: :shadow)

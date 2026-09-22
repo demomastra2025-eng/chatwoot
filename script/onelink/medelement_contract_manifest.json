@@ -10,7 +10,7 @@
     "spec/services/scheduling/available_slot_search_service_spec.rb",
     "spec/services/scheduling/calendar_view_service_spec.rb",
     "spec/services/scheduling/id_list_param_parser_spec.rb",
-    "spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb",
+    "spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb",
     "spec/requests/api/v1/accounts/scheduling/appointments_spec.rb"
   ],
   "protected_files": {
@@ -36,6 +36,12 @@
     "spec/services/scheduling/available_slot_search_service_spec.rb": "d3feaaa996c644d3b1e5ca9a00489fa7d2c9811a53bb4241188a67ddced10838",
     "spec/services/scheduling/calendar_view_service_spec.rb": "34484cd9730c69edebf03d08bdd63e11c18a92155b6a5618f054337b74ac2ede",
     "spec/services/scheduling/id_list_param_parser_spec.rb": "3a4ad285ee156a47061cc572cb4151210fd690d149095297a6e3a494c7dec8b6"
+  },
+  "protected_file_renames": {
+    "spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb": {
+      "candidate_path": "spec/enterprise/services/captain/tools/account/search_available_slots_service_spec.rb",
+      "candidate_sha256": "d766bd67f7c8544c38531537a902f58f6dc9834c97cc6d1cef226fe9e303b921"
+    }
   },
   "required_ancestor": "48be39f5eed8608179dcd07e987337a7a821156a",
   "version": 1

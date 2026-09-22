@@ -61,7 +61,7 @@ class CommunicationThread < ApplicationRecord
     CommunicationThreads::ParticipationService.new(
       communication_thread: self,
       actor: Current.executed_by || Current.user
-    ).clear!
+    ).clear!(reason: 'thread_resolved')
   end
 
   def resolved_transition?

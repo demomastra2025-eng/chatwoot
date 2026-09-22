@@ -10,7 +10,8 @@ class AccessControl::LegacyCustomRoleMapper
     'crm_deal_view' => -> { grants('deals', %w[view], 'all') },
     'crm_deal_manage' => -> { grants('deals', DEAL_MANAGE_CAPABILITIES, 'all') },
     'crm_task_view' => -> { grants('tasks', %w[view], 'all') },
-    'crm_task_manage' => -> { grants('tasks', TASK_MANAGE_CAPABILITIES, 'all') }
+    'crm_task_manage' => -> { grants('tasks', TASK_MANAGE_CAPABILITIES, 'all') },
+    'automation_manage' => -> { grants('automation_rules', %w[manage], 'all') }
   }.freeze
 
   Analysis = Data.define(:grants, :unsupported_permissions) do

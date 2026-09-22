@@ -1,6 +1,7 @@
 class AccessRoleGrant < ApplicationRecord
   include AccessControl::AccountLockable
 
+  ACCESS_SCOPES = %w[none own team all].freeze
   RESOURCE_CAPABILITIES = {
     'contacts' => %w[view create update_fields assign delete_archive view_configuration configure export view_reports],
     'conversations' => %w[view create update_fields assign transition take delete_archive view_configuration configure export view_reports],
@@ -9,11 +10,14 @@ class AccessRoleGrant < ApplicationRecord
       view_reports override_schedule
     ],
     'deals' => %w[view create update_fields assign transition delete_archive view_configuration configure export view_reports],
-    'tasks' => %w[view create update_fields assign transition complete_cancel delete_archive view_configuration configure export view_reports]
+    'tasks' => %w[view create update_fields assign transition complete_cancel delete_archive view_configuration configure export view_reports],
+    'automation_rules' => %w[manage]
   }.freeze
+  RESOURCE_ACCESS_SCOPES = RESOURCE_CAPABILITIES.to_h do |resource, _capabilities|
+    [resource, resource == 'automation_rules' ? %w[none all] : ACCESS_SCOPES]
+  end.freeze
   RESOURCES = RESOURCE_CAPABILITIES.keys.freeze
   CAPABILITIES = RESOURCE_CAPABILITIES.values.flatten.uniq.freeze
-  ACCESS_SCOPES = %w[none own team all].freeze
 
   belongs_to :account
   belongs_to :access_role, inverse_of: :grants
@@ -26,6 +30,7 @@ class AccessRoleGrant < ApplicationRecord
   validates :capability, uniqueness: { scope: [:access_role_id, :resource] }
   validate :access_role_belongs_to_account
   validate :capability_supported_for_resource
+  validate :access_scope_supported_for_resource
 
   before_validation :normalize_attributes
   before_validation :lock_account_for_access_control
@@ -58,5 +63,11 @@ class AccessRoleGrant < ApplicationRecord
     return if RESOURCE_CAPABILITIES.fetch(resource, []).include?(capability)
 
     errors.add(:capability, 'is not supported for this resource')
+  end
+
+  def access_scope_supported_for_resource
+    return if RESOURCE_ACCESS_SCOPES.fetch(resource, []).include?(access_scope)
+
+    errors.add(:access_scope, 'is not supported for this resource')
   end
 end

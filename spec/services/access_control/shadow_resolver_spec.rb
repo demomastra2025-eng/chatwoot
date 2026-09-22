@@ -9,7 +9,7 @@ RSpec.describe AccessControl::ShadowResolver do
 
       result = described_class.call(account_user: account_user, resource: 'contacts', capability: 'view')
 
-      expect(result).to have_attributes(status: 'resolved', scope: 'own', reason: nil)
+      expect(result).to have_attributes(status: 'resolved', scope: 'all', reason: nil)
     end
 
     it 'returns none for a supported capability without a grant' do
@@ -20,6 +20,16 @@ RSpec.describe AccessControl::ShadowResolver do
       result = described_class.call(account_user: account_user, resource: 'contacts', capability: 'configure')
 
       expect(result).to have_attributes(status: 'resolved', scope: 'none', reason: 'missing_grant')
+    end
+
+    it 'resolves the persisted administrator Automation management grant' do
+      account = create(:account)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      account_user = create(:account_user, account: account, role: :administrator)
+
+      result = described_class.call(account_user: account_user, resource: 'automation_rules', capability: 'manage')
+
+      expect(result).to have_attributes(status: 'resolved', scope: 'all', reason: nil)
     end
 
     it 'is unresolved when no access role is assigned' do
@@ -34,7 +44,7 @@ RSpec.describe AccessControl::ShadowResolver do
       account_user = create(:account_user)
       account_user.access_role = create(:access_role)
 
-      result = described_class.call(account_user: account_user, resource: 'contacts', capability: 'view')
+      result = described_class.call(account_user: account_user, resource: 'automation_rules', capability: 'manage')
 
       expect(result).to have_attributes(status: 'unresolved', scope: 'none', reason: 'cross_account_access_role')
     end

@@ -36,6 +36,7 @@ class Crm::Event < ApplicationRecord
   validates :schema_version, numericality: { only_integer: true, greater_than: 0 }
 
   before_validation :prepare_envelope
+  after_create :capture_durable_automation_event
   after_create_commit :enqueue_publication
 
   scope :ordered, -> { order(created_at: :desc, id: :desc) }
@@ -81,6 +82,10 @@ class Crm::Event < ApplicationRecord
 
   private
 
+  def capture_durable_automation_event
+    AutomationRules::Events::CrmEventAdapter.new(self).capture!
+  end
+
   def with_publication_write
     @publication_write = true
     yield
@@ -105,6 +110,7 @@ class Crm::Event < ApplicationRecord
   end
 
   def attempt_listener_dispatch
+    AutomationRules::Events::CrmEventAdapter.new(self).capture!
     dispatch_automation_event
     self.published_at = Time.current
     self.publication_error = nil

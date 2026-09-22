@@ -135,13 +135,6 @@ Rails.application.routes.draw do
                 post :retry_failed
               end
             end
-            resource :tasks, only: [], controller: 'tasks' do
-              post :rewrite
-              post :summarize
-              post :reply_suggestion
-              post :label_suggestion
-              post :follow_up
-            end
           end
 
           resources :contact_inboxes, only: [] do
@@ -281,6 +274,8 @@ Rails.application.routes.draw do
                 get :deals_without_next_action_details
                 get :deal_workload
                 get :deal_workload_details
+                get :deal_terminal_outcomes
+                get :deal_terminal_outcomes_details
                 get :task_workload
                 get :task_workload_details
               end
@@ -345,6 +340,16 @@ Rails.application.routes.draw do
             end
             scope module: :communication_threads do
               resource :participants, only: [:show, :create, :destroy]
+            end
+          end
+          namespace :communication_threads do
+            resources :reports, only: [] do
+              collection do
+                get :workload
+                get :workload_details
+                get :collaboration_occurrences
+                get :collaboration_occurrence_details
+              end
             end
           end
 

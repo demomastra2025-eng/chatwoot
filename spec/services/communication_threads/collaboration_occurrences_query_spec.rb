@@ -1,0 +1,418 @@
+require 'rails_helper'
+
+RSpec.describe CommunicationThreads::CollaborationOccurrencesQuery do
+  let(:account) { create(:account, settings: { 'workspace_timezone' => 'Asia/Almaty' }) }
+  let(:owner) { create(:user, account: account) }
+  let(:thread) { create(:communication_thread, account: account, assignee: owner) }
+  let(:scope) { CommunicationThread.where(account_id: account.id) }
+  let(:window) { { from_date: '2026-09-21', to_date: '2026-09-22' } }
+
+  def query(fact_kind, extra = {}, threads_scope: scope)
+    described_class.new(
+      account: account,
+      threads_scope: threads_scope,
+      params: window.merge(fact_kind: fact_kind).merge(extra)
+    )
+  end
+
+  def linked_conversation(target_thread = thread)
+    link = create(:communication_thread_conversation, account: account, communication_thread: target_thread)
+    link.conversation
+  end
+
+  it 'reports immutable participant lifecycle occurrences with participant and action actor kept separate' do
+    participant = create(:user, account: account)
+    action_actor = create(:user, account: account)
+    fact = create(
+      :communication_thread_participant_lifecycle_fact,
+      account: account,
+      communication_thread: thread,
+      participant_id: participant.id,
+      actor_kind: 'user',
+      actor_type: 'User',
+      actor_id: action_actor.id,
+      action: 'add',
+      occurred_at: Time.utc(2026, 9, 21, 18),
+      created_at: Time.utc(2026, 9, 21, 18),
+      reliable_since: Time.utc(2026, 9, 21, 18)
+    )
+
+    report = query('participant_lifecycle', { as_of_date: '2026-09-22' })
+    aggregate = report.aggregate_rows.sole
+    detail = report.drill_down_rows.sole
+
+    expect(aggregate).to include(
+      fact_kind: 'participant_lifecycle', action: 'add', occurrence_count: 1, distinct_thread_count: 1,
+      actor: include(kind: 'user', type: 'User', id: participant.id)
+    )
+    expect(detail).to include(
+      occurrence_id: fact.id,
+      communication_thread_id: thread.id,
+      actor: include(id: participant.id),
+      action_actor: include(kind: 'user', type: 'User', id: action_actor.id),
+      reliability: 'exact_immutable_occurrence'
+    )
+    expect(detail.dig(:actor, :id)).not_to eq(owner.id)
+    expect(report.meta).to include(
+      total_count: 1,
+      owner_definition: 'canonical_thread_owner_is_not_collaboration_actor_and_receives_no_credit_from_this_report'
+    )
+  end
+
+  it 'uses half-open Workspace windows and participant as-of observation time' do
+    participant = create(:user, account: account)
+    inside = create(
+      :communication_thread_participant_lifecycle_fact,
+      account: account,
+      communication_thread: thread,
+      participant_id: participant.id,
+      occurred_at: Time.utc(2026, 9, 20, 19),
+      created_at: Time.utc(2026, 9, 20, 19),
+      reliable_since: Time.utc(2026, 9, 20, 19)
+    )
+    create(
+      :communication_thread_participant_lifecycle_fact,
+      account: account,
+      communication_thread: thread,
+      participant_id: participant.id,
+      action: 'remove',
+      occurred_at: Time.utc(2026, 9, 21, 19),
+      created_at: Time.utc(2026, 9, 21, 19),
+      reliable_since: inside.reliable_since
+    )
+
+    report = query('participant_lifecycle', { from_date: '2026-09-21', to_date: '2026-09-21', as_of_date: '2026-09-21' })
+
+    expect(report.drill_down_rows.pluck(:occurrence_id)).to eq([inside.id])
+    expect(report.meta).to include(
+      from: '2026-09-20T19:00:00.000000Z',
+      to: '2026-09-21T19:00:00.000000Z',
+      as_of: '2026-09-21T19:00:00.000000Z'
+    )
+  end
+
+  it 'keeps local date windows correct across a DST transition' do
+    account.update!(settings: account.settings.merge('workspace_timezone' => 'America/New_York'))
+
+    report = query(
+      'participant_lifecycle',
+      { from_date: '2026-11-01', to_date: '2026-11-01', as_of_date: '2026-11-01' }
+    )
+
+    expect(report.meta).to include(
+      from: '2026-11-01T04:00:00.000000Z',
+      to: '2026-11-02T05:00:00.000000Z',
+      as_of: '2026-11-02T05:00:00.000000Z'
+    )
+  end
+
+  it 'applies the supplied visible Thread scope and account boundary' do
+    participant = create(:user, account: account)
+    hidden_thread = create(:communication_thread, account: account)
+    foreign_account = create(:account)
+    foreign_thread = create(:communication_thread, account: foreign_account)
+    create(
+      :communication_thread_participant_lifecycle_fact,
+      account: account, communication_thread: thread, participant_id: participant.id, occurred_at: Time.utc(2026, 9, 21, 6)
+    )
+    create(
+      :communication_thread_participant_lifecycle_fact,
+      account: account, communication_thread: hidden_thread, participant_id: participant.id, occurred_at: Time.utc(2026, 9, 21, 7)
+    )
+    create(
+      :communication_thread_participant_lifecycle_fact,
+      account: foreign_account, communication_thread: foreign_thread, occurred_at: Time.utc(2026, 9, 21, 8)
+    )
+
+    report = query(
+      'participant_lifecycle',
+      { as_of_date: '2026-09-22' },
+      threads_scope: CommunicationThread.where(id: thread.id)
+    )
+
+    expect(report.drill_down_rows.pluck(:communication_thread_id)).to eq([thread.id])
+  end
+
+  it 'reports public replies and private messages as separate retained partial sources' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    public_reply = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                                    message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 9))
+    private_message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                                       message_type: :outgoing, private: true, created_at: Time.utc(2026, 9, 21, 10),
+                                       content_attributes: { deleted: true })
+    create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                     message_type: :incoming, private: false, created_at: Time.utc(2026, 9, 21, 11))
+    create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                     message_type: :outgoing, private: false, content_type: :voice_call, created_at: Time.utc(2026, 9, 21, 12))
+    automated = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                                 message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 13))
+    automated.update_columns(content_attributes: { automation_rule_id: 7 }) # rubocop:disable Rails/SkipsModelValidations
+    external_echo = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                     message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 13, 1))
+    external_echo.update_columns(sender_type: nil, sender_id: nil, content_attributes: { external_echo: true }) # rubocop:disable Rails/SkipsModelValidations
+    external_automation = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                           message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 13, 2))
+    external_automation.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      sender_type: nil, sender_id: nil, content_attributes: { external_echo: true, automation_rule_id: 7 }
+    )
+    external_campaign = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                         message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 13, 3))
+    external_campaign.update_columns( # rubocop:disable Rails/SkipsModelValidations
+      sender_type: nil, sender_id: nil, content_attributes: { external_echo: true }, additional_attributes: { campaign_id: 9 }
+    )
+    malformed = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                 message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 13, 4))
+    malformed.update_columns(sender_type: nil, sender_id: nil, content_attributes: '{not-json') # rubocop:disable Rails/SkipsModelValidations
+    physically_deleted = create(
+      :message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                message_type: :outgoing, private: false, created_at: Time.utc(2026, 9, 21, 14)
+    )
+    physically_deleted.destroy!
+
+    replies = query('authored_customer_reply')
+    private_messages = query('private_message')
+
+    expect(replies.drill_down_rows.pluck(:occurrence_id)).to eq([external_echo.id, public_reply.id])
+    expect(replies.drill_down_rows.find { |row| row[:occurrence_id] == external_echo.id }[:actor]).to include(
+      kind: 'unknown', type: nil, id: nil, identity_state: 'unknown_deleted_or_missing_identity'
+    )
+    expect(replies.drill_down_rows).to all(include(deleted: false))
+    expect(private_messages.drill_down_rows).to contain_exactly(include(occurrence_id: private_message.id, deleted: true))
+    expect(private_messages.aggregate_rows.sole).to include(occurrence_count: 1, deleted_count: 1, distinct_thread_count: 1)
+    expect(replies.meta.dig(:source_contract, :reliability)).to eq('retained_but_deletable_partial_occurrence')
+    expect(replies.meta.dig(:source_contract, :as_of_supported)).to be(false)
+  end
+
+  it 'matches Message human-response blank and present semantics for persisted JSON values' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    messages = [
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: 'false' },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                       message_type: :outgoing, content_attributes: { external_echo: 'false' },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: [] },
+                       additional_attributes: { campaign_id: false }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: {} },
+                       additional_attributes: { campaign_id: [] }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: nil },
+                       additional_attributes: { campaign_id: {} }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: "\t" },
+                       additional_attributes: { campaign_id: "\n" }),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                       message_type: :outgoing, content_attributes: { external_echo: "\u00A0" },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: { automation_rule_id: 0 },
+                       additional_attributes: {}),
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                       message_type: :outgoing, content_attributes: {},
+                       additional_attributes: { campaign_id: 'false' })
+    ]
+    messages[6].update_columns(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+
+    expected_ids = messages.select { |message| message.send(:human_response?) }.map(&:id).sort
+    actual_ids = query('authored_customer_reply').drill_down_rows.pluck(:occurrence_id).sort
+
+    expect(actual_ids).to eq(expected_ids)
+  end
+
+  it 'matches Rails presence semantics for string-encoded JSON and safely ignores malformed containers' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    content_cases = [
+      ['{"automation_rule_id":false}', author],
+      ['{"automation_rule_id":true}', author],
+      ['{"automation_rule_id":"false"}', author],
+      ['{"automation_rule_id":"\\t\\n\\u00A0\\u2003"}', author],
+      ['{"automation_rule_id":[]}', author],
+      ['{"automation_rule_id":{"id":1}}', author],
+      ['{"external_echo":false}', nil],
+      ['{"external_echo":"false"}', nil],
+      ['{"external_echo":"\\u00A0"}', nil],
+      ['{"external_echo":0}', nil],
+      ['{"nested":{"external_echo":true}}', nil]
+    ]
+    messages = content_cases.map do |payload, sender|
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: sender,
+                                 message_type: :outgoing)
+      message.update_columns(sender_type: nil, sender_id: nil) unless sender # rubocop:disable Rails/SkipsModelValidations
+      encoded_payload = ApplicationRecord.connection.quote(payload.to_json)
+      Message.unscoped.where(id: message.id).update_all("content_attributes = #{encoded_payload}::json") # rubocop:disable Rails/SkipsModelValidations
+      message.reload
+    end
+    ['{"campaign_id":false}', '{"nested":{"campaign_id":9}}', '{not-json campaign_id', '{"other":9}'].each do |payload|
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                                 message_type: :outgoing)
+      encoded_payload = ApplicationRecord.connection.quote(payload.to_json)
+      Message.unscoped.where(id: message.id).update_all("additional_attributes = #{encoded_payload}::jsonb") # rubocop:disable Rails/SkipsModelValidations
+      messages << message.reload
+    end
+
+    expected_ids = messages.select { |message| message.send(:human_response?) }.map(&:id).sort
+    malformed = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                 message_type: :outgoing)
+    malformed.update_columns(sender_type: nil, sender_id: nil) # rubocop:disable Rails/SkipsModelValidations
+    malformed_payload = ApplicationRecord.connection.quote('{not-json'.to_json)
+    Message.unscoped.where(id: malformed.id).update_all("content_attributes = #{malformed_payload}::json") # rubocop:disable Rails/SkipsModelValidations
+    actual_ids = query('authored_customer_reply').drill_down_rows.pluck(:occurrence_id).sort
+
+    expect(actual_ids).to eq(expected_ids)
+  end
+
+  it 'preserves typed Captain, customer, system, deleted, and unknown sender identities without constantization' do
+    conversation = linked_conversation
+    rows = [
+      ['Captain::Assistant', 91, 'captain', 'persisted_raw_identity', 'Captain::Assistant'],
+      ['Contact', 92, 'customer', 'persisted_raw_identity', 'Contact'],
+      [nil, nil, 'system', 'system', 'System'],
+      [nil, 94, 'unknown', 'persisted_raw_identity', nil],
+      ['User', nil, 'user', 'unknown_deleted_or_missing_identity', 'User'],
+      ['Legacy::Actor', 93, 'unknown', 'persisted_raw_identity', 'Legacy::Actor']
+    ]
+    rows.each_with_index do |(type, id, _kind, _state, _payload_type), index|
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation,
+                                 message_type: :outgoing, private: true, created_at: Time.utc(2026, 9, 21, 9, index))
+      message.update_columns(sender_type: type, sender_id: id) # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    actors = query('private_message').drill_down_rows.map { |row| row.fetch(:actor) }
+
+    rows.each do |_type, id, kind, state, payload_type|
+      expect(actors).to include(include(type: payload_type, id: id, kind: kind, identity_state: state))
+    end
+  end
+
+  it 'keeps aggregate and details parity, stable ordering, pagination, and fingerprint' do
+    author = create(:user, account: account)
+    conversation = linked_conversation
+    first = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                             message_type: :outgoing, created_at: Time.utc(2026, 9, 21, 9))
+    second = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, sender: author,
+                              message_type: :outgoing, created_at: Time.utc(2026, 9, 21, 10))
+
+    aggregate = query('authored_customer_reply')
+    details = query('authored_customer_reply', { page: 1, per_page: 1 })
+
+    expect(aggregate.aggregate_rows.sole).to include(occurrence_count: 2, distinct_thread_count: 1)
+    expect(details.drill_down_rows.pluck(:occurrence_id)).to eq([second.id])
+    expect(details.pagination_meta).to include(total_count: 2, page: 1, per_page: 1)
+    expect(aggregate.meta[:query_fingerprint]).to eq(details.pagination_meta[:query_fingerprint])
+    plan = ApplicationRecord.connection.execute("EXPLAIN #{details.send(:relation).to_sql}")
+    expect(plan.to_a).to be_present
+    expect(first.id).to be < second.id
+  end
+
+  it 'reports exact durable manual-call actor occurrences without crediting the Thread owner' do
+    caller = create(:user, account: account, name: 'Deleted later caller')
+    conversation = linked_conversation
+    call_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 21, 9),
+      external_call_ref: 'sipuni:local:analytics-manual-1'
+    )
+    occurrence = create(
+      :communication_thread_manual_call_occurrence,
+      account: account,
+      communication_thread: thread,
+      actor: caller,
+      actor_id: caller.id,
+      actor_name: caller.name,
+      source: call_session,
+      occurred_at: call_session.started_at,
+      created_at: Time.utc(2026, 9, 21, 9, 0, 1)
+    )
+
+    report = query('manual_call', { as_of_date: '2026-09-22' })
+
+    expect(report.aggregate_rows.sole).to include(
+      fact_kind: 'manual_call',
+      source: 'communication_thread_manual_call_occurrences',
+      occurrence_count: 1,
+      distinct_thread_count: 1,
+      actor: include(id: caller.id)
+    )
+    expect(report.drill_down_rows.sole).to include(
+      occurrence_id: occurrence.id,
+      communication_thread_id: thread.id,
+      reliability: 'exact_immutable_occurrence',
+      retention: 'append_only_except_account_teardown',
+      reliable_since: '2026-09-21T09:00:00.000000Z'
+    )
+    expect(report.drill_down_rows.sole.dig(:actor, :name_snapshot)).to eq('Deleted later caller')
+    expect(report.drill_down_rows.sole.dig(:actor, :id)).not_to eq(owner.id)
+    expect(report.meta.dig(:source_contract, :backfill)).to eq('none_unrecorded_history_is_unknown')
+  end
+
+  it 'applies half-open Workspace windows and as-of observation time to manual-call occurrences' do
+    caller = create(:user, account: account)
+    conversation = linked_conversation
+    inside_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 20, 19),
+      external_call_ref: 'sipuni:local:manual-window-inside'
+    )
+    boundary_session = create(
+      :telephony_call_session,
+      :native_manual,
+      account: account,
+      conversation: conversation,
+      initiator: caller,
+      inbox: inside_session.inbox,
+      number_binding: inside_session.number_binding,
+      direction: 'outbound',
+      started_at: Time.utc(2026, 9, 21, 19),
+      external_call_ref: 'sipuni:local:manual-window-boundary'
+    )
+    inside = create(
+      :communication_thread_manual_call_occurrence,
+      account: account, communication_thread: thread, actor: caller, source: inside_session,
+      occurred_at: inside_session.started_at, created_at: Time.utc(2026, 9, 21, 18, 59)
+    )
+    create(
+      :communication_thread_manual_call_occurrence,
+      account: account, communication_thread: thread, actor: caller, source: boundary_session,
+      occurred_at: boundary_session.started_at, created_at: Time.utc(2026, 9, 21, 19)
+    )
+
+    report = query('manual_call', { from_date: '2026-09-21', to_date: '2026-09-21', as_of_date: '2026-09-21' })
+
+    expect(report.drill_down_rows.pluck(:occurrence_id)).to eq([inside.id])
+    expect(report.meta).to include(
+      from: '2026-09-20T19:00:00.000000Z',
+      to: '2026-09-21T19:00:00.000000Z',
+      as_of: '2026-09-21T19:00:00.000000Z'
+    )
+  end
+
+  it 'rejects unsupported temporal claims, unknown manual-call zero, invalid windows, and unbounded pagination' do
+    expect { query('authored_customer_reply', { as_of_date: '2026-09-22' }) }
+      .to raise_error(described_class::InvalidQuery, 'as_of_date is not supported for authored_customer_reply retained rows')
+    expect { query('participant_lifecycle') }.to raise_error(described_class::InvalidQuery, 'as_of_date is required')
+    expect { query('manual_call') }.to raise_error(described_class::InvalidQuery, 'as_of_date is required')
+    expect { query('manual_call', { as_of_date: '2026-09-22' }).aggregate_rows }
+      .to raise_error(described_class::InvalidQuery, 'manual_call occurrence coverage is unknown for an empty window')
+    expect { query('unknown') }.to raise_error(described_class::InvalidQuery, 'fact_kind is invalid')
+    expect { query('private_message', { to_date: '2026-09-20' }) }
+      .to raise_error(described_class::InvalidQuery, 'to_date must be on or after from_date')
+    expect { query('private_message', { per_page: 101 }).pagination_meta }
+      .to raise_error(described_class::InvalidQuery, 'per_page must not exceed 100')
+  end
+end

@@ -62,6 +62,15 @@ RSpec.describe AccountUser do
   end
 
   describe 'access role' do
+    it 'locks the account without discarding unrelated in-memory changes' do
+      account = create(:account)
+      account.custom_attributes['integration_probe'] = true
+
+      expect { create(:account_user, account: account) }.not_to raise_error
+      expect(account.custom_attributes).to include('integration_probe' => true)
+      expect(account.reload.custom_attributes).to include('integration_probe' => true)
+    end
+
     it 'allows a role from the same account' do
       role = create(:access_role, account: account_user.account)
 

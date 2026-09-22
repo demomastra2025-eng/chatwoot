@@ -382,7 +382,7 @@ module Crm::PayloadBuilder
       correlation_id: event.correlation_id,
       causation_id: event.causation_id,
       schema_version: event.schema_version,
-      meta: event.meta,
+      meta: event.meta.to_h.except('automation_matching_snapshot'),
       created_at: event.created_at&.iso8601
     }
   end

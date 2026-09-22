@@ -68,12 +68,21 @@ RSpec.describe 'CRM Task Results Reports API', type: :request do
       )
     )
     expect(details.dig('payload', 'rows')).to contain_exactly(
-      include('lifecycle_event_id' => event.id, 'task_id' => task.id, 'reliability' => 'exact')
+      include(
+        'lifecycle_event_id' => event.id,
+        'task_id' => task.id,
+        'reliability' => 'exact',
+        'terminal_responsibility' => include(
+          'assignee' => include('state' => 'unknown'),
+          'team' => include('state' => 'unknown')
+        ),
+        'action_actor' => include('event' => include('type' => 'User'))
+      )
     )
     expect(aggregate.dig('meta', 'query_fingerprint')).to eq(details.dig('meta', 'query_fingerprint'))
     expect(aggregate['meta']).to include(
       'source' => 'crm_events.task_terminal_catalog_snapshots',
-      'definition_version' => 1,
+      'definition_version' => 2,
       'cohort_definition' => 'terminal_lifecycle_occurrences_in_window_observed_by_as_of',
       'catalog_label_definition' => 'current_catalog_projection_not_historical_name_or_code_snapshot'
     )

@@ -12,5 +12,21 @@ FactoryBot.define do
     from_number { inbox.channel.try(:phone_number) || '+15551230000' }
     to_number { contact.phone_number || '+15551239999' }
     metadata { {} }
+
+    trait :native_manual do
+      transient do
+        initiator { create(:user, account: account) }
+      end
+
+      metadata do
+        {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'route_action' => 'operator',
+            'chatwoot_user_id' => initiator.id
+          }
+        }
+      end
+    end
   end
 end

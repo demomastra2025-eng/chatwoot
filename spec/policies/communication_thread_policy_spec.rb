@@ -47,6 +47,48 @@ RSpec.describe CommunicationThreadPolicy, type: :policy do
     expect(scope).to include(communication_thread)
   end
 
+  it 'excludes participant-only visibility from owner workload intersections' do
+    scope = described_class::Scope.intersection(
+      user_context,
+      CommunicationThread.where(account_id: account.id),
+      capabilities: %w[view view_reports]
+    )
+
+    expect(scope).not_to include(communication_thread)
+  end
+
+  it 'authorizes reports from conversations:view_reports independently of participant access' do
+    account_user = user_context.fetch(:account_user)
+    report_grant = account_user.access_role.grants.find_or_initialize_by(
+      account: account,
+      resource: 'conversations',
+      capability: 'view_reports'
+    )
+    report_grant.update!(access_scope: 'own')
+
+    expect(described_class.new(user_context, CommunicationThread)).to be_view_reports
+  end
+
+  it 'instruments the legacy account-wide scope while AccessRole scopes are in shadow mode' do
+    mode_resolution = instance_double(
+      AccessControl::ModeResolver::Result,
+      mode: 'shadow',
+      authoritative_source: 'legacy'
+    )
+    allow(AccessControl::ModeResolver).to receive(:call).and_return(mode_resolution)
+    expect(AccessControl::ModeAwareDecision).to receive(:instrument_shadow_scope).with(
+      mode_resolution: mode_resolution,
+      legacy_scope: 'all'
+    )
+
+    described_class::Scope.new(
+      user_context,
+      CommunicationThread.where(account_id: account.id),
+      capability: 'view_reports',
+      owner_only: true
+    ).resolve
+  end
+
   it 'keeps a directly assigned thread visible in a prefetched team scope' do
     communication_thread.communication_thread_participants.delete_all
     communication_thread.update!(assignee: participant, team: nil)

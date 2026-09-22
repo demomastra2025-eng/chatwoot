@@ -46,7 +46,7 @@ const props = defineProps({
   maxHeight: { type: String, default: '32rem' },
 });
 
-const emit = defineEmits(['update:modelValue', 'executeCopilotAction']);
+const emit = defineEmits(['update:modelValue']);
 
 const AUTO_HEIGHT_STORAGE_PREFIX = 'captain:editor-height:';
 const DEFAULT_EDITOR_HEIGHT = 240;
@@ -283,9 +283,6 @@ onBeforeUnmount(() => {
         @input="handleInput"
         @focus="handleFocus"
         @blur="handleBlur"
-        @execute-copilot-action="
-          (...args) => emit('executeCopilotAction', ...args)
-        "
       />
       <div
         v-if="autoHeight"

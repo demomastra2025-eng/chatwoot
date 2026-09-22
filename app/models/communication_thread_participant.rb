@@ -11,6 +11,8 @@
 #  user_id                 :bigint           not null
 #
 class CommunicationThreadParticipant < ApplicationRecord
+  attr_accessor :lifecycle_fact_context
+
   belongs_to :account
   belongs_to :communication_thread
   belongs_to :user
@@ -19,6 +21,7 @@ class CommunicationThreadParticipant < ApplicationRecord
   audited associated_with: :account
 
   before_validation :ensure_account
+  before_destroy :record_lifecycle_removal_fact
 
   validates :account_id, presence: true
   validates :user_id, uniqueness: { scope: :communication_thread_id }
@@ -69,5 +72,35 @@ class CommunicationThreadParticipant < ApplicationRecord
     return if AccountUser.exists?(account_id: account_id, user_id: added_by_id)
 
     errors.add(:added_by, 'must belong to the same account')
+  end
+
+  def record_lifecycle_removal_fact
+    context = lifecycle_fact_context || default_lifecycle_fact_context
+    CommunicationThreadParticipantLifecycleFact.record!(
+      membership: self,
+      actor: context[:actor],
+      action: context[:action],
+      reason: context[:reason],
+      identity: context[:identity]
+    )
+  end
+
+  def default_lifecycle_fact_context
+    reason = case destroyed_by_association&.active_record&.name
+             when 'CommunicationThread' then 'thread_deleted'
+             when 'User' then 'user_deleted'
+             else 'direct_destroy'
+             end
+    action = 'remove'
+    {
+      actor: Current.executed_by || Current.user,
+      action: action,
+      reason: reason,
+      identity: {
+        key: "membership:#{id}:#{action}",
+        correlation_id: SecureRandom.uuid,
+        occurred_at: Time.current
+      }
+    }
   end
 end

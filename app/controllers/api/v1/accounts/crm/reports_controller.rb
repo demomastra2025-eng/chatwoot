@@ -111,6 +111,10 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
 
   def deal_workload_details = render_deal_workload(details: true)
 
+  def deal_terminal_outcomes = render_deal_terminal_outcomes
+
+  def deal_terminal_outcomes_details = render_deal_terminal_outcomes(details: true)
+
   def task_workload = render_task_workload
 
   def task_workload_details = render_task_workload(details: true)
@@ -240,6 +244,18 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
       params: params.permit(
         :dimension, :owner_id, :team_id, :pipeline_id, :stage_id, :page, :per_page,
         :from, :to, :as_of, :from_date, :to_date, :as_of_date
+      )
+    )
+    render_payload({ rows: details ? query.drill_down_rows : query.aggregate_rows }, meta: details ? query.pagination_meta : query.meta)
+  end
+
+  def render_deal_terminal_outcomes(details: false)
+    authorize ::Crm::Deal, :view_reports?
+    query = ::Crm::Reports::DealTerminalOutcomesQuery.new(
+      account: Current.account,
+      deals_scope: report_deals_scope,
+      params: params.permit(
+        :from_date, :to_date, :as_of_date, :dimension, :owner_id, :team_id, :outcome, :page, :per_page
       )
     )
     render_payload({ rows: details ? query.drill_down_rows : query.aggregate_rows }, meta: details ? query.pagination_meta : query.meta)

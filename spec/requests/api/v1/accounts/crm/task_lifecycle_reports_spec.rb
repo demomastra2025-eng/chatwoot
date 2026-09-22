@@ -63,8 +63,47 @@ RSpec.describe 'CRM Task Lifecycle Reports API', type: :request do
     expect(aggregate.dig('meta', 'query_fingerprint')).to eq(details.dig('meta', 'query_fingerprint'))
     expect(aggregate['meta']).to include(
       'source' => 'crm_events.task_terminal_lifecycle',
-      'definition_version' => 1,
+      'definition_version' => 2,
       'cohort_definition' => 'terminal_lifecycle_occurrences_in_window_observed_by_as_of'
+    )
+  end
+
+  it 'returns immutable responsibility and typed action attribution without exposing current Task assignment' do
+    responsible = create(:user, account: account)
+    actor = create(:user, account: account)
+    team = create(:team, account: account)
+    task = create(:crm_task, account: account, status: status, assignee: responsible, team: team)
+    event = create(
+      :crm_event,
+      account: account,
+      eventable: task,
+      actor: actor,
+      actor_kind: 'User',
+      event_type: 'task_completed',
+      created_at: Time.utc(2026, 9, 15, 12),
+      after_data: {
+        'completed_at' => Time.utc(2026, 9, 15, 12).iso8601,
+        'completed_by_id' => actor.id,
+        'assignee_id' => responsible.id,
+        'team_id' => team.id,
+        'all_day' => false,
+        'due_at' => Time.utc(2026, 9, 15, 13).iso8601
+      }
+    )
+    task.update!(assignee: actor, team: nil)
+
+    get details_path, params: report_params, headers: headers, as: :json
+
+    row = response.parsed_body.dig('payload', 'rows').find { |candidate| candidate['lifecycle_event_id'] == event.id }
+    expect(row).to include(
+      'terminal_responsibility' => {
+        'assignee' => include('id' => responsible.id),
+        'team' => include('id' => team.id)
+      },
+      'action_actor' => include(
+        'terminal' => include('id' => actor.id),
+        'event' => { 'type' => 'User', 'id' => actor.id, 'state' => 'persisted_typed_identity' }
+      )
     )
   end
 

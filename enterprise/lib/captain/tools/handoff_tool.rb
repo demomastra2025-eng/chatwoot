@@ -1,7 +1,7 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Required concise factual explanation of what happened and why a human is needed.', required: true
-  param :status_reason, type: 'string', desc: 'Exact configured assistant handoff outcome ID',
+  param :status_reason, type: 'string', desc: 'Configured conversation status reason ID for the assistant handoff outcome',
                         required: false
   param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 

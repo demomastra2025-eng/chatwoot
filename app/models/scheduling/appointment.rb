@@ -98,13 +98,16 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :inherit_contact_owner
   before_validation :assign_duration_min
   before_validation :mark_local_medelement_cancellation, on: :update
+  after_create :capture_automation_created_event
   after_update :capture_updated_changes_for_commit
+  before_commit :capture_automation_updated_events, on: :update
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
   after_update_commit :sync_deferred_touch_enrollments
   after_destroy_commit :invalidate_scheduling_scope
   after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
+  after_rollback :clear_updated_changes_after_rollback
 
   validates :client_name, :starts_at, :ends_at, :source, presence: true
   validates :status, inclusion: { in: Scheduling::Constants::APPOINTMENT_STATUSES }
@@ -225,6 +228,51 @@ class Scheduling::Appointment < ApplicationRecord
       medelement_source_updated_at: medelement_source_updated_at,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
+  ensure
+    clear_updated_changes_after_rollback
+  end
+
+  def capture_automation_created_event
+    @automation_create_occurrence_id ||= SecureRandom.uuid
+    capture_automation_event(APPOINTMENT_CREATED, {}, @automation_create_occurrence_id)
+  end
+
+  def capture_automation_updated_events
+    changed_attributes = changed_attributes_payload
+    return if changed_attributes.blank?
+
+    @automation_update_occurrence_id ||= SecureRandom.uuid
+    capture_automation_event(APPOINTMENT_UPDATED, changed_attributes, @automation_update_occurrence_id)
+    capture_automation_rescheduled_event(changed_attributes)
+    capture_automation_status_event(changed_attributes)
+  end
+
+  def capture_automation_rescheduled_event(changed_attributes)
+    return unless appointment_rescheduled?(changed_attributes)
+
+    capture_automation_event('appointment.rescheduled', changed_attributes, @automation_update_occurrence_id)
+  end
+
+  def capture_automation_status_event(changed_attributes)
+    return unless changed_attributes.key?('status')
+
+    capture_automation_event(APPOINTMENT_CANCELLED, changed_attributes, @automation_update_occurrence_id) if status == 'cancelled'
+    capture_automation_event(APPOINTMENT_COMPLETED, changed_attributes, @automation_update_occurrence_id) if status == 'completed'
+  end
+
+  def capture_automation_event(event_name, changed_attributes, occurrence_id)
+    AutomationRules::Events::CaptureService.capture_model_event!(
+      record: self,
+      event_name: event_name,
+      payload_snapshot: AutomationRules::Events::MatchingSnapshot.for(self),
+      changes_snapshot: changed_attributes,
+      producer: 'appointment_model',
+      occurrence_id: occurrence_id
+    )
+  end
+
+  def appointment_rescheduled?(changed_attributes)
+    changed_attributes.keys.intersect?(SchedulingAutomationRuleListener::RESCHEDULED_ATTRIBUTE_KEYS)
   end
 
   def dispatch_updated_events
@@ -244,8 +292,14 @@ class Scheduling::Appointment < ApplicationRecord
 
     dispatch_status_event(changed_attributes) if changed_attributes.key?('status')
   ensure
+    clear_updated_changes_after_rollback
+  end
+
+  def clear_updated_changes_after_rollback
     @updated_changes_for_commit = nil
     @medelement_provider_reconciled = nil
+    @automation_update_occurrence_id = nil
+    @automation_create_occurrence_id = nil
   end
 
   def dispatch_status_event(changed_attributes)

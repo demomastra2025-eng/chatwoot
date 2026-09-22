@@ -10,6 +10,13 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
     'task_completed' => 'completed',
     'task_cancelled' => 'cancelled'
   }.freeze
+  ATTRIBUTION_GROUP_COLUMNS = %w[
+    assignee_snapshot_present assignee_snapshot_blank assignee_id_snapshot assignee_catalog_id assignee_name
+    team_snapshot_present team_snapshot_blank team_id_snapshot team_catalog_id team_name
+    terminal_actor_snapshot_present terminal_actor_id_snapshot
+    terminal_actor_catalog_id terminal_actor_name event_actor_type event_actor_id event_actor_state
+    performed_by_type performed_by_id performed_by_state
+  ].freeze
 
   attr_reader :account, :tasks_scope, :params, :timezone, :from_time, :to_time, :as_of_time
 
@@ -40,7 +47,7 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
   def meta
     window_metadata.merge(reliability_metadata).merge(
       query_fingerprint: query_fingerprint,
-      definition_version: 1,
+      definition_version: 2,
       source: SOURCE
     ).merge(metric_definitions)
   end
@@ -51,6 +58,13 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
 
   def fact_relation
     @fact_relation ||= Crm::Event.unscoped.from("(#{facts_sql}) crm_events")
+  end
+
+  def attribution_payloads(values)
+    {
+      terminal_responsibility: responsibility_payloads(values),
+      action_actor: action_actor_payload(values)
+    }
   end
 
   private
@@ -79,10 +93,10 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
   end
 
   def aggregate_payload(values)
-    lifecycle_type, lifecycle_count, overdue_count, on_time_count, not_configured_count,
-      unknown_deadline_count, exact_count, estimated_count, unknown_count = values
+    lifecycle_count, overdue_count, on_time_count, not_configured_count,
+      unknown_deadline_count, exact_count, estimated_count, unknown_count = values.drop(1)
     {
-      lifecycle_type: lifecycle_type,
+      lifecycle_type: values.first,
       lifecycle_count: lifecycle_count.to_i,
       overdue_count: overdue_count.to_i,
       on_time_count: on_time_count.to_i,
@@ -102,6 +116,8 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
       window_fact: 'terminal_at_with_event_created_at_fallback',
       completed_definition: 'canonical_task_completed_event',
       cancelled_definition: 'canonical_task_cancelled_event',
+      responsibility_definition: 'terminal_event_assignee_and_team_snapshots_not_current_task_assignment',
+      action_actor_definition: 'terminal_actor_snapshot_with_typed_event_actor_and_performer_provenance',
       overdue_definition: 'terminal_event_after_timed_due_at_or_after_workspace_end_of_due_on',
       retry_definition: 'one_persisted_event_per_successful_canonical_command'
     }
@@ -187,6 +203,26 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
         events.after_data->>'task_type_id' AS task_type_id_snapshot,
         events.after_data->>'task_outcome_id' AS task_outcome_id_snapshot,
         events.after_data->>'outcome' AS legacy_outcome_snapshot,
+        events.after_data ? 'assignee_id' AS assignee_snapshot_present,
+        NULLIF(events.after_data->>'assignee_id', '') IS NULL AS assignee_snapshot_blank,
+        #{snapshot_id_sql("events.after_data->>'assignee_id'")} AS assignee_id_snapshot,
+        assignee_memberships.user_id AS assignee_catalog_id,
+        assignees.name AS assignee_name,
+        events.after_data ? 'team_id' AS team_snapshot_present,
+        NULLIF(events.after_data->>'team_id', '') IS NULL AS team_snapshot_blank,
+        #{snapshot_id_sql("events.after_data->>'team_id'")} AS team_id_snapshot,
+        terminal_teams.id AS team_catalog_id,
+        terminal_teams.name AS team_name,
+        #{terminal_actor_presence_sql} AS terminal_actor_snapshot_present,
+        #{snapshot_id_sql(terminal_actor_id_sql)} AS terminal_actor_id_snapshot,
+        terminal_actor_memberships.user_id AS terminal_actor_catalog_id,
+        terminal_actors.name AS terminal_actor_name,
+        events.actor_kind AS event_actor_type,
+        #{typed_actor_id_sql('events.actor_kind', 'events.actor_id')} AS event_actor_id,
+        #{typed_actor_state_sql('events.actor_kind', 'events.actor_id')} AS event_actor_state,
+        events.performed_by_type,
+        #{typed_actor_id_sql('events.performed_by_type', 'events.performed_by_id')} AS performed_by_id,
+        #{typed_actor_state_sql('events.performed_by_type', 'events.performed_by_id')} AS performed_by_state,
         CASE
           WHEN NOT (#{valid_terminal_at_sql}) THEN 'unknown'
           WHEN events.after_data->>'all_day' = 'true'
@@ -214,6 +250,17 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
         events.correlation_id
       FROM crm_events events
       INNER JOIN (#{visible_tasks_sql}) visible_tasks ON visible_tasks.id = events.eventable_id
+      LEFT JOIN account_users assignee_memberships
+        ON assignee_memberships.user_id = #{snapshot_id_sql("events.after_data->>'assignee_id'")}
+        AND assignee_memberships.account_id = #{connection.quote(account.id)}
+      LEFT JOIN users assignees ON assignees.id = assignee_memberships.user_id
+      LEFT JOIN teams terminal_teams
+        ON terminal_teams.id = #{snapshot_id_sql("events.after_data->>'team_id'")}
+        AND terminal_teams.account_id = #{connection.quote(account.id)}
+      LEFT JOIN account_users terminal_actor_memberships
+        ON terminal_actor_memberships.user_id = #{snapshot_id_sql(terminal_actor_id_sql)}
+        AND terminal_actor_memberships.account_id = #{connection.quote(account.id)}
+      LEFT JOIN users terminal_actors ON terminal_actors.id = terminal_actor_memberships.user_id
       WHERE events.account_id = #{connection.quote(account.id)}
         AND events.eventable_type = 'Crm::Task'
         AND events.event_type IN (#{EVENT_TYPES.keys.map { |value| connection.quote(value) }.join(', ')})
@@ -273,6 +320,50 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
     '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$'
   end
 
+  def valid_snapshot_id_sql(expression)
+    "#{expression} ~ '^[1-9]\\d*$' AND COALESCE(pg_input_is_valid(#{expression}, 'bigint'), FALSE)"
+  end
+
+  def snapshot_id_sql(expression)
+    "CASE WHEN #{valid_snapshot_id_sql(expression)} THEN (#{expression})::bigint END"
+  end
+
+  def typed_actor_id_sql(type_expression, id_expression)
+    "CASE WHEN #{valid_typed_actor_sql(type_expression, id_expression)} THEN #{id_expression} END"
+  end
+
+  def typed_actor_state_sql(type_expression, id_expression)
+    <<~SQL.squish
+      CASE
+        WHEN #{type_expression} = 'System' AND #{id_expression} IS NULL THEN 'system'
+        WHEN #{valid_typed_actor_sql(type_expression, id_expression)} THEN 'persisted_typed_identity'
+        ELSE 'unknown'
+      END
+    SQL
+  end
+
+  def valid_typed_actor_sql(type_expression, id_expression)
+    "NULLIF(BTRIM(#{type_expression}), '') IS NOT NULL AND #{type_expression} <> 'System' AND #{id_expression} > 0"
+  end
+
+  def terminal_actor_id_sql
+    <<~SQL.squish
+      CASE events.event_type
+        WHEN 'task_completed' THEN events.after_data->>'completed_by_id'
+        WHEN 'task_cancelled' THEN events.after_data->>'cancelled_by_id'
+      END
+    SQL
+  end
+
+  def terminal_actor_presence_sql
+    <<~SQL.squish
+      CASE events.event_type
+        WHEN 'task_completed' THEN events.after_data ? 'completed_by_id'
+        WHEN 'task_cancelled' THEN events.after_data ? 'cancelled_by_id'
+      END
+    SQL
+  end
+
   def grouped_counts
     relation.group(:lifecycle_type).order(:lifecycle_type).pluck(
       :lifecycle_type,
@@ -315,10 +406,12 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
   end
 
   def drill_down_payload(fact)
+    attribution_values = ATTRIBUTION_GROUP_COLUMNS.map { |column| fact.public_send(column) }
     {
       lifecycle_event_id: fact.id,
       task_id: fact.task_id,
       lifecycle_type: fact.lifecycle_type,
+      **attribution_payloads(attribution_values),
       lifecycle_at: fact.lifecycle_at&.utc&.iso8601(6),
       terminal_at: fact.terminal_at,
       lifecycle_reliability: fact.lifecycle_reliability,
@@ -327,6 +420,61 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
       schema_version: fact.schema_version,
       correlation_id: fact.correlation_id
     }
+  end
+
+  def responsibility_payloads(values)
+    attributes = ATTRIBUTION_GROUP_COLUMNS.zip(values).to_h
+    {
+      assignee: responsibility_payload(attributes, :assignee),
+      team: responsibility_payload(attributes, :team)
+    }
+  end
+
+  def responsibility_payload(attributes, prefix)
+    present = attributes.fetch("#{prefix}_snapshot_present")
+    blank = attributes.fetch("#{prefix}_snapshot_blank")
+    snapshot_id = attributes.fetch("#{prefix}_id_snapshot")
+    catalog_id = attributes.fetch("#{prefix}_catalog_id")
+    state = if present && blank
+              'not_configured'
+            elsif snapshot_id.blank?
+              'unknown'
+            elsif catalog_id.present?
+              'current_catalog_projection'
+            else
+              'persisted_identity'
+            end
+    { id: snapshot_id, name: catalog_id.present? ? attributes.fetch("#{prefix}_name") : nil, state: state }
+  end
+
+  def action_actor_payload(values)
+    attributes = ATTRIBUTION_GROUP_COLUMNS.zip(values).to_h
+    {
+      terminal: terminal_actor_payload(attributes),
+      event: typed_actor_payload(
+        type: attributes['event_actor_type'], id: attributes['event_actor_id'], state: attributes['event_actor_state']
+      ),
+      performed_by: typed_actor_payload(
+        type: attributes['performed_by_type'], id: attributes['performed_by_id'], state: attributes['performed_by_state']
+      )
+    }
+  end
+
+  def terminal_actor_payload(attributes)
+    snapshot_id = attributes['terminal_actor_id_snapshot']
+    catalog_id = attributes['terminal_actor_catalog_id']
+    state = if !attributes['terminal_actor_snapshot_present'] || snapshot_id.blank?
+              'unknown'
+            elsif catalog_id.present?
+              'current_catalog_projection'
+            else
+              'persisted_identity'
+            end
+    { type: 'User', id: snapshot_id, name: catalog_id.present? ? attributes['terminal_actor_name'] : nil, state: state }
+  end
+
+  def typed_actor_payload(type:, id:, state:)
+    { type: type, id: id, state: state }
   end
 
   def deadline_payload(fact)

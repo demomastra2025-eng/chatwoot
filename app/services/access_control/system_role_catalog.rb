@@ -7,6 +7,8 @@ class AccessControl::SystemRoleCatalog
     'observer' => 'Observer'
   }.freeze
   EMPLOYEE_ALL_VIEW_RESOURCES = %w[contacts conversations appointments].freeze
+  BOOTSTRAP_RESOURCES = AccessRoleGrant::RESOURCES.freeze
+  SCOPED_BOOTSTRAP_RESOURCES = (BOOTSTRAP_RESOURCES - %w[automation_rules]).freeze
 
   class << self
     def grants_for(system_key)
@@ -16,12 +18,12 @@ class AccessControl::SystemRoleCatalog
     private
 
     def administrator_grants
-      grants_for_resources(AccessRoleGrant::RESOURCES, except: [], scope: 'all')
+      grants_for_resources(BOOTSTRAP_RESOURCES, except: [], scope: 'all')
     end
 
     def department_lead_grants
       grants_for_resources(
-        AccessRoleGrant::RESOURCES,
+        SCOPED_BOOTSTRAP_RESOURCES,
         except: %w[configure manage_finance override_schedule],
         scope: 'team'
       )
@@ -29,7 +31,7 @@ class AccessControl::SystemRoleCatalog
 
     def employee_grants
       grants_for_resources(
-        AccessRoleGrant::RESOURCES,
+        SCOPED_BOOTSTRAP_RESOURCES,
         except: %w[view_finance manage_finance view_configuration configure export view_reports override_schedule],
         scope: 'own'
       ).map do |grant|
@@ -47,7 +49,7 @@ class AccessControl::SystemRoleCatalog
     end
 
     def observer_grants
-      grants_for_resources(AccessRoleGrant::RESOURCES, only: %w[view], scope: 'all')
+      grants_for_resources(SCOPED_BOOTSTRAP_RESOURCES, only: %w[view], scope: 'all')
     end
 
     def grants_for_resources(resources, scope:, only: nil, except: [])

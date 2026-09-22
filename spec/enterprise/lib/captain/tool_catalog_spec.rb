@@ -74,10 +74,11 @@ RSpec.describe Captain::ToolCatalog do
     it 'keeps employee-actor and private conversation tools out of the customer-agent scope' do
       assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
       agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
-      restricted_tool_ids = %w[add_deal_comment add_task_comment get_conversation get_deal_timeline]
+      restricted_tool_ids = %w[add_deal_comment add_task_comment get_conversation]
 
       expect(assistant_tool_ids).to include(*restricted_tool_ids)
       expect(agent_tool_ids).not_to include(*restricted_tool_ids)
+      expect(agent_tool_ids).to include('get_deal_timeline')
     end
 
 
@@ -292,6 +293,18 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool).to be_a(Captain::Tools::SearchDocumentationService)
     end
 
+    it 'builds a neutral account tool for the preserved assistant/MCP scope' do
+      tool = described_class.build_tool(
+        { id: 'faq_lookup', custom: false },
+        assistant: assistant,
+        scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
+        user: nil,
+        conversation: nil
+      )
+
+      expect(tool).to be_a(Captain::Tools::Account::FaqLookupService)
+    end
+
     it 'builds delegated account tools for the customer-facing agent scope' do
       tool = described_class.build_tool(
         { id: 'search_available_slots', custom: false },
@@ -346,7 +359,7 @@ RSpec.describe Captain::ToolCatalog do
         conversation: nil
       )
 
-      expect(tool).to be_a(Captain::Tools::Copilot::CustomHttpTool)
+      expect(tool).to be_a(Captain::Tools::Account::CustomHttpTool)
     end
 
     it 'builds a custom agent tool via the dynamic public tool path' do
@@ -378,7 +391,7 @@ RSpec.describe Captain::ToolCatalog do
         conversation: nil
       )
 
-      expect(tool).to be_a(Captain::Tools::Copilot::McpTool)
+      expect(tool).to be_a(Captain::Tools::Account::McpTool)
     end
   end
 

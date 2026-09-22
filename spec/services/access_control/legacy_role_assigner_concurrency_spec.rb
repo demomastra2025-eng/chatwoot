@@ -19,7 +19,7 @@ RSpec.describe AccessControl::LegacyRoleAssigner, :no_transactional_tests do
     )
     operator_account_user.destroy!
     AccessControl::ModeTransition.call(account: account, to: :shadow)
-    service = Captain::Tools::Copilot::ReactivateUserService.new(create(:captain_assistant, account: account), user: admin)
+    service = Captain::Tools::Account::ReactivateUserService.new(create(:captain_assistant, account: account), user: admin)
     backfill_account = Account.find(account.id)
     reactivation_at_create = Queue.new
     backfill_attempting_account_lock = Queue.new

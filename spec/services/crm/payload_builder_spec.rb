@@ -3,6 +3,22 @@
 require 'rails_helper'
 
 RSpec.describe Crm::PayloadBuilder do
+  describe '.event' do
+    it 'keeps the internal automation snapshot out of timeline payloads' do
+      event = create(
+        :crm_event,
+        meta: {
+          'changes' => { 'stage_id' => [1, 2] },
+          'automation_matching_snapshot' => { 'matcher_data' => { 'private' => 'value' } }
+        }
+      )
+
+      payload = described_class.event(event)
+
+      expect(payload.fetch(:meta)).to eq('changes' => { 'stage_id' => [1, 2] })
+    end
+  end
+
   describe '.pipeline' do
     let(:account) { create(:account) }
     let(:pipeline) { create(:crm_pipeline, account: account) }

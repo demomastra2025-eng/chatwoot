@@ -78,6 +78,8 @@ class Account < ApplicationRecord
 
   has_many :account_users, dependent: :destroy_async
   has_many :access_roles, dependent: :destroy
+  has_many :communication_thread_participant_lifecycle_facts, dependent: :delete_all
+  has_many :communication_thread_manual_call_occurrences, dependent: :delete_all
 
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
@@ -173,6 +175,7 @@ class Account < ApplicationRecord
 
   before_validation :validate_limit_keys
   before_validation :normalize_default_settings
+  before_destroy :authorize_participant_lifecycle_fact_teardown, prepend: true
   before_destroy :clear_access_role_references, prepend: true
   after_create_commit :notify_creation
   after_destroy :remove_account_sequences
@@ -276,6 +279,13 @@ class Account < ApplicationRecord
   end
 
   private
+
+  def authorize_participant_lifecycle_fact_teardown
+    quoted_account_id = self.class.connection.quote(id.to_s)
+    self.class.connection.select_value(
+      "SELECT set_config('onelink.account_teardown_id', #{quoted_account_id}, true)"
+    )
+  end
 
   def clear_access_role_references
     # The roles are destroyed synchronously with the account; remove restrictive

@@ -98,6 +98,7 @@ export const accessRoleCatalog = {
   meta: {
     resources: { contacts: ['view', 'create'] },
     access_scopes: ['none', 'own', 'team', 'all'],
+    resource_access_scopes: { contacts: ['none', 'own', 'team', 'all'] },
     mutations_enabled: false,
     legacy_mutations_enabled: true,
     assignments_enabled: false,

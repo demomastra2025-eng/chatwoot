@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from dev_release_gate import ContractManifest, GateError, evaluate, read_live_sha
+from dev_release_gate import ContractManifest, GateError, evaluate, load_contract_manifest, read_live_sha
 
 
 def run(repo: Path, *args: str) -> str:
@@ -133,6 +133,50 @@ class DevReleaseGateTest(unittest.TestCase):
 
         with self.assertRaisesRegex(GateError, "missing files required"):
             self.evaluate(self.sha())
+
+    def test_validates_renamed_protected_file_against_baseline_and_candidate_hashes(self):
+        run(self.repo, "merge", "--no-ff", "live", "-m", "merge live functionality")
+        run(self.repo, "mv", "app/services/integrations/medelement/contract.rb", "app/services/integrations/medelement/account_contract.rb")
+        self.write("app/services/integrations/medelement/account_contract.rb", "renamed contract\n")
+        self.commit("rename protected contract")
+        manifest = ContractManifest(
+            required_ancestor=self.base_sha,
+            protected_files={
+                "app/services/integrations/medelement/contract.rb": hashlib.sha256(b"baseline contract\n").hexdigest()
+            },
+            contract_specs=("spec/contracts/medelement_spec.rb",),
+            protected_file_renames={
+                "app/services/integrations/medelement/contract.rb": (
+                    "app/services/integrations/medelement/account_contract.rb",
+                    hashlib.sha256(b"renamed contract\n").hexdigest(),
+                )
+            },
+        )
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            evaluate(self.repo, self.live_sha, self.sha(), manifest=manifest)
+
+        self.write("app/services/integrations/medelement/account_contract.rb", "tampered contract\n")
+        self.commit("tamper with renamed protected contract")
+        with self.assertRaisesRegex(GateError, "candidate hash mismatch"):
+            evaluate(self.repo, self.live_sha, self.sha(), manifest=manifest)
+
+    def test_loads_legacy_manifest_without_protected_file_renames(self):
+        manifest_path = self.repo / "manifest.json"
+        manifest_path.write_text(
+            '{"version":1,"required_ancestor":"%s","protected_files":{"app/services/integrations/medelement/contract.rb":"%s"},'
+            '"contract_specs":["spec/contracts/medelement_spec.rb"]}'
+            % (self.base_sha, hashlib.sha256(b"baseline contract\n").hexdigest()),
+            encoding="utf-8",
+        )
+
+        manifest = load_contract_manifest(manifest_path)
+
+        self.assertEqual(manifest.protected_file_renames, {})
+        self.assertEqual(
+            manifest.candidate_protected_files(),
+            {"app/services/integrations/medelement/contract.rb": None},
+        )
 
     def test_reads_exact_live_sha_marker(self):
         current = self.repo / "current"

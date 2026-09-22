@@ -12,7 +12,7 @@ class Api::V1::Accounts::CommunicationThreads::ParticipantsController < Api::V1:
     CommunicationThreads::ParticipationService.new(
       communication_thread: @communication_thread,
       actor: Current.user
-    ).add!(user_id: participant_user_id)
+    ).add!(user_id: participant_user_id, idempotency_key: request.headers['Idempotency-Key'])
     load_participants
     render :show
   end
@@ -22,7 +22,7 @@ class Api::V1::Accounts::CommunicationThreads::ParticipantsController < Api::V1:
     CommunicationThreads::ParticipationService.new(
       communication_thread: @communication_thread,
       actor: Current.user
-    ).remove!(user_id: participant_user_id)
+    ).remove!(user_id: participant_user_id, idempotency_key: request.headers['Idempotency-Key'])
     load_participants
     render :show
   end

@@ -288,8 +288,7 @@ class Captain::BaseTaskService
 
   # Follow-up context for client-side refinement
   def build_follow_up_context?
-    # FollowUpService should return its own updated context
-    !is_a?(Captain::FollowUpService)
+    true
   end
 
   def build_follow_up_context(messages, response)

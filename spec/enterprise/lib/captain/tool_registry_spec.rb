@@ -6,7 +6,7 @@ RSpec.describe Captain::ToolRegistry do
       agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
       assistant_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
 
-      expect(agent_tool_ids - assistant_tool_ids).to be_empty
+      expect(agent_tool_ids - assistant_tool_ids).to eq(['customer_tasks'])
       expect(assistant_tool_ids).to include(
         'list_captain_assistants',
         'get_captain_assistant',
@@ -68,7 +68,6 @@ RSpec.describe Captain::ToolRegistry do
         'complete_task',
         'merge_contacts',
         'add_appointment_payment',
-
         'list_macros',
         'get_macro',
         'create_macro',
@@ -209,7 +208,16 @@ RSpec.describe Captain::ToolRegistry do
 
   describe '.resolve_assistant_tool_class' do
     it 'uses the explicit registry mapping for assistant tools' do
-      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Copilot::FaqLookupService)
+      expect(described_class.resolve_assistant_tool_class('faq_lookup')).to eq(Captain::Tools::Account::FaqLookupService)
+    end
+
+    it 'uses neutral account-tool ownership for every assistant tool' do
+      described_class.definitions.each do |definition|
+        tool_class = definition.assistant_tool_class
+        next if tool_class.blank? || tool_class == Captain::Tools::SearchDocumentationService
+
+        expect(tool_class.to_s).to start_with('Captain::Tools::Account::')
+      end
     end
   end
 

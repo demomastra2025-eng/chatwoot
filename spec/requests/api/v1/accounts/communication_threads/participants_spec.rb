@@ -24,12 +24,39 @@ RSpec.describe 'Communication thread participants API', type: :request do
     expect(response).to have_http_status(:success)
     expect(response.parsed_body.pluck('id')).to contain_exactly(participant.id)
     expect(communication_thread.communication_thread_participants.exists?(user: participant)).to be(true)
+    expect(CommunicationThreadParticipantLifecycleFact.last).to have_attributes(
+      action: 'add', participant_id: participant.id, actor_id: owner.id
+    )
+  end
+
+  it 'replays API mutations safely with the same idempotency key' do
+    token = owner.create_token
+    owner.save!
+    owner.activate_auth_client!(token.client)
+    auth_headers = owner.build_auth_headers(token.token, token.client)
+
+    2.times do
+      post base_path, params: { user_id: participant.id },
+                      headers: auth_headers.merge('Idempotency-Key' => 'api-add'), as: :json
+      expect(response).to have_http_status(:success)
+    end
+
+    expect(CommunicationThreadParticipantLifecycleFact.where(idempotency_key: 'api-add').count).to eq(1)
+
+    2.times do
+      delete base_path, params: { user_id: participant.id },
+                        headers: auth_headers.merge('Idempotency-Key' => 'api-remove'), as: :json
+    end
+
+    expect(response).to have_http_status(:success)
+    expect(CommunicationThreadParticipantLifecycleFact.where(idempotency_key: 'api-remove').count).to eq(1)
   end
 
   it 'rejects participant management by an unrelated agent' do
     post base_path, params: { user_id: participant.id }, headers: other_agent.create_new_auth_token, as: :json
 
     expect(response).to have_http_status(:unauthorized)
+    expect(CommunicationThreadParticipantLifecycleFact.count).to eq(0)
   end
 
   it 'allows a participant to leave without allowing removal of another participant' do

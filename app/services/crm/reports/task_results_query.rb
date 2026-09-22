@@ -4,6 +4,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
   QUERY_KIND = 'task_results'.freeze
   SOURCE = 'crm_events.task_terminal_catalog_snapshots'.freeze
   RELIABILITIES = %w[exact estimated unknown].freeze
+  ATTRIBUTION_GROUP_COLUMNS = Crm::Reports::TaskLifecycleQuery::ATTRIBUTION_GROUP_COLUMNS
 
   attr_reader :account, :params
 
@@ -33,7 +34,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
   def meta
     window_metadata.merge(
       query_fingerprint: query_fingerprint,
-      definition_version: 1,
+      definition_version: 2,
       source: SOURCE,
       reliable_since: nil,
       unknown_before: nil,
@@ -192,7 +193,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
       lifecycle_type schema_version task_type_id task_type_code task_type_name task_type_kind
       task_type_reliability task_type_source task_outcome_id task_outcome_code task_outcome_name
       task_outcome_kind task_outcome_reliability task_outcome_source
-    ]
+    ] + ATTRIBUTION_GROUP_COLUMNS
   end
 
   def ordering_columns
@@ -203,11 +204,13 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
     lifecycle, version, *dimension_values, count, exact_count, estimated_count, unknown_count = values
     type_values = dimension_values.shift(6)
     outcome_values = dimension_values.shift(6)
+    attribution_values = dimension_values.shift(ATTRIBUTION_GROUP_COLUMNS.length)
     {
       lifecycle_type: lifecycle,
       snapshot_schema_version: version,
       task_type: dimension_payload(type_values),
       task_outcome: dimension_payload(outcome_values),
+      **lifecycle_query.attribution_payloads(attribution_values),
       occurrence_count: count.to_i,
       exact_count: exact_count.to_i,
       estimated_count: estimated_count.to_i,
@@ -243,6 +246,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
   end
 
   def drill_down_payload(fact)
+    attribution_values = ATTRIBUTION_GROUP_COLUMNS.map { |column| fact.public_send(column) }
     {
       lifecycle_event_id: fact.id,
       task_id: fact.task_id,
@@ -251,6 +255,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
       snapshot_schema_version: fact.schema_version,
       task_type: dimension_payload(dimension_values(fact, :task_type)),
       task_outcome: dimension_payload(dimension_values(fact, :task_outcome)),
+      **lifecycle_query.attribution_payloads(attribution_values),
       reliability: fact.fact_reliability,
       correlation_id: fact.correlation_id
     }
@@ -267,7 +272,9 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
       window_fact: 'terminal_at_with_event_created_at_fallback',
       catalog_identity_definition: 'event_snapshot_foreign_key_with_account_and_type_validated_catalog_projection',
       legacy_outcome_definition: 'persisted_event_outcome_code_without_stable_catalog_identity',
-      catalog_label_definition: 'current_catalog_projection_not_historical_name_or_code_snapshot'
+      catalog_label_definition: 'current_catalog_projection_not_historical_name_or_code_snapshot',
+      responsibility_definition: 'terminal_event_assignee_and_team_snapshots_not_current_task_assignment',
+      action_actor_definition: 'terminal_actor_snapshot_with_typed_event_actor_and_performer_provenance'
     }
   end
 

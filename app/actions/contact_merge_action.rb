@@ -70,16 +70,27 @@ class ContactMergeAction
   end
 
   def merge_thread_participants!(source_thread, target_thread)
-    participation_service = CommunicationThreads::ParticipationService.new(
+    target_participation = CommunicationThreads::ParticipationService.new(
       communication_thread: target_thread,
       actor: Current.user
     )
     source_thread.communication_thread_participants.find_each do |membership|
-      participation_service.add!(user_id: membership.user_id, reason: 'contact_merge') \
-        if membership.user_id != target_thread.assignee_id
-      membership.audit_comment = 'contact_merge'
-      membership.destroy!
+      transfer_thread_participant!(membership, source_thread, target_thread, target_participation)
     end
+  end
+
+  def transfer_thread_participant!(membership, source_thread, target_thread, target_participation)
+    correlation_id = SecureRandom.uuid
+    if membership.user_id != target_thread.assignee_id
+      target_participation.add!(user_id: membership.user_id, reason: 'contact_merge',
+                                idempotency_key: "#{correlation_id}:target", correlation_id: correlation_id)
+    end
+    CommunicationThreads::ParticipationService.new(communication_thread: source_thread, actor: Current.user).remove!(
+      user_id: membership.user_id,
+      reason: 'contact_merge',
+      idempotency_key: "#{correlation_id}:source",
+      correlation_id: correlation_id
+    )
   end
 
   def merge_owner

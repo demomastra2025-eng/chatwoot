@@ -1,7 +1,7 @@
 class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
   param :reason, type: 'string', desc: 'Required concise factual explanation of why the conversation can be completed.', required: true
-  param :status_reason, type: 'string', desc: 'Exact configured assistant completion outcome ID', required: false
+  param :status_reason, type: 'string', desc: 'Configured conversation status reason ID for the assistant completion outcome', required: false
 
   def perform(tool_context, reason: nil, status_reason: nil)
     return 'Automatic completion is disabled for this assistant' unless assistant.auto_completion_enabled?

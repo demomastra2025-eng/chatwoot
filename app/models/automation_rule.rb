@@ -128,6 +128,8 @@ class AutomationRule < ApplicationRecord
   include Reauthorizable
 
   belongs_to :account
+  belongs_to :automation_rule_group, optional: true
+  has_many :automation_executions, dependent: :restrict_with_exception
   has_many :touch_plan_enrollments, dependent: :nullify
   has_many_attached :files
   account_storage_attachments :files
@@ -147,9 +149,16 @@ class AutomationRule < ApplicationRecord
   validate :execution_schedule_supported
   validate :query_operator_presence
   validate :query_operator_value
+  validate :automation_rule_group_consistency
   validates :account_id, presence: true
+  validates :definition_version, numericality: { only_integer: true, greater_than: 0 }
+  validates :position,
+            numericality: { only_integer: true, greater_than_or_equal_to: 0 },
+            uniqueness: { scope: :automation_rule_group_id },
+            allow_nil: true
 
   before_validation :normalize_action_ids
+  before_update :advance_definition_version, if: :automation_definition_changed?
   before_update :advance_lifecycle_generation, if: -> { will_save_change_to_active? && active? }
   before_destroy :cancel_live_touch_enrollments, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
@@ -218,6 +227,27 @@ class AutomationRule < ApplicationRecord
   end
 
   private
+
+  def automation_rule_group_consistency
+    if automation_rule_group.blank?
+      errors.add(:position, 'must be blank for an independent rule') if position.present?
+      return
+    end
+
+    errors.add(:position, 'must be present for a grouped rule') if position.blank?
+    errors.add(:automation_rule_group, 'must belong to the same account') if automation_rule_group.account_id != account_id
+    errors.add(:automation_rule_group, 'must use the same event') if automation_rule_group.event_name != event_name
+  end
+
+  def automation_definition_changed?
+    %w[event_name conditions actions execution_schedule automation_rule_group_id position].any? do |attribute|
+      will_save_change_to_attribute?(attribute)
+    end
+  end
+
+  def advance_definition_version
+    self.definition_version = definition_version.to_i + 1
+  end
 
   def normalize_action_ids
     existing_actions = actions_in_database
