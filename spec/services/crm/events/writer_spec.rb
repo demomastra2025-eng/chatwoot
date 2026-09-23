@@ -57,6 +57,46 @@ RSpec.describe Crm::Events::Writer do
     expect(account.crm_events.where(command_key: 'request-123').count).to eq(1)
   end
 
+  it 'discards caller-supplied matching data when the eventable has no trusted snapshot' do
+    pipeline = create(:crm_pipeline, account: account)
+    event = nil
+
+    expect do
+      event = described_class.record!(
+        account: account,
+        eventable: pipeline,
+        actor: actor,
+        event_type: 'deal_updated',
+        meta: { changes: { name: %w[old new] }, automation_matching_snapshot: { matcher_kind: 'forged' } }
+      )
+    end.not_to change(AutomationEvent, :count)
+
+    expect(event.meta).to eq('changes' => { 'name' => %w[old new] })
+    expect { event.publish! }.not_to change(AutomationEvent, :count)
+    expect(event.reload.published_at).to be_present
+  end
+
+  it 'seals the Task snapshot before later changes and hides it from the timeline payload' do
+    task = create(:crm_task, account: account, title: 'event-time-task')
+    event = described_class.record!(
+      account: account,
+      eventable: task,
+      actor: actor,
+      event_type: 'task_updated',
+      meta: { automation_matching_snapshot: { matcher_kind: 'forged' } }
+    )
+
+    writer_snapshot = event.meta.fetch('automation_matching_snapshot')
+    expect(writer_snapshot).to include('snapshot_version' => 1, 'matcher_kind' => 'crm/task')
+    expect(writer_snapshot.dig('matcher_data', 'task', 'title')).to eq('event-time-task')
+
+    task.update!(title: 'later-task')
+
+    expect(event.reload.meta.fetch('automation_matching_snapshot')).to eq(writer_snapshot)
+    expect(AutomationEvent.find_by!(dedupe_key: "crm-event:#{event.id}").payload_snapshot).to eq(writer_snapshot)
+    expect(Crm::PayloadBuilder.event(event).fetch(:meta)).not_to have_key('automation_matching_snapshot')
+  end
+
   it 'persists automation provenance for asynchronous publication' do
     rule = create(:automation_rule, account: account)
     Current.executed_by = rule

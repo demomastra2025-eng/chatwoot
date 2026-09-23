@@ -49,6 +49,7 @@ class Crm::Events::Writer
   def self.audit_attributes(eventable, options)
     meta = options.fetch(:meta, {}).to_h.deep_stringify_keys
     changes = meta.to_h.with_indifferent_access[:changes].to_h
+    meta.delete('automation_matching_snapshot')
     matching_snapshot = AutomationRules::Events::MatchingSnapshot.for_crm(eventable)
     meta['automation_matching_snapshot'] = matching_snapshot if matching_snapshot.present?
     {
