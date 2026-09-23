@@ -9,6 +9,7 @@ class ContactMergeAction
 
     ActiveRecord::Base.transaction do
       validate_contacts
+      lock_contacts
       lock_contact_inboxes
       merge_owner
       merge_conversations
@@ -34,6 +35,15 @@ class ContactMergeAction
 
   def belongs_to_account?(contact)
     @account.id == contact.account_id
+  end
+
+  def lock_contacts
+    # Owner synchronization locks Contact before Conversation and Thread. A
+    # merge must take both Contact locks in a stable order before either side
+    # can lock a Thread, including when the base already has an owner.
+    contacts = @account.contacts.where(id: [@base_contact.id, @mergee_contact.id]).order(:id).lock.index_by(&:id)
+    @base_contact = contacts.fetch(@base_contact.id)
+    @mergee_contact = contacts.fetch(@mergee_contact.id)
   end
 
   def lock_contact_inboxes

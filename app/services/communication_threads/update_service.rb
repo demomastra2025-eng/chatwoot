@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class CommunicationThreads::UpdateService
+class CommunicationThreads::UpdateService # rubocop:disable Metrics/ClassLength
   def initialize(communication_thread:, params:, accessible_links:, actor: Current.user, source: 'communication_thread')
     @communication_thread = communication_thread
     @current_account = communication_thread.account
@@ -9,18 +9,23 @@ class CommunicationThreads::UpdateService
     @accessible_links = accessible_links.includes(:conversation) if accessible_links.respond_to?(:includes)
     @actor = actor
     @source = source.to_s.presence || 'communication_thread'
+    @communication_thread_event_id = SecureRandom.uuid
+    @communication_thread_event_occurred_at = Time.current
   end
 
   def perform
     source_conversation = linked_links.first&.conversation
     updated_thread = CommunicationThread.transaction do
       validate_routing!
-      sync_contact_owner!
-      sync_participants_for_routing!
-      sync_linked_conversations!
-      clear_participants_if_resolved!
-      refresh_communication_thread!
-      communication_thread.reload
+      lock_routing_scope!
+      Conversations::StatusTransitionService.with_locked_conversations(communication_thread) do
+        sync_contact_owner!
+        sync_participants_for_routing!
+        sync_linked_conversations!
+        clear_participants_if_resolved!
+        refresh_communication_thread!
+        communication_thread.reload
+      end
     end
 
     enqueue_realtime_update(updated_thread, source_conversation)
@@ -29,10 +34,25 @@ class CommunicationThreads::UpdateService
 
   private
 
-  attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
+  attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source,
+              :communication_thread_event_id, :communication_thread_event_occurred_at
+
+  def routing_change?
+    params.key?(:team_id) || params.key?(:assignee_id)
+  end
+
+  def lock_routing_scope!
+    communication_thread.contact.lock! if params.key?(:assignee_id)
+    Team.lock_routing_targets!(account_id: current_account.id, team_ids: [effective_team&.id]) if routing_change?
+    lock_contact_conversations! if params.key?(:assignee_id)
+  end
+
+  def lock_contact_conversations!
+    Conversation.where(account_id: current_account.id, contact_id: communication_thread.contact_id).order(:id).lock.load
+  end
 
   def sync_linked_conversations!
-    linked_links.each do |link|
+    linked_links.order(:conversation_id).each do |link|
       sync_conversation!(link.conversation)
     end
   end
@@ -40,7 +60,19 @@ class CommunicationThreads::UpdateService
   def sync_contact_owner!
     return unless params.key?(:assignee_id)
 
-    communication_thread.contact.update!(owner: human_assignee)
+    contact = communication_thread.contact
+    owner_changed = contact.owner_id != human_assignee&.id
+    contact.skip_communication_thread_owner_projection = true
+    contact.update!(owner: human_assignee)
+    # A repeated owner command must still repair unlinked channels. An
+    # unchanged Contact does not run its owner-change callback.
+    unless owner_changed
+      Contacts::OwnerSyncService.new(contact: contact, actor: actor, source: source,
+                                     source_event_id: communication_thread_event_id,
+                                     skip_thread_projection: true).perform
+    end
+  ensure
+    contact.skip_communication_thread_owner_projection = false if contact
   end
 
   def linked_links
@@ -51,6 +83,10 @@ class CommunicationThreads::UpdateService
     conversation.skip_communication_thread_refresh = true
     conversation.skip_communication_thread_realtime = true
     conversation.communication_thread_event_id = communication_thread_event_id
+    conversation.communication_thread_event_actor = actor
+    conversation.communication_thread_event_source = source
+    conversation.communication_thread_event_source_record = communication_thread
+    conversation.communication_thread_event_occurred_at = communication_thread_event_occurred_at
     assign_priority!(conversation)
     assign_agent!(conversation)
     assign_team!(conversation)
@@ -70,7 +106,10 @@ class CommunicationThreads::UpdateService
       params: status_transition_params,
       actor: actor,
       source: source,
-      aggregate: false
+      aggregate: false,
+      source_record: communication_thread,
+      source_event_id: communication_thread_event_id,
+      occurred_at: communication_thread_event_occurred_at
     ).perform
   end
 
@@ -186,10 +225,6 @@ class CommunicationThreads::UpdateService
     params.slice(:status, :status_reason, :snoozed_until)
   end
 
-  def communication_thread_event_id
-    @communication_thread_event_id ||= SecureRandom.uuid
-  end
-
   def enqueue_realtime_update(updated_thread, source_conversation)
     return if source_conversation.blank?
 
@@ -208,6 +243,13 @@ class CommunicationThreads::UpdateService
     # Resolver#lock! reloads its record. Use a separate instance so the saved
     # conversations retain saved_changes for their after_commit activity callbacks.
     resolver_conversation = current_account.conversations.find(seed_conversation.id)
-    Conversations::CommunicationThreadResolver.new(conversation: resolver_conversation).perform
+    Conversations::CommunicationThreadResolver.new(
+      conversation: resolver_conversation,
+      actor: actor,
+      source: source,
+      source_record: communication_thread,
+      source_event_id: communication_thread_event_id,
+      occurred_at: communication_thread_event_occurred_at
+    ).perform
   end
 end

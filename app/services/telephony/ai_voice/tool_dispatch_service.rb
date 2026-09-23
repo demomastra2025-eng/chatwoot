@@ -553,7 +553,7 @@ class Telephony::AiVoice::ToolDispatchService
   def handoff_conversation(reason)
     return if conversation.blank?
 
-    conversation.with_lock do
+    Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       next if conversation.status == 'open' && conversation.waiting_since.present?
 
       if captain_assistant.present?

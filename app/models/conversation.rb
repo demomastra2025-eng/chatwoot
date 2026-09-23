@@ -65,7 +65,9 @@ class Conversation < ApplicationRecord
   include ConversationMuteHelpers
 
   attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
-                :communication_thread_event_id
+                :communication_thread_event_id, :communication_thread_event_actor,
+                :communication_thread_event_source, :communication_thread_event_source_record,
+                :communication_thread_event_occurred_at
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true
@@ -133,16 +135,25 @@ class Conversation < ApplicationRecord
   before_create :ensure_waiting_since
 
   after_create :capture_automation_create_event
+  after_create :sync_contact_owner_from_assignee
+  after_create :ensure_communication_thread, if: :communication_threads_enabled?
+  before_update :lock_contact_before_assignee_change, if: :will_save_change_to_assignee_id?
+  before_update :lock_routing_team_before_change, if: :routing_team_lock_required?
+  before_update :lock_contact_conversations_before_assignee_change, if: :will_save_change_to_assignee_id?
   after_update :capture_automation_updated_changes_for_commit
+  after_update :sync_contact_owner_from_assignee
+  after_update :ensure_communication_thread, if: :communication_thread_refresh_required?
+  after_save :clear_communication_thread_event_context_after_save
   before_commit :capture_automation_update_events, on: :update
   after_update_commit :execute_after_update_commit_callbacks
   after_create_commit :notify_conversation_creation
   after_create_commit :load_attributes_created_by_db_triggers
-  after_create_commit :sync_contact_owner_from_assignee
-  after_create_commit :ensure_communication_thread, if: :communication_threads_enabled?
   after_create_commit :auto_create_crm_deal_from_channel_contact
   after_commit :clear_automation_updated_changes
   after_rollback :clear_automation_updated_changes
+  after_rollback :clear_communication_thread_event_context_on_rollback
+
+  attr_reader :last_saved_communication_thread_event_id
 
   delegate :auto_resolve_after, to: :account
 
@@ -274,6 +285,15 @@ class Conversation < ApplicationRecord
     Conversations::CommunicationThreadResolver.new(conversation: self).perform
   end
 
+  def clear_communication_thread_event_context!
+    self.communication_thread_event_id = nil
+    self.communication_thread_event_actor = nil
+    self.communication_thread_event_source = nil
+    self.communication_thread_event_source_record = nil
+    self.communication_thread_event_occurred_at = nil
+    self.skip_communication_thread_refresh = false
+  end
+
   private
 
   def ensure_communication_thread
@@ -294,6 +314,10 @@ class Conversation < ApplicationRecord
     account&.feature_enabled?('communication_threads')
   end
 
+  def communication_thread_refresh_required?
+    communication_threads_enabled? && !skip_communication_thread_refresh
+  end
+
   def unread_incoming_message_scope
     unread_messages.where(account_id: account_id, private: false).incoming
   end
@@ -302,13 +326,23 @@ class Conversation < ApplicationRecord
     handle_resolved_status_change
     runtime_events_suppressed = runtime_events_suppressed?
     notify_status_change unless runtime_events_suppressed
-    refresh_communication_thread! if communication_threads_enabled? && !skip_communication_thread_refresh
-    sync_contact_owner_from_assignee
     return if runtime_events_suppressed
 
     notify_ai_transfer
     create_activity
     notify_conversation_updation
+  ensure
+    @last_saved_communication_thread_event_id = nil
+  end
+
+  def clear_communication_thread_event_context_after_save
+    @last_saved_communication_thread_event_id = communication_thread_event_id
+    clear_communication_thread_event_context!
+  end
+
+  def clear_communication_thread_event_context_on_rollback
+    clear_communication_thread_event_context_after_save
+    @last_saved_communication_thread_event_id = nil
   end
 
   def handle_resolved_status_change
@@ -344,7 +378,45 @@ class Conversation < ApplicationRecord
     return if contact_owner_synced?
     return unless contact_owner_sync_allowed?
 
-    contact.update!(owner_id: assignee_id)
+    unless communication_threads_enabled?
+      contact.update!(owner_id: assignee_id)
+      return
+    end
+
+    # Contact still fans out to the other channels, but the Thread fact must
+    # reflect this Conversation's final status after its resolver callback.
+    previous_defer = contact.defer_communication_thread_owner_fact
+    begin
+      contact.defer_communication_thread_owner_fact = true
+      contact.update!(owner_id: assignee_id)
+    ensure
+      contact.defer_communication_thread_owner_fact = previous_defer
+    end
+  end
+
+  def lock_contact_before_assignee_change
+    contact&.lock!
+  end
+
+  def lock_contact_conversations_before_assignee_change
+    # Owner fan-out locks Contact, then the target Team, then every channel in
+    # id order before the first Conversation UPDATE takes this row's lock.
+    return if contact_owner_synced? || !contact_owner_sync_allowed?
+
+    self.class.where(account_id: account_id, contact_id: contact_id).order(:id).lock.load
+  end
+
+  def routing_team_lock_required?
+    will_save_change_to_team_id? || will_save_change_to_assignee_id?
+  end
+
+  def lock_routing_team_before_change
+    ids = [team_id] if will_save_change_to_team_id?
+    ids ||= []
+    if will_save_change_to_assignee_id? && !contact_owner_synced? && contact_owner_sync_allowed? && assignee_id.present?
+      ids.concat(TeamMember.joins(:team).where(user_id: assignee_id, teams: { account_id: account_id }).pluck(:team_id))
+    end
+    Team.lock_routing_targets!(account_id: account_id, team_ids: ids)
   end
 
   def contact_owner_synced?

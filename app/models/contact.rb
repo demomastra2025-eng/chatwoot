@@ -48,7 +48,7 @@
 
 # rubocop:enable Layout/LineLength
 
-class Contact < ApplicationRecord
+class Contact < ApplicationRecord # rubocop:disable Metrics/ClassLength
   DISPLAY_PREFERENCES_KEY = 'display_preferences'.freeze
   PRIMARY_NAME_SOURCE_KEY = 'primary_name_source'.freeze
   PRIMARY_AVATAR_SOURCE_KEY = 'primary_avatar_source'.freeze
@@ -61,7 +61,8 @@ class Contact < ApplicationRecord
   include Labelable
   include LlmFormattable
 
-  attr_accessor :skip_runtime_events
+  attr_accessor :skip_runtime_events, :skip_communication_thread_owner_projection,
+                :defer_communication_thread_owner_fact
 
   validates :account_id, presence: true
   validates :email, allow_blank: true, uniqueness: { scope: [:account_id], case_sensitive: false },
@@ -92,7 +93,8 @@ class Contact < ApplicationRecord
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
   before_validation :prepare_contact_attributes, :normalize_phone_number, :lock_phone_identity
   before_save :sync_contact_attributes
-  after_commit :sync_unified_owner, if: :saved_change_to_owner_id?
+  after_create :sync_unified_owner, if: :saved_change_to_owner_id?
+  after_update :sync_unified_owner, if: :saved_change_to_owner_id?
   after_create_commit :dispatch_create_event, :ip_lookup
   after_update_commit :dispatch_update_event
   after_destroy_commit :dispatch_destroy_event
@@ -510,7 +512,9 @@ class Contact < ApplicationRecord
   def sync_unified_owner
     return if destroyed?
 
-    ::Contacts::OwnerSyncService.new(contact: self).perform
+    ::Contacts::OwnerSyncService.new(contact: self,
+                                     skip_thread_projection: skip_communication_thread_owner_projection,
+                                     defer_thread_fact: defer_communication_thread_owner_fact).perform
   end
 
   def owner_belongs_to_account

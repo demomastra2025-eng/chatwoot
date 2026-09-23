@@ -1,7 +1,16 @@
 class Contacts::OwnerSyncService
-  def initialize(contact:)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(contact:, actor: Current.executed_by || Current.user, source: 'contact_owner_sync', source_event_id: nil,
+                 skip_thread_projection: false, defer_thread_fact: false)
     @contact = contact
+    @actor = actor
+    @source = source
+    @source_event_id = source_event_id.presence || SecureRandom.uuid
+    @occurred_at = Time.current
+    @skip_thread_projection = skip_thread_projection
+    @defer_thread_fact = defer_thread_fact
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def perform
     return if contact.blank? || contact.destroyed?
@@ -17,7 +26,7 @@ class Contacts::OwnerSyncService
 
   private
 
-  attr_reader :contact
+  attr_reader :contact, :actor, :source, :source_event_id, :occurred_at
 
   def owner_id
     contact.owner_id
@@ -37,11 +46,29 @@ class Contacts::OwnerSyncService
   end
 
   def sync_conversations!
-    conversations_requiring_owner_sync.find_each do |conversation|
-      conversation.assignee_id = owner_id
-      conversation.team_id = owner_team_id if owner_id.present?
-      conversation.save! if conversation.changed?
-    end
+    # The Thread command handles linked channels itself, but still needs the
+    # Contact callback to update channels awaiting backfill.
+    Team.lock_routing_targets!(account_id: contact.account_id, team_ids: [owner_team_id]) if owner_id.present?
+    conversations_for_owner_sync.find_each { |conversation| sync_conversation!(conversation) }
+  end
+
+  def conversations_for_owner_sync
+    scope = conversations_requiring_owner_sync
+    @skip_thread_projection ? scope.where.missing(:communication_thread_conversation) : scope
+  end
+
+  def sync_conversation!(conversation)
+    conversation.communication_thread_event_id = source_event_id
+    conversation.communication_thread_event_actor = actor
+    conversation.communication_thread_event_source = source
+    conversation.communication_thread_event_source_record = contact
+    conversation.communication_thread_event_occurred_at = occurred_at
+    conversation.skip_communication_thread_refresh = true
+    conversation.assignee_id = owner_id
+    conversation.team_id = owner_team_id if owner_id.present?
+    conversation.save! if conversation.changed?
+  ensure
+    conversation.skip_communication_thread_refresh = false if conversation
   end
 
   def conversations_requiring_owner_sync
@@ -50,11 +77,21 @@ class Contacts::OwnerSyncService
   end
 
   def sync_communication_threads!
+    return if @skip_thread_projection || @defer_thread_fact
+
     threads_requiring_owner_sync.find_each do |thread|
       reconcile_thread_participants!(thread)
       attributes = { assignee_id: owner_id }
       attributes[:team_id] = owner_team_id if owner_id.present?
-      thread.update!(attributes)
+      CommunicationThreads::StateTransitionWriter.new(
+        thread: thread,
+        attributes: attributes,
+        actor: actor,
+        source: source,
+        source_record: contact,
+        source_event_id: source_event_id,
+        occurred_at: occurred_at
+      ).perform
     end
   end
 

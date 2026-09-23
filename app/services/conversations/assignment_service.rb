@@ -16,6 +16,7 @@ class Conversations::AssignmentService
     validate_assignee_type!
 
     conversation.contact.with_lock do
+      Team.lock_routing_targets!(account_id: conversation.account_id, team_ids: [team&.id]) if team_requested?
       if conversation.communication_thread.present?
         update_communication_thread!
       else

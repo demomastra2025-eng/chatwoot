@@ -79,6 +79,8 @@ class Account < ApplicationRecord
   has_many :account_users, dependent: :destroy_async
   has_many :access_roles, dependent: :destroy
   has_many :communication_thread_participant_lifecycle_facts, dependent: :delete_all
+  # PostgreSQL deletes the immutable facts only after the Account row has gone.
+  has_many :communication_thread_state_transition_facts # rubocop:disable Rails/HasManyOrHasOneDependent
   has_many :communication_thread_manual_call_occurrences, dependent: :delete_all
   has_many :telephony_logical_call_occurrences, dependent: :delete_all, class_name: 'Telephony::LogicalCallOccurrence'
 

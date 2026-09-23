@@ -376,7 +376,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
       return unless handoff_explanation_valid?
 
       I18n.with_locale(@assistant.account.locale) do
-        @conversation.with_lock do
+        Conversations::StatusTransitionService.with_locked_conversations_for(@conversation) do
           bot_handoff_with_activity_reason
           create_handoff_private_note
           create_handoff_message(preserve_waiting_since: true)
@@ -384,7 +384,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         send_out_of_office_message_if_applicable
       end
     when 'provider_error_handoff'
-      @conversation.with_lock do
+      Conversations::StatusTransitionService.with_locked_conversations_for(@conversation) do
         bot_handoff_with_activity_reason(provider_error_note_content)
         create_provider_error_private_note
       end
@@ -394,7 +394,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
       if conversation_pending?
         I18n.with_locale(@assistant.account.locale) do
-          @conversation.with_lock do
+          Conversations::StatusTransitionService.with_locked_conversations_for(@conversation) do
             bot_handoff_with_activity_reason
             create_handoff_private_note
             create_handoff_message(preserve_waiting_since: true)

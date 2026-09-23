@@ -540,12 +540,16 @@ class Message < ApplicationRecord
 
   def reopen_resolved_conversation
     communication_thread = conversation.communication_thread if communication_threads_enabled?
-    if communication_thread&.resolved?
-      communication_thread.with_lock do
-        if conversation.reload.resolved?
-          communication_thread.update!(session_started_at: created_at)
-          perform_reopen_transition
-        end
+    if communication_thread.present?
+      # Both the message path and aggregate status updates lock all channels in
+      # the same order before the resolver locks the Thread.
+      Conversations::StatusTransitionService.with_locked_conversations(communication_thread) do
+        conversation.reload # DB triggers may leave display_id dirty on this instance.
+        next unless conversation.resolved?
+
+        start_new_session = communication_thread.reload.resolved?
+        perform_reopen_transition
+        communication_thread.update!(session_started_at: created_at) if start_new_session && !communication_thread.reload.resolved?
       end
       return
     end
