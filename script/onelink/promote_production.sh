@@ -136,6 +136,7 @@ recreate() {
   local app_image="$1" voice_image="$2" service="$3" source_sha="${4:-${SHA}}" timeout=240
   case "${service}" in
     chatwoot_rails|chatwoot_rails_2) timeout=600 ;;
+    chatwoot_action_cable_realtime_worker|chatwoot_action_cable_realtime_worker_2) timeout=480 ;;
   esac
   CHATWOOT_IMAGE="${app_image}" ONELINK_AI_VOICE_IMAGE="${voice_image}" SOURCE_SHA="${source_sha}" "${COMPOSE[@]}" \
     up -d --no-deps --no-build --force-recreate "${service}"

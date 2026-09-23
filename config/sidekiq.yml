@@ -21,6 +21,7 @@
   - default
   - mailers
   - action_mailbox_routing
+  - action_cable_realtime
   - low
   - deferred
   # Temporary consumer for compatibility tombstones enqueued before LinkedIn Personal retirement.
