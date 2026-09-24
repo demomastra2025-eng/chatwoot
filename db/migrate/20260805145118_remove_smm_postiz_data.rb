@@ -43,17 +43,13 @@ class RemoveSmmPostizData < ActiveRecord::Migration[7.1]
   end
 
   def remove_account_feature_flags
-    cleaned_accounts = 0
-    Account.where.not(feature_flags_overflow: []).find_each do |account|
-      existing_features = Array(account[:feature_flags_overflow]).map(&:to_s)
-      cleaned_features = existing_features - [REMOVED_FEATURE]
-      next if cleaned_features == existing_features
-
-      # rubocop:disable Rails/SkipsModelValidations -- preserve unrelated flags on legacy rows that may no longer validate.
-      account.update_columns(feature_flags_overflow: cleaned_features)
-      # rubocop:enable Rails/SkipsModelValidations
-      cleaned_accounts += 1
-    end
+    # Account's current enums reference columns absent from this historical schema.
+    cleaned_accounts = connection.update(<<~SQL.squish)
+      UPDATE accounts
+      SET feature_flags_overflow = feature_flags_overflow - #{connection.quote(REMOVED_FEATURE)}
+      WHERE jsonb_typeof(feature_flags_overflow) = 'array'
+        AND feature_flags_overflow ? #{connection.quote(REMOVED_FEATURE)}
+    SQL
     say "Removed the content feature flag from #{cleaned_accounts} account(s)"
   end
 
