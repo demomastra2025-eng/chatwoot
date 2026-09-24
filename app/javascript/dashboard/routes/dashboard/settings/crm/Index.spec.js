@@ -8,6 +8,7 @@ const testState = vi.hoisted(() => ({
   batchUpdateStages: vi.fn(() => Promise.resolve()),
   checkStageDeletion: vi.fn(() => Promise.resolve({ deletable: true })),
   deleteStage: vi.fn(() => Promise.resolve()),
+  loadFieldDefinitions: vi.fn(() => Promise.resolve([])),
   loadPipelines: vi.fn(() => Promise.resolve()),
   reorderStages: vi.fn(() => Promise.resolve()),
   savePipeline: vi.fn(payload => Promise.resolve(payload)),
@@ -101,6 +102,7 @@ const pipeline = {
 
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => ({
+    dealFieldDefinitions: [],
     pipelines: [pipeline],
     ui: {
       error: null,
@@ -108,6 +110,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
       isSaving: false,
     },
     loadPipelines: testState.loadPipelines,
+    loadFieldDefinitions: testState.loadFieldDefinitions,
     batchUpdateStages: testState.batchUpdateStages,
     checkStageDeletion: testState.checkStageDeletion,
     deleteStage: testState.deleteStage,
@@ -244,6 +247,7 @@ describe('CRM pipeline settings', () => {
     testState.batchUpdateStages.mockReset();
     testState.batchUpdateStages.mockResolvedValue(pipeline);
     testState.deleteStage.mockClear();
+    testState.loadFieldDefinitions.mockClear();
     testState.loadPipelines.mockClear();
     testState.reorderStages.mockClear();
     testState.savePipeline.mockClear();

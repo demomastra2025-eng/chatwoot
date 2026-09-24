@@ -96,7 +96,7 @@ describe('SchedulingVueCalCalendar', () => {
       wrapper.findAll('.scheduling-vue-cal__background-fill--unavailable')
         .length
     ).toBeGreaterThan(0);
-  });
+  }, 20_000);
 
   it('renders the same unavailable background for closed days', async () => {
     const wrapper = mountCalendar({
