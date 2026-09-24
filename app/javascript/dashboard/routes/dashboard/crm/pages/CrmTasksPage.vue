@@ -169,9 +169,12 @@ const boardSort = reactive({
 });
 const boardSortDirections = reactive({});
 const hasRestoredPreferences = ref(false);
+let restoredPreferenceKey = null;
+let lastRenderedPreferences = null;
 const persistedPreferencesByAccount = useLocalStorage(
   TASKS_PREFERENCES_STORAGE_KEY,
-  {}
+  {},
+  { flush: 'sync' }
 );
 
 const LIST_PAGE_SIZE = 25;
@@ -841,11 +844,51 @@ const sanitizeTasksPreferences = preferences => {
   return next;
 };
 
+const readStoredTasksPreferences = () => {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(TASKS_PREFERENCES_STORAGE_KEY) || '{}'
+    );
+    return stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? stored
+      : {};
+  } catch {
+    return persistedPreferencesByAccount.value || {};
+  }
+};
+
+const mergePreferenceChanges = (before, after, latest) => {
+  const merged = { ...latest };
+  const isObject = value =>
+    value && typeof value === 'object' && !Array.isArray(value);
+
+  new Set([...Object.keys(before), ...Object.keys(after)]).forEach(key => {
+    if (JSON.stringify(before[key]) === JSON.stringify(after[key])) return;
+
+    if (
+      isObject(before[key]) &&
+      isObject(after[key]) &&
+      isObject(latest[key])
+    ) {
+      merged[key] = mergePreferenceChanges(
+        before[key],
+        after[key],
+        latest[key]
+      );
+    } else if (after[key] === undefined) delete merged[key];
+    else merged[key] = after[key];
+  });
+
+  return merged;
+};
+
 const restoreTasksPreferences = () => {
-  const stored =
-    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferenceKey = accountPreferenceKey.value;
+  const stored = readStoredTasksPreferences()[preferenceKey] || {};
   const preferences = sanitizeTasksPreferences(stored);
 
+  restoredPreferenceKey = preferenceKey;
+  lastRenderedPreferences = JSON.parse(JSON.stringify(preferences));
   currentPresentation.value = preferences.currentPresentation;
   currentCalendarView.value = preferences.currentCalendarView;
   listSort.value = { ...preferences.listSort };
@@ -858,20 +901,30 @@ const restoreTasksPreferences = () => {
   listQuickFilters.q = preferences.listQuickFilters.q;
 };
 
-const persistTasksPreferences = () => {
-  if (!hasRestoredPreferences.value) return;
+const persistTasksPreferences = (key = accountPreferenceKey.value) => {
+  if (!hasRestoredPreferences.value || restoredPreferenceKey !== key) return;
 
+  const current = sanitizeTasksPreferences({
+    boardSort: { ...boardSort },
+    boardSortDirections: { ...boardSortDirections },
+    currentCalendarView: currentCalendarView.value,
+    currentPresentation: currentPresentation.value,
+    filters: { ...filters },
+    listQuickFilters: { ...listQuickFilters },
+    listSort: { ...listSort.value },
+  });
+  if (JSON.stringify(current) === JSON.stringify(lastRenderedPreferences))
+    return;
+
+  const storedByAccount = readStoredTasksPreferences();
+  const latest = sanitizeTasksPreferences(storedByAccount[key] || {});
+  const next = sanitizeTasksPreferences(
+    mergePreferenceChanges(lastRenderedPreferences, current, latest)
+  );
+  lastRenderedPreferences = current;
   persistedPreferencesByAccount.value = {
-    ...(persistedPreferencesByAccount.value || {}),
-    [accountPreferenceKey.value]: sanitizeTasksPreferences({
-      boardSort: { ...boardSort },
-      boardSortDirections: { ...boardSortDirections },
-      currentCalendarView: currentCalendarView.value,
-      currentPresentation: currentPresentation.value,
-      filters: { ...filters },
-      listQuickFilters: { ...listQuickFilters },
-      listSort: { ...listSort.value },
-    }),
+    ...storedByAccount,
+    [key]: next,
   };
 };
 
@@ -2663,6 +2716,7 @@ onBeforeUnmount(() => {
 });
 
 watch(accountId, async nextAccountId => {
+  persistTasksPreferences(restoredPreferenceKey);
   taskUiActionGeneration += 1;
   taskPageInitializationGeneration += 1;
   scheduleTaskListReload.cancel();

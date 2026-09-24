@@ -1895,6 +1895,205 @@ it('cancels pending reloads and restores preferences before loading a different 
   }
 });
 
+it('keeps same-tick edits in the old account without overwriting the next account preferences', async () => {
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: {
+        currentPresentation: 'list',
+        listQuickFilters: { q: 'account B search' },
+      },
+    })
+  );
+  const { state } = await mountEditor('page');
+  CrmTasksAPI.get.mockClear();
+  vi.useFakeTimers();
+
+  try {
+    state.currentPresentation = 'list';
+    state.listQuickFilters.q = 'account A latest search';
+    state.accountId = 2;
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+
+    const stored = JSON.parse(
+      localStorage.getItem('crm-tasks-page-preferences')
+    );
+    expect(stored['1']).toMatchObject({
+      currentPresentation: 'list',
+      listQuickFilters: { q: 'account A latest search' },
+    });
+    expect(stored['2']).toMatchObject({
+      currentPresentation: 'list',
+      listQuickFilters: { q: 'account B search' },
+    });
+    expect(state.currentPresentation).toBe('list');
+    expect(state.listQuickFilters.q).toBe('account B search');
+    expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ page: 1, per_page: 25, q: 'account B search' })
+    );
+
+    CrmTasksAPI.get.mockClear();
+    state.accountId = 1;
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(state.currentPresentation).toBe('list');
+    expect(state.listQuickFilters.q).toBe('account A latest search');
+    expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        page: 1,
+        per_page: 25,
+        q: 'account A latest search',
+      })
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not overwrite newer preferences from another tab when leaving an unchanged account', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: {
+        currentPresentation: 'list',
+        listQuickFilters: { q: 'account B search' },
+      },
+    })
+  );
+  const { state } = await mountEditor('page');
+  const oldValue = localStorage.getItem(storageKey);
+  const updated = JSON.parse(oldValue);
+  updated['1'].currentPresentation = 'calendar';
+  const newValue = JSON.stringify(updated);
+  localStorage.setItem(storageKey, newValue);
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: storageKey,
+      oldValue,
+      newValue,
+      storageArea: localStorage,
+    })
+  );
+  await flushPromises();
+
+  CrmTasksAPI.get.mockClear();
+  state.accountId = 2;
+  await flushPromises();
+
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'calendar',
+  });
+  expect(state.listQuickFilters.q).toBe('account B search');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ page: 1, per_page: 25, q: 'account B search' })
+  );
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('calendar');
+});
+
+it('preserves other accounts and merges same-tick edits before a storage event arrives', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: { currentPresentation: 'list', listQuickFilters: { q: 'B search' } },
+    })
+  );
+  const { state } = await mountEditor('page');
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['1'].currentPresentation = 'calendar';
+  updated['2'].listQuickFilters.q = 'B newer search';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+
+  state.listQuickFilters.q = 'A latest search';
+  state.accountId = 2;
+  await flushPromises();
+
+  const stored = JSON.parse(localStorage.getItem(storageKey));
+  expect(stored['1']).toMatchObject({
+    currentPresentation: 'calendar',
+    listQuickFilters: { q: 'A latest search' },
+  });
+  expect(stored['2'].listQuickFilters.q).toBe('B newer search');
+  expect(state.listQuickFilters.q).toBe('B newer search');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ q: 'B newer search' })
+  );
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('calendar');
+  expect(state.listQuickFilters.q).toBe('A latest search');
+});
+
+it('keeps an explicit local choice when another tab changes the same preference first', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({ 1: { currentPresentation: 'board' } })
+  );
+  const { state } = await mountEditor('page');
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['1'].currentPresentation = 'calendar';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+
+  state.currentPresentation = 'list';
+  state.accountId = 2;
+  await flushPromises();
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'list',
+  });
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('list');
+
+  state.currentPresentation = 'board';
+  await flushPromises();
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'board',
+  });
+});
+
+it('writes the merged preferences before another tab changes a different account', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: { currentPresentation: 'list', listQuickFilters: { q: 'old B' } },
+    })
+  );
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.persistTasksPreferences();
+
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['2'].listQuickFilters.q = 'new B';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+  await flushPromises();
+
+  const stored = JSON.parse(localStorage.getItem(storageKey));
+  expect(stored['1'].currentPresentation).toBe('list');
+  expect(stored['2'].listQuickFilters.q).toBe('new B');
+
+  CrmTasksAPI.get.mockClear();
+  state.accountId = 2;
+  await flushPromises();
+  expect(state.listQuickFilters.q).toBe('new B');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ q: 'new B' })
+  );
+});
+
 it('reclassifies a sales task as standalone personal in one form save', async () => {
   const { state } = await mountEditor('page');
   await open('page', state);
