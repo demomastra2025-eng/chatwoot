@@ -6,6 +6,34 @@ require Rails.root.join('db/migrate/20260901140000_add_automation_lifecycle_gene
 RSpec.describe AddAutomationLifecycleGenerations do
   subject(:migration) { described_class.new }
 
+  describe 'replacing the legacy index' do
+    let(:connection) { double('connection') }
+
+    before do
+      allow(migration).to receive(:connection).and_return(connection)
+      allow(migration).to receive(:ensure_bigint_column!)
+      allow(migration).to receive(:create_lifecycle_generation_trigger)
+      allow(migration).to receive(:ensure_generation_index!)
+      allow(connection).to receive(:execute)
+    end
+
+    it 'removes the legacy index by name when it is present' do
+      expect(connection).to receive(:index_name_exists?).with('touch_plan_enrollments', described_class::OLD_INDEX).and_return(true)
+      expect(connection).to receive(:remove_index).with(
+        'touch_plan_enrollments', name: described_class::OLD_INDEX, algorithm: :concurrently
+      )
+
+      migration.up
+    end
+
+    it 'leaves an already replaced index alone on retry' do
+      expect(connection).to receive(:index_name_exists?).with('touch_plan_enrollments', described_class::OLD_INDEX).and_return(false)
+      expect(connection).not_to receive(:remove_index)
+
+      migration.up
+    end
+  end
+
   describe 'partial-state recovery' do
     it 'accepts an existing compatible bigint column without recreating it' do
       column = Struct.new(:name, :sql_type, :default, :null).new(

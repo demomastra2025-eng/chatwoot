@@ -19,7 +19,7 @@ class AddAutomationLifecycleGenerations < ActiveRecord::Migration[7.1]
     SQL
 
     ensure_generation_index!
-    remove_index :touch_plan_enrollments, name: OLD_INDEX, algorithm: :concurrently if index_exists?(:touch_plan_enrollments, name: OLD_INDEX)
+    remove_index :touch_plan_enrollments, name: OLD_INDEX, algorithm: :concurrently if index_name_exists?(:touch_plan_enrollments, OLD_INDEX)
   end
 
   def down
