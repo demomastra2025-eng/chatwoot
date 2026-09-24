@@ -83,17 +83,35 @@ class AccessControl::LegacyCompatibilityChecker
 
   def grant_differences(account_user, expected_grants)
     expected_scopes = scopes_by_key(expected_grants)
-    actual_keys = account_user.access_role&.grants&.map { |grant| [grant.resource, grant.capability] } || []
+    actual_keys = legacy_grant_keys(account_user.access_role)
     keys = (expected_scopes.keys + actual_keys).uniq.sort
     resolver = AccessControl::ShadowResolver.new(account_user)
 
     keys.filter_map do |resource, capability|
-      expected_scope = expected_scopes.fetch([resource, capability], 'none')
-      actual_scope = resolver.call(resource: resource, capability: capability).scope
-      next if actual_scope == expected_scope
-
-      { resource: resource, capability: capability, expected_scope: expected_scope, actual_scope: actual_scope }
+      grant_difference(resolver, expected_scopes, resource, capability)
     end
+  end
+
+  def legacy_grant_keys(role)
+    return [] unless role
+
+    role.grants.filter_map do |grant|
+      next if AccessControl::FutureTelephonyGrant.bridge_only? && AccessControl::FutureTelephonyGrant.valid?(grant)
+
+      [grant.resource, grant.capability]
+    end
+  end
+
+  def grant_difference(resolver, expected_scopes, resource, capability)
+    unless AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource, []).include?(capability)
+      return { resource: resource, capability: capability, expected_scope: 'unsupported', actual_scope: 'persisted' }
+    end
+
+    expected_scope = expected_scopes.fetch([resource, capability], 'none')
+    actual_scope = resolver.call(resource: resource, capability: capability).scope
+    return if actual_scope == expected_scope
+
+    { resource: resource, capability: capability, expected_scope: expected_scope, actual_scope: actual_scope }
   end
 
   def scopes_by_key(grants)

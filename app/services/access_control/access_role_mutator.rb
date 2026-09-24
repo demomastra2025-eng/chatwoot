@@ -174,10 +174,19 @@ class AccessControl::AccessRoleMutator
     grants = Array(attributes['grants']).map do |grant|
       grant.symbolize_keys.slice(:resource, :capability, :access_scope)
     end
+    reject_future_telephony_grants!(grants)
+
     keys = grants.map { |grant| [grant[:resource].to_s.strip, grant[:capability].to_s.strip] }
     return grants if keys.uniq.size == keys.size
 
     raise Error.new('DUPLICATE_GRANT', 'grants contain duplicate resource and capability entries')
+  end
+
+  def reject_future_telephony_grants!(grants)
+    return unless AccessControl::FutureTelephonyGrant.bridge_only?
+    return unless grants.any? { |grant| grant[:resource].to_s.strip == AccessControl::FutureTelephonyGrant::RESOURCE }
+
+    raise Error.new('UNSUPPORTED_GRANT', 'Telephony grants cannot be edited by this version')
   end
 
   def replace_grants(role, grants)

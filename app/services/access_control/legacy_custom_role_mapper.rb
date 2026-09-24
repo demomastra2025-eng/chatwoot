@@ -114,7 +114,7 @@ class AccessControl::LegacyCustomRoleMapper
           grant.update!(access_scope: definition[:access_scope])
           changed = true
         end
-      else
+      elsif !AccessControl::FutureTelephonyGrant.valid?(grant)
         grant.destroy!
         changed = true
       end

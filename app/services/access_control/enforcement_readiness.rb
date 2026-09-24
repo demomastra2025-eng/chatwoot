@@ -48,7 +48,8 @@ class AccessControl::EnforcementReadiness
   end
 
   def grants_for(role)
-    role.grants.map { |grant| [grant.resource, grant.capability, grant.access_scope] }.sort
+    role.grants.reject { |grant| AccessControl::FutureTelephonyGrant.bridge_only? && AccessControl::FutureTelephonyGrant.valid?(grant) }
+        .map { |grant| [grant.resource, grant.capability, grant.access_scope] }.sort
   end
 
   def expected_grants_for(system_key)

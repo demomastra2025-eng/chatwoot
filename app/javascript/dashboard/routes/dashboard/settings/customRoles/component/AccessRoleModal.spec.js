@@ -146,6 +146,32 @@ describe('AccessRoleModal', () => {
     );
   });
 
+  it('does not expose or submit grants absent from the legacy resource catalog', async () => {
+    const wrapper = mountComponent({
+      mode: 'edit',
+      selectedRole: {
+        ...role,
+        grants: [
+          ...role.grants,
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'team',
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.findAll('select')).toHaveLength(2);
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'customRole/updateAccessRole',
+      expect.objectContaining({ grants: role.grants })
+    );
+  });
+
   it('previews a clone and creates only copied metadata and normalized grants', async () => {
     const sourceRole = {
       ...role,

@@ -41,7 +41,11 @@ class AccessControl::SystemRoleBootstrapper
     expected = definitions.index_by { |grant| [grant[:resource], grant[:capability]] }
     role.grants.find_each do |grant|
       definition = expected.delete([grant.resource, grant.capability])
-      definition ? reconcile_scope(grant, definition[:access_scope]) : grant.destroy!
+      if definition
+        reconcile_scope(grant, definition[:access_scope])
+      elsif !AccessControl::FutureTelephonyGrant.valid?(grant)
+        grant.destroy!
+      end
     end
 
     missing = expected.values
