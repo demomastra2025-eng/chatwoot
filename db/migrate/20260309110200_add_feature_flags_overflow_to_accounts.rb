@@ -2,20 +2,22 @@
 
 class AddFeatureFlagsOverflowToAccounts < ActiveRecord::Migration[7.1]
   def up
-    add_column :accounts, :feature_flags_overflow, :jsonb, default: [], null: false
+    add_column :accounts, :feature_flags_overflow, :jsonb, default: [], null: false unless column_exists?(:accounts, :feature_flags_overflow)
 
-    Account.reset_column_information
-    Account.find_each(batch_size: 100) do |account|
-      account.enable_features!('scheduling', 'scheduling_finance')
-    end
+    execute <<~SQL.squish
+      UPDATE accounts
+      SET feature_flags_overflow = feature_flags_overflow
+        || CASE WHEN feature_flags_overflow ? 'scheduling' THEN '[]'::jsonb ELSE '["scheduling"]'::jsonb END
+        || CASE WHEN feature_flags_overflow ? 'scheduling_finance' THEN '[]'::jsonb ELSE '["scheduling_finance"]'::jsonb END,
+          updated_at = NOW()
+      WHERE NOT (feature_flags_overflow @> '["scheduling", "scheduling_finance"]'::jsonb)
+    SQL
   end
 
   def down
-    Account.reset_column_information
-    Account.find_each(batch_size: 100) do |account|
-      account.disable_features!('scheduling', 'scheduling_finance')
-    end
+    return unless column_exists?(:accounts, :feature_flags_overflow)
 
-    remove_column :accounts, :feature_flags_overflow
+    # Existing installations may already have this column; its origin cannot be proven on rollback.
+    raise ActiveRecord::IrreversibleMigration, 'Cannot safely discard account overflow flags'
   end
 end
