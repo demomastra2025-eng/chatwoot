@@ -1,4 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
@@ -1086,25 +1087,35 @@ it('ignores an older list response after a newer request wins', async () => {
   expect(state.deals.map(item => item.id)).toEqual([2]);
 });
 
-it('invalidates the old workspace request before loading the new workspace', async () => {
+it('invalidates the old workspace request without leaking preferences to the new workspace', async () => {
   const { state } = await mountPage();
   state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'account one';
+  await nextTick();
   const oldWorkspace = deferred();
+  const newWorkspace = response([deal(2, 'Account two')], {
+    count: 1,
+    has_more: false,
+    page: 1,
+    per_page: 8,
+    total_count: 1,
+  });
   CrmDealsAPI.get
     .mockReset()
     .mockReturnValueOnce(oldWorkspace.promise)
-    .mockResolvedValueOnce(
-      response([deal(2, 'Account two')], {
-        count: 1,
-        has_more: false,
-        page: 1,
-        per_page: 25,
-        total_count: 1,
-      })
-    );
+    .mockResolvedValue(newWorkspace);
 
   const oldRequest = state.loadDeals();
+  state.listQuickFilters.q = 'pending edit';
   runtime.accountId.value = 2;
+  await vi.waitFor(
+    () => {
+      expect(CrmDealsAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({ board: true, page: 1, per_page: 8 })
+      );
+    },
+    { timeout: 10_000 }
+  );
   await flushPromises();
   oldWorkspace.resolve(
     response([deal(1, 'Old workspace')], {
@@ -1119,10 +1130,10 @@ it('invalidates the old workspace request before loading the new workspace', asy
   await flushPromises();
 
   expect(state.deals.map(item => item.id)).toEqual([2]);
-  expect(CrmDealsAPI.get).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      page: 1,
-      per_page: 25,
-    })
+  expect(state.currentPresentation).toBe('board');
+  expect(state.listQuickFilters.q).toBe('');
+  const boardCall = CrmDealsAPI.get.mock.calls.find(
+    ([params]) => params.board && params.per_page === 8
   );
-});
+  expect(boardCall[0]).not.toHaveProperty('q');
+}, 15_000);

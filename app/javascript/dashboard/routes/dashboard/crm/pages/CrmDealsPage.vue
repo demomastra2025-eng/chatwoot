@@ -212,6 +212,7 @@ const dealConversationDraft = reactive({
 const contactableInboxesByContactId = ref({});
 const communicationThreadsByContactId = ref({});
 const hasRestoredPreferences = ref(false);
+let restoredPreferencesAccountKey = null;
 const persistedPreferencesByAccount = useLocalStorage(
   DEALS_PREFERENCES_STORAGE_KEY,
   {}
@@ -1014,8 +1015,8 @@ const sanitizeDealsPreferences = preferences => {
 };
 
 const restoreDealsPreferences = () => {
-  const stored =
-    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferenceKey = accountPreferenceKey.value;
+  const stored = persistedPreferencesByAccount.value?.[preferenceKey] || {};
   const preferences = sanitizeDealsPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
@@ -1027,10 +1028,15 @@ const restoreDealsPreferences = () => {
   Object.assign(boardSortDirections, preferences.boardSortDirections);
   Object.assign(filters, preferences.filters);
   listQuickFilters.q = preferences.listQuickFilters.q;
+  restoredPreferencesAccountKey = preferenceKey;
 };
 
 const persistDealsPreferences = () => {
-  if (!hasRestoredPreferences.value) return;
+  if (
+    !hasRestoredPreferences.value ||
+    restoredPreferencesAccountKey !== accountPreferenceKey.value
+  )
+    return;
 
   persistedPreferencesByAccount.value = {
     ...(persistedPreferencesByAccount.value || {}),
