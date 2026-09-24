@@ -17,28 +17,30 @@ RSpec.describe 'Telephony Logical Call Reports API', type: :request do
   end
   let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
 
-  around do |example|
-    with_routing do |routes|
-      routes.draw do
-        get '/api/v1/accounts/:account_id/telephony/reports/logical_calls',
-            to: 'api/v1/accounts/telephony/reports#logical_calls'
-        get '/api/v1/accounts/:account_id/telephony/reports/logical_call_details',
-            to: 'api/v1/accounts/telephony/reports#logical_call_details'
-      end
-      example.run
-    end
-  end
-
   before { account.enable_features!('channel_voice') }
 
-  def insert_connected_fact(identity: 'request-call') # rubocop:disable Metrics/MethodLength
-    conversation = create(:conversation, account: account, inbox: voice_inbox)
+  def enable_enforced_access!
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+  end
+
+  def set_scope(account_user, capability, scope)
+    grants = account_user.access_role.grants
+    grant = grants.find_or_initialize_by(account: account, resource: 'telephony_calls', capability: capability)
+    grant.update!(access_scope: scope)
+  end
+
+  def insert_connected_fact( # rubocop:disable Metrics/MethodLength
+    identity: 'request-call', account_record: account, inbox: voice_inbox, actor: nil, actor_team: nil
+  )
+    conversation = create(:conversation, account: account_record, inbox: inbox)
     source = create(
       :telephony_call_session,
-      account: account,
+      account: account_record,
       conversation: conversation,
       contact: conversation.contact,
-      inbox: voice_inbox,
+      inbox: inbox,
       number_binding: nil,
       external_call_ref: identity,
       provider: 'sipuni',
@@ -49,7 +51,7 @@ RSpec.describe 'Telephony Logical Call Reports API', type: :request do
     occurred_at = Time.utc(2026, 1, 10, 10)
     Telephony::LogicalCallOccurrence.insert_all!( # rubocop:disable Rails/SkipsModelValidations
       [{
-        account_id: account.id,
+        account_id: account_record.id,
         logical_call_identity: identity,
         logical_call_ref: identity,
         occurrence_kind: 'connected',
@@ -58,8 +60,12 @@ RSpec.describe 'Telephony Logical Call Reports API', type: :request do
         source_ref: source.external_call_ref,
         provider: source.provider,
         direction: source.direction,
-        inbox_id_snapshot: voice_inbox.id,
-        actor_kind: 'unknown',
+        inbox_id_snapshot: inbox.id,
+        actor_kind: actor ? 'human' : 'unknown',
+        actor_id_snapshot: actor&.id,
+        actor_name_snapshot: actor&.name,
+        actor_team_id_snapshot: actor_team&.id,
+        actor_team_name_snapshot: actor_team&.name,
         occurred_at: occurred_at,
         connected_at: occurred_at,
         reliability: 'exact',
@@ -70,6 +76,16 @@ RSpec.describe 'Telephony Logical Call Reports API', type: :request do
         created_at: occurred_at
       }]
     )
+  end
+
+  it 'recognizes both production GET routes without test-only routing' do
+    [[aggregate_path, 'logical_calls'], [details_path, 'logical_call_details']].each do |path, action|
+      expect(Rails.application.routes.recognize_path(path, method: :get)).to include(
+        controller: 'api/v1/accounts/telephony/reports', action: action, account_id: account.id.to_s
+      )
+      expect { Rails.application.routes.recognize_path(path, method: :post) }
+        .to raise_error(ActionController::RoutingError)
+    end
   end
 
   it 'returns aggregate/detail parity with a shared fixed-as-of fingerprint' do
@@ -114,15 +130,116 @@ RSpec.describe 'Telephony Logical Call Reports API', type: :request do
     expect(response.parsed_body).to include('code' => 'NOT_AUTHORIZED', 'state' => 'not_authorized')
   end
 
-  it 'returns forbidden rather than a validation error without a telephony grant contract in shadow or enforced mode' do
+  it 'allows administrator reporting in enforced mode with bootstrapped grants' do
     voice_inbox
-    %w[shadow enforced].each do |mode|
-      account.authorize_access_control_mode_transition { account.update!(access_control_mode: mode) }
-      get aggregate_path, params: window, headers: headers, as: :json
+    viewer
+    enable_enforced_access!
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    expect(grants.where(resource: 'telephony_calls').pluck(:capability, :access_scope))
+      .to contain_exactly(%w[view all], %w[view_reports all])
 
-      expect(response).to have_http_status(:forbidden)
-      expect(response.parsed_body).to include('code' => 'NOT_AUTHORIZED', 'state' => 'not_authorized')
+    get aggregate_path, params: window, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'coverage_state')).to eq('unknown')
+  end
+
+  it 'keeps explicit administrator denial after bootstrap and in enforced mode' do
+    voice_inbox
+    viewer
+    enable_enforced_access!
+    administrator = viewer.account_users.find_by!(account: account).access_role
+    administrator.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports').update!(access_scope: 'none')
+
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    get aggregate_path, params: window, headers: headers, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to include('code' => 'NOT_AUTHORIZED', 'state' => 'not_authorized')
+  end
+
+  it 'preserves legacy report_manage authorization in shadow without inventing a grant' do
+    report_viewer = create(:user, account: account, role: :agent)
+    role = create(:custom_role, account: account, permissions: ['report_manage'])
+    report_viewer.account_users.find_by!(account: account).update!(custom_role: role)
+    voice_inbox
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+
+    get aggregate_path, params: window, headers: { api_access_token: report_viewer.access_token.token }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('meta', 'state')).to eq('ready')
+  end
+
+  it 'denies missing and explicitly denied grants in enforced mode rather than reporting zero' do
+    reporter = create(:user, account: account, role: :agent)
+    voice_inbox
+    enable_enforced_access!
+    reporter_account_user = reporter.account_users.find_by!(account: account)
+    reporter_headers = { api_access_token: reporter.access_token.token }
+    get aggregate_path, params: window, headers: reporter_headers, as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to include('code' => 'NOT_AUTHORIZED', 'state' => 'not_authorized')
+
+    set_scope(reporter_account_user, 'view', 'all')
+    set_scope(reporter_account_user, 'view_reports', 'none')
+    get details_path, params: window, headers: reporter_headers, as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to include('code' => 'NOT_AUTHORIZED', 'state' => 'not_authorized')
+  end
+
+  it 'intersects own/team/all with Voice membership, tenant and hidden filters' do # rubocop:disable RSpec/MultipleExpectations
+    reporter = create(:user, account: account, role: :agent)
+    teammate = create(:user, account: account)
+    outsider = create(:user, account: account)
+    team = create(:team, account: account)
+    hidden_inbox = create(:channel_voice, :sipuni, account: account).inbox
+    create(:inbox_member, inbox: voice_inbox, user: reporter)
+    create(:team_member, team: team, user: reporter)
+    insert_connected_fact(identity: 'own', actor: reporter)
+    insert_connected_fact(identity: 'team', actor: teammate, actor_team: team)
+    insert_connected_fact(identity: 'outsider', actor: outsider)
+    insert_connected_fact(identity: 'unknown')
+    insert_connected_fact(identity: 'hidden', actor: reporter, inbox: hidden_inbox)
+    foreign_account = create(:account)
+    foreign_inbox = create(:channel_voice, :sipuni, account: foreign_account).inbox
+    foreign_actor = create(:user, account: foreign_account)
+    insert_connected_fact(identity: 'foreign', account_record: foreign_account, inbox: foreign_inbox, actor: foreign_actor)
+    enable_enforced_access!
+    account_user = reporter.account_users.find_by!(account: account)
+    reporter_headers = { api_access_token: reporter.access_token.token }
+
+    set_scope(account_user, 'view', 'own')
+    set_scope(account_user, 'view_reports', 'all')
+    get details_path, params: window, headers: reporter_headers, as: :json
+    expect(response.parsed_body.dig('payload', 'rows').pluck('logical_call_identity')).to eq(['own'])
+
+    set_scope(account_user, 'view', 'all')
+    set_scope(account_user, 'view_reports', 'team')
+    get details_path, params: window, headers: reporter_headers, as: :json
+    expect(response.parsed_body.dig('payload', 'rows').pluck('logical_call_identity')).to contain_exactly('own', 'team')
+
+    set_scope(account_user, 'view_reports', 'all')
+    get aggregate_path, params: window, headers: reporter_headers, as: :json
+    aggregate = response.parsed_body
+    get details_path, params: window.merge(page: 1, per_page: 100), headers: reporter_headers, as: :json
+    details = response.parsed_body
+    expect(details.dig('payload', 'rows').pluck('logical_call_identity')).to contain_exactly('own', 'team', 'outsider', 'unknown')
+    expect(details.dig('meta', 'observed_count')).to eq(4)
+    expect(aggregate.dig('meta', 'observed_count')).to eq(details.dig('meta', 'observed_count'))
+    expect(aggregate.dig('meta', 'query_fingerprint')).to eq(details.dig('meta', 'query_fingerprint'))
+
+    [hidden_inbox.id, foreign_inbox.id].each do |inbox_id|
+      get details_path, params: window.merge(inbox_id: inbox_id), headers: reporter_headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include('code' => 'INVALID_REPORT_QUERY', 'error' => 'inbox_id is invalid')
     end
+    get details_path, params: window.merge(actor_id: foreign_actor.id), headers: reporter_headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to include('code' => 'INVALID_REPORT_QUERY', 'error' => 'actor_id is invalid')
+
+    set_scope(account_user, 'view', 'none')
+    get aggregate_path, params: window, headers: reporter_headers, as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body).to include('state' => 'not_authorized')
   end
 
   it 'returns the report validation contract for malformed windows and missing detail metric' do

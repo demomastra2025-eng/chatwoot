@@ -28,6 +28,27 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
       expect(observer.grants.pluck(:resource, :capability, :access_scope)).to match_array(expected_observer_grants)
     end
 
+    it 'defaults Telephony report grants only for administrators and preserves explicit denial' do
+      administrator = roles.fetch('administrator')
+      expect(AccessRoleGrant.where(account: account, resource: 'telephony_calls').pluck(:access_role_id, :capability, :access_scope))
+        .to contain_exactly([administrator.id, 'view', 'all'], [administrator.id, 'view_reports', 'all'])
+
+      denied = administrator.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports')
+      denied.update!(access_scope: 'none')
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      expect(denied.reload.access_scope).to eq('none')
+    end
+
+    it 'keeps non-administrator system-role opt-ins across repeated bootstrap' do
+      employee = roles.fetch('employee')
+      view = employee.grants.create!(account: account, resource: 'telephony_calls', capability: 'view', access_scope: 'own')
+      report = employee.grants.create!(account: account, resource: 'telephony_calls', capability: 'view_reports', access_scope: 'team')
+
+      2.times { described_class.call(account: account) }
+      expect([view, report].map { |grant| grant.reload.access_scope }).to eq(%w[own team])
+      expect(AccessControl::EnforcementReadiness.call(account: account).system_role_mismatches).to be_empty
+    end
+
     it 'creates the canonical Department Lead matrix' do
       department_lead = roles.fetch('department_lead')
       expected_lead_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.flat_map do |resource|

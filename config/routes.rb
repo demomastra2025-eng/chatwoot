@@ -507,6 +507,8 @@ Rails.application.routes.draw do
           end
 
           namespace :telephony do
+            get 'reports/logical_calls', to: 'reports#logical_calls'
+            get 'reports/logical_call_details', to: 'reports#logical_call_details'
             resources :calls, only: [:index, :show], param: :call_ref, constraints: { call_ref: %r{[^/]+} } do
               member do
                 get :recording

@@ -28,6 +28,7 @@
         "APPOINTMENTS": "Appointments",
         "DEALS": "Deals",
         "TASKS": "Tasks",
+        "TELEPHONY_CALLS": "Calls",
         "AUTOMATION_RULES": "Automation rules"
       },
       "CAPABILITIES": {

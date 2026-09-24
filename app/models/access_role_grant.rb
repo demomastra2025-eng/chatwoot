@@ -11,6 +11,7 @@ class AccessRoleGrant < ApplicationRecord
     ],
     'deals' => %w[view create update_fields assign transition delete_archive view_configuration configure export view_reports],
     'tasks' => %w[view create update_fields assign transition complete_cancel delete_archive view_configuration configure export view_reports],
+    'telephony_calls' => %w[view view_reports],
     'automation_rules' => %w[manage]
   }.freeze
   RESOURCE_ACCESS_SCOPES = RESOURCE_CAPABILITIES.to_h do |resource, _capabilities|

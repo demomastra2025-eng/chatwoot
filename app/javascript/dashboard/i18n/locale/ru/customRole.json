@@ -28,6 +28,7 @@
         "APPOINTMENTS": "Записи",
         "DEALS": "Сделки",
         "TASKS": "Задачи",
+        "TELEPHONY_CALLS": "Звонки",
         "AUTOMATION_RULES": "Правила автоматизации"
       },
       "CAPABILITIES": {

@@ -1,4 +1,11 @@
 module FutureTelephonyGrantSpecHelper
+  def simulate_bridge_catalog!
+    catalog = AccessRoleGrant::RESOURCE_CAPABILITIES.except('telephony_calls').freeze
+    stub_const('AccessRoleGrant::RESOURCE_CAPABILITIES', catalog)
+    stub_const('AccessRoleGrant::RESOURCES', catalog.keys.freeze)
+    stub_const('AccessControl::SystemRoleCatalog::BOOTSTRAP_RESOURCES', catalog.keys.freeze)
+  end
+
   def insert_future_telephony_grant(role:, capability: 'view', scope: 'own')
     attributes = {
       account_id: role.account_id,

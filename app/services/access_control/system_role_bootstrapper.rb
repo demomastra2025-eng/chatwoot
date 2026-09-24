@@ -56,6 +56,9 @@ class AccessControl::SystemRoleBootstrapper
   end
 
   def reconcile_scope(grant, expected_scope)
+    # A deliberate administrator denial is not a stale preset.
+    return if grant.resource == 'telephony_calls' && grant.access_scope == 'none' && grant.access_role.system_key == 'administrator'
+
     grant.update!(access_scope: expected_scope) unless grant.access_scope == expected_scope
   end
 end

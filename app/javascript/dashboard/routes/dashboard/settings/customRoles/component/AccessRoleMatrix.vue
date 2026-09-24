@@ -67,6 +67,7 @@ const translations = computed(() => ({
     appointments: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.APPOINTMENTS'),
     deals: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.DEALS'),
     tasks: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TASKS'),
+    telephony_calls: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TELEPHONY_CALLS'),
     automation_rules: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES'),
   },
   capabilities: {

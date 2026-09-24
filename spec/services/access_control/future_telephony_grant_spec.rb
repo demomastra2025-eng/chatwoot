@@ -6,6 +6,8 @@ RSpec.describe AccessControl::FutureTelephonyGrant do
   let(:account) { create(:account) }
   let(:roles) { AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key }
 
+  before { simulate_bridge_catalog! }
+
   it 'ends the bridge-only tolerance once the native resource catalog owns Telephony' do
     expect(described_class.bridge_only?).to be(true)
     catalog = AccessRoleGrant::RESOURCE_CAPABILITIES.merge('telephony_calls' => %w[view view_reports])

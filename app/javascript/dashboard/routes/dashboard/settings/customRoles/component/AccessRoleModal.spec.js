@@ -172,6 +172,129 @@ describe('AccessRoleModal', () => {
     );
   });
 
+  it('round-trips Telephony view and report scopes', async () => {
+    const wrapper = mountComponent({
+      mode: 'edit',
+      resources: { telephony_calls: ['view', 'view_reports'] },
+      selectedRole: {
+        ...role,
+        grants: [
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'own',
+          },
+        ],
+      },
+    });
+    const selects = wrapper.findAll('select');
+
+    expect(wrapper.text()).toContain(
+      'CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TELEPHONY_CALLS'
+    );
+    expect(selects.map(select => select.element.value)).toEqual([
+      'none',
+      'own',
+    ]);
+    await selects[0].setValue('team');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'customRole/updateAccessRole',
+      expect.objectContaining({
+        grants: [
+          {
+            resource: 'telephony_calls',
+            capability: 'view',
+            access_scope: 'team',
+          },
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'own',
+          },
+        ],
+      })
+    );
+  });
+
+  it('revokes both Telephony capabilities with explicit none scopes', async () => {
+    const wrapper = mountComponent({
+      mode: 'edit',
+      resources: { telephony_calls: ['view', 'view_reports'] },
+      selectedRole: {
+        ...role,
+        grants: [
+          {
+            resource: 'telephony_calls',
+            capability: 'view',
+            access_scope: 'all',
+          },
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'team',
+          },
+        ],
+      },
+    });
+
+    const selects = wrapper.findAll('select');
+    await selects[0].setValue('none');
+    await selects[1].setValue('none');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'customRole/updateAccessRole',
+      expect.objectContaining({
+        grants: [
+          {
+            resource: 'telephony_calls',
+            capability: 'view',
+            access_scope: 'none',
+          },
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'none',
+          },
+        ],
+      })
+    );
+  });
+
+  it('creates explicit Telephony denials for an unconfigured native role', async () => {
+    const wrapper = mountComponent({
+      mode: 'add',
+      resources: { telephony_calls: ['view', 'view_reports'] },
+    });
+
+    await wrapper.get('input').setValue('Observer');
+    await wrapper.get('textarea').setValue('Can see assigned work');
+    await wrapper.get('form').trigger('submit');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith(
+      'customRole/createAccessRole',
+      expect.objectContaining({
+        grants: [
+          {
+            resource: 'telephony_calls',
+            capability: 'view',
+            access_scope: 'none',
+          },
+          {
+            resource: 'telephony_calls',
+            capability: 'view_reports',
+            access_scope: 'none',
+          },
+        ],
+      })
+    );
+  });
+
   it('previews a clone and creates only copied metadata and normalized grants', async () => {
     const sourceRole = {
       ...role,

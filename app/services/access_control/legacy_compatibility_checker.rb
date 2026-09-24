@@ -82,7 +82,9 @@ class AccessControl::LegacyCompatibilityChecker
   end
 
   def grant_differences(account_user, expected_grants)
-    expected_scopes = scopes_by_key(expected_grants)
+    # The legacy permission model has no Telephony resource. Native Telephony grants are
+    # intentionally opt-in/deniable and cannot be compared with legacy 'all'.
+    expected_scopes = scopes_by_key(expected_grants.reject { |grant| grant[:resource] == AccessControl::FutureTelephonyGrant::RESOURCE })
     actual_keys = legacy_grant_keys(account_user.access_role)
     keys = (expected_scopes.keys + actual_keys).uniq.sort
     resolver = AccessControl::ShadowResolver.new(account_user)
@@ -96,7 +98,7 @@ class AccessControl::LegacyCompatibilityChecker
     return [] unless role
 
     role.grants.filter_map do |grant|
-      next if AccessControl::FutureTelephonyGrant.bridge_only? && AccessControl::FutureTelephonyGrant.valid?(grant)
+      next if AccessControl::FutureTelephonyGrant.valid?(grant)
 
       [grant.resource, grant.capability]
     end

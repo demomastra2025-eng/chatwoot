@@ -8,7 +8,8 @@ class AccessControl::SystemRoleCatalog
   }.freeze
   EMPLOYEE_ALL_VIEW_RESOURCES = %w[contacts conversations appointments].freeze
   BOOTSTRAP_RESOURCES = AccessRoleGrant::RESOURCES.freeze
-  SCOPED_BOOTSTRAP_RESOURCES = (BOOTSTRAP_RESOURCES - %w[automation_rules]).freeze
+  # Non-administrator Telephony reporting is opt-in; existing valid grants survive bootstrap.
+  SCOPED_BOOTSTRAP_RESOURCES = (BOOTSTRAP_RESOURCES - %w[automation_rules telephony_calls]).freeze
 
   class << self
     def grants_for(system_key)

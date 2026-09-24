@@ -48,8 +48,16 @@ class AccessControl::EnforcementReadiness
   end
 
   def grants_for(role)
-    role.grants.reject { |grant| AccessControl::FutureTelephonyGrant.bridge_only? && AccessControl::FutureTelephonyGrant.valid?(grant) }
-        .map { |grant| [grant.resource, grant.capability, grant.access_scope] }.sort
+    role.grants.filter_map do |grant|
+      if AccessControl::FutureTelephonyGrant.valid?(grant)
+        next if AccessControl::FutureTelephonyGrant.bridge_only? || role.system_key != 'administrator'
+
+        # Preserve presence of both admin capabilities while allowing an explicit denial.
+        [grant.resource, grant.capability, grant.access_scope == 'none' ? 'all' : grant.access_scope]
+      else
+        [grant.resource, grant.capability, grant.access_scope]
+      end
+    end.sort
   end
 
   def expected_grants_for(system_key)

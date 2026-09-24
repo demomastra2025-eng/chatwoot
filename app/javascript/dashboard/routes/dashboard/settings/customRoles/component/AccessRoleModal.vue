@@ -46,6 +46,7 @@ const resourceLabels = computed(() => ({
   appointments: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.APPOINTMENTS'),
   deals: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.DEALS'),
   tasks: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TASKS'),
+  telephony_calls: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TELEPHONY_CALLS'),
   automation_rules: t('CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES'),
 }));
 
@@ -179,10 +180,15 @@ watch(
   { immediate: true }
 );
 
+// B clients omit hidden Telephony grants, so native clients must send explicit denials.
 const buildGrants = () =>
   resourceGroups.value.flatMap(group =>
     group.capabilities
-      .filter(item => (grantScopes[item.key] || 'none') !== 'none')
+      .filter(
+        item =>
+          group.resource === 'telephony_calls' ||
+          (grantScopes[item.key] || 'none') !== 'none'
+      )
       .map(item => ({
         resource: group.resource,
         capability: item.capability,

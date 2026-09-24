@@ -14,6 +14,7 @@ RSpec.describe 'Access Roles API', type: :request do
 
   describe 'GET #index' do
     it 'hides persisted future Telephony grants without publishing the capability catalog' do
+      simulate_bridge_catalog!
       employee = account.access_roles.find_by!(system_key: 'employee')
       future = insert_future_telephony_grant(role: employee, scope: 'own')
 
@@ -295,6 +296,7 @@ RSpec.describe 'Access Roles API', type: :request do
     end
 
     it 'keeps hidden future grants through full replacement' do
+      simulate_bridge_catalog!
       enforce_access_control!
       role = create_normalized_role
       hidden = insert_future_telephony_grant(role: role, capability: 'view_reports', scope: 'team')
@@ -317,6 +319,7 @@ RSpec.describe 'Access Roles API', type: :request do
     end
 
     it 'rejects edits to an existing future Telephony grant' do
+      simulate_bridge_catalog!
       enforce_access_control!
       role = create_normalized_role
       hidden = insert_future_telephony_grant(role: role, capability: 'view_reports', scope: 'team')
@@ -334,7 +337,9 @@ RSpec.describe 'Access Roles API', type: :request do
     end
 
     it 'cannot create a Telephony grant through the bridge API' do
+      simulate_bridge_catalog!
       enforce_access_control!
+      existing_grants = AccessRoleGrant.where(resource: 'telephony_calls', account: account).count
 
       post path,
            params: { access_role: { name: 'Future editor', grants: [
@@ -346,14 +351,12 @@ RSpec.describe 'Access Roles API', type: :request do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body.fetch('code')).to eq('UNSUPPORTED_GRANT')
       expect(account.access_roles.where(name: 'Future editor')).not_to exist
-      expect(AccessRoleGrant.where(resource: 'telephony_calls', account: account)).not_to exist
+      expect(AccessRoleGrant.where(resource: 'telephony_calls', account: account).count).to eq(existing_grants)
     end
 
     it 'exposes existing grants and accepts their payload once the native catalog owns Telephony' do
       role = account.access_roles.find_by!(system_key: 'employee')
       future = insert_future_telephony_grant(role: role, scope: 'own')
-      catalog = AccessRoleGrant::RESOURCE_CAPABILITIES.merge('telephony_calls' => %w[view view_reports])
-      stub_const('AccessRoleGrant::RESOURCE_CAPABILITIES', catalog)
       grant_payload = { 'resource' => 'telephony_calls', 'capability' => 'view', 'access_scope' => 'all' }
 
       get path, headers: administrator.create_new_auth_token, as: :json
@@ -367,6 +370,50 @@ RSpec.describe 'Access Roles API', type: :request do
         [{ resource: 'telephony_calls', capability: 'view', access_scope: 'all' }]
       )
       expect(future.reload.access_scope).to eq('own')
+    end
+
+    it 'revokes both native Telephony capabilities through explicit none scopes' do
+      enforce_access_control!
+      role = create_normalized_role
+      %w[view view_reports].each do |capability|
+        role.grants.create!(account: account, resource: 'telephony_calls', capability: capability, access_scope: 'all')
+      end
+
+      patch "#{path}/#{role.id}",
+            params: {
+              access_role: {
+                lock_version: role.reload.lock_version,
+                grants: %w[view view_reports].map do |capability|
+                  { resource: 'telephony_calls', capability: capability, access_scope: 'none' }
+                end
+              }
+            },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(role.grants.reload.where(resource: 'telephony_calls').pluck(:capability, :access_scope)).to contain_exactly(
+        %w[view none], %w[view_reports none]
+      )
+    end
+
+    it 'preserves Telephony grants omitted by a mixed-version B editor' do
+      enforce_access_control!
+      role = create_normalized_role
+      hidden = role.grants.create!(account: account, resource: 'telephony_calls', capability: 'view', access_scope: 'team')
+
+      patch "#{path}/#{role.id}",
+            params: {
+              access_role: {
+                lock_version: role.reload.lock_version,
+                grants: [{ resource: 'tasks', capability: 'view', access_scope: 'team' }]
+              }
+            },
+            headers: administrator.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(hidden.reload.access_scope).to eq('team')
     end
 
     it 'rolls back metadata and grants when a replacement grant is invalid' do
