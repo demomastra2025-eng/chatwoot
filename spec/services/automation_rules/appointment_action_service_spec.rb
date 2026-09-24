@@ -53,28 +53,17 @@ RSpec.describe AutomationRules::AppointmentActionService do
     expect(appointment.reload.status).to eq('confirmed')
   end
 
-  it 'cancels payment via finance sync when the feature is enabled' do
-    account.enable_features!('scheduling_finance')
-    appointment.update!(
-      prepaid_amount: 4_000,
-      prepaid_payment_method: 'cash',
-      payment_status: 'prepaid'
-    )
+  it 'skips persisted retired and unknown actions without blocking supported actions' do
+    historical_actions = [
+      { action_name: 'cancel_appointment_payment', action_params: [] },
+      { action_name: 'unknown_legacy_action', action_params: [] },
+      { action_name: 'change_appointment_status', action_params: ['confirmed'] }
+    ]
+    rule.update_columns(actions: historical_actions) # rubocop:disable Rails/SkipsModelValidations
+    expect(ChatwootExceptionTracker).not_to receive(:new)
 
-    cancel_payment_rule = create(
-      :automation_rule,
-      account: account,
-      event_name: 'appointment_updated',
-      conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
-      actions: [{ action_name: 'cancel_appointment_payment', action_params: [] }]
-    )
+    described_class.new(rule, account, appointment).perform
 
-    described_class.new(cancel_payment_rule, account, appointment).perform
-
-    appointment.reload
-    expect(appointment.prepaid_amount).to eq(0)
-    expect(appointment.prepaid_payment_method).to be_nil
-    expect(appointment.settlement_amount).to eq(0)
-    expect(appointment.payment_status).to eq('cancelled')
+    expect(appointment.reload.status).to eq('confirmed')
   end
 end

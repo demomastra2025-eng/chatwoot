@@ -53,12 +53,7 @@ class Scheduling::Resource < ApplicationRecord
 
   validates :name, :timezone, presence: true
   validates :slot_duration_min, inclusion: { in: 5..720 }
-  validates :compensation_type, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }
-  validates :compensation_value, numericality: { greater_than_or_equal_to: 0, only_integer: true }
-  validates :compensation_percent, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validate :valid_timezone
-  validate :compensation_percent_within_range
-  validate :combined_compensation_percent_within_range
   validate :user_belongs_to_account
   validate :team_belongs_to_account
 
@@ -183,20 +178,6 @@ class Scheduling::Resource < ApplicationRecord
   def minute_for_time(value)
     hour, minute = value.split(':').map(&:to_i)
     (hour * 60) + minute
-  end
-
-  def compensation_percent_within_range
-    return unless compensation_type == 'percent'
-    return if compensation_value.to_i.between?(0, 100)
-
-    errors.add(:compensation_value, 'must be between 0 and 100 for percent compensation')
-  end
-
-  def combined_compensation_percent_within_range
-    return unless compensation_type == 'fixed_plus_percent'
-    return if compensation_percent.to_i.between?(0, 100)
-
-    errors.add(:compensation_percent, 'must be between 0 and 100 for fixed plus percent compensation')
   end
 
   def valid_timezone

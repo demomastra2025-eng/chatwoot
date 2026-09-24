@@ -6,13 +6,15 @@ class AccessRoleGrant < ApplicationRecord
     'contacts' => %w[view create update_fields assign delete_archive view_configuration configure export view_reports],
     'conversations' => %w[view create update_fields assign transition take delete_archive view_configuration configure export view_reports],
     'appointments' => %w[
-      view create update_fields assign transition delete_archive view_finance manage_finance view_configuration configure export
+      view create update_fields assign transition delete_archive view_configuration configure export
       view_reports override_schedule
     ],
     'deals' => %w[view create update_fields assign transition delete_archive view_configuration configure export view_reports],
     'tasks' => %w[view create update_fields assign transition complete_cancel delete_archive view_configuration configure export view_reports],
     'automation_rules' => %w[manage]
   }.freeze
+  # Legacy finance grants remain stored, but cannot be issued or used by the current catalog.
+  RETIRED_CAPABILITIES = { 'appointments' => %w[view_finance manage_finance].freeze }.freeze
   RESOURCE_ACCESS_SCOPES = RESOURCE_CAPABILITIES.to_h do |resource, _capabilities|
     [resource, resource == 'automation_rules' ? %w[none all] : ACCESS_SCOPES]
   end.freeze
@@ -27,6 +29,11 @@ class AccessRoleGrant < ApplicationRecord
   validates :resource, inclusion: { in: RESOURCES }
   validates :capability, inclusion: { in: CAPABILITIES }
   validates :access_scope, inclusion: { in: ACCESS_SCOPES }
+
+  def retired?
+    RETIRED_CAPABILITIES.fetch(resource, []).include?(capability)
+  end
+
   validates :capability, uniqueness: { scope: [:access_role_id, :resource] }
   validate :access_role_belongs_to_account
   validate :capability_supported_for_resource

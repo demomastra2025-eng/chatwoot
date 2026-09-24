@@ -1233,30 +1233,12 @@
               "CLIENT_COMMENT": { "TITLE": "Комментарий клиента" },
               "SOURCE": { "TITLE": "Источник" },
               "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
-              "PAYMENT_STATUS": { "TITLE": "Статус оплаты" },
               "SERVICE_NAME_SNAPSHOT": { "TITLE": "Название услуги" },
               "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Тип услуги" },
               "SERVICE_DURATION_MIN_SNAPSHOT": {
                 "TITLE": "Длительность услуги (в минутах)"
               },
-              "SERVICE_AMOUNT": { "TITLE": "Стоимость услуги" },
-              "COMPENSATION_TYPE_SNAPSHOT": {
-                "TITLE": "Тип компенсации"
-              },
-              "COMPENSATION_VALUE_SNAPSHOT": {
-                "TITLE": "Значение компенсации"
-              },
-              "COMPENSATION_PERCENT_SNAPSHOT": {
-                "TITLE": "Процент компенсации"
-              },
-              "PREPAID_AMOUNT": { "TITLE": "Сумма предоплаты" },
-              "PREPAID_PAYMENT_METHOD": {
-                "TITLE": "Способ предоплаты"
-              },
-              "SETTLEMENT_AMOUNT": { "TITLE": "Сумма расчета" },
-              "SETTLEMENT_PAYMENT_METHOD": {
-                "TITLE": "Способ расчета"
-              }
+              "SERVICE_AMOUNT": { "TITLE": "Стоимость услуги" }
             }
           }
         },
@@ -1593,10 +1575,6 @@
             "merge_contacts": {
               "TITLE": "Объединить контакты",
               "DESCRIPTION": "Объединяет один контакт с другим."
-            },
-            "add_appointment_payment": {
-              "TITLE": "Добавить оплату записи",
-              "DESCRIPTION": "Добавляет оплату к записи, связанной с текущим диалогом."
             },
             "execute_macro": {
               "TITLE": "Выполнить макрос",

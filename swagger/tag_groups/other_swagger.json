@@ -238,7 +238,7 @@
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `payment_status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
+            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -271,7 +271,7 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
+            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event` and `change_appointment_status`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -281,7 +281,7 @@
                 },
                 "action_params": {
                   "type": "array",
-                  "description": "Action params. `cancel_appointment_payment` uses an empty array.",
+                  "description": "Action params for supported actions.",
                   "items": {
                     "type": "string"
                   }
@@ -3738,7 +3738,7 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
+            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event` and `change_appointment_status`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -3764,7 +3764,6 @@
                     "send_email_transcript",
                     "add_private_note",
                     "change_appointment_status",
-                    "cancel_appointment_payment",
                     "change_deal_stage",
                     "assign_deal_owner",
                     "assign_deal_team",
@@ -3780,7 +3779,7 @@
                 },
                 "action_params": {
                   "type": "array",
-                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`cancel_appointment_payment` does not require params.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
+                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
                   "items": {
                     "type": "string"
                   }
@@ -3796,7 +3795,7 @@
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
+            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {

@@ -63,6 +63,31 @@ FactoryBot.define do
     end
   end
 
+  factory :communication_thread_state_transition_fact do
+    event_kind { 'created' }
+    occurred_at { Time.current }
+    requested_occurred_at { occurred_at }
+    reliable_since { occurred_at }
+    source_version { 1 }
+    from_status { nil }
+    to_status { 'open' }
+    source { 'factory' }
+    source_event_id { SecureRandom.uuid }
+    actor_kind { 'system' }
+    actor_name { 'System' }
+    request_fingerprint { '0' * 64 }
+    sequence(:idempotency_key) { |number| "thread-state-fact-#{number}" }
+
+    after(:build) do |fact|
+      thread = create(:communication_thread, account: fact.account) if fact.communication_thread_id_snapshot.blank?
+      thread ||= CommunicationThread.find(fact.communication_thread_id_snapshot)
+      fact.account ||= thread.account
+      fact.communication_thread_id_snapshot ||= thread.id
+      fact.thread_display_id_snapshot ||= thread.display_id
+      fact.contact_id_snapshot ||= thread.contact_id
+    end
+  end
+
   factory :communication_thread_manual_call_occurrence do
     actor_type { 'User' }
     actor_name { actor&.name || 'Manual caller' }

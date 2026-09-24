@@ -29,10 +29,28 @@ const defaultPayload = () => ({
   workdayOverrides: [],
   timeOffs: [],
   appointments: [],
-  payments: [],
-  expenses: [],
   slots: [],
 });
+
+// Old web instances can return historical finance fields during a rolling deploy.
+const RETIRED_APPOINTMENT_KEYS = [
+  'paymentStatus',
+  'prepaidAmount',
+  'prepaidPaymentMethod',
+  'settlementAmount',
+  'settlementPaymentMethod',
+  'compensationTypeSnapshot',
+  'compensationValueSnapshot',
+  'compensationPercentSnapshot',
+  'payments',
+  'expense',
+];
+
+const withoutHistoricalFinance = appointment => {
+  const visible = { ...appointment };
+  RETIRED_APPOINTMENT_KEYS.forEach(key => delete visible[key]);
+  return visible;
+};
 
 const appointmentIntersectsRange = (appointment, range) => {
   const startsAt = new Date(appointment.startsAt);
@@ -84,7 +102,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     listPage: 1,
     listPerPage: LIST_PAGE_SIZE,
     listTotal: 0,
-    paymentStatusFilters: [],
     payload: defaultPayload(),
     selectedResourceIds: [],
     showInactiveAppointments: false,
@@ -108,11 +125,9 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         state.anchorDate,
         state.workspaceTimezone
       ),
-    expenses: state => state.payload.expenses,
     holidays: state => state.payload.holidays,
     listTotalPages: state =>
       Math.max(Math.ceil(state.listTotal / state.listPerPage), 1),
-    payments: state => state.payload.payments,
     resources: state => state.payload.resources,
     slots: state => state.payload.slots,
     timeOffs: state => state.payload.timeOffs,
@@ -203,7 +218,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.customAttributeFilters = {};
       this.listPage = 1;
       this.listTotal = 0;
-      this.paymentStatusFilters = [];
       this.payload = defaultPayload();
       this.selectedResourceIds = [];
       this.statusFilters = [];
@@ -262,17 +276,12 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.persistPreferences();
     },
 
-    setPaymentStatusFilters(statuses) {
-      this.paymentStatusFilters = [...statuses];
-    },
-
     setCustomAttributeFilters(filters = {}) {
       this.customAttributeFilters = { ...(filters || {}) };
     },
 
     clearQuickFilters() {
       this.statusFilters = [];
-      this.paymentStatusFilters = [];
     },
 
     resetFilters() {
@@ -323,10 +332,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           params.status = effectiveStatusFilters.join(',');
         }
 
-        if (this.paymentStatusFilters.length) {
-          params.payment_status = this.paymentStatusFilters.join(',');
-        }
-
         const customAttributeFilters =
           options.customAttributeFilters ?? this.customAttributeFilters;
         if (Object.keys(customAttributeFilters || {}).length) {
@@ -339,6 +344,11 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         }
 
         const payload = normalizePayload(data);
+        delete payload.payments;
+        delete payload.expenses;
+        payload.appointments = (payload.appointments || []).map(
+          withoutHistoricalFinance
+        );
         if (paginateAppointments) {
           const meta = camelcaseKeys(data?.meta || {});
           this.listTotal = Number(meta.count) || 0;
@@ -380,12 +390,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         appointments: this.payload.appointments.filter(
           item => Number(item.id) !== normalizedId
         ),
-        expenses: this.payload.expenses.filter(
-          item => Number(item.appointmentId) !== normalizedId
-        ),
-        payments: this.payload.payments.filter(
-          item => Number(item.appointmentId) !== normalizedId
-        ),
       };
     },
 
@@ -413,17 +417,17 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         ) &&
         (!effectiveStatusFilters.length ||
           effectiveStatusFilters.includes(appointment.status)) &&
-        (!this.paymentStatusFilters.length ||
-          this.paymentStatusFilters.includes(appointment.paymentStatus)) &&
         matchesCustomFields &&
         appointmentIntersectsRange(appointment, currentRange)
       );
     },
 
     upsertAppointment(appointment) {
-      const nextAppointment = preserveCustomAttributeKeys(
-        appointment,
-        camelcaseKeys(appointment, { deep: true })
+      const nextAppointment = withoutHistoricalFinance(
+        preserveCustomAttributeKeys(
+          appointment,
+          camelcaseKeys(appointment, { deep: true })
+        )
       );
       const nextAppointments = [...this.payload.appointments];
       const existingIndex = nextAppointments.findIndex(
@@ -440,28 +444,9 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         return new Date(left.startsAt) - new Date(right.startsAt);
       });
 
-      const appointmentPayments = nextAppointment.payments || [];
       this.payload = {
         ...this.payload,
         appointments: nextAppointments,
-        expenses: nextAppointment.expense
-          ? [
-              nextAppointment.expense,
-              ...this.payload.expenses.filter(
-                item => item.appointmentId !== nextAppointment.id
-              ),
-            ]
-          : this.payload.expenses.filter(
-              item => item.appointmentId !== nextAppointment.id
-            ),
-        payments: [
-          ...appointmentPayments,
-          ...this.payload.payments.filter(
-            item => item.appointmentId !== nextAppointment.id
-          ),
-        ].sort(
-          (left, right) => new Date(right.createdAt) - new Date(left.createdAt)
-        ),
       };
     },
 

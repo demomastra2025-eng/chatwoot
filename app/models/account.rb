@@ -79,12 +79,19 @@ class Account < ApplicationRecord
   has_many :account_users, dependent: :destroy_async
   has_many :access_roles, dependent: :destroy
   has_many :communication_thread_participant_lifecycle_facts, dependent: :delete_all
+  # PostgreSQL deletes the immutable facts only after the Account row has gone.
+  has_many :communication_thread_state_transition_facts # rubocop:disable Rails/HasManyOrHasOneDependent
   has_many :communication_thread_manual_call_occurrences, dependent: :delete_all
   has_many :telephony_logical_call_occurrences, dependent: :delete_all, class_name: 'Telephony::LogicalCallOccurrence'
 
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
   has_many :assignment_policies, dependent: :destroy_async
+  # Durable automation records have tenant foreign keys; delete children before
+  # removing the account, while keeping their history for every live tenant.
+  has_many :automation_action_receipts, dependent: :delete_all
+  has_many :automation_executions, dependent: :delete_all
+  has_many :automation_events, dependent: :delete_all
   has_many :automation_rules, dependent: :destroy_async
   has_many :bulk_action_runs, dependent: :destroy_async
   has_many :macros, dependent: :destroy_async
@@ -142,9 +149,10 @@ class Account < ApplicationRecord
   has_many :portals, dependent: :destroy_async, class_name: '::Portal'
   has_many :scheduling_appointments, dependent: :destroy_async, class_name: 'Scheduling::Appointment'
   has_many :scheduling_break_rules, dependent: :destroy_async, class_name: 'Scheduling::BreakRule'
-  has_many :scheduling_expenses, dependent: :destroy_async, class_name: 'Scheduling::Expense'
+  # Historical finance rows remain until their retention/migration policy is approved.
+  has_many :scheduling_expenses, dependent: :restrict_with_error, class_name: 'Scheduling::Expense'
   has_many :scheduling_holidays, dependent: :destroy_async, class_name: 'Scheduling::Holiday'
-  has_many :scheduling_payments, dependent: :destroy_async, class_name: 'Scheduling::Payment'
+  has_many :scheduling_payments, dependent: :restrict_with_error, class_name: 'Scheduling::Payment'
   has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
   has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
   has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'

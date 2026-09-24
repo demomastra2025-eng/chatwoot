@@ -595,7 +595,6 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
               resource_name: 'Doctor One',
               service_name: 'Consultation',
               status: 'scheduled',
-              payment_status: 'awaiting_payment',
             },
           },
         },

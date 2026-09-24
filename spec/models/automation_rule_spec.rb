@@ -520,9 +520,9 @@ RSpec.describe AutomationRule do
       params[:event_name] = 'appointment_created'
       params[:conditions] = [
         {
-          attribute_key: 'payment_status',
+          attribute_key: 'status',
           filter_operator: 'equal_to',
-          values: ['paid'],
+          values: ['scheduled'],
           query_operator: nil
         }
       ]
@@ -742,7 +742,7 @@ RSpec.describe AutomationRule do
       )
     end
 
-    it 'rejects appointment payment cancellation actions when scheduling finance is disabled' do
+    it 'rejects retired appointment payment cancellation actions' do
       account.enable_features!('scheduling')
       params[:event_name] = 'appointment_created'
       params[:conditions] = [
@@ -765,27 +765,22 @@ RSpec.describe AutomationRule do
       expect(rule.errors.messages[:actions]).to eq(['Automation actions cancel_appointment_payment not supported.'])
     end
 
-    it 'allows appointment payment cancellation actions when scheduling finance is enabled' do
+    it 'deactivates unchanged historical finance rules but requires a supported definition to reactivate' do
       account.enable_features!('scheduling')
-      account.enable_features!('scheduling_finance')
       params[:event_name] = 'appointment_created'
-      params[:conditions] = [
-        {
-          attribute_key: 'status',
-          filter_operator: 'equal_to',
-          values: ['scheduled'],
-          query_operator: nil
-        }
-      ]
-      params[:actions] = [
-        {
-          action_name: :cancel_appointment_payment,
-          action_params: []
-        }
-      ]
+      params[:conditions] = [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }]
+      params[:actions] = [{ action_name: 'change_appointment_status', action_params: ['confirmed'] }]
+      rule = FactoryBot.create(:automation_rule, params)
+      historical_conditions = [{ 'attribute_key' => 'payment_status', 'filter_operator' => 'equal_to',
+                                 'values' => ['paid'], 'query_operator' => nil }]
+      historical_actions = [{ 'action_name' => 'cancel_appointment_payment', 'action_params' => [] }]
+      rule.update_columns(conditions: historical_conditions, actions: historical_actions) # rubocop:disable Rails/SkipsModelValidations
 
-      rule = FactoryBot.build(:automation_rule, params)
-      expect(rule.valid?).to be true
+      expect(rule.reload.update(active: false)).to be(true)
+      expect(rule.reload).to have_attributes(active: false, conditions: historical_conditions, actions: historical_actions)
+      expect(rule.update(active: true)).to be(false)
+      expect(rule.errors[:conditions]).to include('Automation conditions payment_status not supported.')
+      expect(rule.errors[:actions]).to include('Automation actions cancel_appointment_payment not supported.')
     end
 
     it 'rejects unsupported appointment automation conditions' do

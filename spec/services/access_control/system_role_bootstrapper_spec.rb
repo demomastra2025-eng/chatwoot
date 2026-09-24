@@ -33,8 +33,7 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
       expected_lead_grants = AccessControl::SystemRoleCatalog::SCOPED_BOOTSTRAP_RESOURCES.flat_map do |resource|
         capabilities = AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(resource)
         allowed = capabilities.reject do |capability|
-          %w[configure override_schedule].include?(capability) ||
-            (resource == 'appointments' && capability == 'manage_finance')
+          %w[configure override_schedule].include?(capability)
         end
         allowed.map { |capability| [resource, capability, 'team'] }
       end
@@ -91,6 +90,23 @@ RSpec.describe AccessControl::SystemRoleBootstrapper do
       expect(second_result.created_grants).to eq(0)
       expect(existing_grant.reload.access_scope).to eq('all')
       expect(AccessRoleGrant.where(id: extra_grant.id)).not_to exist
+    end
+
+    it 'preserves historical finance grants while reconciling live system capabilities' do
+      role = described_class.call(account: account).roles_by_key.fetch('department_lead')
+      now = Time.current
+      # Seed historical records without reopening retired model validations.
+      AccessRoleGrant.insert_all!(%w[view_finance manage_finance].map do |capability| # rubocop:disable Rails/SkipsModelValidations
+        {
+          account_id: account.id, access_role_id: role.id, resource: 'appointments',
+          capability: capability, access_scope: 'team', created_at: now, updated_at: now
+        }
+      end)
+
+      2.times { described_class.call(account: account) }
+
+      expect(role.grants.where(resource: 'appointments', capability: %w[view_finance manage_finance])
+                 .pluck(:capability, :access_scope)).to contain_exactly(%w[view_finance team], %w[manage_finance team])
     end
   end
 end

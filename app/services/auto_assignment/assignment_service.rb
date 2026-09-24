@@ -174,9 +174,18 @@ class AutoAssignment::AssignmentService
     Current.executed_by = active_policy || inbox
 
     Conversation.transaction do
+      # Owner sync holds Contact while updating Conversations; claim in the same order.
+      contact = Contact.where(account_id: conversation.account_id, id: conversation.contact_id)
+                       .lock('FOR UPDATE SKIP LOCKED').first
+      next false unless contact
+
+      # Protect the new Team from deletion before claiming any Conversation.
+      lock_agent_team_before_claim!(agent, contact)
+      next false unless claim_contact_conversations(contact)
+
       locked_conversation = inbox.conversations
                                  .where(id: assignable_conversations_scope.select(:id))
-                                 .where(id: conversation.id, assignee_id: nil)
+                                 .where(id: conversation.id, contact_id: contact.id, assignee_id: nil)
                                  .lock('FOR UPDATE SKIP LOCKED')
                                  .first
       next false unless locked_conversation
@@ -186,6 +195,18 @@ class AutoAssignment::AssignmentService
     end
   ensure
     Current.executed_by = nil
+  end
+
+  def lock_agent_team_before_claim!(agent, contact)
+    team_ids = TeamMember.joins(:team).where(user_id: agent.id, teams: { account_id: contact.account_id }).pluck(:team_id)
+    Team.lock_routing_targets!(account_id: contact.account_id, team_ids: team_ids)
+  end
+
+  def claim_contact_conversations(contact)
+    # Owner sync fans out to all channels; claim them before a higher-id row.
+    # Keep SKIP LOCKED semantics when a competing transition holds one.
+    scope = Conversation.where(account_id: contact.account_id, contact_id: contact.id).order(:id)
+    scope.pluck(:id) == scope.lock('FOR UPDATE SKIP LOCKED').pluck(:id)
   end
 
   def dispatch_assignment_event(conversation, agent)

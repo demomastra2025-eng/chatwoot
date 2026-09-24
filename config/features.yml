@@ -242,8 +242,9 @@
   display_name: Scheduling
   enabled: true
 - name: scheduling_finance
-  display_name: Scheduling Finance
-  enabled: true
+  display_name: Retired Scheduling Finance (historical compatibility)
+  enabled: false
+  chatwoot_internal: true
 - name: crm_deals
   display_name: CRM Deals
   enabled: false

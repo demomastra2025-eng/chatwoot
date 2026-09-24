@@ -39,6 +39,6 @@ class Captain::Tools::Account::SearchSchedulingServicesService < Captain::Tools:
   private
 
   def service_payload(service)
-    Scheduling::PayloadBuilder.service(service, finance_resource_ids: [])
+    Scheduling::PayloadBuilder.service(service)
   end
 end

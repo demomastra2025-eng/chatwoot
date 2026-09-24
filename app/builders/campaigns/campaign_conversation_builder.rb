@@ -6,7 +6,7 @@ class Campaigns::CampaignConversationBuilder
     @campaign = @contact_inbox.inbox.campaigns.find_by!(display_id: campaign_display_id)
 
     ActiveRecord::Base.transaction do
-      @contact_inbox.lock!
+      lock_contact_inbox
 
       # We won't send campaigns if a conversation is already present
       raise 'Conversation already present' if @contact_inbox.reload.conversations.present?
@@ -28,6 +28,12 @@ class Campaigns::CampaignConversationBuilder
   end
 
   private
+
+  def lock_contact_inbox
+    # IdentityResolver may update Contact.owner while this CI is locked.
+    Contact.lock.find(@contact_inbox.contact_id)
+    @contact_inbox.lock!
+  end
 
   def message_params
     ActionController::Parameters.new({

@@ -80,7 +80,7 @@ RSpec.describe 'Captain tool schema metadata' do
     expect(search_tasks[:activity_type].description).to eq('Task type: task, call, meeting, message, or touch')
     expect(search_tasks[:priority].description).to eq('Task priority: low, medium, high, or urgent')
     expect(search_appointments[:status].description).to eq('Appointment status: scheduled, confirmed, completed, cancelled, or no_show')
-    expect(search_appointments[:payment_status].description).to eq('Payment status: awaiting_payment, prepaid, paid, or cancelled')
+    expect(search_appointments).not_to have_key(:payment_status)
     expect(update_contact[:phone_number].description).to include('E.164')
     expect(search_resources[:search_by].description).to eq('Search mode: name, specialty, or all')
   end

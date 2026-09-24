@@ -39,7 +39,7 @@ RSpec.describe AutomationRules::AppointmentConditionService do
       event_name: 'appointment_updated',
       conditions: [
         { attribute_key: 'status', filter_operator: 'equal_to', values: ['cancelled'], query_operator: 'OR' },
-        { attribute_key: 'payment_status', filter_operator: 'equal_to', values: ['awaiting_payment'], query_operator: nil }
+        { attribute_key: 'source', filter_operator: 'equal_to', values: ['manual'], query_operator: nil }
       ],
       actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
     )

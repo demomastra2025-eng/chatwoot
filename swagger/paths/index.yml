@@ -240,7 +240,7 @@ x-scheduling-error-schema: &scheduling_error_schema
         - DUPLICATE_EXTERNAL_REF
         - DUPLICATE_IDEMPOTENCY_KEY
         - APPOINTMENT_NOT_FOUND
-        - EXPENSE_NOT_FOUND
+        - HISTORICAL_DATA_RETAINED
         - NOT_FOUND
     details:
       type: object
@@ -266,9 +266,7 @@ x-scheduling-resource-schema: &scheduling_resource_schema
     schedule_update_supported: { type: boolean }
     availability_override_supported: { type: boolean }
     inherit_working_hours_from_account: { type: boolean }
-    compensation_type: { type: string, nullable: true }
-    compensation_value: { type: integer, nullable: true }
-    compensation_percent: { type: integer, nullable: true }
+
     active: { type: boolean }
     custom_attributes:
       type: object
@@ -294,9 +292,6 @@ x-scheduling-service-schema: &scheduling_service_schema
           id: { type: integer }
           resource_id: { type: integer }
           price: { type: integer }
-          compensation_type: { type: string, nullable: true }
-          compensation_value: { type: integer, nullable: true }
-          compensation_percent: { type: integer, nullable: true }
           active: { type: boolean }
 
 x-scheduling-contact-schema: &scheduling_contact_schema
@@ -335,28 +330,9 @@ x-scheduling-appointment-schema: &scheduling_appointment_schema
     client_identifier: { type: string, nullable: true }
     client_birth_date: { type: string, format: date, nullable: true }
     client_gender: { type: string, nullable: true }
-    payment_status: { type: string }
     service_amount: { type: integer }
-    prepaid_amount: { type: integer }
-    settlement_amount: { type: integer }
     external_ref: { type: string, nullable: true }
     idempotency_key: { type: string, nullable: true }
-    payments:
-      type: array
-      items:
-        type: object
-        properties:
-          id: { type: integer }
-          amount: { type: integer }
-          payment_method: { type: string }
-          payment_kind: { type: string }
-    expense:
-      type: object
-      nullable: true
-      properties:
-        id: { type: integer }
-        amount: { type: integer }
-        status: { type: string }
 
 x-scheduling-rule-schema: &scheduling_rule_schema
   type: object
@@ -422,26 +398,6 @@ x-scheduling-time-off-schema: &scheduling_time_off_schema
       type: object
       additionalProperties: true
 
-x-scheduling-payment-schema: &scheduling_payment_schema
-  type: object
-  properties:
-    id: { type: integer }
-    appointment_id: { type: integer }
-    recorded_by_id: { type: integer, nullable: true }
-    amount: { type: integer }
-    payment_method: { type: string }
-    payment_kind: { type: string }
-
-x-scheduling-expense-schema: &scheduling_expense_schema
-  type: object
-  properties:
-    id: { type: integer }
-    appointment_id: { type: integer }
-    resource_id: { type: integer, nullable: true }
-    amount: { type: integer }
-    status: { type: string }
-    paid_at: { type: string, format: date-time, nullable: true }
-    paid_by_id: { type: integer, nullable: true }
 
 # Accounts
 /api/v1/accounts/{account_id}:
@@ -532,12 +488,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                     appointments:
                       type: array
                       items: *scheduling_appointment_schema
-                    payments:
-                      type: array
-                      items: *scheduling_payment_schema
-                    expenses:
-                      type: array
-                      items: *scheduling_expense_schema
                     slots:
                       type: array
                       items:
@@ -605,9 +555,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               color: { type: string }
               slot_duration_min: { type: integer }
               inherit_working_hours_from_account: { type: boolean }
-              compensation_type: { type: string }
-              compensation_value: { type: integer }
-              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -685,9 +632,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               color: { type: string }
               slot_duration_min: { type: integer }
               inherit_working_hours_from_account: { type: boolean }
-              compensation_type: { type: string }
-              compensation_value: { type: integer }
-              compensation_percent: { type: integer }
               active: { type: boolean }
               user_id: { type: integer }
               custom_attributes:
@@ -1400,9 +1344,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                   properties:
                     resource_id: { type: integer }
                     price: { type: integer }
-                    compensation_type: { type: string }
-                    compensation_value: { type: integer }
-                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -1487,9 +1428,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
                   properties:
                     resource_id: { type: integer }
                     price: { type: integer }
-                    compensation_type: { type: string }
-                    compensation_value: { type: integer }
-                    compensation_percent: { type: integer }
                     active: { type: boolean }
               custom_attributes:
                 type: object
@@ -1561,9 +1499,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
         name: status
         schema: { type: string }
       - in: query
-        name: payment_status
-        schema: { type: string }
-      - in: query
         name: custom_attribute_filters
         description: Deep-object map of managed appointment custom field keys to selected filter values or advanced operator payloads.
         style: deepObject
@@ -1623,12 +1558,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               source: { type: string }
               external_ref: { type: string }
               idempotency_key: { type: string }
-              service_amount: { type: integer }
-              prepaid_amount: { type: integer }
-              prepaid_payment_method: { type: string }
-              settlement_amount: { type: integer }
-              settlement_payment_method: { type: string }
-              payment_status: { type: string }
               confirm_outside_working_hours:
                 type: boolean
                 description: Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings.
@@ -1745,12 +1674,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               client_comment: { type: string }
               source: { type: string }
               external_ref: { type: string }
-              service_amount: { type: integer }
-              prepaid_amount: { type: integer }
-              prepaid_payment_method: { type: string }
-              settlement_amount: { type: integer }
-              settlement_payment_method: { type: string }
-              payment_status: { type: string }
               confirm_outside_working_hours:
                 type: boolean
                 description: Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings.
@@ -1828,248 +1751,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
             schema: *scheduling_error_schema
       '404':
         description: Appointment not found
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/appointments/{appointment_id}/payments:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-    - in: path
-      name: appointment_id
-      required: true
-      schema: { type: integer }
-  post:
-    tags: [Scheduling]
-    operationId: create-scheduling-appointment-payment
-    summary: Record a payment on an appointment
-    security:
-      - userApiKey: []
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              amount: { type: integer }
-              payment_method: { type: string }
-    responses:
-      '200':
-        description: Appointment payment state updated
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload: *scheduling_appointment_schema
-      '403':
-        description: Scheduling finance is disabled
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-      '404':
-        description: Appointment not found
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-      '422':
-        description: Invalid payment mutation
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/appointments/{id}/payments:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-    - in: path
-      name: id
-      required: true
-      schema: { type: integer }
-  delete:
-    tags: [Scheduling]
-    operationId: cancel-scheduling-appointment-payments
-    summary: Cancel all appointment payments
-    security:
-      - userApiKey: []
-    responses:
-      '200':
-        description: Appointment payments cancelled
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload: *scheduling_appointment_schema
-      '403':
-        description: Scheduling finance is disabled
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-      '404':
-        description: Appointment not found
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-      '422':
-        description: Payment cancellation is not allowed
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/payments:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-  get:
-    tags: [Scheduling]
-    operationId: list-scheduling-payments
-    summary: List payment journal entries
-    description: Requires `scheduling_finance` and admin access.
-    security:
-      - userApiKey: []
-    parameters:
-      - in: query
-        name: payment_kinds
-        schema: { type: string }
-      - in: query
-        name: payment_methods
-        schema: { type: string }
-      - in: query
-        name: resource_ids
-        schema: { type: string }
-      - in: query
-        name: from
-        schema: { type: string, format: date-time }
-      - in: query
-        name: to
-        schema: { type: string, format: date-time }
-    responses:
-      '200':
-        description: Payment journal
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload:
-                  type: array
-                  items: *scheduling_payment_schema
-                meta: *scheduling_list_meta
-      '403':
-        description: Scheduling finance is disabled or caller is not an admin
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/expenses:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-  get:
-    tags: [Scheduling]
-    operationId: list-scheduling-expenses
-    summary: List resource expenses and payouts
-    description: Requires `scheduling_finance` and admin access.
-    security:
-      - userApiKey: []
-    parameters:
-      - in: query
-        name: status
-        schema: { type: string }
-      - in: query
-        name: resource_ids
-        schema: { type: string }
-      - in: query
-        name: from
-        schema: { type: string, format: date-time }
-      - in: query
-        name: to
-        schema: { type: string, format: date-time }
-    responses:
-      '200':
-        description: Expense journal
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload:
-                  type: array
-                  items: *scheduling_expense_schema
-                meta: *scheduling_list_meta
-      '403':
-        description: Scheduling finance is disabled or caller is not an admin
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/expenses/{id}/pay:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-    - in: path
-      name: id
-      required: true
-      schema: { type: integer }
-  post:
-    tags: [Scheduling]
-    operationId: pay-scheduling-expense
-    summary: Mark a single resource expense as paid
-    description: Requires `scheduling_finance` and admin access.
-    security:
-      - userApiKey: []
-    responses:
-      '200':
-        description: Expense marked paid
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload: *scheduling_expense_schema
-      '403':
-        description: Scheduling finance is disabled or caller is not an admin
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-      '404':
-        description: Expense not found
-        content:
-          application/json:
-            schema: *scheduling_error_schema
-
-/api/v1/accounts/{account_id}/scheduling/expenses/pay_all:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-  post:
-    tags: [Scheduling]
-    operationId: pay-all-scheduling-expenses
-    summary: Pay all filtered unpaid expenses
-    description: Requires `scheduling_finance` and admin access.
-    security:
-      - userApiKey: []
-    requestBody:
-      required: false
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              resource_ids: { type: string }
-              from: { type: string, format: date-time }
-              to: { type: string, format: date-time }
-    responses:
-      '200':
-        description: Paid expense list
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                payload:
-                  type: array
-                  items: *scheduling_expense_schema
-                meta: *scheduling_list_meta
-      '403':
-        description: Scheduling finance is disabled or caller is not an admin
         content:
           application/json:
             schema: *scheduling_error_schema

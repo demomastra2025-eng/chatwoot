@@ -205,7 +205,7 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
     expect(owner_row).to include('meeting_tasks_count' => 0)
   end
 
-  it 'returns manager effectiveness metrics from native CRM, telephony, scheduling, and payment data' do
+  it 'returns manager effectiveness metrics from native CRM, telephony, and scheduling data' do
     travel_to Time.zone.local(2026, 1, 15, 12, 0, 0) do
       pipeline = create(:crm_pipeline, account: account, name: 'Sales', code: 'sales', default: true)
       open_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open', position: 1)
@@ -234,10 +234,8 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
       create(:telephony_call_session, account: account, agent_binding: binding, direction: 'inbound',
                                       status: 'completed', started_at: 1.day.ago, duration_seconds: 80)
 
-      appointment = create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
-                                                    starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
-      create(:scheduling_payment, account: account, appointment: appointment, amount: 5_000, payment_method: 'cash')
-      create(:scheduling_payment, account: account, appointment: appointment, amount: 7_000, payment_method: 'card')
+      create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
+                                      starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
       create(:crm_task, account: account, assignee: owner, activity_type: 'meeting', due_at: 1.day.ago)
 
       get manager_effectiveness_path,
@@ -269,17 +267,12 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
         'appointments_count' => 1,
         'meeting_tasks_count' => 1,
         'meetings_count' => 1,
-        'payments_amount_minor' => 12_000,
-        'cash_amount_minor' => 5_000,
-        'non_cash_amount_minor' => 7_000,
-        'trade_in_amount_minor' => 0,
         'bad_rate' => 33.3,
         'lead_to_deal_conversion' => 33.3
       )
       expect(totals).to include(
         'leads_count' => 3,
         'meetings_count' => 1,
-        'payments_amount_minor' => 12_000,
         'lead_to_meeting_conversion' => 33.3
       )
       expect(response.parsed_body.dig('meta', 'call_duration_threshold_seconds')).to eq(25)

@@ -108,7 +108,6 @@
     "TOOLBAR": {
       "ALL_RESOURCES": "Все специалисты",
       "FILTERS": "Фильтры",
-      "PAYMENT_STATUS": "Статус оплаты",
       "RESET_FILTERS": "Сбросить фильтры",
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
@@ -138,7 +137,6 @@
       "ERROR": "Не удалось загрузить записи",
       "OPEN_CALENDAR": "Открыть календарь",
       "PANEL_TITLE": "Записи",
-      "PAYMENT": "Оплата",
       "RESOURCE": "Специалист",
       "SERVICE": "Услуга",
       "SIDEBAR_TITLE": "Записи",
@@ -213,12 +211,10 @@
       "CUSTOM_FIELDS_TITLE": "Пользовательские поля",
       "EDIT_TITLE": "Редактировать запись",
       "ENDS_AT": "Окончание",
-
       "INTAKE_FIELDS_DESCRIPTION": "Собирайте управляемые поля, которые должны заполняться прямо во время оформления записи.",
       "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
       "NOTES_TITLE": "Заметки",
-      "PREPAID_AMOUNT": "Предоплата",
       "RESOURCE": "Специалист",
       "SERVICE": "Услуга",
       "SERVICE_EMPTY": "Услуги не найдены",
@@ -239,7 +235,6 @@
         "MEDELEMENT_MIDDLE_NAME_REQUIRED": "Укажите отчество для записи MedElement",
         "MEDELEMENT_PHONE_REQUIRED": "Укажите номер Казахстана в формате +7XXXXXXXXXX",
         "MEDELEMENT_SERVICE_REQUIRED": "Выберите услугу из каталога MedElement",
-        "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Предоплата не может превышать стоимость услуги",
         "RESOURCE_REQUIRED": "Выберите специалиста",
         "START_REQUIRED": "Укажите время начала"
       }
@@ -250,12 +245,6 @@
       "completed": "Завершено",
       "cancelled": "Отменено",
       "no_show": "Не пришёл"
-    },
-    "PAYMENT_STATUS": {
-      "awaiting_payment": "Ожидает оплаты",
-      "prepaid": "Предоплата",
-      "paid": "Оплачено",
-      "cancelled": "Отменено"
     },
     "APPOINTMENT_TYPE": {
       "primary": "Первичный",
@@ -295,7 +284,6 @@
       "BREAK_TITLE": "Название перерыва",
       "COLOR": "Цвет",
       "COLOR_UNAVAILABLE": "Недоступен",
-      "COMPENSATION": "Компенсация",
       "DESCRIPTION": "Создавайте специалистов и настраивайте их поведение в календаре.",
       "DESCRIPTION_HELP": "Добавьте описание, которое поможет операторам быстрее ориентироваться.",
       "EDIT": "Редактировать специалиста",
@@ -393,23 +381,13 @@
         "OTHER": "Другое"
       }
     },
-    "COMPENSATION": {
-      "percent": "Процент",
-      "fixed": "Фиксировано",
-      "fixed_plus_percent": "Фикс + процент",
-      "fixed_value": "Фикс",
-      "percent_value": "Процент"
-    },
     "ERRORS": {
-      "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Заполните обязательные поля перед переводом записи в статус «Оплачено»: {fields}.",
       "GENERIC": "Что-то пошло не так. Попробуйте еще раз.",
       "APPOINTMENT_NOT_FOUND": "Запись не найдена.",
       "APPOINTMENT_DELETE_REQUIRES_CANCELLED": "Сначала переведите запись в статус «Отменено», затем удаляйте её.",
       "BLOCKED_BY_BREAK": "Это время пересекается с перерывом.",
       "BLOCKED_BY_HOLIDAY": "Эта дата заблокирована праздником.",
       "BLOCKED_BY_VACATION": "Это время пересекается с блокировкой.",
-      "CANCELLED_PAYMENTS_LOCKED": "Отмененные оплаты больше нельзя изменять.",
-      "CANNOT_CANCEL_PAID_EXPENSE": "Нельзя отменить оплаты после того, как расход специалиста уже оплачен.",
       "CLIENT_NAME_REQUIRED": "Укажите имя клиента.",
       "DUPLICATE_EXTERNAL_REF": "Такой внешний идентификатор уже используется в аккаунте.",
       "DUPLICATE_IDEMPOTENCY_KEY": "Этот запрос уже был обработан.",
@@ -418,29 +396,22 @@
       "MEDELEMENT_SERVICE_UNMAPPED": "Выбранная услуга не связана с MedElement.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "Только запланированную или подтверждённую запись можно создать в MedElement.",
       "END_BEFORE_START": "Время окончания должно быть позже времени начала.",
-      "EXPENSE_NOT_FOUND": "Расход не найден.",
       "FEATURE_DISABLED": "Модуль записи отключен для этого аккаунта.",
       "FIELD_INVALID_DATE": "Укажите корректную дату для поля «{field}».",
       "FIELD_INVALID_DATETIME": "Укажите корректные дату и время для поля «{field}».",
       "FIELD_INVALID_INTEGER": "Поле «{field}» должно быть целым числом.",
       "FIELD_REQUIRED": "Поле «{field}» обязательно.",
-      "FINANCE_DISABLED": "Финансы модуля записи отключены для этого аккаунта.",
       "INVALID_IIN": "Укажите корректный ИИН.",
       "NO_WORKING_RULES": "На этот день не настроены рабочие часы.",
       "OUTSIDE_WORKING_HOURS": "Нерабочее время",
-      "PAYMENT_AMOUNT_EXCEEDS_BALANCE": "Сумма оплаты превышает остаток к оплате.",
-      "PAYMENT_AMOUNT_REQUIRED": "Сумма оплаты должна быть больше 0.",
       "RESOURCE_HAS_APPOINTMENTS": "У этого специалиста есть активные записи. Сначала отмените или удалите их.",
       "RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING": "Этот специалист недоступен для новых записей.",
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Выберите специалиста для цены по специалисту.",
       "SCHEDULE_VERSION_CONFLICT": "Расписание уже изменил другой пользователь. Обновите его перед сохранением своих изменений.",
-      "SERVICE_AMOUNT_REQUIRED": "Укажите стоимость услуги больше 0.",
       "SERVICE_NOT_AVAILABLE_FOR_RESOURCE": "Эта услуга недоступна для выбранного специалиста.",
-      "SETTLEMENT_BELOW_RECORDED_PAYMENTS": "Сумма окончательного расчета не может быть меньше уже записанных оплат.",
-      "SET_SERVICE_AMOUNT_FIRST": "Сначала укажите стоимость услуги, затем добавляйте оплату.",
       "SINGLE_DAY_REQUIRED": "Запись должна укладываться в один локальный день.",
       "SLOT_CONFLICT": "Этот слот уже занят.",
-      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Общая сумма полученных оплат не может превышать стоимость услуги."
+      "HISTORICAL_DATA_RETAINED": "Запись с сохранёнными историческими финансовыми данными нельзя удалить"
     },
     "WEEKDAYS": {
       "0": "Воскресенье",

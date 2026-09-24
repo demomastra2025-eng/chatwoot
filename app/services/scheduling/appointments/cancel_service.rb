@@ -8,13 +8,13 @@ class Scheduling::Appointments::CancelService
   end
 
   def perform
-    return normalize_cancelled_payment! if appointment.status == 'cancelled'
+    return appointment if appointment.status == 'cancelled'
     return cancel_provider_owned_appointment! if provider_owned?
 
     Scheduling::Appointments::UpsertService.new(
       account: appointment.account,
       appointment: appointment,
-      params: { status: 'cancelled', payment_status: 'cancelled' },
+      params: { status: 'cancelled' },
       actor: actor
     ).perform
   end
@@ -27,12 +27,6 @@ class Scheduling::Appointments::CancelService
     appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
   end
 
-  def normalize_cancelled_payment!
-    return appointment if appointment.payment_status == 'cancelled'
-
-    appointment.update!(payment_status: 'cancelled')
-    appointment
-  end
 
   def cancel_provider_owned_appointment!
     command = Integrations::Medelement::OutboundChangeService.new(
@@ -57,10 +51,7 @@ class Scheduling::Appointments::CancelService
   end
 
   def provider_changed_attributes
-    {
-      'status' => [appointment.status, 'cancelled'],
-      'payment_status' => [appointment.payment_status, 'cancelled']
-    }
+    { 'status' => [appointment.status, 'cancelled'] }
   end
 
   def provider_desired_attributes

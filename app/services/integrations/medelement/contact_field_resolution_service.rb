@@ -32,7 +32,9 @@ class Integrations::Medelement::ContactFieldResolutionService
     )
     user = command.account.users.find(metadata.fetch('user_id'))
     service = new(conflict: conflict, user: user)
-    service.send(:apply_provider_command_result!, command, metadata)
+    service.send(:with_phone_identity_lock, metadata.fetch('directions')) do
+      service.send(:apply_provider_command_result!, command, metadata)
+    end
   end
 
   def self.record_provider_command_conflict!(command, error)
@@ -55,7 +57,7 @@ class Integrations::Medelement::ContactFieldResolutionService
     validate_request!(directions)
     outbound_fields = fields_for(directions, 'onelink_to_medelement')
 
-    return perform_local_resolution!(directions) if outbound_fields.empty?
+    return with_phone_identity_lock(directions) { perform_local_resolution!(directions) } if outbound_fields.empty?
 
     perform_provider_resolution!(directions)
   rescue FieldAlreadyUsedError => e
@@ -66,6 +68,17 @@ class Integrations::Medelement::ContactFieldResolutionService
   private
 
   attr_reader :conflict, :user, :client
+
+  def with_phone_identity_lock(directions)
+    return yield unless directions['phone'] == 'medelement_to_onelink'
+
+    ActiveRecord::Base.transaction do
+      # Manual conflict merging takes account advisory before the conflict row;
+      # field resolution must not invert that order when writing a Contact phone.
+      Contacts::PhoneIdentityLock.acquire!(account_id: conflict.account_id)
+      yield
+    end
+  end
 
   # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def perform_local_resolution!(directions)

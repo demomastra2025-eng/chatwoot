@@ -26,6 +26,24 @@ RSpec.describe AccessControl::EnforcementReadiness do
       expect(result.system_role_mismatches).to be_empty
     end
 
+    it 'does not treat preserved retired finance grants as active preset mismatches' do
+      account = create(:account)
+      role = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key.fetch('administrator')
+      create(:account_user, account: account, role: :administrator)
+      now = Time.current
+      historical_grant = {
+        account_id: account.id, access_role_id: role.id, resource: 'appointments',
+        capability: 'view_finance', access_scope: 'all', created_at: now, updated_at: now
+      }
+      AccessRoleGrant.insert_all!([historical_grant]) # rubocop:disable Rails/SkipsModelValidations
+
+      result = described_class.call(account: account)
+
+      expect(result).to be_ready
+      expect(result.system_role_mismatches).to be_empty
+      expect(role.grants.where(resource: 'appointments', capability: 'view_finance')).to exist
+    end
+
     it 'accepts an assigned legacy Automation manager' do
       account = create(:account)
       custom_role = create(:custom_role, account: account, permissions: %w[automation_manage])

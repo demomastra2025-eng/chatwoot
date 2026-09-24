@@ -691,29 +691,7 @@
       ],
       "note": "False positive: assistant_id/page/id are query controls only; document collections and records are loaded from Current.account with visibility restrictions and are not mass-assigned from this hash."
     },
-    {
-      "warning_type": "SQL Injection",
-      "warning_code": 0,
-      "fingerprint": "522214dc9fc04d45a0083bb6b6a53bf4fa5f4646ed8c4bcd0a9036cf8e3adf53",
-      "check_name": "SQL",
-      "message": "Possible SQL injection",
-      "file": "app/services/crm/reports/manager_effectiveness_service.rb",
-      "line": 241,
-      "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
-      "code": "Scheduling::Payment.joins(:appointment).where(:account_id => account.id, :created_at => ((since_time..until_time))).where(:scheduling_appointments => ({ :account_id => account.id })).where(\"#{payment_owner_sql} IN (?)\", visible_owner_ids)",
-      "render_path": null,
-      "location": {
-        "type": "method",
-        "class": "Crm::Reports::ManagerEffectivenessService",
-        "method": "payment_scope"
-      },
-      "user_input": "payment_owner_sql",
-      "confidence": "Medium",
-      "cwe_id": [
-        89
-      ],
-      "note": "False positive: `payment_owner_sql` is the fixed Arel literal `COALESCE(scheduling_appointments.owner_id, scheduling_payments.recorded_by_id)`; owner ids use the bound `IN (?)` parameter and both tables are account scoped."
-    },
+
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,

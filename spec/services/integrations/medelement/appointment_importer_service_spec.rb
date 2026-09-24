@@ -630,7 +630,7 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.custom_attributes['medelement_patient_unresolved']).to be(true)
   end
 
-  it 'preserves local amounts and payments while recording provider conflicts' do
+  it 'preserves historical local amounts and payments while recording provider conflicts' do
     contact = create(:contact, account: account)
     existing_service = create(:scheduling_service, account: account)
     create(

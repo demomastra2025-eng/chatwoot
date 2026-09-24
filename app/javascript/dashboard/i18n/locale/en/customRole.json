@@ -43,8 +43,6 @@
         "CONFIGURE": "Configure",
         "EXPORT": "Export",
         "VIEW_REPORTS": "View reports",
-        "VIEW_FINANCE": "View finance",
-        "MANAGE_FINANCE": "Manage finance",
         "OVERRIDE_SCHEDULE": "Override schedule conflicts",
         "MANAGE": "Manage"
       },

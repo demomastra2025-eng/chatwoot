@@ -143,7 +143,7 @@
         "INVALID_RECEPTION": "Запись не удалось импортировать",
         "PATIENT_UNRESOLVED": "Пациент не связан с контактом",
         "APPOINTMENT_AMOUNT_MISMATCH": "Сумма записи расходится с MedElement",
-        "LOCAL_PAYMENT_PRESERVED": "Локальный платёж сохранён"
+        "LOCAL_PAYMENT_PRESERVED": "Историческая сумма записи сохранена"
       },
       "IMPORT": {
         "TITLE": "Импорт каталога",
@@ -181,7 +181,7 @@
         "RECEPTION_CODE": "Код записи",
         "DATE_TIME": "Дата и время",
         "STATUS_LABEL": "Статус записи",
-        "PAYMENT_STATUS": "Статус оплаты",
+
         "LOCAL_AMOUNT": "Сумма в One Link",
         "PROVIDER_AMOUNT": "Сумма в MedElement",
         "OPEN_EDIT": "Открыть и изменить",

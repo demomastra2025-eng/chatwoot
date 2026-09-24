@@ -57,7 +57,6 @@ RSpec.describe Scheduling::AppointmentPolicy, type: :policy do
     expect(policy.update?).to be(false)
     expect(policy.assign?).to be(false)
     expect(policy.transition?).to be(false)
-    expect(policy.manage_finance?).to be(false)
   end
 
   it 'intersects view and view_reports scopes for reporting' do

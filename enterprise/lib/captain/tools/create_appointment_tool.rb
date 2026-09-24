@@ -35,8 +35,7 @@ class Captain::Tools::CreateAppointmentTool < Captain::Tools::BasePublicTool
     JSON.pretty_generate(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(
         action: 'create_appointment',
-        appointment: appointment,
-        include_finance: false
+        appointment: appointment
       )
     )
   rescue StandardError => e

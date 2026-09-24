@@ -16,12 +16,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     inputType: 'multi_select',
     filterOperators: OPERATOR_TYPES_1,
   },
-  {
-    key: 'payment_status',
-    name: 'PAYMENT_STATUS',
-    inputType: 'multi_select',
-    filterOperators: OPERATOR_TYPES_1,
-  },
+
   {
     key: 'appointment_type',
     name: 'APPOINTMENT_TYPE',
@@ -59,10 +54,7 @@ const APPOINTMENT_AUTOMATION_ACTIONS = [
     key: 'change_appointment_status',
     name: 'CHANGE_APPOINTMENT_STATUS',
   },
-  {
-    key: 'cancel_appointment_payment',
-    name: 'CANCEL_APPOINTMENT_PAYMENT',
-  },
+
   {
     key: 'send_webhook_event',
     name: 'SEND_WEBHOOK_EVENT',
@@ -856,11 +848,7 @@ export const AUTOMATION_ACTION_TYPES = [
     label: 'UNARCHIVE_TASK',
     inputType: null,
   },
-  {
-    key: 'cancel_appointment_payment',
-    label: 'CANCEL_APPOINTMENT_PAYMENT',
-    inputType: null,
-  },
+
   {
     key: 'send_webhook_event',
     label: 'SEND_WEBHOOK_EVENT',

@@ -186,7 +186,7 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
       status_reason,
       fallback_reason: reason
     )
-    conversation.with_lock do
+    ::Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       conversation.bot_handoff!(
         status_reason: resolved_status_reason,
         actor: actor || assistant,

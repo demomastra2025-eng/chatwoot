@@ -18,10 +18,7 @@ class AutomationRules::AppointmentFieldCatalog
       field_type: 'select',
       operators: %w[equal_to not_equal_to]
     },
-    'payment_status' => {
-      field_type: 'select',
-      operators: %w[equal_to not_equal_to]
-    },
+
     'appointment_type' => {
       field_type: 'select',
       operators: %w[equal_to not_equal_to]

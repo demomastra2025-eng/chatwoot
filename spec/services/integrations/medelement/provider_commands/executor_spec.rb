@@ -1126,7 +1126,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
       expect(command.reload).to be_succeeded
       expect(command.request_snapshot).not_to have_key('patient_phone_numbers')
-      expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(appointment.reload).to have_attributes(status: 'cancelled')
       expect(client).not_to have_received(:remove_reception)
     end
   end
@@ -1196,7 +1196,6 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).to have_received(:get_reception).with(reception_code: 'reception-1', version: :v1).once
       expect(appointment.reload).to have_attributes(
         status: 'cancelled',
-        payment_status: 'cancelled',
         service_id: local_service.id
       )
       expect(appointment.custom_attributes).to include(

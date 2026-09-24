@@ -115,12 +115,9 @@ class Integrations::Medelement::ConflictEntityPresenter
       id: appointment.id,
       client_name: appointment.client_name,
       status: appointment.status,
-      payment_status: appointment.payment_status,
       service_name: appointment.service_name_snapshot.presence || appointment.service&.name,
       resource_name: appointment.resource&.name,
-      service_amount: appointment.service_amount,
-      prepaid_amount: appointment.prepaid_amount,
-      settlement_amount: appointment.settlement_amount
+      service_amount: appointment.service_amount
     }
   end
 

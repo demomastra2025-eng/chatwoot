@@ -38,7 +38,6 @@ RSpec.describe Captain::Tools::Account::UpdateAppointmentService do
 
   describe '#execute' do
     it 'recomputes ends_at from duration and returns a structured payload' do
-      allow(service).to receive(:appointment_finance_visible?).and_return(false)
       payload = JSON.parse(
         execute_confirmed(
           resource_id: new_resource.id,
@@ -66,7 +65,7 @@ RSpec.describe Captain::Tools::Account::UpdateAppointmentService do
         'service_id' => follow_up.id,
         'duration_min' => 20
       )
-      expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+      expect(payload['appointment']).not_to include('payment_status', 'prepaid_amount', 'settlement_amount', 'payments', 'expense')
       expect(appointment).to have_attributes(
         resource_id: new_resource.id,
         service_id: follow_up.id,

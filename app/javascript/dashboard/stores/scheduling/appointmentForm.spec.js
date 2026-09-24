@@ -221,7 +221,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.form.serviceAmount).toBe(26000);
   });
 
-  it('hydrates prepaid fields when editing an appointment', () => {
+  it('does not expose retained historical payment fields when editing an appointment', () => {
     const store = useSchedulingAppointmentFormStore();
 
     store.openEdit({
@@ -235,8 +235,8 @@ describe('useSchedulingAppointmentFormStore', () => {
       startsAt: '2026-03-09T10:00:00.000Z',
     });
 
-    expect(store.form.prepaidAmount).toBe(5000);
-    expect(store.form.prepaidPaymentMethod).toBe('bank_transfer');
+    expect(store.form).not.toHaveProperty('prepaidAmount');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
   });
 
   it('persists the selected Medelement cabinet in appointment custom attributes', () => {
@@ -883,17 +883,13 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.selectedAppointment.conversationId).toBe(12002);
   });
 
-  it('defaults prepaid payment method to cash when prepaid amount is positive', () => {
+  it('ignores retired finance values supplied in create defaults', () => {
     const store = useSchedulingAppointmentFormStore();
 
-    store.openCreate();
-    store.updateField('prepaidAmount', 4000);
+    store.openCreate({ prepaidAmount: 4000, prepaidPaymentMethod: 'cash' });
 
-    expect(store.form.prepaidPaymentMethod).toBe('cash');
-    expect(store.buildPayload()).toMatchObject({
-      prepaid_amount: 4000,
-      prepaid_payment_method: 'cash',
-    });
+    expect(store.form).not.toHaveProperty('prepaidAmount');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
   });
 
   it('sends a manual service name snapshot when creating without configured services', () => {
@@ -906,11 +902,11 @@ describe('useSchedulingAppointmentFormStore', () => {
 
     expect(store.buildPayload()).toMatchObject({
       resource_id: 3,
-      service_amount: 12000,
       service_ids: [],
       service_name_snapshot: 'Осмотр',
     });
     expect(store.buildPayload()).not.toHaveProperty('service_id');
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
   });
 
   it('sends an empty service list when an edited appointment switches to a manual service name', () => {
@@ -929,14 +925,14 @@ describe('useSchedulingAppointmentFormStore', () => {
     store.updateField('serviceAmount', 22000);
 
     expect(store.buildPayload()).toMatchObject({
-      service_amount: 22000,
       service_ids: [],
       service_name_snapshot: 'Консультация',
     });
     expect(store.buildPayload()).not.toHaveProperty('service_id');
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
   });
 
-  it('clears prepaid payment method when prepaid amount is zeroed out', () => {
+  it('never re-serializes historical prepayment values on edit', () => {
     const store = useSchedulingAppointmentFormStore();
 
     store.openEdit({
@@ -950,12 +946,8 @@ describe('useSchedulingAppointmentFormStore', () => {
       startsAt: '2026-03-09T10:00:00.000Z',
     });
 
-    store.updateField('prepaidAmount', 0);
-
-    expect(store.form.prepaidPaymentMethod).toBe('');
-    expect(store.buildPayload()).toMatchObject({
-      prepaid_amount: 0,
-    });
+    expect(store.form).not.toHaveProperty('prepaidPaymentMethod');
+    expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
     expect(store.buildPayload()).not.toHaveProperty('prepaid_payment_method');
   });
 
@@ -987,7 +979,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
   });
 
-  it('includes transition and finance fields only when their visible values change', () => {
+  it('includes status transitions without serializing a manually changed display amount', () => {
     const store = useSchedulingAppointmentFormStore();
 
     store.openEdit({
@@ -1002,10 +994,8 @@ describe('useSchedulingAppointmentFormStore', () => {
     store.updateField('serviceAmount', 22000);
     store.updateField('status', 'confirmed');
 
-    expect(store.buildPayload()).toMatchObject({
-      service_amount: 22000,
-      status: 'confirmed',
-    });
+    expect(store.buildPayload()).toMatchObject({ status: 'confirmed' });
+    expect(store.buildPayload()).not.toHaveProperty('service_amount');
     expect(store.buildPayload()).not.toHaveProperty('prepaid_amount');
   });
 

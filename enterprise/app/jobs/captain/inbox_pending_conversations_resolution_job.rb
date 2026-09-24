@@ -30,7 +30,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Current.executed_by = inbox.captain_assistant
 
     resolvable_pending_conversations(inbox).each do |conversation|
-      conversation.with_lock do
+      Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
         transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
         create_private_note(conversation, inbox, "Auto-resolved: #{TIME_BASED_COMPLETION_EXPLANATION}")
         create_resolution_message(conversation, inbox)
@@ -99,7 +99,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   def resolve_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
     raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
 
-    conversation.with_lock do
+    Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       transition_agent_outcome(conversation, inbox.captain_assistant, :completion, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
       create_resolution_message(conversation, inbox, generated_message: generated_message)
@@ -112,7 +112,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
 
     raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
 
-    conversation.with_lock do
+    Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       transition_agent_outcome(conversation, inbox.captain_assistant, :handoff, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
       create_handoff_message(conversation, inbox, generated_message: generated_message)

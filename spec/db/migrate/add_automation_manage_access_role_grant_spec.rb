@@ -59,12 +59,11 @@ RSpec.describe AddAutomationManageAccessRoleGrant do
   end
 
   it 'restores every previous grant constraint on rollback without removing existing grants' do
-    existing_grant = role.grants.create!(
-      account: account,
-      resource: 'appointments',
-      capability: 'manage_finance',
-      access_scope: 'team'
-    )
+    AccessRoleGrant.insert_all!([timestamps.merge( # rubocop:disable Rails/SkipsModelValidations
+      account_id: account.id, access_role_id: role.id,
+      resource: 'appointments', capability: 'manage_finance', access_scope: 'team'
+    )])
+    existing_grant = role.grants.find_by!(resource: 'appointments', capability: 'manage_finance')
     role.grants.create!(account: account, resource: 'automation_rules', capability: 'manage', access_scope: 'all')
 
     migration.down

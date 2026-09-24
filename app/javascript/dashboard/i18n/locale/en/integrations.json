@@ -1233,30 +1233,12 @@
               "CLIENT_COMMENT": { "TITLE": "Client Comment" },
               "SOURCE": { "TITLE": "Source" },
               "EXTERNAL_REF": { "TITLE": "External Reference" },
-              "PAYMENT_STATUS": { "TITLE": "Payment Status" },
               "SERVICE_NAME_SNAPSHOT": { "TITLE": "Service Name" },
               "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Service Type" },
               "SERVICE_DURATION_MIN_SNAPSHOT": {
                 "TITLE": "Service Duration (minutes)"
               },
-              "SERVICE_AMOUNT": { "TITLE": "Service Amount" },
-              "COMPENSATION_TYPE_SNAPSHOT": {
-                "TITLE": "Compensation Type"
-              },
-              "COMPENSATION_VALUE_SNAPSHOT": {
-                "TITLE": "Compensation Value"
-              },
-              "COMPENSATION_PERCENT_SNAPSHOT": {
-                "TITLE": "Compensation Percent"
-              },
-              "PREPAID_AMOUNT": { "TITLE": "Prepaid Amount" },
-              "PREPAID_PAYMENT_METHOD": {
-                "TITLE": "Prepaid Payment Method"
-              },
-              "SETTLEMENT_AMOUNT": { "TITLE": "Settlement Amount" },
-              "SETTLEMENT_PAYMENT_METHOD": {
-                "TITLE": "Settlement Payment Method"
-              }
+              "SERVICE_AMOUNT": { "TITLE": "Service Amount" }
             }
           }
         },
@@ -1593,10 +1575,6 @@
             "merge_contacts": {
               "TITLE": "Merge contacts",
               "DESCRIPTION": "Merge one contact into another contact."
-            },
-            "add_appointment_payment": {
-              "TITLE": "Add appointment payment",
-              "DESCRIPTION": "Add a payment to the appointment linked to the current conversation."
             },
             "execute_macro": {
               "TITLE": "Execute macro",

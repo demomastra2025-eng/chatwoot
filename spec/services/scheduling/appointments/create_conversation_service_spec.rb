@@ -89,7 +89,12 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
 
   it 'dispatches the appointment update event when linking a conversation' do
     dispatcher = Rails.configuration.dispatcher
-    allow(dispatcher).to receive(:dispatch)
+    appointment
+    other_appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
+    updates = []
+    allow(dispatcher).to receive(:dispatch) do |event_name, _, data|
+      updates << data if event_name == 'appointment.updated' && data[:appointment].id == appointment.id
+    end
 
     described_class.new(
       account: account,
@@ -99,14 +104,24 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
       actor: actor
     ).perform
 
-    expect(dispatcher).to have_received(:dispatch).with(
-      'appointment.updated',
-      anything,
+    expect(updates).to contain_exactly(
       hash_including(
         appointment: appointment,
-        changed_attributes: hash_including('conversation_id' => [nil, appointment.reload.conversation_id])
+        changed_attributes: hash_including(
+          'conversation_id' => [nil, appointment.reload.conversation_id],
+          'owner_id' => [nil, actor.id]
+        )
       )
     )
+    expect(appointment.owner_id).to eq(actor.id)
+    expect(other_appointment.reload.owner_id).to eq(actor.id)
+    expect(contact.reload.owner_id).to eq(actor.id)
+    expect(Current.scheduling_conversation_link_appointment).to be_nil
+    durable_updates = AutomationEvent.where(
+      subject_type: 'Scheduling::Appointment', subject_id: appointment.id, event_name: 'appointment_updated'
+    )
+    expect(durable_updates.count).to eq(1)
+    expect(durable_updates.first.changes_snapshot).to include('conversation_id' => [nil, appointment.conversation_id])
   end
 
   it 'does not overwrite a contact changed before the appointment lock is acquired' do
@@ -146,6 +161,7 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
   end
 
   it 'rolls the conversation back when appointment linking fails' do
+    other_appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
     allow(appointment).to receive(:update!).and_raise(ActiveRecord::ActiveRecordError, 'link failed')
 
     expect do
@@ -157,6 +173,13 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
         actor: actor
       ).perform
     end.to raise_error(ActiveRecord::ActiveRecordError, 'link failed')
-    expect(Conversation.count).to eq(0)
+    expect(Conversation.where(account: account).count).to eq(0)
+    expect(contact.reload.owner_id).to be_nil
+    expect(other_appointment.reload.owner_id).to be_nil
+    expect(Current.scheduling_conversation_link_appointment).to be_nil
+
+    contact.update!(owner_id: actor.id)
+    expect(appointment.reload.owner_id).to eq(actor.id)
+    expect(other_appointment.reload.owner_id).to eq(actor.id)
   end
 end

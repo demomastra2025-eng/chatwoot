@@ -114,7 +114,7 @@ class AccessControl::LegacyCustomRoleMapper
           grant.update!(access_scope: definition[:access_scope])
           changed = true
         end
-      else
+      elsif !grant.retired?
         grant.destroy!
         changed = true
       end

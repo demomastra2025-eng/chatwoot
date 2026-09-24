@@ -130,18 +130,10 @@ RSpec.describe Reminder do
         client_comment: 'Prefers morning',
         source: 'manual',
         external_ref: 'APPT-1',
-        payment_status: 'paid',
         service_name_snapshot: 'Consultation',
         service_type_snapshot: 'consultation',
         service_duration_min_snapshot: 45,
         service_amount: 20_000,
-        compensation_type_snapshot: 'fixed',
-        compensation_value_snapshot: 5_000,
-        compensation_percent_snapshot: 0,
-        prepaid_amount: 10_000,
-        prepaid_payment_method: 'card',
-        settlement_amount: 10_000,
-        settlement_payment_method: 'cash',
         custom_attributes: { 'visit_room' => 'B12' }
       )
 
@@ -228,18 +220,11 @@ RSpec.describe Reminder do
         'appointment.client_comment' => appointment.client_comment,
         'appointment.source' => appointment.source,
         'appointment.external_ref' => appointment.external_ref,
-        'appointment.payment_status' => appointment.payment_status,
         'appointment.service_name_snapshot' => appointment.service_name_snapshot,
         'appointment.service_type_snapshot' => appointment.service_type_snapshot,
         'appointment.service_duration_min_snapshot' => appointment.service_duration_min_snapshot,
         'appointment.service_amount' => appointment.service_amount,
-        'appointment.compensation_type_snapshot' => appointment.compensation_type_snapshot,
-        'appointment.compensation_value_snapshot' => appointment.compensation_value_snapshot,
-        'appointment.compensation_percent_snapshot' => appointment.compensation_percent_snapshot,
-        'appointment.prepaid_amount' => appointment.prepaid_amount,
-        'appointment.prepaid_payment_method' => appointment.prepaid_payment_method,
-        'appointment.settlement_amount' => appointment.settlement_amount,
-        'appointment.settlement_payment_method' => appointment.settlement_payment_method,
+
         'appointment.custom_attributes.visit_room' => 'B12'
       }
       body = field_values.keys.map { |field_id| "#{field_id}: [#{field_id}](field://#{field_id})" }.join("\n")

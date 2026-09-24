@@ -89,12 +89,12 @@ RSpec.describe Scheduling::Appointments::CancelService do
     )
   end
 
-  it 'normalizes payment state for an appointment that is already cancelled' do
+  it 'leaves the retained historical fields untouched for an already cancelled appointment' do
     appointment.update!(status: 'cancelled', payment_status: 'awaiting_payment')
 
     result = described_class.new(appointment: appointment, actor: actor).perform
 
-    expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+    expect(result).to have_attributes(status: 'cancelled', payment_status: 'awaiting_payment')
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
   end
 
@@ -112,6 +112,6 @@ RSpec.describe Scheduling::Appointments::CancelService do
 
     result = described_class.new(appointment: local_appointment, actor: actor).perform
 
-    expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+    expect(result).to have_attributes(status: 'cancelled', payment_status: 'awaiting_payment')
   end
 end

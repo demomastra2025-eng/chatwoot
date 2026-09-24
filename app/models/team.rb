@@ -32,6 +32,13 @@ class Team < ApplicationRecord
             presence: { message: I18n.t('errors.validations.presence') },
             uniqueness: { scope: :account_id }
 
+  def self.lock_routing_targets!(account_id:, team_ids:)
+    ids = Array(team_ids).compact.uniq
+    where(account_id: account_id, id: ids).order(:id).lock('FOR KEY SHARE').load if ids.present?
+  end
+
+  before_destroy :record_communication_thread_nullifications, prepend: true
+
   before_validation do
     self.name = name.downcase if attribute_present?('name')
   end
@@ -69,6 +76,37 @@ class Team < ApplicationRecord
       id: id,
       name: name
     }
+  end
+
+  private
+
+  def record_communication_thread_nullifications
+    return if account_teardown?
+
+    # Fence new team memberships before scanning Conversations. An in-flight
+    # join holds a FK key-share lock until it commits, so this waits for it;
+    # later joins cannot reach the Thread resolver before deletion completes.
+    self.class.where(id: id).lock('FOR UPDATE').pick(:id)
+    # Status callbacks hold Conversation before Thread. Lock the complete
+    # membership that dependent: :nullify will update before writing facts.
+    conversations.select(:id).order(:id).lock.load
+    source_event_id = SecureRandom.uuid
+    occurred_at = Time.current
+    communication_threads.find_each do |thread|
+      CommunicationThreads::StateTransitionWriter.new(
+        thread: thread,
+        attributes: { team_id: nil },
+        actor: Current.executed_by || Current.user,
+        source: 'team_deleted',
+        source_record: self,
+        source_event_id: source_event_id,
+        occurred_at: occurred_at
+      ).perform
+    end
+  end
+
+  def account_teardown?
+    self.class.connection.select_value("SELECT current_setting('onelink.account_teardown_id', true)") == account_id.to_s
   end
 end
 

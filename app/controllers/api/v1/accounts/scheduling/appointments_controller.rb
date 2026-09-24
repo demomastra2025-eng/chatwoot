@@ -26,12 +26,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     external_ref
     idempotency_key
     service_name_snapshot
-    service_amount
-    prepaid_amount
-    prepaid_payment_method
-    settlement_amount
-    settlement_payment_method
-    payment_status
+
     confirm_outside_working_hours
     confirm_slot_conflict
     confirm_break_conflict
@@ -45,9 +40,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     'cancel' => ['transition'],
     'destroy' => ['delete_archive']
   }.freeze
-  FINANCE_PARAM_KEYS = %i[
-    service_amount prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method payment_status
-  ].freeze
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
   before_action :authorize_appointment_index!, only: [:index]
@@ -58,10 +50,11 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   before_action :authorize_appointment_destroy!, only: [:destroy]
   before_action :ensure_editable_appointment!, only: [:update, :cancel, :destroy]
   before_action :ensure_destroyable_appointment!, only: [:destroy]
+  before_action :reject_retired_finance_params!, only: [:create, :update]
 
   def index
     appointments = filtered_appointments
-    @finance_visibility = appointment_finance_scope.where(id: appointments.map(&:id)).pluck(:id).index_with(true)
+
     render_payload(
       appointments.map { |appointment| appointment_payload(appointment) },
       meta: { count: appointments.size }
@@ -136,21 +129,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   private
 
   def appointment_payload(appointment)
-    Scheduling::PayloadBuilder.appointment(appointment, include_finance: appointment_finance_visible?(appointment))
-  end
-
-  def appointment_finance_visible?(appointment)
-    return @finance_visibility.key?(appointment.id) if defined?(@finance_visibility)
-
-    Scheduling::AppointmentPolicy.new(pundit_user, appointment).view_finance_legacy?
-  end
-
-  def appointment_finance_scope
-    Scheduling::AppointmentPolicy::Scope.new(
-      pundit_user,
-      Current.account.scheduling_appointments,
-      capability: 'view_finance'
-    ).resolve
+    Scheduling::PayloadBuilder.appointment(appointment)
   end
 
   def appointment_params
@@ -201,8 +180,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def appointments_with_payload_associations(scope = appointment_scope)
     scope.includes(
-      :payments,
-      :expense,
       :contact,
       :resource,
       conversation: [:communication_thread, :inbox]
@@ -217,12 +194,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def filter_by_status_params(scope)
-    scope = filter_by_csv(scope, :status, params[:status])
-    return scope if params[:payment_status].blank?
-
-    scope.where(
-      id: filter_by_csv(appointment_finance_scope, :payment_status, params[:payment_status]).select(:id)
-    )
+    filter_by_csv(scope, :status, params[:status])
   end
 
   def set_appointment
@@ -244,27 +216,17 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   def authorize_appointment_create!
     authorize Scheduling::Appointment, :create?
     authorize Scheduling::Appointment, :transition? if create_transition?
-    authorize Scheduling::Appointment, :manage_finance_legacy? if finance_params?
   end
 
   def authorize_appointment_update!
     keys = appointment_params.keys.map(&:to_sym)
     authorize @appointment, :assign? if keys.intersect?(ASSIGNMENT_PARAM_KEYS)
     authorize @appointment, :transition? if keys.include?(:status)
-    authorize @appointment, :manage_finance_legacy? if finance_params?
     authorize @appointment, :update? if ordinary_update_keys(keys).any?
   end
 
-  def finance_params?
-    appointment_params.keys.map(&:to_sym).intersect?(FINANCE_PARAM_KEYS)
-  end
-
-  def finance_capabilities
-    finance_params? ? ['manage_finance'] : []
-  end
-
   def create_capabilities
-    ['create'] + (create_transition? ? ['transition'] : []) + finance_capabilities
+    ['create'] + (create_transition? ? ['transition'] : [])
   end
 
   def create_transition?
@@ -276,11 +238,11 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     capabilities = []
     capabilities << 'update_fields' if ordinary_update_keys(keys).any?
     capabilities << 'transition' if keys.include?(:status)
-    capabilities + finance_capabilities
+    capabilities
   end
 
   def ordinary_update_keys(keys)
-    keys - ASSIGNMENT_PARAM_KEYS - FINANCE_PARAM_KEYS - [:status]
+    keys - ASSIGNMENT_PARAM_KEYS - [:status]
   end
 
   def appointment_lookup_scope
@@ -323,6 +285,13 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def ensure_destroyable_appointment!
+    if @appointment.payments.exists? || @appointment.expense.present?
+      raise Scheduling::Error.new(
+        code: 'HISTORICAL_DATA_RETAINED',
+        message: 'Historical finance data prevents appointment deletion',
+        status: :unprocessable_content
+      )
+    end
     return if @appointment.status == 'cancelled'
 
     raise Scheduling::Error.new(
@@ -330,5 +299,10 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
       message: 'Only cancelled appointments can be deleted',
       status: :unprocessable_content
     )
+  end
+
+  def reject_retired_finance_params!
+    retired_keys = Scheduling::Appointments::UpsertService::RETIRED_FINANCE_PARAMS
+    raise ArgumentError, 'Scheduling finance fields are no longer writable' if params.keys.map(&:to_sym).intersect?(retired_keys)
   end
 end

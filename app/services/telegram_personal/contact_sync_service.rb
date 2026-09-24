@@ -265,6 +265,11 @@ class TelegramPersonal::ContactSyncService
   def merge_contact_records!(source_contact:, target_contact:)
     now = Time.current
 
+    Contacts::PhoneIdentityLock.acquire!(account_id: inbox.account_id)
+    # Match conversation identity resolution and contact merges: Contact before ContactInbox.
+    # Reload also discards attributes from the failed phone validation.
+    [source_contact, target_contact].sort_by(&:id).each { |contact| contact.reload(lock: true) }
+
     source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
     ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
@@ -298,14 +303,18 @@ class TelegramPersonal::ContactSyncService
     end
     merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
 
-    source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
+    source_identifier = source_contact.identifier
+    source_phone_number = source_contact.phone_number
+    if source_identifier.present? || source_phone_number.present?
+      source_contact.update_columns(identifier: nil, phone_number: nil, updated_at: now) # rubocop:disable Rails/SkipsModelValidations
+    end
 
     target_contact.skip_runtime_events = true
     target_contact.update!(
       additional_attributes: merged_additional_attributes,
       name: preferred_contact_name(target_contact, source_contact),
-      phone_number: target_contact.phone_number.presence || source_contact.phone_number,
-      identifier: target_contact.identifier.presence || source_contact.identifier
+      phone_number: target_contact.phone_number.presence || source_phone_number,
+      identifier: target_contact.identifier.presence || source_identifier
     )
 
     source_contact.skip_runtime_events = true

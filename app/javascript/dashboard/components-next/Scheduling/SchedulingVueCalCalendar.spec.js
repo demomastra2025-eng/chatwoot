@@ -140,7 +140,7 @@ describe('SchedulingVueCalCalendar', () => {
           clientName: 'Alex Doe',
           durationMin: 30,
           endsAt: '2026-03-09T10:30:00.000Z',
-          paymentStatus: 'awaiting_payment',
+
           resourceId: 12,
           serviceNameSnapshot: 'Consultation',
           startsAt: '2026-03-09T10:00:00.000Z',

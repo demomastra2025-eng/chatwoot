@@ -6,9 +6,6 @@ FactoryBot.define do
     sequence(:name) { |n| "Resource #{n}" }
     timezone { Scheduling::Constants::DEFAULT_TIMEZONE }
     slot_duration_min { 30 }
-    compensation_type { 'percent' }
-    compensation_value { 40 }
-    compensation_percent { 0 }
     active { true }
   end
 
@@ -71,9 +68,6 @@ FactoryBot.define do
     service { association :scheduling_service }
     resource { association :scheduling_resource, account: service.account }
     price { 20_000 }
-    compensation_type { 'percent' }
-    compensation_value { 50 }
-    compensation_percent { 0 }
     active { true }
   end
 
@@ -95,12 +89,6 @@ FactoryBot.define do
     service_type_snapshot { service&.service_type }
     service_duration_min_snapshot { service&.duration_min }
     service_amount { service&.base_price || 0 }
-    compensation_type_snapshot { resource.compensation_type }
-    compensation_value_snapshot { resource.compensation_value }
-    compensation_percent_snapshot { resource.compensation_percent }
-    prepaid_amount { 0 }
-    settlement_amount { 0 }
-    payment_status { 'awaiting_payment' }
   end
 
   factory :scheduling_payment, class: 'Scheduling::Payment' do

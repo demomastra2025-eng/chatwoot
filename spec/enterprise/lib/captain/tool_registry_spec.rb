@@ -67,7 +67,6 @@ RSpec.describe Captain::ToolRegistry do
         'create_contact',
         'complete_task',
         'merge_contacts',
-        'add_appointment_payment',
         'list_macros',
         'get_macro',
         'create_macro',
@@ -272,7 +271,7 @@ RSpec.describe Captain::ToolRegistry do
       update_captain_custom_tool
       set_captain_custom_tool_status
       delete_captain_custom_tool
-      add_appointment_payment
+
 
       create_canned_response
       get_canned_response

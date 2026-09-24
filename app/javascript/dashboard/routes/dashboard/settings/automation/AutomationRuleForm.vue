@@ -163,12 +163,7 @@ const executionTimingChoice = computed({
   },
 });
 const currentAccountId = computed(() => getters.getCurrentAccountId.value);
-const isSchedulingFinanceEnabled = computed(() =>
-  getters['accounts/isFeatureEnabledonAccount'].value(
-    currentAccountId.value,
-    'scheduling_finance'
-  )
-);
+
 const isSchedulingEnabled = computed(() =>
   getters['accounts/isFeatureEnabledonAccount'].value(
     currentAccountId.value,
@@ -281,11 +276,6 @@ const automationActionTypes = computed(() => {
   ]);
 
   return actionTypes
-    .filter(
-      action =>
-        action.key !== 'cancel_appointment_payment' ||
-        isSchedulingFinanceEnabled.value
-    )
     .filter(action => allowedActions.has(action.key))
     .map(action => ({
       ...action,

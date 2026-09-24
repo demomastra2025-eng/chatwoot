@@ -98,33 +98,6 @@ class Scheduling::AppointmentPolicy < ApplicationPolicy
     appointment_access?(:update_fields)
   end
 
-  def finance?
-    appointment_access?(:update_fields)
-  end
-
-  def view_finance?
-    appointment_access?(:view_finance, record_scoped: record != Scheduling::Appointment)
-  end
-
-  def view_finance_legacy?
-    appointment_access?(
-      :view_finance,
-      record_scoped: record != Scheduling::Appointment,
-      legacy_allowed: account_user.present?
-    )
-  end
-
-  def manage_finance?
-    appointment_access?(:manage_finance, record_scoped: record != Scheduling::Appointment)
-  end
-
-  def manage_finance_legacy?
-    appointment_access?(
-      :manage_finance,
-      record_scoped: record != Scheduling::Appointment,
-      legacy_allowed: account_user.present?
-    )
-  end
 
   def view_reports?
     appointment_access?(:view_reports, record_scoped: false)
@@ -172,7 +145,7 @@ class Scheduling::AppointmentPolicy < ApplicationPolicy
   def legacy_appointment_access?(capability)
     return administrator_access? || has_permission?('scheduling_override') if capability == :override_schedule
     return administrator_access? || has_permission?('report_manage') if capability == :view_reports
-    return administrator_access? if %i[view_finance manage_finance].include?(capability)
+
 
     account_user.present?
   end

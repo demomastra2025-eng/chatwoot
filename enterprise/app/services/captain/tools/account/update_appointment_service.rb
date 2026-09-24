@@ -38,8 +38,7 @@ class Captain::Tools::Account::UpdateAppointmentService < Captain::Tools::Accoun
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(
         action: 'update_appointment',
-        appointment: appointment,
-        include_finance: appointment_finance_visible?(appointment)
+        appointment: appointment
       )
     )
   rescue StandardError => e

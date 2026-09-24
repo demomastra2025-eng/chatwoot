@@ -78,6 +78,24 @@ RSpec.describe AccessControl::LegacyCustomRoleMapper do
       expect(AccessRoleGrant.where(id: extra_grant.id)).not_to exist
     end
 
+    it 'retains historical finance grants when reconciling current custom role grants' do
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      role = described_class.call(custom_role: custom_role)
+      now = Time.current
+      historical_grant = {
+        account_id: account.id, access_role_id: role.id, resource: 'appointments',
+        capability: 'view_finance', access_scope: 'all', created_at: now, updated_at: now
+      }
+      AccessRoleGrant.insert_all!([historical_grant]) # rubocop:disable Rails/SkipsModelValidations
+      custom_role.update_columns(permissions: %w[contact_manage]) # rubocop:disable Rails/SkipsModelValidations
+
+      described_class.call(custom_role: custom_role)
+
+      expect(role.grants.where(resource: 'appointments', capability: 'view_finance')).to exist
+      expect(role.grants.where(resource: 'contacts', capability: 'view')).to exist
+      expect(role.grants.where(resource: 'tasks', capability: 'view')).not_to exist
+    end
+
     it 'reconciles role metadata without treating its current name as a collision' do
       custom_role = create(
         :custom_role,

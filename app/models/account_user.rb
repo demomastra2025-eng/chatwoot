@@ -42,6 +42,7 @@ class AccountUser < ApplicationRecord
   before_validation :lock_account_for_access_control, if: :access_control_assignment_changed?
   before_validation :synchronize_access_role, if: :access_role_identity_changed?
   before_destroy :remove_communication_thread_participations
+  before_destroy :remove_communication_thread_ownership, prepend: true
   after_create_commit :notify_creation, :create_notification_setting
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
@@ -108,6 +109,27 @@ class AccountUser < ApplicationRecord
         communication_thread: membership.communication_thread,
         actor: Current.executed_by || Current.user
       ).remove!(user_id: user_id, reason: 'workspace_membership_removed')
+    end
+  end
+
+  def remove_communication_thread_ownership
+    return if self.class.connection.select_value("SELECT current_setting('onelink.account_teardown_id', true)") == account_id.to_s
+
+    # Snapshot the former owner while this account membership still exists.
+    Contact.where(account_id: account_id, owner_id: user_id).update_all(owner_id: nil) # rubocop:disable Rails/SkipsModelValidations
+    CommunicationThread.where(account_id: account_id, assignee_id: user_id).find_each do |thread|
+      links = thread.communication_thread_conversations
+      if links.exists?
+        CommunicationThreads::UpdateService.new(
+          communication_thread: thread, params: { assignee_id: nil }, accessible_links: links,
+          actor: Current.executed_by || Current.user, source: 'workspace_membership_removed'
+        ).perform
+      else
+        CommunicationThreads::StateTransitionWriter.new(
+          thread: thread, attributes: { assignee_id: nil }, actor: Current.executed_by || Current.user,
+          source: 'workspace_membership_removed', source_record: self
+        ).perform
+      end
     end
   end
 

@@ -307,13 +307,9 @@ function formatConflictAmount(value) {
   return new Intl.NumberFormat(locale.value).format(value);
 }
 
-function schedulingStatusLabel(type, value) {
+function schedulingStatusLabel(value) {
   if (!value) return '—';
-  const namespace =
-    type === 'payment'
-      ? 'SCHEDULING.PAYMENT_STATUS'
-      : 'SCHEDULING.APPOINTMENT_STATUS';
-  const key = `${namespace}.${value}`;
+  const key = `SCHEDULING.APPOINTMENT_STATUS.${value}`;
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   const translated = t(key);
   return translated === key ? humanizeProperty(value) : translated;
@@ -1585,29 +1581,12 @@ onBeforeUnmount(() => {
                 <dd>
                   {{
                     schedulingStatusLabel(
-                      'appointment',
                       conflict.entity_context.appointment?.status
                     )
                   }}
                 </dd>
               </div>
-              <div>
-                <dt>
-                  {{
-                    $t(
-                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAYMENT_STATUS'
-                    )
-                  }}
-                </dt>
-                <dd>
-                  {{
-                    schedulingStatusLabel(
-                      'payment',
-                      conflict.entity_context.appointment?.payment_status
-                    )
-                  }}
-                </dd>
-              </div>
+
               <div>
                 <dt>
                   {{

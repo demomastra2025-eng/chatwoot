@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_22_180000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1367,6 +1367,58 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["added_by_id"], name: "index_communication_thread_participants_on_added_by_id"
     t.index ["communication_thread_id", "user_id"], name: "idx_thread_participants_thread_user", unique: true
     t.index ["user_id"], name: "index_communication_thread_participants_on_user_id"
+  end
+
+  create_table "communication_thread_state_transition_facts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id_snapshot", null: false
+    t.bigint "thread_display_id_snapshot", null: false
+    t.bigint "contact_id_snapshot", null: false
+    t.string "event_kind", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "requested_occurred_at", null: false
+    t.datetime "reliable_since", null: false
+    t.integer "source_version", default: 1, null: false
+    t.string "request_fingerprint", limit: 64
+    t.bigint "from_assignee_id"
+    t.string "from_assignee_name"
+    t.bigint "to_assignee_id"
+    t.string "to_assignee_name"
+    t.bigint "from_team_id"
+    t.string "from_team_name"
+    t.bigint "to_team_id"
+    t.string "to_team_name"
+    t.string "from_status"
+    t.string "to_status", null: false
+    t.string "source", null: false
+    t.string "source_record_type"
+    t.bigint "source_record_id"
+    t.uuid "source_event_id", null: false
+    t.string "actor_kind", null: false
+    t.bigint "actor_id"
+    t.string "actor_name"
+    t.string "idempotency_key", null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "communication_thread_id_snapshot", "occurred_at", "id"], name: "idx_thread_state_facts_thread_time"
+    t.index ["account_id", "event_kind", "occurred_at", "id"], name: "idx_thread_state_facts_kind_time"
+    t.index ["account_id", "idempotency_key"], name: "idx_thread_state_facts_idempotency", unique: true
+    t.index ["account_id", "occurred_at", "id"], name: "idx_thread_state_facts_account_time"
+    t.index ["account_id", "to_assignee_id", "occurred_at", "id"], name: "idx_thread_state_facts_assignee_time"
+    t.index ["account_id", "to_team_id", "occurred_at", "id"], name: "idx_thread_state_facts_team_time"
+    t.index ["account_id"], name: "idx_on_account_id_e354bf1064"
+    t.check_constraint "(actor_kind::text = ANY (ARRAY['system'::character varying, 'unknown'::character varying]::text[])) AND actor_id IS NULL OR (actor_kind::text = ANY (ARRAY['user'::character varying, 'contact'::character varying, 'captain'::character varying, 'automation'::character varying]::text[])) AND actor_id IS NOT NULL", name: "chk_thread_state_facts_actor_identity"
+    t.check_constraint "(source_record_type IS NULL) = (source_record_id IS NULL)", name: "chk_thread_state_facts_source_record"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['user'::character varying, 'contact'::character varying, 'captain'::character varying, 'system'::character varying, 'automation'::character varying, 'unknown'::character varying]::text[])", name: "chk_thread_state_facts_actor_kind"
+    t.check_constraint "btrim(source::text) <> ''::text AND btrim(idempotency_key::text) <> ''::text", name: "chk_thread_state_facts_nonblank_identity"
+    t.check_constraint "event_kind::text <> 'reopened'::text OR from_status::text = 'resolved'::text AND to_status::text <> 'resolved'::text", name: "chk_thread_state_facts_reopened"
+    t.check_constraint "event_kind::text <> 'resolved'::text OR from_status::text <> 'resolved'::text AND to_status::text = 'resolved'::text", name: "chk_thread_state_facts_resolved"
+    t.check_constraint "event_kind::text <> 'routing_changed'::text OR from_assignee_id IS DISTINCT FROM to_assignee_id OR from_team_id IS DISTINCT FROM to_team_id", name: "chk_thread_state_facts_routing_changed"
+    t.check_constraint "event_kind::text = 'created'::text AND from_assignee_id IS NULL AND from_team_id IS NULL AND from_status IS NULL OR event_kind::text <> 'created'::text AND from_status IS NOT NULL AND (from_assignee_id IS DISTINCT FROM to_assignee_id OR from_team_id IS DISTINCT FROM to_team_id OR from_status::text IS DISTINCT FROM to_status::text)", name: "chk_thread_state_facts_effective_change"
+    t.check_constraint "event_kind::text = ANY (ARRAY['created'::character varying, 'routing_changed'::character varying, 'resolved'::character varying, 'reopened'::character varying, 'state_changed'::character varying]::text[])", name: "chk_thread_state_facts_event_kind"
+    t.check_constraint "reliable_since <= occurred_at", name: "chk_thread_state_facts_reliable_since"
+    t.check_constraint "requested_occurred_at <= occurred_at", name: "chk_thread_state_facts_requested_occurred_at"
+    t.check_constraint "source::text = 'database_projection_fallback'::text AND request_fingerprint IS NULL OR source::text <> 'database_projection_fallback'::text AND request_fingerprint IS NOT NULL AND request_fingerprint::text ~ '^[0-9a-f]{64}$'::text", name: "chk_thread_state_facts_request_fingerprint"
+    t.check_constraint "source_version = 1", name: "chk_thread_state_facts_source_version"
   end
 
   create_table "communication_threads", force: :cascade do |t|
@@ -4072,6 +4124,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "contact_channel_profiles", "contacts"
   add_foreign_key "contact_channel_profiles", "inboxes"
   add_foreign_key "contacts", "users", column: "owner_id"
+  add_foreign_key "conversations", "teams", name: "fk_conversations_team_for_thread_state_facts", on_delete: :nullify, validate: false
   add_foreign_key "conversation_status_transitions", "accounts"
   add_foreign_key "conversation_status_transitions", "conversations"
   add_foreign_key "conversation_user_read_states", "accounts", on_delete: :cascade
@@ -4211,6 +4264,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "telephony_ai_voice_fish_voices", "accounts", on_delete: :cascade
   add_foreign_key "telephony_ai_voice_fish_voices", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "telephony_logical_call_occurrences", "accounts"
+  add_foreign_key "communication_thread_state_transition_facts", "accounts", on_delete: :cascade
   add_foreign_key "telephony_call_sessions", "accounts"
   add_foreign_key "telephony_call_sessions", "contacts"
   add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
@@ -4663,6 +4717,229 @@ $function$
   SQL
 
   execute("CREATE TRIGGER prevent_thread_manual_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_manual_call_occurrence_changes()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_thread_state_transition_fact_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM communication_threads
+    WHERE id = NEW.communication_thread_id_snapshot
+      AND account_id = NEW.account_id
+      AND contact_id = NEW.contact_id_snapshot
+      AND display_id = NEW.thread_display_id_snapshot
+  ) THEN
+    RAISE EXCEPTION 'thread state fact snapshot must match its account thread' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM contacts WHERE id = NEW.contact_id_snapshot AND account_id = NEW.account_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact contact snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.from_assignee_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.from_assignee_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact from assignee must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.to_assignee_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.to_assignee_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact to assignee must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.from_team_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.from_team_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact from team must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.to_team_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.to_team_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact to team must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  IF NEW.source_record_type = 'Contact' AND NOT EXISTS (
+    SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source contact must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'Conversation' AND NOT EXISTS (
+    SELECT 1 FROM conversations WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source conversation must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'CommunicationThread' AND NOT EXISTS (
+    SELECT 1 FROM communication_threads WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source thread must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'Team' AND NOT EXISTS (
+    SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source team must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'AssignmentPolicy' AND NOT EXISTS (
+    SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source assignment policy must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'AutomationRule' AND NOT EXISTS (
+    SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source automation rule must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'Inbox' AND NOT EXISTS (
+    SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source inbox must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type = 'AccountUser' AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND id = NEW.source_record_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source account user must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.source_record_type IS NOT NULL AND NEW.source_record_type NOT IN (
+    'Contact', 'Conversation', 'CommunicationThread', 'Team', 'AssignmentPolicy', 'AutomationRule', 'Inbox', 'AccountUser'
+  ) THEN
+    RAISE EXCEPTION 'thread state fact source record type is unsupported' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.actor_kind = 'user' AND NOT EXISTS (
+    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'contact' AND NOT EXISTS (
+    SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact contact actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'captain' AND NOT EXISTS (
+    SELECT 1 FROM captain_assistants WHERE account_id = NEW.account_id AND id = NEW.actor_id
+  ) THEN
+    RAISE EXCEPTION 'thread state fact captain actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  ELSIF NEW.actor_kind = 'automation' AND NOT (
+    (NEW.source_record_type = 'AssignmentPolicy' AND EXISTS (
+      SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    )) OR
+    (NEW.source_record_type = 'AutomationRule' AND EXISTS (
+      SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    )) OR
+    (NEW.source_record_type = 'Inbox' AND EXISTS (
+      SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.actor_id
+    ))
+  ) THEN
+    RAISE EXCEPTION 'thread state fact automation actor must belong to account' USING ERRCODE = 'foreign_key_violation';
+  END IF;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER validate_thread_state_transition_fact_insert BEFORE INSERT ON \"communication_thread_state_transition_facts\" FOR EACH ROW EXECUTE FUNCTION validate_thread_state_transition_fact_insert()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.record_thread_state_transition_fallback()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  operation_id uuid := gen_random_uuid();
+  transition_time timestamp without time zone := clock_timestamp();
+  requested_time timestamp without time zone := transition_time;
+  transition_kind text;
+  previous_status text;
+  current_status text;
+  previous_assignee_name text;
+  current_assignee_name text;
+  previous_team_name text;
+  current_team_name text;
+BEGIN
+  IF NULLIF(current_setting('onelink.thread_state_fact_writer', true), '') IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE' AND
+     OLD.assignee_id IS NOT DISTINCT FROM NEW.assignee_id AND
+     OLD.team_id IS NOT DISTINCT FROM NEW.team_id AND
+     OLD.status IS NOT DISTINCT FROM NEW.status THEN
+    RETURN NEW;
+  END IF;
+  current_status := CASE NEW.status WHEN 0 THEN 'open' WHEN 1 THEN 'resolved' WHEN 2 THEN 'pending' WHEN 3 THEN 'snoozed' END;
+  IF TG_OP = 'INSERT' THEN
+    transition_kind := 'created';
+  ELSE
+    previous_status := CASE OLD.status WHEN 0 THEN 'open' WHEN 1 THEN 'resolved' WHEN 2 THEN 'pending' WHEN 3 THEN 'snoozed' END;
+    transition_kind := CASE
+      WHEN OLD.status <> 1 AND NEW.status = 1 THEN 'resolved'
+      WHEN OLD.status = 1 AND NEW.status <> 1 THEN 'reopened'
+      WHEN OLD.assignee_id IS DISTINCT FROM NEW.assignee_id OR OLD.team_id IS DISTINCT FROM NEW.team_id THEN 'routing_changed'
+      ELSE 'state_changed'
+    END;
+    SELECT users.name INTO previous_assignee_name
+    FROM users INNER JOIN account_users ON account_users.user_id = users.id
+    WHERE account_users.account_id = NEW.account_id AND users.id = OLD.assignee_id;
+    SELECT name INTO previous_team_name FROM teams WHERE account_id = NEW.account_id AND id = OLD.team_id;
+  END IF;
+  SELECT users.name INTO current_assignee_name
+  FROM users INNER JOIN account_users ON account_users.user_id = users.id
+  WHERE account_users.account_id = NEW.account_id AND users.id = NEW.assignee_id;
+  SELECT name INTO current_team_name FROM teams WHERE account_id = NEW.account_id AND id = NEW.team_id;
+  transition_time := GREATEST(transition_time, COALESCE((
+    SELECT occurred_at + interval '1 microsecond' FROM communication_thread_state_transition_facts
+    WHERE account_id = NEW.account_id AND communication_thread_id_snapshot = NEW.id
+    ORDER BY occurred_at DESC, id DESC LIMIT 1
+  ), transition_time));
+  INSERT INTO communication_thread_state_transition_facts (
+    account_id, communication_thread_id_snapshot, thread_display_id_snapshot, contact_id_snapshot,
+    event_kind, occurred_at, requested_occurred_at, reliable_since, source_version,
+    from_assignee_id, from_assignee_name, to_assignee_id, to_assignee_name,
+    from_team_id, from_team_name, to_team_id, to_team_name, from_status, to_status,
+    source, source_record_type, source_record_id, source_event_id,
+    actor_kind, actor_id, actor_name, idempotency_key, created_at
+  ) VALUES (
+    NEW.account_id, NEW.id, NEW.display_id, NEW.contact_id,
+    transition_kind, transition_time, requested_time, transition_time, 1,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.assignee_id END,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_assignee_name END,
+    NEW.assignee_id, current_assignee_name,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.team_id END,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_team_name END,
+    NEW.team_id, current_team_name,
+    CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_status END, current_status,
+    'database_projection_fallback', 'CommunicationThread', NEW.id, operation_id,
+    'system', NULL, 'System',
+    CASE WHEN TG_OP = 'INSERT' THEN 'thread:' || NEW.id || ':created:v1'
+         ELSE 'thread:' || NEW.id || ':state:' || operation_id || ':v1' END,
+    transition_time
+  ) ON CONFLICT (account_id, idempotency_key) DO NOTHING;
+  RETURN NEW;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER record_thread_state_transition_fallback AFTER INSERT OR UPDATE ON \"communication_threads\" FOR EACH ROW EXECUTE FUNCTION record_thread_state_transition_fallback()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.clear_thread_routing_before_account_user_delete()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
+    RETURN OLD;
+  END IF;
+  UPDATE contacts SET owner_id = NULL WHERE account_id = OLD.account_id AND owner_id = OLD.user_id;
+  UPDATE conversations SET assignee_id = NULL WHERE account_id = OLD.account_id AND assignee_id = OLD.user_id;
+  UPDATE communication_threads SET assignee_id = NULL
+  WHERE account_id = OLD.account_id AND assignee_id = OLD.user_id;
+  RETURN OLD;
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER clear_thread_routing_before_account_user_delete BEFORE DELETE ON \"account_users\" FOR EACH ROW EXECUTE FUNCTION clear_thread_routing_before_account_user_delete()")
+
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_state_transition_fact_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+  IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM accounts WHERE id = OLD.account_id) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'communication thread state transition facts are append-only' USING ERRCODE = 'check_violation';
+END;
+$function$
+  SQL
+
+  execute("CREATE TRIGGER prevent_thread_state_transition_fact_changes BEFORE UPDATE OR DELETE ON \"communication_thread_state_transition_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_state_transition_fact_changes()")
 
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.validate_telephony_logical_call_occurrence_insert()

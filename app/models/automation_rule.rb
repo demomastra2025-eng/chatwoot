@@ -77,7 +77,6 @@ class AutomationRule < ApplicationRecord
   APPOINTMENT_ACTION_ATTRIBUTES = %w[
     send_webhook_event
     change_appointment_status
-    cancel_appointment_payment
     send_message
     apply_touch_plan
     create_touch
@@ -121,7 +120,7 @@ class AutomationRule < ApplicationRecord
     mail_subject phone_number priority conversation_language labels private_note
   ].freeze
   APPOINTMENT_CONDITION_ATTRIBUTES = %w[
-    status payment_status appointment_type source starts_at_weekday starts_at_time service_id
+    status appointment_type source starts_at_weekday starts_at_time service_id
   ].freeze
 
   include Rails.application.routes.url_helpers
@@ -134,8 +133,8 @@ class AutomationRule < ApplicationRecord
   has_many_attached :files
   account_storage_attachments :files
 
-  validate :json_conditions_format
-  validate :json_actions_format
+  validate :json_conditions_format, unless: :deactivating_without_definition_changes?
+  validate :json_actions_format, unless: :deactivating_without_definition_changes?
   validate :event_name_supported
   validate :feature_enabled_for_event
   validate :appointment_condition_operators_supported
@@ -477,9 +476,7 @@ class AutomationRule < ApplicationRecord
   end
 
   def appointment_actions_attributes
-    actions = APPOINTMENT_ACTION_ATTRIBUTES.dup
-    actions.delete('cancel_appointment_payment') unless account&.feature_enabled?('scheduling_finance')
-    actions
+    APPOINTMENT_ACTION_ATTRIBUTES
   end
 
   def crm_actions_attributes

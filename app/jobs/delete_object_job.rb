@@ -1,4 +1,4 @@
-class DeleteObjectJob < ApplicationJob
+class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength
   queue_as :low
 
   BATCH_SIZE = 5_000
@@ -8,12 +8,20 @@ class DeleteObjectJob < ApplicationJob
 
     mark_pending_deletion(object)
     teardown_remote_dependencies(object)
-    destroy_with_prepared_dependencies(object)
+    if object.is_a?(Conversation) || object.is_a?(Inbox)
+      object.class.transaction do
+        destroy_with_prepared_dependencies(object)
+        cleanup_communication_threads(deletion_context[:communication_thread_ids], actor: user)
+      end
+      deletion_context = deletion_context.merge(communication_thread_ids: nil)
+    else
+      destroy_with_prepared_dependencies(object)
+    end
     process_post_deletion_tasks(object, user, ip, deletion_context)
   end
 
-  def process_post_deletion_tasks(_object, _user, _ip, deletion_context = {})
-    cleanup_empty_communication_threads(deletion_context[:communication_thread_ids])
+  def process_post_deletion_tasks(_object, user, _ip, deletion_context = {})
+    cleanup_communication_threads(deletion_context[:communication_thread_ids], actor: user)
   end
 
   private
@@ -138,10 +146,15 @@ class DeleteObjectJob < ApplicationJob
     ids.presence
   end
 
-  def cleanup_empty_communication_threads(thread_ids)
+  def cleanup_communication_threads(thread_ids, actor: nil)
+    source_event_id = SecureRandom.uuid
+    occurred_at = Time.current
     Array(thread_ids).compact.each_slice(BATCH_SIZE) do |ids|
       CommunicationThread.where(id: ids).find_each do |thread|
-        next if thread.communication_thread_conversations.exists?
+        if thread.communication_thread_conversations.exists?
+          refresh_surviving_thread!(thread, actor: actor, source_event_id: source_event_id, occurred_at: occurred_at)
+          next
+        end
 
         nullify_records(
           Crm::Deal.where(originating_communication_thread_id: thread.id),
@@ -150,6 +163,20 @@ class DeleteObjectJob < ApplicationJob
         thread.destroy!
       end
     end
+  end
+
+  def refresh_surviving_thread!(thread, actor:, source_event_id:, occurred_at:)
+    link = thread.communication_thread_conversations.includes(:conversation).order(:created_at, :id).first
+    return if link.blank?
+
+    link.update!(primary: true) unless thread.communication_thread_conversations.exists?(primary: true)
+    Conversations::CommunicationThreadResolver.new(
+      conversation: link.conversation,
+      actor: actor,
+      source: 'record_deleted',
+      source_event_id: source_event_id,
+      occurred_at: occurred_at
+    ).perform
   end
 
   def delete_communication_thread_links(conversation_ids)

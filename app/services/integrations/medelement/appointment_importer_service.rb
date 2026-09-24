@@ -100,7 +100,7 @@ class Integrations::Medelement::AppointmentImporterService
       )
     }
 
-    base_attributes.merge(client_attributes(contact)).merge(financial_attributes(appointment, reception))
+    base_attributes.merge(client_attributes(contact)).merge(amount_attributes(appointment, reception, resource, services))
   end
   # rubocop:enable Metrics/MethodLength
 
@@ -124,10 +124,12 @@ class Integrations::Medelement::AppointmentImporterService
     }
   end
 
-  def financial_attributes(appointment, reception)
-    Integrations::Medelement::AppointmentFinancialReconciler.new(
+  def amount_attributes(appointment, reception, resource, services)
+    Integrations::Medelement::AppointmentAmountReconciler.new(
       appointment: appointment,
       reception: reception,
+      resource: resource,
+      services: services,
       conflict_tracker: conflict_tracker
     ).attributes
   end

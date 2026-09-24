@@ -428,7 +428,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
-      serviceAmount: '7000',
       serviceId: 9,
       startsAt: '2026-06-27T10:30',
       status: 'completed',
@@ -447,7 +446,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_id: 123,
       ends_at: new Date('2026-06-27T11:00').toISOString(),
       resource_id: 7,
-      service_amount: 7000,
       service_id: 9,
       service_ids: [9],
       source: 'conversation',
@@ -460,7 +458,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('omits unchanged capability-sensitive fields from an update', async () => {
+  it('omits derived price and unchanged status from an update', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -471,18 +469,18 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(payload).not.toHaveProperty('status');
   });
 
-  it('omits hidden finance fields from an update', async () => {
-    const financeHiddenAppointment = {
+  it('does not write a displayed historical amount on update', async () => {
+    const historicalAppointment = {
       ...existingAppointment,
-      serviceAmount: undefined,
+      serviceAmount: 7500,
     };
     SchedulingAppointmentsAPI.get.mockResolvedValue({
-      data: { payload: [financeHiddenAppointment] },
+      data: { payload: [historicalAppointment] },
     });
     const wrapper = mountComponent();
     await flushPromises();
 
-    await wrapper.vm.saveAppointment(financeHiddenAppointment);
+    await wrapper.vm.saveAppointment(historicalAppointment);
 
     const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
     expect(payload).not.toHaveProperty('service_amount');
@@ -615,24 +613,19 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent();
     await flushPromises();
 
-    Object.assign(wrapper.vm.appointmentForms['appointment-501'], {
-      serviceAmount: '7000',
-    });
-
     await wrapper.vm.saveAppointment(existingAppointment);
 
     expect(wrapper.vm.hasServiceOptions).toBe(false);
     expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
       501,
       expect.objectContaining({
-        service_amount: 7000,
         service_ids: [],
         service_name_snapshot: 'Консультация',
       })
     );
-    expect(
-      SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1]
-    ).not.toHaveProperty('service_id');
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload).not.toHaveProperty('service_amount');
+    expect(payload).not.toHaveProperty('service_id');
   });
 
   it('updates a dialog appointment by conversation display id when the record is not linked to a database conversation id', async () => {
@@ -663,7 +656,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientFirstName: 'Айша updated',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
-      serviceAmount: '7000',
       startsAt: '2026-06-27T10:30',
     });
 
@@ -689,7 +681,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '5000',
       serviceId: 9,
       startsAt: '2026-06-27T10:00',
       status: 'completed',
@@ -720,7 +711,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('omits default status and a blank finance field from create', async () => {
+  it('omits default status and retired price overrides from create', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -733,7 +724,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '',
+      serviceAmount: '3000',
       startsAt: '2026-06-27T10:00',
     });
 
@@ -917,7 +908,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '3000',
       serviceNameSnapshot: 'Осмотр',
       startsAt: '2026-06-27T10:00',
     });
@@ -935,7 +925,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_display_id: 123,
       ends_at: new Date('2026-06-27T10:30').toISOString(),
       resource_id: 7,
-      service_amount: 3000,
       service_ids: [],
       service_name_snapshot: 'Осмотр',
       source: 'conversation',

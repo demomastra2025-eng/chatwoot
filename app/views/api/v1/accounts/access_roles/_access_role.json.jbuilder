@@ -7,7 +7,10 @@ json.grant_source access_role.grant_source
 json.legacy_custom_role_id access_role.legacy_custom_role_id
 json.lock_version access_role.lock_version
 json.assigned_users_count assigned_users_count
-json.grants access_role.grants.sort_by { |grant| [grant.resource, grant.capability] } do |grant|
+supported_grants = access_role.grants.select do |grant|
+  AccessRoleGrant::RESOURCE_CAPABILITIES.fetch(grant.resource, []).include?(grant.capability)
+end
+json.grants supported_grants.sort_by { |grant| [grant.resource, grant.capability] } do |grant|
   json.resource grant.resource
   json.capability grant.capability
   json.access_scope grant.access_scope

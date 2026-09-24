@@ -143,7 +143,7 @@
         "INVALID_RECEPTION": "Appointment could not be imported",
         "PATIENT_UNRESOLVED": "Patient is not linked to a contact",
         "APPOINTMENT_AMOUNT_MISMATCH": "Appointment amount differs from MedElement",
-        "LOCAL_PAYMENT_PRESERVED": "Local payment was preserved"
+        "LOCAL_PAYMENT_PRESERVED": "Historical appointment amount was preserved"
       },
       "IMPORT": {
         "TITLE": "Catalog import",
@@ -181,7 +181,7 @@
         "RECEPTION_CODE": "Appointment code",
         "DATE_TIME": "Date and time",
         "STATUS_LABEL": "Appointment status",
-        "PAYMENT_STATUS": "Payment status",
+
         "LOCAL_AMOUNT": "One Link amount",
         "PROVIDER_AMOUNT": "MedElement amount",
         "OPEN_EDIT": "Open and edit",

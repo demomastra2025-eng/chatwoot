@@ -15,7 +15,7 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
   end
 
   before do
-    account.enable_features!('scheduling', 'scheduling_finance')
+    account.enable_features!('scheduling')
   end
 
   def response_body
@@ -58,6 +58,8 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(response_body['payload'].pluck('id')).to eq([contact.id])
     end
+  end
+
   it 'loads one account-scoped contact by id with structured name fields' do
     target = create(
       :contact,
@@ -332,5 +334,4 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     )
     expect(contact.reload.custom_attributes).to eq(response_body.dig('payload', 'custom_attributes'))
   end
-end
 end

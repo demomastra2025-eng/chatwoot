@@ -187,7 +187,6 @@ const BACKEND_CONVERSATION_CONDITIONS = [
 const BACKEND_APPOINTMENT_ACTIONS = [
   'send_webhook_event',
   'change_appointment_status',
-  'cancel_appointment_payment',
   'send_message',
   'apply_touch_plan',
   'create_touch',
@@ -223,7 +222,6 @@ const BACKEND_TASK_ACTIONS = [
 
 const BACKEND_APPOINTMENT_CONDITIONS = [
   'status',
-  'payment_status',
   'appointment_type',
   'source',
   'starts_at_weekday',
@@ -619,7 +617,6 @@ describe('getConditionOptions', () => {
 
   it('returns appointment-specific options when the event is appointment-based', () => {
     const appointmentStatusOptions = [{ id: 'scheduled', name: 'Scheduled' }];
-    const appointmentPaymentStatusOptions = [{ id: 'paid', name: 'Paid' }];
     const appointmentServiceOptions = [{ id: 7, name: 'Consultation' }];
     const appointmentWeekdayOptions = [{ id: '1', name: 'Monday' }];
 
@@ -631,15 +628,6 @@ describe('getConditionOptions', () => {
         type: 'status',
       })
     ).toEqual(appointmentStatusOptions);
-
-    expect(
-      helpers.getConditionOptions({
-        customAttributes,
-        eventName: 'appointment_created',
-        appointmentPaymentStatusOptions,
-        type: 'payment_status',
-      })
-    ).toEqual(appointmentPaymentStatusOptions);
 
     expect(
       helpers.getConditionOptions({

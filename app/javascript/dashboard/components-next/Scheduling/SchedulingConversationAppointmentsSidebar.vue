@@ -27,7 +27,6 @@ import {
   compactPayload,
   formatSchedulingErrorMessage,
   normalizePayload,
-  toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
@@ -551,9 +550,6 @@ const isAppointmentFormInvalid = form =>
   !form?.endsAt ||
   !appointmentFormEndsAfterStart(form);
 
-const hasExplicitValue = value =>
-  value !== '' && value !== null && value !== undefined;
-
 const buildAppointmentPayload = (form, appointment) => {
   const payload = appendServicePayload(
     {
@@ -579,8 +575,6 @@ const buildAppointmentPayload = (form, appointment) => {
         : undefined,
       ends_at: fromDateTimeInputValue(form.endsAt),
       resource_id: toNumeric(form.resourceId),
-      service_amount:
-        toIntegerNumeric(form.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
       starts_at: fromDateTimeInputValue(form.startsAt),
       status: form.status || 'scheduled',
@@ -592,12 +586,6 @@ const buildAppointmentPayload = (form, appointment) => {
   );
 
   if (form.status === appointment.status) delete payload.status;
-
-  const financeVisible = hasExplicitValue(appointment.serviceAmount);
-  const serviceAmountChanged =
-    financeVisible &&
-    Number(form.serviceAmount) !== Number(appointment.serviceAmount);
-  if (!serviceAmountChanged) delete payload.service_amount;
 
   return payload;
 };
@@ -626,8 +614,6 @@ const buildCreatePayload = () => {
         : {}),
       ends_at: fromDateTimeInputValue(createForm.endsAt),
       resource_id: toNumeric(createForm.resourceId),
-      service_amount:
-        toIntegerNumeric(createForm.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
       starts_at: fromDateTimeInputValue(createForm.startsAt),
       status: createForm.status || 'scheduled',
@@ -638,12 +624,6 @@ const buildCreatePayload = () => {
     }
   );
 
-  if (
-    hasExplicitValue(createForm.serviceId) ||
-    !hasExplicitValue(createForm.serviceAmount)
-  ) {
-    delete payload.service_amount;
-  }
   if (createForm.status === 'scheduled') delete payload.status;
 
   return payload;
@@ -1364,7 +1344,7 @@ watch(
                       "
                       :model-value="createForm.serviceAmount"
                       size="sm"
-                      @update:model-value="createForm.serviceAmount = $event"
+                      disabled
                     />
                   </div>
                 </div>
@@ -1858,11 +1838,7 @@ watch(
                           .serviceAmount
                       "
                       size="sm"
-                      @update:model-value="
-                        appointmentForms[
-                          appointmentKey(appointment)
-                        ].serviceAmount = $event
-                      "
+                      disabled
                     />
                   </div>
                 </div>

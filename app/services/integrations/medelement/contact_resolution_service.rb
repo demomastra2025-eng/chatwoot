@@ -11,17 +11,21 @@ class Integrations::Medelement::ContactResolutionService
     ensure_contact_conflict!
     base_contact = nil
 
-    conflict.with_lock do
-      ensure_open_conflict!
-      base_contact, mergee_contact = locked_contacts!(base_contact_id, mergee_contact_id)
-      ensure_merge_direction!(base_contact, mergee_contact)
+    ActiveRecord::Base.transaction do
+      # This caller locks Contact rows before invoking ContactMergeAction.
+      Contacts::PhoneIdentityLock.acquire!(account_id: conflict.account_id)
+      conflict.with_lock do
+        ensure_open_conflict!
+        base_contact, mergee_contact = locked_contacts!(base_contact_id, mergee_contact_id)
+        ensure_merge_direction!(base_contact, mergee_contact)
 
-      ContactMergeAction.new(
-        account: conflict.account,
-        base_contact: base_contact,
-        mergee_contact: mergee_contact
-      ).perform
-      resolve!("Contacts merged into ##{base_contact.id}")
+        ContactMergeAction.new(
+          account: conflict.account,
+          base_contact: base_contact,
+          mergee_contact: mergee_contact
+        ).perform
+        resolve!("Contacts merged into ##{base_contact.id}")
+      end
     end
     base_contact
   end

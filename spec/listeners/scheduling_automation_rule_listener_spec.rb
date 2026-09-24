@@ -114,7 +114,8 @@ RSpec.describe SchedulingAutomationRuleListener do
         automation_rule,
         account,
         appointment,
-        changed_attributes: changed_attributes
+        changed_attributes: changed_attributes,
+        execution_key: kind_of(String)
       )
     end
 
@@ -191,47 +192,6 @@ RSpec.describe SchedulingAutomationRuleListener do
       end
 
       expect(appointment.reload.status).to eq('confirmed')
-    end
-
-    it 'applies native appointment payment cancellation actions without looping' do
-      account.enable_features!('scheduling_finance')
-      appointment.update!(
-        prepaid_amount: 3_000,
-        prepaid_payment_method: 'cash',
-        payment_status: 'prepaid'
-      )
-
-      create(
-        :automation_rule,
-        account: account,
-        event_name: 'appointment_updated',
-        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
-        actions: [{ action_name: 'cancel_appointment_payment', action_params: [] }]
-      )
-      create(
-        :automation_rule,
-        account: account,
-        event_name: 'appointment_updated',
-        conditions: [{ attribute_key: 'payment_status', filter_operator: 'equal_to', values: ['cancelled'], query_operator: nil }],
-        actions: [{ action_name: 'change_appointment_status', action_params: ['cancelled'] }]
-      )
-
-      perform_enqueued_jobs do
-        listener.appointment_updated(
-          Events::Base.new(
-            'appointment_updated',
-            Time.zone.now,
-            appointment: appointment,
-            changed_attributes: { 'client_comment' => [nil, 'Trigger finance automation'] }
-          )
-        )
-      end
-
-      appointment.reload
-      expect(appointment.prepaid_amount).to eq(0)
-      expect(appointment.prepaid_payment_method).to be_nil
-      expect(appointment.payment_status).to eq('cancelled')
-      expect(appointment.status).to eq('scheduled')
     end
   end
 end

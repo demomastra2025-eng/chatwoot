@@ -1138,7 +1138,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: 'Search appointments by client, status, payment status, contact, or specialist',
+          description: 'Search appointments by client, status, contact, or specialist',
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1774,18 +1774,6 @@ class Captain::ToolRegistry
           agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
           assistant_tool_class: Captain::Tools::Account::MergeContactsService,
           required_permissions: %w[contact_manage],
-          risk_level: 'high',
-          requires_confirmation: true
-        ),
-        definition(
-          id: 'add_appointment_payment',
-          title: 'Add Appointment Payment',
-          description: 'Add a payment to the appointment linked to the current conversation',
-          group_name: 'Scheduling',
-          icon: 'credit-card',
-          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Account::AddAppointmentPaymentService,
-          required_features: %w[scheduling scheduling_finance],
           risk_level: 'high',
           requires_confirmation: true
         ),

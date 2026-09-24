@@ -73,9 +73,7 @@ class Crm::Reports::ManagerEffectivenessService
       leads: 'dialog-linked crm_deals.created_at',
       bad_leads: 'dialog-linked crm_stages.outcome=lost',
       calls: 'telephony_call_sessions.agent_binding_id',
-      meetings: 'scheduling_appointments.owner_id + crm_tasks.activity_type=meeting fallback',
-      payments: 'scheduling_payments by appointment owner',
-      trade_in: 'not_configured'
+      meetings: 'scheduling_appointments.owner_id + crm_tasks.activity_type=meeting fallback'
     }
   end
 
@@ -86,7 +84,7 @@ class Crm::Reports::ManagerEffectivenessService
     merge_call_stats!(stats)
     merge_appointment_stats!(stats)
     merge_task_meeting_stats!(stats)
-    merge_payment_stats!(stats)
+
 
     owner_names = owner_names_for(stats.keys.compact)
 
@@ -118,12 +116,7 @@ class Crm::Reports::ManagerEffectivenessService
       cancelled_appointments_count: 0,
       no_show_appointments_count: 0,
       meeting_tasks_count: 0,
-      meetings_count: 0,
-      payments_amount_minor: 0,
-      cash_amount_minor: 0,
-      non_cash_amount_minor: 0,
-      trade_in_amount_minor: 0,
-      other_amount_minor: 0
+      meetings_count: 0
     }
   end
 
@@ -189,14 +182,6 @@ class Crm::Reports::ManagerEffectivenessService
     end
   end
 
-  def merge_payment_stats!(stats)
-    payment_scope.group(payment_owner_sql, :payment_method).sum(:amount).each do |(owner_id, payment_method), amount|
-      row = stats[owner_id]
-      amount_minor = amount.to_i
-      row[:payments_amount_minor] += amount_minor
-      row["#{payment_category(payment_method)}_amount_minor".to_sym] += amount_minor
-    end
-  end
 
   def deals_scope
     scope = deal_relation.kept.joins(:stage)
@@ -233,17 +218,6 @@ class Crm::Reports::ManagerEffectivenessService
       .where('COALESCE(crm_tasks.due_at, crm_tasks.start_at, crm_tasks.created_at) BETWEEN ? AND ?', since_time, until_time)
   end
 
-  def payment_scope
-    Scheduling::Payment
-      .joins(:appointment)
-      .where(account_id: account.id, created_at: since_time..until_time)
-      .where(scheduling_appointments: { account_id: account.id })
-      .where("#{payment_owner_sql} IN (?)", visible_owner_ids)
-  end
-
-  def payment_owner_sql
-    Arel.sql('COALESCE(scheduling_appointments.owner_id, scheduling_payments.recorded_by_id)')
-  end
 
   def crm_task_meeting_source_available?
     defined?(Crm::Task) && Crm::Task.column_names.include?('activity_type')
@@ -289,16 +263,6 @@ class Crm::Reports::ManagerEffectivenessService
     ActiveRecord::Base.connection.quote(value)
   end
 
-  def payment_category(method)
-    case method.to_s
-    when 'cash'
-      :cash
-    when 'bank_transfer', 'card'
-      :non_cash
-    else
-      :other
-    end
-  end
 
   def owner_names_for(owner_ids)
     return {} if owner_ids.blank?

@@ -6,6 +6,15 @@ module Current
   thread_mattr_accessor :executed_by
   thread_mattr_accessor :contact
   thread_mattr_accessor :suppress_runtime_events
+  thread_mattr_accessor :scheduling_conversation_link_appointment
+
+  def self.with_scheduling_conversation_link(appointment)
+    previous_value = scheduling_conversation_link_appointment
+    self.scheduling_conversation_link_appointment = appointment
+    yield
+  ensure
+    self.scheduling_conversation_link_appointment = previous_value
+  end
 
   def self.with_runtime_events_suppressed
     previous_value = Current.suppress_runtime_events
@@ -23,5 +32,6 @@ module Current
     Current.executed_by = nil
     Current.contact = nil
     Current.suppress_runtime_events = nil
+    Current.scheduling_conversation_link_appointment = nil
   end
 end

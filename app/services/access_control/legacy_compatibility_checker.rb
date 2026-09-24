@@ -83,7 +83,8 @@ class AccessControl::LegacyCompatibilityChecker
 
   def grant_differences(account_user, expected_grants)
     expected_scopes = scopes_by_key(expected_grants)
-    actual_keys = account_user.access_role&.grants&.map { |grant| [grant.resource, grant.capability] } || []
+    actual_grants = account_user.access_role&.grants || []
+    actual_keys = actual_grants.reject(&:retired?).map { |grant| [grant.resource, grant.capability] }
     keys = (expected_scopes.keys + actual_keys).uniq.sort
     resolver = AccessControl::ShadowResolver.new(account_user)
 

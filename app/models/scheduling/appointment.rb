@@ -89,8 +89,12 @@ class Scheduling::Appointment < ApplicationRecord
   belongs_to :service, class_name: 'Scheduling::Service', optional: true, inverse_of: :appointments
   belongs_to :team, optional: true
 
-  has_one :expense, class_name: 'Scheduling::Expense', dependent: :destroy_async, inverse_of: :appointment
-  has_many :payments, -> { order(:created_at, :id) }, class_name: 'Scheduling::Payment', dependent: :destroy_async, inverse_of: :appointment
+  # Historical finance records are retained until their data-retention policy is decided.
+  has_one :expense, class_name: 'Scheduling::Expense', dependent: :restrict_with_error, inverse_of: :appointment
+  has_many :payments, -> { order(:created_at, :id) },
+           class_name: 'Scheduling::Payment',
+           dependent: :restrict_with_error,
+           inverse_of: :appointment
   has_many :reminders, as: :remindable, dependent: :nullify
   has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
 
@@ -112,29 +116,17 @@ class Scheduling::Appointment < ApplicationRecord
   validates :client_name, :starts_at, :ends_at, :source, presence: true
   validates :status, inclusion: { in: Scheduling::Constants::APPOINTMENT_STATUSES }
   validates :appointment_type, inclusion: { in: Scheduling::Constants::APPOINTMENT_TYPES }
-  validates :payment_status, inclusion: { in: Scheduling::Constants::PAYMENT_STATUSES }
-  validates :prepaid_payment_method, inclusion: { in: Scheduling::Constants::PAYMENT_METHODS }, allow_blank: true
-  validates :settlement_payment_method, inclusion: { in: Scheduling::Constants::PAYMENT_METHODS }, allow_blank: true
-  validates :compensation_type_snapshot, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }, allow_blank: true
   validates :duration_min, inclusion: { in: 5..720 }
-  validates :service_amount, :prepaid_amount, :settlement_amount, numericality: { greater_than_or_equal_to: 0, only_integer: true }
-  validates :compensation_percent_snapshot, numericality: { greater_than_or_equal_to: 0, only_integer: true }
+  validates :service_amount, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
   validates :title, length: { maximum: 255 }, allow_nil: true
   validate :ends_after_starts
-  validate :total_received_within_service_amount
-  validate :payment_methods_present_for_positive_amounts
   validate :associations_belong_to_account
-  validate :compensation_snapshot_percent_within_range
-  validate :combined_compensation_snapshot_percent_within_range
 
   scope :ordered, -> { order(:starts_at, :id) }
   scope :active_statuses, -> { where.not(status: 'cancelled') }
 
-  def manual_payments_total
-    payments.where(payment_kind: 'payment').sum(:amount)
-  end
 
   def automation_webhook_data
     payload = {
@@ -145,15 +137,12 @@ class Scheduling::Appointment < ApplicationRecord
         ends_at: ends_at&.iso8601,
         duration_min: duration_min,
         status: status,
-        payment_status: payment_status,
         appointment_type: appointment_type,
         source: source,
         client_name: client_name,
         client_phone: client_phone,
         client_identifier: client_identifier,
         service_amount: service_amount,
-        prepaid_amount: prepaid_amount,
-        settlement_amount: settlement_amount,
         contact_id: contact_id,
         company_id: company_id,
         conversation_id: conversation_id,
@@ -388,19 +377,6 @@ class Scheduling::Appointment < ApplicationRecord
     contact.update!(owner_id: owner_id)
   end
 
-  def compensation_snapshot_percent_within_range
-    return unless compensation_type_snapshot == 'percent'
-    return if compensation_value_snapshot.to_i.between?(0, 100)
-
-    errors.add(:compensation_value_snapshot, 'must be between 0 and 100 for percent compensation')
-  end
-
-  def combined_compensation_snapshot_percent_within_range
-    return unless compensation_type_snapshot == 'fixed_plus_percent'
-    return if compensation_percent_snapshot.to_i.between?(0, 100)
-
-    errors.add(:compensation_percent_snapshot, 'must be between 0 and 100 for fixed plus percent compensation')
-  end
 
   def ends_after_starts
     return if starts_at.blank? || ends_at.blank?
@@ -409,23 +385,9 @@ class Scheduling::Appointment < ApplicationRecord
     errors.add(:ends_at, 'must be after starts_at')
   end
 
-  def payment_methods_present_for_positive_amounts
-    if prepaid_amount.to_i.positive? && prepaid_payment_method.blank?
-      errors.add(:prepaid_payment_method, 'must be present when prepaid_amount is greater than 0')
-    end
-    return unless settlement_amount.to_i.positive? && settlement_payment_method.blank?
-
-    errors.add(:settlement_payment_method, 'must be present when settlement_amount is greater than 0')
-  end
 
   def sync_account_id
     self.account_id = resource.account_id if resource.present?
   end
 
-  def total_received_within_service_amount
-    return unless service_amount.to_i.positive?
-    return if prepaid_amount.to_i + settlement_amount.to_i <= service_amount.to_i
-
-    errors.add(:base, 'total received amount cannot exceed service_amount')
-  end
 end

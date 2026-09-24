@@ -14,7 +14,6 @@ RSpec.describe Captain::Tools::Account::CancelAppointmentService do
   end
 
   it 'returns normalized cancelled appointment payload wrapper' do
-    allow(service).to receive(:appointment_finance_visible?).and_return(false)
     resource = create(:scheduling_resource, account: account)
     scheduling_service = create(:scheduling_service, account: account)
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: scheduling_service,
@@ -36,7 +35,7 @@ RSpec.describe Captain::Tools::Account::CancelAppointmentService do
       'id' => appointment.id,
       'status' => 'cancelled'
     )
-    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+    expect(payload['appointment']).not_to include('payment_status', 'prepaid_amount', 'settlement_amount', 'payments', 'expense')
   end
 
   it 'cancels the explicitly selected appointment when the conversation has multiple appointments' do

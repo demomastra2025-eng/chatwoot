@@ -7,6 +7,7 @@ class Campaigns::OneoffConversationBuilder
     @contact_inbox = ensure_contact_inbox
 
     ActiveRecord::Base.transaction do
+      Contact.lock.find(@contact_inbox.contact_id)
       @contact_inbox.lock!
 
       @conversation = find_or_create_conversation

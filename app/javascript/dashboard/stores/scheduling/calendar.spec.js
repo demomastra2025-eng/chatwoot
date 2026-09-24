@@ -35,11 +35,9 @@ describe('useSchedulingCalendarStore', () => {
     showMock.mockResolvedValue({
       data: {
         payload: {
-          appointments: [],
+          appointments: [{ id: 3, service_amount: 5000 }],
           break_rules: [],
-          expenses: [],
           holidays: [],
-          payments: [],
           range: {
             from: '2026-03-08T18:00:00.000Z',
             to: '2026-03-09T17:59:59.999Z',
@@ -55,7 +53,6 @@ describe('useSchedulingCalendarStore', () => {
 
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
-    store.setPaymentStatusFilters(['paid']);
 
     const payload = await store.fetchCalendar();
 
@@ -65,13 +62,15 @@ describe('useSchedulingCalendarStore', () => {
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({
         include_slots: true,
-        payment_status: 'paid',
         resource_ids: '5,8',
         status: 'confirmed',
         view: 'day',
       })
     );
     expect(payload.resources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
+    expect(payload.appointments).toEqual([{ id: 3, serviceAmount: 5000 }]);
+    expect(payload).not.toHaveProperty('payments');
+    expect(payload).not.toHaveProperty('expenses');
     expect(store.visibleResources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
   });
 
@@ -111,7 +110,6 @@ describe('useSchedulingCalendarStore', () => {
     };
     store.listPage = 3;
     store.listTotal = 51;
-    store.paymentStatusFilters = ['paid'];
     store.selectedResourceIds = [5];
     store.statusFilters = ['confirmed'];
     store.ui.error = { message: 'Old account error' };
@@ -124,7 +122,6 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.customAttributeFilters).toEqual({});
     expect(store.listPage).toBe(1);
     expect(store.listTotal).toBe(0);
-    expect(store.paymentStatusFilters).toEqual([]);
     expect(store.selectedResourceIds).toEqual([]);
     expect(store.statusFilters).toEqual([]);
     expect(store.ui).toEqual({
@@ -140,9 +137,7 @@ describe('useSchedulingCalendarStore', () => {
         payload: {
           appointments: [],
           break_rules: [],
-          expenses: [],
           holidays: [],
-          payments: [],
           range: {
             from: '2026-03-09T00:00:00.000Z',
             to: '2026-03-16T00:00:00.000Z',
@@ -267,7 +262,6 @@ describe('useSchedulingCalendarStore', () => {
   it('resets all appointment filters without changing calendar navigation', () => {
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
-    store.setPaymentStatusFilters(['paid']);
     store.setCustomAttributeFilters({ visit_reason: ['follow_up'] });
     store.setShowInactiveAppointments(true);
     store.setView('month');
@@ -275,7 +269,6 @@ describe('useSchedulingCalendarStore', () => {
     store.resetFilters();
 
     expect(store.statusFilters).toEqual([]);
-    expect(store.paymentStatusFilters).toEqual([]);
     expect(store.customAttributeFilters).toEqual({});
     expect(store.showInactiveAppointments).toBe(false);
     expect(store.currentView).toBe('month');
@@ -287,9 +280,7 @@ describe('useSchedulingCalendarStore', () => {
     store.payload = {
       appointments: [],
       breakRules: [],
-      expenses: [],
       holidays: [],
-      payments: [],
       range: { from: null, to: null },
       resources: [
         { id: 5, name: 'Dr. Sam' },
@@ -305,7 +296,7 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.visibleResources).toEqual([]);
   });
 
-  it('merges updated appointment finance snapshots into the calendar payload', () => {
+  it('merges an updated appointment without exposing historical finance payloads', () => {
     const store = useSchedulingCalendarStore();
 
     store.payload = {
@@ -316,15 +307,7 @@ describe('useSchedulingCalendarStore', () => {
         },
       ],
       breakRules: [],
-      expenses: [
-        { appointmentId: 3, id: 201 },
-        { appointmentId: 9, id: 202 },
-      ],
       holidays: [],
-      payments: [
-        { appointmentId: 3, createdAt: '2026-03-11T08:05:00.000Z', id: 301 },
-        { appointmentId: 9, createdAt: '2026-03-10T08:05:00.000Z', id: 302 },
-      ],
       range: { from: null, to: null },
       resources: [],
       slots: [],
@@ -350,26 +333,12 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.payload.appointments).toEqual([
       {
         endsAt: '2026-03-11T09:00:00.000Z',
-        expense: { appointmentId: 3, id: 401 },
         id: 3,
-        payments: [
-          {
-            appointmentId: 3,
-            createdAt: '2026-03-11T08:30:00.000Z',
-            id: 501,
-          },
-        ],
         startsAt: '2026-03-11T08:30:00.000Z',
       },
     ]);
-    expect(store.payload.expenses).toEqual([
-      { appointmentId: 3, id: 401 },
-      { appointmentId: 9, id: 202 },
-    ]);
-    expect(store.payload.payments).toEqual([
-      { appointmentId: 3, createdAt: '2026-03-11T08:30:00.000Z', id: 501 },
-      { appointmentId: 9, createdAt: '2026-03-10T08:05:00.000Z', id: 302 },
-    ]);
+    expect(store.payload).not.toHaveProperty('payments');
+    expect(store.payload.appointments[0]).not.toHaveProperty('expense');
   });
 
   it('removes synced appointments that no longer match active filters', () => {
@@ -389,9 +358,7 @@ describe('useSchedulingCalendarStore', () => {
         },
       ],
       breakRules: [],
-      expenses: [],
       holidays: [],
-      payments: [],
       range: { from: null, to: null },
       resources: [],
       slots: [],
@@ -486,9 +453,7 @@ describe('useSchedulingCalendarStore', () => {
         },
       ],
       breakRules: [],
-      expenses: [],
       holidays: [],
-      payments: [],
       range: { from: null, to: null },
       resources: [],
       slots: [],
@@ -583,9 +548,7 @@ describe('useSchedulingCalendarStore', () => {
             },
           ],
           break_rules: [],
-          expenses: [],
           holidays: [],
-          payments: [],
           range: {
             from: '2026-03-09T00:00:00.000Z',
             to: '2026-03-16T00:00:00.000Z',
@@ -613,9 +576,7 @@ describe('useSchedulingCalendarStore', () => {
             },
           ],
           break_rules: [],
-          expenses: [],
           holidays: [],
-          payments: [],
           range: {
             from: '2026-03-09T00:00:00.000Z',
             to: '2026-03-16T00:00:00.000Z',

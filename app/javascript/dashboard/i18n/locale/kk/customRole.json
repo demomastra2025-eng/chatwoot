@@ -43,8 +43,6 @@
         "CONFIGURE": "Баптау",
         "EXPORT": "Экспорт",
         "VIEW_REPORTS": "Есептерді көру",
-        "VIEW_FINANCE": "Қаржыны көру",
-        "MANAGE_FINANCE": "Қаржыны басқару",
         "OVERRIDE_SCHEDULE": "Кесте қайшылықтарын растау",
         "MANAGE": "Басқару"
       },

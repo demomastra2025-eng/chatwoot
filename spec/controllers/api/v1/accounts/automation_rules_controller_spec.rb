@@ -304,7 +304,6 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
 
       it 'saves appointment automation rules with native appointment actions' do
         account.enable_features!('scheduling')
-        account.enable_features!('scheduling_finance')
 
         appointment_params = params.merge(
           event_name: 'appointment_updated',
@@ -320,10 +319,6 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
             {
               action_name: :change_appointment_status,
               action_params: ['confirmed']
-            },
-            {
-              action_name: :cancel_appointment_payment,
-              action_params: []
             }
           ]
         )
@@ -334,10 +329,25 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(account.automation_rules.count).to eq(1)
-        expect(account.automation_rules.first.actions.pluck('action_name')).to contain_exactly(
-          'change_appointment_status',
-          'cancel_appointment_payment'
-        )
+        expect(account.automation_rules.first.actions.pluck('action_name')).to contain_exactly('change_appointment_status')
+      end
+
+      it 'rejects a retired appointment payment action even if the historical feature bit is enabled' do
+        account.enable_features!('scheduling', 'scheduling_finance')
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params.merge(
+               event_name: 'appointment_updated',
+               conditions: [
+                 { attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }
+               ],
+               actions: [{ action_name: :cancel_appointment_payment, action_params: [] }]
+             )
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body.dig('error', 'actions')).to include('Automation actions cancel_appointment_payment not supported.')
+        expect(account.automation_rules.count).to eq(0)
       end
 
       it 'saves deal automation rules with managed custom field conditions and native actions' do
@@ -756,6 +766,30 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         body = JSON.parse(response.body, symbolize_names: true)
         expect(body[:payload][:active]).to be(false)
         expect(automation_rule.reload.active).to be(false)
+      end
+
+      it 'disables a preserved rule with retired scheduling finance conditions and actions' do
+        account.enable_features!('scheduling')
+        automation_rule.update!(
+          event_name: 'appointment_created',
+          conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+          actions: [{ action_name: 'change_appointment_status', action_params: ['confirmed'] }]
+        )
+        original_conditions = [{ 'attribute_key' => 'payment_status', 'filter_operator' => 'equal_to',
+                                 'values' => ['paid'], 'query_operator' => nil }]
+        original_actions = [{ 'action_name' => 'cancel_appointment_payment', 'action_params' => [] }]
+        automation_rule.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          conditions: original_conditions, actions: original_actions
+        )
+
+        patch "/api/v1/accounts/#{account.id}/automation_rules/#{automation_rule.id}",
+              headers: administrator.create_new_auth_token,
+              params: { active: false }
+
+        expect(response).to have_http_status(:success)
+        expect(automation_rule.reload).to have_attributes(
+          active: false, conditions: original_conditions, actions: original_actions
+        )
       end
 
       it 'allows deactivating a deal automation rule with stale stage references' do

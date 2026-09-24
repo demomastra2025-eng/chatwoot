@@ -15,10 +15,9 @@ import SchedulingErrorState from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import SchedulingPercentInput from 'dashboard/components-next/Scheduling/SchedulingPercentInput.vue';
+
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
-import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import { COMPENSATION_TYPE_VALUES } from '../constants';
+
 import {
   formatSchedulingErrorMessage,
   toIntegerNumeric,
@@ -47,25 +46,6 @@ const serviceForm = reactive({
   prices: [],
   serviceType: '',
 });
-
-const compensationTypeLabels = computed(() => ({
-  fixed: t('SCHEDULING.COMPENSATION.fixed'),
-  fixed_plus_percent: t('SCHEDULING.COMPENSATION.fixed_plus_percent'),
-  percent: t('SCHEDULING.COMPENSATION.percent'),
-}));
-
-const compensationPrimaryLabel = type => {
-  if (type === 'percent') return t('SCHEDULING.COMPENSATION.percent_value');
-
-  return t('SCHEDULING.COMPENSATION.fixed_value');
-};
-
-const compensationTypeOptions = computed(() =>
-  COMPENSATION_TYPE_VALUES.map(value => ({
-    label: compensationTypeLabels.value[value] || value,
-    value,
-  }))
-);
 
 const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
 
@@ -110,14 +90,6 @@ const initializePriceRows = prices => {
 
     return {
       active: matchingPrice?.active ?? false,
-      compensationType:
-        matchingPrice?.compensationType ||
-        resource.compensationType ||
-        'percent',
-      compensationPercent:
-        matchingPrice?.compensationPercent ?? resource.compensationPercent ?? 0,
-      compensationValue:
-        matchingPrice?.compensationValue ?? resource.compensationValue ?? 0,
       price: matchingPrice?.price || '',
       resourceId: resource.id,
       resourceName: resource.name,
@@ -460,12 +432,7 @@ onMounted(async () => {
             <div
               v-for="price in serviceForm.prices"
               :key="price.resourceId"
-              class="grid gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container"
-              :class="
-                price.compensationType === 'fixed_plus_percent'
-                  ? 'lg:grid-cols-[minmax(0,1.2fr)_120px_180px_140px_140px]'
-                  : 'lg:grid-cols-[minmax(0,1.2fr)_120px_180px_140px]'
-              "
+              class="grid gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container lg:grid-cols-[minmax(0,1.2fr)_120px_180px]"
             >
               <div class="flex flex-col gap-1">
                 <span class="text-sm font-medium text-n-slate-12">
@@ -483,33 +450,6 @@ onMounted(async () => {
                 v-model="price.price"
                 min="0"
                 :label="$t('SCHEDULING.SERVICES.PRICE')"
-              />
-              <div class="grid gap-1">
-                <span class="text-sm font-medium text-n-slate-12">
-                  {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-                </span>
-                <SchedulingSelectField
-                  :model-value="price.compensationType"
-                  :options="compensationTypeOptions"
-                  :placeholder="$t('SCHEDULING.RESOURCES.COMPENSATION')"
-                  @update:model-value="price.compensationType = $event"
-                />
-              </div>
-              <SchedulingPercentInput
-                v-if="price.compensationType === 'percent'"
-                v-model="price.compensationValue"
-                :label="$t('SCHEDULING.COMPENSATION.percent_value')"
-              />
-              <SchedulingMoneyInput
-                v-else
-                v-model="price.compensationValue"
-                min="0"
-                :label="compensationPrimaryLabel(price.compensationType)"
-              />
-              <SchedulingPercentInput
-                v-if="price.compensationType === 'fixed_plus_percent'"
-                v-model="price.compensationPercent"
-                :label="$t('SCHEDULING.COMPENSATION.percent_value')"
               />
             </div>
           </div>

@@ -55,6 +55,28 @@ RSpec.describe 'Access Roles API', type: :request do
       )
     end
 
+    it 'hides historical finance grants without deleting them' do
+      headers = administrator.create_new_auth_token
+      role = account.access_roles.find_by!(system_key: 'administrator')
+      now = Time.current
+      # Recreate legacy data that current model validations intentionally reject.
+      # rubocop:disable Rails/SkipsModelValidations
+      AccessRoleGrant.insert_all!(%w[view_finance manage_finance].map do |capability|
+        {
+          account_id: account.id, access_role_id: role.id, resource: 'appointments',
+          capability: capability, access_scope: 'all', created_at: now, updated_at: now
+        }
+      end)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      get path, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      serialized = response.parsed_body.fetch('data').find { |item| item['id'] == role.id }
+      expect(serialized.fetch('grants').map { |grant| grant['capability'] }).not_to include('view_finance', 'manage_finance')
+      expect(role.grants.where(resource: 'appointments', capability: %w[view_finance manage_finance]).count).to eq(2)
+    end
+
     it 'does not advertise normalized mutations from the release gate alone' do
       ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true') do
         get path, headers: administrator.create_new_auth_token, as: :json

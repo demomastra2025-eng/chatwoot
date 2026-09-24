@@ -24,7 +24,7 @@ class AccessControl::SystemRoleCatalog
     def department_lead_grants
       grants_for_resources(
         SCOPED_BOOTSTRAP_RESOURCES,
-        except: %w[configure manage_finance override_schedule],
+        except: %w[configure override_schedule],
         scope: 'team'
       )
     end
@@ -32,7 +32,7 @@ class AccessControl::SystemRoleCatalog
     def employee_grants
       grants_for_resources(
         SCOPED_BOOTSTRAP_RESOURCES,
-        except: %w[view_finance manage_finance view_configuration configure export view_reports override_schedule],
+        except: %w[view_configuration configure export view_reports override_schedule],
         scope: 'own'
       ).map do |grant|
         next grant.merge(access_scope: 'all') if grant[:capability] == 'view' &&

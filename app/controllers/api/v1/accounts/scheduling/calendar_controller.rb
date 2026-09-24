@@ -25,7 +25,7 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
       view: resolved_view,
       from: from,
       to: to,
-      resource_ids: parse_csv_ids(params[:resource_ids]),
+      resource_ids: parse_id_list_param!(params[:resource_ids], field_name: 'resource_ids'),
       include_slots: parse_boolean(params[:include_slots]),
       duration_min: params[:duration_min],
       custom_attribute_filters: custom_attribute_filters_param,
@@ -37,44 +37,14 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
   end
 
   def calendar_payload(result)
-    Scheduling::PayloadBuilder.calendar(
-      result,
-      finance_appointment_ids: finance_appointment_ids(result[:appointments]),
-      finance_resource_ids: finance_resource_ids(result[:resources])
-    )
-  end
-
-  def finance_resource_ids(resources)
-    Scheduling::ResourceFinanceScope.new(
-      pundit_user,
-      Current.account.scheduling_resources.where(id: resources.map(&:id))
-    ).resolve.pluck(:id)
-  end
-
-  def finance_appointment_ids(appointments)
-    Scheduling::AppointmentPolicy::Scope.new(
-      pundit_user,
-      Current.account.scheduling_appointments.where(id: appointments.map(&:id)),
-      capability: 'view_finance'
-    ).resolve.pluck(:id)
+    Scheduling::PayloadBuilder.calendar(result)
   end
 
   def appointment_scope
-    scope = Scheduling::AppointmentPolicy::Scope.new(
-      pundit_user,
-      Current.account.scheduling_appointments,
-      capability: 'view'
-    ).resolve
-    return scope if params[:payment_status].blank?
-
-    scope.where(id: finance_scope.select(:id))
-  end
-
-  def finance_scope
     Scheduling::AppointmentPolicy::Scope.new(
       pundit_user,
       Current.account.scheduling_appointments,
-      capability: 'view_finance'
+      capability: 'view'
     ).resolve
   end
 
@@ -90,10 +60,7 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
   end
 
   def appointment_filters
-    {
-      statuses: parse_csv_ids(params[:status]),
-      payment_statuses: parse_csv_ids(params[:payment_status])
-    }
+    { statuses: parse_csv_ids(params[:status]) }
   end
 
   def appointment_page

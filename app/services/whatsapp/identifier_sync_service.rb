@@ -2,8 +2,11 @@ class Whatsapp::IdentifierSyncService
   pattr_initialize [:contact_inbox!, :contact]
 
   def perform(source_ids: [], username: nil, phone_number: nil)
+    # Phone writes acquire the account advisory lock; take it before inserting
+    # ContactInbox rows when this sync is part of a wider transaction.
+    update_contact_phone_number(phone_number) if synced_contact.present?
     create_contact_inboxes(source_ids)
-    update_contact(phone_number: phone_number, username: username)
+    update_contact_username(username) if synced_contact.present?
   end
 
   private
@@ -17,13 +20,6 @@ class Whatsapp::IdentifierSyncService
       # A concurrent webhook/status update inserted the same inbox/source_id row.
       # The identity already exists, so this sync can safely continue.
     end
-  end
-
-  def update_contact(phone_number:, username:)
-    return if synced_contact.blank?
-
-    update_contact_phone_number(phone_number)
-    update_contact_username(username)
   end
 
   def update_contact_phone_number(phone_number)

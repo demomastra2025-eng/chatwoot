@@ -1,12 +1,7 @@
 module Scheduling::PayloadBuilder
-  APPOINTMENT_FINANCE_KEYS = %i[
-    service_amount compensation_type_snapshot compensation_value_snapshot compensation_percent_snapshot
-    prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method payment_status payments expense
-  ].freeze
-
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil, include_finance: true, dialog_context: nil)
+  def appointment(appointment, dialog_context: nil)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
     legacy_chat_conversation = conversation || appointment_chat_conversation(appointment, dialog_context)
@@ -59,21 +54,7 @@ module Scheduling::PayloadBuilder
       external_ref: appointment.external_ref,
       idempotency_key: appointment.idempotency_key,
       service_amount: appointment.service_amount,
-      compensation_type_snapshot: appointment.compensation_type_snapshot,
-      compensation_value_snapshot: appointment.compensation_value_snapshot,
-      compensation_percent_snapshot: appointment.compensation_percent_snapshot,
-      prepaid_amount: appointment.prepaid_amount,
-      prepaid_payment_method: appointment.prepaid_payment_method,
-      settlement_amount: appointment.settlement_amount,
-      settlement_payment_method: appointment.settlement_payment_method,
-      payment_status: appointment.payment_status,
       custom_attributes: appointment.custom_attributes,
-      payments: Array(payments || appointment.try(:payments)).map { |item| payment(item) },
-      expense: if expense_record
-                 expense(expense_record)
-               else
-                 (appointment.try(:expense).present? ? expense(appointment.expense) : nil)
-               end,
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
     }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).tap do |result|
@@ -83,12 +64,12 @@ module Scheduling::PayloadBuilder
       result[:provider_command_receipt] = receipt if receipt.present?
     end
 
-    include_finance ? payload : payload.except(*APPOINTMENT_FINANCE_KEYS)
+    payload
   end
 
-  def appointments(records, include_finance: true)
+  def appointments(records)
     dialog_context = Scheduling::AppointmentDialogContextLoader.new(records).perform
-    records.map { |record| appointment(record, include_finance: include_finance, dialog_context: dialog_context) }
+    records.map { |record| appointment(record, dialog_context: dialog_context) }
   end
 
   def available_conversation(conversation)
@@ -148,48 +129,21 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def calendar(payload, include_finance: true, finance_appointment_ids: nil, finance_resource_ids: nil)
-    finance_visibility = finance_visibility_map(finance_appointment_ids)
-    resource_finance_visibility = finance_visibility_map(finance_resource_ids)
+  def calendar(payload)
     {
       view: payload[:view],
       range: payload[:range],
-      resources: payload[:resources].map do |item|
-        resource(item, include_finance: finance_visible?(item.id, include_finance, resource_finance_visibility))
-      end,
+      resources: payload[:resources].map { |item| resource(item) },
       work_rules: payload[:work_rules].map { |item| work_rule(item) },
       break_rules: payload[:break_rules].map { |item| break_rule(item) },
       holidays: payload[:holidays].map { |item| holiday(item) },
       workday_overrides: payload[:workday_overrides].map { |item| workday_override(item) },
       time_offs: payload[:time_offs].map { |item| time_off(item) },
-      appointments: calendar_appointments(payload[:appointments], include_finance, finance_visibility),
-      payments: calendar_finance_records(payload[:payments], include_finance, finance_visibility, :payment),
-      expenses: calendar_finance_records(payload[:expenses], include_finance, finance_visibility, :expense),
+      appointments: appointments(payload[:appointments]),
       slots: payload[:slots]
     }
   end
 
-  def calendar_appointments(appointments, include_finance, finance_visibility)
-    appointments.map do |item|
-      appointment(item, include_finance: finance_visible?(item.id, include_finance, finance_visibility))
-    end
-  end
-
-  def calendar_finance_records(records, include_finance, finance_visibility, serializer)
-    records.filter_map do |item|
-      public_send(serializer, item) if finance_visible?(item.appointment_id, include_finance, finance_visibility)
-    end
-  end
-
-  def finance_visibility_map(appointment_ids)
-    return if appointment_ids.nil?
-
-    Array(appointment_ids).index_with(true)
-  end
-
-  def finance_visible?(appointment_id, include_finance, finance_visibility)
-    finance_visibility.nil? ? include_finance : finance_visibility.key?(appointment_id)
-  end
 
   def contact(contact)
     {
@@ -211,20 +165,6 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def expense(expense)
-    {
-      id: expense.id,
-      account_id: expense.account_id,
-      appointment_id: expense.appointment_id,
-      resource_id: expense.resource_id,
-      amount: expense.amount,
-      status: expense.status,
-      paid_at: expense.paid_at&.iso8601,
-      paid_by_id: expense.paid_by_id,
-      created_at: expense.created_at&.iso8601,
-      updated_at: expense.updated_at&.iso8601
-    }
-  end
 
   def holiday(holiday)
     {
@@ -240,21 +180,7 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def payment(payment)
-    {
-      id: payment.id,
-      account_id: payment.account_id,
-      appointment_id: payment.appointment_id,
-      recorded_by_id: payment.recorded_by_id,
-      amount: payment.amount,
-      payment_method: payment.payment_method,
-      payment_kind: payment.payment_kind,
-      created_at: payment.created_at&.iso8601,
-      updated_at: payment.updated_at&.iso8601
-    }
-  end
-
-  def resource(resource, include_finance: false)
+  def resource(resource)
     {
       id: resource.id,
       account_id: resource.account_id,
@@ -265,11 +191,11 @@ module Scheduling::PayloadBuilder
       photo_url: resource.photo_url,
       description: resource.description,
       color: resource.color
-    }.merge(resource_capacity(resource, include_finance: include_finance))
+    }.merge(resource_capacity(resource))
   end
 
-  def resource_capacity(resource, include_finance: false)
-    payload = {
+  def resource_capacity(resource)
+    {
       timezone: resource.timezone,
       slot_duration_min: resource.slot_duration_min,
       schedule_update_supported: true,
@@ -280,17 +206,9 @@ module Scheduling::PayloadBuilder
       created_at: resource.created_at&.iso8601,
       updated_at: resource.updated_at&.iso8601
     }
-    return payload unless include_finance
-
-    payload.merge(
-      compensation_type: resource.compensation_type,
-      compensation_value: resource.compensation_value,
-      compensation_percent: resource.compensation_percent
-    )
   end
 
-  def service(service, finance_resource_ids: [])
-    finance_visibility = finance_visibility_map(finance_resource_ids)
+  def service(service)
     {
       id: service.id,
       account_id: service.account_id,
@@ -303,16 +221,14 @@ module Scheduling::PayloadBuilder
       description: service.description,
       active: service.active,
       custom_attributes: service.custom_attributes,
-      prices: Array(service.try(:prices)).map do |item|
-        service_price(item, include_finance: finance_visible?(item.resource_id, false, finance_visibility))
-      end,
+      prices: Array(service.try(:prices)).map { |item| service_price(item) },
       created_at: service.created_at&.iso8601,
       updated_at: service.updated_at&.iso8601
     }
   end
 
-  def service_price(price, include_finance: false)
-    payload = {
+  def service_price(price)
+    {
       id: price.id,
       account_id: price.account_id,
       service_id: price.service_id,
@@ -322,13 +238,6 @@ module Scheduling::PayloadBuilder
       created_at: price.created_at&.iso8601,
       updated_at: price.updated_at&.iso8601
     }
-    return payload unless include_finance
-
-    payload.merge(
-      compensation_type: price.compensation_type,
-      compensation_value: price.compensation_value,
-      compensation_percent: price.compensation_percent
-    )
   end
 
   def time_off(time_off)

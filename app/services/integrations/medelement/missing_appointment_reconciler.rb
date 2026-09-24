@@ -43,7 +43,6 @@ class Integrations::Medelement::MissingAppointmentReconciler
     attributes['source_mode'] = 'provider_tombstone'
     appointment.assign_attributes(
       status: 'cancelled',
-      payment_status: 'cancelled',
       custom_attributes: attributes
     )
   end

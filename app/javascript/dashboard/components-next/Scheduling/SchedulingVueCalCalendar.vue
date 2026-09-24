@@ -1024,7 +1024,7 @@ const appointmentEvents = computed(() => {
       status: appointment.status,
       statusIcon: appointment.statusIcon || '',
       statusLabel: appointment.statusLabel || '',
-      paymentStatus: appointment.paymentStatus,
+
       clientName,
       serviceNameSnapshot: subtitle,
       resourceColor,

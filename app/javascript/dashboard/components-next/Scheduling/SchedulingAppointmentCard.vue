@@ -39,17 +39,6 @@ const statusClass = computed(() => {
   return classMap[props.appointment.status] || classMap.scheduled;
 });
 
-const paymentClass = computed(() => {
-  const classMap = {
-    awaiting_payment: 'text-n-amber-11',
-    cancelled: 'text-n-ruby-11',
-    paid: 'text-n-teal-11',
-    prepaid: 'text-n-blue-11',
-  };
-
-  return classMap[props.appointment.paymentStatus] || 'text-n-slate-11';
-});
-
 const appointmentStatusLabel = computed(() => {
   const labels = {
     cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
@@ -66,17 +55,6 @@ const appointmentStatusIcon = computed(
     APPOINTMENT_STATUS_ICONS[props.appointment.status] ||
     APPOINTMENT_STATUS_ICONS.scheduled
 );
-
-const paymentStatusLabel = computed(() => {
-  const labels = {
-    awaiting_payment: t('SCHEDULING.PAYMENT_STATUS.awaiting_payment'),
-    cancelled: t('SCHEDULING.PAYMENT_STATUS.cancelled'),
-    paid: t('SCHEDULING.PAYMENT_STATUS.paid'),
-    prepaid: t('SCHEDULING.PAYMENT_STATUS.prepaid'),
-  };
-
-  return labels[props.appointment.paymentStatus] || labels.awaiting_payment;
-});
 
 const timeRange = computed(() => {
   return `${formatTimeLabel(minuteOfDayFromDate(props.appointment.startsAt))} - ${formatTimeLabel(minuteOfDayFromDate(props.appointment.endsAt))}`;
@@ -125,9 +103,6 @@ const backgroundStyle = computed(() => ({
     </div>
 
     <div class="flex items-center justify-between gap-2">
-      <span class="truncate" :class="paymentClass">
-        {{ paymentStatusLabel }}
-      </span>
       <span
         class="inline-flex items-center gap-1 rounded-full bg-n-alpha-2 px-2 py-0.5 text-n-slate-11"
       >

@@ -68,10 +68,7 @@ class Crm::FieldDefinition < ApplicationRecord
       client_last_name client_middle_name client_phone
       client_identifier client_birth_date client_gender client_comment source
       external_ref idempotency_key service_name_snapshot service_type_snapshot
-      service_duration_min_snapshot service_amount compensation_type_snapshot
-      compensation_value_snapshot compensation_percent_snapshot prepaid_amount
-      prepaid_payment_method settlement_amount settlement_payment_method
-      payment_status
+      service_duration_min_snapshot service_amount
     ]
   }.freeze
   RESERVED_CUSTOM_ATTRIBUTE_KEYS = {

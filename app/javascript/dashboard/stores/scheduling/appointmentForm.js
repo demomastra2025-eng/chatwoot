@@ -1,14 +1,13 @@
 import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
-import { PAYMENT_METHOD_VALUES } from 'dashboard/routes/dashboard/scheduling/constants';
+
 import { schedulingContactNameParts } from './contactName';
 import {
   compactPayload,
   extractSchedulingError,
   normalizePayload,
   normalizeMeta,
-  toIntegerNumeric,
   toNumeric,
 } from './shared';
 import {
@@ -17,10 +16,6 @@ import {
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
-const DEFAULT_PREPAID_PAYMENT_METHOD =
-  PAYMENT_METHOD_VALUES.find(value => value === 'cash') ||
-  PAYMENT_METHOD_VALUES[0] ||
-  'cash';
 const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
   'service_ids',
   'services',
@@ -72,15 +67,6 @@ const editableCustomAttributes = attributes =>
     })
   );
 
-const resolveAmount = value => {
-  if (value === '' || value === null || value === undefined) {
-    return 0;
-  }
-
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : 0;
-};
-
 const normalizeIdArray = values => {
   const normalizedValues = Array.isArray(values) ? values : [values];
 
@@ -101,61 +87,6 @@ const haveEqualIds = (left = [], right = []) => {
   return normalizedLeft.every(
     (value, index) => value === normalizedRight[index]
   );
-};
-
-const normalizePrepaymentForm = form => ({
-  ...form,
-  prepaidPaymentMethod:
-    resolveAmount(form.prepaidAmount) > 0
-      ? form.prepaidPaymentMethod || DEFAULT_PREPAID_PAYMENT_METHOD
-      : '',
-});
-
-const hasExplicitValue = value =>
-  value !== '' && value !== null && value !== undefined;
-
-const pruneCapabilitySensitiveFields = ({
-  payload,
-  form,
-  mode,
-  selectedAppointment,
-}) => {
-  if (mode === 'create') {
-    const usesCatalogService =
-      hasExplicitValue(payload.service_id) || payload.service_ids?.length;
-    if (usesCatalogService || !hasExplicitValue(form.serviceAmount)) {
-      delete payload.service_amount;
-    }
-    if (!hasExplicitValue(form.prepaidAmount)) {
-      delete payload.prepaid_amount;
-      delete payload.prepaid_payment_method;
-    }
-    if (form.status === 'scheduled') delete payload.status;
-    return payload;
-  }
-
-  if (form.status === selectedAppointment?.status) delete payload.status;
-
-  const financeVisible = hasExplicitValue(selectedAppointment?.serviceAmount);
-  const serviceAmountChanged =
-    financeVisible &&
-    Number(form.serviceAmount) !== Number(selectedAppointment.serviceAmount);
-  if (!serviceAmountChanged) delete payload.service_amount;
-
-  const prepaidAmountChanged =
-    financeVisible &&
-    Number(form.prepaidAmount || 0) !==
-      Number(selectedAppointment.prepaidAmount || 0);
-  const prepaidMethodChanged =
-    financeVisible &&
-    (form.prepaidPaymentMethod || '') !==
-      (selectedAppointment.prepaidPaymentMethod || '');
-  if (!prepaidAmountChanged) delete payload.prepaid_amount;
-  if (!prepaidAmountChanged && !prepaidMethodChanged) {
-    delete payload.prepaid_payment_method;
-  }
-
-  return payload;
 };
 
 export const isKazakhstanE164Phone = value => {
@@ -188,8 +119,7 @@ const createDefaultForm = () => ({
   customAttributes: {},
   endsAt: '',
   medelementCabinetCode: '',
-  prepaidAmount: '',
-  prepaidPaymentMethod: '',
+
   resourceId: '',
   serviceAmount: '',
   serviceId: '',
@@ -237,11 +167,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           new Date(state.form.endsAt) <= new Date(state.form.startsAt)
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
             : '',
-        prepaidAmount:
-          resolveAmount(state.form.prepaidAmount) >
-          resolveAmount(state.form.serviceAmount)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.PREPAID_EXCEEDS_SERVICE_AMOUNT'
-            : '',
+
         clientName: !state.form.clientFirstName?.trim()
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
           : '',
@@ -316,7 +242,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resourceId: slot.resourceId || defaults.resourceId || '',
           startsAt: toDateTimeInputValue(slot.startsAt),
         };
-        this.form = normalizePrepaymentForm(this.form);
       },
 
       openEdit(appointment) {
@@ -354,8 +279,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             appointment.customAttributes?.medelement_cabinet_code ||
             appointment.customAttributes?.medelementCabinetCode ||
             '',
-          prepaidAmount: appointment.prepaidAmount ?? '',
-          prepaidPaymentMethod: appointment.prepaidPaymentMethod || '',
+
           resourceId: appointment.resourceId || '',
           serviceAmount: appointment.serviceAmount ?? '',
           serviceId: appointment.serviceId || '',
@@ -369,7 +293,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           status: appointment.status || 'scheduled',
           title: appointment.title || '',
         };
-        this.form = normalizePrepaymentForm(this.form);
       },
 
       close() {
@@ -416,7 +339,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           updatedForm.clientName = fullPatientName(updatedForm);
           updatedForm.clientNameStructured = true;
         }
-        this.form = normalizePrepaymentForm(updatedForm);
+        this.form = updatedForm;
       },
 
       applyContact(contact) {
@@ -625,7 +548,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       buildPayload() {
-        const normalizedForm = normalizePrepaymentForm(this.form);
+        const normalizedForm = this.form;
         const serviceIds = normalizeIdArray(normalizedForm.serviceIds);
         const serviceId = toNumeric(normalizedForm.serviceId);
         const hasSelectedService = serviceIds.length || serviceId;
@@ -660,15 +583,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : {}),
           },
           ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
-          prepaid_amount:
-            toIntegerNumeric(normalizedForm.prepaidAmount, 'prepaid_amount') ||
-            0,
-          prepaid_payment_method:
-            normalizedForm.prepaidPaymentMethod || undefined,
           resource_id: toNumeric(normalizedForm.resourceId),
-          service_amount:
-            toIntegerNumeric(normalizedForm.serviceAmount, 'service_amount') ||
-            0,
           service_id: serviceId,
           service_ids: serviceIds,
           service_name_snapshot: hasSelectedService
@@ -695,12 +610,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
             normalizedForm.clientMiddleName?.trim() || null;
         }
 
-        pruneCapabilitySensitiveFields({
-          payload,
-          form: normalizedForm,
-          mode: this.mode,
-          selectedAppointment: this.selectedAppointment,
-        });
+        if (this.mode === 'create' && normalizedForm.status === 'scheduled') {
+          delete payload.status;
+        } else if (normalizedForm.status === this.selectedAppointment?.status) {
+          delete payload.status;
+        }
 
         const selectedAppointmentContactId = Number(
           this.selectedAppointment?.contactId || 0

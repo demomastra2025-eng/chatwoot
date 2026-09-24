@@ -84,7 +84,7 @@ class Reminders::PostDeliveryActionService
   end
 
   def resolve_conversation!(conversation, audit_context)
-    conversation.with_lock do
+    Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       Conversations::StatusTransitionService.new(
         conversation: conversation,
         params: { status: 'resolved' },

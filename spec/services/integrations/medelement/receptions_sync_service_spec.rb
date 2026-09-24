@@ -327,7 +327,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
 
       stale_imported.reload
       expect(stale_imported.status).to eq('cancelled')
-      expect(stale_imported.payment_status).to eq('cancelled')
+
       expect(stale_imported.custom_attributes['source_mode']).to eq('provider_tombstone')
       expect(stale_imported.custom_attributes['medelement_removed_at']).to be_present
       expect(account.scheduling_appointments.exists?(manual.id)).to be(true)
@@ -360,7 +360,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       service.perform
 
       outbound.reload
-      expect(outbound).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(outbound).to have_attributes(status: 'cancelled')
       expect(outbound.custom_attributes.slice('source_mode', 'medelement_local_cancelled_at')).to eq(
         'source_mode' => 'provider_tombstone'
       )

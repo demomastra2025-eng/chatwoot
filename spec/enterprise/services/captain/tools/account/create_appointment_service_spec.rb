@@ -20,7 +20,6 @@ RSpec.describe Captain::Tools::Account::CreateAppointmentService do
 
   describe '#execute' do
     it 'creates an appointment from the selected service duration and returns a structured payload' do
-      allow(service).to receive(:appointment_finance_visible?).and_return(false)
       payload = JSON.parse(
         execute_confirmed(
           resource_id: resource.id,
@@ -51,7 +50,7 @@ RSpec.describe Captain::Tools::Account::CreateAppointmentService do
         'duration_min' => 45,
         'client_comment' => 'Needs a morning slot'
       )
-      expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+      expect(payload['appointment']).not_to include('payment_status', 'prepaid_amount', 'settlement_amount', 'payments', 'expense')
       expect(appointment).to have_attributes(
         resource_id: resource.id,
         service_id: consultation.id,

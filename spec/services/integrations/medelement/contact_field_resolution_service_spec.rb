@@ -95,6 +95,24 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
     expect(client).not_to have_received(:update_patient)
   end
 
+  it 'takes the account phone lock before locking an inbound phone conflict' do
+    contact
+    conflict
+    lock_order = []
+    allow(Contacts::PhoneIdentityLock).to receive(:acquire!).and_wrap_original do |original, **kwargs|
+      lock_order << :account_phone
+      original.call(**kwargs)
+    end
+    allow(conflict).to receive(:with_lock).and_wrap_original do |original, &block|
+      lock_order << :conflict_row
+      original.call(&block)
+    end
+
+    service.perform(field_directions: { phone: 'medelement_to_onelink' })
+
+    expect(lock_order.first(2)).to eq(%i[account_phone conflict_row])
+  end
+
   it 'sends only the selected OneLink values while preserving other provider identity fields' do
     service.perform(field_directions: { phone: 'onelink_to_medelement' })
 
