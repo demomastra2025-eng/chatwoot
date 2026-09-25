@@ -415,6 +415,20 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(message.reload.content_attributes['external_error']).to be_nil
         expect(message.reload.content_attributes['template_params']).to eq('name' => 'approved_template')
       end
+
+      it 'rejects a Captain reply with an unknown provider outcome without changing its status' do
+        message.update!(sender: create(:captain_assistant, account: account), message_type: :outgoing,
+                        additional_attributes: { 'captain_delivery_state' => 'outcome_unknown' })
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/conversations/#{message.conversation.display_id}/messages/#{message.id}/retry",
+               headers: agent.create_new_auth_token, as: :json
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(response).to have_http_status(:conflict)
+        expect(message.reload).to be_failed
+        expect(message.additional_attributes['captain_delivery_state']).to eq('outcome_unknown')
+      end
     end
 
     context 'when the message id is invalid' do

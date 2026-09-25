@@ -5,6 +5,7 @@
 :max_retries: 3
 
 :queues:
+  - medelement_provider_commands_v2
   - medelement_provider_commands
 
 production:

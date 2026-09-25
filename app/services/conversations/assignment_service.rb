@@ -15,12 +15,13 @@ class Conversations::AssignmentService
   def perform
     validate_assignee_type!
 
-    conversation.contact.with_lock do
-      if conversation.communication_thread.present?
-        update_communication_thread!
-      else
-        update_without_communication_thread!
+    if conversation.communication_thread.present?
+      ::Conversation.transaction do
+        Conversations::CommunicationThreadResolver.lock_contact_thread!(conversation.account_id, conversation.contact_id)
+        assign_under_control_lock!
       end
+    else
+      assign_under_control_lock!
     end
 
     assignee_requested? ? assignee : team
@@ -29,6 +30,32 @@ class Conversations::AssignmentService
   private
 
   attr_reader :conversation, :assignee_id, :assignee_type, :team_id, :actor, :source
+
+  def assign_under_control_lock!
+    if human_assignment?
+      conversation.with_captain_control_lock do
+        apply_assignment!
+        conversation.activate_captain_human_control!(source: source)
+      end
+    else
+      apply_assignment!
+    end
+  end
+
+  def apply_assignment!
+    conversation.contact.with_lock do
+      if conversation.communication_thread.present?
+        update_communication_thread!
+      else
+        update_without_communication_thread!
+      end
+    end
+  end
+
+  def human_assignment?
+    ((assignee_requested? && assignee.present?) || (actor.is_a?(User) && team_requested?)) &&
+      CaptainInbox.where(inbox_id: conversation.communication_thread ? conversation.communication_thread.conversations.select(:inbox_id) : [conversation.inbox_id]).exists?
+  end
 
   def update_communication_thread!
     thread = conversation.communication_thread

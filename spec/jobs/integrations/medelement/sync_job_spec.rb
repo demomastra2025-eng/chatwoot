@@ -53,7 +53,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
         Integrations::Medelement::OutboundChangeJob
       ]
 
-      expect(jobs.map(&:queue_name).uniq).to eq(['medelement_provider_commands'])
+      expect(jobs.map(&:queue_name).uniq).to contain_exactly('medelement_provider_commands', 'medelement_provider_commands_v2')
     end
 
     it 'serves each MedElement queue from a dedicated worker only' do
@@ -67,10 +67,22 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
 
         expect(sync_config[:queues]).to eq(['medelement_sync'])
         expect(sync_config[:concurrency]).to eq(1)
-        expect(commands_config[:queues]).to eq(['medelement_provider_commands'])
+        expect(commands_config[:queues]).to eq(%w[medelement_provider_commands_v2 medelement_provider_commands])
         expect(commands_config[:concurrency]).to eq(2)
-        expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands')
+        expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands', 'medelement_provider_commands_v2')
       end
+    end
+
+    it 'replaces legacy consumers before Captain producers and never rolls back to unfenced workers automatically' do
+      script = Rails.root.join('script/onelink/promote_production.sh').read
+      promotion = script.split('log "retiring legacy outbound/provider consumers before any new producer"', 2).last
+      rollback = script.split('rollback() {', 2).last.split('recreate() {', 2).first
+
+      expect(script).to include('FENCED_CONSUMERS=(chatwoot_outbound_messages_worker chatwoot_medelement_commands_worker)')
+      expect(promotion.index('for service in "${FENCED_CONSUMERS[@]}"')).to be < promotion.index('for service in "${APP_SERVICES[@]}"')
+      expect(promotion.index('for service in "${FENCED_CONSUMERS[@]}"')).to be < promotion.index('recreate "${IMAGE_REF}" chatwoot_rails_2')
+      expect(rollback).to include('recreate "${ROLLBACK_TAG}" chatwoot_rails_2')
+      expect(rollback).not_to include('recreate "${ROLLBACK_TAG}" "${service}"')
     end
   end
 

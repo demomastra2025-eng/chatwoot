@@ -76,4 +76,33 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations do
       )
     ).to be_persisted
   end
+
+  it 'preserves local appointment creation when the legacy tool passes the assistant as actor' do
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: assistant)
+
+    expect(
+      customer_operation.create_appointment(
+        resource_id: resource.id,
+        starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
+        duration_min: 30
+      )
+    ).to be_persisted
+  end
+
+  it 'refuses provider-backed AI appointments before synchronous availability I/O or local booking' do
+    resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => 'specialist-1' }
+    )
+    customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: assistant)
+    allow(Scheduling::Appointments::UpsertService).to receive(:new)
+
+    expect do
+      customer_operation.create_appointment(resource_id: resource.id, starts_at: Time.current.iso8601, duration_min: 30)
+    end.to raise_error(ArgumentError, /provider idempotency and reconciliation contract/)
+    expect(Scheduling::Appointments::UpsertService).not_to have_received(:new)
+  end
 end

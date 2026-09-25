@@ -185,6 +185,8 @@ module Llm::Models
     end
 
     def configured_model_for_feature?(feature, model_name, account: nil)
+      return false unless assistant_model_allowed_by_catalog?(feature.to_s, canonical_model_name(model_name))
+
       configured_static_model_for_feature?(feature.to_s, model_name) &&
         model_config_allowed_for_feature?(feature.to_s, model_config(model_name, account: account), account: account)
     end
@@ -409,25 +411,7 @@ module Llm::Models
     def assistant_model_allowed_by_catalog?(feature_key, model_name)
       return true unless feature_key == 'assistant'
 
-      allowlist = assistant_model_allowlist
-      allowlist.nil? || allowlist.include?(canonical_model_name(model_name))
-    end
-
-    def assistant_model_allowlist
-      raw_value = InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value
-      return nil if raw_value.blank?
-
-      values = if raw_value.is_a?(Array)
-                 raw_value
-               elsif raw_value.is_a?(String)
-                 JSON.parse(raw_value)
-               else
-                 []
-               end
-      Array(values).filter_map { |model_name| canonical_model_name(model_name).presence }.uniq
-    rescue JSON::ParserError
-      Rails.logger.error('[LLM] CAPTAIN_ASSISTANT_MODEL_ALLOWLIST must be a JSON array; no assistant models are allowed')
-      []
+      Llm::CaptainModelPolicy.allowed?(canonical_model_name(model_name))
     end
 
     def dynamic_model_configs(account: nil)
@@ -469,6 +453,8 @@ module Llm::Models
       runtime_preferences = runtime_preferences_for(account)
       required_capabilities = required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)
       openrouter_default_candidates(feature_key, configured_default, account: account).find do |candidate|
+        next false unless assistant_model_allowed_by_catalog?(feature_key, candidate)
+
         candidate_config = model_config(candidate, account: account)
         dynamic_model_allowed_for_feature?(
           feature_key,
@@ -525,6 +511,8 @@ module Llm::Models
       return [] unless OPENROUTER_DYNAMIC_FEATURE_REQUIREMENTS.key?(feature_key.to_s)
 
       dynamic_model_configs(account: account).filter_map do |model_name, model_config|
+        next unless assistant_model_allowed_by_catalog?(feature_key, model_name)
+
         if dynamic_model_allowed_for_feature?(
           feature_key,
           model_config,

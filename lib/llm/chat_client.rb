@@ -6,6 +6,8 @@ class Llm::ChatClient
   class << self
     def build(**options)
       account = options[:account]
+      ensure_captain_model!(options[:feature], options[:model], chat: options[:chat])
+      ensure_captain_wire_models!(options[:feature], options[:params])
       if options[:thinking].present?
         Llm::CapabilityPolicy.ensure_thinking_supported!(model: resolved_model_name(options[:chat], options[:model]), account: account)
       end
@@ -13,6 +15,8 @@ class Llm::ChatClient
       llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model], account: account)
       tag_openrouter_routing_metadata(llm_chat, options, account: account)
       apply_chat_options(llm_chat, options, account: account).tap do |chat|
+        ensure_captain_model!(options[:feature], options[:model], chat: chat)
+        ensure_captain_wire_models!(options[:feature], chat.params) if chat.respond_to?(:params)
         tag_openrouter_routing_metadata(chat, options, account: account)
       end
     end
@@ -69,6 +73,9 @@ class Llm::ChatClient
     end
 
     def perform_ask(chat, content, model:, account: nil)
+      feature = Llm::OpenRouterRequestPolicy.routing_metadata(chat)[:feature]
+      ensure_captain_model!(feature, model, chat: chat)
+      ensure_captain_wire_models!(feature, chat.params) if chat.respond_to?(:params)
       Llm::StructuredOutputPolicy.execute(chat: chat) do
         if content.is_a?(RubyLLM::Content)
           attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
@@ -97,6 +104,40 @@ class Llm::ChatClient
       return context.chat(model: model) if context
 
       RubyLLM.chat(model: model)
+    end
+
+    def ensure_captain_model!(feature, model, chat: nil)
+      return unless Llm::CaptainModelPolicy.captain_feature?(feature)
+
+      effective_model = chat ? chat_model_name(chat) : model
+      Llm::CaptainModelPolicy.ensure_allowed!(feature: feature, model: effective_model, fallback_models: (model if chat))
+    end
+
+    def ensure_captain_wire_models!(feature, params)
+      return unless Llm::CaptainModelPolicy.captain_feature?(feature)
+      return if params.nil?
+
+      raise Llm::CaptainModelPolicy::DisallowedModelError, 'Captain wire parameters must be a hash' unless params.is_a?(Hash)
+
+      wire = params.with_indifferent_access
+      return unless wire.key?(:model) || wire.key?(:models)
+
+      raise Llm::CaptainModelPolicy::DisallowedModelError, 'Captain wire model is empty' if wire.key?(:model) && wire[:model].blank?
+      if wire.key?(:models) && (!wire[:models].is_a?(Array) || wire[:models].empty?)
+        raise Llm::CaptainModelPolicy::DisallowedModelError, 'Captain wire fallback models must be a nonempty array'
+      end
+
+      model_names = [wire[:model], *Array(wire[:models])].compact
+      model_names.each do |model_name|
+        Llm::CaptainModelPolicy.ensure_allowed!(feature: feature, model: model_name)
+      end
+    end
+
+    def chat_model_name(chat)
+      return unless chat.respond_to?(:model)
+
+      chat_model = chat.model
+      chat_model.respond_to?(:id) ? chat_model.id : chat_model
     end
 
     def assume_model_exists?(model, account: nil)

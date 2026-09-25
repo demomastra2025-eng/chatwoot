@@ -14,12 +14,17 @@ class CommunicationThreads::UpdateService
   def perform
     source_conversation = linked_links.first&.conversation
     updated_thread = CommunicationThread.transaction do
-      validate_routing!
-      sync_contact_owner!
-      sync_participants_for_routing!
-      sync_linked_conversations!
-      clear_participants_if_resolved!
-      refresh_communication_thread!
+      # Resolver takes this advisory lock before the Thread row. Take it here
+      # before routing locks the owner, even when an inline refresh follows.
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(current_account.id, communication_thread.contact_id)
+      if human_routing_action?
+        communication_thread.with_lock do
+          apply_updates!
+          source_conversation&.activate_captain_human_control!(source: source.presence || 'communication_thread_update')
+        end
+      else
+        apply_updates!
+      end
       communication_thread.reload
     end
 
@@ -30,6 +35,20 @@ class CommunicationThreads::UpdateService
   private
 
   attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
+
+  def apply_updates!
+    validate_routing!
+    sync_contact_owner!
+    sync_participants_for_routing!
+    sync_linked_conversations!
+    clear_participants_if_resolved!
+    refresh_communication_thread!
+  end
+
+  def human_routing_action?
+    ((params.key?(:assignee_id) && human_assignee.present?) || (actor.is_a?(User) && params.key?(:team_id))) &&
+      CaptainInbox.where(inbox_id: communication_thread.conversations.select(:inbox_id)).exists?
+  end
 
   def sync_linked_conversations!
     linked_links.each do |link|

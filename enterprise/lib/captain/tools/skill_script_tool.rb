@@ -26,13 +26,14 @@ class Captain::Tools::SkillScriptTool < Captain::Tools::BasePublicTool
     script.present?
   end
 
-  def perform(tool_context, **params)
-    Captain::SkillScriptRunner.new(
-      script: script,
-      assistant: assistant,
-      tool_context: tool_context,
-      params: params
-    ).call
+  def perform(_tool_context, **_params)
+    # A subprocess can perform network writes even when its manifest says it
+    # does not need network. It must not run inside the Captain owner lock (up
+    # to 30s) or after takeover without a remote idempotency contract.
+    Captain::ToolResult.failure_output(
+      error: 'Captain skill scripts require an isolated, fenced execution contract',
+      audit: { failure_stage: 'policy', failure_reason: 'unsafe_script_execution' }
+    )
   end
 
   private

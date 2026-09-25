@@ -3,6 +3,12 @@
 require 'rails_helper'
 
 RSpec.describe Llm::Models do
+  before do
+    # Catalog/capability examples use a broad test installation allowlist.
+    # The production default and fail-closed behavior have dedicated policy specs.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed?).and_return(true)
+  end
+
   describe '.capabilities_for' do
     it 'normalizes upstream registry capabilities to onelink capability names' do
       registry_info = instance_double(RubyLLM::Model::Info, capabilities: %w[function_calling vision], type: 'chat')
@@ -48,7 +54,7 @@ RSpec.describe Llm::Models do
   describe '.features' do
     it 'uses OpenRouter model ids as normal Captain feature defaults' do
       expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-5.4-mini')
-      expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-5.4')
+      expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-5.6-luna')
       expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-5.4')
       expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-5.4-mini')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
@@ -423,7 +429,7 @@ RSpec.describe Llm::Models do
         }
       )
 
-      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.4')
+      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.6-luna')
       expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.feature_config(:audio_transcription)[:models]).to include(
         hash_including(
@@ -449,7 +455,7 @@ RSpec.describe Llm::Models do
 
       config = described_class.feature_config(:assistant)
 
-      expect(config[:default]).to be_nil
+      expect(config[:default]).to eq('openai/gpt-5.6-luna')
       expect(config[:models]).not_to include(hash_including(id: 'openai/gpt-5.4'))
     end
 

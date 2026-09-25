@@ -3,6 +3,13 @@
 require 'rails_helper'
 
 RSpec.describe Llm::FeatureRequest do
+  before do
+    # These examples exercise request shape rather than installation policy.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini anthropic/claude-sonnet-4]
+    )
+  end
+
   let(:account) { instance_double(Account, id: 42) }
   let(:tool) { instance_double(RubyLLM::Tool, name: 'lookup_contact') }
   let(:schema) do

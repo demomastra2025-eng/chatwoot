@@ -9,6 +9,7 @@ class Captain::Assistant::AgentRunnerService
   include Captain::Assistant::TracePayloadHelper
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
+  PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
@@ -36,11 +37,12 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil)
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @response_fence = response_fence.to_h.symbolize_keys.compact
     @handoff_tool_called = false
   end
 
@@ -54,6 +56,8 @@ class Captain::Assistant::AgentRunnerService
         end
       end
     end
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
     ChatwootExceptionTracker.new(e, account: @conversation&.account).capture_exception
@@ -133,6 +137,7 @@ class Captain::Assistant::AgentRunnerService
     source_context = context.presence || fallback_context
     source_context.deep_dup.tap do |retry_context|
       retry_context.delete(:captain_v2_handoff_tool_called)
+
       retry_context.delete(:captain_v2_completed_tool_names)
       retry_context.delete(:captain_v2_completed_tool_results)
     end
@@ -219,19 +224,30 @@ class Captain::Assistant::AgentRunnerService
       return response_cancellation_response(result.context[:pending_response_cancellation], result.context[:current_agent])
     end
 
-    if result.context&.dig(:pending_human_handoff).present?
+    if authorized_handoff_pending?(result.context, handoff_tool_called)
       return human_handoff_response(result.context[:pending_human_handoff],
                                     result.context[:current_agent],
                                     handoff_tool_called: handoff_tool_called)
     end
 
+    # Legacy/in-flight tool runners can still return a successful Halt even
+    # though strict consent refused its pending handoff. Never turn that Halt
+    # into a customer-facing reply without a trusted authorization event.
+    if @assistant.handoff_requires_explicit_consent? && result.context&.dig(:pending_human_handoff).present?
+      return response_cancellation_response({ reason: 'handoff_not_authorized' }, result.context[:current_agent])
+    end
+
     output = result.output
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
+    response.delete('handoff_authorized')
+    response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
     semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
+
+    return suppressed_response(response) if response_suppressed?(response)
 
     if blank_public_response?(response)
       error = blank_response_error
@@ -286,7 +302,8 @@ class Captain::Assistant::AgentRunnerService
       'response' => PROVIDER_ERROR_RESPONSE,
       'reasoning' => "Error occurred: #{message}",
       'error_class' => error.class.name,
-      'error_message' => message
+      'error_message' => message,
+      PROVIDER_ERROR_AUTHORIZED_KEY => true
     }
   end
 
@@ -297,6 +314,7 @@ class Captain::Assistant::AgentRunnerService
       'error_class' => error.class.name,
       'error_message' => error.message
     }
+    response[PROVIDER_ERROR_AUTHORIZED_KEY] = true if error.is_a?(RubyLLM::Error)
     response['handoff_tool_called'] = true if handoff_tool_called
     response
   end
@@ -520,12 +538,40 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def semantic_output_error(response)
+    return invalid_response_mode_error(response) unless response_mode_valid?(response)
     return invalid_public_response_error(response) if invalid_public_response?(response)
     return reserved_runtime_action_error(response) if reserved_runtime_action?(response)
     return provider_error_literal_error if provider_error_literal?(response)
     return invalid_handoff_output_error if invalid_handoff_output?(response)
 
     nil
+  end
+
+  def response_mode_valid?(response)
+    response_mode(response).in?(%w[reply suppress])
+  end
+
+  def invalid_response_mode_error(response)
+    SemanticOutputError.new(
+      'invalid_response_mode',
+      "Model output returned invalid response mode #{response['response_mode'].inspect}"
+    )
+  end
+
+  def response_suppressed?(response)
+    response_mode(response) == 'suppress'
+  end
+
+  def response_mode(response)
+    response['response_mode'].to_s.strip.presence || 'reply'
+  end
+
+  def suppressed_response(response)
+    response.merge(
+      'response' => '',
+      'response_mode' => 'suppress',
+      'response_suppressed' => true
+    )
   end
 
   def invalid_public_response?(response)
@@ -686,6 +732,12 @@ class Captain::Assistant::AgentRunnerService
     context&.dig(:captain_v2_handoff_tool_called) || false
   end
 
+  def authorized_handoff_pending?(context, handoff_tool_called)
+    return false if @assistant.handoff_requires_explicit_consent?
+
+    handoff_tool_called && context&.dig(:pending_human_handoff).present?
+  end
+
   def blank_public_response?(response)
     return false if response['response'] == 'conversation_handoff'
     return false if response['response'] == PROVIDER_ERROR_RESPONSE
@@ -705,6 +757,8 @@ class Captain::Assistant::AgentRunnerService
       captain_runtime: @assistant.account.captain_runtime_preferences
     }
     state[:source] = @source if @source.present?
+    state[:captain_control_generation] = @response_fence[:control_generation] if @response_fence.key?(:control_generation)
+    state[:captain_response_fence] = @response_fence if @conversation.present? && @response_fence.present?
     state[:runtime_clock] = runtime_clock_state
 
     time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation
@@ -866,8 +920,8 @@ class Captain::Assistant::AgentRunnerService
 
     # This callback feeds ResponseBuilderJob and blank-response retry safety even when OTEL is disabled.
     runner.on_tool_complete do |tool_name, tool_result, context_wrapper|
+      track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
       track_completed_tool_usage(tool_name, tool_result, context_wrapper)
-      track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
     end
 
     if ChatwootApp.otel_enabled?
@@ -974,10 +1028,16 @@ class Captain::Assistant::AgentRunnerService
     []
   end
 
-  def track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
+  def track_handoff_usage(tool_name, handoff_tool_name, tool_result, context_wrapper)
     return unless context_wrapper&.context
     return unless tool_name.to_s == handoff_tool_name
     return unless context_wrapper.context[:pending_human_handoff].present?
+
+    # A model's request is not proof of explicit consent. Strict handoff needs a
+    # trusted server-side consent event; absent one, it remains unavailable.
+    return if @assistant.handoff_requires_explicit_consent?
+    return if Captain::ToolResult.error?(Captain::ToolResult.normalize(tool_result))
+    return if context_wrapper.context[:pending_human_handoff].blank?
 
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
     @handoff_tool_called = true
@@ -1076,6 +1136,7 @@ class Captain::Assistant::AgentRunnerService
       'handoff_reason' => reason,
       'handoff_status_reason' => status_reason,
       'handoff_message' => message,
+      'handoff_authorized' => true,
       'agent_name' => agent_name
     }
     response['handoff_tool_called'] = true if handoff_tool_called

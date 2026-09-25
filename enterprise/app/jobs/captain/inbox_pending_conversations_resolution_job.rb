@@ -30,7 +30,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Current.executed_by = inbox.captain_assistant
 
     resolvable_pending_conversations(inbox).each do |conversation|
-      conversation.with_lock do
+      with_current_captain_control(conversation, inbox.captain_assistant) do
         transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
         create_private_note(conversation, inbox, "Auto-resolved: #{TIME_BASED_COMPLETION_EXPLANATION}")
         create_resolution_message(conversation, inbox)
@@ -99,12 +99,12 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   def resolve_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
     raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
 
-    conversation.with_lock do
+    applied = with_current_captain_control(conversation, inbox.captain_assistant) do
       transition_agent_outcome(conversation, inbox.captain_assistant, :completion, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
       create_resolution_message(conversation, inbox, generated_message: generated_message)
     end
-    conversation.dispatch_captain_inference_resolved_event
+    conversation.dispatch_captain_inference_resolved_event if applied
   end
 
   def handoff_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
@@ -112,11 +112,13 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
 
     raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
 
-    conversation.with_lock do
+    applied = with_current_captain_control(conversation, inbox.captain_assistant) do
       transition_agent_outcome(conversation, inbox.captain_assistant, :handoff, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
       create_handoff_message(conversation, inbox, generated_message: generated_message)
     end
+    return unless applied
+
     conversation.dispatch_captain_inference_handoff_event
     send_out_of_office_message_if_applicable(conversation.reload)
   end
@@ -132,6 +134,26 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'captain', **transition_options)
     else
       conversation.bot_handoff!(actor: assistant, source: 'captain', **transition_options)
+    end
+  end
+
+  def with_current_captain_control(conversation, assistant)
+    Conversation.transaction do
+      if conversation.contact_id.present?
+        Conversations::CommunicationThreadResolver.lock_contact_thread!(conversation.account_id, conversation.contact_id)
+      end
+      conversation.with_captain_control_lock do
+        conversation.with_lock do
+          cutoff_time = auto_resolve_cutoff_time(conversation.account)
+          next unless cutoff_time && conversation.pending? && conversation.last_activity_at < cutoff_time
+          next if Captain::Conversation::ControlService.contact_messages_scope(conversation).incoming
+                                                       .where('messages.created_at >= ?', cutoff_time).exists?
+          next if conversation.captain_human_control_active? || conversation.inbox.captain_assistant&.id != assistant.id
+
+          yield
+          true
+        end
+      end
     end
   end
 
@@ -183,7 +205,8 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
           account_id: conversation.account_id,
           inbox_id: conversation.inbox_id,
           content: assistant.render_runtime_text(content, conversation: conversation),
-          sender: assistant
+          sender: assistant,
+          additional_attributes: delivery_fence(conversation, assistant, kind: 'resolution')
         }
       )
     end
@@ -208,6 +231,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
       content: assistant.render_runtime_text(handoff_message, conversation: conversation),
+      additional_attributes: delivery_fence(conversation, assistant, kind: 'handoff'),
       preserve_waiting_since: true
     )
   end
@@ -216,5 +240,17 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     return generated_message.presence if assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
     assistant.config['handoff_message'].presence
+  end
+
+  def delivery_fence(conversation, assistant, kind:)
+    trigger_id = Captain::Conversation::ControlService.messages_scope(conversation).incoming.reorder(id: :desc).pick(:id)
+    {
+      Captain::Conversation::DeliveryFenceService::FENCE_KEY => {
+        'assistant_id' => assistant.id,
+        'control_generation' => conversation.current_captain_control_generation,
+        'trigger_message_id' => trigger_id || 0,
+        'kind' => kind
+      }
+    }
   end
 end

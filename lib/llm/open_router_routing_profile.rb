@@ -143,7 +143,9 @@ class Llm::OpenRouterRoutingProfile
   private
 
   def build_models
-    ([model] + FALLBACK_MODELS.fetch(feature_key, [])).compact_blank.uniq
+    fallbacks = FALLBACK_MODELS.fetch(feature_key, [])
+    fallbacks = fallbacks.select { |candidate| Llm::CaptainModelPolicy.allowed?(candidate) } if feature_key == 'captain_agent'
+    ([model] + fallbacks).compact_blank.uniq
   end
 
   def build_provider_preferences

@@ -41,6 +41,17 @@ describe Messages::StatusUpdateService do
         expect(service.perform).to be false
         expect(message.reload.status).to eq('read')
       end
+
+      it 'does not clear a failed Captain delivery without provider reconciliation' do
+        assistant = create(:captain_assistant, account: account)
+        message.update!(sender: assistant, message_type: :outgoing, status: :failed,
+                        additional_attributes: { 'captain_delivery_state' => 'outcome_unknown' })
+
+        expect(described_class.new(message, 'sent').perform).to be false
+        expect(described_class.new(message, 'delivered').perform).to be false
+        expect(message.reload).to be_failed
+        expect(message.additional_attributes['captain_delivery_state']).to eq('outcome_unknown')
+      end
     end
   end
 end

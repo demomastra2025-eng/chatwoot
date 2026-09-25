@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_24_090714) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1382,6 +1382,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "session_started_at"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "contact_id"], name: "idx_communication_threads_one_per_contact", unique: true
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
@@ -1599,6 +1602,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.text "cached_label_list"
     t.bigint "assignee_agent_bot_id"
     t.string "identity_key"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "display_id"], name: "index_conversations_on_account_id_and_display_id", unique: true
     t.index ["account_id", "id"], name: "index_conversations_on_id_and_account_id"
     t.index ["account_id", "inbox_id", "contact_id", "identity_key"], name: "idx_conversations_on_account_inbox_contact_identity", where: "(identity_key IS NOT NULL)"

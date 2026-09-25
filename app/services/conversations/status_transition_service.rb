@@ -1,6 +1,15 @@
 class Conversations::StatusTransitionService
   include DateRangeHelper
 
+  # Lock the shared Captain control owner before its linked conversations.
+  # Reopen, handoff and human actions must use the same order.
+  def self.with_locked_conversations(thread)
+    thread.with_lock do
+      ::Conversation.where(id: thread.conversations.select(:id)).order(:id).lock('FOR UPDATE').load
+      yield
+    end
+  end
+
   # rubocop:disable Metrics/ParameterLists
   def initialize(conversation:, params: {}, actor: nil, source: 'manual', audit: {}, aggregate: true)
     @conversation = conversation
@@ -25,6 +34,20 @@ class Conversations::StatusTransitionService
   attr_reader :conversation, :account, :params, :actor, :source, :reason_override, :metadata, :aggregate
 
   def perform_single_transition
+    return perform_human_transition if human_action?
+
+    apply_single_transition
+  end
+
+  def perform_human_transition
+    conversation.with_captain_control_lock do
+      apply_single_transition
+      conversation.activate_captain_human_control!(source: source, actor: actor)
+    end
+    true
+  end
+
+  def apply_single_transition
     previous_status = conversation.status
     target_status = resolve_target_status(previous_status)
     status_changing = previous_status != target_status
@@ -39,6 +62,12 @@ class Conversations::StatusTransitionService
     true
   end
 
+  def human_action?
+    return false unless actor.is_a?(User) && params[:status].to_s != 'pending'
+
+    CaptainInbox.where(inbox_id: communication_thread ? communication_thread.conversations.select(:inbox_id) : [conversation.inbox_id]).exists?
+  end
+
   def aggregate_transition?
     aggregate && communication_thread.present? && linked_conversations.many?
   end
@@ -47,7 +76,7 @@ class Conversations::StatusTransitionService
     target_status = resolve_target_status(conversation.status)
     aggregate_params = params.merge(status: target_status)
 
-    Conversation.transaction do
+    self.class.with_locked_conversations(communication_thread) do
       linked_conversations.each do |linked_conversation|
         self.class.new(
           conversation: linked_conversation,

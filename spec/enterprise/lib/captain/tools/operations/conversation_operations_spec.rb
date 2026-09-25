@@ -28,6 +28,18 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
     )
   end
 
+  describe '#retry_failed_message' do
+    it 'refuses to replay a failed Captain reply with an unknown provider outcome' do
+      message = create(:message, account: account, inbox: inbox, conversation: conversation,
+                                 sender: assistant, message_type: :outgoing, status: :failed,
+                                 additional_attributes: { 'captain_delivery_state' => 'outcome_unknown' })
+
+      expect { operations.retry_failed_message(message_id: message.id) }
+        .to raise_error(ArgumentError, /Reconcile Captain delivery/)
+      expect(message.reload).to be_failed
+    end
+  end
+
   describe '#send_message_to_conversation' do
     it 'sends selected attachment ids through the native message builder pipeline' do
       message = operations.send_message_to_conversation(
@@ -277,7 +289,7 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
         'outcome_reason_type' => 'handoff',
         'outcome_reason_explanation' => 'Клиент просит нестандартную отсрочку платежа'
       )
-      expect(conversation.messages.private.last.content).to eq('Клиент просит нестандартную отсрочку платежа')
+      expect(conversation.messages.where(private: true).last.content).to eq('Клиент просит нестандартную отсрочку платежа')
     end
   end
 end

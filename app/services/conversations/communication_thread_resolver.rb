@@ -1,6 +1,13 @@
 require 'digest'
 
 class Conversations::CommunicationThreadResolver
+  def self.lock_contact_thread!(account_id, contact_id)
+    identity = "communication-thread:#{account_id}:#{contact_id}"
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
   def initialize(conversation:)
     # Conversation DB triggers populate display_id/uuid after insert and the
     # originating instance can still report those attributes as dirty. Locking
@@ -13,19 +20,22 @@ class Conversations::CommunicationThreadResolver
     return unless linkable_conversation?
 
     CommunicationThread.transaction do
-      conversation.lock!
-      next unless linkable_conversation?
-
       locked_account_id = conversation.account_id
       locked_contact_id = conversation.contact_id
-      lock_contact_thread!(locked_account_id, locked_contact_id)
-      next unless conversation.account_id == locked_account_id && conversation.contact_id == locked_contact_id
+      self.class.lock_contact_thread!(locked_account_id, locked_contact_id)
+      thread = existing_thread
+      # Captain jobs and human actions lock the shared owner before a channel.
+      # Resolve in the same order, including the after-create link path.
+      thread.lock! if thread&.persisted?
+      conversation.lock!
+      next unless linkable_conversation? && conversation.account_id == locked_account_id && conversation.contact_id == locked_contact_id
 
       previous_thread = raw_communication_thread
-      thread = existing_thread || build_thread
+      thread ||= build_thread
       thread.save! if thread.new_record?
       create_or_update_link!(thread)
       reset_conversation_thread_associations
+      merge_captain_control!(thread) if previous_thread&.id != thread.id
       refresh_thread!(thread)
       refresh_previous_thread!(previous_thread, thread)
       thread
@@ -35,13 +45,6 @@ class Conversations::CommunicationThreadResolver
   private
 
   attr_reader :conversation
-
-  def lock_contact_thread!(account_id, contact_id)
-    identity = "communication-thread:#{account_id}:#{contact_id}"
-    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
-
-    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
-  end
 
   def linkable_conversation?
     return false if conversation.blank? || conversation.destroyed? || conversation.marked_for_destruction?
@@ -76,8 +79,24 @@ class Conversations::CommunicationThreadResolver
       assignee_id: conversation.contact&.owner_id || conversation.assignee_id,
       team_id: conversation.team_id,
       last_activity_at: conversation.last_activity_at,
-      unread_count: conversation.unread_incoming_messages_count
+      unread_count: conversation.unread_incoming_messages_count,
+      captain_control_state: conversation.captain_control_state,
+      captain_control_generation: conversation.captain_control_generation.to_i + (conversation.captain_control_state == 'human' ? 1 : 0),
+      captain_handoff_applied_at: conversation.captain_handoff_applied_at
     )
+  end
+
+  def merge_captain_control!(thread)
+    return unless thread.captain_control_state == 'human' || conversation.captain_control_state == 'human'
+
+    if thread.captain_control_state != 'human'
+      thread.update!(
+        captain_control_state: 'human',
+        captain_control_generation: [thread.captain_control_generation.to_i, conversation.captain_control_generation.to_i].max + 1,
+        captain_handoff_applied_at: conversation.captain_handoff_applied_at
+      )
+    end
+    Captain::Conversation::PendingActionCancellationService.new(conversation: conversation, control_owner: thread).perform
   end
 
   def create_or_update_link!(thread)

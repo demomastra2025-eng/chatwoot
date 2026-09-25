@@ -15,6 +15,7 @@ class Captain::Runtime::ToolWrapper
   TOOL_REQUEST_COUNTS_KEY = Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY
   TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
   OPTIONAL_ARGUMENT_DESCRIPTION =
     'If this value was not explicitly provided or resolved, omit the key entirely; never invent a placeholder value.'
@@ -38,7 +39,7 @@ class Captain::Runtime::ToolWrapper
     'search_scheduling_resources' => %i[limit].freeze,
     'search_tasks' => %i[limit].freeze
   }.freeze
-  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call mutation_retry_blocked].freeze
+  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call handoff_not_authorized mutation_retry_blocked].freeze
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_TOOL = 12
   MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
@@ -52,6 +53,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
+    ensure_response_run_current!
     normalized_args = normalize_args(args)
 
     request_stop = requested_tool_stop_result(normalized_args)
@@ -65,6 +67,8 @@ class Captain::Runtime::ToolWrapper
     return complete_and_halt(attempt_error) if attempt_error
 
     execute_registered_tool(normalized_args)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue InvalidToolArgumentsError => e
     invalid_tool_arguments_result(e)
   rescue StandardError => e
@@ -111,11 +115,27 @@ class Captain::Runtime::ToolWrapper
 
   private
 
+  def ensure_response_run_current!
+    state = @context_wrapper.context[:state] || {}
+    fence = state[:captain_response_fence] || state['captain_response_fence']
+    return if fence.blank?
+
+    assistant_id = state[:assistant_id] || state['assistant_id']
+    assistant = Captain::Assistant.find_by(id: assistant_id)
+    Captain::Conversation::RunFenceService.new(assistant: assistant, state: state).ensure_current!
+  end
+
   def execute_registered_tool(normalized_args)
     tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
     @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
     track_mutating_tool_execution(normalized_args)
-    execute_tool(tool_context, normalized_args)
+    return execute_tool(tool_context, normalized_args) unless mutating_tool?
+
+    state = @context_wrapper.context[:state] || {}
+    assistant = Captain::Assistant.find_by(id: state[:assistant_id] || state['assistant_id'])
+    Captain::Conversation::ActionFenceService.new(assistant: assistant, state: state).with_effect! do
+      execute_tool(tool_context, normalized_args)
+    end
   end
 
   def handle_execution_error(error)
@@ -157,6 +177,7 @@ class Captain::Runtime::ToolWrapper
     record_mutating_tool_result(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
+    return halt_completed_result(final_result) if terminal_failure_result?(final_result)
 
     Captain::ToolResult.render(final_result)
   end
@@ -339,6 +360,11 @@ class Captain::Runtime::ToolWrapper
   def complete_and_halt(result)
     normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, normalized_result, @context_wrapper)
+    halt_completed_result(normalized_result)
+  end
+
+  def halt_completed_result(result)
+    normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     remember_terminal_tool_stop(normalized_result)
     RubyLLM::Tool::Halt.new(Captain::ToolResult.render(normalized_result))
   end
@@ -355,7 +381,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def terminal_early_result?(result)
-    return false if result.blank?
+    terminal_failure_result?(result)
+  end
+
+  def terminal_failure_result?(result)
+    return false if result.blank? || halt_result?(result)
 
     failure_reason = Captain::ToolResult.normalize(result).dig(:audit, :failure_reason).to_s
     failure_reason.in?(TERMINAL_FAILURE_REASONS)
@@ -551,7 +581,10 @@ class Captain::Runtime::ToolWrapper
     entry = mutating_tool_executions[@tool.name.to_s]
     return if entry.blank?
 
-    entry[:retryable] = Captain::ToolResult.normalize(result)[:retryable] == true
+    normalized_result = Captain::ToolResult.normalize(result)
+    entry[:retryable] = normalized_result[:retryable] == true
+    entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
+    entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
   rescue StandardError
     entry[:retryable] = false
   end

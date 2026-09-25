@@ -30,6 +30,16 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   end
 
   describe '#perform' do
+    it 'denies a strict-mode tool call without a successful Halt or pending handoff' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true, 'handoff_enabled' => true))
+
+      result = tool.perform(tool_context, reason: 'Please transfer me')
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect(Captain::ToolResult.error?(Captain::ToolResult.normalize(result))).to be(true)
+      expect(run_context.context).not_to have_key(:pending_human_handoff)
+    end
+
     it 'does not request a handoff when the capability is disabled' do
       disabled_assistant = build(:captain_assistant, config: { 'handoff_enabled' => false })
       disabled_tool = described_class.new(disabled_assistant)

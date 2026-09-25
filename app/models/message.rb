@@ -154,6 +154,8 @@ class Message < ApplicationRecord
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
   after_create :capture_automation_create_event
+  before_create :serialize_incoming_with_captain_delivery
+  before_create :activate_captain_human_control_for_human_response
   after_create_commit :execute_after_create_commit_callbacks
   after_commit :clear_automation_capture_state, on: :create
 
@@ -344,6 +346,15 @@ class Message < ApplicationRecord
 
   private
 
+  # Hold the same contact-scoped transaction lock as Captain delivery until
+  # this INSERT commits. A provider dispatch cannot overtake an incoming
+  # message while its after-commit thread refresh is still pending.
+  def serialize_incoming_with_captain_delivery
+    return unless incoming? && conversation&.contact_id.present?
+
+    Conversations::CommunicationThreadResolver.lock_contact_thread!(conversation.account_id, conversation.contact_id)
+  end
+
   def prevent_message_flooding
     # Added this to cover the validation specs in messages
     # We can revisit and see if we can remove this later
@@ -515,7 +526,7 @@ class Message < ApplicationRecord
 
     transition_conversation_status!('open', source: 'contact') if conversation.snoozed?
 
-    reopen_resolved_conversation if conversation.resolved?
+    reopen_resolved_conversation if communication_threads_enabled? || conversation.resolved?
   end
 
   def mark_pending_conversation_as_open_for_human_response
@@ -526,6 +537,8 @@ class Message < ApplicationRecord
 
     transition_conversation_status!('open', source: 'system')
   end
+
+  def activate_captain_human_control_for_human_response; end
 
   def scheduled_touch_message?
     touch_content_attributes = content_attributes.to_h.with_indifferent_access
@@ -539,18 +552,24 @@ class Message < ApplicationRecord
   end
 
   def reopen_resolved_conversation
-    communication_thread = conversation.communication_thread if communication_threads_enabled?
-    if communication_thread&.resolved?
-      communication_thread.with_lock do
-        if conversation.reload.resolved?
-          communication_thread.update!(session_started_at: created_at)
-          perform_reopen_transition
-        end
-      end
-      return
-    end
+    return perform_reopen_transition if !communication_threads_enabled? && conversation.resolved?
 
-    perform_reopen_transition
+    conversation.restore_attributes if conversation.has_changes_to_save?
+    communication_thread = conversation.communication_thread if communication_threads_enabled?
+    if communication_thread.present?
+      # Both the message path and aggregate status updates lock all channels in
+      # the same order before the resolver locks the Thread.
+      Conversations::StatusTransitionService.with_locked_conversations(communication_thread) do
+        conversation.reload # DB triggers may leave display_id dirty on this instance.
+        next unless conversation.resolved?
+
+        start_new_session = communication_thread.reload.resolved?
+        perform_reopen_transition
+        communication_thread.update!(session_started_at: created_at) if start_new_session && !conversation.reload.resolved?
+      end
+    elsif conversation.resolved?
+      conversation.with_lock { perform_reopen_transition if conversation.resolved? }
+    end
   end
 
   def perform_reopen_transition

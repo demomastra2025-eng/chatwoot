@@ -22,8 +22,8 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
     )
   end
 
-  it 'uses a queue that legacy worker images do not poll' do
-    expect(described_class.queue_name).to eq('medelement_provider_commands')
+  it 'routes provider writes away from the queue polled by legacy workers' do
+    expect(described_class.queue_name).to eq('medelement_provider_commands_v2')
     expect(Integrations::Medelement::ProviderCommandConfirmationJob.queue_name).to eq('medelement_provider_commands')
     expect(Integrations::Medelement::ProviderCommandReconciliationJob.queue_name).to eq('medelement_provider_commands')
   end

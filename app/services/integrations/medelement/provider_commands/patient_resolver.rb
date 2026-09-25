@@ -170,8 +170,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
       organization_id: organization_id
     )
 
-    before_create.call
-    response = client.create_patient(params: patient_snapshot.fetch('payload'))
+    response = before_create.call { client.create_patient(params: patient_snapshot.fetch('payload')) }
     code = patient_code(response)
     raise reconciliation_error('patient_create_missing_ref') if code.blank?
 

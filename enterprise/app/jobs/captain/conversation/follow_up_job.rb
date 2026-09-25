@@ -26,7 +26,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
         'captain_follow_up' => {
           'assistant_id' => assistant.id,
           'anchor_message_id' => anchor_message.id,
-          'step_index' => step_index
+          'step_index' => step_index,
+          'control_generation' => anchor_message.additional_attributes.to_h.dig('captain_delivery_fence', 'control_generation')
         }
       }
     )
@@ -94,7 +95,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   end
 
   def eligible?
-    follow_up_records_present? && anchor_delivery_viable? && valid_step? && conversation_followable? && assistant_connected?
+    follow_up_records_present? && anchor_epoch_current? && anchor_delivery_viable? &&
+      valid_step? && conversation_followable? && assistant_connected?
   end
 
   def follow_up_records_present?
@@ -102,7 +104,18 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   end
 
   def anchor_delivery_viable?
-    @anchor_message.outgoing? && !@anchor_message.failed?
+    @anchor_message.outgoing? && !@anchor_message.failed? &&
+      @anchor_message.additional_attributes.to_h['captain_delivery_state'] == 'submitted'
+  end
+
+  def anchor_epoch_current?
+    generation = @anchor_message.additional_attributes.to_h.dig('captain_delivery_fence', 'control_generation')
+    return false if generation.nil? || @conversation.captain_human_control_active?
+    return false unless generation.to_i == @conversation.current_captain_control_generation.to_i
+
+    reminder = Reminder.find_by(account: @conversation.account,
+                                idempotency_key: "captain_follow_up:#{@assistant.id}:#{@anchor_message.id}:#{@step_index}")
+    reminder.nil? || reminder.metadata.to_h.dig('captain_follow_up', 'control_generation').to_s == generation.to_s
   end
 
   def valid_step?
@@ -292,13 +305,11 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   end
 
   def customer_replied?
-    @conversation.messages.incoming.exists?(['id > ?', @anchor_message.id])
+    Captain::Conversation::ControlService.contact_messages_scope(@conversation).incoming.exists?(['id > ?', @anchor_message.id])
   end
 
   def human_intervened?
-    @conversation.messages.outgoing
-                 .where(private: false, sender_type: 'User')
-                 .exists?(['id > ?', @anchor_message.id])
+    Captain::Conversation::ControlService.human_response_after?(@conversation, @anchor_message.id)
   end
 
   def conversation_still_needs_follow_up?
@@ -388,13 +399,21 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   def find_or_create_follow_up_message(content)
     return if content.blank?
 
-    @conversation.with_lock do
-      existing_message = existing_follow_up_message
-      next existing_message if existing_message
-      next if customer_replied? || human_intervened? || !conversation_followable?
-      next if duplicate_content?(content)
+    ActiveRecord::Base.transaction do
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(@conversation.account_id, @conversation.contact_id)
+      @conversation.with_captain_control_lock do
+        @conversation.with_lock do
+          @anchor_message.reload
+          next unless anchor_epoch_current? && anchor_delivery_viable?
 
-      create_follow_up_message!(content)
+          existing_message = existing_follow_up_message
+          next existing_message if existing_message
+          next if customer_replied? || human_intervened? || !conversation_followable?
+          next if duplicate_content?(content)
+
+          create_follow_up_message!(content)
+        end
+      end
     end
   end
 
@@ -422,6 +441,12 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
 
   def follow_up_attributes
     attributes = {
+      'captain_delivery_fence' => {
+        'control_generation' => @conversation.current_captain_control_generation,
+        'assistant_id' => @assistant.id,
+        'trigger_message_id' => @anchor_message.id,
+        'kind' => 'reply'
+      },
       'captain_follow_up' => {
         'assistant_id' => @assistant.id,
         'step_index' => @step_index,

@@ -76,12 +76,13 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(CommunicationThread.where(account: account, contact: contact).count).to eq(1)
     end
 
-    it 'locks the conversation row before taking the contact advisory lock' do
+    it 'locks the contact and thread before the conversation row' do
       conversation = create(:conversation, account: account)
       lock_queries = []
       callback = lambda do |_name, _started, _finished, _id, payload|
         sql = payload[:sql].to_s
-        lock_queries << :conversation if sql.end_with?('FOR UPDATE')
+        lock_queries << :thread if sql.include?('communication_threads') && sql.end_with?('FOR UPDATE')
+        lock_queries << :conversation if sql.include?('conversations') && sql.end_with?('FOR UPDATE')
         lock_queries << :contact if sql.include?('pg_advisory_xact_lock')
       end
 
@@ -89,8 +90,43 @@ RSpec.describe Conversations::CommunicationThreadResolver do
         described_class.new(conversation: conversation).perform
       end
 
-      expect(lock_queries).to include(:conversation, :contact)
-      expect(lock_queries.index(:conversation)).to be < lock_queries.index(:contact)
+      expect(lock_queries).to include(:conversation, :thread, :contact)
+      expect(lock_queries.index(:contact)).to be < lock_queries.index(:thread)
+      expect(lock_queries.index(:thread)).to be < lock_queries.index(:conversation)
+    end
+
+    it 'preserves a human takeover made before a thread is created' do
+      account_without_thread = create(:account)
+      conversation = create(:conversation, account: account_without_thread)
+      expect(conversation.communication_thread).to be_nil
+      conversation.update!(captain_control_state: 'human', captain_control_generation: 2)
+      account_without_thread.enable_features!('communication_threads')
+
+      thread = described_class.new(conversation: conversation).perform
+
+      expect(thread.reload.captain_control_state).to eq('human')
+      expect(thread.captain_control_generation).to be > conversation.captain_control_generation
+      expect(conversation.reload.captain_human_control_active?).to be(true)
+    end
+
+    it 'keeps both channel projections human when linking a human-controlled conversation to an AI thread' do
+      contact = create(:contact, account: account)
+      first = create(:conversation, account: account, contact: contact)
+      thread = first.communication_thread
+      second_inbox = create(:inbox, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: second_inbox)
+      second = create(:conversation, account: account, contact: contact, inbox: second_inbox, contact_inbox: contact_inbox)
+      # Represent a human message committed before the after-create resolver ran.
+      CommunicationThreadConversation.where(conversation_id: second.id).delete_all
+      second.reload.update_columns(captain_control_state: 'human', captain_control_generation: 2) # rubocop:disable Rails/SkipsModelValidations
+      previous_generation = thread.captain_control_generation
+
+      described_class.new(conversation: second.reload).perform
+
+      expect(thread.reload.captain_control_state).to eq('human')
+      expect(thread.captain_control_generation).to be > previous_generation
+      expect(first.reload.captain_human_control_active?).to be(true)
+      expect(second.reload.captain_human_control_active?).to be(true)
     end
 
     it 'is idempotent for the same conversation' do
@@ -100,8 +136,8 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       second_thread = described_class.new(conversation: conversation).perform
 
       expect(second_thread).to eq(first_thread)
-      expect(CommunicationThread.count).to eq(1)
-      expect(CommunicationThreadConversation.count).to eq(1)
+      expect(CommunicationThread.where(account: account).count).to eq(1)
+      expect(CommunicationThreadConversation.where(account: account).count).to eq(1)
     end
 
     it 'rejects a malformed conversation linked to a contact from another account' do

@@ -63,6 +63,13 @@ if ! contains_service chatwoot_rails || ! contains_service chatwoot_rails_2; the
   echo "compose plan does not contain both rolling web services" >&2
   exit 65
 fi
+if ! contains_service chatwoot_outbound_messages_worker || ! contains_service chatwoot_medelement_commands_worker; then
+  echo "compose plan is missing the dedicated Captain delivery or provider-command worker" >&2
+  exit 65
+fi
+# These workers are the only consumers of the legacy queues. They must be
+# retired before a new Captain runtime (or web process) can produce fenced work.
+FENCED_CONSUMERS=(chatwoot_outbound_messages_worker chatwoot_medelement_commands_worker)
 ((${#APP_SERVICES[@]} > 2)) || { echo "no Chatwoot workers selected" >&2; exit 65; }
 
 printf 'sha=%s\nimage=%s\nservices=%s\n' "${SHA}" "${IMAGE_REF}" "${APP_SERVICES[*]}"
@@ -114,26 +121,17 @@ recreate() {
 }
 
 rollback() {
-  local reason="$1" service cid running_sha rollback_failed=false
-  echo "production verification failed: ${reason}; rolling back" >&2
-  for service in "${APP_SERVICES[@]}"; do
-    case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
-    recreate "${ROLLBACK_TAG}" "${service}" "${OLD_SHA}" || rollback_failed=true
-  done
+  local reason="$1" rollback_failed=false
+  echo "production verification failed: ${reason}; rolling back web only" >&2
+  # Do not resurrect old outbound/provider workers. An old dispatcher can
+  # enqueue a new Captain-originated v2 command onto its legacy queue, and an
+  # old worker has no ownership fence even when the command is versioned.
+  # Keep the fenced workers until their pending work is drained/reconciled and
+  # a separate operator-approved worker rollback is proven safe.
   recreate "${ROLLBACK_TAG}" chatwoot_rails_2 "${OLD_SHA}" || rollback_failed=true
   recreate "${ROLLBACK_TAG}" chatwoot_rails "${OLD_SHA}" || rollback_failed=true
-  for service in "${APP_SERVICES[@]}"; do
-    cid="$(CHATWOOT_IMAGE="${ROLLBACK_TAG}" SOURCE_SHA="${OLD_SHA}" "${COMPOSE[@]}" ps -q "${service}")"
-    running_sha=""
-    if [[ -n "${cid}" ]]; then
-      running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
-    fi
-    if [[ "${running_sha}" != "${OLD_SHA}" ]]; then
-      echo "rollback mismatch: ${service} runs ${running_sha:-unknown}, expected ${OLD_SHA}" >&2
-      rollback_failed=true
-    fi
-  done
-  [[ "${rollback_failed}" == false ]] || echo "rollback verification failed; operator intervention required" >&2
+  [[ "${rollback_failed}" == false ]] || echo "web rollback verification failed" >&2
+  echo "fenced workers deliberately retained; verify service SHAs/queues and resolve mixed-version state before further promotion" >&2
   exit 1
 }
 
@@ -143,9 +141,15 @@ if ! with_image run --rm --no-deps chatwoot_rails bundle exec rails db:chatwoot_
   exit 1
 fi
 
-log "recreating workers before rolling web cutover"
+log "retiring legacy outbound/provider consumers before any new producer"
+for service in "${FENCED_CONSUMERS[@]}"; do
+  recreate "${IMAGE_REF}" "${service}" || rollback "${service} did not become ready"
+done
+log "recreating remaining workers before rolling web cutover"
 for service in "${APP_SERVICES[@]}"; do
-  case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
+  case "${service}" in
+    chatwoot_rails|chatwoot_rails_2|chatwoot_outbound_messages_worker|chatwoot_medelement_commands_worker) continue ;;
+  esac
   recreate "${IMAGE_REF}" "${service}" || rollback "${service} did not become ready"
 done
 recreate "${IMAGE_REF}" chatwoot_rails_2 || rollback "chatwoot_rails_2 did not become healthy"

@@ -330,14 +330,14 @@ RSpec.describe Llm::ChatClient do
         events << ActiveSupport::Notifications::Event.new(*args)
       end
       response = double('message', content: 'Hello back', input_tokens: 5, output_tokens: 7, tool_call?: false)
-      allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'openai/gpt-5.4-mini'))
+      allow(chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'openai/gpt-5.6-luna'))
       allow(chat).to receive(:ask).with('Hello').and_return(response)
       Llm::OpenRouterRequestPolicy.tag!(
         chat,
         feature: :captain_agent,
-        model: 'openai/gpt-5.4-mini',
+        model: 'openai/gpt-5.6-luna',
         routing_metadata: {
-          requested_model: 'openai/gpt-5.4-mini',
+          requested_model: 'openai/gpt-5.6-luna',
           routing_profile: 'exacto',
           openrouter_provider_order: ['OpenAI'],
           openrouter_require_parameters: true
@@ -349,7 +349,7 @@ RSpec.describe Llm::ChatClient do
       expect(events.last.payload).to include(
         'provider' => 'openrouter',
         'feature' => 'captain_agent',
-        'requested_model' => 'openai/gpt-5.4-mini',
+        'requested_model' => 'openai/gpt-5.6-luna',
         'routing_profile' => 'exacto',
         'openrouter_provider_order' => ['OpenAI'],
         'openrouter_require_parameters' => true,

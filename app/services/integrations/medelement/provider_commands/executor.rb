@@ -5,14 +5,20 @@ class Integrations::Medelement::ProviderCommands::Executor
   BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
   PATIENT_WRITE_RESPONSE_KEYS = Integrations::Medelement::ProviderCommands::PatientResolver::WRITE_RESPONSE_KEYS
 
-  def initialize(command:, client: nil)
+  def initialize(command:, client: nil, before_write: nil)
     @command = command
     @client = client
+    @before_write = before_write
   end
 
   # The ordered rescue map is the public command outcome contract.
   # rubocop:disable Metrics/MethodLength
   def perform
+    # Also covers direct executor callers (e.g. contact-field reconciliation),
+    # not just ProviderCommandJob. No Captain provider mutation is safe until
+    # the remote side supports a verified idempotency and receipt contract.
+    return cancel_unsafe_captain_command! if command.execution_state.to_h['captain_action_origin'].present?
+
     return unless claim!
 
     validate_execution_gate!
@@ -29,6 +35,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     fail_command!(code: 'slot_unavailable')
   rescue Integrations::Medelement::ProviderCommands::Preflight::StateChanged
     fail_command!(code: 'remote_state_changed', reconciliation: true)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    fail_command!(code: 'captain_control_stale', reconciliation: write_started?)
   rescue Integrations::Medelement::ProviderScope::MismatchError
     fail_command!(code: 'provider_scope_mismatch', reconciliation: write_started?)
   rescue Integrations::Medelement::ContactFieldResolutionService::FieldAlreadyUsedError => e
@@ -45,6 +53,15 @@ class Integrations::Medelement::ProviderCommands::Executor
   private
 
   attr_reader :command
+
+  def cancel_unsafe_captain_command!
+    command.with_lock do
+      next unless command.queued?
+
+      command.update!(status: 'cancelled', executed_at: Time.current,
+                      last_error_code: 'captain_provider_contract_unavailable')
+    end
+  end
 
   def record_contact_field_conflict(error)
     Integrations::Medelement::ContactFieldResolutionService.record_provider_command_conflict!(command, error)
@@ -126,8 +143,7 @@ class Integrations::Medelement::ProviderCommands::Executor
     Integrations::Medelement::ProviderScope.validate_write!(payload, organization_id: configuration.organization_id)
     remote = patient_by_code(patient_code)
     Integrations::Medelement::ProviderScope.validate!(remote, organization_id: payload['company_code'])
-    mark_write_phase!('patient_update', provider_patient_code: patient_code)
-    response = client.update_patient(params: payload)
+    response = write_provider!('patient_update', provider_patient_code: patient_code) { client.update_patient(params: payload) }
     remote = updated_patient_readback(response, patient_code)
     raise reconciliation_error('patient_update_pending_materialization') unless patient_snapshot_matches?(remote)
 
@@ -157,8 +173,10 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def create_remote_reception!(patient_code:, preflight_result:)
-    mark_write_phase!('reception_create', preflight_reception_codes: preflight_result.reception_codes, provider_patient_code: patient_code)
-    response = client.create_reception(params: reception_payload_builder.create_payload(patient_code: patient_code))
+    response = write_provider!('reception_create', preflight_reception_codes: preflight_result.reception_codes,
+                                                   provider_patient_code: patient_code) do
+      client.create_reception(params: reception_payload_builder.create_payload(patient_code: patient_code))
+    end
     reception_code = response.is_a?(Hash) ? response['reception_code'].presence || response['RECEPTION_CODE'].presence : nil
     raise reconciliation_error('reception_create_missing_ref') if reception_code.blank?
 
@@ -168,8 +186,10 @@ class Integrations::Medelement::ProviderCommands::Executor
   def move_reception!
     patient_code = patient_resolver.resolve!(allow_create: false)
     preflight_result = preflight.perform
-    mark_write_phase!('reception_move', preflight_reception_codes: preflight_result.reception_codes, provider_patient_code: patient_code)
-    client.move_reception(params: reception_payload_builder.move_payload(patient_code: patient_code))
+    write_provider!('reception_move', preflight_reception_codes: preflight_result.reception_codes,
+                                      provider_patient_code: patient_code) do
+      client.move_reception(params: reception_payload_builder.move_payload(patient_code: patient_code))
+    end
     remote = bounded_readback do
       candidate = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
       candidate = preflight_result.remote_reception.to_h.merge(candidate.to_h)
@@ -184,8 +204,9 @@ class Integrations::Medelement::ProviderCommands::Executor
     result = preflight.perform
     return success_applier.reception_removed! if removed_reception_matches?(result.remote_reception)
 
-    mark_write_phase!('reception_remove')
-    client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
+    write_provider!('reception_remove') do
+      client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
+    end
     remote = await_removed_reception(result)
     raise reconciliation_error('reception_remove_pending_materialization') unless remote
 
@@ -197,7 +218,7 @@ class Integrations::Medelement::ProviderCommands::Executor
       command: command,
       client: client,
       organization_id: configuration.organization_id,
-      before_create: -> { mark_write_phase!('patient_create') }
+      before_create: ->(&write) { write_provider!('patient_create', &write) }
     )
   end
 
@@ -228,7 +249,15 @@ class Integrations::Medelement::ProviderCommands::Executor
     @client ||= Integrations::Medelement::Client.new(configuration: configuration)
   end
 
-  def mark_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
+  def write_provider!(phase, preflight_reception_codes: nil, provider_patient_code: nil, &write)
+    # The claim and write intent must be committed before external I/O. The
+    # separate fenced call then rechecks ownership and holds it through the
+    # provider request, closing the marker-to-write takeover window.
+    persist_write_phase!(phase, preflight_reception_codes: preflight_reception_codes, provider_patient_code: provider_patient_code)
+    @before_write ? @before_write.call(&write) : yield
+  end
+
+  def persist_write_phase!(phase, preflight_reception_codes:, provider_patient_code:)
     state = command.execution_state.merge('write_phase' => phase)
     state['preflight_reception_codes'] = preflight_reception_codes if preflight_reception_codes
     state['write_provider_patient_code'] = provider_patient_code if provider_patient_code

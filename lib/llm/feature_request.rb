@@ -181,6 +181,9 @@ class Llm::FeatureRequest
     validate_account!
     validate_schema!
     validate_tools!
+    if model.present? || models.present? || options[:models].present?
+      Llm::CaptainModelPolicy.ensure_allowed!(feature: feature_key, model: model, fallback_models: [models, options[:models]])
+    end
   end
 
   def validate_feature!

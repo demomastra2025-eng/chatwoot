@@ -85,6 +85,7 @@ describe Conversations::AssignmentService do
     it 'atomically applies an agent and team to every channel projection' do
       contact = create(:contact, account: account)
       team = create(:team, account: account)
+      create(:team_member, team: team, user: agent)
       first_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
       second_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
 

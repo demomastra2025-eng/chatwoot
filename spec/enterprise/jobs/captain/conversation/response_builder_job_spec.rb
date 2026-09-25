@@ -5,6 +5,29 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
 
+  describe 'buffer cleanup' do
+    it 'does not delete a newly scheduled token between the read and compare-and-delete' do
+      conversation = create(:conversation, account: account, inbox: inbox)
+      job = described_class.new
+      job.instance_variable_set(:@conversation, conversation)
+      job.instance_variable_set(:@buffer_token, 'old-run')
+      key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+      old_state = { 'token' => 'old-run' }.to_json
+      new_state = { 'token' => 'new-run' }.to_json
+      Redis::Alfred.set(key, old_state, ex: 60)
+      allow(Redis::Alfred).to receive(:delete_if_value).and_wrap_original do |original, redis_key, value|
+        Redis::Alfred.set(redis_key, new_state, ex: 60)
+        original.call(redis_key, value)
+      end
+
+      job.send(:clear_buffer_state_if_current)
+
+      expect(Redis::Alfred.get(key)).to eq(new_state)
+    ensure
+      Redis::Alfred.delete(key) if key
+    end
+  end
+
   describe '#perform' do
     let(:conversation) { create(:conversation, inbox: inbox, account: account, status: :pending) }
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
@@ -77,6 +100,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
         assistant: assistant,
         conversation: conversation,
+        response_fence: hash_including(control_generation: 0, last_message_id: kind_of(Integer)),
         callbacks: hash_including(
           on_agent_thinking: kind_of(Proc),
           on_tool_start: kind_of(Proc),
@@ -87,6 +111,25 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       described_class.perform_now(conversation, assistant)
 
       expect(conversation.messages.last.content).to eq('Hey, welcome to Captain V2')
+    end
+
+    it 'never publishes an unauthorized strict-mode tool Halt as a public reply' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: 'Conversation handed off to human support team (Reason: help)',
+        context: { pending_human_handoff: { reason: 'help' }, current_agent: 'assistant_agent', captain_v2_handoff_tool_called: true },
+        error: nil
+      )
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_call_original
+      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: conversation)
+      response = runner.send(:process_agent_result, result)
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
+      allow(agent_runner_service).to receive(:generate_response).and_return(response)
+
+      expect { described_class.perform_now(conversation, assistant) }
+        .not_to(change { conversation.messages.outgoing.where(private: false).count })
+      expect(conversation.reload.captain_ai_control_active?).to be(true)
     end
 
     it 'turns the manager typing indicator on and off around response generation' do
@@ -108,6 +151,27 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
 
       described_class.perform_now(conversation, assistant)
+    end
+
+    it 'includes bounded public history from another channel linked to the same contact thread' do
+      account.enable_features!('communication_threads')
+      first_thread = Conversations::CommunicationThreadResolver.new(conversation: conversation).perform
+      second_inbox = create(:inbox, account: account)
+      create(:captain_inbox, captain_assistant: assistant, inbox: second_inbox)
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: second_inbox)
+      second = create(:conversation, account: account, inbox: second_inbox,
+                                    contact: conversation.contact, contact_inbox: contact_inbox, status: :pending)
+      create(:message, conversation: second, content: 'Following up on another channel', message_type: :incoming)
+
+      expect(second.communication_thread).to eq(first_thread)
+      expect(agent_runner_service).to receive(:generate_response).with(
+        message_history: [
+          { content: 'Hello', role: 'user' },
+          { content: 'Following up on another channel', role: 'user' }
+        ]
+      ).and_return({ 'response' => 'Thanks for following up' })
+
+      described_class.perform_now(second, assistant)
     end
 
     it 'infers scenario agent_name from captain trace when legacy messages are missing explicit attribution' do
@@ -329,6 +393,31 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           expected_last_message_id: expected_last_message_id
         )
       end.not_to(change { conversation.messages.outgoing.count })
+    ensure
+      Redis::Alfred.delete(state_key) if defined?(state_key)
+    end
+
+    it 'does not repeat a committed buffered reply when the worker exits before token cleanup' do
+      token = SecureRandom.uuid
+      incoming_id = conversation.messages.incoming.last.id
+      state_key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+      Redis::Alfred.set(state_key, {
+        token: token, assistant_id: assistant.id, last_message_id: incoming_id,
+        control_generation: conversation.current_captain_control_generation
+      }.to_json, ex: 10.minutes.to_i)
+      first = described_class.new(conversation, assistant, buffer_token: token, expected_last_message_id: incoming_id)
+      allow(first).to receive(:clear_buffer_state_if_current)
+
+      first.perform_now
+      expect(Redis::Alfred.get(state_key)).to be_present
+      first_message = conversation.messages.outgoing.where(private: false).sole
+
+      expect do
+        described_class.perform_now(conversation.reload, assistant, buffer_token: token, expected_last_message_id: incoming_id)
+      end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+      expect(first_message.reload.additional_attributes['captain_response_id']).to be_present
+      expect(agent_runner_service).to have_received(:generate_response).once
+      expect(Redis::Alfred.get(state_key)).to be_nil
     ensure
       Redis::Alfred.delete(state_key) if defined?(state_key)
     end
@@ -682,7 +771,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
-    it 'creates the configured public handoff message when the V2 handoff tool already opened the conversation' do
+    it 'does not emit a late Captain message when the V2 handoff tool already opened the conversation' do
       assistant.update!(config: {
                           'handoff_message_enabled' => true,
                           'handoff_message_mode' => 'static',
@@ -701,7 +790,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       conversation.reload
       expect(conversation.status).to eq('open')
-      expect(conversation.messages.outgoing.last.content).to eq('Connecting you to a human agent.')
+      expect(conversation.messages.outgoing).to be_empty
       expect(conversation.waiting_since).to be_present
     end
 

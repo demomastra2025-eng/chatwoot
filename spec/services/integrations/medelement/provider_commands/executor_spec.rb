@@ -91,6 +91,17 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     allow(client).to receive(:search_patients_by_codes).and_return([])
   end
 
+  context 'when an old Captain command reaches the executor directly' do
+    it 'cancels a queued command before constructing a provider client' do
+      command.update!(execution_state: command.execution_state.merge('captain_action_origin' => { 'assistant_id' => 1 }))
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'cancelled', last_error_code: 'captain_provider_contract_unavailable')
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+  end
+
   context 'when confirmation is no longer confirmed' do
     let(:confirmation_status) { 'pending' }
 
@@ -127,6 +138,53 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   end
 
   context 'when creating a patient' do
+    it 'commits the write marker before a worker interruption at the actual provider call' do
+      contact.update!(name: 'Ivanov Ivan Ivanovich', custom_attributes: { 'medelement_iin' => '940720300129' })
+      command.update!(execution_state: command.execution_state.merge('patient_creation_confirmed' => true))
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return([])
+      allow(client).to receive(:create_patient).and_raise(Interrupt, 'provider accepted before worker exited')
+      fenced_writes = 0
+      gated_executor = described_class.new(command: command, before_write: lambda { |&block|
+        fenced_writes += 1
+        block.call
+      })
+
+      expect { gated_executor.perform }.to raise_error(Interrupt)
+
+      expect(fenced_writes).to eq(1)
+      expect(command.reload).to have_attributes(status: 'processing')
+      expect(command.execution_state['write_phase']).to eq('patient_create')
+    end
+
+    it 'rechecks control after the durable marker and blocks a takeover before provider I/O' do
+      contact.update!(name: 'Ivanov Ivan Ivanovich', custom_attributes: { 'medelement_iin' => '940720300129' })
+      command.update!(execution_state: command.execution_state.merge('patient_creation_confirmed' => true))
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return([])
+      allow(client).to receive(:create_patient)
+      assistant = create(:captain_assistant, account: account)
+      channel = create(:channel_widget, account: account)
+      create(:captain_inbox, inbox: channel.inbox, captain_assistant: assistant)
+      conversation = create(:conversation, account: account, inbox: channel.inbox, contact: contact, status: :pending)
+      incoming = create(:message, conversation: conversation, message_type: :incoming)
+      state = {
+        account_id: account.id, conversation: { id: conversation.id },
+        captain_response_fence: {
+          control_generation: conversation.current_captain_control_generation, last_message_id: incoming.id
+        }
+      }
+      fence = Captain::Conversation::ActionFenceService.new(assistant: assistant, state: state)
+      gated_executor = described_class.new(command: command, before_write: lambda { |&write|
+        expect(command.reload.execution_state['write_phase']).to eq('patient_create')
+        conversation.activate_captain_human_control!(source: 'manual_assignment')
+        fence.with_effect!(&write)
+      })
+
+      gated_executor.perform
+
+      expect(client).not_to have_received(:create_patient)
+      expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'captain_control_stale')
+    end
+
     it 'requires explicit selection for one phone-only provider match' do
       allow(client).to receive(:search_patients_by_phone).and_return(
         [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',

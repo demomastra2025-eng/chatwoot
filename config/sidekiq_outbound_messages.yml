@@ -5,6 +5,7 @@
 :max_retries: 3
 
 :queues:
+  - captain_outbound_messages_v2
   - outbound_messages
 
 production:

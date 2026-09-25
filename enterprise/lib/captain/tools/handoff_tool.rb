@@ -7,6 +7,9 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   def perform(tool_context, reason: nil, status_reason: nil, message: nil)
     return 'Handoff to a human is disabled for this assistant' unless assistant.handoff_enabled?
+    # Strict mode accepts only a trusted server-side consent event. A tool
+    # request must not Halt with a public success message without that event.
+    return tool_failure('Human handoff requires explicit consent') if assistant.handoff_requires_explicit_consent?
     return 'A specific handoff explanation is required' if reason.to_s.squish.blank?
 
     conversation = find_conversation(tool_context.state)

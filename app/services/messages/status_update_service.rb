@@ -26,6 +26,10 @@ class Messages::StatusUpdateService
   def valid_status_transition?
     return false unless Message.statuses.key?(status)
 
+    # A failed Captain send may already have reached the provider. Callers
+    # cannot declare sent/delivered/read without reconciling its receipt.
+    return false if message.sender_type == 'Captain::Assistant' && message.failed? && status != 'failed'
+
     # Don't allow changing from 'read' to 'delivered'
     return false if message.read? && status == 'delivered'
 

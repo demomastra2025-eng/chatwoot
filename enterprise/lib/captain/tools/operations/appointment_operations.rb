@@ -4,10 +4,11 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     appointment = target_appointment(appointment_id)
 
     authorize_appointment!(appointment, :transition?)
+    ensure_local_appointment_effect!(appointment: appointment)
 
     ::Scheduling::Appointments::CancelService.new(
       appointment: appointment,
-      actor: actor
+      actor: dashboard_actor
     ).perform
   end
 
@@ -15,6 +16,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
                          custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     authorize_appointment!(::Scheduling::Appointment, :create?)
+    ensure_local_appointment_effect!(resource: account.scheduling_resources.find_by(id: resource_id))
 
     create_params = {
       resource_id: resource_id,
@@ -35,7 +37,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       ::Scheduling::Appointments::UpsertService.new(
         account: account,
         params: create_params,
-        actor: actor,
+        actor: dashboard_actor,
         required_capabilities: ['create']
       ).perform
     end
@@ -58,12 +60,14 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
 
     authorize_appointment_update!(appointment, params)
+    ensure_local_appointment_effect!(appointment: appointment,
+                                     resource: (account.scheduling_resources.find_by(id: resource_id) if resource_id.present?))
 
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: params,
       appointment: appointment,
-      actor: actor,
+      actor: dashboard_actor,
       required_capabilities: appointment_update_capabilities(params)
     ).perform
   end
@@ -78,7 +82,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
 
     ::Scheduling::Appointments::FinanceSyncService.new(
       appointment: current_appointment,
-      actor: actor
+      actor: dashboard_actor
     ).add_payment!(
       amount: amount,
       payment_method: payment_method
@@ -86,6 +90,24 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def dashboard_actor
+    actor if actor.is_a?(User)
+  end
+
+  def ensure_local_appointment_effect!(appointment: nil, resource: nil)
+    # Legacy customer tools pass the assistant as actor without a scope tag;
+    # account tools pass a real dashboard user instead.
+    return if actor.is_a?(User) && !customer_agent_execution?
+    return unless appointment&.source == 'medelement' ||
+                  appointment&.resource&.custom_attributes.to_h['medelement_specialist_code'].present? ||
+                  resource&.custom_attributes.to_h['medelement_specialist_code'].present?
+
+    # UpsertService performs synchronous provider availability I/O inside a
+    # resource transaction. Its eventual write command cannot be ordered with
+    # a takeover without a provider receipt/idempotency contract.
+    raise ArgumentError, 'Medelement appointment actions require a provider idempotency and reconciliation contract'
+  end
 
   def target_appointment(appointment_id)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
@@ -140,7 +162,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   def authorize_appointment!(appointment, query)
-    return if actor.blank? || customer_agent_execution?
+    return if actor.blank? || customer_agent_execution? || actor == assistant
 
     user_context = {
       user: actor,

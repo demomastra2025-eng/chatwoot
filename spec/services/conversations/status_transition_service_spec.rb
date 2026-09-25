@@ -33,6 +33,14 @@ RSpec.describe Conversations::StatusTransitionService do
     )
   end
 
+  it 'passes the actor and source when a human status change claims Captain control' do
+    create(:captain_inbox, inbox: conversation.inbox, captain_assistant: create(:captain_assistant, account: account))
+
+    transition(params: { status: 'resolved' }, source: 'api')
+
+    expect(conversation.reload.captain_human_control_active?).to be(true)
+    expect(conversation.current_captain_control_generation).to eq(1)
+  end
 
   it 'records a prevalidated agent outcome reason and analytics metadata' do
     described_class.new(

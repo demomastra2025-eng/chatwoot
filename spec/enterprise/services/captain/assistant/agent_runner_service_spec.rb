@@ -307,6 +307,22 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
     end
 
+    it 'suppresses an old successful tool Halt when strict consent is missing' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true))
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: 'Conversation handed off to human support team (Reason: help)',
+        context: { pending_human_handoff: { reason: 'help' }, current_agent: 'assistant_agent', captain_v2_handoff_tool_called: true },
+        error: nil
+      )
+      allow(mock_runner).to receive(:run).and_return(result)
+
+      response = service.generate_response(message_history: message_history)
+
+      expect(response).to include('response' => 'response_cancelled', 'cancel_reason' => 'handoff_not_authorized')
+      expect(response.to_json).not_to include('Conversation handed off')
+    end
+
     it 'records a persisted omission reason when the model skips all bound tools' do
       result = instance_double(
         Captain::Runtime::Result,
@@ -882,6 +898,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
           'handoff_message' => 'I’m connecting you with a human support specialist.',
+          'handoff_authorized' => true,
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
         }
@@ -1019,7 +1036,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                'reasoning' => 'Error occurred: Test error',
                                'error_class' => 'StandardError',
-                               'error_message' => 'Test error'
+                               'error_message' => 'Test error',
+                               'provider_error_handoff_authorized' => true
                              })
       end
 
@@ -1066,7 +1084,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                  'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                  'reasoning' => 'Error occurred: Test error',
                                  'error_class' => 'StandardError',
-                                 'error_message' => 'Test error'
+                                 'error_message' => 'Test error',
+                                 'provider_error_handoff_authorized' => true
                                })
         end
       end
@@ -1091,7 +1110,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'response' => described_class::PROVIDER_ERROR_RESPONSE,
             'reasoning' => 'Provider error occurred: Quota exceeded',
             'error_class' => 'RubyLLM::RateLimitError',
-            'error_message' => 'Quota exceeded'
+            'error_message' => 'Quota exceeded',
+            'provider_error_handoff_authorized' => true
           }
         )
       end

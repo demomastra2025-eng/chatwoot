@@ -7,6 +7,7 @@ RSpec.describe Captain::Tools::Account::McpTool do
   let(:tool_definition) do
     {
       id: 'mcp_lookup_order',
+      risk_level: 'low',
       description: 'Lookup order in MCP',
       mcp_tool_name: 'lookup_order',
       input_schema: {
@@ -37,5 +38,13 @@ RSpec.describe Captain::Tools::Account::McpTool do
       tool_name: 'lookup_order',
       params: { order_id: 'ORD-1' }
     )
+  end
+
+  it 'does not run a mutating copilot MCP tool without a provider receipt contract' do
+    tool_definition[:risk_level] = 'high'
+    allow(Captain::Mcp::ExecutionService).to receive(:new)
+
+    expect(tool.execute(order_id: 'ORD-1')).to include('provider idempotency and reconciliation contract')
+    expect(Captain::Mcp::ExecutionService).not_to have_received(:new)
   end
 end

@@ -87,6 +87,15 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def command_attributes(snapshot:, request_fingerprint:, intent_fingerprint:)
+    execution_state = {
+      'request_snapshot' => snapshot,
+      'request_fingerprint' => request_fingerprint,
+      'idempotency_fingerprint' => intent_fingerprint,
+      'dispatch_identity' => dispatch_identity
+    }
+    origin = Captain::Conversation::ActionFenceService.current_origin
+    execution_state['captain_action_origin'] = origin if origin.present?
+
     {
       hook: hook,
       appointment: appointment,
@@ -99,12 +108,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
       company_cabinet_code: company_cabinet_code.presence,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at,
-      execution_state: {
-        'request_snapshot' => snapshot,
-        'request_fingerprint' => request_fingerprint,
-        'idempotency_fingerprint' => intent_fingerprint,
-        'dispatch_identity' => dispatch_identity
-      }
+      execution_state: execution_state
     }
   end
 

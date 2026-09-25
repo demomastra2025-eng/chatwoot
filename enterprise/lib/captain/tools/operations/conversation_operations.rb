@@ -146,6 +146,9 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     message = find_permissible_message!(message_id)
     raise ArgumentError, 'Only outgoing messages can be retried' unless message.outgoing?
     raise ArgumentError, 'Only failed messages can be retried' unless message.failed?
+    if message.sender_type == 'Captain::Assistant'
+      raise ArgumentError, 'Reconcile Captain delivery with the provider before retrying this message'
+    end
 
     ::Messages::StatusUpdateService.new(message, 'sent').perform
     message.update!(content_attributes: {})
@@ -186,13 +189,12 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
       status_reason,
       fallback_reason: reason
     )
-    conversation.with_lock do
-      conversation.bot_handoff!(
-        status_reason: resolved_status_reason,
-        actor: actor || assistant,
-        source: captain_status_source,
-        **transition_options
-      )
+    conversation.bot_handoff!(
+      status_reason: resolved_status_reason,
+      actor: actor || assistant,
+      source: captain_status_source,
+      **transition_options
+    ) do
       add_private_note(note: reason)
     end
     ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) if conversation.campaign.blank?

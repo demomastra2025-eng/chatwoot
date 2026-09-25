@@ -57,6 +57,23 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       expect(recent_pending_conversation.reload.status).to eq('pending')
     end
 
+    it 'does not resolve after a recent incoming on an unlinked channel of the same contact' do
+      inbox.account.disable_features!('communication_threads')
+      other_channel = create(:channel_widget, account: inbox.account)
+      other_contact_inbox = create(:contact_inbox, contact: resolvable_pending_conversation.contact, inbox: other_channel.inbox)
+      other_conversation = create(:conversation, account: inbox.account, contact: resolvable_pending_conversation.contact,
+                                                inbox: other_channel.inbox, contact_inbox: other_contact_inbox)
+      create(:message, message_type: :incoming, conversation: other_conversation)
+      inbox.account.enable_features!('communication_threads')
+      Conversations::CommunicationThreadResolver.new(conversation: resolvable_pending_conversation).perform
+      expect(other_conversation.reload.communication_thread).to be_nil
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.reload).to be_pending
+      expect(resolvable_pending_conversation.messages.outgoing).to be_empty
+    end
+
     it 'does not affect open conversations' do
       described_class.perform_now(inbox)
 
@@ -235,6 +252,23 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
       expect(public_message.content).to eq(custom_message)
+      expect(public_message.additional_attributes.dig('captain_delivery_fence', 'kind')).to eq('resolution')
+      public_message.conversation.reload
+      expect(Captain::Conversation::DeliveryFenceService.new(public_message).send(:stale?)).to be(false)
+    end
+
+    it 'does not resolve a conversation taken over after LLM evaluation' do
+      mock_service = instance_double(Captain::ConversationCompletionService)
+      allow(mock_service).to receive(:perform) do
+        resolvable_pending_conversation.activate_captain_human_control!(source: 'manual_assignment')
+        { evaluated: true, complete: true, reason: 'Customer question was answered' }
+      end
+      allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.reload).to be_pending
+      expect(resolvable_pending_conversation.messages.outgoing).to be_empty
     end
 
     it 'does not create resolution message when disabled' do
@@ -365,6 +399,9 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
       expect(public_message.content).to eq(handoff_message)
       expect(public_message.additional_attributes['preserve_waiting_since']).to be_nil
+      expect(public_message.additional_attributes.dig('captain_delivery_fence', 'kind')).to eq('handoff')
+      public_message.conversation.reload
+      expect(Captain::Conversation::DeliveryFenceService.new(public_message).send(:stale?)).to be(false)
     end
 
     it 'uses generated handoff text when AI handoff message mode is enabled' do

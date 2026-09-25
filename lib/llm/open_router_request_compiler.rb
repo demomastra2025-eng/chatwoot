@@ -74,6 +74,9 @@ class Llm::OpenRouterRequestCompiler
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
     apply_server_tools!(params, server_tools)
+    if @feature.present? || request_value(:feature_key).present? || request_value(:feature).present?
+      Llm::CaptainModelPolicy.ensure_allowed!(feature: feature_key, model: @model, fallback_models: models)
+    end
     metadata = compiled_metadata(
       profile: profile,
       feature_policy: feature_policy,
@@ -138,6 +141,12 @@ class Llm::OpenRouterRequestCompiler
       params.delete('service_tier')
       params.delete(:parallel_tool_calls)
       params.delete('parallel_tool_calls')
+      # The selected model is passed to RubyLLM separately. Raw wire overrides
+      # must not replace an already validated route.
+      params.delete(:model)
+      params.delete('model')
+      params.delete(:models)
+      params.delete('models')
     end
   end
 

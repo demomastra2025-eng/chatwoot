@@ -34,6 +34,10 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def retry
     return if message.blank?
+    if message.sender_type == 'Captain::Assistant'
+      return render json: { error: 'Reconcile Captain delivery with the provider before retrying this message',
+                            error_code: 'CAPTAIN_DELIVERY_RECONCILIATION_REQUIRED' }, status: :conflict
+    end
 
     service = Messages::StatusUpdateService.new(message, 'sent')
     service.perform

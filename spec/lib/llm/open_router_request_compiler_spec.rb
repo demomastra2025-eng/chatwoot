@@ -24,6 +24,17 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
 end
 
 RSpec.describe Llm::OpenRouterRequestCompiler do
+  before do
+    # Routing tests intentionally probe models other than the production
+    # Captain default; treat those as an explicit test installation allowlist.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini openai/gpt-5.4 moonshotai/kimi-k2.6
+         deepseek/deepseek-v4-pro anthropic/claude-sonnet-4]
+    )
+    # Lightweight account doubles used for privacy routing have no BYOK hooks.
+    allow(Llm::Config).to receive(:account_provider_byok_allowed?).and_return(false)
+  end
+
   def compile(feature:, model: 'moonshotai/kimi-k2.6', base_params: {}, stream: false, **options)
     request = OpenRouterRequestCompilerSpecRequest.new(
       feature_key: feature.to_s,
@@ -152,7 +163,7 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
   end
 
   it 'lets ZDR-required workspace policy override weaker provider params' do
-    account = instance_double(Account, captain_preferences: { runtime: { privacy_profile: 'zdr_required' } })
+    account = instance_double(Account, captain_preferences: { runtime: { privacy_profile: 'zdr_required' } }, feature_enabled?: false)
 
     compiled = compile(
       feature: :captain_agent,

@@ -71,14 +71,14 @@ RSpec.describe CaptainFeaturable do
       before do
         account.update!(captain_models: {
                           'editor' => 'gpt-4.1-mini',
-                          'assistant' => 'gpt-5.1',
+                          'assistant' => 'openai/gpt-5.6-luna',
                           'label_suggestion' => 'gpt-4.1-nano'
                         })
       end
 
       it 'returns configured models for configured features' do
         expect(account.captain_editor_model).to eq('gpt-4.1-mini')
-        expect(account.captain_assistant_model).to eq('gpt-5.1')
+        expect(account.captain_assistant_model).to eq('openai/gpt-5.6-luna')
         expect(account.captain_label_suggestion_model).to eq('gpt-4.1-nano')
       end
 
@@ -103,8 +103,8 @@ RSpec.describe CaptainFeaturable do
         account.captain_models = { 'assistant' => 'claude-sonnet-4.6' }
       end
 
-      it 'returns the canonical Anthropic model id' do
-        expect(account.captain_assistant_model).to eq('claude-sonnet-4-6')
+      it 'does not expose a forbidden legacy alias and falls back to the configured default' do
+        expect(account.captain_assistant_model).to eq(Llm::Models.default_model_for('assistant'))
       end
     end
 
@@ -133,12 +133,20 @@ RSpec.describe CaptainFeaturable do
     end
 
     it 'model methods use the same logic as captain_preferences[:models]' do
-      account.update!(captain_models: { 'editor' => 'gpt-4.1-mini', 'assistant' => 'gpt-5.2' })
+      account.update!(captain_models: { 'editor' => 'gpt-4.1-mini', 'assistant' => 'openai/gpt-5.6-luna' })
       prefs = account.captain_preferences
 
       Llm::Models.feature_keys.each do |feature_key|
         expect(account.send("captain_#{feature_key}_model")).to eq(prefs[:models][feature_key])
       end
+    end
+
+    it 'rejects a forbidden static Captain model at write time and keeps the runtime default' do
+      account.captain_models = { 'assistant' => 'gpt-5.2' }
+
+      expect(account).not_to be_valid
+      expect(account.errors[:captain_models]).to be_present
+      expect(account.reload.captain_assistant_model).to eq(Llm::Models.default_model_for('assistant'))
     end
 
     it 'exposes runtime preferences with defaults' do
