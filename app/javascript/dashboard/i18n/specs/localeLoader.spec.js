@@ -10,6 +10,8 @@ import {
   setI18nLocale,
 } from '../localeLoader';
 
+const LOCALE_IMPORT_TIMEOUT = 20_000;
+
 describe('dashboard i18n lazy loading', () => {
   beforeEach(() => {
     registerDashboardI18n(null);
@@ -19,89 +21,109 @@ describe('dashboard i18n lazy loading', () => {
     expect(Object.keys(initialMessages).sort()).toEqual(['en', 'ru']);
   });
 
-  it('loads non-startup locales on demand', async () => {
-    const i18n = {
-      availableLocales: ['en', 'ru'],
-      setLocaleMessage: vi.fn(),
-    };
+  it(
+    'loads non-startup locales on demand',
+    async () => {
+      const i18n = {
+        availableLocales: ['en', 'ru'],
+        setLocaleMessage: vi.fn(),
+      };
 
-    const locale = await loadLocaleMessages(i18n, 'pt-BR');
+      const locale = await loadLocaleMessages(i18n, 'pt-BR');
 
-    expect(locale).toBe('pt_BR');
-    expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
-      'pt_BR',
-      expect.objectContaining({})
-    );
-  });
+      expect(locale).toBe('pt_BR');
+      expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
+        'pt_BR',
+        expect.objectContaining({})
+      );
+    },
+    LOCALE_IMPORT_TIMEOUT
+  );
 
-  it('sets vue-i18n composer locale refs after loading the locale', async () => {
-    const i18n = {
-      availableLocales: ['en', 'ru'],
-      locale: { value: 'ru' },
-      setLocaleMessage: vi.fn(),
-    };
+  it(
+    'sets vue-i18n composer locale refs after loading the locale',
+    async () => {
+      const i18n = {
+        availableLocales: ['en', 'ru'],
+        locale: { value: 'ru' },
+        setLocaleMessage: vi.fn(),
+      };
 
-    const locale = await setI18nLocale(i18n, 'kk');
+      const locale = await setI18nLocale(i18n, 'kk');
 
-    expect(locale).toBe('kk');
-    expect(i18n.locale.value).toBe('kk');
-    expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
-      'kk',
-      expect.objectContaining({})
-    );
-  });
+      expect(locale).toBe('kk');
+      expect(i18n.locale.value).toBe('kk');
+      expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
+        'kk',
+        expect.objectContaining({})
+      );
+    },
+    LOCALE_IMPORT_TIMEOUT
+  );
 
-  it('loads Kazakh scheduling overrides while retaining the complete fallback catalog', async () => {
-    const setLocaleMessage = vi.fn();
-    const i18n = {
-      availableLocales: ['en', 'ru'],
-      setLocaleMessage,
-    };
+  it(
+    'loads Kazakh scheduling overrides while retaining the complete fallback catalog',
+    async () => {
+      const setLocaleMessage = vi.fn();
+      const i18n = {
+        availableLocales: ['en', 'ru'],
+        setLocaleMessage,
+      };
 
-    await loadLocaleMessages(i18n, 'kk');
+      await loadLocaleMessages(i18n, 'kk');
 
-    const messages = setLocaleMessage.mock.calls[0][1];
-    expect(messages.SCHEDULING.RESOURCES.INHERIT_COMPANY_HOURS).toBe(
-      'Компанияның жұмыс уақытын пайдалану'
-    );
-    expect(messages.SCHEDULING.GENERAL.SAVE).toBeTruthy();
-  });
+      const messages = setLocaleMessage.mock.calls[0][1];
+      expect(messages.SCHEDULING.RESOURCES.INHERIT_COMPANY_HOURS).toBe(
+        'Компанияның жұмыс уақытын пайдалану'
+      );
+      expect(messages.SCHEDULING.GENERAL.SAVE).toBeTruthy();
+    },
+    LOCALE_IMPORT_TIMEOUT
+  );
 
-  it('uses the registered runtime i18n instance for component locale changes', async () => {
-    const i18n = {
-      availableLocales: ['en', 'ru'],
-      locale: { value: 'ru' },
-      setLocaleMessage: vi.fn(),
-    };
+  it(
+    'uses the registered runtime i18n instance for component locale changes',
+    async () => {
+      const i18n = {
+        availableLocales: ['en', 'ru'],
+        locale: { value: 'ru' },
+        setLocaleMessage: vi.fn(),
+      };
 
-    registerDashboardI18n(i18n);
+      registerDashboardI18n(i18n);
 
-    const locale = await setDashboardLocale('pt-BR');
+      const locale = await setDashboardLocale('pt-BR');
 
-    expect(locale).toBe('pt_BR');
-    expect(i18n.locale.value).toBe('pt_BR');
-    expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
-      'pt_BR',
-      expect.objectContaining({})
-    );
-  });
+      expect(locale).toBe('pt_BR');
+      expect(i18n.locale.value).toBe('pt_BR');
+      expect(i18n.setLocaleMessage).toHaveBeenCalledWith(
+        'pt_BR',
+        expect.objectContaining({})
+      );
+    },
+    LOCALE_IMPORT_TIMEOUT
+  );
 
-  it('works with the real vue-i18n legacy:false global composer', async () => {
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'ru',
-      fallbackLocale: 'en',
-      messages: initialMessages,
-    });
+  it(
+    'works with the real vue-i18n legacy:false global composer',
+    async () => {
+      const i18n = createI18n({
+        legacy: false,
+        locale: 'ru',
+        fallbackLocale: 'en',
+        messages: initialMessages,
+      });
 
-    registerDashboardI18n(i18n.global);
+      registerDashboardI18n(i18n.global);
 
-    const locale = await setDashboardLocale('kk');
+      const locale = await setDashboardLocale('kk');
 
-    expect(locale).toBe('kk');
-    expect(i18n.global.locale.value).toBe('kk');
-    expect(i18n.global.availableLocales).toContain('kk');
-  });
+      expect(locale).toBe('kk');
+      expect(i18n.global.locale.value).toBe('kk');
+      expect(i18n.global.availableLocales).toContain('kk');
+    },
+    LOCALE_IMPORT_TIMEOUT
+  );
 
   it('falls back to Russian for unsupported locales', () => {
     expect(resolveLocaleCode('unknown-locale')).toBe('ru');

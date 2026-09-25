@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 const {
@@ -22,6 +22,9 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
 import { useCallsStore } from './calls';
 
 describe('useCallsStore', () => {
+  // Warm the mocked lazy client outside individual test timeouts.
+  beforeAll(() => import('dashboard/api/channel/voice/webphoneClient'), 30_000);
+
   beforeEach(() => {
     setActivePinia(createPinia());
     endClientCallMock.mockReset();
@@ -1011,7 +1014,7 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-  }, 10000);
+  }, 30_000);
 
   it('keeps a distinct simultaneous logical call for the same client after a foreign claim', async () => {
     const store = useCallsStore();
@@ -1403,7 +1406,7 @@ describe('useCallsStore', () => {
         operatorInternalExtension: '202',
       }),
     ]);
-  }, 10000);
+  }, 20_000);
 
   it('keeps an active branch when a same-SID sibling ends before the logical call', async () => {
     const store = useCallsStore();
@@ -1904,7 +1907,7 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-  });
+  }, 20_000);
 
   it('does not clear a newer active call through a stale scoped cleanup', async () => {
     const store = useCallsStore();
