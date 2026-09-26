@@ -11,6 +11,7 @@ class Llm::OpenRouterRuntime
 
   def chat(request)
     request = normalize_request(request)
+    reject_audio_chat!(request)
     model = resolve_model(request)
     enforce_budget!(request, model)
     compiled = compiled_chat_request(request, model)
@@ -37,6 +38,7 @@ class Llm::OpenRouterRuntime
 
   def build_chat(request)
     request = normalize_request(request)
+    reject_audio_chat!(request)
     model = resolve_model(request)
     compiled = compiled_chat_request(request, model)
     Llm::ChatClient.build(
@@ -69,7 +71,10 @@ class Llm::OpenRouterRuntime
     request = normalize_request(request, feature: :audio_transcription)
     raise ArgumentError, 'input is required for OpenRouter transcription.' if request.input.blank?
 
-    model = resolve_model(request)
+    model = Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+    requested_models = [request.model, request.options[:model], *request.models].compact_blank
+    raise ArgumentError, "Audio transcription only supports #{model}." if requested_models.any? { |requested_model| requested_model.to_s != model }
+
     enforce_budget!(request, model)
     profile = routing_profile(request, model)
     headers = native_headers(request, profile)
@@ -80,11 +85,11 @@ class Llm::OpenRouterRuntime
           model: model,
           api_key: api_key!(request),
           api_base: api_base(request),
-          prompt: request.options[:prompt],
           language: request.options[:language],
           temperature: request.temperature.nil? ? 0.4 : request.temperature,
           provider: profile.provider_preferences,
-          headers: headers.headers
+          headers: headers.headers,
+          timings: request.options[:stage_timings]
         )
       end
     end
@@ -170,6 +175,12 @@ class Llm::OpenRouterRuntime
   end
 
   private
+
+  def reject_audio_chat!(request)
+    return unless request.feature_key == 'audio_transcription'
+
+    raise ArgumentError, 'Audio transcription must use the native /audio/transcriptions endpoint.'
+  end
 
   def normalize_request(request, feature: nil)
     return request if request.is_a?(Llm::FeatureRequest)

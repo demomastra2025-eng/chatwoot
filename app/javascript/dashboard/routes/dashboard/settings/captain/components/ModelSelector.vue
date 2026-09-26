@@ -34,6 +34,14 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  fixedModel: {
+    type: String,
+    default: null,
+  },
+  readOnlyModel: {
+    type: String,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['change']);
@@ -94,8 +102,30 @@ const handleModelChange = ({ feature, model }) => {
           </ul>
         </div>
       </div>
+      <div
+        v-if="fixedModel"
+        data-test="fixed-model"
+        class="rounded-lg border border-n-weak bg-n-solid-2 px-3 py-2 text-xs text-n-slate-12"
+      >
+        <span>
+          {{
+            t(
+              'CAPTAIN_SETTINGS.MODEL_CONFIG.AUDIO_TRANSCRIPTION.NATIVE_PROMPT_TITLE'
+            )
+          }}
+        </span>
+        <span class="ml-1 font-medium">{{ fixedModel }}</span>
+      </div>
+      <div
+        v-else-if="readOnlyModel"
+        data-test="legacy-model"
+        class="rounded-lg border border-n-weak bg-n-solid-2 px-3 py-2 text-xs text-n-slate-12"
+      >
+        <span>{{ title }}</span>
+        <span class="ml-1 font-medium">{{ readOnlyModel }}</span>
+      </div>
       <ModelDropdown
-        v-if="isAllowed && hasAvailableModels"
+        v-else-if="isAllowed && hasAvailableModels"
         :feature-key="featureKey"
         :feature-title="title"
         :models="availableModels"

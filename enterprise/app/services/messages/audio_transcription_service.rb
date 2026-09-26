@@ -69,19 +69,23 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     transcribed_text = cached_transcription || ''
     return transcribed_text if transcribed_text.present?
 
-    temp_file_path = fetch_audio_file
-    provider_file_path = audio_file_path_for_provider(temp_file_path)
+    timings = Llm::TranscriptionTimings.new(source: 'message')
+    selected_model = timings.measure(:model_selection) { model }
+    temp_file_path = nil
+    provider_file_path = nil
+    timings.measure(:file_preparation) do
+      temp_file_path = fetch_audio_file
+      provider_file_path = Llm::OpenRouterAudioInput.normalize_for_transcription(temp_file_path)
+    end
     observability = instrumentation_params(provider_file_path)
-    response = instrument_audio_transcription(observability) do
-      if openrouter_chat_transcription?
-        transcribe_with_openrouter_chat(provider_file_path, observability)
-      else
-        transcribe_with_transcription_endpoint(provider_file_path, observability)
+    response = timings.measure(:provider_request) do
+      instrument_audio_transcription(observability) do
+        transcribe_with_transcription_endpoint(provider_file_path, observability, selected_model, timings)
       end
     end
     transcribed_text = response.respond_to?(:text) ? response.text.to_s : response.to_s
 
-    update_transcription(transcribed_text)
+    timings.measure(:persistence) { update_transcription(transcribed_text) }
     transcribed_text
   ensure
     FileUtils.rm_f(temp_file_path) if temp_file_path.present?
@@ -111,69 +115,15 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
     account.captain_audio_transcription_prompt
   end
 
-  def openrouter_chat_transcription?
-    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
-      Llm::Models.type_for(model, account: account) == 'chat' &&
-      Llm::Models.supports_audio_input?(model, account: account)
-  end
-
-  def openrouter_transcription_endpoint?
-    Llm::Config.provider_for_model(model, account: account) == 'openrouter' &&
-      Llm::Models.type_for(model, account: account) == 'transcription'
-  end
-
-  def audio_file_path_for_provider(temp_file_path)
-    if openrouter_chat_transcription?
-      return Llm::OpenRouterAudioInput.normalize_for_chat(
-        temp_file_path,
-        logger_context: { attachment_id: attachment.id, message_id: message.id }
-      )
-    end
-
-    if openrouter_transcription_endpoint?
-      return Llm::OpenRouterAudioInput.normalize_for_transcription(
-        temp_file_path,
-        logger_context: { attachment_id: attachment.id, message_id: message.id }
-      )
-    end
-
-    temp_file_path
-  end
-
-  def transcribe_with_transcription_endpoint(temp_file_path, observability)
+  def transcribe_with_transcription_endpoint(temp_file_path, observability, selected_model, timings)
     Llm::Runtime.transcribe(
       feature: :audio_transcription,
       account: account,
-      model: model,
+      model: selected_model,
       input: temp_file_path,
       observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      options: { temperature: 0.4, prompt: transcription_prompt }
+      options: { temperature: 0.4, prompt: transcription_prompt, stage_timings: timings }
     )
-  end
-
-  def transcribe_with_openrouter_chat(temp_file_path, observability)
-    response = Llm::Runtime.chat(
-      feature: :audio_transcription,
-      account: account,
-      model: model,
-      messages: [
-        {
-          role: 'user',
-          content: RubyLLM::Content.new(openrouter_transcription_prompt, [temp_file_path])
-        }
-      ],
-      observability: observability.merge(runtime_mode: 'audio_transcription', provider: 'openrouter'),
-      options: { temperature: 0 }
-    )
-
-    response&.content.to_s
-  end
-
-  def openrouter_transcription_prompt
-    [
-      'Transcribe the attached audio accurately. Return only the transcript text, without markdown or commentary.',
-      transcription_prompt.presence
-    ].compact.join("\n")
   end
 
   def update_transcription(transcribed_text)

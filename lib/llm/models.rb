@@ -41,8 +41,8 @@ module Llm::Models
   OPENROUTER_REASONING_RUNTIME_FEATURES = %w[assistant copilot].freeze
   OPENROUTER_PREFERRED_FEATURE_MODELS = {
     'audio_transcription' => %w[
-      openai/gpt-4o-mini-transcribe
       openai/gpt-4o-transcribe
+      openai/gpt-4o-mini-transcribe
       openai/whisper-large-v3
       openai/gpt-audio-mini
       openai/gpt-audio
@@ -74,6 +74,8 @@ module Llm::Models
 
     def default_model_for(feature, account: nil)
       feature_key = feature.to_s
+      return Llm::Config::DEFAULT_TRANSCRIPTION_MODEL if feature_key == 'audio_transcription'
+
       configured_default = configured_default_model_for(feature_key)
 
       if openrouter_only_feature?(feature_key)
@@ -131,6 +133,8 @@ module Llm::Models
 
     def models_for(feature, account: nil, runtime_filtered: true)
       feature_key = feature.to_s
+      return [Llm::Config::DEFAULT_TRANSCRIPTION_MODEL] if feature_key == 'audio_transcription'
+
       static_models = Array(CONFIG.dig('features', feature_key, 'models')).map { |model_name| canonical_model_name(model_name) }
       dynamic_models = dynamic_models_for_feature(feature_key, account: account, runtime_filtered: runtime_filtered)
 
@@ -152,6 +156,7 @@ module Llm::Models
       feature_key = feature.to_s
       canonical_name = canonical_model_name(model_name)
       return false if feature_key.blank? || canonical_name.blank?
+      return canonical_name == Llm::Config::DEFAULT_TRANSCRIPTION_MODEL if feature_key == 'audio_transcription'
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
@@ -188,6 +193,8 @@ module Llm::Models
 
     def model_config(model_name, account: nil)
       canonical_name = canonical_model_name(model_name)
+      return configured_models[canonical_name] if canonical_name == Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+
       dynamic_config = dynamic_model_configs(account: account)[canonical_name]
       return dynamic_config if dynamic_config.to_h['provider'] == OPENROUTER_PROVIDER
 
@@ -309,6 +316,14 @@ module Llm::Models
       provider_status = provider_status_by_name(account)
       runtime_preferences = runtime_preferences_for(account)
       feature_model_names = feature_config_models_for(feature_key, account: account)
+      diagnostic_models = if feature_key.to_s == 'audio_transcription'
+                            []
+                          else
+                            diagnostic_models_for_feature(
+                              feature_key, feature_model_names, provider_status,
+                              account: account, runtime_preferences: runtime_preferences
+                            )
+                          end
       {
         models: feature_model_names.filter_map do |model_name|
           canonical_name = canonical_model_name(model_name)
@@ -355,13 +370,7 @@ module Llm::Models
             diagnostics: diagnostics&.to_h
           }
         end,
-        diagnostic_models: diagnostic_models_for_feature(
-          feature_key,
-          feature_model_names,
-          provider_status,
-          account: account,
-          runtime_preferences: runtime_preferences
-        ),
+        diagnostic_models: diagnostic_models,
         default: default_model_for(feature_key, account: account),
         configured_default: configured_default_model_for(feature_key),
         required_capabilities: required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)

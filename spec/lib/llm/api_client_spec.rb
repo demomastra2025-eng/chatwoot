@@ -168,7 +168,7 @@ RSpec.describe Llm::ApiClient do
 
       expect(Llm::OpenRouterTranscriptionClient).to receive(:transcribe).with(
         '/tmp/audio.mp3',
-        model: 'openai/gpt-4o-mini-transcribe',
+        model: 'openai/gpt-4o-transcribe',
         api_key: 'openrouter-key',
         api_base: 'https://openrouter.ai/api/v1',
         language: nil,
@@ -183,7 +183,7 @@ RSpec.describe Llm::ApiClient do
           provider: 'openrouter',
           api_key: 'openrouter-key',
           api_base: 'https://openrouter.ai/api/v1',
-          model: 'openai/gpt-4o-mini-transcribe',
+          model: 'openai/gpt-4o-transcribe',
           temperature: 0.2
         )
       ).to eq(response)

@@ -49,7 +49,7 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     voice_message
     FileUtils.mkdir_p(recording_path.dirname)
     File.binwrite(recording_path, "RIFF\x24\x00\x00\x00WAVEfmt ")
-    allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+    allow(Llm::Config).to receive(:provider_for_model).and_call_original
     allow(Llm::Config).to receive(:api_key).and_return('test-key')
     allow(Llm::Config).to receive(:api_base).and_return(nil)
     allow(Llm::Config).to receive(:with_api_key).and_yield(:llm_context)
@@ -145,21 +145,21 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     FileUtils.rm_f(outside_path) if defined?(outside_path) && outside_path.present?
   end
 
-  it 'uses the native OpenRouter transcription endpoint for dedicated STT models' do
+  it 'uses pinned native STT despite a saved override without scanning model or endpoint catalogs' do
+    account.update!(captain_models: { 'audio_transcription' => 'openai/gpt-audio-mini' })
     service = described_class.new(call_session)
-    allow(service).to receive(:model).and_return('openai/gpt-4o-mini-transcribe')
-    allow(Llm::Config).to receive(:provider_for_model).with('openai/gpt-4o-mini-transcribe', account: account).and_return('openrouter')
-    allow(Llm::Models).to receive(:type_for).with('openai/gpt-4o-mini-transcribe', account: account).and_return('transcription')
-    allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
-    allow(Llm::Config).to receive(:api_base).with('openrouter', account: account).and_return('https://openrouter.ai/api/v1')
+    expect(Llm::Runtime).not_to receive(:chat)
+    expect(Llm::Models).not_to receive(:models_for)
+    expect(Llm::OpenRouterModelCatalog).not_to receive(:model_configs)
+    expect(Llm::OpenRouterEndpointCatalog).not_to receive(:endpoint_configs)
 
     expect(Llm::Runtime).to receive(:transcribe).with(
       feature: :audio_transcription,
       account: account,
-      model: 'openai/gpt-4o-mini-transcribe',
+      model: 'openai/gpt-4o-transcribe',
       input: recording_path.to_s,
       observability: hash_including(runtime_mode: 'call_recording_transcription'),
-      options: hash_including(temperature: 0.2)
+      options: hash_including(temperature: 0.2, stage_timings: an_instance_of(Llm::TranscriptionTimings))
     ).and_return(response)
 
     expect(service.perform).to include(success: true, transcript: transcript)

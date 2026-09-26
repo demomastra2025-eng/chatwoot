@@ -246,7 +246,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             params: {
               captain_models: {
                 editor: 'gpt-4.1-mini',
-                audio_transcription: 'whisper-1',
                 image_recognition: 'gpt-5.4-mini',
                 help_center_search: 'text-embedding-3-small',
                 moderation: 'openai/gpt-oss-safeguard-20b'
@@ -262,11 +261,71 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:observability)
         expect(account.reload.captain_models).to include(
           'editor' => 'gpt-4.1-mini',
-          'audio_transcription' => 'whisper-1',
           'image_recognition' => 'gpt-5.4-mini',
           'help_center_search' => 'text-embedding-3-small',
           'moderation' => 'openai/gpt-oss-safeguard-20b'
         )
+      end
+
+      it 'rejects an explicit audio model override without changing settings' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { audio_transcription: 'openai/gpt-audio-mini', editor: 'gpt-4.1-mini' } },
+            as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(json_response[:error]).to include('openai/gpt-4o-transcribe')
+        expect(account.reload.captain_models).to be_nil
+      end
+
+      it 'accepts the only advertised audio model from an older dashboard bundle' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { audio_transcription: 'openai/gpt-4o-transcribe' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :audio_transcription, :selected)).to eq('openai/gpt-4o-transcribe')
+        expect(account.reload.captain_models).to be_blank
+      end
+
+      it 'reports the fixed audio model even when the account has a saved legacy override' do
+        account.update!(captain_models: { 'audio_transcription' => 'legacy-removed-model' })
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences", headers: admin.create_new_auth_token, as: :json
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :audio_transcription, :selected)).to eq('openai/gpt-4o-transcribe')
+        expect(json_response.dig(:features, :audio_transcription, :model_selection_locked)).to be(true)
+      end
+
+      it 'advertises only the fixed model to older dashboard bundles' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences", headers: admin.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :audio_transcription)).to include(
+          selected: 'openai/gpt-4o-transcribe',
+          default: 'openai/gpt-4o-transcribe',
+          model_selection_locked: true
+        )
+        expect(json_response.dig(:features, :audio_transcription, :models).pluck(:id)).to eq(['openai/gpt-4o-transcribe'])
+      end
+
+      it 'ignores a saved audio override while validating other model settings' do
+        account.update!(captain_models: { 'audio_transcription' => 'legacy-removed-model' })
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { editor: 'gpt-4.1-mini' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_models).to include(
+          'audio_transcription' => 'legacy-removed-model',
+          'editor' => 'gpt-4.1-mini'
+        )
+        expect(json_response.dig(:features, :audio_transcription, :selected)).to eq('openai/gpt-4o-transcribe')
       end
 
       it 'updates captain_features' do
@@ -412,7 +471,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: {
-              captain_models: { audio_transcription: nil },
               captain_runtime: { knowledge_chunk_size: '40000' }
             },
             as: :json

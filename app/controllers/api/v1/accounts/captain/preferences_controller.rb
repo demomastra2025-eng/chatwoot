@@ -44,6 +44,14 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def update
+    if params[:captain_models].respond_to?(:key?) && params[:captain_models].key?(:audio_transcription)
+      requested_model = params[:captain_models][:audio_transcription]
+      if requested_model != Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+        return render json: { error: "Audio transcription model is fixed to #{Llm::Config::DEFAULT_TRANSCRIPTION_MODEL}." },
+                      status: :unprocessable_entity
+      end
+    end
+
     params_to_update = captain_params
     Account.transaction do
       @current_account.captain_models = params_to_update[:captain_models] if params_to_update[:captain_models]
@@ -141,7 +149,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def permitted_captain_models
     params.require(:captain_models).permit(
       :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :image_recognition, :help_center_search, :moderation
+      :image_recognition, :help_center_search, :moderation
     ).to_h.stringify_keys
   end
 
@@ -262,6 +270,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
     Llm::Models.feature_keys.index_with do |feature_key|
       config = Llm::Models.feature_config(feature_key, account: Current.account)
+      config[:model_selection_locked] = true if feature_key == 'audio_transcription'
       selected_model = Llm::Config.model_for(feature: feature_key, account: Current.account)
       selected_diagnostics = if selected_model.present?
                                Llm::Models.capability_diagnostics_for(

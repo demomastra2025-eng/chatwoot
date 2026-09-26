@@ -3,7 +3,7 @@ require 'ruby_llm'
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
   DEFAULT_MODEL = 'openai/gpt-5.4-mini'.freeze
-  DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
+  DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
@@ -60,6 +60,7 @@ module Llm::Config
 
     def model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
       feature_key = feature.to_s.presence
+      return DEFAULT_TRANSCRIPTION_MODEL if feature_key == 'audio_transcription'
 
       account_model = account_model_for(account, feature_key)
       return account_model if account_model.present?

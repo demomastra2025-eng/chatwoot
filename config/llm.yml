@@ -129,6 +129,15 @@ models:
     input_modalities: [audio]
     output_modalities: [transcription]
     context_length: 128000
+  openai/gpt-4o-transcribe:
+    provider: openrouter
+    display_name: 'GPT-4o Transcribe'
+    credit_multiplier: 1
+    type: transcription
+    source: static_openrouter_default
+    capabilities: [audio_input, transcription]
+    input_modalities: [audio]
+    output_modalities: [transcription]
   gpt-5.4-nano:
     provider: openai
     display_name: 'GPT-5.4 Nano'
@@ -290,8 +299,8 @@ features:
       [gpt-4.1-nano, gpt-4.1-mini, gpt-5-mini, gpt-5.4-nano, gpt-5.4-mini, gemini-2.5-flash-lite, gemini-2.5-flash, claude-haiku-4-5]
     default: openai/gpt-5.4-mini
   audio_transcription:
-    models: [openai/gpt-4o-mini-transcribe, openai/gpt-audio-mini, mistralai/voxtral-small-24b-2507, gpt-4o-transcribe, whisper-1]
-    default: openai/gpt-4o-mini-transcribe
+    models: [openai/gpt-4o-transcribe]
+    default: openai/gpt-4o-transcribe
   image_recognition:
     models:
       [

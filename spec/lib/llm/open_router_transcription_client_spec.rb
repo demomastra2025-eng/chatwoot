@@ -14,17 +14,20 @@ RSpec.describe Llm::OpenRouterTranscriptionClient do
   end
 
   it 'posts base64 audio to the native OpenRouter transcription endpoint' do
+    timings = instance_double(Llm::TranscriptionTimings)
+    expect(timings).to receive(:mark).with(:provider_http_start)
     stub = stub_request(:post, 'https://openrouter.ai/api/v1/audio/transcriptions')
            .with(headers: { 'Authorization' => 'Bearer openrouter-key' }) do |request|
       body = JSON.parse(request.body)
       expect(body).to include(
-        'model' => 'openai/gpt-4o-mini-transcribe',
+        'model' => 'openai/gpt-4o-transcribe',
         'temperature' => 0.2
       )
       expect(body['input_audio']).to include(
         'format' => 'wav',
         'data' => Base64.strict_encode64(File.binread(audio_path))
       )
+      expect(body).not_to have_key('prompt')
     end.to_return(
       status: 200,
       body: {
@@ -37,16 +40,18 @@ RSpec.describe Llm::OpenRouterTranscriptionClient do
 
     result = described_class.transcribe(
       audio_path,
-      model: 'openai/gpt-4o-mini-transcribe',
+      model: 'openai/gpt-4o-transcribe',
       api_key: 'openrouter-key',
       api_base: 'https://openrouter.ai/api/v1',
-      temperature: 0.2
+      temperature: 0.2,
+      prompt: 'Saved account instructions',
+      timings: timings
     )
 
     expect(stub).to have_been_requested
     expect(result).to be_a(RubyLLM::Transcription)
     expect(result.text).to eq('Привет')
-    expect(result.model).to eq('openai/gpt-4o-mini-transcribe')
+    expect(result.model).to eq('openai/gpt-4o-transcribe')
     expect(result.input_tokens).to eq(12)
     expect(result.output_tokens).to eq(3)
     expect(result.duration).to eq(1.4)
@@ -59,7 +64,7 @@ RSpec.describe Llm::OpenRouterTranscriptionClient do
     expect do
       described_class.transcribe(
         audio_path,
-        model: 'openai/gpt-4o-mini-transcribe',
+        model: 'openai/gpt-4o-transcribe',
         api_key: 'bad-key'
       )
     end.to raise_error(RubyLLM::UnauthorizedError, /Invalid key/)

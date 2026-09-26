@@ -260,7 +260,7 @@ RSpec.describe Llm::Config do
       expect(described_class.provider_available?('openrouter', account: account)).to be true
     end
 
-    it 'prefers a native OpenRouter transcription model over an audio chat model when OpenRouter is configured' do
+    it 'pins native OpenRouter STT even when the catalog advertises a different transcription model' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o-mini-transcribe' => {
@@ -275,8 +275,20 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'audio_transcription')).to eq('openai/gpt-4o-mini-transcribe')
+      expect(described_class.model_for(feature: 'audio_transcription')).to eq('openai/gpt-4o-transcribe')
       expect(described_class.provider_for_model(described_class.model_for(feature: 'audio_transcription'))).to eq('openrouter')
+    end
+
+    it 'pins transcription independently of saved account and installation defaults without model discovery' do
+      account = create(:account, captain_models: { 'audio_transcription' => 'openai/gpt-audio-mini' })
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-audio-mini')
+      expect(Llm::Models).not_to receive(:models_for)
+      expect(Llm::OpenRouterModelCatalog).not_to receive(:model_configs)
+      expect(Llm::OpenRouterEndpointCatalog).not_to receive(:endpoint_configs)
+
+      expect(described_class.model_for(feature: :audio_transcription, account: account,
+                                       fallback: 'openai/gpt-audio-mini')).to eq('openai/gpt-4o-transcribe')
+      expect(described_class.provider_for_model('openai/gpt-4o-transcribe', account: account)).to eq('openrouter')
     end
 
     it 'keeps help center search on the explicit OpenRouter embedding default instead of dynamic chat lookalikes' do

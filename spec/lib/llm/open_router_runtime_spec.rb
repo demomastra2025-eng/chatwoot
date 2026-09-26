@@ -346,21 +346,25 @@ RSpec.describe Llm::OpenRouterRuntime do
     request = Llm::FeatureRequest.new(
       feature: :audio_transcription,
       account: account,
-      model: 'openai/gpt-4o-mini-transcribe',
+      model: 'openai/gpt-4o-transcribe',
       input: '/tmp/audio.ogg',
       options: { language: 'ru', temperature: 0.1 }
     )
     result = instance_double(RubyLLM::Transcription, text: 'Привет')
 
+    expect(Llm::Models).not_to receive(:models_for)
+    expect(Llm::OpenRouterModelCatalog).not_to receive(:model_configs)
+    expect(Llm::OpenRouterEndpointCatalog).not_to receive(:endpoint_configs)
+
     expect(Llm::OpenRouterTranscriptionClient).to receive(:transcribe).with(
       '/tmp/audio.ogg',
       hash_including(
-        model: 'openai/gpt-4o-mini-transcribe',
+        model: 'openai/gpt-4o-transcribe',
         language: 'ru',
         temperature: 0.1,
         api_key: 'openrouter-key',
         api_base: 'https://openrouter.example/api/v1',
-        provider: include(allow_fallbacks: true, data_collection: 'deny')
+        provider: include(allow_fallbacks: false, data_collection: 'deny')
       )
     ).and_return(result)
 
@@ -373,11 +377,47 @@ RSpec.describe Llm::OpenRouterRuntime do
     )
   end
 
+  it 'rejects explicit alternative audio model and fallback list before a provider request' do
+    expect(Llm::OpenRouterTranscriptionClient).not_to receive(:transcribe)
+
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription, account: account, model: 'openai/gpt-4o-mini-transcribe', input: '/tmp/audio.ogg'
+    )
+    expect { runtime.transcribe(request) }.to raise_error(ArgumentError, %r{only supports openai/gpt-4o-transcribe})
+
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription, account: account, model: 'openai/gpt-4o-transcribe',
+      models: ['openai/gpt-4o-mini-transcribe'], input: '/tmp/audio.ogg'
+    )
+    expect { runtime.transcribe(request) }.to raise_error(ArgumentError, %r{only supports openai/gpt-4o-transcribe})
+  end
+
+  it 'refuses the chat endpoint for audio transcription' do
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription, account: account, model: 'openai/gpt-4o-transcribe',
+      messages: [{ role: 'user', content: 'transcribe' }]
+    )
+
+    expect { runtime.chat(request) }.to raise_error(ArgumentError, %r{native /audio/transcriptions endpoint})
+  end
+
+  it 'surfaces missing OpenRouter credentials without attempting another model' do
+    request = Llm::FeatureRequest.new(
+      feature: :audio_transcription, account: account,
+      model: 'openai/gpt-4o-transcribe', input: '/tmp/audio.ogg'
+    )
+    allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return(nil)
+    expect(Llm::OpenRouterTranscriptionClient).not_to receive(:transcribe)
+    expect(Llm::Models).not_to receive(:models_for)
+
+    expect { runtime.transcribe(request) }.to raise_error(RubyLLM::ConfigurationError, /OpenRouter API key is not configured/)
+  end
+
   it 'retries transient native OpenRouter provider errors once and records a retry event' do
     request = Llm::FeatureRequest.new(
       feature: :audio_transcription,
       account: account,
-      model: 'openai/gpt-4o-mini-transcribe',
+      model: 'openai/gpt-4o-transcribe',
       input: '/tmp/audio.ogg'
     )
     result = instance_double(RubyLLM::Transcription, text: 'Привет')

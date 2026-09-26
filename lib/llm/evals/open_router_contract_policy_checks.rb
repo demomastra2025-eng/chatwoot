@@ -23,7 +23,7 @@ module Llm::Evals::OpenRouterContractPolicyChecks
       embedding: Llm::OpenRouterRoutingProfile.for(feature: :embedding, model: 'openai/text-embedding-3-small').native_endpoint,
       audio_transcription: Llm::OpenRouterRoutingProfile.for(
         feature: :audio_transcription,
-        model: 'openai/gpt-4o-mini-transcribe'
+        model: Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
       ).native_endpoint,
       knowledge_rerank: Llm::OpenRouterRoutingProfile.for(feature: :knowledge_rerank, model: 'rerank/model').native_endpoint
     }

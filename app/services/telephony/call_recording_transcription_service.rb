@@ -24,8 +24,10 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     transcript = transcribe_recording.to_s.strip
     return { error: 'Empty transcript' } if transcript.blank?
 
-    update_call_and_message!(transcript, source: 'audio_transcription')
-    account.increment_response_usage
+    @transcription_timings.measure(:persistence) do
+      update_call_and_message!(transcript, source: 'audio_transcription')
+      account.increment_response_usage
+    end
 
     { success: true, transcript: transcript }
   rescue RubyLLM::UnauthorizedError, Faraday::UnauthorizedError
@@ -88,66 +90,33 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   end
 
   def transcribe_recording
-    file_path = recording_file_path!
-    provider_file_path = audio_file_path_for_provider(file_path)
-    response = if openrouter_chat_transcription?
-                 transcribe_with_openrouter_chat(provider_file_path)
-               else
-                 transcribe_with_transcription_endpoint(provider_file_path)
-               end
+    @transcription_timings = Llm::TranscriptionTimings.new(source: 'telephony_call')
+    selected_model = @transcription_timings.measure(:model_selection) { model }
+    file_path, provider_file_path = @transcription_timings.measure(:file_preparation) do
+      original = recording_file_path!
+      [original, Llm::OpenRouterAudioInput.normalize_for_transcription(original)]
+    end
+    response = @transcription_timings.measure(:provider_request) do
+      transcribe_with_transcription_endpoint(provider_file_path, selected_model)
+    end
 
     response.respond_to?(:text) ? response.text.to_s : response.to_s
   ensure
     FileUtils.rm_f(provider_file_path) if provider_file_path.present? && provider_file_path != file_path
   end
 
-  def transcribe_with_transcription_endpoint(file_path)
+  def transcribe_with_transcription_endpoint(file_path, selected_model)
     observability = instrumentation_params(file_path)
     instrument_audio_transcription(observability) do
       Llm::Runtime.transcribe(
         feature: :audio_transcription,
         account: account,
-        model: model,
+        model: selected_model,
         input: file_path,
         observability: observability.merge(runtime_mode: 'call_recording_transcription', provider: 'openrouter'),
-        options: { temperature: 0.2, prompt: transcription_prompt }
+        options: { temperature: 0.2, prompt: transcription_prompt, stage_timings: @transcription_timings }
       )
     end
-  end
-
-  def transcribe_with_openrouter_transcription_endpoint(file_path)
-    observability = instrumentation_params(file_path).merge(provider: 'openrouter')
-    instrument_audio_transcription(observability) do
-      Llm::Runtime.transcribe(
-        feature: :audio_transcription,
-        account: account,
-        model: model,
-        input: file_path,
-        observability: observability.merge(runtime_mode: 'call_recording_transcription'),
-        options: { temperature: 0.2, prompt: transcription_prompt }
-      )
-    end
-  end
-
-  def transcribe_with_openrouter_chat(file_path)
-    observability = instrumentation_params(file_path).merge(provider: 'openrouter')
-    response = instrument_audio_transcription(observability) do
-      Llm::Runtime.chat(
-        feature: :audio_transcription,
-        account: account,
-        model: model,
-        messages: [
-          {
-            role: 'user',
-            content: RubyLLM::Content.new(openrouter_transcription_prompt, [file_path])
-          }
-        ],
-        observability: observability.merge(runtime_mode: 'call_recording_transcription'),
-        options: { temperature: 0 }
-      )
-    end
-
-    TranscriptionResult.new(text: response&.content.to_s)
   end
 
   def recording_file_path!
@@ -247,38 +216,6 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
       'If speaker roles are clear, label them as Клиент and Оператор.',
       account.captain_audio_transcription_prompt.presence
     ].compact.join("\n")
-  end
-
-  def openrouter_transcription_prompt
-    transcription_prompt
-  end
-
-  def openrouter_chat_transcription?
-    provider_name == 'openrouter' &&
-      Llm::Models.type_for(model, account: account) == 'chat' &&
-      Llm::Models.supports_audio_input?(model, account: account)
-  end
-
-  def openrouter_transcription_endpoint?
-    provider_name == 'openrouter' && Llm::Models.type_for(model, account: account) == 'transcription'
-  end
-
-  def audio_file_path_for_provider(file_path)
-    if openrouter_chat_transcription?
-      return Llm::OpenRouterAudioInput.normalize_for_chat(
-        file_path,
-        logger_context: { account_id: account.id, call_session_id: call_session.id }
-      )
-    end
-
-    if openrouter_transcription_endpoint?
-      return Llm::OpenRouterAudioInput.normalize_for_transcription(
-        file_path,
-        logger_context: { account_id: account.id, call_session_id: call_session.id }
-      )
-    end
-
-    file_path
   end
 
   def provider_name

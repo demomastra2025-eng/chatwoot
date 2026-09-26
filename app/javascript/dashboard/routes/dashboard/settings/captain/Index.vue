@@ -14,7 +14,6 @@ import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import ModelSelector from './components/ModelSelector.vue';
 import ModelDropdown from './components/ModelDropdown.vue';
-import { shouldShowAudioTranscriptionPrompt } from './helpers/modelDiagnostics';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -24,6 +23,7 @@ import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
 const { t } = useI18n();
+const fixedAudioTranscriptionModel = 'openai/gpt-4o-transcribe';
 const { captainEnabled } = useCaptain();
 const { isEnterprise, enterprisePlanName } = useConfig();
 const { isOnChatwootCloud } = useAccount();
@@ -421,19 +421,15 @@ const guardrailActionOptions = computed(() => [
 const labelSuggestionModelCount = computed(
   () => captainConfigStore.getModelsForFeature('label_suggestion').length
 );
-const selectedAudioTranscriptionModel = computed(() => {
-  const modelId = captainConfigStore.getSelectedModelForFeature(
-    'audio_transcription'
-  );
-
-  return (
-    captainConfigStore
-      .getModelsForFeature('audio_transcription')
-      .find(model => model.id === modelId) || null
-  );
-});
-const showAudioTranscriptionPrompt = computed(() =>
-  shouldShowAudioTranscriptionPrompt(selectedAudioTranscriptionModel.value)
+const audioModelSelectionLocked = computed(
+  () => features.value.audio_transcription?.model_selection_locked === true
+);
+const legacyAudioTranscriptionModel = computed(() =>
+  audioModelSelectionLocked.value
+    ? null
+    : features.value.audio_transcription?.selected ||
+      features.value.audio_transcription?.default ||
+      '—'
 );
 const isHelpCenterSearchEnabled = computed(
   () => features.value.help_center_search?.enabled === true
@@ -1816,6 +1812,17 @@ onMounted(() => {
               :title="feature.title"
               :description="feature.description"
               :models="modelsForFeature(feature.key)"
+              :fixed-model="
+                feature.key === 'audio_transcription' &&
+                audioModelSelectionLocked
+                  ? fixedAudioTranscriptionModel
+                  : null
+              "
+              :read-only-model="
+                feature.key === 'audio_transcription'
+                  ? legacyAudioTranscriptionModel
+                  : null
+              "
               :show-controls="feature.key !== 'image_recognition'"
               @change="handleModelChange"
             >
@@ -1859,7 +1866,7 @@ onMounted(() => {
                   v-else-if="feature.key === 'audio_transcription'"
                   class="grid gap-4 border-t border-n-weak pt-4"
                 >
-                  <div v-if="showAudioTranscriptionPrompt" class="grid gap-3">
+                  <div class="grid gap-3">
                     <div class="flex min-w-0 items-start gap-4">
                       <Icon
                         icon="i-lucide-message-square-text"
@@ -1917,7 +1924,7 @@ onMounted(() => {
                     </div>
                   </div>
                   <div
-                    v-else
+                    v-if="audioModelSelectionLocked"
                     class="flex min-w-0 items-start gap-3 border-t border-n-weak pt-4"
                   >
                     <Icon

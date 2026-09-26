@@ -87,6 +87,11 @@ module CaptainFeaturable
   def captain_models_with_defaults
     stored_models = captain_models || {}
     Llm::Models.feature_keys.each_with_object({}) do |feature_key, result|
+      if feature_key == 'audio_transcription'
+        result[feature_key] = Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+        next
+      end
+
       stored_value = stored_models[feature_key]
       result[feature_key] = resolved_captain_model_for(feature_key, stored_value) ||
                             Llm::Models.default_model_for(feature_key, account: self)
@@ -117,6 +122,7 @@ module CaptainFeaturable
     return if captain_models.blank?
 
     captain_models.each do |feature_key, model_name|
+      next if feature_key.to_s == 'audio_transcription'
       next if model_name.blank?
 
       resolved_model = resolved_captain_model_for(feature_key, model_name)

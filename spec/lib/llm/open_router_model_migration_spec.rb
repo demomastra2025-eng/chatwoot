@@ -20,7 +20,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
       expect(described_class.resolve('gemini-2.5-pro', feature: :assistant)).to eq('google/gemini-2.5-pro')
     end
 
-    it 'maps legacy audio, moderation, and embedding ids through explicit OpenRouter candidates' do
+    it 'maps legacy audio to the pinned STT model and keeps moderation and embedding candidates' do
       stub_openrouter_catalog(
         'openai/gpt-4o-transcribe' => {
           'provider' => 'openrouter',
@@ -131,7 +131,7 @@ RSpec.describe Llm::OpenRouterModelMigration do
       expect(report[:totals]).to include(accounts_updated: 1, model_changes: 2, voice_models_unchanged: 1)
       expect(account.reload.captain_models).to include(
         'assistant' => 'openai/gpt-5.4',
-        'audio_transcription' => 'openai/gpt-4o-mini-transcribe',
+        'audio_transcription' => 'openai/gpt-4o-transcribe',
         'voice_settings' => 'gemini-live',
         'editor' => ''
       )

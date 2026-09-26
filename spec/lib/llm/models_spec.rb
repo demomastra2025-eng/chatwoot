@@ -51,7 +51,7 @@ RSpec.describe Llm::Models do
       expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-5.6-luna')
       expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-5.4')
       expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-5.4-mini')
-      expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
+      expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
     end
   end
@@ -403,7 +403,7 @@ RSpec.describe Llm::Models do
       expect(config[:models]).not_to include(hash_including(provider: 'openai'))
     end
 
-    it 'uses OpenRouter default equivalents only when the OpenRouter catalog has a capability-compatible model' do
+    it 'keeps the static native transcription model even when the catalog advertises a different entry with the same id' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-5.4' => {
@@ -412,9 +412,9 @@ RSpec.describe Llm::Models do
           'type' => 'chat',
           'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
         },
-        'openai/gpt-4o-mini-transcribe' => {
+        'openai/gpt-4o-transcribe' => {
           'provider' => 'openrouter',
-          'display_name' => 'GPT-4o Mini Transcribe via OpenRouter',
+          'display_name' => 'GPT-4o Transcribe via OpenRouter',
           'type' => 'transcription',
           'source' => 'openrouter_api',
           'input_modalities' => ['audio'],
@@ -424,12 +424,12 @@ RSpec.describe Llm::Models do
       )
 
       expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.6-luna')
-      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-mini-transcribe')
+      expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-transcribe')
       expect(described_class.feature_config(:audio_transcription)[:models]).to include(
         hash_including(
-          id: 'openai/gpt-4o-mini-transcribe',
-          display_name: 'GPT-4o Mini Transcribe via OpenRouter',
-          source: 'openrouter_api',
+          id: 'openai/gpt-4o-transcribe',
+          display_name: 'GPT-4o Transcribe',
+          source: 'static_openrouter_default',
           input_modalities: ['audio'],
           output_modalities: ['transcription']
         )
@@ -459,7 +459,7 @@ RSpec.describe Llm::Models do
       )
     end
 
-    it 'offers static capability-safe OpenRouter models for audio transcription, image recognition, and moderation when the live catalog is empty' do
+    it 'offers only pinned audio STT and preserves other feature defaults when the live catalog is empty' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
 
@@ -467,10 +467,9 @@ RSpec.describe Llm::Models do
       image_config = described_class.feature_config(:image_recognition)
       moderation_config = described_class.feature_config(:moderation)
 
-      expect(audio_config[:default]).to eq('openai/gpt-4o-mini-transcribe')
-      expect(audio_config[:models]).to include(
-        hash_including(id: 'openai/gpt-4o-mini-transcribe', provider: 'openrouter', capabilities: include('audio_input', 'transcription')),
-        hash_including(id: 'openai/gpt-audio-mini', provider: 'openrouter', capabilities: include('audio_input', 'transcription'))
+      expect(audio_config[:default]).to eq('openai/gpt-4o-transcribe')
+      expect(audio_config[:models]).to contain_exactly(
+        hash_including(id: 'openai/gpt-4o-transcribe', provider: 'openrouter', capabilities: include('audio_input', 'transcription'))
       )
       expect(image_config[:default]).to eq('openai/gpt-5.4-mini')
       expect(image_config[:models]).to include(
@@ -482,7 +481,7 @@ RSpec.describe Llm::Models do
       )
     end
 
-    it 'filters OpenRouter audio recognition models to transcription-capable chat or STT models' do
+    it 'exposes only the pinned native STT model despite other compatible catalog models' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openrouter/auto' => {
@@ -513,10 +512,8 @@ RSpec.describe Llm::Models do
 
       config = described_class.feature_config(:audio_transcription)
 
-      expect(config[:models]).to include(hash_including(id: 'openai/gpt-4o-mini-transcribe'))
-      expect(config[:models]).to include(hash_including(id: 'openai/gpt-audio-mini'))
-      expect(config[:models]).not_to include(hash_including(id: 'openrouter/auto'))
-      expect(config[:models]).not_to include(hash_including(id: 'google/gemini-3.1-pro-preview-customtools'))
+      expect(config[:models]).to contain_exactly(hash_including(id: 'openai/gpt-4o-transcribe'))
+      expect(config[:diagnostic_models]).to eq([])
       expect(config[:required_capabilities]).to eq(%w[audio_input transcription])
     end
 

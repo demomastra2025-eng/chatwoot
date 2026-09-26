@@ -107,4 +107,63 @@ describe('Captain model selector diagnostics', () => {
       wrapper.find('[data-test="selected-model-diagnostics"]').exists()
     ).toBe(false);
   });
+
+  it('renders a fixed audio model without a dropdown even if a stale selection is present', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload({
+      features: {
+        audio_transcription: {
+          selected: 'openai/gpt-audio-mini',
+          models: [{ id: 'openai/gpt-audio-mini', provider_configured: true }],
+        },
+      },
+    });
+
+    const wrapper = shallowMount(ModelSelector, {
+      props: {
+        featureKey: 'audio_transcription',
+        title: 'Audio recognition model',
+        description: 'Transcription model is fixed.',
+        fixedModel: 'openai/gpt-4o-transcribe',
+        isAllowed: true,
+      },
+    });
+
+    expect(wrapper.find('[data-test="fixed-model"]').text()).toContain(
+      'openai/gpt-4o-transcribe'
+    );
+    expect(wrapper.findComponent({ name: 'ModelDropdown' }).exists()).toBe(
+      false
+    );
+  });
+
+  it('renders the old server selection read-only without a model choice', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload({
+      features: {
+        audio_transcription: {
+          selected: 'openai/gpt-4o-mini-transcribe',
+          models: [{ id: 'openai/gpt-audio-mini', provider_configured: true }],
+        },
+      },
+    });
+
+    const wrapper = shallowMount(ModelSelector, {
+      props: {
+        featureKey: 'audio_transcription',
+        title: 'Audio recognition model',
+        description: 'Old server is still responding.',
+        readOnlyModel: 'openai/gpt-4o-mini-transcribe',
+        isAllowed: true,
+      },
+    });
+
+    expect(wrapper.find('[data-test="legacy-model"]').text()).toContain(
+      'openai/gpt-4o-mini-transcribe'
+    );
+    expect(wrapper.find('[data-test="fixed-model"]').exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'ModelDropdown' }).exists()).toBe(
+      false
+    );
+  });
 });

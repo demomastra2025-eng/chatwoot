@@ -48,6 +48,7 @@ const basePayload = ({ audioModel }) => ({
     label_suggestion: { models: [], enabled: false },
     audio_transcription: {
       enabled: true,
+      model_selection_locked: true,
       selected: audioModel.id,
       default: audioModel.id,
       models: [audioModel],
@@ -162,10 +163,12 @@ const mountComponent = store => {
             'title',
             'description',
             'models',
+            'fixedModel',
+            'readOnlyModel',
             'showControls',
           ],
           template:
-            '<section :data-feature-key="featureKey"><span v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
+            '<section :data-feature-key="featureKey"><span v-if="fixedModel" data-test="fixed-model">{{ fixedModel }}</span><span v-else-if="readOnlyModel" data-test="legacy-model">{{ readOnlyModel }}</span><span v-else v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
         },
         ModelDropdown: true,
         NextButton: { template: '<button type="button"><slot /></button>' },
@@ -232,7 +235,7 @@ describe('Captain settings OpenRouter UX', () => {
     expect(wrapper.text()).not.toContain('Gemini');
   });
 
-  it('hides the audio prompt control for native transcription endpoint models', () => {
+  it('preserves the saved prompt editor but warns it is not sent to the native endpoint', () => {
     const store = useCaptainConfigStore();
     store.applyPayload(
       basePayload({
@@ -248,13 +251,15 @@ describe('Captain settings OpenRouter UX', () => {
     );
 
     const wrapper = mountComponent(store);
-
     expect(
       wrapper.find('[data-test="audio-transcription-prompt"]').exists()
-    ).toBe(false);
+    ).toBe(true);
+    expect(wrapper.text()).toContain(
+      'CAPTAIN_SETTINGS.MODEL_CONFIG.AUDIO_TRANSCRIPTION.NATIVE_PROMPT_DESCRIPTION'
+    );
   });
 
-  it('keeps the audio prompt control for prompt-aware audio chat models', () => {
+  it('shows the fixed model only when the API confirms the lock, even with a stale saved selection', () => {
     const store = useCaptainConfigStore();
     store.applyPayload(
       basePayload({
@@ -270,10 +275,41 @@ describe('Captain settings OpenRouter UX', () => {
     );
 
     const wrapper = mountComponent(store);
-
+    const audioBlock = wrapper.find('[data-feature-key="audio_transcription"]');
+    expect(audioBlock.find('[data-test="fixed-model"]').text()).toBe(
+      'openai/gpt-4o-transcribe'
+    );
+    expect(audioBlock.text()).not.toContain('openai/gpt-audio-mini');
     expect(
       wrapper.find('[data-test="audio-transcription-prompt"]').exists()
     ).toBe(true);
+  });
+
+  it('shows the actual old-server selection read-only instead of claiming the new fixed model is active', () => {
+    const store = useCaptainConfigStore();
+    const legacyPayload = basePayload({
+      audioModel: {
+        id: 'openai/gpt-4o-mini-transcribe',
+        display_name: 'GPT-4o Mini Transcribe',
+        provider: 'openrouter',
+        provider_configured: true,
+        type: 'transcription',
+        capabilities: ['audio_input', 'transcription'],
+      },
+    });
+    delete legacyPayload.features.audio_transcription.model_selection_locked;
+    store.applyPayload(legacyPayload);
+
+    const wrapper = mountComponent(store);
+    const audioBlock = wrapper.find('[data-feature-key="audio_transcription"]');
+    expect(audioBlock.find('[data-test="fixed-model"]').exists()).toBe(false);
+    expect(audioBlock.find('[data-test="legacy-model"]').text()).toBe(
+      'openai/gpt-4o-mini-transcribe'
+    );
+    expect(audioBlock.find('[data-test="model-id"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain(
+      'CAPTAIN_SETTINGS.MODEL_CONFIG.AUDIO_TRANSCRIPTION.NATIVE_PROMPT_DESCRIPTION'
+    );
   });
 
   it('filters embedding models by the selected knowledge chunk constraints', () => {

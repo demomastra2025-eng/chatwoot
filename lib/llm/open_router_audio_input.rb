@@ -18,12 +18,12 @@ class Llm::OpenRouterAudioInput
   NormalizationError = Class.new(StandardError)
 
   class << self
-    def normalize_for_chat(file_path, logger_context: {})
-      normalize(file_path, allowed_formats: CHAT_INPUT_FORMATS, logger_context: logger_context)
+    def normalize_for_chat(file_path)
+      normalize(file_path, allowed_formats: CHAT_INPUT_FORMATS)
     end
 
-    def normalize_for_transcription(file_path, logger_context: {})
-      normalize(file_path, allowed_formats: TRANSCRIPTION_INPUT_FORMATS, logger_context: logger_context)
+    def normalize_for_transcription(file_path)
+      normalize(file_path, allowed_formats: TRANSCRIPTION_INPUT_FORMATS)
     end
 
     def format_for(file_path)
@@ -36,10 +36,10 @@ class Llm::OpenRouterAudioInput
 
     private
 
-    def normalize(file_path, allowed_formats:, logger_context:)
+    def normalize(file_path, allowed_formats:)
       return file_path if format_for(file_path).in?(allowed_formats)
 
-      transcode_to_wav(file_path, logger_context: logger_context)
+      transcode_to_wav(file_path)
     end
 
     def attachment_format(file_path)
@@ -57,12 +57,12 @@ class Llm::OpenRouterAudioInput
       FORMAT_ALIASES.fetch(format, format)
     end
 
-    def transcode_to_wav(source_file_path, logger_context:)
+    def transcode_to_wav(source_file_path)
       destination_file_path = "#{source_file_path}.openrouter.wav"
       ffmpeg = ffmpeg_path
       raise NormalizationError, 'Audio transcription converter ffmpeg is not available for OpenRouter audio input' if ffmpeg.blank?
 
-      stdout, stderr, status = Open3.capture3(
+      _, _, status = Open3.capture3(
         ffmpeg,
         '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-i', source_file_path,
@@ -70,22 +70,14 @@ class Llm::OpenRouterAudioInput
         destination_file_path
       )
 
-      if status.success? && File.size?(destination_file_path)
-        Rails.logger.info("OpenRouter audio input normalized #{formatted_context(logger_context)} output_format=wav")
-        return destination_file_path
-      end
+      return destination_file_path if status.success? && File.size?(destination_file_path)
 
       FileUtils.rm_f(destination_file_path)
-      Rails.logger.warn("OpenRouter audio input normalization failed #{formatted_context(logger_context)} stderr=#{stderr.presence || stdout}")
       raise NormalizationError, 'Audio transcription normalization failed'
     end
 
     def system_ffmpeg_path
       ENV.fetch('PATH', '').split(File::PATH_SEPARATOR).map { |path| File.join(path, 'ffmpeg') }.find { |path| File.executable?(path) }
-    end
-
-    def formatted_context(context)
-      context.to_h.compact.map { |key, value| "#{key}=#{value}" }.join(' ')
     end
   end
 end

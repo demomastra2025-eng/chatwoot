@@ -4,6 +4,20 @@ require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterRoutingProfile do
   describe '.for' do
+    it 'pins native audio transcription without model or provider endpoint fallbacks' do
+      profile = described_class.for(
+        feature: :audio_transcription,
+        runtime_preferences: { openrouter_allow_model_fallbacks: true, openrouter_allow_fallbacks: true }
+      )
+
+      expect(profile.models).to eq(['openai/gpt-4o-transcribe'])
+      expect(profile.model_fallbacks_allowed?).to be(false)
+      expect(profile.provider_preferences[:allow_fallbacks]).to be(false)
+      expect do
+        described_class.for(feature: :audio_transcription, model: 'openai/gpt-audio-mini')
+      end.to raise_error(ArgumentError, %r{only supports openai/gpt-4o-transcribe})
+    end
+
     it 'builds a tool-safe low-latency Captain agent routing profile' do
       profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6')
 
@@ -68,7 +82,7 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
     it 'marks native endpoint profiles for embeddings, transcription, and rerank' do
       expect(described_class.for(feature: :embedding, model: 'openai/text-embedding-3-small').native_endpoint).to eq('/embeddings')
       expect(described_class.for(feature: :audio_transcription,
-                                 model: 'openai/gpt-4o-mini-transcribe').native_endpoint).to eq('/audio/transcriptions')
+                                 model: 'openai/gpt-4o-transcribe').native_endpoint).to eq('/audio/transcriptions')
       expect(described_class.for(feature: :knowledge_rerank, model: 'rerank/model').native_endpoint).to eq('/rerank')
     end
 

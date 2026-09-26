@@ -12,11 +12,16 @@ class Llm::OpenRouterTranscriptionClient
   class << self
     def transcribe(file_path, **options)
       model = options[:model]
+      if model != Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+        raise ArgumentError, "Audio transcription only supports #{Llm::Config::DEFAULT_TRANSCRIPTION_MODEL}."
+      end
+
       api_key = options[:api_key]
       raise RubyLLM::ConfigurationError, 'OpenRouter API key is not configured for transcription.' if api_key.blank?
 
       uri = transcription_uri(options[:api_base])
       request = transcription_request(uri, file_path, options)
+      options[:timings]&.mark(:provider_http_start)
       response = perform_request(uri, request)
       parse_response(response, model: model)
     rescue JSON::ParserError => e
@@ -40,7 +45,6 @@ class Llm::OpenRouterTranscriptionClient
               data: Base64.strict_encode64(File.binread(file_path)),
               format: Llm::OpenRouterAudioInput.format_for(file_path)
             },
-            prompt: options[:prompt].presence,
             language: options[:language].presence,
             temperature: options[:temperature],
             provider: options[:provider].presence

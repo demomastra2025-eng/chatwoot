@@ -57,7 +57,7 @@ class Llm::OpenRouterRoutingProfile
     'editor' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'label_suggestion' => %w[openai/gpt-5.4-mini openai/gpt-4.1-mini],
     'image_recognition' => %w[openai/gpt-5.4-mini openai/gpt-5.4],
-    'audio_transcription' => %w[openai/gpt-4o-mini-transcribe openai/gpt-audio-mini],
+    'audio_transcription' => [],
     'moderation' => %w[openai/gpt-oss-safeguard-20b],
     'embedding' => %w[text-embedding-3-small],
     'knowledge_rerank' => []
@@ -93,6 +93,12 @@ class Llm::OpenRouterRoutingProfile
   def initialize(feature_key:, model: nil, account: nil, runtime_preferences: nil, privacy_profile: nil)
     @feature_key = feature_key
     @model = model.to_s.presence
+    if feature_key == 'audio_transcription'
+      fixed_model = Llm::Config::DEFAULT_TRANSCRIPTION_MODEL
+      raise ArgumentError, "Audio transcription only supports #{fixed_model}." if @model.present? && @model != fixed_model
+
+      @model = fixed_model
+    end
     @account = account
     @runtime_preferences = normalize_runtime_preferences(runtime_preferences)
     @workspace_policy = Llm::OpenRouterWorkspacePolicy.resolve(
@@ -116,6 +122,8 @@ class Llm::OpenRouterRoutingProfile
   end
 
   def model_fallbacks_allowed?
+    return false if feature_key == 'audio_transcription'
+
     value = model_fallback_runtime_preference
     return true if value.nil?
 
@@ -160,6 +168,8 @@ class Llm::OpenRouterRoutingProfile
   end
 
   def build_models
+    return [Llm::Config::DEFAULT_TRANSCRIPTION_MODEL] if feature_key == 'audio_transcription'
+
     fallback_models = model_fallbacks_allowed? ? FALLBACK_MODELS.fetch(feature_key, []) : []
     ([model] + fallback_models).compact_blank.uniq
   end
@@ -186,6 +196,7 @@ class Llm::OpenRouterRoutingProfile
 
     apply_routing_strategy(base.merge(feature_preferences).merge(runtime_provider_preferences)).tap do |provider_preferences|
       enforce_workspace_privacy!(provider_preferences)
+      provider_preferences[:allow_fallbacks] = false if feature_key == 'audio_transcription'
     end
   end
 
