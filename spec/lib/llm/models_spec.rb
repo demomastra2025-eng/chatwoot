@@ -48,7 +48,7 @@ RSpec.describe Llm::Models do
   describe '.features' do
     it 'uses OpenRouter model ids as normal Captain feature defaults' do
       expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-5.4-mini')
-      expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-5.6-luna')
+      expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-5.4')
       expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-5.4-mini')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
@@ -423,7 +423,7 @@ RSpec.describe Llm::Models do
         }
       )
 
-      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-5.6-luna')
+      expect(described_class.feature_config(:assistant)[:default]).to eq('openai/gpt-6-luna')
       expect(described_class.feature_config(:audio_transcription)[:default]).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.feature_config(:audio_transcription)[:models]).to include(
         hash_including(
@@ -439,9 +439,9 @@ RSpec.describe Llm::Models do
     it 'does not use stale static OpenRouter capabilities when the live catalog has an incompatible model with the same id' do
       allow(Llm::Config).to receive(:provider_available?) { |provider, **| provider == 'openrouter' }
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-        'openai/gpt-5.6-luna' => {
+        'openai/gpt-6-luna' => {
           'provider' => 'openrouter',
-          'display_name' => 'GPT-5.6 Luna via OpenRouter',
+          'display_name' => 'GPT-6 Luna via OpenRouter',
           'type' => 'chat',
           'capabilities' => %w[streaming]
         }
@@ -452,7 +452,7 @@ RSpec.describe Llm::Models do
       expect(config[:default]).to be_nil
       expect(config[:models]).to include(
         hash_including(
-          id: 'openai/gpt-5.6-luna',
+          id: 'openai/gpt-6-luna',
           capabilities: ['streaming'],
           diagnostics: hash_including(allowed: false)
         )

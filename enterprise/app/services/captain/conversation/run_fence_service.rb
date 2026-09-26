@@ -4,8 +4,8 @@ class Captain::Conversation::RunFenceService
     conversation_missing: :conversation_missing?,
     assistant_changed: :assistant_changed?,
     human_response_committed: :human_response_committed?,
-    human_control: :human_control?,
     control_generation_changed: :control_generation_changed?,
+    status_epoch_changed: :status_epoch_changed?,
     status_changed: :status_changed?,
     last_message_changed: :last_message_changed?,
     buffer_state_changed: :buffer_state_changed?
@@ -48,16 +48,18 @@ class Captain::Conversation::RunFenceService
     conversation.inbox.captain_assistant&.id != assistant.id
   end
 
-  def human_control?
-    conversation.captain_human_control_active?
-  end
-
   def human_response_committed?
     Captain::Conversation::ControlService.human_response_after?(conversation, fence[:last_message_id])
   end
 
   def control_generation_changed?
     !control_generation_current?
+  end
+
+  def status_epoch_changed?
+    return false unless fence.key?(:status_transition_id)
+
+    conversation.status_transitions.maximum(:id).to_i != fence[:status_transition_id].to_i
   end
 
   def status_changed?
@@ -81,10 +83,7 @@ class Captain::Conversation::RunFenceService
   end
 
   def conversation_allows_captain_response?
-    return true if conversation.pending?
-    return false unless conversation.open?
-
-    conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
+    conversation.pending?
   end
 
   def last_message_current?

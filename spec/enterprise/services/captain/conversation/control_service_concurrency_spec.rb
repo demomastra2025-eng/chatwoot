@@ -22,14 +22,54 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(handoff_result.pop).to eq(:stale)
     expect(records.fetch(:conversation).reload).to have_attributes(
       status: 'open',
-      captain_control_state: 'human',
       captain_control_generation: 1,
       captain_handoff_applied_at: nil
     )
+    expect(records.fetch(:conversation).current_captain_control_state).to eq('human')
   ensure
     release_human << true if defined?(release_human) && release_human.empty?
     human_worker&.join
     handoff_worker&.join
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'does not expose a status change before its status epoch is recorded' do
+    records = create_race_records
+    conversation_id = records.fetch(:conversation).id
+    previous_epoch = ConversationStatusTransition.where(conversation_id: conversation_id).maximum(:id).to_i
+    status_saved = Queue.new
+    release_transition = Queue.new
+    transition_result = Queue.new
+
+    allow_any_instance_of(Conversations::StatusTransitionService).to receive(:record_transition!).and_wrap_original do |method, **kwargs|
+      status_saved << true
+      release_transition.pop
+      method.call(**kwargs)
+    end
+
+    transition_worker = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Conversations::StatusTransitionService.new(
+          conversation: Conversation.find(conversation_id), params: { status: 'open' }, source: 'system'
+        ).perform
+        transition_result << :done
+      end
+    rescue StandardError => e
+      transition_result << e
+    end
+
+    Timeout.timeout(5) { status_saved.pop }
+    expect(Conversation.find(conversation_id)).to be_pending
+    expect(ConversationStatusTransition.where(conversation_id: conversation_id).maximum(:id).to_i).to eq(previous_epoch)
+
+    release_transition << true
+    Timeout.timeout(5) { transition_worker.join }
+    expect(transition_result.pop).to eq(:done)
+    expect(Conversation.find(conversation_id)).to be_open
+    expect(ConversationStatusTransition.where(conversation_id: conversation_id).maximum(:id).to_i).to be > previous_epoch
+  ensure
+    release_transition << true if defined?(release_transition) && release_transition.empty?
+    transition_worker&.join
     cleanup_race_records(records) if defined?(records) && records
   end
 

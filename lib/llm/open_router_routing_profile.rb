@@ -62,6 +62,9 @@ class Llm::OpenRouterRoutingProfile
     'embedding' => %w[text-embedding-3-small],
     'knowledge_rerank' => []
   }.freeze
+  LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'
+  LUNA_FALLBACK_MODEL = 'openai/gpt-5.6-luna'
+  EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS = %w[openai/fast openai/priority openai/flex].freeze
 
   NATIVE_ENDPOINTS = {
     'audio_transcription' => '/audio/transcriptions',
@@ -73,6 +76,10 @@ class Llm::OpenRouterRoutingProfile
               :workspace_policy, :runtime_preferences
 
   class << self
+    def standardize_captain_provider(provider)
+      EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS.include?(provider.to_s.downcase) ? 'openai' : provider
+    end
+
     def for(feature:, model: nil, account: nil, runtime_preferences: nil, privacy_profile: nil)
       feature_key = normalize_feature(feature)
       new(
@@ -160,7 +167,11 @@ class Llm::OpenRouterRoutingProfile
   end
 
   def build_models
-    fallback_models = model_fallbacks_allowed? ? FALLBACK_MODELS.fetch(feature_key, []) : []
+    fallback_models = if model_fallbacks_allowed?
+                        feature_key == 'captain_agent' && model == LUNA_PRIMARY_MODEL ? [LUNA_FALLBACK_MODEL] : FALLBACK_MODELS.fetch(feature_key, [])
+                      else
+                        []
+                      end
     ([model] + fallback_models).compact_blank.uniq
   end
 
@@ -171,7 +182,7 @@ class Llm::OpenRouterRoutingProfile
                           when 'captain_agent'
                             {
                               require_parameters: true,
-                              sort: { by: 'latency', partition: 'none' },
+                              sort: { by: 'latency', partition: 'model' },
                               preferred_max_latency: { p90: 3 }
                             }
                           when 'moderation'
@@ -185,8 +196,37 @@ class Llm::OpenRouterRoutingProfile
                           end
 
     apply_routing_strategy(base.merge(feature_preferences).merge(runtime_provider_preferences)).tap do |provider_preferences|
+      preserve_model_priority!(provider_preferences)
+      enforce_luna_provider_selection!(provider_preferences)
+      exclude_captain_fast_endpoints!(provider_preferences)
       enforce_workspace_privacy!(provider_preferences)
     end
+  end
+
+  def enforce_luna_provider_selection!(provider_preferences)
+    return unless feature_key == 'captain_agent' && models.first == LUNA_PRIMARY_MODEL
+
+    provider_preferences[:sort] = { by: 'latency', partition: 'model' }
+    provider_preferences[:allow_fallbacks] = true
+    provider_preferences.except!(:preferred_max_latency, :preferred_min_throughput, :order, :only)
+  end
+
+  def exclude_captain_fast_endpoints!(provider_preferences)
+    return unless feature_key == 'captain_agent'
+
+    provider_preferences[:ignore] = (Array(provider_preferences[:ignore]) + EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS).uniq
+    %i[only order].each do |key|
+      next if provider_preferences[key].blank?
+
+      provider_preferences[key] = Array(provider_preferences[key]).map { |slug| self.class.standardize_captain_provider(slug) }.uniq
+    end
+  end
+
+  def preserve_model_priority!(provider_preferences)
+    return unless feature_key == 'captain_agent' && models.length > 1
+    return unless provider_preferences[:sort].is_a?(Hash)
+
+    provider_preferences[:sort] = provider_preferences[:sort].merge(partition: 'model')
   end
 
   def normalize_runtime_preferences(preferences)
@@ -251,7 +291,7 @@ class Llm::OpenRouterRoutingProfile
 
       provider_preferences.except(:sort).merge(order: order, allow_fallbacks: true)
     when LOW_LATENCY_STRATEGY
-      provider_preferences.merge(sort: { by: 'latency', partition: 'none' })
+      provider_preferences.merge(sort: { by: 'latency', partition: feature_key == 'captain_agent' ? 'model' : 'none' })
     when LOW_COST_STRATEGY
       provider_preferences.merge(sort: { by: 'price', partition: 'none' })
     when STRICT_TOOLS_STRATEGY
@@ -274,6 +314,8 @@ class Llm::OpenRouterRoutingProfile
   def provider_order
     PROVIDER_ORDER_KEYS.each do |key|
       order = Array(runtime_preferences[key]).map { |provider| provider.to_s.strip }.compact_blank
+      order.map! { |provider| self.class.standardize_captain_provider(provider) } if feature_key == 'captain_agent'
+      order.uniq!
       return order if order.present?
     end
 

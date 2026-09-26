@@ -142,6 +142,8 @@ class Llm::OpenRouterRequestCompiler
   end
 
   def compiled_models(profile)
+    return profile.models if feature_key == 'captain_agent' && @model == Llm::OpenRouterRoutingProfile::LUNA_PRIMARY_MODEL
+
     request_models.presence || profile.models
   end
 
@@ -258,6 +260,28 @@ class Llm::OpenRouterRequestCompiler
         provider.delete(:require_parameters) if provider[:require_parameters] == false
         provider.delete('require_parameters') if provider['require_parameters'] == false
       end
+
+      enforce_captain_provider_exclusions!(provider, profile_preferences)
+      enforce_luna_provider_selection!(provider, profile_preferences)
+    end
+  end
+
+  def enforce_luna_provider_selection!(provider, profile_preferences)
+    return unless feature_key == 'captain_agent' && @model == Llm::OpenRouterRoutingProfile::LUNA_PRIMARY_MODEL
+
+    provider[:sort] = { by: 'latency', partition: 'model' }
+    provider[:allow_fallbacks] = profile_preferences[:allow_fallbacks]
+    provider.except!(:only, :order, :preferred_max_latency, :preferred_min_throughput)
+  end
+
+  def enforce_captain_provider_exclusions!(provider, profile_preferences)
+    return unless feature_key == 'captain_agent'
+
+    provider[:ignore] = (Array(profile_preferences[:ignore]) + Array(provider[:ignore])).uniq
+    %i[only order].each do |key|
+      next if provider[key].blank?
+
+      provider[key] = Array(provider[key]).map { |slug| Llm::OpenRouterRoutingProfile.standardize_captain_provider(slug) }.uniq
     end
   end
 

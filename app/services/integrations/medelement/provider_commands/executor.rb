@@ -258,6 +258,15 @@ class Integrations::Medelement::ProviderCommands::Executor
     raise ClaimLost unless updated == 1
 
     command.reload
+    enqueue_ai_booking_acknowledgement
+  end
+
+  def enqueue_ai_booking_acknowledgement
+    return unless command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+
+    Integrations::Medelement::AiBookingOutcomeJob.perform_later(command.id)
+  rescue StandardError => e
+    Rails.logger.error("[MEDELEMENT::PROVIDER_COMMAND] booking outcome enqueue failed command_id=#{command.id} error=#{e.class}")
   end
 
   def read_reception_after_write(reception_code, version: :v2)

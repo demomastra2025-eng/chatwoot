@@ -12,7 +12,7 @@ class Conversations::StatusTransitionService
   def perform
     return perform_captain_control_release_transition if explicit_captain_control_release?
 
-    perform_transition
+    with_locked_conversation_preserving_changes { perform_transition }
   end
 
   private
@@ -20,18 +20,23 @@ class Conversations::StatusTransitionService
   attr_reader :conversation, :account, :params, :actor, :source
 
   def perform_captain_control_release_transition
-    pending_attributes = conversation.attributes.slice(*conversation.changed_attribute_names_to_save.excluding('status'))
-    conversation.restore_attributes
-
-    conversation.with_lock do
-      conversation.assign_attributes(pending_attributes)
+    with_locked_conversation_preserving_changes do
       control_owner = conversation.captain_control_owner
-
       if control_owner.equal?(conversation)
         perform_transition
       else
         conversation.with_captain_control_lock { perform_transition }
       end
+    end
+  end
+
+  def with_locked_conversation_preserving_changes
+    pending_attributes = conversation.attributes.slice(*conversation.changed_attribute_names_to_save.excluding('status'))
+    conversation.restore_attributes
+
+    conversation.with_lock do
+      conversation.assign_attributes(pending_attributes)
+      yield
     end
   end
 

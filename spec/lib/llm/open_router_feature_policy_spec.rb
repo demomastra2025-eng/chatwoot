@@ -64,12 +64,14 @@ RSpec.describe Llm::OpenRouterFeaturePolicy do
     expect(policy.filter_server_tools(tools)).to contain_exactly(type: 'openrouter:datetime')
   end
 
-  it 'does not let runtime preferences upgrade a feature beyond its service-tier allowlist' do
+  it 'does not let Captain opt into the premium Fast service tier' do
     editor_policy = described_class.for(feature: :editor, runtime_preferences: { openrouter_service_tier: 'priority' })
     captain_policy = described_class.for(feature: :captain_agent, runtime_preferences: { openrouter_service_tier: 'priority' })
+    copilot_policy = described_class.for(feature: :copilot, runtime_preferences: { openrouter_service_tier: 'priority' })
 
     expect(editor_policy.compiled_service_tier).to eq('flex')
-    expect(captain_policy.compiled_service_tier).to eq('priority')
+    expect(captain_policy.compiled_service_tier).to be_nil
+    expect(copilot_policy.compiled_service_tier).to eq('priority')
   end
 
   it 'does not let runtime preferences upgrade Captain session cache into read-only provider cache' do

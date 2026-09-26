@@ -43,6 +43,16 @@ RSpec.describe Conversations::StatusTransitionService do
     )
   end
 
+  it 'rolls back the status change if the audit transition cannot be written' do
+    allow(ConversationStatusTransition).to receive(:create!).and_raise(ActiveRecord::RecordNotSaved, 'audit unavailable')
+
+    expect do
+      transition(params: { status: 'pending' }, source: 'system', actor: nil)
+    end.to raise_error(ActiveRecord::RecordNotSaved, 'audit unavailable')
+
+    expect(conversation.reload.status).to eq('open')
+  end
+
   it 'returns ownership to Captain when an agent explicitly resolves a human-owned conversation' do
     allow(Llm::EventBus).to receive(:publish)
     conversation.activate_captain_human_control!(source: 'agent_reply', actor: agent)
@@ -52,10 +62,10 @@ RSpec.describe Conversations::StatusTransitionService do
 
     expect(conversation.reload).to have_attributes(
       status: 'resolved',
-      captain_control_state: 'ai',
       captain_control_generation: human_generation + 1,
       captain_handoff_applied_at: nil
     )
+    expect(conversation.current_captain_control_state).to eq('human')
     expect(Llm::EventBus).to have_received(:publish).with(
       'captain.control.ai_activated',
       hash_including(conversation_id: conversation.id, source: 'manual')
@@ -72,7 +82,8 @@ RSpec.describe Conversations::StatusTransitionService do
       source: 'bulk_action'
     ).perform
 
-    expect(conversation.reload).to have_attributes(status: 'resolved', captain_control_state: 'ai')
+    expect(conversation.reload).to have_attributes(status: 'resolved')
+    expect(conversation.current_captain_control_state).to eq('human')
   end
 
   it 'requires configured reasons for manual transitions' do

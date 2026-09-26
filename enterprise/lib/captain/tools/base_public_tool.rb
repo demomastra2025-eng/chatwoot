@@ -90,7 +90,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
     return [nil, nil] if conversation.blank?
 
     owner = conversation.captain_control_owner
-    [owner.captain_control_state, owner.captain_control_generation]
+    [conversation.current_captain_control_state, owner.captain_control_generation]
   end
 
   def captain_control_current?(control_state, control_generation, expected_generation)

@@ -54,6 +54,20 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:id]).to eq(assistant.id)
       end
+
+      it 'does not expose historical handoff consent settings' do
+        assistant.update!(config: assistant.config.merge(
+          'handoff_requires_explicit_consent' => true,
+          'handoff_consent_reason' => 'Legacy setting'
+        ))
+
+        get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.fetch(:config)).not_to include(:handoff_requires_explicit_consent, :handoff_consent_reason)
+      end
     end
   end
 
@@ -940,8 +954,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'temperature' => 0.4,
           'handoff_message_enabled' => true,
           'handoff_message_mode' => 'ai',
-          'handoff_requires_explicit_consent' => true,
-          'handoff_consent_reason' => 'Customer asked for a person.',
           'handoff_message' => 'Escalating now.',
           'resolution_message_enabled' => true,
           'resolution_message_mode' => 'static',
@@ -949,6 +961,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
             'agent' => { 'enabled' => true, 'tool_ids' => %w[faq_lookup handoff] }
           }
         )
+        expect(assistant.config).not_to include('handoff_requires_explicit_consent', 'handoff_consent_reason')
         expect(assistant.config['rules']).to include(
           hash_including(
             'id' => 'stay_focused',

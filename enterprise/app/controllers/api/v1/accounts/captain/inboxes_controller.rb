@@ -41,14 +41,14 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def assistant_params
-    params.require(:inbox).permit(:inbox_id, :auto_reply_mode, :reply_to_open_conversations)
+    params.require(:inbox).permit(:inbox_id, :auto_reply_mode)
   end
 
   def captain_inbox_attributes(inbox)
     {
       inbox: inbox,
       auto_reply_mode: assistant_params[:auto_reply_mode].presence,
-      reply_to_open_conversations: reply_to_open_conversations_param
+      reply_to_open_conversations: false
     }.compact
   end
 
@@ -63,18 +63,10 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def update_requested_captain_inbox_settings!
-    updates = {}
+    updates = { reply_to_open_conversations: false }
     updates[:auto_reply_mode] = assistant_params[:auto_reply_mode] if assistant_params[:auto_reply_mode].present?
-    updates[:reply_to_open_conversations] = reply_to_open_conversations_param if assistant_params.key?(:reply_to_open_conversations)
-    return if updates.blank?
 
     @captain_inbox.update!(updates)
-  end
-
-  def reply_to_open_conversations_param
-    return unless assistant_params.key?(:reply_to_open_conversations)
-
-    ActiveModel::Type::Boolean.new.cast(assistant_params[:reply_to_open_conversations])
   end
 
   def handle_captain_inbox_create_failure(error, inbox)

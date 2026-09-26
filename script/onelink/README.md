@@ -89,6 +89,22 @@ deploy <40-character-sha>
 8. проверяет Rails, workers, Vite, finalizers и итоговый tracked tree;
 9. автоматически возвращает предыдущий release при ошибке.
 
+При обновлении Captain jobs на DEV старые Sidekiq workers не должны получать задания
+нового web: `deploy_dev_release.sh` останавливает worker-группу **до** переключения
+`current`, затем запускает workers только из нового release (или восстанавливает
+старые при неуспешном cutover). На время переключения обработка DEV jobs приостанавливается;
+`onelink-ai-voice-dev.service` заранее не останавливается.
+
+**Условие перед merge в `onelink-dev`:** forced deploy использует установленную копию
+`/usr/local/sbin/onelink-dev-deploy-release`, а не файл из Git release. В согласованное
+DEV-окно оператор должен сохранить предыдущие копии endpoint, установить проверенные
+`script/onelink/dev_forced_command.sh` и `script/onelink/deploy_dev_release.sh` из reviewed
+commit и сверить SHA-256 deploy-script с установленным. CI перед `deploy` вызывает
+ограниченную read-only команду `deploy-script-sha256` и сравнивает её результат с файлом
+точного release SHA; старый forced endpoint эту команду отклонит и выпуск остановится.
+До установки обеих копий merge/автоматический DEV deploy запрещён; успешный PR gate
+сам по себе не доказывает, что сервер использует новый порядок.
+
 После deploy workflow вызывает отдельную разрешённую forced-команду:
 
 ```text

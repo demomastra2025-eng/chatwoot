@@ -23,12 +23,16 @@ class Captain::Conversation::ControlService
 
   def stamp_generation!(message)
     generation = control_owner.captain_control_generation.to_i
+    status_transition_id = conversation.status_transitions.maximum(:id).to_i
     message.with_lock do
       attributes = message.additional_attributes.to_h
       next if attributes.key?('captain_control_generation') && attributes['captain_control_generation'].to_i == generation
 
       # This internal fence must not trigger message-updated broadcasts or provider callbacks.
-      message.update_column(:additional_attributes, attributes.merge('captain_control_generation' => generation)) # rubocop:disable Rails/SkipsModelValidations
+      message.update_column(
+        :additional_attributes,
+        attributes.merge('captain_control_generation' => generation, 'captain_status_transition_id' => status_transition_id)
+      )
     end
     generation
   end
@@ -98,7 +102,7 @@ class Captain::Conversation::ControlService
   end
 
   def human_active?
-    control_owner.captain_control_state == HUMAN_CONTROL
+    !conversation.pending?
   end
 
   def apply_handoff(status_reason:, actor:, source:, fence:, &callback)
@@ -157,16 +161,20 @@ class Captain::Conversation::ControlService
     expected = fence.to_h.with_indifferent_access
     return false if expected.blank?
     return true unless conversation_allows_captain_response?
+    return true if status_epoch_stale?(expected)
     return true if expected[:control_generation].present? && control_owner.captain_control_generation.to_i != expected[:control_generation].to_i
 
     self.class.human_response_after?(conversation, expected[:last_message_id])
   end
 
-  def conversation_allows_captain_response?
-    return true if conversation.pending?
-    return false unless conversation.open?
+  def status_epoch_stale?(expected)
+    return false unless expected.key?(:status_transition_id)
 
-    conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
+    conversation.status_transitions.maximum(:id).to_i != expected[:status_transition_id].to_i
+  end
+
+  def conversation_allows_captain_response?
+    conversation.pending?
   end
 
   def handoff_event_name(result)
@@ -192,6 +200,9 @@ class Captain::Conversation::ControlService
     control_owner.captain_control_state = HUMAN_CONTROL
     control_owner.captain_control_generation += 1
     control_owner.save!
+    Conversations::StatusTransitionService.new(
+      conversation: conversation, params: { status: 'open' }, source: 'system'
+    ).perform
   end
 
   def publish(event_name, source:, actor: nil, error_class: nil)
@@ -205,7 +216,7 @@ class Captain::Conversation::ControlService
       source: source,
       actor_type: actor&.class&.name,
       actor_id: actor&.id,
-      control_state: control_owner.captain_control_state,
+      control_state: conversation.current_captain_control_state,
       control_generation: control_owner.captain_control_generation,
       error_class: error_class
     )

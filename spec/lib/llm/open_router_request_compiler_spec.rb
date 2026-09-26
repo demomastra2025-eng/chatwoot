@@ -15,6 +15,7 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
   :options,
   :temperature,
   :parallel_tool_calls,
+  :models,
   keyword_init: true
 ) do
   def requires_tools? = tools_required == true || Array(tool_objects).present?
@@ -37,7 +38,8 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       privacy_profile: options[:privacy_profile],
       options: options[:request_options] || {},
       temperature: options[:temperature],
-      parallel_tool_calls: options[:parallel_tool_calls]
+      parallel_tool_calls: options[:parallel_tool_calls],
+      models: options[:models]
     )
 
     described_class.call(
@@ -88,11 +90,11 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
     expect(compiled.params[:provider]).not_to include('only')
     expect(compiled.params[:provider]).not_to include(:only)
     expect(compiled.params[:provider]).not_to include('ignore')
-    expect(compiled.params[:provider]).not_to include(:ignore)
+    expect(compiled.params[:provider][:ignore]).to contain_exactly('openai/fast', 'openai/priority', 'openai/flex')
     expect(compiled.params[:provider]).not_to include('allow_fallbacks')
     expect(compiled.params[:provider]).not_to include('data_collection')
     expect(compiled.params[:provider]).not_to include('sort')
-    expect(compiled.params[:provider]).to include(sort: { by: 'latency', partition: 'none' })
+    expect(compiled.params[:provider]).to include(sort: { by: 'latency', partition: 'model' })
     expect(compiled.params[:plugins].count { |plugin| plugin[:id] == 'response-healing' || plugin['id'] == 'response-healing' }).to eq(1)
     expect(compiled.params[:plugins]).not_to include({ id: 'web' })
     expect(compiled.metadata).to include(
@@ -124,6 +126,70 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       fallback_models: [],
       openrouter_allow_model_fallbacks: false
     )
+  end
+
+  it 'compiles a Luna 6 first route with same-model provider failover, then Luna 5.6' do
+    compiled = compile(feature: :captain_agent, model: 'openai/gpt-6-luna')
+
+    expect(compiled.params[:models]).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+    expect(compiled.params[:provider]).to include(
+      allow_fallbacks: true,
+      sort: { by: 'latency', partition: 'model' }
+    )
+    expect(compiled.params[:provider]).not_to include(:preferred_max_latency, :preferred_min_throughput)
+    expect(compiled.metadata[:fallback_models]).to eq(['openai/gpt-5.6-luna'])
+  end
+
+  it 'excludes Fast from the effective Captain request even with trusted provider overrides' do
+    request = OpenRouterRequestCompilerSpecRequest.new(
+      feature_key: 'captain_agent',
+      runtime_preferences: { openrouter_provider_ignore: ['OtherProvider'] }
+    )
+    compiled = described_class.call(
+      request: request,
+      model: 'openai/gpt-6-luna',
+      trusted_provider_params: true,
+      base_params: { provider: { ignore: ['TrustedProvider'], order: %w[openai/fast openai/priority openai] } }
+    )
+
+    expect(compiled.params[:provider][:ignore]).to contain_exactly(
+      'OtherProvider', 'TrustedProvider', 'openai/fast', 'openai/priority', 'openai/flex'
+    )
+    expect(compiled.params[:provider]).not_to include(:order)
+    expect(compiled.params[:models]).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+  end
+
+  it 'does not pin Luna 6 to Fast or a priority tier even when requested' do
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'openai/gpt-6-luna',
+      runtime_preferences: {
+        openrouter_provider_only: ['openai/fast'],
+        openrouter_provider_order: ['openai/priority'],
+        openrouter_service_tier: 'priority'
+      }
+    )
+
+    expect(compiled.params[:provider]).to include(ignore: %w[openai/fast openai/priority openai/flex])
+    expect(compiled.params[:provider]).not_to include(:only, :order)
+    expect(compiled.params).not_to include(:service_tier)
+  end
+
+  it 'keeps Luna 6 ahead of 5.6 and refuses Flex from caller-supplied models and tier' do
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'openai/gpt-6-luna',
+      models: %w[openai/gpt-6-luna:floor openai/gpt-5.6-luna],
+      base_params: { service_tier: 'flex', provider: { only: ['openai/flex'] } },
+      runtime_preferences: { openrouter_service_tier: 'flex', openrouter_preferred_max_latency: { p90: 3 } }
+    )
+
+    expect(compiled.params[:models]).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+    expect(compiled.params[:provider]).to include(sort: { by: 'latency', partition: 'model' })
+    expect(compiled.params[:provider][:ignore]).to include('openai/flex')
+    expect(compiled.params[:provider]).not_to include(:only)
+    expect(compiled.params[:provider]).not_to include(:preferred_max_latency)
+    expect(compiled.params).not_to include(:service_tier)
   end
 
   it 'does not add response healing for streaming structured output requests' do

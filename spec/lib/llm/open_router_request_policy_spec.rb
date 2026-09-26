@@ -128,7 +128,7 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       expect(chat.params[:provider]).to include(
         order: %w[Groq Fireworks],
         only: ['Groq'],
-        ignore: ['OpenAI'],
+        ignore: %w[openai/fast openai/priority openai/flex OpenAI],
         quantizations: ['fp8'],
         preferred_min_throughput: 80,
         preferred_max_latency: 1200,
@@ -162,7 +162,8 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
 
       described_class.require_parameters!(chat, feature: :captain_agent, tools: true)
 
-      expect(chat.params[:provider]).not_to include(:order, :only, :ignore)
+      expect(chat.params[:provider]).not_to include(:order, :only)
+      expect(chat.params[:provider][:ignore]).to eq(%w[openai/fast openai/priority openai/flex])
       expect(chat.params[:provider]).to include(
         data_collection: 'deny',
         allow_fallbacks: true,
@@ -296,7 +297,7 @@ RSpec.describe Llm::OpenRouterRequestPolicy do
       described_class.require_structured_output!(chat)
 
       expect(chat.params).to include(
-        provider: include(sort: { by: 'latency', partition: 'none' }, require_parameters: true),
+        provider: include(sort: { by: 'latency', partition: 'model' }, require_parameters: true),
         plugins: contain_exactly({ id: 'response-healing' })
       )
     end

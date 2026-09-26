@@ -227,7 +227,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
       wrapper
         .find('[data-testid="captain-inbox-reply-to-open-conversations"]')
         .exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(
       wrapper
         .find(
@@ -263,7 +263,6 @@ describe('Inbox BotConfiguration Captain settings', () => {
       assistantId: 101,
       inboxId: 4593,
       autoReplyMode: 'always',
-      replyToOpenConversations: false,
     });
     expect(mockState.dispatch).toHaveBeenCalledWith('inboxes/get');
     expect(mockState.useAlert).toHaveBeenCalledWith(
@@ -290,37 +289,27 @@ describe('Inbox BotConfiguration Captain settings', () => {
       assistantId: 101,
       inboxId: 4593,
       autoReplyMode: 'outside_working_hours',
-      replyToOpenConversations: false,
     });
     expect(mockState.useAlert).toHaveBeenCalledWith(
       'CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'
     );
   });
 
-  it('updates reply-to-open-conversations for the connected assistant', async () => {
+  it('does not offer open conversation replies even for a legacy inbox with them enabled', async () => {
     mockState.inbox = {
       ...mockState.inbox,
       captain_assistant: { id: 101, name: 'Sales assistant' },
       captain_auto_reply_mode: 'outside_working_hours',
-      captain_reply_to_open_conversations: false,
+      captain_reply_to_open_conversations: true,
     };
 
     const wrapper = buildWrapper({ inbox: mockState.inbox });
     await flushPromises();
 
-    await wrapper
-      .get('[data-testid="captain-inbox-reply-to-open-conversations"]')
-      .setValue(true);
-    await flushPromises();
-
-    expect(mockState.dispatch).toHaveBeenCalledWith('captainInboxes/create', {
-      assistantId: 101,
-      inboxId: 4593,
-      autoReplyMode: 'outside_working_hours',
-      replyToOpenConversations: true,
-    });
-    expect(mockState.useAlert).toHaveBeenCalledWith(
-      'CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.UPDATE.SUCCESS_MESSAGE'
-    );
+    expect(
+      wrapper
+        .find('[data-testid="captain-inbox-reply-to-open-conversations"]')
+        .exists()
+    ).toBe(false);
   });
 });

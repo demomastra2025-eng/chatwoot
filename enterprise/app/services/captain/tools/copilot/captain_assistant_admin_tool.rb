@@ -74,7 +74,7 @@ class Captain::Tools::Copilot::CaptainAssistantAdminTool < Captain::Tools::Copil
   end
 
   def merge_extended_assistant_payload!(payload, assistant)
-    payload[:config] = redacted_value(assistant.config)
+    payload[:config] = redacted_value(assistant.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason'))
     payload[:response_guidelines] = redacted_value(assistant.response_guidelines)
     payload[:guardrails] = redacted_value(assistant.guardrails)
   end

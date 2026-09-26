@@ -303,7 +303,8 @@ module Llm::Config
     end
 
     def installation_model_for(feature_key, account: nil)
-      model_name = installation_default_model
+      model_name = installation_config_value('CAPTAIN_AI_AGENT_DEFAULT_MODEL').presence if feature_key.to_s == 'assistant'
+      model_name ||= installation_default_model
       return if model_name.blank?
 
       model_name = normal_feature_model_name(feature_key, model_name, account: account) if feature_key.present?

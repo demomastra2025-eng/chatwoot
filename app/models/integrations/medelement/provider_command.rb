@@ -47,6 +47,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
 
   before_validation :normalize_execution_state
   before_validation :normalize_provider_patient_code
+  after_update_commit :enqueue_ai_booking_outcome, if: :saved_change_to_status?
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
@@ -120,6 +121,21 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   end
 
   private
+
+  def enqueue_ai_booking_outcome
+    return unless ai_booking_command? && ai_booking_outcome_relevant?
+
+    Integrations::Medelement::AiBookingOutcomeJob.perform_later(id)
+  end
+
+  def ai_booking_command?
+    (create_reception? || move_reception?) && request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+  end
+
+  def ai_booking_outcome_relevant?
+    terminal? || provider_status_unknown? ||
+      (reconciliation_required? && execution_state.to_h['write_provider_reception_code'].present?)
+  end
 
   def confirmation_binding_matches?(confirmation)
     metadata = confirmation&.metadata.to_h

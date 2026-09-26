@@ -2,11 +2,11 @@ module Enterprise::Conversation
   attr_accessor :captain_activity_reason, :captain_activity_reason_type
 
   def captain_ai_control_active?
-    !captain_human_control_active?
+    pending?
   end
 
   def captain_human_control_active?
-    current_captain_control_state == Captain::Conversation::ControlService::HUMAN_CONTROL
+    !pending?
   end
 
   def captain_control_owner
@@ -14,7 +14,7 @@ module Enterprise::Conversation
   end
 
   def current_captain_control_state
-    captain_control_owner.captain_control_state
+    pending? ? Captain::Conversation::ControlService::AI_CONTROL : Captain::Conversation::ControlService::HUMAN_CONTROL
   end
 
   def current_captain_control_generation

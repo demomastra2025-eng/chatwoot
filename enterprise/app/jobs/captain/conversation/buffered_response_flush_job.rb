@@ -50,12 +50,7 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
   end
 
   def conversation_allows_captain_response?(conversation)
-    return false if conversation.respond_to?(:captain_human_control_active?) && conversation.captain_human_control_active?
-
-    return true if conversation.pending?
-    return false unless conversation.open?
-
-    conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
+    conversation.pending?
   end
 
   def clear_state(conversation_id, token)

@@ -81,7 +81,7 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
     expect(Redis::Alfred.get(state_key)).to be_nil
   end
 
-  it 'calls ResponseBuilderJob for open conversations when open replies are enabled' do
+  it 'does not call ResponseBuilderJob for open conversations even when open replies were enabled' do
     latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
     latest_token = SecureRandom.uuid
     inbox.captain_inbox.update!(reply_to_open_conversations: true)
@@ -96,14 +96,10 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
       ex: 10.minutes.to_i
     )
 
-    expect(Captain::Conversation::ResponseBuilderJob).to receive(:perform_now).with(
-      conversation,
-      assistant,
-      buffer_token: latest_token,
-      expected_last_message_id: latest_message.id
-    )
+    expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_now)
 
     described_class.perform_now(conversation_id: conversation.id, assistant_id: assistant.id, token: latest_token)
+    expect(Redis::Alfred.get(state_key)).to be_nil
   end
 
   it 'clears the current buffer state without answering when captain auto-reply is no longer allowed' do

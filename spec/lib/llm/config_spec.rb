@@ -115,6 +115,17 @@ RSpec.describe Llm::Config do
 
       expect(described_class.installation_default_model).to eq('gpt-4.1-mini')
     end
+
+    it 'uses an agent-only model override without changing Copilot or the legacy installation default' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.6-luna')
+      copilot_model = described_class.model_for(feature: :copilot)
+      upsert_installation_config('CAPTAIN_AI_AGENT_DEFAULT_MODEL', 'openai/gpt-6-luna')
+
+      expect(described_class.model_for(feature: :assistant)).to eq('openai/gpt-6-luna')
+      expect(described_class.model_for(feature: :copilot)).to eq(copilot_model)
+      expect(described_class.installation_default_model).to eq('openai/gpt-5.6-luna')
+    end
   end
 
   describe '.with_runtime_cache' do
@@ -192,7 +203,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-6-luna')
     end
 
     it 'uses the OpenRouter default even when a direct provider key is configured alongside OpenRouter' do
@@ -206,7 +217,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-6-luna')
     end
 
     it 'maps legacy account-selected direct model ids to OpenRouter equivalents for normal Captain features' do

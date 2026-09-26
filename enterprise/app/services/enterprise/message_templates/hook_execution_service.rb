@@ -5,12 +5,7 @@ module Enterprise::MessageTemplates::HookExecutionService
     super
     return unless should_process_captain_response?
 
-    unless inbox.captain_auto_reply_allowed?
-      open_conversation_for_human_response
-      return
-    end
-
-    return perform_handoff unless inbox.captain_active?
+    return unless inbox.captain_auto_reply_allowed? && inbox.captain_active?
 
     schedule_captain_response
   end
@@ -85,57 +80,12 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def should_process_captain_response?
-    conversation_accepts_captain_response? && message.incoming? && !message.voice_call? && !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
+    conversation_accepts_captain_response? && message.incoming? && !message.voice_call? &&
+      !message.ai_voice_transcript_turn? && inbox.captain_assistant.present?
   end
 
   def conversation_accepts_captain_response?
-    return false if conversation.respond_to?(:captain_human_control_active?) && conversation.captain_human_control_active?
-
-    return true if conversation.pending?
-    return false unless conversation.open?
-
-    inbox.captain_inbox&.reply_to_open_conversations? || false
-  end
-
-  def open_conversation_for_human_response
-    return unless conversation.pending?
-
-    Rails.logger.info("[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now")
-    previous_current = [Current.user, Current.executed_by]
-    Current.user = Current.executed_by = nil
-    Conversations::StatusTransitionService.new(
-      conversation: conversation,
-      params: { status: 'open' },
-      source: 'system'
-    ).perform
-    return unless conversation.saved_change_to_status?
-
-    Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation, assistant: inbox.captain_assistant)
-  ensure
-    Current.user, Current.executed_by = previous_current if previous_current
-  end
-
-  def perform_handoff
-    return unless conversation.pending?
-
-    Rails.logger.info("Captain limit exceeded, performing handoff mid-conversation for conversation: #{conversation.id}")
-    conversation.bot_handoff!(source: 'system', fence: { last_message_id: message.id }) do
-      conversation.messages.create!(
-        message_type: :outgoing,
-        account_id: conversation.account.id,
-        inbox_id: conversation.inbox.id,
-        content: 'Transferring to another agent for further assistance.'
-      )
-      send_out_of_office_message_after_handoff
-    end
-  end
-
-  def send_out_of_office_message_after_handoff
-    # Campaign conversations should never receive OOO templates — the campaign itself
-    # serves as the initial outreach, and OOO would be confusing in that context.
-    return if conversation.campaign.present?
-
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation)
+    conversation.pending?
   end
 
   def captain_handling_conversation?

@@ -176,11 +176,6 @@ CURRENT_BEFORE_CUTOVER="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
   exit 75
 }
 
-log "switching current symlink and restarting the DEV application group"
-rm -f "${CURRENT}.next"
-ln -s "${RELEASE}" "${CURRENT}.next"
-mv -Tf "${CURRENT}.next" "${CURRENT}"
-
 rollback() {
   local reason="$1"
   local current_target rollback_failed=false rollback_code voice_pid voice_cwd previous_sha current_sha
@@ -223,6 +218,16 @@ rollback() {
     else
       echo "DEV rollback verification failed; operator intervention required" >&2
     fi
+  elif [[ "${current_target}" == "${PREVIOUS}" && -d "${PREVIOUS}" ]]; then
+    systemctl restart "${WORKER_SERVICES[@]}" || rollback_failed=true
+    for unit in "${WORKER_SERVICES[@]}"; do
+      [[ "$(systemctl is-active "${unit}" 2>/dev/null || true)" == active ]] || rollback_failed=true
+    done
+    if [[ "${rollback_failed}" == false ]]; then
+      echo "restored previous DEV workers before cutover" >&2
+    else
+      echo "DEV worker recovery failed; operator intervention required" >&2
+    fi
   elif [[ "${current_target}" != "${RELEASE}" ]]; then
     echo "skipped rollback because current changed concurrently to ${current_target:-missing}" >&2
     rollback_failed=true
@@ -233,6 +238,17 @@ rollback() {
   [[ "${rollback_failed}" == false ]] || exit 70
   exit 1
 }
+
+log "quiescing DEV workers before switching releases (old workers cannot run new Captain jobs)"
+systemctl stop "${WORKER_SERVICES[@]}" || rollback "stopping old DEV workers"
+for unit in "${WORKER_SERVICES[@]}"; do
+  [[ "$(systemctl is-active "${unit}" 2>/dev/null || true)" == inactive ]] || rollback "${unit} did not stop"
+done
+
+log "switching current symlink and restarting the DEV application group"
+rm -f "${CURRENT}.next" || rollback "preparing DEV current symlink"
+ln -s "${RELEASE}" "${CURRENT}.next" || rollback "preparing new DEV current symlink"
+mv -Tf "${CURRENT}.next" "${CURRENT}" || rollback "switching DEV current symlink"
 
 cp -a "${VOICE_START_SCRIPT}" "${VOICE_START_BACKUP}" || rollback "backing up AI voice start script"
 install -o root -g root -m 0755 \

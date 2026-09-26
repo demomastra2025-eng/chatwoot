@@ -557,9 +557,36 @@ RSpec.describe Conversation do
     it 'changes status to open' do
       expect(conversation.bot_handoff!).to eq(:applied)
       expect(conversation.reload.status).to eq('open')
-      expect(conversation.captain_control_state).to eq('human')
+      expect(conversation.current_captain_control_state).to eq('human')
+      expect(conversation.captain_control_owner.reload.captain_control_state).to eq('human')
       expect(conversation.captain_control_generation).to eq(1)
       expect(conversation.captain_handoff_applied_at).to be_present
+    end
+
+    it 'rejects a handoff from an older status epoch even when the generation is unchanged' do
+      trigger = create(:message, conversation: conversation, message_type: :incoming)
+      fence = {
+        control_generation: conversation.current_captain_control_generation,
+        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
+        last_message_id: trigger.id
+      }
+      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
+      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'pending' }, source: 'system').perform
+
+      expect(conversation.bot_handoff!(fence: fence)).to eq(:stale)
+      expect(conversation.reload.status).to eq('pending')
+    end
+
+    it 'keeps a legacy open-reply worker from responding during a rolling handoff' do
+      create(:captain_inbox, inbox: conversation.inbox,
+                             captain_assistant: create(:captain_assistant, account: conversation.account),
+                             reply_to_open_conversations: true)
+      conversation.bot_handoff!
+
+      legacy_can_reply = conversation.reload.open? && conversation.inbox.captain_inbox.reply_to_open_conversations? &&
+                         conversation.captain_control_owner.reload.captain_control_state == 'ai'
+      expect(legacy_can_reply).to be(false)
+      expect(conversation.current_captain_control_state).to eq('human')
     end
 
     it 'rolls back the short handoff bundle and applies its artifacts once on retry' do
@@ -575,7 +602,7 @@ RSpec.describe Conversation do
 
       conversation.reload
       expect(conversation.status).to eq('pending')
-      expect(conversation.captain_control_state).to eq('ai')
+      expect(conversation.current_captain_control_state).to eq('ai')
       expect(conversation.waiting_since).to eq(original_waiting_since)
       expect(conversation.messages.where(content: artifact_content)).to be_empty
 
@@ -585,7 +612,8 @@ RSpec.describe Conversation do
         end
       end.to change { conversation.messages.where(content: artifact_content).count }.by(1)
 
-      expect(conversation.reload).to have_attributes(status: 'open', captain_control_state: 'human')
+      expect(conversation.reload).to have_attributes(status: 'open')
+      expect(conversation.current_captain_control_state).to eq('human')
       expect(conversation.bot_handoff! { raise 'must not execute duplicate artifacts' }).to eq(:already_applied)
     end
 
@@ -614,7 +642,7 @@ RSpec.describe Conversation do
       conversation.update!(assignee: create(:user, account: conversation.account))
 
       expect(conversation.bot_handoff!).to eq(:already_applied)
-      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.reload.current_captain_control_state).to eq('human')
       expect(conversation.captain_control_generation).to eq(1)
       expect(conversation.captain_handoff_applied_at).to be_nil
       expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
@@ -654,7 +682,7 @@ RSpec.describe Conversation do
         .with('captain.handoff.applied', hash_including(actor_type: 'User', actor_id: actor.id))
     end
 
-    it 'returns control to Captain only on an explicit agent transfer to pending' do
+    it 'returns control to Captain on an explicit agent transfer to pending' do
       agent = create(:user, account: conversation.account)
       conversation.bot_handoff!
 
@@ -665,12 +693,12 @@ RSpec.describe Conversation do
         source: 'api'
       ).perform
 
-      expect(conversation.reload.captain_control_state).to eq('ai')
+      expect(conversation.reload.current_captain_control_state).to eq('ai')
       expect(conversation.captain_control_generation).to eq(2)
       expect(conversation.captain_handoff_applied_at).to be_nil
     end
 
-    it 'does not return control to Captain for an automatic pending transition' do
+    it 'allows Captain to respond when the business status returns to pending automatically' do
       conversation.bot_handoff!
 
       Conversations::StatusTransitionService.new(
@@ -679,11 +707,11 @@ RSpec.describe Conversation do
         source: 'system'
       ).perform
 
-      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.reload.current_captain_control_state).to eq('ai')
       expect(conversation.captain_control_generation).to eq(1)
     end
 
-    it 'ends the human-control epoch when an agent resolves the conversation' do
+    it 'does not let Captain reply to a resolved conversation' do
       agent = create(:user, account: conversation.account)
       conversation.bot_handoff!
 
@@ -695,7 +723,7 @@ RSpec.describe Conversation do
       ).perform
 
       expect(conversation.reload.status).to eq('resolved')
-      expect(conversation.captain_control_state).to eq('ai')
+      expect(conversation.current_captain_control_state).to eq('human')
       expect(conversation.captain_control_generation).to eq(2)
     end
   end

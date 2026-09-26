@@ -1,8 +1,5 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   AUTHORIZED_CONTEXT_KEY = :captain_v2_handoff_authorized_tool_call
-  CONSENT_REQUIRED_ERROR = (
-    'Handoff requires an explicit request for a human or direct consent to the latest handoff question.'
-  ).freeze
 
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
@@ -11,15 +8,10 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
   def perform(tool_context, reason: nil, status_reason: nil, message: nil)
+    return tool_failure('Handoff tool is not enabled for this assistant') unless assistant.selected_agent_tool_ids.include?('handoff')
+
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
-
-    if assistant.handoff_requires_explicit_consent?
-      return reject_unauthorized_handoff(conversation) unless handoff_authorized?(conversation, tool_context.state)
-
-      reason = assistant.handoff_consent_reason_value
-      status_reason = nil
-    end
 
     # Log the handoff with reason
     log_tool_usage('tool_handoff', {
@@ -35,29 +27,6 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   end
 
   private
-
-  def reject_unauthorized_handoff(conversation)
-    log_tool_usage('tool_handoff_denied', {
-                     conversation_id: conversation.id,
-                     reason: 'explicit_consent_required'
-                   })
-    Captain::ToolResult.failure(
-      error: CONSENT_REQUIRED_ERROR,
-      retryable: false,
-      audit: {
-        failure_stage: 'authorization',
-        failure_reason: 'handoff_not_authorized'
-      }
-    )
-  end
-
-  def handoff_authorized?(conversation, state)
-    Captain::Tools::HandoffConsentPolicy.new(
-      assistant: assistant,
-      conversation: conversation,
-      state: state
-    ).authorized?
-  end
 
   def request_handoff(tool_context, reason, status_reason, message)
     tool_context.context[:pending_human_handoff] = {

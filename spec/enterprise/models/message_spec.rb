@@ -38,25 +38,25 @@ RSpec.describe Message do
       create(:message, message_type: :outgoing, conversation: conversation)
 
       expect(conversation.reload.open?).to be true
-      expect(conversation.captain_control_state).to eq('human')
+      expect(conversation).to be_captain_human_control_active
       expect(conversation.captain_control_generation).to eq(1)
     end
 
-    it 'keeps human control durable without incrementing the generation for later replies' do
+    it 'keeps the conversation open without incrementing the generation for later replies' do
       create(:message, message_type: :outgoing, conversation: conversation)
       create(:message, message_type: :outgoing, conversation: conversation)
 
-      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.reload).to be_open
       expect(conversation.captain_control_generation).to eq(1)
     end
 
-    it 'activates human control for a public reply while the conversation is already open' do
+    it 'keeps an already open conversation out of AI control' do
       conversation.update!(status: :open)
 
       create(:message, message_type: :outgoing, conversation: conversation)
 
-      expect(conversation.reload.captain_control_state).to eq('human')
-      expect(conversation.captain_control_generation).to eq(1)
+      expect(conversation.reload).to be_open
+      expect(conversation.captain_control_generation).to eq(0)
     end
 
     it 'creates an activity message when a human sends a public outgoing message' do

@@ -3,7 +3,7 @@
 class Llm::OpenRouterFeaturePolicy
   SERVICE_TIERS = %w[auto flex priority].freeze
   SERVICE_TIER_ALLOWLIST = {
-    'captain_agent' => %w[auto priority],
+    'captain_agent' => %w[auto],
     'copilot' => %w[auto priority],
     'editor' => %w[flex],
     'label_suggestion' => %w[flex],

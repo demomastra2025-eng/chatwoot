@@ -923,6 +923,70 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'keeps an authorized tool handoff when the provider fails during finalization' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: nil,
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_handoff_tool_called: true,
+            pending_human_handoff: { reason: 'Needs manual review' }
+          },
+          error: StandardError.new('Provider failed after tool execution')
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'conversation_handoff', 'handoff_authorized' => true,
+                                'handoff_tool_called' => true, 'handoff_reason' => 'Needs manual review')
+    end
+
+    it 'keeps an authorized handoff after a booking even when provider finalization fails' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: nil,
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_handoff_tool_called: true,
+            pending_human_handoff: { reason: 'Needs manual review' },
+            captain_v2_completed_tool_results: [{
+              tool_name: 'create_appointment', success: true,
+              appointment_evidence: {
+                action: 'create_appointment', provider_confirmation_required: true,
+                provider_command_receipt_present: true, provider_command_id: 77,
+                provider_command_operation: 'create_reception',
+                provider_confirmation_status: 'pending_provider_confirmation'
+              }
+            }]
+          },
+          error: StandardError.new('Provider failed after booking and handoff tools')
+        )
+      )
+
+      expect(service.generate_response(message_history: message_history)).to include(
+        'response' => 'conversation_handoff', 'handoff_authorized' => true, 'handoff_tool_called' => true
+      )
+    end
+
+    it 'does not authorize handoff from an error and an unconfirmed pending marker' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: nil,
+          context: { current_agent: 'assistant_agent', pending_human_handoff: { reason: 'Unconfirmed' } },
+          error: StandardError.new('Provider failed')
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result).not_to have_key('handoff_authorized')
+    end
+
     it 'returns a silent cancellation payload when the runtime cancels the response' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
@@ -971,7 +1035,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).not_to have_key('error_class')
     end
 
-    it 'blocks appointment success claims without completed mutation evidence' do
+    it 'rejects a confirmed booking claim without completed mutation evidence' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -983,14 +1047,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError',
-        'error_message' => 'Appointment success claim has no completed appointment tool evidence'
-      )
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
     end
 
-    it 'blocks an English has-been-created claim without completed mutation evidence' do
+    it 'rejects an English confirmed booking claim without completed mutation evidence' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1002,13 +1063,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError'
-      )
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
     end
 
-    it 'does not treat negative, pending, or future booking statements as success claims' do
+    it 'passes negative, pending, and future booking statements through unchanged' do
       responses = [
         "The appointment couldn't be booked.",
         'No appointment has been successfully booked.',
@@ -1033,7 +1092,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
     end
 
-    it 'blocks an adverbial English success claim without completed mutation evidence' do
+    it 'rejects an unsupported update claim without completed mutation evidence' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1045,13 +1104,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include(
-        'response' => described_class::PROVIDER_ERROR_RESPONSE,
-        'error_class' => 'Captain::Assistant::AgentRunnerService::AppointmentGroundingError'
-      )
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
     end
 
-    it 'allows appointment success claims only with complete provider-confirmed evidence' do
+    it 'leaves even a fast provider confirmation to the outcome job instead of replying twice' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1067,7 +1124,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                   appointment_id: 42,
                   provider_confirmation_status: 'succeeded',
                   provider_confirmed: true,
+                  provider_confirmation_required: true,
                   provider_command_receipt_present: true,
+                  provider_command_id: 77,
+                  provider_command_operation: 'create_reception',
+                  provider_reception_code: 'reception-42',
                   status: 'confirmed',
                   service_id: 7,
                   resource_id: 9,
@@ -1083,7 +1144,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include('response' => 'Запись создана и подтверждена.')
+      expect(result).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true)
       expect(result).not_to have_key('error_class')
     end
 
@@ -1093,7 +1154,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           appointment_id: 42,
           command: {
             id: 77, operation: 'move_reception', status: 'succeeded', appointment_id: 42,
-            idempotency_key: 'move-42-v2'
+            idempotency_key: 'move-42-v2', provider_reception_code: 'reception-42'
           }
         }
       }.with_indifferent_access
@@ -1104,18 +1165,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         action: 'update_appointment',
         appointment_id: 42,
         provider_command_id: 77,
+        provider_reception_code: 'reception-42',
         provider_confirmed: true,
         provider_status_lookup: true
       )
-    end
-
-    it 'does not correlate a provider read-back from another command' do
-      mutation = { provider_command_id: 77, provider_command_operation: 'move_reception' }
-      stale_lookup = { provider_command_id: 76, provider_command_operation: 'move_reception' }
-      wrong_operation = { provider_command_id: 77, provider_command_operation: 'create_reception' }
-
-      expect(service.send(:provider_command_identity_matches?, mutation, stale_lookup)).to be(false)
-      expect(service.send(:provider_command_identity_matches?, mutation, wrong_operation)).to be(false)
     end
 
     it 'preserves provider command identity in mutation evidence' do
@@ -1139,34 +1192,35 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
-    it 'fails closed when provider confirmation metadata is omitted' do
-      evidence = {
-        appointment_id: 42,
-        status: 'confirmed',
-        service_id: 7,
-        resource_id: 9,
-        starts_at: '2026-09-17T11:00:00Z',
-        ends_at: '2026-09-17T11:30:00Z'
-      }.with_indifferent_access
+    it 'answers a comment-only update of an already confirmed provider appointment' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Комментарий к записи обновлён.', 'reasoning' => 'Saved locally.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [{
+              tool_name: 'update_appointment', success: true,
+              appointment_evidence: {
+                action: 'update_appointment', appointment_id: 42,
+                provider_confirmation_required: true, provider_confirmation_status: 'succeeded',
+                provider_confirmed: true, provider_command_receipt_present: false,
+                status: 'confirmed', service_id: 7, resource_id: 9,
+                starts_at: '2026-09-17T11:00:00Z', ends_at: '2026-09-17T11:30:00Z'
+              }
+            }]
+          },
+          error: nil
+        )
+      )
 
-      expect(service.send(:appointment_evidence_confirmed?, evidence)).to be(false)
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => 'Комментарий к записи обновлён.')
+      expect(result).not_to have_key('response_suppressed')
     end
 
-    it 'accepts complete local appointment evidence when provider confirmation is explicitly not required' do
-      evidence = {
-        appointment_id: 42,
-        status: 'confirmed',
-        service_id: 7,
-        resource_id: 9,
-        starts_at: '2026-09-17T11:00:00Z',
-        ends_at: '2026-09-17T11:30:00Z',
-        provider_confirmation_required: false
-      }.with_indifferent_access
-
-      expect(service.send(:appointment_evidence_confirmed?, evidence)).to be(true)
-    end
-
-    it 'allows an update claim after a successful move provider read-back' do
+    it 'suppresses the public reply while provider confirmation is unresolved' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1180,18 +1234,10 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                 appointment_evidence: {
                   action: 'update_appointment', appointment_id: 42,
                   provider_confirmation_status: 'pending_provider_confirmation', provider_confirmed: false,
+                  provider_confirmation_required: true,
                   provider_command_receipt_present: true, provider_command_id: 77,
                   provider_command_operation: 'move_reception', status: 'confirmed', service_id: 7, resource_id: 9,
                   starts_at: '2026-09-17T11:00:00Z', ends_at: '2026-09-17T11:30:00Z'
-                }
-              },
-              {
-                tool_name: 'get_appointment_provider_status',
-                success: true,
-                appointment_evidence: {
-                  action: 'update_appointment', appointment_id: 42, provider_confirmation_status: 'succeeded',
-                  provider_confirmed: true, provider_command_receipt_present: true, provider_command_id: 77,
-                  provider_command_operation: 'move_reception', provider_status_lookup: true
                 }
               }
             ]
@@ -1202,8 +1248,96 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include('response' => 'Your appointment has been updated.')
+      expect(result).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true)
       expect(result).not_to have_key('error_class')
+    end
+
+    it 'leaves a same-turn provider read-back to the outcome job' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment is confirmed.', 'reasoning' => 'Provider confirmed.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [
+              {
+                tool_name: 'create_appointment', success: true, appointment_evidence: {
+                  action: 'create_appointment', appointment_id: 42,
+                  provider_confirmation_status: 'pending_provider_confirmation', provider_confirmed: false,
+                  provider_confirmation_required: true, provider_command_receipt_present: true,
+                  provider_command_id: 77, provider_command_operation: 'create_reception'
+                }
+              },
+              {
+                tool_name: 'get_appointment_provider_status', success: true, appointment_evidence: {
+                  action: 'create_appointment', appointment_id: 42,
+                  provider_confirmation_status: 'succeeded', provider_confirmed: true,
+                  provider_status_lookup: true, provider_command_receipt_present: true,
+                  provider_command_id: 77, provider_command_operation: 'create_reception',
+                  provider_reception_code: 'reception-42'
+                }
+              }
+            ]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true)
+    end
+
+    it 'answers a provider status lookup when no booking mutation occurred in this turn' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment is confirmed.', 'reasoning' => 'Provider confirmed.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [{
+              tool_name: 'get_appointment_provider_status',
+              success: true, appointment_evidence: {
+                action: 'create_appointment', appointment_id: 42,
+                provider_confirmation_status: 'succeeded', provider_confirmed: true,
+                provider_status_lookup: true, provider_command_receipt_present: true,
+                provider_command_id: 77, provider_command_operation: 'create_reception',
+                provider_reception_code: 'reception-42'
+              }
+            }]
+          },
+          error: nil
+        )
+      )
+
+      expect(service.generate_response(message_history: message_history)).to include('response' => 'Your appointment is confirmed.')
+    end
+
+    it 'rejects a provider status claim without a concrete reception ID' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => 'Your appointment is confirmed.', 'reasoning' => 'Provider confirmed.' },
+          context: {
+            current_agent: 'assistant_agent',
+            captain_v2_completed_tool_results: [{
+              tool_name: 'get_appointment_provider_status', success: true,
+              appointment_evidence: {
+                action: 'create_appointment', appointment_id: 42,
+                provider_confirmation_status: 'succeeded', provider_confirmed: true,
+                provider_status_lookup: true, provider_command_receipt_present: true,
+                provider_command_id: 77, provider_command_operation: 'create_reception'
+              }
+            }]
+          },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
+      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
     end
 
     context 'when no scenarios are enabled' do
@@ -1832,7 +1966,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       run_complete_callback.call('assistant', nil, context_wrapper)
     end
 
-    it 'halts the run after one denied handoff even when the model changes the arguments' do
+    it 'authorizes an enabled handoff tool without matching the customer message against phrases' do
       service = described_class.new(assistant: assistant, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
@@ -1872,21 +2006,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       wrapper = Captain::Runtime::ToolWrapper.new(handoff_tool, run_context)
 
       first_result = wrapper.call(reason: 'Model supplied reason')
-      second_result = wrapper.call(reason: 'Changed model reason', message: 'Changed handoff message')
 
       expect(first_result).to be_a(RubyLLM::Tool::Halt)
-      expect(first_result.content).to include(Captain::Tools::HandoffTool::CONSENT_REQUIRED_ERROR)
-      expect(second_result.content).to eq(first_result.content)
-      expect(run_context.context[:captain_v2_completed_tool_names]).to eq([handoff_tool.name, handoff_tool.name])
-      expect(run_context.context[:captain_v2_handoff_tool_called]).to be_nil
-      expect(run_context.context[:pending_human_handoff]).to be_nil
-      expect(run_context.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to include(
-        tool_name: handoff_tool.name,
-        result: include(
-          retryable: false,
-          audit: include(failure_reason: 'handoff_not_authorized')
-        )
-      )
+      expect(first_result.content).to include('Conversation handed off to human support team')
+      expect(run_context.context[:captain_v2_completed_tool_names]).to eq([handoff_tool.name])
+      expect(run_context.context[:captain_v2_handoff_tool_called]).to be(true)
+      expect(run_context.context[:pending_human_handoff]).to include(reason: 'Model supplied reason')
     end
 
     it 'does not infer handoff authorization from the completed tool name and a pending payload' do

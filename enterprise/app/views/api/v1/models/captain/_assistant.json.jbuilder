@@ -1,6 +1,7 @@
 json.account_id resource.account_id
 json.avatar_url resource.avatar_url
-json.config(resource.config.to_h.merge('rules' => resource.rule_entries.map(&:stringify_keys)))
+json.config(resource.config.to_h.except('handoff_requires_explicit_consent', 'handoff_consent_reason')
+                    .merge('rules' => resource.rule_entries.map(&:stringify_keys)))
 json.created_at resource.created_at.to_i
 json.description resource.description
 json.guardrails resource.guardrails

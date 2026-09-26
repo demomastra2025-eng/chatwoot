@@ -1,6 +1,5 @@
 class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON = 'no outstanding questions'.freeze
-  CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON = 'pending clarification from customer'.freeze
 
   queue_as :low
 
@@ -39,11 +38,7 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       evaluation = evaluate_conversation(conversation, inbox)
       next unless still_resolvable_after_evaluation?(conversation)
 
-      if evaluation[:complete]
-        resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
-      else
-        handoff_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
-      end
+      resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message]) if evaluation[:complete]
     end
   end
 
@@ -90,17 +85,6 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     conversation.dispatch_captain_inference_resolved_event
   end
 
-  def handoff_conversation(conversation, inbox, reason, generated_message: nil)
-    create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
-    create_handoff_message(conversation, inbox, generated_message: generated_message)
-    conversation.with_captain_activity_context(
-      reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON,
-      reason_type: :inference
-    ) { conversation.bot_handoff!(actor: inbox.captain_assistant, source: 'system') }
-    conversation.dispatch_captain_inference_handoff_event
-    send_out_of_office_message_if_applicable(conversation.reload)
-  end
-
   def transition_conversation_status!(conversation, status, actor:, source:)
     Conversations::StatusTransitionService.new(
       conversation: conversation,
@@ -108,14 +92,6 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       actor: actor,
       source: source
     ).perform
-  end
-
-  def send_out_of_office_message_if_applicable(conversation)
-    # Campaign conversations should never receive OOO templates — the campaign itself
-    # serves as the initial outreach, and OOO would be confusing in that context.
-    return if conversation.campaign.present?
-
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation)
   end
 
   def create_private_note(conversation, inbox, content)
@@ -153,28 +129,5 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     return generated_message.presence if assistant.resolution_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
     assistant.config['resolution_message'].presence
-  end
-
-  def create_handoff_message(conversation, inbox, generated_message: nil)
-    assistant = inbox.captain_assistant
-    return unless assistant&.handoff_message_enabled?
-
-    handoff_message = handoff_message_content(assistant, generated_message: generated_message)
-    return if handoff_message.blank?
-
-    conversation.messages.create!(
-      message_type: :outgoing,
-      sender: assistant,
-      account_id: conversation.account_id,
-      inbox_id: conversation.inbox_id,
-      content: assistant.render_runtime_text(handoff_message, conversation: conversation),
-      preserve_waiting_since: true
-    )
-  end
-
-  def handoff_message_content(assistant, generated_message: nil)
-    return generated_message.presence if assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
-
-    assistant.config['handoff_message'].presence
   end
 end

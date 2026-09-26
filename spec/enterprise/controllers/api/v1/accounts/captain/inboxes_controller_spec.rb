@@ -85,14 +85,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         expect(json_response[:captain_auto_reply_mode]).to eq('working_hours')
       end
 
-      it 'updates reply-to-open-conversations when the same assistant is already connected to the inbox' do
+      it 'ignores a request to enable open replies for a new inbox' do
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
+             params: { inbox: { inbox_id: inbox2.id, reply_to_open_conversations: true } },
+             headers: admin.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(CaptainInbox.find_by!(inbox: inbox2).reply_to_open_conversations).to be(false)
+      end
+
+      it 'disables legacy open replies on the next save even when the client requests true' do
+        captain_inbox.update!(reply_to_open_conversations: true)
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",
              params: { inbox: { inbox_id: inbox.id, reply_to_open_conversations: true } },
              headers: admin.create_new_auth_token
 
         expect(response).to have_http_status(:success)
-        expect(captain_inbox.reload.reply_to_open_conversations).to be(true)
-        expect(json_response[:captain_reply_to_open_conversations]).to be(true)
+        expect(captain_inbox.reload.reply_to_open_conversations).to be(false)
+        expect(json_response[:captain_reply_to_open_conversations]).to be(false)
       end
 
       it 'rejects removed never auto-reply mode' do

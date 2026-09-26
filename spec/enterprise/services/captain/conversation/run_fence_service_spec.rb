@@ -18,6 +18,7 @@ RSpec.describe Captain::Conversation::RunFenceService do
       conversation: { id: conversation.id },
       captain_response_fence: {
         control_generation: conversation.captain_control_generation,
+        status_transition_id: conversation.status_transitions.maximum(:id).to_i,
         last_message_id: trigger_message.id,
         buffer_token: buffer_token
       }
@@ -71,11 +72,12 @@ RSpec.describe Captain::Conversation::RunFenceService do
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /buffer_state_changed/)
   end
 
-  it 'fences the run after human ownership is activated' do
+  it 'fences a run after an employee reply bumps the generation' do
+    expected_state = state
     conversation.activate_captain_human_control!(source: 'agent_reply')
 
-    expect { described_class.new(assistant: assistant, state: state).ensure_current! }
-      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /human_control/)
+    expect { described_class.new(assistant: assistant, state: expected_state).ensure_current! }
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /control_generation_changed/)
   end
 
   it 'fences the run when a human reply committed before its ownership callback acquired the lock' do
@@ -92,5 +94,15 @@ RSpec.describe Captain::Conversation::RunFenceService do
 
     expect { described_class.new(assistant: assistant, state: state).ensure_current! }
       .to raise_error(Captain::Conversation::ControlGenerationStaleError, /status_changed/)
+  end
+
+  it 'does not revive an old run after the status cycles from pending to open and back' do
+    expected_state = state
+    Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
+    Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'pending' }, source: 'system').perform
+
+    expect(conversation.reload).to be_pending
+    expect { described_class.new(assistant: assistant, state: expected_state).ensure_current! }
+      .to raise_error(Captain::Conversation::ControlGenerationStaleError, /status_epoch_changed/)
   end
 end

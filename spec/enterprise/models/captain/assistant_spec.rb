@@ -363,7 +363,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(glossary_field_ids).to include('contact.email')
     end
 
-    it 'adds explicitly referenced capability tools even when their checkbox is off' do
+    it 'does not add a handoff tool mentioned in instructions when its checkbox is off' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) when needed.'
       assistant.config = {
         'context_access' => {},
@@ -376,7 +376,7 @@ RSpec.describe Captain::Assistant, type: :model do
       }
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
     end
 
     it 'does not include non-default tools in the runtime set when they are only checked but not referenced' do
@@ -1135,11 +1135,11 @@ RSpec.describe Captain::Assistant, type: :model do
       )
     end
 
-    it 'accepts capability tools in instructions even when their checkbox is off' do
+    it 'does not enable a handoff tool mentioned in instructions when its checkbox is off' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
     end
 
     it 'accepts capability tools in instructions when their checkbox is on' do

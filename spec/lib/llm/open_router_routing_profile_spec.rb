@@ -13,8 +13,9 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
         require_parameters: true,
         allow_fallbacks: true,
         data_collection: 'deny',
-        sort: { by: 'latency', partition: 'none' },
-        preferred_max_latency: { p90: 3 }
+        sort: { by: 'latency', partition: 'model' },
+        preferred_max_latency: { p90: 3 },
+        ignore: %w[openai/fast openai/priority openai/flex]
       )
       expect(profile.to_h).to include(
         models: profile.models,
@@ -54,6 +55,90 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       profile = described_class.for(feature: :captain_agent, model: 'openai/gpt-5.6-luna', account: account)
 
       expect(profile.models).to eq(['openai/gpt-5.6-luna'])
+    end
+
+    it 'tries faster eligible Luna 6 providers before falling back to Luna 5.6' do
+      profile = described_class.for(feature: :captain_agent, model: 'openai/gpt-6-luna')
+
+      expect(profile.models).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(profile.provider_preferences).to include(
+        allow_fallbacks: true,
+        sort: { by: 'latency', partition: 'model' }
+      )
+      expect(profile.provider_preferences).not_to include(:preferred_max_latency)
+    end
+
+    it 'ignores pinned order and price strategy for automatic Luna 6 provider selection' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: {
+          openrouter_routing_strategy: 'low_cost',
+          openrouter_provider_order: %w[azure/eu openai/fast],
+          openrouter_preferred_max_latency: { p90: 3 }
+        }
+      )
+
+      expect(profile.provider_preferences[:sort]).to eq(by: 'latency', partition: 'model')
+      expect(profile.provider_preferences).not_to include(:preferred_max_latency, :order)
+    end
+
+    it 'excludes OpenAI Fast without pinning Luna 6 to a provider' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: {
+          openrouter_provider_ignore: ['OtherProvider'],
+          openrouter_provider_order: %w[azure/eu openai/fast openai/priority openai]
+        }
+      )
+
+      expect(profile.provider_preferences[:ignore]).to contain_exactly('OtherProvider', 'openai/fast', 'openai/priority', 'openai/flex')
+      expect(profile.provider_preferences).not_to include(:order)
+      expect(profile.models).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(described_class.for(feature: :copilot, model: 'openai/gpt-5.4').provider_preferences).not_to include(:ignore)
+    end
+
+    it 'keeps Luna 6 without model fallback when the workspace forbids it' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: { openrouter_allow_model_fallbacks: false }
+      )
+
+      expect(profile.models).to eq(['openai/gpt-6-luna'])
+      expect(profile.provider_preferences).to include(allow_fallbacks: true)
+    end
+
+    it 'does not allow a global latency sort to move Luna 5.6 ahead of Luna 6' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: { openrouter_sort: { by: 'latency', partition: 'none' } }
+      )
+
+      expect(profile.provider_preferences[:sort]).to eq(by: 'latency', partition: 'model')
+    end
+
+    it 'preserves model priority under the low-latency routing strategy' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: { openrouter_routing_strategy: 'low_latency' }
+      )
+
+      expect(profile.provider_preferences[:sort]).to eq(by: 'latency', partition: 'model')
+    end
+
+    it 'selects providers by latency even when a workspace selects the lower-cost strategy' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-6-luna',
+        runtime_preferences: { openrouter_routing_strategy: 'low_cost' }
+      )
+
+      expect(profile.models).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+      expect(profile.provider_preferences[:sort]).to eq(by: 'latency', partition: 'model')
     end
 
     it 'uses cost/speed routing for background editor and label features' do
@@ -171,7 +256,7 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
 
       expect(exacto_profile.provider_preferences).not_to include(:order)
       expect(exacto_profile.provider_preferences).to include(allow_fallbacks: true)
-      expect(exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'none' })
+      expect(exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'model' })
       expect(auto_exacto_profile.provider_preferences).not_to include(:order)
       expect(auto_exacto_profile.provider_preferences).to include(sort: { by: 'latency', partition: 'none' })
     end

@@ -11,8 +11,6 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   DOCUMENT_PARSE_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   DEFAULT_HANDOFF_PRIVATE_NOTE = 'Captain transferred the conversation to a human agent.'.freeze
-  EMERGENCY_HANDOFF_PRIVATE_NOTE = 'Captain detected an emergency and transferred the conversation to a human agent.'.freeze
-  EMERGENCY_CONTACT_NUMBERS = %w[103 112].freeze
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -82,6 +80,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @buffer_token = buffer_token
     @expected_last_message_id = expected_last_message_id || conversation.messages.incoming.last&.id
     @expected_control_generation = expected_control_generation || message_control_generation || conversation.current_captain_control_generation
+    @expected_status_transition_id = message_status_transition_id
   end
 
   def generate_and_process_response
@@ -107,19 +106,21 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return process_non_public_response if non_public_response?
 
     normalize_blank_public_response!
+    return process_provider_error_without_handoff if provider_error_without_handoff?
 
-    processed_response =
-      if handoff_requested?
-        handoff_applied = process_action(handoff_action_name)
-        account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
-        handoff_applied
-      elsif conversation_allows_captain_response?
-        process_pending_response
-      else
-        false
-      end
+    clear_buffer_state_if_current if process_public_response
+  end
 
-    clear_buffer_state_if_current if processed_response
+  def process_public_response
+    if handoff_requested?
+      handoff_applied = process_action(handoff_action_name)
+      account.increment_token_usage(@response.dig('usage', 'total_tokens')) if handoff_applied
+      handoff_applied
+    elsif conversation_allows_captain_response?
+      process_pending_response
+    else
+      false
+    end
   end
 
   def non_public_response?
@@ -192,6 +193,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def response_fence
     {
       control_generation: @expected_control_generation,
+      status_transition_id: @expected_status_transition_id,
       buffer_token: @buffer_token,
       last_message_id: @expected_last_message_id
     }.compact
@@ -312,37 +314,21 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
-    if @assistant.handoff_requires_explicit_consent?
-      return deterministic_emergency_handoff_requested? || provider_error_handoff_requested? || authorized_v2_handoff_requested?
-    end
-
-    v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
-  end
-
-  def deterministic_emergency_handoff_requested?
-    return @deterministic_emergency_handoff_requested if defined?(@deterministic_emergency_handoff_requested)
-
-    @deterministic_emergency_handoff_requested = Captain::Tools::HandoffConsentPolicy.new(
-      assistant: @assistant,
-      conversation: @conversation,
-      state: { captain_response_fence: response_fence }
-    ).emergency?
+    authorized_v2_handoff_requested?
   end
 
   def authorized_v2_handoff_requested?
-    ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
+    @assistant.selected_agent_tool_ids.include?('handoff') &&
+      ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
       v2_handoff_tool_fired? && @response['response'] == 'conversation_handoff'
   end
 
   def response_cancelled?
-    assistant_cancelled_response? || manager_cancelled_response? || unauthorized_strict_handoff_response?
+    assistant_cancelled_response? || manager_cancelled_response? || unauthorized_handoff_response?
   end
 
-  def unauthorized_strict_handoff_response?
-    return false unless @assistant.handoff_requires_explicit_consent?
-    return false unless ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response&.[]('response'))
-
-    !authorized_v2_handoff_requested? && !provider_error_handoff_requested?
+  def unauthorized_handoff_response?
+    @response&.[]('response') == 'conversation_handoff' && !authorized_v2_handoff_requested?
   end
 
   def assistant_cancelled_response?
@@ -378,19 +364,17 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_action_name
-    return 'emergency_handoff' if deterministic_emergency_handoff_requested?
-    return 'v2_handoff' if v2_handoff_tool_fired?
-
-    provider_error_handoff_requested? ? 'provider_error_handoff' : 'handoff'
+    v2_handoff_tool_fired? ? 'v2_handoff' : 'handoff'
   end
 
-  def provider_error_handoff_requested?
-    return false unless @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
-    return true unless @assistant.handoff_requires_explicit_consent?
+  def provider_error_without_handoff?
+    @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
+  end
 
-    ActiveModel::Type::Boolean.new.cast(
-      @response[Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_AUTHORIZED_KEY]
-    )
+  def process_provider_error_without_handoff
+    create_provider_error_private_note
+    clear_buffer_state_if_current
+    true
   end
 
   def normalize_blank_public_response!
@@ -424,52 +408,26 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     result == :applied
   end
 
-  def handoff_reason_for(action)
-    return provider_error_note_content if action == 'provider_error_handoff'
-    return EMERGENCY_HANDOFF_PRIVATE_NOTE if action == 'emergency_handoff'
-
+  def handoff_reason_for(_action)
     handoff_activity_reason
   end
 
-  def handoff_context_for(action)
-    return { status_reason: nil, reason_type: :inference } if action == 'emergency_handoff'
-
+  def handoff_context_for(_action)
     { status_reason: handoff_status_reason, reason_type: nil }
   end
 
   def create_action_notifications(action)
     case action
     when 'handoff', 'v2_handoff' then create_handoff_notifications
-    when 'provider_error_handoff' then create_provider_error_handoff_notifications
-    when 'emergency_handoff' then create_emergency_handoff_notifications
     end
   end
 
   def create_handoff_notifications
     I18n.with_locale(@assistant.account.locale) do
       create_handoff_private_note
-      create_handoff_message(preserve_waiting_since: true)
+      create_handoff_message(preserve_waiting_since: true) if @assistant.handoff_message_enabled?
       send_out_of_office_message_if_applicable
     end
-  end
-
-  def create_provider_error_handoff_notifications
-    create_provider_error_private_note
-    create_handoff_message(preserve_waiting_since: true)
-    send_out_of_office_message_if_applicable
-  end
-
-  def create_emergency_handoff_notifications
-    create_private_note(EMERGENCY_HANDOFF_PRIVATE_NOTE)
-    create_outgoing_message(emergency_handoff_message_content, preserve_waiting_since: true)
-    send_out_of_office_message_if_applicable
-  end
-
-  def emergency_handoff_message_content
-    response = @response['response'].to_s.strip
-    return response if EMERGENCY_CONTACT_NUMBERS.all? { |number| response.match?(/\b#{number}\b/) }
-
-    I18n.with_locale(@assistant.account.locale) { I18n.t('conversations.captain.emergency_handoff') }
   end
 
   def bot_handoff_with_activity_reason(reason = handoff_activity_reason, status_reason: handoff_status_reason, reason_type: nil, &)
@@ -495,6 +453,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def current_response_fence
     {
       control_generation: @expected_control_generation,
+      status_transition_id: @expected_status_transition_id,
       last_message_id: @expected_last_message_id
     }.compact
   end
@@ -598,7 +557,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def provider_error_note_content
     # This note can surface in agent-side conversation previews. Keep provider
     # names, exception classes, quota details, and raw prompts out of content.
-    'Automatic reply could not be generated. Handoff to human agent was triggered.'
+    'Automatic reply could not be generated. No handoff was applied.'
   end
 
   def validate_message_content!(content, attachment_ids: [])
@@ -820,7 +779,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handle_error(error)
-    return process_cancelled_response if response_cancelled?
+    return process_cancelled_response if assistant_cancelled_response? || manager_cancelled_response?
 
     log_error(error)
     return true unless current_buffer_state_valid?
@@ -828,7 +787,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     if conversation_allows_captain_response?
       @response = provider_fallback_response(error_class: error.class.name, error_message: error.message)
       publish_provider_fallback_without_status_reason
-      process_action('provider_error_handoff')
+      process_provider_error_without_handoff
     end
     clear_buffer_state_if_current
     true
@@ -1000,12 +959,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_allows_captain_response?
-    return false if @conversation.captain_human_control_active?
-
-    return true if conversation_pending?
-    return false unless conversation_open?
-
-    @conversation.inbox.captain_inbox&.reply_to_open_conversations? || false
+    conversation_pending?
   end
 
   def conversation_status
@@ -1075,10 +1029,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def message_control_generation
+    message_fence_attributes['captain_control_generation']
+  end
+
+  def message_status_transition_id
     return if @expected_last_message_id.blank?
 
-    attributes = Message.where(id: @expected_last_message_id, conversation_id: @conversation.id).pick(:additional_attributes)
-    attributes.to_h['captain_control_generation']
+    message_fence_attributes.fetch('captain_status_transition_id', -1)
+  end
+
+  def message_fence_attributes
+    return {} if @expected_last_message_id.blank?
+
+    @message_fence_attributes ||= Message.where(id: @expected_last_message_id, conversation_id: @conversation.id)
+                                          .pick(:additional_attributes).to_h
   end
 end
 # rubocop:enable Metrics/ClassLength

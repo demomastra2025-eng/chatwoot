@@ -232,20 +232,37 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
     end
 
-    it 'hands off the conversation to agents (status becomes open)' do
+    it 'leaves the conversation pending when evaluation is incomplete even with the handoff tool enabled' do
       described_class.perform_now(inbox)
 
-      expect(resolvable_pending_conversation.reload.status).to eq('open')
+      expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      expect(resolvable_pending_conversation.messages.outgoing).to be_empty
     end
 
-    it 'creates a private note with the reason' do
+    it 'does not force a handoff or send a handoff message when the tool is disabled' do
+      captain_assistant.update!(config: captain_assistant.config.deep_merge(
+        'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }
+      ))
+      inbox.reload
+      allow(inbox.account).to receive(:feature_enabled?).and_call_original
+      allow(inbox.account).to receive(:feature_enabled?).with('captain_tasks').and_return(true)
+      initial_message_count = resolvable_pending_conversation.messages.count
+
+      described_class.perform_now(inbox)
+
+      expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      expect(resolvable_pending_conversation.messages.count).to eq(initial_message_count)
+      expect(resolvable_pending_conversation.captain_handoff_applied_at).to be_nil
+    end
+
+    it 'does not claim an automatic handoff in a private note' do
       described_class.perform_now(inbox)
 
       private_note = resolvable_pending_conversation.messages.where(private: true).last
-      expect(private_note.content).to eq("Auto-handoff: #{handoff_reason}")
+      expect(private_note).to be_nil
     end
 
-    it 'creates handoff message with configured static content' do
+    it 'does not use configured static handoff text without a tool call' do
       handoff_message = 'Connecting you to a human agent...'
       captain_assistant.update!(config: {
                                   'handoff_message_enabled' => true,
@@ -259,11 +276,10 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expect(public_message.content).to eq(handoff_message)
-      expect(public_message.additional_attributes['preserve_waiting_since']).to be_nil
+      expect(public_message).to be_nil
     end
 
-    it 'uses generated handoff text when AI handoff message mode is enabled' do
+    it 'does not use generated handoff text without a tool call' do
       mock_service = instance_double(Captain::ConversationCompletionService)
       allow(mock_service).to receive(:perform).and_return(
         { complete: false, reason: handoff_reason, message: 'A specialist will continue with your request.' }
@@ -281,10 +297,10 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       described_class.perform_now(inbox)
 
       public_message = resolvable_pending_conversation.messages.where(private: false).outgoing.last
-      expect(public_message.content).to eq('A specialist will continue with your request.')
+      expect(public_message).to be_nil
     end
 
-    it 'preserves existing waiting_since when handoff message is configured' do
+    it 'preserves waiting_since without scheduling a handoff' do
       handoff_message = 'Connecting you to a human agent...'
       original_waiting_since = 3.hours.ago
 
@@ -315,29 +331,14 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       end.not_to(change { resolvable_pending_conversation.messages.where(private: false).count })
     end
 
-    it 'adds the correct activity message after handoff' do
+    it 'does not transition or enqueue a handoff activity message' do
       described_class.perform_now(inbox)
 
-      expected_content = I18n.with_locale(inbox.account.locale) do
-        I18n.t(
-          'conversations.activity.captain.open_with_reason',
-          user_name: captain_assistant.name,
-          reason: 'pending clarification from customer'
-        )
-      end
-      expect(Conversations::ActivityMessageJob)
-        .to have_been_enqueued.with(
-          resolvable_pending_conversation,
-          {
-            account_id: resolvable_pending_conversation.account_id,
-            inbox_id: resolvable_pending_conversation.inbox_id,
-            message_type: :activity,
-            content: expected_content
-          }
-        )
+      expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      expect(resolvable_pending_conversation.status_transitions).to be_empty
     end
 
-    it 'creates a captain inference handoff reporting event' do
+    it 'does not create a captain inference handoff reporting event' do
       perform_enqueued_jobs do
         described_class.perform_now(inbox)
       end
@@ -346,11 +347,11 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
         conversation_id: resolvable_pending_conversation.id,
         name: 'conversation_captain_inference_handoff'
       )
-      expect(inference_event).to be_present
+      expect(inference_event).to be_nil
     end
   end
 
-  context 'when handoff occurs outside business hours' do
+  context 'when an incomplete evaluation occurs outside business hours' do
     let(:handoff_reason) { 'Customer has not responded to clarifying question' }
 
     before do
@@ -362,14 +363,14 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       inbox.update!(working_hours_enabled: true, out_of_office_message: 'We are currently unavailable.')
     end
 
-    it 'sends OOO message for non-campaign conversations' do
+    it 'does not send an OOO handoff message for non-campaign conversations' do
       travel_to '01.11.2020 13:00'.to_datetime do
         resolvable_pending_conversation.update!(last_activity_at: 2.hours.ago)
         described_class.perform_now(inbox)
 
         ooo_message = resolvable_pending_conversation.messages.template.last
-        expect(ooo_message).to be_present
-        expect(ooo_message.content).to eq('We are currently unavailable.')
+        expect(ooo_message).to be_nil
+        expect(resolvable_pending_conversation.reload.status).to eq('pending')
       end
     end
 
@@ -404,10 +405,11 @@ RSpec.describe Captain::InboxPendingConversationsResolutionJob, type: :job do
       allow(Captain::ConversationCompletionService).to receive(:new).and_return(mock_service)
     end
 
-    it 'hands off as safe default' do
+    it 'does not force a handoff when evaluation fails' do
       described_class.perform_now(inbox)
 
-      expect(resolvable_pending_conversation.reload.status).to eq('open')
+      expect(resolvable_pending_conversation.reload.status).to eq('pending')
+      expect(resolvable_pending_conversation.messages.outgoing).to be_empty
     end
   end
 

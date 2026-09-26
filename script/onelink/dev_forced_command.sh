@@ -5,6 +5,11 @@ readonly DEPLOY_SCRIPT=/usr/local/sbin/onelink-dev-deploy-release
 readonly VERIFY_SCRIPT=/usr/local/sbin/onelink-dev-verify-release
 readonly COMMAND="${SSH_ORIGINAL_COMMAND:-}"
 
+if [[ "${COMMAND}" == deploy-script-sha256 ]]; then
+  sha256sum "${DEPLOY_SCRIPT}" | cut -d' ' -f1
+  exit 0
+fi
+
 if [[ "${COMMAND}" =~ ^deploy[[:space:]]([0-9a-f]{40})$ ]]; then
   exec sudo --non-interactive "${DEPLOY_SCRIPT}" "${BASH_REMATCH[1]}"
 fi
@@ -17,5 +22,5 @@ if [[ "${COMMAND}" =~ ^verify[[:space:]]([0-9a-f]{40})$ ]]; then
   exec sudo --non-interactive "${VERIFY_SCRIPT}" "${BASH_REMATCH[1]}"
 fi
 
-echo "Only 'deploy <full-sha>', 'rollback <full-sha>', or 'verify <full-sha>' is allowed." >&2
+echo "Only 'deploy-script-sha256', 'deploy <full-sha>', 'rollback <full-sha>', or 'verify <full-sha>' is allowed." >&2
 exit 64

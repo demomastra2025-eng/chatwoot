@@ -10,10 +10,12 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
         phone_number: '+77000000001',
         custom_attributes: { 'medelement_iin' => '940720300129' }
       )
+      conversation = create(:conversation, account: account, contact: contact)
       appointment = create(
         :scheduling_appointment,
         account: account,
         contact: contact,
+        conversation: conversation,
         client_first_name: 'Айжан',
         client_last_name: 'Касымова',
         client_middle_name: 'Ерлановна',
@@ -35,6 +37,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
         'middlename' => 'Ерлановна',
         'iin' => '940720300129'
       )
+      expect(snapshot['conversation_id']).to eq(conversation.id)
     end
 
     it 'validates contact IIN fallbacks for structured appointments' do

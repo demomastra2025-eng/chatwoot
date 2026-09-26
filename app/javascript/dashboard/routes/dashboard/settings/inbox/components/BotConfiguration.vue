@@ -9,7 +9,6 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
-import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Policy from 'dashboard/components/policy.vue';
 import SelectInput from 'dashboard/components-next/select/Select.vue';
@@ -34,10 +33,8 @@ const assistants = useMapGetter('captainAssistants/getRecords');
 
 const selectedAssistantId = ref(NO_ASSISTANT_VALUE);
 const selectedAutoReplyMode = ref(DEFAULT_AUTO_REPLY_MODE);
-const selectedReplyToOpenConversations = ref(false);
 const isUpdatingConnection = ref(false);
 const isUpdatingMode = ref(false);
-const isUpdatingOpenConversationReplies = ref(false);
 const isAssistantDropdownOpen = ref(false);
 
 const currentInboxId = computed(() =>
@@ -86,9 +83,6 @@ const selectedAssistantName = computed(
 const currentAutoReplyMode = computed(
   () => currentInbox.value?.captain_auto_reply_mode || DEFAULT_AUTO_REPLY_MODE
 );
-const currentReplyToOpenConversations = computed(() =>
-  Boolean(currentInbox.value?.captain_reply_to_open_conversations)
-);
 
 const autoReplyModeOptions = computed(() => [
   {
@@ -117,13 +111,6 @@ const isAutoReplyModeDisabled = computed(
     !selectedAssistantId.value ||
     isUpdatingConnection.value ||
     isUpdatingMode.value ||
-    !canChangeSettings.value
-);
-const isReplyToOpenConversationsDisabled = computed(
-  () =>
-    !selectedAssistantId.value ||
-    isUpdatingConnection.value ||
-    isUpdatingOpenConversationReplies.value ||
     !canChangeSettings.value
 );
 
@@ -166,11 +153,6 @@ const syncLocalStateFromInbox = () => {
   if (!isUpdatingMode.value) {
     selectedAutoReplyMode.value = currentAutoReplyMode.value;
   }
-
-  if (!isUpdatingOpenConversationReplies.value) {
-    selectedReplyToOpenConversations.value =
-      currentReplyToOpenConversations.value;
-  }
 };
 
 const deleteCurrentConnection = async () => {
@@ -193,7 +175,6 @@ const connectSelectedAssistant = async assistantId => {
     assistantId: Number(assistantId),
     inboxId: currentInboxId.value,
     autoReplyMode: selectedAutoReplyMode.value || DEFAULT_AUTO_REPLY_MODE,
-    replyToOpenConversations: selectedReplyToOpenConversations.value,
   });
 };
 
@@ -266,13 +247,9 @@ watch(
   { immediate: true }
 );
 
-watch(
-  [connectedAssistantId, currentAutoReplyMode, currentReplyToOpenConversations],
-  syncLocalStateFromInbox,
-  {
-    immediate: true,
-  }
-);
+watch([connectedAssistantId, currentAutoReplyMode], syncLocalStateFromInbox, {
+  immediate: true,
+});
 
 const updateAutoReplyMode = async event => {
   const nextMode = String(event?.target?.value ?? selectedAutoReplyMode.value);
@@ -293,7 +270,6 @@ const updateAutoReplyMode = async event => {
       assistantId: connectedAssistantId.value,
       inboxId: currentInboxId.value,
       autoReplyMode: nextMode,
-      replyToOpenConversations: selectedReplyToOpenConversations.value,
     });
     useAlert(t('CAPTAIN.INBOXES.AUTO_REPLY_MODE.UPDATE.SUCCESS_MESSAGE'));
     await refreshInboxData();
@@ -305,45 +281,6 @@ const updateAutoReplyMode = async event => {
     );
   } finally {
     isUpdatingMode.value = false;
-  }
-};
-
-const updateReplyToOpenConversations = async event => {
-  const nextValue = Boolean(
-    event?.target
-      ? event.target.checked
-      : selectedReplyToOpenConversations.value
-  );
-  if (
-    !connectedAssistantId.value ||
-    nextValue === currentReplyToOpenConversations.value ||
-    isReplyToOpenConversationsDisabled.value
-  ) {
-    return;
-  }
-
-  const previousValue = currentReplyToOpenConversations.value;
-  isUpdatingOpenConversationReplies.value = true;
-
-  try {
-    await store.dispatch('captainInboxes/create', {
-      assistantId: connectedAssistantId.value,
-      inboxId: currentInboxId.value,
-      autoReplyMode: selectedAutoReplyMode.value || DEFAULT_AUTO_REPLY_MODE,
-      replyToOpenConversations: nextValue,
-    });
-    useAlert(
-      t('CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.UPDATE.SUCCESS_MESSAGE')
-    );
-    await refreshInboxData();
-  } catch (error) {
-    selectedReplyToOpenConversations.value = previousValue;
-    useAlert(
-      error?.message ||
-        t('CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.UPDATE.ERROR_MESSAGE')
-    );
-  } finally {
-    isUpdatingOpenConversationReplies.value = false;
   }
 };
 </script>
@@ -543,34 +480,6 @@ const updateReplyToOpenConversations = async event => {
               @change="updateAutoReplyMode"
             />
           </div>
-
-          <label
-            for="captain-inbox-reply-to-open-conversations"
-            class="flex cursor-pointer gap-3 rounded-xl border border-n-weak px-3 py-3 lg:col-span-2"
-            :class="{
-              'cursor-not-allowed opacity-60':
-                isReplyToOpenConversationsDisabled,
-            }"
-          >
-            <Checkbox
-              id="captain-inbox-reply-to-open-conversations"
-              v-model="selectedReplyToOpenConversations"
-              class="mt-0.5 shrink-0"
-              data-testid="captain-inbox-reply-to-open-conversations"
-              :disabled="isReplyToOpenConversationsDisabled"
-              @change="updateReplyToOpenConversations"
-            />
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-n-slate-12">
-                {{ t('CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.LABEL') }}
-              </span>
-              <span class="mt-1 block text-sm leading-5 text-n-slate-11">
-                {{
-                  t('CAPTAIN.INBOXES.REPLY_TO_OPEN_CONVERSATIONS.DESCRIPTION')
-                }}
-              </span>
-            </span>
-          </label>
         </div>
       </Policy>
     </section>

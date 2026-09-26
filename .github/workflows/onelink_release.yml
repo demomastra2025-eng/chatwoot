@@ -266,6 +266,9 @@ jobs:
       contents: read
       deployments: write
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Create GitHub deployment record
         id: deployment
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -305,6 +308,19 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/onelink-dev
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 0600 ~/.ssh/onelink-dev ~/.ssh/known_hosts
+      - name: Require installed DEV deploy endpoint to match this release
+        env:
+          DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
+        run: |
+          expected="$(sha256sum script/onelink/deploy_dev_release.sh | cut -d' ' -f1)"
+          installed="$(ssh -i ~/.ssh/onelink-dev \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'deploy-script-sha256')"
+          [[ "$installed" == "$expected" ]] || {
+            echo '::error::DEV deploy endpoint differs from this release; install reviewed endpoint before deploy.'
+            exit 1
+          }
       - name: Atomically deploy exact SHA to DEV
         env:
           DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}

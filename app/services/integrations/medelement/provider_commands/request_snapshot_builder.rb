@@ -64,6 +64,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'organization_id' => configuration.organization_id,
       'appointment_id' => appointment&.id,
       'contact_id' => contact&.id,
+      'conversation_id' => appointment&.conversation_id,
       **requester_snapshot,
       'operation' => operation,
       'provider_patient_code' => patient_code,
