@@ -1,8 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe Captain::Conversation::ControlService do
-  self.use_transactional_tests = false
-
   let(:account) { create(:account) }
   let(:contact) { create(:contact, account: account) }
   let(:thread) { create(:communication_thread, account: account, contact: contact) }
