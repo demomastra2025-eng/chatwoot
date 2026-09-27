@@ -1,4 +1,19 @@
 {
+  "PHONE_WIDGET": {
+    "TITLE": "Phone",
+    "OPEN": "Open phone",
+    "HIDE": "Hide phone widget",
+    "MINIMIZE": "Minimize keypad",
+    "EXPAND": "Open keypad",
+    "LINE": "Line",
+    "NUMBER_PLACEHOLDER": "Enter a number",
+    "CALL": "Call",
+    "IN_CALL": "Call in progress",
+    "DELETE_DIGIT": "Delete digit",
+    "ADD_PLUS": "Add plus",
+    "INVALID_NUMBER": "Enter a valid phone number (use + for international numbers)",
+    "CONTACT_LOOKUP_INCOMPLETE": "Could not check all contacts. Please try again."
+  },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",
     "TITLE": "Profile Settings",

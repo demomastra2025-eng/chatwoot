@@ -21,6 +21,10 @@ const FloatingCallWidget = defineAsyncComponent(
   () => import('dashboard/components/widgets/FloatingCallWidget.vue')
 );
 
+const PhoneWidget = defineAsyncComponent(
+  () => import('dashboard/components/widgets/PhoneWidget.vue')
+);
+
 const WhatsappCallWidget = defineAsyncComponent(
   () => import('dashboard/components/widgets/WhatsappCallWidget.vue')
 );
@@ -44,6 +48,7 @@ export default {
     CopilotLauncher,
     CopilotContainer,
     FloatingCallWidget,
+    PhoneWidget,
     WhatsappCallWidget,
     MobileSidebarLauncher,
   },
@@ -185,6 +190,7 @@ export default {
         />
         <CopilotContainer v-if="shouldMountCopilot" />
         <FloatingCallWidget />
+        <PhoneWidget />
         <WhatsappCallWidget v-if="hasWhatsappCall" />
       </template>
       <AddAccountModal

@@ -1,4 +1,19 @@
 {
+  "PHONE_WIDGET": {
+    "TITLE": "Телефон",
+    "OPEN": "Телефонды ашу",
+    "HIDE": "Телефон виджетін жасыру",
+    "MINIMIZE": "Пернетақтаны жинау",
+    "EXPAND": "Пернетақтаны ашу",
+    "LINE": "Желі",
+    "NUMBER_PLACEHOLDER": "Нөмірді енгізіңіз",
+    "CALL": "Қоңырау шалу",
+    "IN_CALL": "Қоңырау жүріп жатыр",
+    "DELETE_DIGIT": "Цифрды өшіру",
+    "ADD_PLUS": "Плюс қосу",
+    "INVALID_NUMBER": "Дұрыс телефон нөмірін енгізіңіз (халықаралық нөмір үшін + қолданыңыз)",
+    "CONTACT_LOOKUP_INCOMPLETE": "Барлық контактіні тексеру мүмкін болмады. Қайталап көріңіз."
+  },
   "PROFILE_SETTINGS": {
     "LINK": "Profile Settings",
     "TITLE": "Profile Settings",

@@ -8,6 +8,8 @@ import { useAlert } from 'dashboard/composables';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
+import ContactAPI from 'dashboard/api/contacts';
+import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import { startOutboundBrowserCall } from 'dashboard/api/channel/voice/outboundCallCoordinator';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -15,7 +17,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 
 const props = defineProps({
   phone: { type: String, default: '' },
-  contactId: { type: [String, Number], required: true },
+  contactId: { type: [String, Number], default: null },
   label: { type: String, default: '' },
   icon: { type: [String, Object, Function], default: '' },
   size: { type: String, default: 'sm' },
@@ -178,6 +180,40 @@ const callSessionOperatorInternalExtension = callSession => {
   );
 };
 
+const digitsOnly = number => String(number || '').replace(/\D/g, '');
+const MAX_CONTACT_SEARCH_PAGES = 20;
+const canonicalDialNumber = phone => {
+  if (!/^\+?\d{3,20}$/.test(phone)) {
+    throw new Error(t('PHONE_WIDGET.INVALID_NUMBER'));
+  }
+  const parsed = parsePhoneNumberFromString(phone, 'KZ');
+  if (!parsed?.isValid()) throw new Error(t('PHONE_WIDGET.INVALID_NUMBER'));
+  return parsed.number;
+};
+const findDialContactId = async (phone, page = 1) => {
+  const { data } = await ContactAPI.search(digitsOnly(phone), page);
+  const contact = (data?.payload || []).find(
+    item => item.phone_number === phone
+  );
+  if (contact) return contact.id;
+  if (!data?.meta?.has_more) return null;
+  if (page === MAX_CONTACT_SEARCH_PAGES) {
+    // Never create a duplicate while an exact contact may still exist.
+    throw new Error(t('PHONE_WIDGET.CONTACT_LOOKUP_INCOMPLETE'));
+  }
+  return findDialContactId(phone, page + 1);
+};
+const resolveDialContactId = async () => {
+  const phone = canonicalDialNumber(props.phone.trim());
+  const contactId = await findDialContactId(phone);
+  if (contactId) return contactId;
+  const created = await store.dispatch('contacts/create', {
+    name: phone,
+    phoneNumber: phone,
+  });
+  return created.id;
+};
+
 const prepareBrowserSipWebphone = async inbox => {
   if (!isBrowserSipInbox(inbox)) return { ready: true };
 
@@ -235,6 +271,7 @@ const startCall = async inbox => {
   isPreparingCall.value = true;
   let callInitiated = false;
   try {
+    const contactId = props.contactId || (await resolveDialContactId());
     const webphonePreparation = await prepareBrowserSipWebphone(inbox);
     if (!webphonePreparation.ready) {
       useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
@@ -242,7 +279,7 @@ const startCall = async inbox => {
     }
 
     const response = await store.dispatch('contacts/initiateCall', {
-      contactId: props.contactId,
+      contactId,
       inboxId: inbox.id,
     });
     callInitiated = true;
@@ -337,6 +374,8 @@ const onPickInbox = async inbox => {
   dialogRef.value?.close();
   await startCall(inbox);
 };
+
+defineExpose({ onClick });
 </script>
 
 <template>

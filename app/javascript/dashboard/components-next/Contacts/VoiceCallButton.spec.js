@@ -8,6 +8,7 @@ import VoiceCallButton from './VoiceCallButton.vue';
 
 const {
   alertMock,
+  contactSearchMock,
   captureExceptionMock,
   initializeDeviceMock,
   prewarmMicrophoneMock,
@@ -19,6 +20,7 @@ const {
   storeMock,
 } = vi.hoisted(() => ({
   alertMock: vi.fn(),
+  contactSearchMock: vi.fn(),
   captureExceptionMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   prewarmMicrophoneMock: vi.fn(),
@@ -64,6 +66,10 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     prewarmMicrophone: prewarmMicrophoneMock,
     stopMicrophonePrewarm: stopMicrophonePrewarmMock,
   },
+}));
+
+vi.mock('dashboard/api/contacts', () => ({
+  default: { search: contactSearchMock },
 }));
 
 vi.mock('dashboard/api/channel/voice/outboundCallCoordinator', () => ({
@@ -128,6 +134,7 @@ describe('VoiceCallButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    contactSearchMock.mockResolvedValue({ data: { payload: [] } });
     Object.keys(routeParamsMock).forEach(key => {
       delete routeParamsMock[key];
     });
@@ -621,5 +628,163 @@ describe('VoiceCallButton', () => {
     await flushPromises();
 
     expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('dials only an exact existing contact when searching by number', async () => {
+    contactSearchMock.mockResolvedValue({
+      data: {
+        payload: [
+          { id: 71, phone_number: '+77779999999' },
+          { id: 72, phone_number: '+77771234567' },
+        ],
+      },
+    });
+    const { dispatchMock, wrapper } = mountComponent({
+      props: { contactId: null, phone: '+77771234567' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(contactSearchMock).toHaveBeenCalledWith('77771234567', 1);
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 72,
+      inboxId: 4593,
+    });
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'contacts/create',
+      expect.anything()
+    );
+  });
+
+  it('creates a contact for an unknown number before initiating a call', async () => {
+    const dispatch = vi.fn(async action => {
+      if (action === 'contacts/create') return { id: 73 };
+      return { call_sid: 'call-ref-2', conversation_id: 627 };
+    });
+    const { wrapper } = mountComponent({
+      dispatch,
+      props: { contactId: null, phone: '+77771234567' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('contacts/create', {
+      name: '+77771234567',
+      phoneNumber: '+77771234567',
+    });
+    expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 73,
+      inboxId: 4593,
+    });
+  });
+
+  it('does not dial an invalid quick-dial number', async () => {
+    const { dispatchMock, wrapper } = mountComponent({
+      props: { contactId: null, phone: '123#' },
+    });
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(contactSearchMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith('PHONE_WIDGET.INVALID_NUMBER');
+  });
+
+  it('reuses the +7 contact when dialing the equivalent KZ trunk number', async () => {
+    contactSearchMock.mockResolvedValue({
+      data: { payload: [{ id: 74, phone_number: '+77771234567' }] },
+    });
+    const { dispatchMock, wrapper } = mountComponent({
+      props: { contactId: null, phone: '87771234567' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(contactSearchMock).toHaveBeenCalledWith('77771234567', 1);
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 74,
+      inboxId: 4593,
+    });
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'contacts/create',
+      expect.anything()
+    );
+  });
+
+  it('creates an E.164 contact for a national number without plus', async () => {
+    const dispatch = vi.fn(async action => {
+      if (action === 'contacts/create') return { id: 75 };
+      return { call_sid: 'call-ref-3', conversation_id: 627 };
+    });
+    const { wrapper } = mountComponent({
+      dispatch,
+      props: { contactId: null, phone: '77712345678' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatch).toHaveBeenCalledWith('contacts/create', {
+      name: '+77712345678',
+      phoneNumber: '+77712345678',
+    });
+    expect(dispatch).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 75,
+      inboxId: 4593,
+    });
+  });
+
+  it('searches every page before creating a contact', async () => {
+    contactSearchMock
+      .mockResolvedValueOnce({
+        data: {
+          payload: [{ id: 76, phone_number: '+77771239999' }],
+          meta: { has_more: true },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          payload: [{ id: 77, phone_number: '+77771234567' }],
+          meta: { has_more: false },
+        },
+      });
+    const { dispatchMock, wrapper } = mountComponent({
+      props: { contactId: null, phone: '+77771234567' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(contactSearchMock).toHaveBeenNthCalledWith(1, '77771234567', 1);
+    expect(contactSearchMock).toHaveBeenNthCalledWith(2, '77771234567', 2);
+    expect(dispatchMock).toHaveBeenCalledWith('contacts/initiateCall', {
+      contactId: 77,
+      inboxId: 4593,
+    });
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'contacts/create',
+      expect.anything()
+    );
+  });
+
+  it('never creates a duplicate if search remains incomplete', async () => {
+    contactSearchMock.mockResolvedValue({
+      data: { payload: [], meta: { has_more: true } },
+    });
+    const { dispatchMock, wrapper } = mountComponent({
+      props: { contactId: null, phone: '+77771234567' },
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(contactSearchMock).toHaveBeenCalledTimes(20);
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'PHONE_WIDGET.CONTACT_LOOKUP_INCOMPLETE'
+    );
   });
 });
