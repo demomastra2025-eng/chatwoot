@@ -92,7 +92,8 @@ RSpec.describe Captain::Conversation::ControlService do
       'status_transition_id' => 0,
       'cancel_reason' => 'employee_reply'
     )
-    expect(records.fetch(:conversation).reload.captain_control_state).to eq('ai')
+    # Legacy column is mirrored for the previous release image during rollout.
+    expect(records.fetch(:conversation).reload.captain_control_state).to eq('human')
   ensure
     release_human << true if defined?(release_human) && release_human.empty?
     worker&.join

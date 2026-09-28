@@ -46,6 +46,7 @@ class Captain::Conversation::ControlService
         # Public reply callbacks require a pending Captain target in any channel.
         next if block_given? ? !yield(control_owner.captain_control_generation) : human_active?
 
+        mirror_legacy_control_state(HUMAN_CONTROL)
         control_owner.captain_control_generation += 1
         control_owner.save!
         changed = true
@@ -62,6 +63,7 @@ class Captain::Conversation::ControlService
     control_owner.with_lock do
       next unless human_active?
 
+      mirror_legacy_control_state(AI_CONTROL)
       control_owner.captain_control_generation += 1
       control_owner.captain_handoff_applied_at = nil
       control_owner.save!
@@ -106,6 +108,13 @@ class Captain::Conversation::ControlService
     !conversation.pending?
   end
 
+  # Write-only bridge for rolling upgrades and rollbacks: the previous release
+  # image and its still-running workers decide AI vs human control from this
+  # legacy column. Current code never reads it; only `pending?` decides.
+  def mirror_legacy_control_state(state)
+    control_owner.captain_control_state = state
+  end
+
   def apply_handoff(status_reason:, actor:, source:, fence:, &callback)
     result = :already_applied
 
@@ -146,6 +155,7 @@ class Captain::Conversation::ControlService
 
   def apply_handoff_transition!(status_reason:, actor:, source:)
     conversation.waiting_since ||= Time.current
+    mirror_legacy_control_state(HUMAN_CONTROL)
     control_owner.captain_control_generation += 1
     control_owner.captain_handoff_applied_at = Time.current
     control_owner.save!
@@ -197,6 +207,7 @@ class Captain::Conversation::ControlService
   end
 
   def activate_human_for_existing_assignment!
+    mirror_legacy_control_state(HUMAN_CONTROL)
     control_owner.captain_control_generation += 1
     control_owner.save!
     Conversations::StatusTransitionService.new(

@@ -22,7 +22,7 @@ RSpec.describe Captain::Conversation::ControlService do
     first_conversation.activate_captain_human_control!(source: 'agent_reply')
 
     expect(thread.reload.captain_control_generation).to eq(stale_generation + 1)
-    expect(thread.captain_control_state).to eq('ai')
+    expect(thread.captain_control_state).to eq('human')
     expect(second_conversation.reload).to be_pending
     expect(second_conversation.bot_handoff!(fence: { control_generation: stale_generation })).to eq(:stale)
   end
@@ -30,7 +30,7 @@ RSpec.describe Captain::Conversation::ControlService do
   it 'bumps the generation when an open conversation returns to pending' do
     first_conversation.bot_handoff!
     human_generation = thread.reload.captain_control_generation
-    expect(thread.captain_control_state).to eq('ai')
+    expect(thread.captain_control_state).to eq('human')
     agent = create(:user, account: account)
 
     Conversations::StatusTransitionService.new(

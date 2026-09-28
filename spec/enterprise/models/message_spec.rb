@@ -40,7 +40,8 @@ RSpec.describe Message do
       expect(conversation.reload.open?).to be true
       expect(conversation).to be_captain_human_control_active
       expect(conversation.captain_control_generation).to eq(1)
-      expect(conversation.captain_control_state).to eq('ai')
+      # Write-only bridge for the previous release image during rollout/rollback.
+      expect(conversation.captain_control_state).to eq('human')
     end
 
     it 'keeps the conversation open without incrementing the generation for later replies' do
@@ -68,7 +69,7 @@ RSpec.describe Message do
       end
 
       expect { create(:message, message_type: :outgoing, conversation: conversation) }.not_to raise_error
-      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'ai')
+      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'human')
     end
 
     it 'keeps the employee reply and open status when post-commit cancellation cannot reach Redis' do
@@ -79,7 +80,7 @@ RSpec.describe Message do
       end
 
       expect { create(:message, message_type: :outgoing, conversation: conversation) }.not_to raise_error
-      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'ai')
+      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'human')
     end
 
     it 'cancels captured runs across its own thread without opening the sibling or cancelling another account' do
@@ -104,7 +105,7 @@ RSpec.describe Message do
           .to be false
       end
       expect(sibling.reload).to be_pending
-      expect(thread.reload.captain_control_state).to eq('ai')
+      expect(thread.reload.captain_control_state).to eq('human')
       expect(Redis::Alfred.get(foreign_key)).to be_nil
     ensure
       [conversation, sibling].compact.each do |candidate|
