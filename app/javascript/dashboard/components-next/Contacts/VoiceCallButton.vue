@@ -233,6 +233,7 @@ const prepareBrowserSipWebphone = async inbox => {
   try {
     const session = await WebphoneClient.initializeDevice(inbox.id, {
       native: true,
+      claimOwnership: true,
     });
     const sessionScope = {
       provider,

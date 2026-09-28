@@ -1117,7 +1117,7 @@ describe('webphoneClient', () => {
     }
   });
 
-  it('stops retrying after a permanent SIP credential rejection', async () => {
+  it('keeps retrying slowly after a SIP credential rejection', async () => {
     getWebphoneTokenMock.mockResolvedValue({
       multi_session: true,
       sessions: [
@@ -1148,15 +1148,95 @@ describe('webphoneClient', () => {
         reason: 'sip_provider_credentials_failed',
       })
     );
-    expect(WebphoneClient.nativeSessionRetryTimers['sip_profile:41']).toBe(
-      undefined
-    );
+    expect(
+      WebphoneClient.nativeSessionRetryTimers['sip_profile:41']
+    ).toBeDefined();
     expect(WebphoneClient.nativeSessionRetryState['sip_profile:41']).toEqual(
       expect.objectContaining({
-        blocked: true,
+        blocked: false,
+        credentialFailure: true,
         reason: 'sip_provider_credentials_failed',
       })
     );
+    WebphoneClient.clearNativeSessionRetry('sip_profile:41');
+  });
+
+  it('waits a minute before retrying a credential rejection', async () => {
+    vi.useFakeTimers();
+    const sessionKey = 'sip_profile:41';
+    const retrySpy = vi
+      .spyOn(WebphoneClient, 'retryNativeSession')
+      .mockResolvedValue(null);
+    WebphoneClient.nativeSessionRetryState[sessionKey] = {
+      response: { provider: 'sipuni', sip_profile_id: 41, inbox_id: 4771 },
+      inboxId: 4771,
+      provider: 'sipuni',
+      blocked: false,
+      credentialFailure: true,
+    };
+
+    try {
+      WebphoneClient.scheduleNativeSessionRetry(sessionKey);
+
+      await vi.advanceTimersByTimeAsync(59_000);
+      expect(retrySpy).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(retrySpy).toHaveBeenCalledWith(sessionKey);
+    } finally {
+      retrySpy.mockRestore();
+      WebphoneClient.clearNativeSessionRetry(sessionKey);
+      delete WebphoneClient.nativeSessionRetryState[sessionKey];
+      vi.useRealTimers();
+    }
+  });
+
+  it('mirrors the owner tab instead of registering SIP in a secondary tab', async () => {
+    WebphoneClient.tabLeadership.isLeader = false;
+    try {
+      const session = await WebphoneClient.initializeFromSession({
+        provider: 'sipuni',
+        sip_profile_id: 41,
+        inbox_id: 4771,
+        calling_supported: false,
+        registered: true,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+      });
+
+      expect(janusInitializeMock).not.toHaveBeenCalled();
+      expect(session).toEqual(
+        expect.objectContaining({
+          sessionKey: 'sip_profile:41',
+          mirrored: true,
+          registered: true,
+          callingSupported: true,
+          reason: 'webphone_active_in_owner_tab',
+        })
+      );
+      expect(WebphoneClient.nativeSessionRetryTimers['sip_profile:41']).toBe(
+        undefined
+      );
+
+      WebphoneClient.applyMirroredSessions([
+        {
+          provider: 'sipuni',
+          sessionKey: 'sip_profile:41',
+          inboxId: 4771,
+          registered: false,
+          reason: 'sip_unregistered',
+        },
+      ]);
+      expect(WebphoneClient.sessions['sip_profile:41']).toEqual(
+        expect.objectContaining({
+          registered: false,
+          reason: 'sip_unregistered',
+        })
+      );
+
+      WebphoneClient.applyMirroredSessions([]);
+      expect(WebphoneClient.sessions['sip_profile:41']).toBe(undefined);
+    } finally {
+      WebphoneClient.tabLeadership.isLeader = true;
+    }
   });
 
   it('keeps a low-frequency recovery loop after the fast retry window', async () => {

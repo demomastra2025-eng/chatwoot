@@ -492,6 +492,33 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     end
   end
 
+  it 'moves the Janus lease to the owner tab of the same browser without waiting for expiry' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    request_token = lambda do |client_instance_id, browser_instance_id|
+      post path,
+           params: { inbox_id: binotel_profile.inbox_id, client_instance_id: client_instance_id,
+                     browser_instance_id: browser_instance_id },
+           headers: headers,
+           as: :json
+      response.parsed_body.fetch('payload')
+    end
+
+    with_modified_env(TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-binotel') do
+      owner_payload = request_token.call('tab-owner', 'browser-1')
+      other_browser_payload = request_token.call('tab-other-browser', 'browser-2')
+      successor_payload = request_token.call('tab-reloaded', 'browser-1')
+
+      expect(owner_payload).to include('calling_supported' => true, 'registration_instance_id' => be_present)
+      expect(other_browser_payload).to include(
+        'calling_supported' => false,
+        'reason' => 'sip_profile_registration_lease_owned_by_another_tab'
+      )
+      expect(successor_payload).to include('calling_supported' => true, 'registration_instance_id' => be_present)
+      expect(successor_payload['registration_instance_id']).not_to eq(owner_payload['registration_instance_id'])
+      expect(binotel_profile.reload.metadata.dig('browser_registration_lease', 'client_instance_id')).to eq('tab-reloaded')
+    end
+  end
+
   it 'requires a browser client instance before issuing a Janus ticket' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
 
@@ -899,6 +926,32 @@ RSpec.describe 'Telephony Webphone API', type: :request do
         expect(response).to have_http_status(:conflict)
         expect(selected_profile.reload.metadata.fetch('registration_context')).to eq(original_context)
         expect_no_incoming_side_effects
+      end
+
+      it 'routes the selected profile only to the tab that took the phone over in the same browser' do
+        stale_event = incoming_event
+        with_modified_env("TELEPHONY_#{provider_kind.upcase}_JANUS_WS_URL" => 'wss://app.example.test/janus-pbx') do
+          [%w[test-tab browser-1], %w[tab-reloaded browser-1]].each do |client_instance_id, browser_instance_id|
+            post path, params: { client_instance_id: client_instance_id, browser_instance_id: browser_instance_id,
+                                 inbox_id: channel.inbox.id }, headers: selected_headers, as: :json
+          end
+        end
+        successor_registration_id = response.parsed_body.dig('payload', 'registration_instance_id')
+
+        expect(successor_registration_id).to be_present
+        expect(successor_registration_id).not_to eq(stale_event[:registration_instance_id])
+        expect(selected_profile.reload.registered_for_routing?).to be(false)
+
+        post incoming_path, params: stale_event, headers: selected_headers, as: :json
+        expect(response).to have_http_status(:conflict)
+        expect(account.telephony_call_sessions).to be_empty
+
+        current_event = stale_event.merge(registration_instance_id: successor_registration_id)
+        expect(selected_profile.update_browser_registration!(registered: true, registration_context: current_event)).to eq(:updated)
+        post incoming_path, params: current_event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect_selected_operator_notification
       end
 
       it 'rejects an event prepared before the selected SIP configuration changed' do

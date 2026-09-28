@@ -502,12 +502,14 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP telephony",
       "RECONNECT": "Reconnect SIP",
+      "MOVE_HERE": "Move the phone to this tab",
       "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Channel #{id}",
       "STATUS": {
         "READY": "Ready for calls",
         "CONNECTING": "Connecting…",
         "DISCONNECTED": "Disconnected",
+        "READY_IN_OWNER_TAB": "Ready (phone in another tab)",
         "ACTIVE_IN_ANOTHER_TAB": "Active in another tab",
         "ERROR": "Connection error"
       }

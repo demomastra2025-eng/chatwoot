@@ -206,7 +206,10 @@ describe('VoiceCallButton', () => {
     await wrapper.find('button').trigger('click');
     await flushPromises();
 
-    expect(initializeDeviceMock).toHaveBeenCalledWith(4593, { native: true });
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4593, {
+      native: true,
+      claimOwnership: true,
+    });
     expect(prewarmMicrophoneMock).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );

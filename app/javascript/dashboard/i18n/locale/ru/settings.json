@@ -502,12 +502,14 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP-телефония",
       "RECONNECT": "Переподключить SIP",
+      "MOVE_HERE": "Перенести телефон в эту вкладку",
       "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Канал #{id}",
       "STATUS": {
         "READY": "Готова к звонкам",
         "CONNECTING": "Подключение…",
         "DISCONNECTED": "Не подключена",
+        "READY_IN_OWNER_TAB": "Готова (телефон в другой вкладке)",
         "ACTIVE_IN_ANOTHER_TAB": "Активна в другой вкладке",
         "ERROR": "Ошибка"
       }

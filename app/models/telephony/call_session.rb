@@ -93,6 +93,7 @@ class Telephony::CallSession < ApplicationRecord
   ALLOWED_STATUSES = (CANONICAL_STATUSES + STATUS_ALIASES.keys).uniq.freeze
   TERMINAL_STATUSES = %w[completed missed no_answer busy cancelled rejected failed].freeze
   TERMINAL_STATUS_VALUES = (TERMINAL_STATUSES + STATUS_ALIASES.select { |_key, value| TERMINAL_STATUSES.include?(value) }.keys).uniq.freeze
+  UNANSWERED_TERMINAL_STATUSES = %w[missed no_answer busy cancelled rejected failed].freeze
   ALLOWED_DIRECTIONS = %w[inbound outbound].freeze
 
   belongs_to :account, class_name: '::Account'
@@ -127,6 +128,12 @@ class Telephony::CallSession < ApplicationRecord
 
   def terminal?
     TERMINAL_STATUSES.include?(canonical_status)
+  end
+
+  # Providers such as Sipuni still send a recording URL for calls nobody
+  # answered; that URL never yields audio, so it must not be fetched or played.
+  def unanswered_terminal?
+    answered_at.blank? && UNANSWERED_TERMINAL_STATUSES.include?(canonical_status)
   end
 
   def tenant_links_match?(expected_account)

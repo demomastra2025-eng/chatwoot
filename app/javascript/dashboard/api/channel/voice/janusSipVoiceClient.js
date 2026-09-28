@@ -35,7 +35,11 @@ const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
 const WEBPHONE_OUTBOUND_START_TIMEOUT_MS = 20_000;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 const WEBPHONE_POST_CALL_REGISTRATION_REFRESH_DELAY_MS = 250;
-const WEBPHONE_JANUS_RECONNECT_DELAYS_MS = [0, 250, 1_000, 2_000];
+// Janus keeps a dropped session claimable for `reclaim_session_timeout`, so
+// keep trying for most of that window before re-registering from scratch.
+const WEBPHONE_JANUS_RECONNECT_DELAYS_MS = [
+  0, 500, 1_000, 2_000, 3_000, 5_000, 8_000,
+];
 const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',

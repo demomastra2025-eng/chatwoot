@@ -7,7 +7,8 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       webphone_service.token_for(
         user: Current.user,
         inbox: inbox,
-        client_instance_id: params[:client_instance_id]
+        client_instance_id: params[:client_instance_id],
+        browser_instance_id: params[:browser_instance_id]
       )
     )
   end

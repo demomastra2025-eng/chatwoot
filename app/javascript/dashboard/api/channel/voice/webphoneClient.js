@@ -3,15 +3,23 @@ import TwilioVoiceClient from './twilioVoiceClient';
 import JanusSipVoiceClient, {
   createJanusSipVoiceClient,
 } from './janusSipVoiceClient';
+import WebphoneTabLeadership from './webphoneTabLeadership';
 
+// Capped low on purpose: an operator waiting a minute for the phone to come
+// back after a short network drop misses calls.
 const WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS = [
-  1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 60_000, 60_000,
+  1_000, 2_000, 3_000, 5_000, 8_000, 10_000,
 ];
 const WEBPHONE_NATIVE_SIP_RETRY_JITTER_RATIO = 0.2;
 const WEBPHONE_NATIVE_SIP_CREDENTIAL_FAILURE_CODES = new Set([401, 403, 407]);
+// Providers occasionally answer 401/403 transiently, so credential failures
+// keep retrying slowly instead of blocking the phone until a page reload.
+const WEBPHONE_NATIVE_SIP_CREDENTIAL_RETRY_DELAY_MS = 60_000;
 const WEBPHONE_NATIVE_SIP_STANDBY_REASON =
   'sip_profile_registration_lease_owned_by_another_tab';
 const WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS = 5_000;
+export const WEBPHONE_OWNER_TAB_REASON = 'webphone_active_in_owner_tab';
+const WEBPHONE_TAB_LEADERSHIP_WAIT_MS = 5_000;
 
 const FORWARDED_EVENTS = [
   'call:connected',
@@ -118,6 +126,205 @@ class WebphoneClient extends EventTarget {
         this.handleVisibilityChange
       );
     }
+
+    this.leadershipBootstrapPromise = null;
+    this.nativeOwnershipRelease = null;
+    this.nativeBootstrapRequested = false;
+    this.tabLeadership = new WebphoneTabLeadership({
+      canHandOver: () => !this.hasNativeCallInProgress(),
+      releaseOwnership: () => this.releaseNativeOwnership(),
+    });
+    this.tabLeadership.addEventListener('leadership-changed', event =>
+      this.handleTabLeadershipChanged(event.detail?.isLeader)
+    );
+    this.tabLeadership.addEventListener('message', event =>
+      this.handleTabMessage(event.detail || {})
+    );
+    this.tabLeadership.start();
+  }
+
+  ownsNativeSip() {
+    return this.tabLeadership.isLeader;
+  }
+
+  handleTabLeadershipChanged(isLeader) {
+    if (!isLeader) {
+      this.releaseNativeOwnership();
+      return;
+    }
+
+    this.dropMirroredSessions();
+    // Before the app asked for the phone (e.g. still on the login screen)
+    // there is nothing to register; the app's own bootstrap runs as owner.
+    if (!this.nativeBootstrapRequested) return;
+
+    const bootstrap = this.bootstrapIncomingSupport()
+      .catch(() => null)
+      .finally(() => {
+        if (this.leadershipBootstrapPromise === bootstrap) {
+          this.leadershipBootstrapPromise = null;
+        }
+      });
+    this.leadershipBootstrapPromise = bootstrap;
+  }
+
+  releaseNativeOwnership() {
+    if (this.nativeOwnershipRelease) return this.nativeOwnershipRelease;
+
+    const sessionKeys = [
+      ...new Set([
+        ...Object.keys(this.nativeSipClients),
+        ...Object.keys(this.nativeSessionConfigs),
+      ]),
+    ];
+    const release = Promise.all(
+      sessionKeys.map(sessionKey =>
+        this.destroyNativeSession(sessionKey).catch(() => null)
+      )
+    ).finally(() => {
+      this.nativeOwnershipRelease = null;
+      this.tabLeadership.post({ type: 'hello' });
+    });
+    this.nativeOwnershipRelease = release;
+    return release;
+  }
+
+  // Moves the phone into this tab (for an outbound call or an explicit
+  // "use here"). The owner tab refuses while it has a call in progress.
+  async ensureNativeSipOwnership() {
+    if (!this.ownsNativeSip()) {
+      const handedOver = await this.tabLeadership.claim();
+      if (!handedOver || !(await this.waitForTabLeadership())) {
+        throw Object.assign(new Error('webphone_owner_tab_busy'), {
+          reason: 'webphone_owner_tab_busy',
+        });
+      }
+    }
+
+    await this.leadershipBootstrapPromise;
+  }
+
+  waitForTabLeadership(timeoutMs = WEBPHONE_TAB_LEADERSHIP_WAIT_MS) {
+    if (this.ownsNativeSip()) return Promise.resolve(true);
+
+    return new Promise(resolve => {
+      let timer = null;
+      const handleChange = event => {
+        if (!event.detail?.isLeader) return;
+        window.clearTimeout(timer);
+        this.tabLeadership.removeEventListener(
+          'leadership-changed',
+          handleChange
+        );
+        resolve(true);
+      };
+      timer = window.setTimeout(() => {
+        this.tabLeadership.removeEventListener(
+          'leadership-changed',
+          handleChange
+        );
+        resolve(false);
+      }, timeoutMs);
+      this.tabLeadership.addEventListener('leadership-changed', handleChange);
+    });
+  }
+
+  broadcastNativeSessions() {
+    if (!this.tabLeadership.supported || !this.ownsNativeSip()) return;
+
+    const sessions = Object.values(this.sessions)
+      .filter(
+        session =>
+          !session.mirrored &&
+          WebphoneClient.isNativeSipProvider(session.provider)
+      )
+      .map(session => ({
+        provider: session.provider,
+        sessionKey: session.sessionKey,
+        inboxId: session.inboxId,
+        sipProfileId: session.sipProfileId,
+        callingSupported: session.callingSupported,
+        browserJoinSupported: session.browserJoinSupported,
+        registered: session.registered,
+        reason: session.reason,
+      }));
+    this.tabLeadership.post({ type: 'sessions', sessions });
+  }
+
+  handleTabMessage(message) {
+    if (message.type === 'hello') {
+      this.broadcastNativeSessions();
+      return;
+    }
+    if (message.type !== 'sessions' || this.ownsNativeSip()) return;
+
+    this.applyMirroredSessions(message.sessions || []);
+  }
+
+  applyMirroredSessions(sessions) {
+    const sessionKeys = new Set();
+    sessions.forEach(remoteSession => {
+      if (!remoteSession?.sessionKey) return;
+
+      sessionKeys.add(remoteSession.sessionKey);
+      this.rememberSession(
+        WebphoneClient.mirroredSession(remoteSession, remoteSession.registered)
+      );
+    });
+    Object.values(this.sessions).forEach(session => {
+      if (session.mirrored && !sessionKeys.has(session.sessionKey)) {
+        this.forgetMirroredSession(session);
+      }
+    });
+  }
+
+  static mirroredSession(session, registered) {
+    return {
+      ...session,
+      mirrored: true,
+      registered: registered === true,
+      reason: registered === true ? WEBPHONE_OWNER_TAB_REASON : session.reason,
+    };
+  }
+
+  dropMirroredSessions() {
+    Object.values(this.sessions)
+      .filter(session => session.mirrored)
+      .forEach(session => this.forgetMirroredSession(session));
+  }
+
+  forgetMirroredSession(session) {
+    delete this.sessions[session.sessionKey];
+    this.refreshProviderFallback(session.provider);
+    this.dispatchEvent(
+      new CustomEvent('call:sessions-changed', {
+        detail: { sessionKey: session.sessionKey, action: 'removed' },
+      })
+    );
+  }
+
+  // A tab that does not own the phone never touches Janus: it reflects the
+  // owner's state, falling back to what the server reports for the profile.
+  followerSessionFromResponse(response, { inboxId, provider, sessionKey }) {
+    const existing = this.sessions[sessionKey];
+    if (existing?.mirrored) return existing;
+
+    const registered = response?.registered ?? response?.registered_for_routing;
+    const session = WebphoneClient.mirroredSession(
+      {
+        provider,
+        sessionKey,
+        inboxId,
+        sipProfileId: WebphoneClient.responseSipProfileId(response),
+        callingSupported: true,
+        browserJoinSupported:
+          response?.browserJoinSupported ?? response?.browser_join_supported,
+        reason: WEBPHONE_OWNER_TAB_REASON,
+      },
+      registered
+    );
+    this.rememberSession(session);
+    return session;
   }
 
   static isNativeSipProvider(provider) {
@@ -356,6 +563,7 @@ class WebphoneClient extends EventTarget {
   scheduleNativeSessionRetry(sessionKey, { immediate = false } = {}) {
     if (
       !sessionKey ||
+      !this.ownsNativeSip() ||
       this.nativeSessionRetryTimers[sessionKey] ||
       this.nativeSessionRetryPromises[sessionKey]
     ) {
@@ -377,7 +585,9 @@ class WebphoneClient extends EventTarget {
 
     this.nativeSessionRetryState[sessionKey] = state;
     let delay = 0;
-    if (!immediate) {
+    if (!immediate && state.credentialFailure) {
+      delay = WEBPHONE_NATIVE_SIP_CREDENTIAL_RETRY_DELAY_MS;
+    } else if (!immediate) {
       delay = WebphoneClient.isNativeSipStandby(state)
         ? WebphoneClient.nativeSipStandbyRetryDelay()
         : WebphoneClient.nativeSipRetryDelay(state.attempt);
@@ -462,27 +672,30 @@ class WebphoneClient extends EventTarget {
         });
         if (!this.isNativeSessionOwner(sessionKey, generation)) return null;
 
-        const permanent = WebphoneClient.isPermanentNativeSipFailure(error);
+        const credentialFailure =
+          WebphoneClient.isPermanentNativeSipFailure(error);
         state = {
           ...state,
           attempt: Math.min(
             (Number(state.attempt) || 0) + 1,
             WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length
           ),
-          blocked: permanent,
-          reason: permanent
+          blocked: false,
+          credentialFailure,
+          reason: credentialFailure
             ? 'webphone_authorization_failed'
             : error?.message || 'webphone_session_retry_failed',
         };
         this.unsupportedSessionFromResponse(state.response, {
           inboxId: state.inboxId,
           reason:
+            !credentialFailure &&
             state.attempt >= WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length
               ? 'webphone_recovery_delayed'
               : state.reason,
         });
         this.nativeSessionRetryState[sessionKey] = state;
-        if (!permanent) this.scheduleNativeSessionRetry(sessionKey);
+        this.scheduleNativeSessionRetry(sessionKey);
         return null;
       }
     })().finally(() => {
@@ -535,6 +748,8 @@ class WebphoneClient extends EventTarget {
   }
 
   resumeNativeSessions() {
+    if (!this.ownsNativeSip()) return;
+
     Object.keys(this.nativeSessionConfigs).forEach(sessionKey => {
       const session = this.sessions[sessionKey];
       if (!session?.registered) {
@@ -718,11 +933,13 @@ class WebphoneClient extends EventTarget {
           this.clearNativeSessionRetry(sessionKey);
           this.nativeSessionRetryState[sessionKey] = {
             ...(this.nativeSessionConfigs[sessionKey] || {}),
-            blocked: true,
+            blocked: false,
+            credentialFailure: true,
             reason: 'sip_provider_credentials_failed',
           };
           session.reason = 'sip_provider_credentials_failed';
           session.callingSupported = false;
+          this.scheduleNativeSessionRetry(sessionKey);
         } else {
           this.scheduleNativeSessionRetry(sessionKey);
         }
@@ -742,6 +959,7 @@ class WebphoneClient extends EventTarget {
           detail: { sessionKey: session.sessionKey, action: 'updated' },
         })
       );
+      if (!session.mirrored) this.broadcastNativeSessions();
     }
     if (!session.provider) return;
 
@@ -800,6 +1018,7 @@ class WebphoneClient extends EventTarget {
   }
 
   bootstrapIncomingSupport() {
+    this.nativeBootstrapRequested = true;
     if (this.bootstrapIncomingPromise) return this.bootstrapIncomingPromise;
 
     const bootstrapPromise = (async () => {
@@ -824,19 +1043,23 @@ class WebphoneClient extends EventTarget {
       provider = null,
       sipProfileId = null,
       sessionKey = null,
+      claimOwnership = false,
     } = {}
   ) {
+    this.nativeBootstrapRequested = true;
     const initializationKey = [
       native ? 'native' : 'default',
       inboxId || 'global',
       provider || 'any',
       sipProfileId || 'any',
       sessionKey || 'any',
+      claimOwnership ? 'claim' : 'observe',
     ].join(':');
     const existing = this.deviceInitializationPromises[initializationKey];
     if (existing) return existing;
 
     const initializationPromise = (async () => {
+      if (claimOwnership) await this.ensureNativeSipOwnership();
       const runtimePromise = native
         ? this.prepareNativeSipRuntime()
         : Promise.resolve();
@@ -976,12 +1199,12 @@ class WebphoneClient extends EventTarget {
       if (WebphoneClient.isPermanentNativeSipFailure(error)) {
         this.nativeSessionRetryState[sessionKey] = {
           ...(this.nativeSessionConfigs[sessionKey] || {}),
-          blocked: true,
+          blocked: false,
+          credentialFailure: true,
           reason: 'sip_provider_credentials_failed',
         };
-      } else {
-        this.scheduleNativeSessionRetry(sessionKey);
       }
+      this.scheduleNativeSessionRetry(sessionKey);
       return this.unsupportedSessionFromResponse(response, {
         inboxId,
         reason: WebphoneClient.isPermanentNativeSipFailure(error)
@@ -1069,12 +1292,25 @@ class WebphoneClient extends EventTarget {
       provider,
     });
     const isNative = WebphoneClient.isNativeSipProvider(provider);
+    const callingSupported =
+      response?.callingSupported ?? response?.calling_supported;
+    if (
+      isNative &&
+      !this.ownsNativeSip() &&
+      (callingSupported !== false ||
+        WebphoneClient.isNativeSipStandby({ reason: response?.reason }))
+    ) {
+      return this.followerSessionFromResponse(response, {
+        inboxId: resolvedInboxId,
+        provider,
+        sessionKey,
+      });
+    }
+
     const operationGeneration = isNative
       ? (nativeGeneration ??
         this.nativeSessionInitializationGeneration(sessionKey))
       : null;
-    const callingSupported =
-      response?.callingSupported ?? response?.calling_supported;
     if (callingSupported === false) {
       if (isNative) {
         if (!this.isNativeSessionOwner(sessionKey, operationGeneration)) {
@@ -1412,6 +1648,7 @@ class WebphoneClient extends EventTarget {
               detail: { sessionKey, action: 'removed' },
             })
           );
+          this.broadcastNativeSessions();
         }
         this.syncNativeCallUnloadGuard();
       }

@@ -1,10 +1,23 @@
 /* global axios */
 import ApiClient from '../../ApiClient';
 import ContactsAPI from '../../contacts';
+import {
+  isWebphoneTabOwner,
+  webphoneBrowserInstanceId,
+} from './webphoneTabLeadership';
 
 const webphoneClientInstanceId =
   window.crypto?.randomUUID?.() ||
   `webphone-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const webphoneInstanceParams = () => {
+  const browserInstanceId = isWebphoneTabOwner()
+    ? webphoneBrowserInstanceId()
+    : null;
+  return {
+    client_instance_id: webphoneClientInstanceId,
+    ...(browserInstanceId ? { browser_instance_id: browserInstanceId } : {}),
+  };
+};
 
 class VoiceAPI extends ApiClient {
   constructor() {
@@ -43,16 +56,17 @@ class VoiceAPI extends ApiClient {
     }
 
     return axios
-      .post(`${this.baseUrl()}/telephony/webphone/token`, {
-        client_instance_id: webphoneClientInstanceId,
-      })
+      .post(
+        `${this.baseUrl()}/telephony/webphone/token`,
+        webphoneInstanceParams()
+      )
       .then(r => r.data.payload || r.data);
   }
 
   getNativeWebphoneToken(inboxId = null) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/token`, {
-        client_instance_id: webphoneClientInstanceId,
+        ...webphoneInstanceParams(),
         ...(inboxId ? { inbox_id: inboxId } : {}),
       })
       .then(r => r.data.payload || r.data);

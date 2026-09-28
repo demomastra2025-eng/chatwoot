@@ -8,6 +8,7 @@ class Telephony::ExternalRecordingCacheJob < ApplicationJob
   def perform(call_session_id)
     call_session = Telephony::CallSession.find_by(id: call_session_id)
     return if call_session.blank?
+    return if call_session.unanswered_terminal?
 
     Telephony::ExternalRecordingCacheService.cache!(call_session: call_session)
   end

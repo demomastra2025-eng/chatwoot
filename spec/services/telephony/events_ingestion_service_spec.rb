@@ -4470,6 +4470,37 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(data.dig('recording', 'recording_url')).to eq(data['recording_url'])
     end
 
+    it 'does not cache or expose a Sipuni recording URL for a call nobody answered' do
+      external_url = 'https://sipuni.com/api/crm/record?id=1790593304.1311701&hash=recording-signature&user=015856'
+      existing_call_session.update!(provider: 'sipuni', direction: 'inbound', status: 'ringing', answered_at: nil)
+      message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: 'voice_call:call-retry-1',
+        content_attributes: { 'data' => { 'status' => 'ringing', 'call_sid' => 'call-retry-1' } }
+      )
+
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'sipuni:call-retry-1:2:NOANSWER:recording',
+          provider: 'sipuni',
+          event: 'missed',
+          status: 'missed',
+          ended_at: Time.current.iso8601,
+          recording_url: external_url
+        )
+      )
+
+      result = nil
+      expect { result = service.perform }.not_to have_enqueued_job(Telephony::ExternalRecordingCacheJob)
+
+      expect(result.reload).to be_unanswered_terminal
+      expect(message.reload.content_attributes.dig('data', 'recording_url')).to be_nil
+    end
+
     it 'keeps Sipuni operator leg metadata when a later external summary event arrives' do
       existing_call_session.update!(
         provider: 'sipuni',

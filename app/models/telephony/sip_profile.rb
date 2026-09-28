@@ -265,14 +265,17 @@ class Telephony::SipProfile < ApplicationRecord
     end
   end
 
-  def acquire_browser_registration_lease!(client_instance_id:, user_id:, occurred_at: Time.current)
+  def acquire_browser_registration_lease!(client_instance_id:, user_id:, browser_instance_id: nil, occurred_at: Time.current)
     return { acquired: false, registration_instance_id: nil } if client_instance_id.blank?
 
     result = nil
     with_lock do
       reload
       lease = browser_registration_lease
-      if browser_registration_lease_active?(lease, occurred_at) && lease['client_instance_id'].to_s != client_instance_id.to_s
+      same_browser_takeover = same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
+      if browser_registration_lease_active?(lease, occurred_at) &&
+         lease['client_instance_id'].to_s != client_instance_id.to_s &&
+         !same_browser_takeover
         result = {
           acquired: false,
           registration_instance_id: lease['registration_instance_id'],
@@ -290,17 +293,16 @@ class Telephony::SipProfile < ApplicationRecord
                                  else
                                    SecureRandom.uuid
                                  end
-      expires_at = occurred_at + registration_ttl.seconds
-      registration_metadata = (metadata || {}).deep_dup
-      registration_metadata[BROWSER_REGISTRATION_LEASE_KEY] = {
+      lease = {
         'client_instance_id' => client_instance_id,
+        'browser_instance_id' => browser_instance_id.presence,
         'registration_instance_id' => registration_instance_id,
         'user_id' => user_id,
         'acquired_at' => occurred_at.iso8601,
-        'expires_at' => expires_at.iso8601
-      }
-      update!(metadata: registration_metadata)
-      result = { acquired: true, registration_instance_id: registration_instance_id, expires_at: expires_at.iso8601 }
+        'expires_at' => (occurred_at + registration_ttl.seconds).iso8601
+      }.compact
+      store_browser_registration_lease!(lease, release_previous: same_browser_takeover, occurred_at: occurred_at)
+      result = { acquired: true, registration_instance_id: registration_instance_id, expires_at: lease['expires_at'] }
     end
 
     result
@@ -465,6 +467,36 @@ class Telephony::SipProfile < ApplicationRecord
     expires_at.present? && expires_at >= reference_time
   rescue ArgumentError, TypeError
     false
+  end
+
+  # The browser elects a single owner tab with a Web Lock, so a different tab of
+  # the same browser asking for the lease means the previous owner already
+  # closed, reloaded or handed the phone over. Waiting for the lease to expire
+  # would only leave the operator unreachable.
+  def same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
+    return false if browser_instance_id.blank? || lease.blank?
+    return false if lease['client_instance_id'].to_s == client_instance_id.to_s
+
+    lease['browser_instance_id'].to_s == browser_instance_id.to_s && lease['user_id'].to_s == user_id.to_s
+  end
+
+  def store_browser_registration_lease!(lease, release_previous:, occurred_at:)
+    registration_metadata = (metadata || {}).deep_dup
+    release_browser_registration!(registration_metadata, occurred_at) if release_previous
+    registration_metadata[BROWSER_REGISTRATION_LEASE_KEY] = lease
+    update!(metadata: registration_metadata)
+  end
+
+  def release_browser_registration!(registration_metadata, occurred_at)
+    registration_metadata['registration_state'] = 'offline'
+    registration_metadata['presence'] = 'offline'
+    registration_metadata['registered'] = false
+    registration_metadata['available'] = false
+    registration_metadata['last_unregistered_event_at'] = occurred_at.iso8601
+    registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
+    registration_metadata.delete('registration_context')
+    registration_metadata.delete('last_registration_instance_id')
+    registration_metadata.delete('last_presence_sequence')
   end
 
   def browser_registration_lease_matches?(context)

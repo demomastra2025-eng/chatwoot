@@ -15,7 +15,8 @@ class Telephony::WebphoneService
     @account = account
   end
 
-  def token_for(user:, inbox: nil, client_instance_id: nil)
+  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil)
+    @browser_instance_id = browser_instance_id.presence
     bootstrap_payload = webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return bootstrap_payload if bootstrap_payload.present?
 
@@ -91,7 +92,7 @@ class Telephony::WebphoneService
 
   private
 
-  attr_reader :account
+  attr_reader :account, :browser_instance_id
 
   def webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return if inbox.present?
@@ -153,7 +154,11 @@ class Telephony::WebphoneService
   def janus_sip_webphone_payload(inbox, operator_identity, user, client_instance_id)
     profile = operator_identity.sip_profile
     profile.ensure_registration_config_version!
-    lease = profile.acquire_browser_registration_lease!(client_instance_id: client_instance_id, user_id: user.id)
+    lease = profile.acquire_browser_registration_lease!(
+      client_instance_id: client_instance_id,
+      browser_instance_id: browser_instance_id,
+      user_id: user.id
+    )
     provider = janus_sip_provider_for(inbox, profile)
     raw_janus_server = janus_sip_server_url(provider)
     credentials = lease[:acquired] ? janus_sip_credentials_for(profile) : nil

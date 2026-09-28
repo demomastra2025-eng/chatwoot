@@ -2721,7 +2721,11 @@ class Telephony::EventsIngestionService
     return if outbound_without_customer_answer?(call_session)
 
     external_url = external_recording_url(call_session)
-    return internal_recording_url(call_session) if Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_url)
+    if Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_url)
+      return if call_session.unanswered_terminal?
+
+      return internal_recording_url(call_session)
+    end
 
     external_url || internal_recording_url(call_session)
   end
@@ -2746,6 +2750,7 @@ class Telephony::EventsIngestionService
 
   def enqueue_external_recording_cache(call_session)
     return unless call_session.terminal?
+    return if call_session.unanswered_terminal?
     return unless Telephony::ExternalRecordingPlaybackPolicy.proxy?(external_recording_url(call_session))
 
     Telephony::ExternalRecordingCacheJob.perform_later(call_session.id)

@@ -236,6 +236,46 @@ RSpec.describe Telephony::SipProfile do
       end
     end
 
+    it 'hands the lease to another tab of the same browser without waiting for expiry' do
+      freeze_time do
+        profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+        owner = profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-owner', browser_instance_id: 'browser-1', user_id: profile.user_id
+        )
+        owner_context = browser_registration_context(profile).merge(registration_instance_id: owner[:registration_instance_id])
+        expect(profile.update_browser_registration!(registered: true, registration_context: owner_context)).to eq(:updated)
+
+        successor = described_class.find(profile.id).acquire_browser_registration_lease!(
+          client_instance_id: 'tab-reloaded', browser_instance_id: 'browser-1', user_id: profile.user_id
+        )
+        successor_context = browser_registration_context(profile, suffix: 'reloaded').merge(
+          registration_instance_id: successor[:registration_instance_id]
+        )
+
+        expect(successor).to include(acquired: true)
+        expect(successor[:registration_instance_id]).not_to eq(owner[:registration_instance_id])
+        expect(profile.reload).not_to be_registered_for_routing
+        expect(profile.update_browser_registration!(registered: true, registration_context: owner_context)).to eq(:conflict)
+        expect(profile.update_browser_registration!(registered: true, registration_context: successor_context)).to eq(:updated)
+        expect(profile.reload).to be_registered_for_routing
+      end
+    end
+
+    it 'keeps the lease with its owner when another browser asks for it' do
+      freeze_time do
+        profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+        owner = profile.acquire_browser_registration_lease!(
+          client_instance_id: 'tab-owner', browser_instance_id: 'browser-1', user_id: profile.user_id
+        )
+
+        competing = described_class.find(profile.id).acquire_browser_registration_lease!(
+          client_instance_id: 'tab-other', browser_instance_id: 'browser-2', user_id: profile.user_id
+        )
+
+        expect(competing).to include(acquired: false, registration_instance_id: owner[:registration_instance_id])
+      end
+    end
+
     it 'does not acquire a browser registration lease without a client instance' do
       profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
 
