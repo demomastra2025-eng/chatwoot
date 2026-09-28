@@ -126,12 +126,21 @@ class Captain::Tools::ProviderBookingHandoffService
     result
   end
 
+  # The fenced conversation was taken over by a human of the original run when
+  # the control generation is unchanged, or moved by exactly one through an
+  # agent's public reply or through an agent already assigned to it. A newer
+  # Captain run also moves the generation, but leaves neither signal. The legacy
+  # captain_control_state column is not written by Captain v4 and is not read.
   def original_human_takeover?
     return false unless conversation.current_captain_control_state == 'human'
 
     generation = conversation.current_captain_control_generation.to_i
     expected = response_fence['control_generation'].to_i
-    generation == expected || (generation == expected + 1 && conversation.captain_control_owner.captain_control_state == 'human')
+    return true if generation == expected
+    return false unless generation == expected + 1
+
+    conversation.assignee_id.present? ||
+      Captain::Conversation::ControlService.human_response_after?(conversation, response_fence['last_message_id'])
   end
 
   def existing_staff_note

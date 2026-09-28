@@ -75,6 +75,32 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
   end
 
+  it 'records a staff note after an agent public reply took the conversation over' do
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, user: agent, inbox: conversation.inbox)
+    captured_fence = fence
+    create(:message, conversation: conversation, account: account, inbox: conversation.inbox, message_type: :outgoing,
+                     sender: agent, private: false, content: 'agent reply')
+    conversation.reload
+
+    expect(conversation.status).to eq('open')
+    expect(conversation.current_captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 1)
+    expect(described_class.new(assistant: assistant, conversation: conversation, fence: captured_fence).perform).to eq(:stale)
+    expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+  end
+
+  it 'does not let the legacy captain_control_state column decide a late note' do
+    captured_fence = fence
+    conversation.update!(status: :open)
+    conversation.prepare_captain_ai_control!
+    conversation.update!(status: :pending)
+    conversation.update!(status: :open)
+    conversation.captain_control_owner.update_column(:captain_control_state, 'human') # rubocop:disable Rails/SkipsModelValidations
+
+    expect(described_class.new(assistant: assistant, conversation: conversation, fence: captured_fence).perform).to eq(:stale)
+    expect(conversation.messages.outgoing).to be_empty
+  end
+
   it 'fails closed without a response fence' do
     expect(described_class.new(assistant: assistant, conversation: conversation).perform).to eq(:missing_fence)
     expect(conversation.reload.status).to eq('pending')
