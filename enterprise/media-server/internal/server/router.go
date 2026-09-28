@@ -56,8 +56,6 @@ func (rt *Router) Build() http.Handler {
 	mux.Handle("POST /sessions/{id}/agent-reconnect", authMw(http.HandlerFunc(rt.handler.AgentReconnect)))
 	mux.Handle("POST /sessions/{id}/terminate", authMw(http.HandlerFunc(rt.handler.TerminateSession)))
 	mux.Handle("GET /sessions/{id}/recording", authMw(http.HandlerFunc(rt.handler.GetRecording)))
-	mux.Handle("GET /sessions/{id}/recording-manifest", authMw(http.HandlerFunc(rt.handler.GetRecordingManifest)))
-	mux.Handle("GET /sessions/{id}/recording-artifacts/{artifact_id}", authMw(http.HandlerFunc(rt.handler.GetRecordingArtifact)))
 	mux.Handle("DELETE /sessions/{id}", authMw(http.HandlerFunc(rt.handler.DeleteSession)))
 
 	// Multi-participant peer management.

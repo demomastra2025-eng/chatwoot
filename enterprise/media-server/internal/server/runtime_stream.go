@@ -19,7 +19,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pion/rtp"
 
-	"github.com/chatwoot/chatwoot-media-server/internal/media"
 	"github.com/chatwoot/chatwoot-media-server/internal/session"
 )
 
@@ -825,14 +824,6 @@ func (w *runtimeAudioWriter) startLocked() error {
 	w.stdin = stdin
 	w.conn = packetConn
 	w.cmd = cmd
-	var captureSource *media.CaptureSource
-	if w.sess.Recorder != nil {
-		rate := uint32(48000)
-		if canonicalRuntimeCodec(codec) != "audio/opus" {
-			rate = 8000
-		}
-		captureSource = w.sess.Recorder.NewCaptureSource("agent", "runtime", codec, rate)
-	}
 
 	go func() {
 		defer cancel()
@@ -859,9 +850,6 @@ func (w *runtimeAudioWriter) startLocked() error {
 			if err := pkt.Unmarshal(raw); err == nil {
 				payloadBytes = len(pkt.Payload)
 				if w.sess.Recorder != nil {
-					if err := w.sess.Recorder.CaptureRTP(captureSource, &pkt); err != nil {
-						slog.Warn("handler: runtime capture failed", "error", err)
-					}
 					if err := w.sess.Recorder.WriteAgentRTP(&pkt); err != nil {
 						slog.Warn("handler: failed to record runtime audio",
 							"session_id", w.grant.SessionID,

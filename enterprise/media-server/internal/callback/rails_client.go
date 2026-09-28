@@ -48,14 +48,12 @@ type AgentDisconnectedPayload struct {
 // RecordingReadyPayload is the request body sent when a call recording has
 // been finalized and is available for download.
 type RecordingReadyPayload struct {
-	SessionID                string `json:"session_id"`
-	CallID                   string `json:"call_id"`
-	AccountID                string `json:"account_id"`
-	FilePath                 string `json:"file_path"`
-	DurationSec              int    `json:"duration_seconds"`
-	FileSizeBytes            int64  `json:"file_size_bytes"`
-	RecordingManifestVersion int    `json:"recording_manifest_version,omitempty"`
-	RecordingManifestSHA256  string `json:"recording_manifest_sha256,omitempty"`
+	SessionID     string `json:"session_id"`
+	CallID        string `json:"call_id"`
+	AccountID     string `json:"account_id"`
+	FilePath      string `json:"file_path"`
+	DurationSec   int    `json:"duration_seconds"`
+	FileSizeBytes int64  `json:"file_size_bytes"`
 }
 
 // SessionTerminatedPayload is the request body sent when a call session has
