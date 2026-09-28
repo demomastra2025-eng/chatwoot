@@ -2,10 +2,13 @@ module Enterprise::Message
   private
 
   def activate_captain_human_control_for_human_response
-    return unless captain_human_control_candidate?
+    return unless captain_public_human_reply?
 
-    conversation.activate_captain_human_control!(source: 'agent_reply', actor: sender)
-    turn_off_captain_typing_indicator
+    conversation.activate_captain_human_control!(source: 'agent_reply', actor: sender) do |generation|
+      services = captain_takeover_cancellation_services
+      @captain_takeover_cancellations = capture_captain_takeover_cancellations(services, generation)
+      services.any?
+    end
   end
 
   def mark_pending_conversation_as_open_for_human_response
@@ -21,6 +24,39 @@ module Enterprise::Message
 
       create_captain_auto_open_activity_message
     end
+  ensure
+    publish_captain_takeover_cancellations
+  end
+
+  def captain_takeover_cancellation_services
+    thread = conversation.communication_thread
+    conversations = thread ? thread.conversations.where(account_id: conversation.account_id).pending : [conversation].select(&:pending?)
+    conversations.filter_map do |candidate|
+      assistant = candidate.inbox.captain_assistant
+      next unless assistant&.account_id == conversation.account_id
+
+      Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: assistant, actor: sender)
+    end
+  end
+
+  def capture_captain_takeover_cancellations(services, generation)
+    services.map { |service| [service, service.snapshot(control_generation: generation)] }
+  rescue Redis::BaseError => e
+    log_captain_cancellation_failure(e)
+    []
+  end
+
+  def publish_captain_takeover_cancellations
+    Array(@captain_takeover_cancellations).each do |service, snapshot|
+      service.perform(reason: 'employee_reply', snapshot: snapshot)
+    rescue Redis::BaseError => e
+      log_captain_cancellation_failure(e)
+    end
+    @captain_takeover_cancellations = nil
+  end
+
+  def log_captain_cancellation_failure(error)
+    Rails.logger.warn("[CAPTAIN][Control] Response cancellation unavailable conversation_id=#{conversation.id} error_class=#{error.class.name}")
   end
 
   def captain_auto_open_candidate?
@@ -28,11 +64,14 @@ module Enterprise::Message
   end
 
   def captain_human_control_candidate?
+    captain_public_human_reply? && ::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
+  end
+
+  def captain_public_human_reply?
     human_response? &&
       !private? &&
       !scheduled_touch_message? &&
-      !template_bootstrap_message? &&
-      ::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
+      !template_bootstrap_message?
   end
 
   def captain_pending_conversation?
@@ -53,14 +92,6 @@ module Enterprise::Message
       inbox_id: conversation.inbox_id,
       message_type: :activity,
       content: I18n.t('conversations.activity.captain.auto_opened_after_agent_reply')
-    )
-  end
-
-  def turn_off_captain_typing_indicator
-    captain_assistant = ::CaptainInbox.find_by(inbox_id: conversation.inbox_id)&.captain_assistant
-    Captain::Conversation::TypingIndicatorService.turn_off(
-      conversation: conversation,
-      assistant: captain_assistant
     )
   end
 

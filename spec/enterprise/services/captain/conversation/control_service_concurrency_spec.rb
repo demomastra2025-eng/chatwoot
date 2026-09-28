@@ -73,6 +73,213 @@ RSpec.describe Captain::Conversation::ControlService do
     cleanup_race_records(records) if defined?(records) && records
   end
 
+  it 'publishes takeover cancellation only after the employee reply commits' do
+    records = create_race_records
+    human_locked = Queue.new
+    release_human = Queue.new
+    key = cancellation_key(records)
+    worker = hold_human_reply(records, human_locked, release_human)
+    Timeout.timeout(5) { human_locked.pop }
+    expect(Redis::Alfred.get(key)).to be_nil
+
+    release_human << true
+    Timeout.timeout(5) { worker.join }
+    expect(JSON.parse(Redis::Alfred.get(key))).to include(
+      'account_id' => records.fetch(:account).id,
+      'conversation_id' => records.fetch(:conversation).id,
+      'control_generation' => records.fetch(:expected_generation),
+      'last_message_id' => records.fetch(:trigger_message).id,
+      'status_transition_id' => 0,
+      'cancel_reason' => 'employee_reply'
+    )
+    expect(records.fetch(:conversation).reload.captain_control_state).to eq('ai')
+  ensure
+    release_human << true if defined?(release_human) && release_human.empty?
+    worker&.join
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'does not publish takeover cancellation or change status after a rolled-back employee reply' do
+    records = create_race_records
+    key = cancellation_key(records)
+    Message.transaction do
+      create(:message, conversation: records.fetch(:conversation), message_type: :outgoing, sender: records.fetch(:agent))
+      expect(Redis::Alfred.get(key)).to be_nil
+      raise ActiveRecord::Rollback
+    end
+
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:conversation).reload).to have_attributes(status: 'pending', captain_control_generation: 0, captain_control_state: 'ai')
+    expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
+  ensure
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'captures a pending sibling after a committed reply across channels from an open conversation' do
+    records = create_cross_channel_records
+    human_locked = Queue.new
+    release_human = Queue.new
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    worker = hold_human_reply(records, human_locked, release_human)
+    Timeout.timeout(5) { human_locked.pop }
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(0)
+
+    release_human << true
+    Timeout.timeout(5) { worker.join }
+    expect(JSON.parse(Redis::Alfred.get(key))).to include(
+      'conversation_id' => records.fetch(:pending_sibling).id,
+      'control_generation' => 0, 'last_message_id' => records.fetch(:trigger_message).id,
+      'status_transition_id' => 0, 'cancel_reason' => 'employee_reply'
+    )
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(1)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+  ensure
+    release_human << true if defined?(release_human) && release_human.empty?
+    worker&.join
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'preserves a pending sibling after a rolled-back reply across channels from an open conversation' do
+    records = create_cross_channel_records
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    Message.transaction do
+      create(:message, conversation: records.fetch(:conversation), message_type: :outgoing, sender: records.fetch(:agent))
+      expect(Redis::Alfred.get(key)).to be_nil
+      raise ActiveRecord::Rollback
+    end
+
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(0)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+    expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
+  ensure
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'invalidates a pending sibling in the database when an open source cannot capture cancellation in Redis' do
+    records = create_cross_channel_records
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    allow(Captain::Conversation::ResponseCancellationService).to receive(:new).and_wrap_original do |method, **params|
+      service = method.call(**params)
+      allow(service).to receive(:snapshot).and_raise(Redis::CannotConnectError)
+      service
+    end
+
+    create(:message, conversation: records.fetch(:conversation), message_type: :outgoing, sender: records.fetch(:agent))
+
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(1)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+    expect(records.fetch(:pending_sibling).bot_handoff!(fence: { control_generation: 0 })).to eq(:stale)
+  ensure
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'cancels a pending Captain sibling only after a public non-Captain source reply commits' do
+    records = create_non_captain_cross_channel_records
+    human_locked = Queue.new
+    release_human = Queue.new
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    worker = hold_human_reply(records, human_locked, release_human)
+    Timeout.timeout(5) { human_locked.pop }
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(0)
+
+    release_human << true
+    Timeout.timeout(5) { worker.join }
+    expect(JSON.parse(Redis::Alfred.get(key))).to include(
+      'conversation_id' => records.fetch(:pending_sibling).id,
+      'control_generation' => 0, 'last_message_id' => records.fetch(:trigger_message).id,
+      'status_transition_id' => 0, 'cancel_reason' => 'employee_reply'
+    )
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(1)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+  ensure
+    release_human << true if defined?(release_human) && release_human.empty?
+    worker&.join
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'rolls back a non-Captain source takeover without publishing its pending sibling cancellation' do
+    records = create_non_captain_cross_channel_records
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    Message.transaction do
+      create(:message, conversation: records.fetch(:conversation), message_type: :outgoing, sender: records.fetch(:agent))
+      expect(records.fetch(:thread).reload.captain_control_generation).to eq(1)
+      expect(Redis::Alfred.get(key)).to be_nil
+      raise ActiveRecord::Rollback
+    end
+
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(0)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+    expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
+  ensure
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  it 'keeps a database fence when a non-Captain source cannot capture its pending sibling in Redis' do
+    records = create_non_captain_cross_channel_records
+    key = cancellation_key(records, conversation: records.fetch(:pending_sibling))
+    allow(Captain::Conversation::ResponseCancellationService).to receive(:new).and_wrap_original do |method, **params|
+      service = method.call(**params)
+      allow(service).to receive(:snapshot).and_raise(Redis::CannotConnectError)
+      service
+    end
+
+    create(:message, conversation: records.fetch(:conversation), message_type: :outgoing, sender: records.fetch(:agent))
+
+    expect(records.fetch(:thread).reload.captain_control_generation).to eq(1)
+    expect(records.fetch(:conversation).reload).to be_open
+    expect(records.fetch(:pending_sibling).reload).to be_pending
+    expect(Redis::Alfred.get(key)).to be_nil
+    expect(records.fetch(:pending_sibling).bot_handoff!(fence: { control_generation: 0 })).to eq(:stale)
+  ensure
+    Redis::Alfred.delete(key) if defined?(key)
+    cleanup_race_records(records) if defined?(records) && records
+  end
+
+  def cancellation_key(records, conversation: records.fetch(:conversation))
+    format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)
+  end
+
+  def create_non_captain_cross_channel_records
+    records = create_cross_channel_records
+    source = records.fetch(:conversation)
+    CaptainInbox.where(inbox_id: source.inbox_id).destroy_all
+    source.inbox.reload
+    records
+  end
+
+  def create_cross_channel_records
+    records = create_race_records
+    conversation = records.fetch(:conversation)
+    conversation.update!(status: :open)
+    thread = create(:communication_thread, account: records.fetch(:account), contact: conversation.contact)
+    sibling = create(:conversation, account: records.fetch(:account), contact: conversation.contact, status: :pending)
+    create(:captain_inbox, inbox: sibling.inbox, captain_assistant: conversation.inbox.captain_assistant)
+    [conversation, sibling].each do |candidate|
+      create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+      candidate.association(:communication_thread_conversation).reset
+      candidate.association(:communication_thread).reset
+    end
+    records.merge(thread: thread, pending_sibling: sibling, expected_generation: thread.captain_control_generation,
+                  trigger_message: create(:message, conversation: sibling, message_type: :incoming))
+  end
+
   def create_race_records
     account = create(:account)
     inbox = create(:inbox, account: account)
@@ -132,10 +339,12 @@ RSpec.describe Captain::Conversation::ControlService do
 
   def cleanup_race_records(records)
     account = records.fetch(:account)
-    conversation_id = records.fetch(:conversation).id
-    ConversationStatusTransition.where(conversation_id: conversation_id).delete_all
-    Message.where(conversation_id: conversation_id).delete_all
-    Conversation.where(id: conversation_id).delete_all
+    conversation_ids = [records.fetch(:conversation).id, records[:pending_sibling]&.id].compact
+    CommunicationThreadConversation.where(conversation_id: conversation_ids).delete_all
+    ConversationStatusTransition.where(conversation_id: conversation_ids).delete_all
+    Message.where(conversation_id: conversation_ids).delete_all
+    Conversation.where(id: conversation_ids).delete_all
+    records[:thread]&.destroy!
     account.destroy!
   end
 end

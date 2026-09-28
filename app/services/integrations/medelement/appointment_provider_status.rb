@@ -26,6 +26,18 @@ class Integrations::Medelement::AppointmentProviderStatus
       appointment.update!(custom_attributes: attributes(appointment, status, command))
     end
 
+    def persist_if_bound!(appointment, status, command:)
+      return if appointment.blank?
+
+      appointment.with_lock do
+        persist!(appointment, status, command: command) if bound_to_command?(appointment, command)
+      end
+    end
+
+    def bound_to_command?(appointment, command)
+      command.present? && appointment.custom_attributes.to_h[COMMAND_ID_KEY].present? && command_current?(appointment, command)
+    end
+
     def payload(appointment)
       status = appointment.custom_attributes.to_h[ATTRIBUTE_KEY].presence
       return {} if status.blank?

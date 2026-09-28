@@ -25,9 +25,9 @@ module Redis::Alfred
       $alfred.with { |conn| conn.del(key) }
     end
 
-    def delete_if_value(key, value)
-      Redis::CompareAndDelete.call($alfred, key, value)
-    end
+    def delete_if_value(key, value) = Redis::CompareAndDelete.call($alfred, key, value)
+
+    def set_if_newer(key, value, **) = Redis::SetIfNewer.call($alfred, key, value, **)
 
     def expire_if_value(key, value, seconds)
       Redis::CompareAndExpire.call($alfred, key, value, seconds)

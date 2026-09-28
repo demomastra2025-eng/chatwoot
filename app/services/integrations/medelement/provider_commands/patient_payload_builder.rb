@@ -19,7 +19,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
       'name' => values.fetch(:first_name),
       'lastname' => values.fetch(:last_name),
       'middlename' => values[:middle_name],
-      'patient_email' => contact_attribute('email').to_s.presence,
+      'patient_email' => (contact_attribute('email').to_s.presence unless identity['appointment_owned'] == true),
       'birthday' => birthday,
       'gender' => gender_code,
       'iin' => iin

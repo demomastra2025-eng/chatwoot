@@ -68,6 +68,27 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(response.parsed_body['code']).to eq('MEDELEMENT_WRITE_DISABLED')
   end
 
+  it 'rejects direct reception create for an already-linked same-account appointment' do
+    resource = create(:scheduling_resource, account: account, custom_attributes: {
+                        'medelement_specialist_code' => 'specialist-1',
+                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                      })
+    appointment = create(:scheduling_appointment,
+                         account: account, contact: contact, resource: resource,
+                         external_ref: 'medelement:reception:71')
+
+    expect do
+      post path,
+           params: {
+             hook_id: hook.id, appointment_id: appointment.id, operation: 'create_reception',
+             idempotency_key: 'duplicate-linked-reception', company_cabinet_code: 'cabinet-1'
+           }, headers: headers, as: :json
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('MEDELEMENT_RECEPTION_ALREADY_LINKED')
+  end
+
   it 'does not resolve a hook from another account' do
     other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
     other_hook = create(:integrations_hook, :medelement, account: other_account)
@@ -206,6 +227,51 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(command.reload.execution_state).to include('reconciliation_cancelled_by_id' => agent.id)
   end
 
+  it 'allows cancellation of a patient action only before any provider write' do
+    command = build_patient_action_command(
+      status: 'awaiting_patient_selection',
+      patient_action: { 'type' => 'patient_selection', 'candidate_count' => 2 }
+    )
+
+    get "#{path}/#{command.id}", headers: headers, as: :json
+    expect(response.parsed_body.dig('payload', 'patient_action', 'cancellable')).to be(true)
+
+    post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(command.reload).to be_cancelled
+  end
+
+  it 'rejects cancellation of a patient action after patient creation may have started' do
+    command = build_patient_action_command(
+      status: 'awaiting_phone_refresh',
+      patient_action: { 'type' => 'phone_refresh', 'refresh_supported' => false }
+    )
+    command.update!(execution_state: command.execution_state.merge('write_phase' => 'patient_create'))
+
+    get "#{path}/#{command.id}", headers: headers, as: :json
+    expect(response.parsed_body.dig('payload', 'patient_action', 'cancellable')).to be(false)
+
+    post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE')
+    expect(command.reload).to be_awaiting_phone_refresh
+  end
+
+  it 'keeps reconciliation after a possible write and does not advertise cancellation' do
+    command = create_command(
+      account: account, hook: hook, contact: contact, status: 'reconciliation_required',
+      execution_state: { 'write_phase' => 'patient_create', 'reconciliation_attempts' => 1 }
+    )
+
+    get "#{path}/#{command.id}", headers: headers, as: :json
+    expect(response.parsed_body.dig('payload', 'reconciliation_cancellable')).to be(false)
+
+    post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE')
+    expect(command.reload).to be_reconciliation_required
+  end
+
   it 'rejects cancellation while a provider command is queued for execution' do
     command = create_command(account: account, hook: hook, contact: contact, status: 'queued')
 
@@ -329,6 +395,57 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(command.reload).to be_awaiting_patient_selection
+  end
+
+  it 'queues only a read-only check for an unresolved reception create without repeating it immediately' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact)
+    command = Integrations::Medelement::ProviderCommand.create!(
+      account: account, hook: hook, appointment: appointment, contact: contact,
+      operation: 'create_reception', status: 'provider_status_unknown', company_cabinet_code: 'cabinet-1',
+      idempotency_key: SecureRandom.uuid,
+      execution_state: {
+        'write_phase' => 'reception_create', 'reconciliation_next_at' => 1.day.from_now.iso8601
+      }
+    )
+
+    expect do
+      post "#{path}/#{command.id}/reconcile", headers: headers, as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
+    expect(response).to have_http_status(:accepted)
+    expect(command.reload).to be_provider_status_unknown
+    expect(command.execution_state['reconciliation_dispatch_reserved_at']).to be_present
+
+    expect do
+      post "#{path}/#{command.id}/reconcile", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob)
+    expect(response).to have_http_status(:conflict)
+  end
+
+  it 'refuses a manual check when no reception write has started' do
+    command = create_command(account: account, hook: hook, contact: contact)
+
+    expect do
+      post "#{path}/#{command.id}/reconcile", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob)
+    expect(response).to have_http_status(:conflict)
+  end
+
+  it 'does not claim a manual check which cannot run after bounded reconciliation was exhausted' do
+    appointment = create(:scheduling_appointment, account: account, contact: contact)
+    command = Integrations::Medelement::ProviderCommand.create!(
+      account: account, hook: hook, appointment: appointment, contact: contact,
+      operation: 'create_reception', status: 'reconciliation_required', company_cabinet_code: 'cabinet-1',
+      idempotency_key: SecureRandom.uuid,
+      execution_state: {
+        'write_phase' => 'reception_create',
+        'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+      }
+    )
+
+    expect do
+      post "#{path}/#{command.id}/reconcile", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob)
+    expect(response).to have_http_status(:conflict)
   end
 
   private

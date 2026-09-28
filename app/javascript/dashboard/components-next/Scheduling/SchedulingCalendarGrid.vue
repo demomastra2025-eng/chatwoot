@@ -7,6 +7,9 @@ import {
   buildDayListForView,
   formatDateKey,
   isAppointmentProviderOwned,
+  providerBookingNeedsReview,
+  providerBookingStatusKey,
+  providerBookingStatusMessage,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
 import SchedulingKanbanBoard from './SchedulingKanbanBoard.vue';
@@ -240,6 +243,21 @@ const handleStatusChange = payload => {
                     class="font-medium whitespace-normal break-words text-n-slate-12"
                   >
                     {{ appointment.title || appointment.clientName || '—' }}
+                  </span>
+                  <span
+                    v-if="providerBookingStatusKey(appointment)"
+                    class="inline-flex items-center gap-1 text-xs font-medium"
+                    :class="
+                      providerBookingNeedsReview(appointment)
+                        ? 'text-n-ruby-11'
+                        : 'text-n-slate-11'
+                    "
+                  >
+                    <span
+                      class="i-lucide-circle-alert size-3.5"
+                      aria-hidden="true"
+                    />
+                    {{ providerBookingStatusMessage(appointment, $t) }}
                   </span>
                   <span
                     class="text-xs whitespace-normal break-words text-n-slate-11"

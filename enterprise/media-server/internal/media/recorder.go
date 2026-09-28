@@ -47,6 +47,7 @@ type Recorder struct {
 	startedAt time.Time
 	finalized bool
 	mu        sync.Mutex
+	bundle    *RecordingBundle
 }
 
 // NewRecorder creates a new recorder that writes OGG/Opus files to the given
@@ -62,15 +63,28 @@ func NewRecorder(sessionID, dir string) (*Recorder, error) {
 	combinedFile := filepath.Join(dir, sessionID+".ogg")
 	customerFile := filepath.Join(dir, sessionID+"_customer.ogg")
 	agentFile := filepath.Join(dir, sessionID+"_agent.ogg")
+	startedAt := time.Now()
+	bundle, err := newRecordingBundle(sessionID, dir, startedAt)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range []string{combinedFile, customerFile, agentFile} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			bundle.Cleanup()
+			return nil, fmt.Errorf("recording path already exists or cannot be checked")
+		}
+	}
 
 	customerWriter, err := oggwriter.New(customerFile, 48000, 1)
 	if err != nil {
+		bundle.Cleanup()
 		return nil, fmt.Errorf("create customer OGG writer: %w", err)
 	}
 
 	agentWriter, err := oggwriter.New(agentFile, 48000, 1)
 	if err != nil {
 		customerWriter.Close()
+		bundle.Cleanup()
 		return nil, fmt.Errorf("create agent OGG writer: %w", err)
 	}
 
@@ -88,7 +102,8 @@ func NewRecorder(sessionID, dir string) (*Recorder, error) {
 		customerFile:   customerFile,
 		agentWriter:    agentWriter,
 		agentFile:      agentFile,
-		startedAt:      time.Now(),
+		startedAt:      startedAt,
+		bundle:         bundle,
 	}, nil
 }
 
@@ -139,7 +154,7 @@ func (r *Recorder) Finalize() error {
 	defer r.mu.Unlock()
 
 	if r.finalized {
-		return nil
+		return r.finalizeBundle()
 	}
 	r.finalized = true
 
@@ -152,6 +167,9 @@ func (r *Recorder) Finalize() error {
 	}
 
 	if err := r.buildCombinedFile(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := r.finalizeBundle(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -282,6 +300,7 @@ func (r *Recorder) FileSize() int64 {
 func (r *Recorder) Cleanup() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.bundle.Cleanup()
 
 	for _, f := range []string{r.combinedFile, r.customerFile, r.agentFile} {
 		if err := os.Remove(f); err != nil && !os.IsNotExist(err) {
@@ -291,4 +310,26 @@ func (r *Recorder) Cleanup() {
 			)
 		}
 	}
+}
+
+func (r *Recorder) SetRecordingIdentity(callID, accountID string) error {
+	return r.bundle.SetIdentity(callID, accountID)
+}
+func (r *Recorder) NewCaptureSource(side, kind, codec string, rate uint32) *CaptureSource {
+	return r.bundle.NewSource(side, kind, codec, rate)
+}
+func (r *Recorder) CaptureRTP(source *CaptureSource, packet *rtp.Packet) error {
+	return r.bundle.Capture(source, packet)
+}
+func (r *Recorder) RecordingBundleDigest() (string, bool) { return r.bundle.ReadyDigest() }
+
+func (r *Recorder) finalizeBundle() error {
+	legacy := map[string]string{}
+	if r.customerPacketsWritten > 0 {
+		legacy["customer"] = r.customerFile
+	}
+	if r.agentPacketsWritten > 0 {
+		legacy["agent"] = r.agentFile
+	}
+	return r.bundle.Finalize(legacy)
 }

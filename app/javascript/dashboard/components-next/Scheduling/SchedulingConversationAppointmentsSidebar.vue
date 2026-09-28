@@ -1,8 +1,17 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
 import SidebarActionsHeader from 'dashboard/components-next/SidebarActionsHeader.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -26,9 +35,14 @@ import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/refere
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
+  appointmentCancellationAlertMessage,
   fromDateTimeInputValue,
   getServicePriceForResource,
   isAppointmentProviderOwned,
+  providerBookingNeedsReview,
+  providerBookingStatusKey,
+  providerBookingStatusMessage,
+  providerCancellationPending,
   isMedelementResource,
   medelementCabinetsForResource,
   servicesAvailableForResource,
@@ -63,7 +77,13 @@ const isCreating = ref(false);
 const isSavingCreate = ref(false);
 const savingAppointmentKey = ref('');
 const cancellingAppointmentKey = ref('');
+const checkingAppointmentKey = ref('');
+const resolvingCancellationKey = ref('');
+const cancellationReviews = reactive({});
+let providerReviewGeneration = 0;
 const createForm = reactive({
+  clientIdentifier: '',
+  clientIdentifierInferred: false,
   clientFirstName: '',
   clientLastName: '',
   clientMiddleName: '',
@@ -191,13 +211,49 @@ const contactPhone = computed(
     ''
 );
 
+const normalizePatientIin = value => String(value || '').replace(/\D/g, '');
+const isValidPatientIin = value => {
+  const iin = normalizePatientIin(value);
+  if (!/^\d{12}$/.test(iin)) return false;
+
+  const digits = [...iin].map(Number);
+  const checksum = weights =>
+    weights.reduce((sum, weight, index) => sum + weight * digits[index], 0) %
+    11;
+  // Keep the same two-pass checksum as Scheduling::IinValidator.
+  const first = checksum([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const result =
+    first === 10 ? checksum([3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]) : first;
+  return (result === 10 ? 0 : result) === digits[11];
+};
+const contactIin = computed(() => {
+  const attributes =
+    contact.value?.custom_attributes || contact.value?.customAttributes || {};
+  const value = [
+    attributes.medelement_iin,
+    attributes.medelementIin,
+    attributes.iin,
+    contact.value?.identifier,
+  ].find(isValidPatientIin);
+  return value ? normalizePatientIin(value) : '';
+});
+
 const fullPatientName = form =>
   [form?.clientFirstName, form?.clientLastName, form?.clientMiddleName]
     .map(value => String(value || '').trim())
     .filter(Boolean)
     .join(' ');
 
+const updatePatientIin = (form, value) => {
+  form.clientIdentifier = value;
+  form.clientIdentifierInferred = false;
+};
+
 const updatePatientNamePart = (form, field, value) => {
+  if (form[field] !== value && form.clientIdentifierInferred) {
+    form.clientIdentifier = '';
+    form.clientIdentifierInferred = false;
+  }
   form[field] = value;
   form.clientName = fullPatientName(form);
   form.clientNameStructured = true;
@@ -255,6 +311,8 @@ const resetCreateForm = () => {
   });
 
   Object.assign(createForm, {
+    clientIdentifier: contactIin.value,
+    clientIdentifierInferred: Boolean(contactIin.value),
     clientFirstName: contactNameParts.firstName,
     clientLastName: contactNameParts.lastName,
     clientMiddleName: contactNameParts.middleName,
@@ -330,18 +388,23 @@ const lookupParams = computed(() => {
 
 const appointmentKey = appointment => `appointment-${appointment.id}`;
 const isProviderCancellationPending = appointment =>
-  isAppointmentProviderOwned(appointment) &&
-  appointment?.providerConfirmationStatus === 'pending';
+  (isAppointmentProviderOwned(appointment) &&
+    appointment?.providerConfirmationStatus === 'pending') ||
+  providerCancellationPending(appointment);
 const isAppointmentOpen = appointment =>
   openAppointmentKeys.value.includes(appointmentKey(appointment));
 
 const statusIconClass = appointment =>
-  APPOINTMENT_STATUS_ICON_CLASSES[appointment.status] ??
-  APPOINTMENT_STATUS_ICON_CLASSES.scheduled;
+  providerBookingNeedsReview(appointment)
+    ? 'text-n-ruby-11'
+    : (APPOINTMENT_STATUS_ICON_CLASSES[appointment.status] ??
+      APPOINTMENT_STATUS_ICON_CLASSES.scheduled);
 
 const statusIcon = appointment =>
-  APPOINTMENT_STATUS_ICONS[appointment.status] ||
-  APPOINTMENT_STATUS_ICONS.scheduled;
+  providerBookingNeedsReview(appointment)
+    ? 'i-lucide-circle-alert'
+    : APPOINTMENT_STATUS_ICONS[appointment.status] ||
+      APPOINTMENT_STATUS_ICONS.scheduled;
 
 const parseTimestamp = value => Date.parse(value || '') || 0;
 
@@ -368,6 +431,8 @@ const formFromAppointment = appointment => {
   const nameParts = patientNameParts(appointment);
   return {
     appointmentType: appointment.appointmentType || 'primary',
+    clientIdentifier: appointment.clientIdentifier || '',
+    clientIdentifierInferred: false,
     ...nameParts,
     clientName: appointment.clientName || '',
     clientPhone: appointment.clientPhone || '',
@@ -485,6 +550,9 @@ const appendServicePayload = (payload, { serviceId, serviceNameSnapshot }) => {
   if (!selectedServiceId) {
     servicePayload.service_ids = [];
   }
+  if (Object.hasOwn(payload, 'client_identifier')) {
+    servicePayload.client_identifier = payload.client_identifier;
+  }
   if (Object.hasOwn(payload, 'client_first_name')) {
     servicePayload.client_last_name = payload.client_last_name?.trim() || null;
     servicePayload.client_middle_name =
@@ -512,6 +580,20 @@ const medelementPhoneError = form =>
     ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED')
     : '';
 
+const medelementIinError = form => {
+  if (
+    !isMedelementResource(selectedResourceForForm(form)) ||
+    !form?.clientIdentifier?.trim()
+  ) {
+    return '';
+  }
+  const iin = normalizePatientIin(form.clientIdentifier);
+  if (!/^\d{12}$/.test(iin)) {
+    return t('SCHEDULING.CONTACT.IIN_ERROR_LENGTH');
+  }
+  return isValidPatientIin(iin) ? '' : t('SCHEDULING.ERRORS.INVALID_IIN');
+};
+
 const medelementServiceError = form =>
   isMedelementResource(selectedResourceForForm(form)) &&
   form?.serviceId &&
@@ -532,6 +614,7 @@ const isAppointmentFormInvalid = form =>
   !form?.clientFirstName?.trim() ||
   Boolean(medelementLastNameError(form)) ||
   Boolean(medelementPhoneError(form)) ||
+  Boolean(medelementIinError(form)) ||
   Boolean(medelementServiceError(form)) ||
   Boolean(medelementCabinetError(form)) ||
   !form?.resourceId ||
@@ -552,6 +635,12 @@ const buildAppointmentPayload = form =>
         : {}),
       client_name: fullPatientName(form),
       client_phone: form.clientPhone,
+      ...(isMedelementResource(selectedResourceForForm(form))
+        ? {
+            client_identifier:
+              normalizePatientIin(form.clientIdentifier) || null,
+          }
+        : {}),
       contact_id: toNumeric(form.contactId || contactId.value),
       conversation_display_id: toNumeric(
         form.conversationId
@@ -589,6 +678,12 @@ const buildCreatePayload = () =>
         : {}),
       client_name: fullPatientName(createForm),
       client_phone: createForm.clientPhone,
+      ...(isMedelementResource(selectedResourceForForm(createForm))
+        ? {
+            client_identifier:
+              normalizePatientIin(createForm.clientIdentifier) || null,
+          }
+        : {}),
       contact_id: toNumeric(contactId.value),
       conversation_display_id: toNumeric(createConversationDisplayId.value),
       ...(createForm.medelementCabinetCode
@@ -631,20 +726,33 @@ const fetchAppointmentsByParams = async params => {
   return normalizePayload(response.data);
 };
 
+let loadRequestId = 0;
+let sidebarDisposed = false;
 const loadAppointments = async () => {
-  if (!lookupParams.value.length) {
+  if (sidebarDisposed) return false;
+  loadRequestId += 1;
+  const requestId = loadRequestId;
+  const params = lookupParams.value;
+  const lookupKey = JSON.stringify(params);
+  const isCurrentRequest = () =>
+    !sidebarDisposed &&
+    requestId === loadRequestId &&
+    lookupKey === JSON.stringify(lookupParams.value);
+
+  if (!params.length) {
     appointments.value = [];
     setAppointmentForms();
-    return;
+    ui.isLoading = false;
+    ui.error = null;
+    return true;
   }
 
   ui.isLoading = true;
   ui.error = null;
 
   try {
-    const results = await Promise.all(
-      lookupParams.value.map(params => fetchAppointmentsByParams(params))
-    );
+    const results = await Promise.all(params.map(fetchAppointmentsByParams));
+    if (!isCurrentRequest()) return false;
     appointments.value = mergeUniqueAppointments(...results);
     setAppointmentForms();
     const firstEditableAppointment = appointments.value.find(
@@ -654,10 +762,12 @@ const loadAppointments = async () => {
       ? [appointmentKey(firstEditableAppointment)]
       : [];
   } catch (error) {
+    if (!isCurrentRequest()) return false;
     ui.error = error;
   } finally {
-    ui.isLoading = false;
+    if (requestId === loadRequestId) ui.isLoading = false;
   }
+  return true;
 };
 
 const toggleAppointment = appointment => {
@@ -795,18 +905,147 @@ async function cancelAppointment(appointment) {
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
     refreshSidebarCounters();
-    if (
-      isAppointmentProviderOwned(savedAppointment) &&
-      savedAppointment.status !== 'cancelled'
-    ) {
-      useAlert(t('SCHEDULING.PROVIDER_COMMANDS.QUEUED'));
-    } else {
-      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
-    }
+    useAlert(appointmentCancellationAlertMessage(savedAppointment, t));
   } catch (error) {
     useAlert(formatSchedulingErrorMessage(error, t));
   } finally {
     cancellingAppointmentKey.value = '';
+  }
+}
+
+async function checkProviderBooking(appointment) {
+  if (checkingAppointmentKey.value || resolvingCancellationKey.value) return;
+
+  const generation = providerReviewGeneration;
+
+  checkingAppointmentKey.value = appointmentKey(appointment);
+  try {
+    const response = await SchedulingProviderCommandsAPI.list({
+      provider: 'medelement',
+      appointmentId: appointment.id,
+      activeOnly: true,
+    });
+    const command = normalizePayload(response.data).find(
+      item =>
+        item.operation === 'create_reception' &&
+        [
+          'reconciliation_required',
+          'provider_status_unknown',
+          'v2_reconciliation_required',
+          'v2_provider_status_unknown',
+        ].includes(item.status)
+    );
+    if (generation !== providerReviewGeneration) return;
+    if (!command) {
+      if (appointment.status === 'cancelled') {
+        useAlert(t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'));
+      } else {
+        useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_NOT_AVAILABLE'));
+      }
+      return;
+    }
+    if (command.manualCancellationAvailable) {
+      cancellationReviews[appointmentKey(appointment)] = {
+        commandId: command.id,
+        receptionCode: command.manualCancellationReceptionCode,
+      };
+      return;
+    }
+    if (
+      appointment.status === 'cancelled' &&
+      command.cancellationReviewCandidates?.length
+    ) {
+      useAlert(
+        t('SCHEDULING.APPOINTMENT_FORM.CANCELLATION_CANDIDATES', {
+          codes: command.cancellationReviewCandidates.join(', '),
+        })
+      );
+      return;
+    }
+
+    await SchedulingProviderCommandsAPI.reconcile(command.id, {
+      provider: 'medelement',
+    });
+    if (generation !== providerReviewGeneration) return;
+    if (appointment.status === 'cancelled') {
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_CANCELLED_STARTED'));
+    } else {
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_STARTED'));
+    }
+  } catch (error) {
+    if (generation === providerReviewGeneration) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
+  } finally {
+    if (generation === providerReviewGeneration)
+      checkingAppointmentKey.value = '';
+  }
+}
+
+async function resolveManualCancellation(appointment) {
+  if (resolvingCancellationKey.value || checkingAppointmentKey.value) return;
+
+  const key = appointmentKey(appointment);
+  const review = cancellationReviews[key];
+  if (!review) return;
+  const generation = providerReviewGeneration;
+
+  resolvingCancellationKey.value = key;
+  try {
+    const response = await SchedulingProviderCommandsAPI.resolveCancellation(
+      review.commandId,
+      { provider: 'medelement', receptionCode: review.receptionCode }
+    );
+    if (generation !== providerReviewGeneration) return;
+    const resolved = normalizePayload(response.data);
+    if (
+      resolved.id !== review.commandId ||
+      resolved.status !== 'cancelled' ||
+      resolved.manualCancellationResolution?.result !== 'removed' ||
+      resolved.manualCancellationResolution?.receptionCode !==
+        review.receptionCode ||
+      resolved.appointment?.id !== appointment.id ||
+      resolved.appointment?.status !== 'cancelled'
+    ) {
+      useAlert(t('SCHEDULING.ERRORS.MEDELEMENT_CANCELLATION_NOT_VERIFIED'));
+      return;
+    }
+    upsertAppointment(resolved.appointment);
+    delete cancellationReviews[key];
+    refreshSidebarCounters();
+    useAlert(t('SCHEDULING.APPOINTMENT_FORM.MANUAL_CANCELLATION_VERIFIED'));
+  } catch (error) {
+    if (generation === providerReviewGeneration) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
+  } finally {
+    if (generation === providerReviewGeneration)
+      resolvingCancellationKey.value = '';
+  }
+}
+
+async function checkReviewedBooking(appointment) {
+  const review = cancellationReviews[appointmentKey(appointment)];
+  if (!review || checkingAppointmentKey.value || resolvingCancellationKey.value)
+    return;
+
+  const generation = providerReviewGeneration;
+
+  checkingAppointmentKey.value = appointmentKey(appointment);
+  try {
+    await SchedulingProviderCommandsAPI.reconcile(review.commandId, {
+      provider: 'medelement',
+    });
+    if (generation !== providerReviewGeneration) return;
+    delete cancellationReviews[appointmentKey(appointment)];
+    useAlert(t('SCHEDULING.APPOINTMENT_FORM.CHECK_STARTED'));
+  } catch (error) {
+    if (generation === providerReviewGeneration) {
+      useAlert(formatSchedulingErrorMessage(error, t));
+    }
+  } finally {
+    if (generation === providerReviewGeneration)
+      checkingAppointmentKey.value = '';
   }
 }
 
@@ -903,8 +1142,8 @@ const initializeSidebar = async () => {
     // Keep the appointments list usable even if optional references fail.
   }
 
-  await loadAppointments();
-  if (!appointments.value.length) {
+  const loaded = await loadAppointments();
+  if (loaded && !appointments.value.length) {
     await startCreateAppointment({ scroll: false });
   }
 };
@@ -913,19 +1152,32 @@ onMounted(() => {
   initializeSidebar();
 });
 
+onBeforeUnmount(() => {
+  sidebarDisposed = true;
+  loadRequestId += 1;
+  providerReviewGeneration += 1;
+});
+
 watch(
   () => [
     props.currentChat?.id,
-    props.currentChat?.contact_id,
-    props.currentChat?.contactId,
+    contactId.value,
+    conversationDisplayIds.value.join(','),
   ],
   async () => {
+    providerReviewGeneration += 1;
+    Object.keys(cancellationReviews).forEach(
+      key => delete cancellationReviews[key]
+    );
+    checkingAppointmentKey.value = '';
+    resolvingCancellationKey.value = '';
     isCreating.value = false;
-    await loadAppointments();
-    if (!appointments.value.length) {
+    const loaded = await loadAppointments();
+    if (loaded && !appointments.value.length) {
       await startCreateAppointment({ scroll: false });
     }
-  }
+  },
+  { flush: 'sync' }
 );
 </script>
 
@@ -1124,6 +1376,33 @@ watch(
                       "
                       size="sm"
                       @update:model-value="createForm.clientPhone = $event"
+                    />
+                  </div>
+
+                  <div
+                    v-if="isMedelementResource(selectedCreateResource)"
+                    class="scheduling-appointment-drawer-row"
+                  >
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      for="scheduling-conversation-appointment-client-iin"
+                    >
+                      {{ $t('SCHEDULING.CONTACT.IIN') }}
+                    </label>
+                    <Input
+                      id="scheduling-conversation-appointment-client-iin"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="$t('SCHEDULING.CONTACT.IIN')"
+                      :model-value="createForm.clientIdentifier"
+                      :message="medelementIinError(createForm)"
+                      :message-type="
+                        medelementIinError(createForm) ? 'error' : 'info'
+                      "
+                      inputmode="numeric"
+                      autocomplete="off"
+                      size="sm"
+                      @update:model-value="updatePatientIin(createForm, $event)"
                     />
                   </div>
 
@@ -1341,6 +1620,17 @@ watch(
                   >
                     {{ appointmentMeta(appointment) }}
                   </span>
+                  <span
+                    v-if="providerBookingStatusKey(appointment)"
+                    class="block text-xs font-medium leading-5"
+                    :class="
+                      providerBookingNeedsReview(appointment)
+                        ? 'text-n-ruby-11'
+                        : 'text-n-slate-11'
+                    "
+                  >
+                    {{ providerBookingStatusMessage(appointment, $t) }}
+                  </span>
                 </span>
               </span>
               <span
@@ -1350,6 +1640,72 @@ watch(
               />
             </span>
           </button>
+
+          <div
+            v-if="
+              providerBookingNeedsReview(appointment) &&
+              !isAppointmentProviderOwned(appointment)
+            "
+            class="flex justify-end px-3 pb-2.5"
+          >
+            <Button
+              size="sm"
+              slate
+              faded
+              :is-loading="
+                checkingAppointmentKey === appointmentKey(appointment)
+              "
+              :disabled="Boolean(resolvingCancellationKey)"
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.CHECK_PROVIDER_BOOKING')"
+              @click="checkProviderBooking(appointment)"
+            />
+          </div>
+
+          <div
+            v-if="cancellationReviews[appointmentKey(appointment)]"
+            class="mx-3 mb-3 rounded-md border border-n-weak bg-n-alpha-1 p-3"
+            role="status"
+          >
+            <p class="mb-2 text-xs leading-5 text-n-slate-12">
+              {{
+                $t(
+                  'SCHEDULING.APPOINTMENT_FORM.MANUAL_CANCELLATION_INSTRUCTIONS',
+                  {
+                    code: cancellationReviews[appointmentKey(appointment)]
+                      .receptionCode,
+                  }
+                )
+              }}
+            </p>
+            <div class="flex flex-wrap justify-end gap-2">
+              <Button
+                v-if="appointment.status !== 'cancelled'"
+                size="sm"
+                slate
+                faded
+                :disabled="Boolean(resolvingCancellationKey)"
+                :is-loading="
+                  checkingAppointmentKey === appointmentKey(appointment)
+                "
+                :label="
+                  $t('SCHEDULING.APPOINTMENT_FORM.CHECK_PROVIDER_BOOKING')
+                "
+                @click="checkReviewedBooking(appointment)"
+              />
+              <Button
+                size="sm"
+                color="blue"
+                :disabled="Boolean(checkingAppointmentKey)"
+                :is-loading="
+                  resolvingCancellationKey === appointmentKey(appointment)
+                "
+                :label="
+                  $t('SCHEDULING.APPOINTMENT_FORM.VERIFY_MANUAL_CANCELLATION')
+                "
+                @click="resolveManualCancellation(appointment)"
+              />
+            </div>
+          </div>
 
           <div
             v-if="
@@ -1541,6 +1897,55 @@ watch(
                         appointmentForms[
                           appointmentKey(appointment)
                         ].clientPhone = $event
+                      "
+                    />
+                  </div>
+
+                  <div
+                    v-if="
+                      isMedelementResource(
+                        selectedResourceForForm(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      )
+                    "
+                    class="scheduling-appointment-drawer-row"
+                  >
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      :for="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
+                    >
+                      {{ $t('SCHEDULING.CONTACT.IIN') }}
+                    </label>
+                    <Input
+                      :id="`scheduling-conversation-appointment-client-iin-${appointment.id}`"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="$t('SCHEDULING.CONTACT.IIN')"
+                      :model-value="
+                        appointmentForms[appointmentKey(appointment)]
+                          .clientIdentifier
+                      "
+                      :message="
+                        medelementIinError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                      :message-type="
+                        medelementIinError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                          ? 'error'
+                          : 'info'
+                      "
+                      inputmode="numeric"
+                      autocomplete="off"
+                      size="sm"
+                      @update:model-value="
+                        updatePatientIin(
+                          appointmentForms[appointmentKey(appointment)],
+                          $event
+                        )
                       "
                     />
                   </div>

@@ -114,4 +114,48 @@ RSpec.describe Scheduling::Appointments::CancelService do
 
     expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
   end
+
+  it 'holds a confirmed local MedElement booking until removal is verified' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    local_appointment = appointment
+    local_appointment.update!(source: 'manual', custom_attributes: local_appointment.custom_attributes.merge(
+      Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'succeeded'
+    ))
+
+    result = described_class.new(appointment: local_appointment, actor: actor).perform
+
+    expect(result).to have_attributes(status: 'scheduled', payment_status: 'awaiting_payment')
+    expect(Scheduling::Appointment.active_statuses.exists?(id: result.id)).to be(true)
+    expect(result.custom_attributes['medelement_provider_sync_status']).to eq('pending')
+    expect(result.medelement_provider_command_receipt).to have_attributes(operation: 'remove_reception')
+    expect do
+      described_class.new(appointment: local_appointment.reload, actor: actor).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: local_appointment, operation: 'remove_reception').count).to eq(1)
+  end
+
+  it 'holds a confirmed local MedElement slot when the write hook vanishes before command creation' do
+    local_appointment = appointment
+    local_appointment.update!(source: 'manual', custom_attributes: local_appointment.custom_attributes.merge(
+      Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'succeeded'
+    ))
+
+    expect do
+      described_class.new(appointment: local_appointment, actor: actor).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CANCELLATION_UNAVAILABLE') }
+    expect(local_appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'does not remove a local reception with an unknown provider outcome' do
+    local_appointment = appointment
+    local_appointment.update!(source: 'manual', custom_attributes: local_appointment.custom_attributes.merge(
+      Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => 'provider_status_unknown'
+    ))
+
+    expect do
+      described_class.new(appointment: local_appointment, actor: actor).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+    expect(local_appointment.reload.status).to eq('scheduled')
+  end
 end

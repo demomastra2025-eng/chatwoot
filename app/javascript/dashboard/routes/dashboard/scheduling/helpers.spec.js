@@ -1,12 +1,17 @@
 import {
+  appointmentCancellationAlertKey,
   buildCalendarRange,
   buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
   canCreateAppointmentConversation,
   deriveVisibleMinuteWindow,
   getServicePriceForResource,
+  hasMedelementReceptionIdentity,
   isAppointmentProviderOwned,
   isMedelementResource,
+  providerBookingNeedsReview,
+  providerBookingStatusKey,
+  providerCancellationPending,
   isServiceAvailableForResource,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
@@ -20,6 +25,96 @@ describe('scheduling helpers', () => {
   it('identifies provider-owned Medelement appointments', () => {
     expect(isAppointmentProviderOwned({ source: 'medelement' })).toBe(true);
     expect(isAppointmentProviderOwned({ source: 'manual' })).toBe(false);
+  });
+
+  it('does not offer another reception create for a linked or pending manual appointment', () => {
+    expect(
+      hasMedelementReceptionIdentity({
+        source: 'manual',
+        externalRef: 'medelement:reception:71',
+      })
+    ).toBe(true);
+    expect(
+      hasMedelementReceptionIdentity({
+        source: 'manual',
+        customAttributes: { medelement_reception_code: '71' },
+      })
+    ).toBe(true);
+    expect(
+      hasMedelementReceptionIdentity({ providerConfirmationStatus: 'pending' })
+    ).toBe(true);
+    expect(
+      hasMedelementReceptionIdentity({ source: 'manual', status: 'scheduled' })
+    ).toBe(false);
+  });
+
+  it('shows a red review state for an unknown booking or cancellation, not a confirmed booking', () => {
+    expect(
+      providerBookingNeedsReview({
+        status: 'scheduled',
+        providerConfirmationStatus: 'provider_status_unknown',
+      })
+    ).toBe(true);
+    expect(
+      providerBookingNeedsReview({
+        status: 'confirmed',
+        customAttributes: { medelement_provider_sync_status: 'failed' },
+      })
+    ).toBe(true);
+    expect(
+      providerBookingNeedsReview({
+        status: 'scheduled',
+        providerConfirmationStatus: 'succeeded',
+      })
+    ).toBe(false);
+    expect(
+      providerBookingNeedsReview({
+        status: 'cancelled',
+        providerConfirmationStatus: 'failed',
+      })
+    ).toBe(true);
+    expect(
+      providerBookingNeedsReview({
+        status: 'no_show',
+        providerConfirmationStatus: 'failed',
+      })
+    ).toBe(false);
+  });
+
+  it('keeps a provider removal pending or unknown without announcing completed cancellation', () => {
+    const appointment = {
+      source: 'manual',
+      status: 'scheduled',
+      customAttributes: { medelement_cancellation_command_id: 42 },
+      providerConfirmationStatus: 'pending',
+    };
+    expect(providerCancellationPending(appointment)).toBe(true);
+    expect(providerBookingStatusKey(appointment)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING'
+    );
+    expect(appointmentCancellationAlertKey(appointment)).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.CANCELLATION_PENDING'
+    );
+
+    const unknown = {
+      ...appointment,
+      providerConfirmationStatus: 'provider_status_unknown',
+    };
+    expect(providerBookingStatusKey(unknown)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'
+    );
+    expect(appointmentCancellationAlertKey(unknown)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'
+    );
+    expect(appointmentCancellationAlertKey({ status: 'cancelled' })).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'
+    );
+    expect(
+      providerBookingStatusKey({
+        status: 'cancelled',
+        providerConfirmationStatus: 'pending',
+      })
+    ).toBe('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING');
   });
 
   it('normalizes Medelement cabinets from resource custom attributes', () => {

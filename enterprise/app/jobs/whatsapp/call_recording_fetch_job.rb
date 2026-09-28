@@ -9,10 +9,29 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
   MIX_TIMEOUT = 8.seconds
 
   retry_on Whatsapp::MediaServerClient::ConnectionError, wait: 5.seconds, attempts: 5
+  retry_on Whatsapp::RecordingBundleImportService::Pending, wait: 5.seconds, attempts: 5
+  discard_on Whatsapp::RecordingBundleImportService::Stale
   discard_on ActiveRecord::RecordNotFound
 
   def perform(call_id)
     call = Call.find(call_id)
+    bundle_error = import_bundle_error(call)
+    fetch_legacy_recording(call)
+    raise bundle_error if bundle_error
+  end
+
+  private
+
+  def import_bundle_error(call)
+    return unless (call.meta || {}).dig('recording_bundle', 'version') == 1
+
+    Whatsapp::RecordingBundleImportService.new(call: call, client: Whatsapp::MediaServerClient.new).perform
+    nil
+  rescue Whatsapp::RecordingBundleImportService::Pending, Whatsapp::RecordingBundleImportService::Invalid => e
+    e
+  end
+
+  def fetch_legacy_recording(call)
     return finalize_attached_recording!(call) if call.recording.attached?
     return if call.media_session_id.blank?
 
@@ -32,8 +51,6 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
     attach_recording(call, recording_data)
     finalize_attached_recording!(call)
   end
-
-  private
 
   def finalize_attached_recording!(call)
     Whatsapp::CallMessageBuilder.update_recording_url!(call: call)

@@ -21,6 +21,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def resolve!(allow_create:)
+    raise deterministic_error('appointment_superseded') unless Integrations::Medelement::AppointmentPatientIdentity.current?(command)
     return resolve_linked_patient! if snapshot_patient_code.present?
 
     return with_identity_lock { resolve_unlinked!(allow_create: allow_create) } if strong_identifier_lookup?
@@ -273,11 +274,29 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
       )
     end
     validate_patient_ref!(code)
-    update_contact_patient_ref!(code)
+    sync_primary_contact!(code, patient)
     command.update!(provider_patient_code: code.to_s)
     record_phone_warning!(patient) if patient && verify_phone
-    sync_contact!(patient) if patient
     code.to_s
+  end
+
+  def sync_primary_contact!(code, patient)
+    return if appointment_patient_owned?
+
+    with_current_patient_identity do
+      update_contact_patient_ref!(code)
+      sync_contact!(patient) if patient
+    end
+  end
+
+  def with_current_patient_identity
+    return yield unless command.appointment
+
+    command.appointment.with_lock do
+      raise deterministic_error('appointment_superseded') unless Integrations::Medelement::AppointmentPatientIdentity.current?(command)
+
+      yield
+    end
   end
 
   def validate_create_payload!
@@ -330,7 +349,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def desired_iin
-    @desired_iin ||= normalized_iin(command.request_snapshot['patient'].to_h['payload'].to_h['iin'])
+    @desired_iin ||= normalized_iin(
+      command.request_snapshot['patient'].to_h['payload'].to_h['iin'] ||
+      command.request_snapshot.dig(Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY, 'fields', 'client_identifier')
+    )
   end
 
   def snapshot_phone_numbers
@@ -414,6 +436,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   def patient_snapshot
     @patient_snapshot ||= command.request_snapshot.fetch('patient')
+  end
+
+  def appointment_patient_owned?
+    command.request_snapshot.dig(Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY, 'owned') == true
   end
 
   def snapshot_patient_code

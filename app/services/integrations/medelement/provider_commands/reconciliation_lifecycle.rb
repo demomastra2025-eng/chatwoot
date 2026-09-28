@@ -2,6 +2,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
   CLAIM_TOKEN_KEY = 'reconciliation_claim_token'.freeze
   CLAIMED_AT_KEY = 'reconciliation_claimed_at'.freeze
   DISPATCH_RESERVED_AT_KEY = 'reconciliation_dispatch_reserved_at'.freeze
+  MANUAL_CHECK_INTERVAL = 1.minute
 
   def initialize(command:, now: -> { Time.current })
     @command = command
@@ -27,6 +28,16 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
       command.reload
       next false unless command.provider_status_unknown?
       next false unless command.reconciliation_next_at.blank? || command.reconciliation_next_at <= current_time
+
+      command.update!(execution_state: reserved_dispatch_state)
+      true
+    end
+  end
+
+  def request_manual_check!
+    command.with_lock do
+      command.reload
+      next false unless manual_check_available?
 
       command.update!(execution_state: reserved_dispatch_state)
       true
@@ -83,6 +94,24 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
   private
 
   attr_reader :command, :now
+
+  def manual_check_available?
+    state = command.execution_state.to_h
+    return false unless command.create_reception? && command.reconcilable? && state['write_phase'] == 'reception_create'
+    return false if command.reconciliation_required? &&
+                    command.reconciliation_attempts >= Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+
+    last_requested_at = last_manual_check_at(state)
+    last_requested_at.blank? || last_requested_at <= current_time - MANUAL_CHECK_INTERVAL
+  end
+
+  def last_manual_check_at(state)
+    [state[DISPATCH_RESERVED_AT_KEY], state['reconciliation_last_attempt_at']].filter_map do |value|
+      Time.iso8601(value) if value.present?
+    rescue ArgumentError
+      nil
+    end.max
+  end
 
   def claimable?
     return false unless command.reconcilable?
@@ -163,6 +192,11 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
   end
 
   def project_appointment_status!(status)
-    Integrations::Medelement::AppointmentProviderStatus.persist!(command.appointment, status)
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+      provider_status.persist_if_bound!(command.appointment, status, command: command)
+    else
+      provider_status.persist!(command.appointment, status)
+    end
   end
 end

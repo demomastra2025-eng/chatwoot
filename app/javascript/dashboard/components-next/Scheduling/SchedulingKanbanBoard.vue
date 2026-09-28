@@ -6,7 +6,12 @@ import Draggable from 'vuedraggable';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import SchedulingStatusMenu from './SchedulingStatusMenu.vue';
 import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
-import { isAppointmentProviderOwned } from 'dashboard/routes/dashboard/scheduling/helpers';
+import {
+  isAppointmentProviderOwned,
+  providerBookingNeedsReview,
+  providerBookingStatusKey,
+  providerBookingStatusMessage,
+} from 'dashboard/routes/dashboard/scheduling/helpers';
 
 const props = defineProps({
   appointments: {
@@ -237,6 +242,17 @@ const canMoveAppointment = event =>
                     </h4>
                     <p class="mb-0 mt-1 text-xs text-n-slate-11">
                       {{ appointmentSubtitle(element) }}
+                    </p>
+                    <p
+                      v-if="providerBookingStatusKey(element)"
+                      class="mb-0 mt-1 text-xs font-medium"
+                      :class="
+                        providerBookingNeedsReview(element)
+                          ? 'text-n-ruby-11'
+                          : 'text-n-slate-11'
+                      "
+                    >
+                      {{ providerBookingStatusMessage(element, $t) }}
                     </p>
                   </div>
 

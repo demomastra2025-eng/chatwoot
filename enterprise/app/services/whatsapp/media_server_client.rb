@@ -71,6 +71,16 @@ class Whatsapp::MediaServerClient
     response.body
   end
 
+  def download_recording_manifest(session_id, account_id:, call_id:)
+    download_bundle_data(recording_bundle_path(session_id, 'recording-manifest', account_id, call_id))
+  end
+
+  def download_recording_artifact(session_id, artifact_id, account_id:, call_id:)
+    raise SessionError, 'Invalid recording artifact ID' unless artifact_id.to_s.match?(/\A(?:track_\d{6}|customer_legacy|agent_legacy)\z/)
+
+    download_bundle_data(recording_bundle_path(session_id, "recording-artifacts/#{artifact_id}", account_id, call_id))
+  end
+
   def add_peer(session_id, role:, label:)
     post("/sessions/#{session_id}/peers", { role: role, label: label })
   end
@@ -92,6 +102,20 @@ class Whatsapp::MediaServerClient
   end
 
   private
+
+  def recording_bundle_path(session_id, suffix, account_id, call_id)
+    raise SessionError, 'Invalid recording session ID' unless session_id.to_s.match?(/\A[A-Za-z0-9_-]{1,128}\z/)
+
+    query = { account_id: account_id.to_s, call_id: call_id.to_s }.to_query
+    "/sessions/#{session_id}/#{suffix}?#{query}"
+  end
+
+  def download_bundle_data(path)
+    response = execute_request(:get, path)
+    return response.body if response.success?
+
+    raise SessionError.new('Recording bundle download failed', http_status: response.code.to_i)
+  end
 
   def post(path, body = {})
     response = execute_request(:post, path, body)

@@ -194,7 +194,6 @@
       "CUSTOM_FIELDS_TITLE": "Custom fields",
       "EDIT_TITLE": "Edit appointment",
       "ENDS_AT": "Ends at",
-
       "INTAKE_FIELDS_DESCRIPTION": "Collect the managed fields that should be captured during booking intake.",
       "INTAKE_FIELDS_TITLE": "Booking intake",
       "NOTES_DESCRIPTION": "Keep any extra instructions or context for the visit.",
@@ -208,6 +207,15 @@
       "STARTS_AT": "Starts at",
       "STATUS": "Status",
       "SUCCESS_CANCEL": "Appointment cancelled",
+      "CANCELLATION_PENDING": "Cancellation requested. MedElement has not confirmed it yet.",
+      "CHECK_PROVIDER_BOOKING": "Check in MedElement",
+      "CHECK_STARTED": "MedElement verification started. Refresh the appointment after it finishes and cancel separately if the reception ID is confirmed.",
+      "CHECK_CANCELLED_STARTED": "MedElement verification started. The remote reception is not being removed; review and resolve manually afterwards.",
+      "CHECK_NOT_AVAILABLE": "Automatic verification is unavailable. The appointment was not cancelled; manual review is required.",
+      "MANUAL_CANCELLATION_INSTRUCTIONS": "For reception #{code}, check the patient, specialist, cabinet, time and services in MedElement. To cancel, remove this reception there, then check removal here. OneLink will release the slot only after verifying removal.",
+      "VERIFY_MANUAL_CANCELLATION": "Verify removal in MedElement",
+      "MANUAL_CANCELLATION_VERIFIED": "MedElement removal verified. Appointment cancelled.",
+      "CANCELLATION_CANDIDATES": "Possible MedElement reception #{codes}. The local booking is cancelled, but remote removal is unconfirmed. Verify patient, specialist, cabinet, time and service in MedElement and resolve manually.",
       "SUCCESS_DELETE": "Appointment deleted",
       "SUCCESS_SAVE": "Appointment saved",
       "ERRORS": {
@@ -228,7 +236,10 @@
       "confirmed": "Confirmed",
       "completed": "Completed",
       "cancelled": "Cancelled",
-      "no_show": "No show"
+      "no_show": "No show",
+      "PROVIDER_REVIEW": "Not confirmed in MedElement — review required",
+      "CANCELLATION_PENDING": "Awaiting MedElement cancellation confirmation",
+      "CANCELLATION_REVIEW": "MedElement cancellation is not confirmed — manual review required"
     },
     "PAYMENT_STATUS": {
       "awaiting_payment": "Awaiting payment",
@@ -391,6 +402,12 @@
       "MEDELEMENT_SERVICE_REQUIRED": "Select a service from the MedElement catalog.",
       "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "The selected service is not available for this MedElement specialist.",
       "MEDELEMENT_SERVICE_UNMAPPED": "The selected service is not linked to MedElement.",
+      "MEDELEMENT_CANCELLATION_RESOLUTION_UNAVAILABLE": "This reception cannot be resolved automatically: the original command or appointment has changed. Manual review is required.",
+      "MEDELEMENT_CANCELLATION_NOT_VERIFIED": "Removal of this exact reception is not confirmed in MedElement. The OneLink appointment remains unchanged.",
+      "MEDELEMENT_CANCELLATION_CHECK_FAILED": "MedElement could not be reached for verification. Try checking again later; the OneLink appointment remains unchanged.",
+      "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "This cancellation record must be kept for MedElement verification and synchronization.",
+      "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Appointment not cancelled: verify the reception in MedElement first. If confirmed, cancel it separately.",
+      "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "MedElement verification is unavailable or already running. Do not cancel without confirmation.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "Only scheduled or confirmed appointments can be created in MedElement.",
       "END_BEFORE_START": "End time must be later than the start time.",
       "EXPENSE_NOT_FOUND": "Expense not found.",
@@ -414,7 +431,8 @@
       "SET_SERVICE_AMOUNT_FIRST": "Set the service amount before recording a payment.",
       "SINGLE_DAY_REQUIRED": "Appointment must stay within one local day.",
       "SLOT_CONFLICT": "This slot is already occupied.",
-      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Total received amount cannot exceed the service amount."
+      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Total received amount cannot exceed the service amount.",
+      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "The patient identity conflicts with a linked MedElement patient. Select the patient card or create a separate appointment."
     },
     "WEEKDAYS": {
       "0": "Sunday",

@@ -258,6 +258,10 @@ func (b *Bridge) beginMetaForwarding() bool {
 }
 
 func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.TrackRemote) {
+	var captureSource *CaptureSource
+	if b.recorder != nil {
+		captureSource = b.recorder.NewCaptureSource("customer", "meta", track.Codec().MimeType, track.Codec().ClockRate)
+	}
 	slog.Info("bridge: forwarding Meta audio to agents",
 		"session_id", b.sessionID,
 		"codec", track.Codec().MimeType,
@@ -296,6 +300,9 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 
 		// Record customer audio.
 		if b.recorder != nil {
+			if err := b.recorder.CaptureRTP(captureSource, pkt); err != nil {
+				slog.Warn("bridge: customer capture failed", "error", err)
+			}
 			if err := b.recorder.WriteCustomerRTP(pkt); err != nil {
 				slog.Warn("bridge: failed to record customer audio",
 					"session_id", b.sessionID,
@@ -381,6 +388,10 @@ func (b *Bridge) finishAgentForwarding(peerID string) {
 }
 
 func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPeer, track *webrtc.TrackRemote) {
+	var captureSource *CaptureSource
+	if b.recorder != nil {
+		captureSource = b.recorder.NewCaptureSource("agent", "browser", track.Codec().MimeType, track.Codec().ClockRate)
+	}
 	slog.Info("bridge: forwarding agent audio to Meta",
 		"session_id", b.sessionID,
 		"peer_id", ap.ID,
@@ -427,6 +438,9 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 
 		// Record agent audio.
 		if b.recorder != nil {
+			if err := b.recorder.CaptureRTP(captureSource, pkt); err != nil {
+				slog.Warn("bridge: agent capture failed", "error", err)
+			}
 			if err := b.recorder.WriteAgentRTP(pkt); err != nil {
 				slog.Warn("bridge: failed to record agent audio",
 					"session_id", b.sessionID,

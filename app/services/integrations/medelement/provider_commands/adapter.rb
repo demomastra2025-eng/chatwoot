@@ -41,6 +41,24 @@ class Integrations::Medelement::ProviderCommands::Adapter
     Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
   end
 
+  def reconcile_command(command:)
+    unless Integrations::Medelement::ProviderCommands::ReconciliationLifecycle.new(command: command).request_manual_check!
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE',
+        message: 'Reception check is unavailable or was recently requested',
+        status: :conflict
+      )
+    end
+
+    Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id)
+  end
+
+  def resolve_cancellation(command:, actor:, reception_code:)
+    Integrations::Medelement::ProviderCommands::ManualCancellationResolutionService.new(
+      command: command, actor: actor, reception_code: reception_code
+    ).perform
+  end
+
   def patient_candidates(command:, actor:)
     patient_actions(command: command, actor: actor).candidates
   end

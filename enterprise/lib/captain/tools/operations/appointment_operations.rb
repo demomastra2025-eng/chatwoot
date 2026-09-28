@@ -1,4 +1,6 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
+  attr_reader :persisted_creation
+
   def cancel_current_appointment(appointment_id: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id)
@@ -16,6 +18,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
 
   def create_appointment(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,
                          custom_attributes: nil)
+    @persisted_creation = nil
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
 
     create_params = {
@@ -33,14 +36,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 
-    appointment = with_idempotent_creation('create_appointment', create_params) do
-      ::Scheduling::Appointments::UpsertService.new(
-        account: account,
-        params: create_params,
-        actor: actor
-      ).perform
-    end
-    attach_provider_command_receipt(appointment)
+    persist_creation!(create_params)
   end
 
   def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
@@ -82,6 +78,27 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def persist_creation!(create_params)
+    upsert = nil
+    appointment = with_idempotent_creation('create_appointment', create_params) do
+      upsert = ::Scheduling::Appointments::UpsertService.new(account: account, params: create_params, actor: actor)
+      upsert.perform
+    end
+    @persisted_creation = appointment
+    attach_provider_command_receipt(appointment)
+  rescue StandardError
+    @persisted_creation ||= upsert&.persisted_appointment
+    cache_persisted_creation!(create_params) if @persisted_creation
+    raise
+  end
+
+  def cache_persisted_creation!(create_params)
+    Captain::ToolExecutionIdempotency.store_record(
+      assistant: assistant, tool_id: 'create_appointment', params: create_params,
+      scope: idempotency_scope, record: persisted_creation
+    )
+  end
 
   def target_appointment(appointment_id)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?

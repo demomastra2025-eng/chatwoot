@@ -46,7 +46,9 @@ import {
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
 import {
+  appointmentCancellationAlertMessage,
   buildMedelementProviderCommandDetails,
+  hasMedelementReceptionIdentity,
   buildMedelementProviderCommandParams,
   canCreateAppointmentConversation,
   formatCalendarTitle,
@@ -302,6 +304,7 @@ const canCreateMedelementReception = computed(
   () =>
     formStore.mode === 'edit' &&
     !isSelectedAppointmentProviderOwned.value &&
+    !hasMedelementReceptionIdentity(formStore.selectedAppointment) &&
     isSelectedFormResourceMedelement.value &&
     ['scheduled', 'confirmed'].includes(formStore.form.status)
 );
@@ -1670,8 +1673,8 @@ const handleAppointmentCancel = async () => {
   }
 
   try {
-    await formStore.cancel(calendarStore);
-    useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
+    const appointment = await formStore.cancel(calendarStore);
+    useAlert(appointmentCancellationAlertMessage(appointment, t));
     handleDrawerClose();
   } catch (error) {
     useAlert(formatErrorMessage(error));

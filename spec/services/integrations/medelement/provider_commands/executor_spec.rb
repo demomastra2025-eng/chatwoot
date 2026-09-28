@@ -700,6 +700,103 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       )
     end
 
+    it 'does not POST after a previous reception write phase on the same command' do
+      command.update!(execution_state: command.execution_state.merge('write_phase' => 'reception_create'))
+      allow(client).to receive(:create_reception)
+      allow(client).to receive(:get_receptions)
+
+      perform
+
+      expect(client).not_to have_received(:create_reception)
+      expect(client).not_to have_received(:get_receptions)
+      expect(command.reload).to be_reconciliation_required
+      expect(command.last_error_code).to eq('reception_create_requires_verification')
+    end
+
+    it 'does not POST if the local appointment acquired a reception reference after confirmation' do
+      command
+      appointment.update!(external_ref: 'medelement:reception:72')
+      allow_available_destination
+      allow(client).to receive(:create_reception)
+
+      perform
+
+      expect(client).not_to have_received(:create_reception)
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'reception_create_requires_verification')
+    end
+
+    it 'does not send a Captain booking to the old specialist after the local appointment changes' do
+      assistant = create(:captain_assistant, account: account)
+      snapshot = command.request_snapshot.deep_merge('actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id })
+      fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(snapshot)
+      command.update!(execution_state: command.execution_state.merge('request_snapshot' => snapshot, 'request_fingerprint' => fingerprint))
+      confirmation_request.update!(metadata: confirmation_request.metadata.merge('request_fingerprint' => fingerprint))
+      replacement = create(:scheduling_resource, account: account, custom_attributes: {})
+      appointment.update!(resource: replacement)
+      allow(client).to receive(:create_reception)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'appointment_superseded')
+      expect(client).not_to have_received(:create_reception)
+    end
+
+    it 'still writes a Captain booking for its current bound specialist' do
+      assistant = create(:captain_assistant, account: account)
+      command.update!(desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at)
+      snapshot = command.request_snapshot.deep_merge('actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id })
+      fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(snapshot)
+      command.update!(execution_state: command.execution_state.merge('request_snapshot' => snapshot, 'request_fingerprint' => fingerprint))
+      confirmation_request.update!(metadata: confirmation_request.metadata.merge('request_fingerprint' => fingerprint))
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      Integrations::Medelement::AppointmentProviderStatus.persist!(
+        appointment, Integrations::Medelement::AppointmentProviderStatus::PENDING, command: command
+      )
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+      allow_materialized_reception(service_codes: [])
+
+      perform
+
+      expect(client).to have_received(:create_reception).once
+      expect(command.reload).to be_succeeded
+      expect(appointment.reload.external_ref).to eq('medelement:reception:reception-1')
+    end
+
+    it 'leaves a create POST returning zero for reconciliation without storing a reception reference' do
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => '0')
+      allow(client).to receive(:get_reception)
+
+      perform
+
+      expect(client).to have_received(:create_reception).once
+      expect(client).not_to have_received(:get_reception)
+      expect(command.reload).to be_reconciliation_required
+      expect(command.provider_reception_code).to be_blank
+      expect(command.execution_state).not_to have_key('write_provider_reception_code')
+    end
+
+    it 'does not reconcile a zero reception ID discovered after the POST returned zero' do
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => '0')
+
+      perform
+
+      allow(client).to receive(:get_receptions).and_return(
+        [{
+          'RECEPTION_CODE' => '0', 'PATIENT_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'specialist-1',
+          'COMPANY_CABINET_CODE' => 'cabinet-1', 'STARTTIME' => provider_time(appointment.starts_at),
+          'ENDTIME' => provider_time(appointment.ends_at), 'REMOVED' => 0, 'SERVICES' => []
+        }]
+      )
+      Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command, client: client).perform
+
+      expect(client).to have_received(:create_reception).once
+      expect(command.reload).to be_reconciliation_required
+      expect(appointment.reload.external_ref).to be_blank
+    end
+
     it 'preflights timetable and collisions, writes once, and applies the canonical external ref' do
       allow(client).to receive(:timetable).and_return(timetable_for(appointment.starts_at, appointment.ends_at))
       allow(client).to receive(:get_receptions).and_return(

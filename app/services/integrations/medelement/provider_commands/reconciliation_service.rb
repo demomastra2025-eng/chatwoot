@@ -47,7 +47,9 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     handler = PHASE_HANDLERS[write_phase]
     return lifecycle.defer_unknown!('reconciliation_unknown_write_phase', claim_token: reconciliation_claim_token) if handler.blank?
 
-    send(handler)
+    result = send(handler)
+    return lifecycle.defer_unknown!('cancelled_reception_found', claim_token: reconciliation_claim_token) if result == :cancelled_reception_found
+
     lifecycle.retry_unresolved!('reconciliation_no_match', claim_token: reconciliation_claim_token)
   end
 
@@ -89,6 +91,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def conflicting_contact_patient_code?(patient_code)
+    return false if command.request_snapshot.dig(Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY, 'owned') == true
+
     current_code = command.contact&.custom_attributes&.dig('medelement_patient_code').presence
     current_code.present? && current_code.to_s != patient_code.to_s
   end
@@ -111,7 +115,9 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def reconcile_reception_create
-    return if reconcile_known_created_reception
+    known_result = reconcile_known_created_reception
+    return known_result if known_result
+    return if cancelled_booking_with_unverifiable_written_reference?
 
     candidates = destination_receptions.reject do |reception|
       preflight_reception_codes.include?(reception['RECEPTION_CODE'].to_s) ||
@@ -121,25 +127,39 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
 
     reception = candidates.first
     reception_code = reception['RECEPTION_CODE'].to_s
-    return if reception_code.blank?
+    return unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
 
     patient_code = reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
-    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+    apply_discovered_reception(reception_code: reception_code, patient_code: patient_code)
   end
 
   def reconcile_known_created_reception
     reception_code = written_reception_code
-    return false if reception_code.blank?
+    return false unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
 
     detail = client.get_reception(reception_code: reception_code, version: :v2)
     reception = reconciled_created_reception(detail, reception_code)
     return false unless reception_verifier.destination_match?(reception, expected_reception_code: reception_code)
 
     patient_code = reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
-    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
-    true
+    apply_discovered_reception(reception_code: reception_code, patient_code: patient_code)
   rescue Integrations::Medelement::Client::ApiError
     false
+  end
+
+  def apply_discovered_reception(reception_code:, patient_code:)
+    if command.appointment.reload.status == 'cancelled'
+      return :cancelled_reception_found if success_applier.cancelled_reception_candidate!(reception_code: reception_code)
+
+      return false
+    end
+
+    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+  end
+
+  def cancelled_booking_with_unverifiable_written_reference?
+    command.appointment.reload.status == 'cancelled' &&
+      Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(written_reception_code)
   end
 
   def reconciled_created_reception(detail, reception_code)

@@ -342,7 +342,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     response_cancellation_service.cancelled?(
       buffer_token: @buffer_token,
-      expected_last_message_id: @expected_last_message_id
+      expected_last_message_id: @expected_last_message_id,
+      expected_control_generation: @expected_control_generation,
+      expected_status_transition_id: @expected_status_transition_id
     )
   end
 
@@ -351,7 +353,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     clear_buffer_state_if_current
     response_cancellation_service.clear_if_current!(
       buffer_token: @buffer_token,
-      expected_last_message_id: @expected_last_message_id
+      expected_last_message_id: @expected_last_message_id,
+      expected_control_generation: @expected_control_generation,
+      expected_status_transition_id: @expected_status_transition_id
     )
     true
   end
@@ -963,14 +967,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_status
-    Conversation.uncached { Conversation.where(id: @conversation.id).pick(:status) }
+    @conversation.status
   end
 
   def current_buffer_state_valid?
+    @conversation.reload
     return false unless conversation_eligible_for_response?
     return false unless control_generation_current?
 
-    @conversation.reload
     current_last_incoming_message_id = Captain::Conversation::ControlService
                                        .messages_scope(@conversation)
                                        .incoming
@@ -999,10 +1003,13 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def clear_buffer_state_if_current
     return if @buffer_token.blank?
 
-    state = current_buffer_state
-    return unless state.present? && state['token'] == @buffer_token
+    raw_state = Redis::Alfred.get(buffer_state_key)
+    state = JSON.parse(raw_state.to_s)
+    return unless state.is_a?(Hash) && state['token'] == @buffer_token
 
-    Redis::Alfred.delete(buffer_state_key)
+    Redis::Alfred.delete_if_value(buffer_state_key, raw_state)
+  rescue JSON::ParserError
+    nil
   end
 
   def current_buffer_state
@@ -1023,7 +1030,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def control_generation_current?
-    @conversation.reload.captain_ai_control_active? &&
+    @conversation.captain_ai_control_active? &&
       !Captain::Conversation::ControlService.human_response_after?(@conversation, @expected_last_message_id) &&
       @conversation.current_captain_control_generation.to_i == @expected_control_generation.to_i
   end
@@ -1042,7 +1049,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return {} if @expected_last_message_id.blank?
 
     @message_fence_attributes ||= Message.where(id: @expected_last_message_id, conversation_id: @conversation.id)
-                                          .pick(:additional_attributes).to_h
+                                         .pick(:additional_attributes).to_h
   end
 end
 # rubocop:enable Metrics/ClassLength

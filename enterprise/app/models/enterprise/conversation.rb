@@ -29,8 +29,8 @@ module Enterprise::Conversation
     captain_control_service.stamp_generation!(message)
   end
 
-  def activate_captain_human_control!(source:, actor: nil)
-    captain_control_service.activate_human!(source: source, actor: actor)
+  def activate_captain_human_control!(source:, actor: nil, &)
+    captain_control_service.activate_human!(source: source, actor: actor, &)
   end
 
   def prepare_captain_ai_control!

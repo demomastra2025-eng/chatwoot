@@ -43,6 +43,94 @@ export const canCreateAppointmentConversation = appointment =>
 export const isAppointmentProviderOwned = appointment =>
   appointment?.source === 'medelement';
 
+export const hasMedelementReceptionIdentity = appointment =>
+  appointment?.externalRef?.startsWith('medelement:reception:') ||
+  Boolean(appointment?.customAttributes?.medelement_reception_code) ||
+  ['pending', 'succeeded', 'provider_status_unknown'].includes(
+    appointment?.providerConfirmationStatus ||
+      appointment?.customAttributes?.medelement_provider_sync_status
+  );
+
+export const providerBookingNeedsReview = appointment =>
+  ['failed', 'provider_status_unknown'].includes(
+    appointment?.providerConfirmationStatus ||
+      appointment?.customAttributes?.medelement_provider_sync_status
+  ) && ['scheduled', 'confirmed', 'cancelled'].includes(appointment?.status);
+
+const providerCancellationCommandId = appointment =>
+  appointment?.customAttributes?.medelement_cancellation_command_id;
+
+export const providerCancellationPending = appointment =>
+  appointment?.status !== 'cancelled' &&
+  Boolean(providerCancellationCommandId(appointment)) &&
+  (appointment?.providerConfirmationStatus ||
+    appointment?.customAttributes?.medelement_provider_sync_status) ===
+    'pending';
+
+export const providerBookingStatusKey = appointment => {
+  if (providerBookingNeedsReview(appointment))
+    return providerCancellationCommandId(appointment) ||
+      appointment?.status === 'cancelled'
+      ? 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW'
+      : 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW';
+  if (providerCancellationPending(appointment))
+    return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING';
+  if (
+    appointment?.status === 'cancelled' &&
+    (appointment?.providerConfirmationStatus ||
+      appointment?.customAttributes?.medelement_provider_sync_status) ===
+      'pending'
+  )
+    return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING';
+
+  return '';
+};
+
+export const providerBookingStatusMessage = (appointment, t) => {
+  const key = providerBookingStatusKey(appointment);
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
+    return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
+    return t('SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW');
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING')
+    return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING');
+
+  return '';
+};
+
+export const appointmentCancellationAlertKey = appointment => {
+  const providerStatus =
+    appointment?.providerConfirmationStatus ||
+    appointment?.customAttributes?.medelement_provider_sync_status;
+  if (
+    (providerCancellationCommandId(appointment) ||
+      appointment?.status === 'cancelled') &&
+    providerBookingNeedsReview(appointment)
+  )
+    return 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW';
+  if (
+    providerStatus === 'pending' &&
+    (providerCancellationCommandId(appointment) ||
+      appointment?.status === 'cancelled')
+  )
+    return 'SCHEDULING.APPOINTMENT_FORM.CANCELLATION_PENDING';
+  return appointment?.status === 'cancelled'
+    ? 'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'
+    : 'SCHEDULING.MEDELEMENT.QUEUED';
+};
+
+export const appointmentCancellationAlertMessage = (appointment, t) => {
+  const key = appointmentCancellationAlertKey(appointment);
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
+    return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
+  if (key === 'SCHEDULING.APPOINTMENT_FORM.CANCELLATION_PENDING')
+    return t('SCHEDULING.APPOINTMENT_FORM.CANCELLATION_PENDING');
+  if (key === 'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL')
+    return t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL');
+
+  return t('SCHEDULING.MEDELEMENT.QUEUED');
+};
+
 export const medelementCabinetsForResource = resource => {
   const customAttributes = resource?.customAttributes || {};
   const cabinets =

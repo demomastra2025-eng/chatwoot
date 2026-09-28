@@ -13,6 +13,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
 
     def validate!(snapshot)
       version = snapshot_version(snapshot)
+      validate_appointment_identity!(snapshot)
       validate_phone_numbers!(snapshot['patient_phone_numbers'], field: 'patient_phone_numbers') if snapshot.key?('patient_phone_numbers')
       validate_patient!(snapshot['patient'])
       reception = snapshot['reception']
@@ -32,6 +33,25 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
     end
 
     private
+
+    def validate_appointment_identity!(snapshot)
+      key = Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY
+      return unless snapshot.key?(key)
+
+      identity = snapshot[key]
+      valid = identity.is_a?(Hash) && identity.keys.sort == %w[explicit_identifier fields owned] &&
+              valid_identity_flags?(identity) && valid_identity_fields?(identity['fields'])
+      raise Error, 'appointment patient identity snapshot is invalid' unless valid
+    end
+
+    def valid_identity_flags?(identity)
+      [true, false].include?(identity['owned']) && [true, false].include?(identity['explicit_identifier'])
+    end
+
+    def valid_identity_fields?(values)
+      fields = Integrations::Medelement::AppointmentPatientIdentity::FIELDS
+      values.is_a?(Hash) && values.keys.sort == fields.sort && values.values.all? { |value| value.nil? || value.is_a?(String) }
+    end
 
     def validate_patient!(patient)
       return if patient.nil?

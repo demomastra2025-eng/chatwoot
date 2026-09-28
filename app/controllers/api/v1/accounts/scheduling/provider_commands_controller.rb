@@ -1,7 +1,8 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
   before_action :set_provider_adapter
   before_action :set_command,
-                only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation, :retry]
+                only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation, :retry, :reconcile,
+                       :resolve_cancellation]
 
   def index
     commands = provider_adapter.command_scope
@@ -52,6 +53,20 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
     )
 
     render_payload(provider_adapter.serialize(command))
+  end
+
+  def reconcile
+    provider_adapter.reconcile_command(command: @command)
+    render_payload(provider_adapter.serialize(@command.reload), status: :accepted)
+  end
+
+  def resolve_cancellation
+    command = provider_adapter.resolve_cancellation(
+      command: @command, actor: Current.user, reception_code: command_params[:reception_code]
+    )
+    render_payload(provider_adapter.serialize(command).merge(
+                     appointment: Scheduling::PayloadBuilder.appointment(command.appointment.reload)
+                   ))
   end
 
   def patient_candidates
@@ -117,6 +132,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
       :active_only,
       :automatic,
       :patient_token,
+      :reception_code,
       :desired_starts_at, :desired_ends_at
     )
   end

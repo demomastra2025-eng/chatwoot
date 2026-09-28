@@ -151,9 +151,9 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
   end
 
   {
-    'неявка' => ['no_show', 'provider_explicit_no_show'],
-    'отменена' => ['cancelled', 'provider_explicit_cancelled'],
-    'завершена' => ['completed', 'provider_explicit_completed']
+    'неявка' => %w[no_show provider_explicit_no_show],
+    'отменена' => %w[cancelled provider_explicit_cancelled],
+    'завершена' => %w[completed provider_explicit_completed]
   }.each do |provider_status, (expected_status, expected_reason)|
     it "maps the explicit provider status #{provider_status} and records its source" do
       appointment = create(
@@ -504,7 +504,7 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.status).to eq('cancelled')
   end
 
-  it 'rejects an active provider row after local cancellation before a removal command exists' do
+  it 'rejects an active provider row for a historically cancelled appointment without a removal command' do
     contact = create(:contact, account: account)
     appointment = create(
       :scheduling_appointment,
@@ -518,11 +518,15 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     )
     allow(Rails.configuration.dispatcher).to receive(:dispatch)
 
-    appointment = Scheduling::Appointments::UpsertService.new(
-      account: account,
-      appointment: appointment,
-      params: { status: 'cancelled' }
-    ).perform
+    expect do
+      Scheduling::Appointments::UpsertService.new(
+        account: account, appointment: appointment, params: { status: 'cancelled' }
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+    expect(appointment.reload.status).to eq('scheduled')
+    appointment.update!(status: 'cancelled', custom_attributes: appointment.custom_attributes.merge(
+      'medelement_local_cancelled_at' => Time.current.iso8601
+    ))
 
     expect(appointment.custom_attributes['medelement_local_cancelled_at']).to be_present
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty

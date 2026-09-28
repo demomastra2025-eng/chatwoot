@@ -17,6 +17,24 @@ RSpec.describe Captain::Conversation::BufferedResponseFlushJob, type: :job do
     Redis::Alfred.delete(lock_key)
   end
 
+  it 'preserves a new buffer when ineligible old work races with replacement' do
+    job = described_class.new
+    allow(job).to receive(:with_lock).and_yield
+    conversation.open!
+    old_state = { token: 'old', assistant_id: assistant.id }.to_json
+    new_state = { token: 'new', assistant_id: assistant.id }.to_json
+    Redis::Alfred.set(state_key, old_state, ex: 60)
+    allow(Redis::Alfred).to receive(:delete_if_value).and_wrap_original do |method, target, value|
+      Redis::Alfred.set(state_key, new_state, ex: 60)
+      method.call(target, value)
+    end
+    expect(Captain::Conversation::ResponseBuilderJob).not_to receive(:perform_now)
+
+    job.perform(conversation_id: conversation.id, assistant_id: assistant.id, token: 'old')
+
+    expect(Redis::Alfred.get(state_key)).to eq(new_state)
+  end
+
   it 'does not call ResponseBuilderJob for a stale token and keeps the latest state intact' do
     latest_message = create(:message, conversation: conversation, content: 'Latest', message_type: :incoming)
     latest_token = SecureRandom.uuid

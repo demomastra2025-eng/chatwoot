@@ -8,23 +8,25 @@ class Scheduling::Appointments::CancelService
   end
 
   def perform
-    return normalize_cancelled_payment! if appointment.status == 'cancelled'
-    return cancel_provider_owned_appointment! if provider_owned?
+    appointment.with_lock do
+      return normalize_cancelled_payment! if appointment.status == 'cancelled'
+      return cancel_provider_appointment! if provider_cancellation_policy.provider_related?
 
-    Scheduling::Appointments::UpsertService.new(
-      account: appointment.account,
-      appointment: appointment,
-      params: { status: 'cancelled', payment_status: 'cancelled' },
-      actor: actor
-    ).perform
+      Scheduling::Appointments::UpsertService.new(
+        account: appointment.account,
+        appointment: appointment,
+        params: { status: 'cancelled', payment_status: 'cancelled' },
+        actor: actor
+      ).perform
+    end
   end
 
   private
 
   attr_reader :actor, :appointment
 
-  def provider_owned?
-    appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE
+  def provider_cancellation_policy
+    Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
   end
 
   def normalize_cancelled_payment!
@@ -34,7 +36,9 @@ class Scheduling::Appointments::CancelService
     appointment
   end
 
-  def cancel_provider_owned_appointment!
+  def cancel_provider_appointment!
+    raise booking_requires_verification_error unless provider_cancellation_policy.confirmed_for_removal?
+
     command = Integrations::Medelement::OutboundChangeService.new(
       entity_type: 'appointment',
       entity_id: appointment.id,
@@ -54,6 +58,14 @@ class Scheduling::Appointments::CancelService
     appointment.reload
     appointment.medelement_provider_command_receipt = command
     appointment
+  end
+
+  def booking_requires_verification_error
+    Scheduling::Error.new(
+      code: 'MEDELEMENT_BOOKING_REQUIRES_VERIFICATION',
+      message: 'Medelement reception must be verified before cancellation',
+      status: :conflict
+    )
   end
 
   def provider_changed_attributes

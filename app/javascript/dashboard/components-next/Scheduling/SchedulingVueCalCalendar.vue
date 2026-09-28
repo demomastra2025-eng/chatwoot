@@ -20,6 +20,9 @@ import {
   formatDateKey,
   formatTimeLabel,
   minuteOfDayFromDate,
+  providerBookingNeedsReview,
+  providerBookingStatusKey,
+  providerBookingStatusMessage,
   snapMinute,
   toDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
@@ -974,6 +977,7 @@ const timelineBackgroundEvents = computed(() => {
 const appointmentEvents = computed(() => {
   return props.appointments.map(appointment => {
     const resource = resourceById.value[appointment.resourceId];
+    const needsProviderReview = providerBookingNeedsReview(appointment);
     const clientName = appointment.title || appointment.clientName || '—';
     const subtitle = [
       appointment.serviceNameSnapshot || appointment.subtitle,
@@ -996,12 +1000,16 @@ const appointmentEvents = computed(() => {
           : appointment.resourceId,
       appointment,
       status: appointment.status,
-      statusIcon: appointment.statusIcon || '',
-      statusLabel: appointment.statusLabel || '',
+      statusIcon: needsProviderReview
+        ? 'i-lucide-circle-alert'
+        : appointment.statusIcon || '',
+      statusLabel: providerBookingStatusKey(appointment)
+        ? providerBookingStatusMessage(appointment, t)
+        : appointment.statusLabel || '',
       paymentStatus: appointment.paymentStatus,
       clientName,
       serviceNameSnapshot: subtitle,
-      resourceColor,
+      resourceColor: needsProviderReview ? '#e11d48' : resourceColor,
       resourceName,
       muted: Boolean(appointment.muted),
       cancelled: Boolean(appointment.cancelled),

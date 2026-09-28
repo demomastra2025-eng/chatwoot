@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::SuccessApplier
   def initialize(command:, reconciliation_claim_token: nil)
     @command = command
@@ -6,6 +7,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def patient!(patient_code:)
     with_owned_command do
+      validate_patient_identity!
       link_contact_patient_ref!(patient_code)
       apply_contact_field_resolution!
       complete_command!(provider_patient_code: patient_code)
@@ -14,6 +16,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def patient_resolved_for_reception!(patient_code:)
     with_owned_command do
+      validate_patient_identity!
       command.update!(
         status: command.status_for_transition('queued'),
         provider_patient_code: patient_code,
@@ -26,7 +29,24 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def reception_created!(reception_code:, patient_code:)
     with_owned_command do
+      validate_patient_identity!
+      if command.create_reception? && (appointment.reload.status == 'cancelled' || captain_create_reception? || frozen_appointment_identity?)
+        Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).validate!
+      end
       apply_reception_created!(reception_code: reception_code, patient_code: patient_code)
+    end
+  end
+
+  def cancelled_reception_candidate!(reception_code:)
+    return false unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
+
+    command.with_lock do
+      command.reload
+      next false unless command.processing? && reconciliation_claim_owned?
+      next false unless Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).current_cancelled_booking?
+
+      command.update!(execution_state: cancelled_reception_candidate_state(reception_code))
+      true
     end
   end
 
@@ -39,6 +59,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def reception_moved!
     with_owned_command do
+      validate_patient_identity!
       appointment.update!(
         starts_at: snapshot_time('destination_starts_at'),
         ends_at: snapshot_time('destination_ends_at'),
@@ -53,6 +74,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def reception_removed!
     with_owned_command do
+      validate_patient_identity!
       appointment.update!(
         status: 'cancelled',
         payment_status: 'cancelled',
@@ -69,6 +91,19 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   private
 
   attr_reader :command, :reconciliation_claim_token
+
+  def captain_create_reception?
+    command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+  end
+
+  def cancelled_reception_candidate_state(code)
+    state = command.execution_state.to_h
+    codes = Array(state['cancelled_reception_candidate_codes'])
+    state.merge(
+      'cancelled_reception_candidate_codes' => (codes + [code.to_s]).uniq,
+      'cancelled_reception_last_checked_at' => Time.current.iso8601
+    )
+  end
 
   def with_owned_command
     command.with_lock do
@@ -92,6 +127,12 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def apply_reception_created!(reception_code:, patient_code:)
+    unless Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_INVALID_RECEPTION_REFERENCE', message: 'Provider reception ID requires reconciliation', status: :conflict
+      )
+    end
+
     appointment.mark_medelement_provider_reconciled!
     appointment.update!(
       starts_at: snapshot_time('destination_starts_at'),
@@ -101,7 +142,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
         'medelement_reception_code' => reception_code,
         'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
         'medelement_provider_sync_status' => 'succeeded'
-      ).merge(local_service_binding_attributes)
+      ).merge(appointment_patient_attributes(patient_code)).merge(local_service_binding_attributes)
     )
     link_contact_patient_ref!(patient_code)
     complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
@@ -124,11 +165,39 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def link_contact_patient_ref!(patient_code)
+    if appointment_patient_owned?
+      appointment.update!(custom_attributes: appointment.custom_attributes.to_h.merge(appointment_patient_attributes(patient_code)))
+      return
+    end
     return if command.contact.blank?
 
     ensure_patient_ref_available!(patient_code)
     command.contact.skip_runtime_events = true
     command.contact.update!(custom_attributes: linked_contact_attributes(patient_code))
+  end
+
+  def appointment_patient_owned?
+    command.request_snapshot.dig(Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY, 'owned') == true
+  end
+
+  def frozen_appointment_identity?
+    Integrations::Medelement::AppointmentPatientIdentity.frozen?(command.request_snapshot)
+  end
+
+  def validate_patient_identity!
+    return unless appointment
+
+    appointment.lock!
+    return if Integrations::Medelement::AppointmentPatientIdentity.current?(command)
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_RECEPTION_COMMAND_STALE_LOCAL',
+      message: 'Local patient identity changed after the provider write started', status: :conflict
+    )
+  end
+
+  def appointment_patient_attributes(patient_code)
+    appointment_patient_owned? ? { 'medelement_patient_code' => patient_code.to_s } : {}
   end
 
   def local_service_binding_attributes
@@ -161,7 +230,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def apply_contact_field_resolution!
-    return if command.execution_state.to_h['contact_field_resolution'].blank?
+    return if appointment_patient_owned? || command.execution_state.to_h['contact_field_resolution'].blank?
 
     Integrations::Medelement::ContactFieldResolutionService.apply_provider_command!(command)
   end
@@ -186,3 +255,4 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     )
   end
 end
+# rubocop:enable Metrics/ClassLength

@@ -35,7 +35,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
   before_action :ensure_editable_appointment!, only: [:destroy]
-  before_action :ensure_destroyable_appointment!, only: [:destroy]
 
   def index
     appointments = filtered_appointments
@@ -100,7 +99,10 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def destroy
-    @appointment.destroy!
+    @appointment.with_lock do
+      Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: @appointment).ensure_deletable!
+      @appointment.destroy!
+    end
     head :no_content
   end
 
@@ -189,7 +191,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def cancellation_requested?
-    appointment_params[:status].to_s == 'cancelled'
+    appointment_params[:status].to_s.strip == 'cancelled'
   end
 
   def cancel_and_render
@@ -199,15 +201,5 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     ).perform
 
     render_payload(Scheduling::PayloadBuilder.appointment(appointment))
-  end
-
-  def ensure_destroyable_appointment!
-    return if @appointment.status == 'cancelled'
-
-    raise Scheduling::Error.new(
-      code: 'APPOINTMENT_DELETE_REQUIRES_CANCELLED',
-      message: 'Only cancelled appointments can be deleted',
-      status: :unprocessable_content
-    )
   end
 end

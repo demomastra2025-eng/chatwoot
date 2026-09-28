@@ -135,7 +135,10 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def create_reception!
+    raise reconciliation_error('reception_create_requires_verification') if reception_write_started?
+
     validate_bookable_appointment!
+    validate_current_captain_booking!
     patient_code = patient_resolver.resolve!(allow_create: true)
     preflight_result = preflight.perform
     reception_code = create_remote_reception!(patient_code: patient_code, preflight_result: preflight_result)
@@ -157,12 +160,61 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def create_remote_reception!(patient_code:, preflight_result:)
+    validate_current_captain_booking!
+    ensure_reception_create_not_repeated!
     mark_write_phase!('reception_create', preflight_reception_codes: preflight_result.reception_codes, provider_patient_code: patient_code)
     response = client.create_reception(params: reception_payload_builder.create_payload(patient_code: patient_code))
     reception_code = response.is_a?(Hash) ? response['reception_code'].presence || response['RECEPTION_CODE'].presence : nil
-    raise reconciliation_error('reception_create_missing_ref') if reception_code.blank?
+    reference_valid = Integrations::Medelement::ProviderCommands::ReceptionVerifier.valid_reception_code?(reception_code)
+    raise reconciliation_error('reception_create_missing_ref') unless reference_valid
 
     reception_code.to_s.tap { |code| record_write_reference!(provider_reception_code: code) }
+  end
+
+  def ensure_reception_create_not_repeated!
+    appointment = command.appointment&.reload
+    attributes = appointment&.custom_attributes.to_h
+    linked = appointment&.external_ref.to_s.start_with?('medelement:reception:') ||
+             attributes['medelement_reception_code'].present?
+    prior_write = reception_write_started?
+    return unless linked || prior_write
+
+    raise reconciliation_error('reception_create_requires_verification') if prior_write
+
+    raise execution_error('reception_create_requires_verification', 'Reception create needs read-only verification')
+  end
+
+  def reception_write_started?
+    command.execution_state.to_h['write_phase'] == 'reception_create' ||
+      command.execution_state.to_h['write_provider_reception_code'].present?
+  end
+
+  def validate_current_captain_booking!
+    return unless command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant' ||
+                  patient_identity_fence_required?
+
+    unless command.create_reception?
+      return validate_frozen_patient_identity! if patient_identity_fence_required?
+
+      return
+    end
+
+    guard = Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
+    return if guard.current_booking?
+
+    raise execution_error('appointment_superseded', 'Local booking changed before the Medelement write')
+  end
+
+  def validate_frozen_patient_identity!
+    command.appointment.lock!
+    return if Integrations::Medelement::AppointmentPatientIdentity.current?(command)
+
+    raise execution_error('appointment_superseded', 'Local patient identity changed before the Medelement write')
+  end
+
+  def patient_identity_fence_required?
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    policy.frozen?(command.request_snapshot) || policy.marked?(command.appointment&.custom_attributes)
   end
 
   def move_reception!
@@ -197,7 +249,10 @@ class Integrations::Medelement::ProviderCommands::Executor
       command: command,
       client: client,
       organization_id: configuration.organization_id,
-      before_create: -> { mark_write_phase!('patient_create') }
+      before_create: lambda {
+        validate_current_captain_booking!
+        mark_write_phase!('patient_create')
+      }
     )
   end
 
@@ -229,6 +284,23 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def mark_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
+    with_patient_identity_write_fence do
+      publish_write_phase!(phase, preflight_reception_codes: preflight_reception_codes, provider_patient_code: provider_patient_code)
+    end
+  end
+
+  def with_patient_identity_write_fence
+    return yield unless command.appointment
+
+    command.with_lock do
+      command.appointment.with_lock do
+        validate_current_captain_booking!
+        yield
+      end
+    end
+  end
+
+  def publish_write_phase!(phase, preflight_reception_codes: nil, provider_patient_code: nil)
     state = command.execution_state.merge('write_phase' => phase)
     state['preflight_reception_codes'] = preflight_reception_codes if preflight_reception_codes
     state['write_provider_patient_code'] = provider_patient_code if provider_patient_code
@@ -258,15 +330,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     raise ClaimLost unless updated == 1
 
     command.reload
-    enqueue_ai_booking_acknowledgement
-  end
-
-  def enqueue_ai_booking_acknowledgement
-    return unless command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
-
-    Integrations::Medelement::AiBookingOutcomeJob.perform_later(command.id)
-  rescue StandardError => e
-    Rails.logger.error("[MEDELEMENT::PROVIDER_COMMAND] booking outcome enqueue failed command_id=#{command.id} error=#{e.class}")
   end
 
   def read_reception_after_write(reception_code, version: :v2)
@@ -430,15 +493,19 @@ class Integrations::Medelement::ProviderCommands::Executor
         last_error_status: status,
         executed_at: Time.current
       )
-      unless reconciliation
-        Integrations::Medelement::AppointmentProviderStatus.persist!(
-          command.appointment,
-          Integrations::Medelement::AppointmentProviderStatus::FAILED
-        )
-      end
+      project_failed_appointment_status! unless reconciliation
       reconciliation_enqueued = reconciliation
     end
     Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if reconciliation_enqueued
+  end
+
+  def project_failed_appointment_status!
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    if command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+      provider_status.persist_if_bound!(command.appointment, provider_status::FAILED, command: command)
+    else
+      provider_status.persist!(command.appointment, provider_status::FAILED)
+    end
   end
 
   def await_patient_action!(action)

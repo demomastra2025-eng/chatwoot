@@ -1,6 +1,8 @@
 package session
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -96,8 +98,12 @@ func (m *Manager) CreateSessionWithOptions(
 	}()
 
 	// Generate a unique session ID.
-	counter := m.sessionCounter.Add(1)
-	sessionID := fmt.Sprintf("sess_%s_%d", time.Now().Format("20060102150405"), counter)
+	m.sessionCounter.Add(1)
+	randomID := make([]byte, 16)
+	if _, err := rand.Read(randomID); err != nil {
+		return nil, "", fmt.Errorf("create session ID: %w", err)
+	}
+	sessionID := "sess_" + hex.EncodeToString(randomID)
 
 	sess, sdpResult, err := NewSessionWithOptions(
 		m.config,

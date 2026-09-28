@@ -57,6 +57,11 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
     reconciliation_required? || provider_status_unknown?
   end
 
+  def provider_write_started?
+    execution_state.to_h.slice('write_phase', 'write_provider_patient_code', 'write_provider_reception_code')
+                   .values.any?(&:present?) || provider_reception_code.present?
+  end
+
   def self.execution_statuses(logical_status)
     [logical_status.to_s, versioned_status(logical_status)]
   end
@@ -123,6 +128,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   private
 
   def enqueue_ai_booking_outcome
+    # Create replies stay with the model; only unresolved outcomes need staff review.
     return unless ai_booking_command? && ai_booking_outcome_relevant?
 
     Integrations::Medelement::AiBookingOutcomeJob.perform_later(id)

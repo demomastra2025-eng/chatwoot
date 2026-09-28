@@ -40,6 +40,39 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
       expect(snapshot['conversation_id']).to eq(conversation.id)
     end
 
+    it 'uses the entered appointment IIN and separate name fields in a new patient command' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: { 'medelement_iin' => 'invalid-iin' }
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        client_first_name: 'Асет',
+        client_last_name: 'Хамзаулы',
+        client_name: 'Асет Хамзаулы',
+        client_identifier: '940720300129'
+      )
+      hook = build_stubbed(:integrations_hook, account: account, app_id: 'medelement', settings: {})
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'create_patient',
+        appointment: appointment,
+        contact: contact
+      ).build
+
+      expect(snapshot.dig('patient', 'payload')).to include(
+        'name' => 'Асет', 'lastname' => 'Хамзаулы', 'iin' => '940720300129'
+      )
+      expect(contact.reload.custom_attributes['medelement_iin']).to eq('invalid-iin')
+    end
+
     it 'validates contact IIN fallbacks for structured appointments' do
       account = create(:account)
       contact = create(

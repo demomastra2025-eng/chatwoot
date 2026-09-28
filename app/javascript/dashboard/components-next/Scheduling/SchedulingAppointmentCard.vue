@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n';
 import {
   formatTimeLabel,
   minuteOfDayFromDate,
+  providerBookingNeedsReview,
+  providerBookingStatusMessage,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
 
@@ -26,8 +28,12 @@ const props = defineProps({
 const emit = defineEmits(['click', 'drag-start', 'resize-start']);
 
 const { t } = useI18n();
-
+const needsProviderReview = computed(() =>
+  providerBookingNeedsReview(props.appointment)
+);
 const statusClass = computed(() => {
+  if (needsProviderReview.value) return 'bg-n-ruby-4 text-n-ruby-11';
+
   const classMap = {
     cancelled: 'bg-n-ruby-4 text-n-ruby-11',
     completed: 'bg-n-slate-4 text-n-slate-11',
@@ -51,6 +57,12 @@ const paymentClass = computed(() => {
 });
 
 const appointmentStatusLabel = computed(() => {
+  const providerStatusMessage = providerBookingStatusMessage(
+    props.appointment,
+    t
+  );
+  if (providerStatusMessage) return providerStatusMessage;
+
   const labels = {
     cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
     completed: t('SCHEDULING.APPOINTMENT_STATUS.completed'),
@@ -63,6 +75,7 @@ const appointmentStatusLabel = computed(() => {
 });
 const appointmentStatusIcon = computed(
   () =>
+    (needsProviderReview.value && 'i-lucide-circle-alert') ||
     APPOINTMENT_STATUS_ICONS[props.appointment.status] ||
     APPOINTMENT_STATUS_ICONS.scheduled
 );
@@ -82,10 +95,15 @@ const timeRange = computed(() => {
   return `${formatTimeLabel(minuteOfDayFromDate(props.appointment.startsAt))} - ${formatTimeLabel(minuteOfDayFromDate(props.appointment.endsAt))}`;
 });
 
-const backgroundStyle = computed(() => ({
-  background: `linear-gradient(135deg, ${props.resourceColor || '#2563eb'}22 0%, ${props.resourceColor || '#2563eb'}55 100%)`,
-  borderColor: props.resourceColor || '#2563eb',
-}));
+const backgroundStyle = computed(() => {
+  const color = needsProviderReview.value
+    ? '#e11d48'
+    : props.resourceColor || '#2563eb';
+  return {
+    background: `linear-gradient(135deg, ${color}22 0%, ${color}55 100%)`,
+    borderColor: color,
+  };
+});
 </script>
 
 <template>

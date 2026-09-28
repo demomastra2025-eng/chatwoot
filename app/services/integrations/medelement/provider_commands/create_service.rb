@@ -67,6 +67,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   def create_new_command!(intent_fingerprint)
     ApplicationRecord.transaction(requires_new: true) do
       acquire_idempotency_lock!
+      appointment.lock! if operation == 'create_reception' && appointment&.persisted?
       existing = ApplicationRecord.uncached { command_scope.find_by(idempotency_key: idempotency_key) }
       if existing.present?
         resolve_idempotent_duplicate!(existing, intent_fingerprint)
@@ -235,7 +236,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def patient_code
-    contact_patient_code || appointment_patient_code
+    Integrations::Medelement::AppointmentPatientIdentity.provider_code(appointment: appointment, contact: contact)
   end
 
   def appointment_patient_code = appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence

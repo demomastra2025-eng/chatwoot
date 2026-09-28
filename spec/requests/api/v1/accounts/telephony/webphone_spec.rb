@@ -673,6 +673,308 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
   end
 
+  it 'notifies only the Beeline SIP profile chosen by the PBX in a broadcast channel' do
+    connection = create(:telephony_provider_connection, account: account, provider_kind: 'beeline', host: 'cloudpbx.beeline.kz')
+    channel = create(
+      :channel_voice, account: account, provider: 'beeline', phone_number: voice_phone_number,
+                      provider_config: { provider_kind: 'beeline', provider_connection_id: connection.id,
+                                         number_ref: 'beeline-company-number', routing_mode: 'operator',
+                                         operator_distribution_mode: 'broadcast' }
+    )
+    other_operator = create(:user, account: account, role: :agent)
+    [administrator, other_operator].each { |user| create(:inbox_member, inbox: channel.inbox, user: user) }
+    profiles = [administrator, other_operator].each_with_index.map do |user, index|
+      extension = (1001 + index).to_s
+      create(
+        :telephony_sip_profile, account: account, inbox: channel.inbox, user: user,
+                                provider_connection: connection, internal_extension: extension,
+                                sip_username: extension, sip_password: 'test-only-password',
+                                sip_host: 'cloudpbx.beeline.kz', agent_ref: "beeline-profile-#{extension}",
+                                agent_aor: "sip:#{extension}@cloudpbx.beeline.kz",
+                                availability_mode: 'browser_webphone', status: 'active'
+      )
+    end
+    profiles.each { |profile| mark_sip_profile_registered!(profile) }
+    selected_profile = profiles.last
+    allow(ActionCable.server).to receive(:broadcast)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+         params: {
+           inbox_id: channel.inbox.id, provider: 'beeline', call_ref: 'beeline-pbx-selected-1002',
+           from: 'sip:+77000000001@cloudpbx.beeline.kz', to: "sip:#{selected_profile.sip_username}@cloudpbx.beeline.kz"
+         }.merge(sip_presence_params(selected_profile)),
+         headers: other_operator.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    call_ref = "beeline:janus:#{selected_profile.id}:beeline-pbx-selected-1002"
+    session = account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+    expect(session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to eq([selected_profile.id])
+    expect(ActionCable.server).to have_received(:broadcast).with(selected_profile.user.pubsub_token, anything)
+    expect(ActionCable.server).not_to have_received(:broadcast).with(administrator.pubsub_token, anything)
+  end
+
+  inactive_profile_statuses = %w[disabled deleting failed]
+  %w[beeline wazo].each do |provider_kind|
+    context "when #{provider_kind} selects an operator SIP profile" do
+      let(:selected_operator) { create(:user, account: account, role: :agent) }
+      let(:selected_headers) { selected_operator.create_new_auth_token }
+      let(:connection) do
+        create(:telephony_provider_connection, account: account, provider_kind: provider_kind, host: 'pbx.example.test',
+                                               username: 'test-trunk-user', password_secret_ref: 'test-trunk-password-reference')
+      end
+      let(:channel) do
+        create(:channel_voice, account: account, provider: provider_kind, phone_number: voice_phone_number,
+                               provider_config: { provider_kind: provider_kind, provider_connection_id: connection.id,
+                                                  number_ref: 'selected-profile-company-number', routing_mode: 'operator',
+                                                  operator_distribution_mode: 'broadcast' })
+      end
+      let(:profiles) do
+        [administrator, selected_operator].each_with_index.map do |user, index|
+          create(:inbox_member, inbox: channel.inbox, user: user)
+          extension = (1001 + index).to_s
+          create(:telephony_sip_profile, account: account, inbox: channel.inbox, user: user,
+                                         provider_connection: connection, internal_extension: extension,
+                                         sip_username: "operator-#{extension}", sip_password: "test-operator-password-#{extension}",
+                                         sip_host: 'pbx.example.test', agent_ref: "selected-profile-#{extension}",
+                                         agent_aor: "sip:operator-#{extension}@pbx.example.test",
+                                         availability_mode: 'browser_webphone', status: 'active')
+        end
+      end
+      let(:selected_profile) { profiles.last }
+      let(:incoming_event) do
+        {
+          inbox_id: channel.inbox.id, provider: provider_kind, call_ref: 'pbx-selected-operator',
+          from: 'sip:+15555550123@pbx.example.test', to: "sip:#{selected_profile.sip_username}@pbx.example.test"
+        }.merge(sip_presence_params(selected_profile))
+      end
+
+      before do
+        profiles.each { |profile| mark_sip_profile_registered!(profile) }
+        allow(ActionCable.server).to receive(:broadcast)
+      end
+
+      def incoming_path
+        "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+      end
+
+      def provider_route_payload
+        binding = Telephony::NumberBinding.sync_from_voice_channel!(channel)
+        {
+          account_id: account.id, inbox_id: channel.inbox.id, number_ref: binding.number_ref,
+          provider: channel.provider, call_ref: 'provider-selected-profile', direction: 'inbound',
+          caller_number: '+15555550123', ingress_number: channel.phone_number
+        }
+      end
+
+      def expect_selected_operator_route
+        payload = response.parsed_body.fetch('payload')
+        expect(payload).to include('route_action' => 'operator', 'sip_profile_id' => selected_profile.id)
+        session = account.telephony_call_sessions.find_by!(external_call_ref: payload.fetch('call_ref'))
+        expect(session.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to eq([selected_profile.id])
+      end
+
+      def expect_selected_operator_notification
+        expect_selected_operator_route
+        expect(ActionCable.server).to have_received(:broadcast)
+          .with(selected_operator.pubsub_token, hash_including(event: 'voice_call.incoming')).once
+        expect(ActionCable.server).not_to have_received(:broadcast).with(administrator.pubsub_token, anything)
+      end
+
+      def expect_no_incoming_side_effects
+        expect(account.telephony_call_sessions).to be_empty
+        expect(ActionCable.server).not_to have_received(:broadcast)
+      end
+
+      it 'notifies only the authenticated selected profile and persists its route candidate' do
+        post incoming_path, params: incoming_event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect_selected_operator_notification
+      end
+
+      it 'uses the selected profile when the incoming destination is the shared business number' do
+        post incoming_path, params: incoming_event.merge(to: channel.phone_number), headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect_selected_operator_notification
+      end
+
+      it 'uses the selected profile when the incoming destination is absent' do
+        post incoming_path, params: incoming_event.except(:to), headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect_selected_operator_notification
+      end
+
+      it 'does not repeat the notification or create another session for the same incoming event' do
+        2.times { post incoming_path, params: incoming_event, headers: selected_headers, as: :json }
+
+        expect(response).to have_http_status(:ok)
+        expect(account.telephony_call_sessions.count).to eq(1)
+        expect_selected_operator_notification
+      end
+
+      it 'ignores event fields that attempt to select another operator or change the provider' do
+        post incoming_path,
+             params: incoming_event.merge(provider: 'sipuni', target_sip_profile_id: profiles.first.id,
+                                          trusted_target_sip_profile_id: profiles.first.id, target_user_id: administrator.id),
+             headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body.dig('payload', 'provider')).to eq(provider_kind)
+        expect_selected_operator_notification
+      end
+
+      it 'preserves configured broadcast routing when a provider payload only claims a trusted profile ID' do
+        decision = Telephony::InboundRoutingService.new(
+          payload: provider_route_payload.merge(
+            trusted_target_sip_profile_id: selected_profile.id,
+            metadata: { trusted_target_sip_profile_id: selected_profile.id, target_sip_profile_id: selected_profile.id }
+          )
+        ).perform
+
+        expect(decision[:action]).to eq('operator')
+        expect(decision[:operator_candidates].pluck(:sip_profile_id)).to match_array(profiles.map(&:id))
+        profiles.each do |profile|
+          expect(ActionCable.server).to have_received(:broadcast)
+            .with(profile.user.pubsub_token, hash_including(event: 'voice_call.incoming')).once
+        end
+      end
+
+      it 'routes a trusted profile ID without requiring a duplicated extension in the payload' do
+        decision = Telephony::InboundRoutingService.new(
+          payload: provider_route_payload, trusted_target_sip_profile_id: selected_profile.id
+        ).perform
+
+        expect(decision[:action]).to eq('operator')
+        expect(decision[:operator_candidates].pluck(:sip_profile_id)).to eq([selected_profile.id])
+        expect(ActionCable.server).to have_received(:broadcast)
+          .with(selected_operator.pubsub_token, hash_including(event: 'voice_call.incoming')).once
+        expect(ActionCable.server).not_to have_received(:broadcast).with(administrator.pubsub_token, anything)
+      end
+
+      it 'rejects a trusted profile outside the account rather than falling back to broadcast' do
+        foreign_profile = create(:telephony_sip_profile)
+        decision = Telephony::InboundRoutingService.new(
+          payload: provider_route_payload, trusted_target_sip_profile_id: foreign_profile.id
+        ).perform
+
+        expect(decision).to include(action: 'reject', reason: 'target_operator_not_found')
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects an explicit profile belonging to another operator in the same channel' do
+        post incoming_path, params: incoming_event.merge(sip_profile_id: profiles.first.id), headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects a profile belonging to another account' do
+        foreign_profile = create(:telephony_sip_profile)
+        post incoming_path, params: incoming_event.merge(sip_profile_id: foreign_profile.id), headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects a profile belonging to another inbox of the same account' do
+        foreign_inbox = create(:inbox, account: account)
+        foreign_profile = create(
+          :telephony_sip_profile,
+          account: account, user: selected_operator, inbox: foreign_inbox,
+          availability_mode: 'browser_webphone', status: 'active'
+        )
+        post incoming_path, params: incoming_event.merge(sip_profile_id: foreign_profile.id), headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects an incoming event from an old browser registration without replacing the current one' do
+        original_context = selected_profile.reload.metadata.fetch('registration_context')
+        post incoming_path, params: incoming_event.merge(registration_instance_id: 'old-browser-registration'),
+                            headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:conflict)
+        expect(selected_profile.reload.metadata.fetch('registration_context')).to eq(original_context)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects an event prepared before the selected SIP configuration changed' do
+        event = incoming_event
+        selected_profile.update!(sip_username: 'changed-operator-username')
+        post incoming_path, params: event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['code']).to eq('WEBPHONE_SIP_REGISTRATION_CONTEXT_MISMATCH')
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects an event after the selected browser has unregistered' do
+        event = incoming_event
+        selected_profile.update_browser_registration!(registered: false, registration_context: event)
+        post incoming_path, params: event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:conflict)
+        expect(selected_profile.reload.registered_for_routing?).to be(false)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects a disabled selected profile without notifying the available operator' do
+        event = incoming_event
+        selected_profile.update!(enabled: false)
+        post incoming_path, params: event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect_no_incoming_side_effects
+      end
+
+      inactive_profile_statuses.each do |profile_status|
+        it "rejects a #{profile_status} selected profile without routing to another employee" do
+          event = incoming_event
+          selected_profile.update!(status: profile_status)
+          post incoming_path, params: event, headers: selected_headers, as: :json
+
+          expect(response).to have_http_status(:not_found)
+          expect_no_incoming_side_effects
+        end
+      end
+
+      it 'rejects an event for a deleted selected profile' do
+        event = incoming_event
+        selected_profile.destroy!
+        post incoming_path, params: event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:not_found)
+        expect_no_incoming_side_effects
+      end
+
+      it 'rejects a busy selected profile rather than notifying the available operator' do
+        create(:telephony_call_session, account: account, status: 'ringing',
+                                        metadata: { 'operator_claim' => { 'sip_profile_id' => selected_profile.id } })
+        post incoming_path, params: incoming_event, headers: selected_headers, as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body.dig('payload', 'route_action')).to eq('reject')
+        expect(ActionCable.server).not_to have_received(:broadcast)
+      end
+
+      it 'returns the selected operator SIP credentials separately from the provider connection credentials' do
+        with_modified_env("TELEPHONY_#{provider_kind.upcase}_JANUS_WS_URL" => 'wss://app.example.test/janus-pbx') do
+          post path, params: { client_instance_id: 'test-tab', inbox_id: channel.inbox.id }, headers: selected_headers, as: :json
+        end
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body.dig('payload', 'sip')).to include(
+          'username' => selected_profile.sip_username, 'password' => selected_profile.sip_password, 'host' => connection.host
+        )
+        expect(response.parsed_body.dig('payload', 'sip', 'username')).not_to eq(connection.username)
+        expect(response.body).not_to include(connection.password_secret_ref)
+      end
+    end
+  end
+
   it 'accepts a legacy incoming event missing only the registration instance from the active browser lease' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     mark_sip_profile_registered!(binotel_profile)

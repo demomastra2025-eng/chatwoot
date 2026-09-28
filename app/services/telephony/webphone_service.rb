@@ -743,8 +743,11 @@ class Telephony::WebphoneService
   end
 
   def perform_browser_sip_incoming_route(context)
+    trusted_profile_id = context.fetch(:profile).id if context.fetch(:provider).in?(Telephony::InboundRoutingService::PBX_SELECTED_SIP_PROVIDERS)
+
     Telephony::InboundRoutingService.new(
-      payload: browser_sip_incoming_route_payload(context)
+      payload: browser_sip_incoming_route_payload(context),
+      trusted_target_sip_profile_id: trusted_profile_id
     ).perform
   end
 

@@ -40,6 +40,7 @@ RSpec.describe Message do
       expect(conversation.reload.open?).to be true
       expect(conversation).to be_captain_human_control_active
       expect(conversation.captain_control_generation).to eq(1)
+      expect(conversation.captain_control_state).to eq('ai')
     end
 
     it 'keeps the conversation open without incrementing the generation for later replies' do
@@ -57,6 +58,58 @@ RSpec.describe Message do
 
       expect(conversation.reload).to be_open
       expect(conversation.captain_control_generation).to eq(0)
+    end
+
+    it 'keeps the employee reply and open status when the cancellation snapshot cannot reach Redis' do
+      allow(Captain::Conversation::ResponseCancellationService).to receive(:new).and_wrap_original do |method, **params|
+        service = method.call(**params)
+        allow(service).to receive(:snapshot).and_raise(Redis::CannotConnectError)
+        service
+      end
+
+      expect { create(:message, message_type: :outgoing, conversation: conversation) }.not_to raise_error
+      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'ai')
+    end
+
+    it 'keeps the employee reply and open status when post-commit cancellation cannot reach Redis' do
+      allow(Captain::Conversation::ResponseCancellationService).to receive(:new).and_wrap_original do |method, **params|
+        service = method.call(**params)
+        allow(service).to receive(:perform).and_raise(Redis::CannotConnectError)
+        service
+      end
+
+      expect { create(:message, message_type: :outgoing, conversation: conversation) }.not_to raise_error
+      expect(conversation.reload).to have_attributes(status: 'open', captain_control_generation: 1, captain_control_state: 'ai')
+    end
+
+    it 'cancels captured runs across its own thread without opening the sibling or cancelling another account' do
+      thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
+      sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
+      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      [conversation, sibling].each do |candidate|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+        candidate.association(:communication_thread_conversation).reset
+        candidate.association(:communication_thread).reset
+      end
+      incoming = create(:message, conversation: conversation, message_type: :incoming)
+      foreign_conversation = create(:conversation, status: :pending)
+      foreign_key = format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: foreign_conversation.id)
+
+      create(:message, message_type: :outgoing, conversation: conversation)
+
+      [conversation, sibling].each do |candidate|
+        service = Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: captain_assistant)
+        expect(service.cancelled?(expected_last_message_id: incoming.id, expected_control_generation: 0, expected_status_transition_id: 0)).to be true
+        expect(service.cancelled?(expected_last_message_id: incoming.id, expected_control_generation: 1, expected_status_transition_id: 0))
+          .to be false
+      end
+      expect(sibling.reload).to be_pending
+      expect(thread.reload.captain_control_state).to eq('ai')
+      expect(Redis::Alfred.get(foreign_key)).to be_nil
+    ensure
+      [conversation, sibling].compact.each do |candidate|
+        Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: candidate.id))
+      end
     end
 
     it 'creates an activity message when a human sends a public outgoing message' do

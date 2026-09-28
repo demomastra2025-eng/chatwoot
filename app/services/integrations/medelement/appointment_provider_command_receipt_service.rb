@@ -1,4 +1,6 @@
 class Integrations::Medelement::AppointmentProviderCommandReceiptService
+  attr_reader :projected_command
+
   def initialize(appointment:, actor:, new_record:)
     @appointment = appointment
     @actor = actor
@@ -12,7 +14,8 @@ class Integrations::Medelement::AppointmentProviderCommandReceiptService
     return unless provider_actor?
 
     attributes = provider_command_attributes
-    command = Integrations::Medelement::OutboundChangeService.new(**attributes).perform
+    outbound = Integrations::Medelement::OutboundChangeService.new(**attributes)
+    command = outbound.perform
     ensure_receipt_available!(command)
     attach_receipt!(command) if command.present?
     command
@@ -22,6 +25,8 @@ class Integrations::Medelement::AppointmentProviderCommandReceiptService
     Rails.logger.error("[AppointmentProviderCommandReceiptService] receipt creation failed: #{e.class}: #{e.message}")
     enqueue_retry!(attributes) if attributes.present?
     raise receipt_unavailable_error
+  ensure
+    @projected_command = outbound&.projected_command
   end
 
   private

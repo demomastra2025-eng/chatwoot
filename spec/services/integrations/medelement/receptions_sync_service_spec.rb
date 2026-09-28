@@ -257,7 +257,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
-  it 'does not restore a cancelled appointment from a snapshot captured before the Captain mutation' do
+  it 'does not restore a cancelled appointment from a snapshot captured before a verified cancellation' do
     appointment = create(
       :scheduling_appointment,
       account: account,
@@ -270,17 +270,13 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
         'medelement_cabinet_code' => '37413011726129875'
       }
     )
-    assistant = create(:captain_assistant, account: account)
-
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       allow(client).to receive(:get_reception) do |reception_code:, **|
         travel 1.second
-        Scheduling::Appointments::UpsertService.new(
-          account: account,
-          appointment: appointment,
-          params: { status: 'cancelled' },
-          actor: assistant
-        ).perform
+        appointment.update!(status: 'cancelled', custom_attributes: appointment.custom_attributes.merge(
+          'medelement_local_cancelled_at' => Time.current.iso8601,
+          'medelement_manual_cancellation_verified_at' => Time.current.iso8601
+        ))
 
         reception_payload.first.merge(
           'RECEPTION_CODE' => reception_code,

@@ -227,6 +227,8 @@ Rails.application.routes.draw do
               get :patient_candidates, on: :member
               post :select_patient, on: :member
               post :confirm_patient_creation, on: :member
+              post :reconcile, on: :member
+              post :resolve_cancellation, on: :member
               post :retry, on: :member
             end
             resources :payments, only: [:index]

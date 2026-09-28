@@ -1,4 +1,11 @@
 class Integrations::Medelement::ProviderCommands::CancelService
+  def self.cancellable?(command)
+    return false if command.provider_write_started?
+
+    command.awaiting_confirmation? || command.reconciliation_required? ||
+      command.logical_status.start_with?('awaiting_patient_') || command.awaiting_phone_refresh?
+  end
+
   def initialize(command:, actor:, now: Time.current)
     @command = command
     @actor = actor
@@ -22,12 +29,11 @@ class Integrations::Medelement::ProviderCommands::CancelService
   attr_reader :actor, :command, :now
 
   def validate_cancellable!
-    return if command.awaiting_confirmation? || command.reconciliation_required? ||
-              command.logical_status.start_with?('awaiting_patient_') || command.awaiting_phone_refresh?
+    return if self.class.cancellable?(command)
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_COMMAND_NOT_CANCELLABLE',
-      message: 'Only a command awaiting user action or manual reconciliation can be cancelled',
+      message: 'Only a pre-write command awaiting user action or manual reconciliation can be cancelled',
       status: :conflict
     )
   end

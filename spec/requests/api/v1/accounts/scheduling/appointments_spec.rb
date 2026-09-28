@@ -55,6 +55,30 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 
+  it 'preserves manually entered first name, surname and IIN after creation and readback' do
+    post path,
+         params: base_params.merge(
+           client_first_name: 'Асет', client_last_name: 'Хамзаулы', client_name: 'Асет Хамзаулы',
+           client_identifier: '940720300129'
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    appointment_id = response_body.dig('payload', 'id')
+    expect(response_body.fetch('payload')).to include(
+      'client_first_name' => 'Асет', 'client_last_name' => 'Хамзаулы',
+      'client_name' => 'Асет Хамзаулы', 'client_identifier' => '940720300129'
+    )
+
+    get "#{path}/#{appointment_id}", headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload')).to include(
+      'client_first_name' => 'Асет', 'client_last_name' => 'Хамзаулы',
+      'client_name' => 'Асет Хамзаулы', 'client_identifier' => '940720300129'
+    )
+  end
+
   it 'rejects a Medelement appointment without a patient last name before persistence' do
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
     params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
@@ -1307,6 +1331,85 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 'source')).to eq('medelement')
     expect(appointment.reload.client_name).not_to eq('Ignored edit')
+  end
+
+  it 'refuses both cancellation routes for an unverified Medelement booking and retains the slot' do
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day, ends_at: booking_day + 30.minutes,
+      custom_attributes: { provider_status::ATTRIBUTE_KEY => provider_status::UNKNOWN }
+    )
+
+    post "#{path}/#{appointment.id}/cancel", headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+
+    put "#{path}/#{appointment.id}", params: { status: 'cancelled' }, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    expect(appointment.reload).to have_attributes(status: 'scheduled', starts_at: booking_day)
+    expect(appointment.custom_attributes[provider_status::ATTRIBUTE_KEY]).to eq(provider_status::UNKNOWN)
+  end
+
+  it 'refuses both cancellation routes after MedElement writes are disabled for a confirmed reception' do
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    hook = create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: {
+        provider_status::ATTRIBUTE_KEY => provider_status::SUCCEEDED,
+        'medelement_reception_code' => 'created-1'
+      }
+    )
+    hook.update!(settings: hook.settings.merge('write_enabled' => false))
+
+    post "#{path}/#{appointment.id}/cancel", headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_CANCELLATION_UNAVAILABLE')
+
+    put "#{path}/#{appointment.id}", params: { status: 'cancelled' }, headers: headers, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_CANCELLATION_UNAVAILABLE')
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'routes whitespace-padded cancellation of a confirmed local reception to a provider command' do
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    appointment = create(
+      :scheduling_appointment, resource: resource, account: account, contact: contact, service: service,
+                               starts_at: booking_day, ends_at: booking_day + 30.minutes,
+                               external_ref: 'medelement:reception:created-1',
+                               custom_attributes: {
+                                 provider_status::ATTRIBUTE_KEY => provider_status::SUCCEEDED,
+                                 'medelement_reception_code' => 'created-1'
+                               }
+    )
+
+    put "#{path}/#{appointment.id}", params: { status: ' cancelled ' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.status).to eq('scheduled')
+    expect(appointment.custom_attributes[provider_status::ATTRIBUTE_KEY]).to eq(provider_status::PENDING)
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment, operation: 'remove_reception').count).to eq(1)
   end
 
   it 'returns a stable calendar payload shape' do

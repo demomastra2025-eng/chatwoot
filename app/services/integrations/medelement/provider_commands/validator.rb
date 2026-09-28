@@ -34,6 +34,7 @@ class Integrations::Medelement::ProviderCommands::Validator
   def validate_runtime!
     validate_write_capability!
     validate_concurrency!
+    require_no_existing_reception!
   end
 
   private
@@ -105,6 +106,7 @@ class Integrations::Medelement::ProviderCommands::Validator
       require_bookable_appointment!
       require_contact!
       require_provider_resource!
+      require_no_existing_reception!
     when 'move_reception'
       validate_move_prerequisites!
     when 'remove_reception'
@@ -133,6 +135,34 @@ class Integrations::Medelement::ProviderCommands::Validator
       message: 'Only scheduled or confirmed appointments can be created in Medelement',
       status: :unprocessable_content
     )
+  end
+
+  def require_no_existing_reception!
+    return unless operation == 'create_reception' && appointment.present?
+
+    attributes = appointment.custom_attributes.to_h
+    linked = appointment.external_ref.to_s.start_with?('medelement:reception:') ||
+             attributes['medelement_reception_code'].present? ||
+             attributes['medelement_provider_sync_status'].in?(%w[succeeded provider_status_unknown])
+    return unless linked || prior_reception_write?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_RECEPTION_ALREADY_LINKED',
+      message: 'The appointment is already linked to a Medelement reception or requires verification',
+      status: :conflict
+    )
+  end
+
+  def prior_reception_write?
+    commands = Integrations::Medelement::ProviderCommand.where(
+      account: account, appointment: appointment, operation: 'create_reception'
+    ).where.not(idempotency_key: idempotency_key)
+    commands.where(
+      "status = 'succeeded' OR NULLIF(provider_reception_code, '') IS NOT NULL OR " \
+      "NULLIF(execution_state->>'write_phase', '') IS NOT NULL OR " \
+      "NULLIF(execution_state->>'write_provider_patient_code', '') IS NOT NULL OR " \
+      "NULLIF(execution_state->>'write_provider_reception_code', '') IS NOT NULL"
+    ).exists?
   end
 
   def validate_move_prerequisites!
@@ -166,7 +196,7 @@ class Integrations::Medelement::ProviderCommands::Validator
   end
 
   def patient_code
-    contact.custom_attributes.to_h['medelement_patient_code'].presence || appointment_patient_code
+    Integrations::Medelement::AppointmentPatientIdentity.provider_code(appointment: appointment, contact: contact)
   end
 
   def appointment_patient_code

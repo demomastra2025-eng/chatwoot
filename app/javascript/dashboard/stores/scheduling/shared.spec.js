@@ -34,6 +34,26 @@ describe('scheduling shared helpers', () => {
       'Selected services must be linked to Medelement',
       'Выбранная услуга не связана с MedElement.',
     ],
+    [
+      'MEDELEMENT_CANCELLATION_RESOLUTION_UNAVAILABLE',
+      'The original reception has changed',
+      'Исходный приём изменился. Требуется ручная проверка.',
+    ],
+    [
+      'MEDELEMENT_CANCELLATION_NOT_VERIFIED',
+      'Removal is not verified',
+      'Удаление приёма в MedElement не подтверждено.',
+    ],
+    [
+      'MEDELEMENT_CANCELLATION_CHECK_FAILED',
+      'Provider lookup failed',
+      'Не удалось проверить удаление в MedElement.',
+    ],
+    [
+      'MEDELEMENT_CANCELLATION_RECORD_PROTECTED',
+      'The cancellation record must be retained',
+      'Запись об отмене нужно сохранить для синхронизации.',
+    ],
   ])('localizes the %s API response', (code, message, translation) => {
     const error = {
       response: {

@@ -65,7 +65,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'appointment_id' => appointment&.id,
       'contact_id' => contact&.id,
       'conversation_id' => appointment&.conversation_id,
-      **requester_snapshot,
+      **metadata_snapshot,
       'operation' => operation,
       'provider_patient_code' => patient_code,
       'patient_phone_numbers' => patient_phone_numbers.presence,
@@ -81,8 +81,11 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   private
 
-  def requester_snapshot
-    { 'requested_by_id' => actor&.id, 'actor' => actor_descriptor }
+  def metadata_snapshot
+    {
+      'requested_by_id' => actor&.id, 'actor' => actor_descriptor,
+      Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY => appointment_identity_snapshot
+    }.compact
   end
 
   attr_reader :account, :hook, :appointment, :contact, :actor, :actor_descriptor, :operation, :company_cabinet_code,
@@ -115,9 +118,28 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_phone_number
+    if appointment_patient_owned? && operation.in?(PATIENT_PHONE_OPERATIONS)
+      return Integrations::Medelement::PhoneNumber.new(appointment_attribute('client_phone')).e164
+    end
+
     raw_phone = operation == 'create_reception' ? appointment_attribute('client_phone').presence : nil
     raw_phone ||= contact_desired_attributes.fetch('phone_number', contact&.phone_number)
     Integrations::Medelement::PhoneNumber.new(raw_phone).e164
+  end
+
+  def appointment_patient_owned?
+    Integrations::Medelement::AppointmentPatientIdentity.owned?(appointment_snapshot_custom_attributes)
+  end
+
+  def appointment_identifier_explicit?
+    Integrations::Medelement::AppointmentPatientIdentity.explicit_identifier?(appointment_snapshot_custom_attributes)
+  end
+
+  def appointment_identity_snapshot
+    return unless appointment.present? && (appointment_patient_owned? || appointment_identifier_explicit?)
+
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    policy.snapshot(attributes: appointment_snapshot_custom_attributes, values: policy::FIELDS.index_with { |key| appointment_attribute(key) })
   end
 
   def appointment_identity
@@ -127,7 +149,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       first_name: appointment_attribute('client_first_name'),
       last_name: appointment_attribute('client_last_name'),
       middle_name: appointment_attribute('client_middle_name')
-    }.merge(appointment_demographic_identity)
+    }.merge(appointment_demographic_identity).merge(appointment_owned: appointment_patient_owned?)
   end
 
   def appointment_demographic_identity
@@ -146,11 +168,14 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       contact_attributes['iin'],
       contact_desired_attributes.fetch('identifier', contact&.identifier)
     ]
+    candidates = [appointment_attribute('client_identifier')] if appointment_patient_owned? || appointment_identifier_explicit?
     value = candidates.find { |candidate| Scheduling::IinValidator.valid?(candidate) }
     Scheduling::IinValidator.normalize(value) if value
   end
 
   def appointment_or_contact_identity(appointment_attribute, contact_attribute_keys, fallback = nil)
+    return self.appointment_attribute(appointment_attribute).presence if appointment_patient_owned?
+
     self.appointment_attribute(appointment_attribute).presence ||
       contact_attribute_keys.filter_map { |key| contact_snapshot_custom_attributes[key].presence }.first ||
       fallback.presence
@@ -158,6 +183,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   def patient_phone_numbers
     return [] unless operation.in?(PATIENT_PHONE_OPERATIONS)
+    return [patient_phone_number] if appointment_patient_owned?
 
     return Array(patient_phone_number) if contact_desired_attributes.key?('phone_number')
 
@@ -249,7 +275,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_code
-    contact_patient_code || appointment_patient_code
+    appointment_patient_owned? ? appointment_patient_code : contact_patient_code || appointment_patient_code
   end
 
   def contact_patient_code
@@ -290,7 +316,9 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   def appointment_snapshot_custom_attributes
     return {} if appointment.blank?
 
-    desired_attributes.fetch('custom_attributes', appointment.custom_attributes).to_h
+    attributes = desired_attributes.fetch('custom_attributes', appointment.custom_attributes).to_h
+    Integrations::Medelement::AppointmentPatientIdentity.validate_source_attributes!(appointment, attributes)
+    attributes
   end
 
   def contact_snapshot_custom_attributes

@@ -5,6 +5,7 @@ class Telephony::InboundRoutingService
   OPERATOR_CANDIDATE_LIMIT = 20
   DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  PBX_SELECTED_SIP_PROVIDERS = %w[beeline wazo].freeze
 
   OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
     def agent_binding_id
@@ -55,9 +56,10 @@ class Telephony::InboundRoutingService
     end
   end
 
-  def initialize(payload:, runtime_capabilities: [])
+  def initialize(payload:, runtime_capabilities: [], trusted_target_sip_profile_id: nil)
     @payload = payload.deep_stringify_keys
     @runtime_capabilities = Array(runtime_capabilities).map(&:to_s).map(&:strip).compact_blank.uniq
+    @trusted_target_sip_profile_id = trusted_target_sip_profile_id
   end
 
   def perform
@@ -76,7 +78,7 @@ class Telephony::InboundRoutingService
 
   private
 
-  attr_reader :payload, :runtime_capabilities
+  attr_reader :payload, :runtime_capabilities, :trusted_target_sip_profile_id
 
   def routed_decision
     recursive_runtime_decision = recursive_runtime_call_active_decision
@@ -589,7 +591,7 @@ class Telephony::InboundRoutingService
   end
 
   def target_operator_requested?
-    targeted_operator_distribution? && (target_operator_extension.present? || target_operator_aor.present?)
+    targeted_operator_distribution? && (trusted_sip_profile_target? || target_operator_extension.present? || target_operator_aor.present?)
   end
 
   def target_operator_block_reason
@@ -667,6 +669,7 @@ class Telephony::InboundRoutingService
   def target_operator_candidate_matches?(candidate)
     profile = candidate.sip_profile
     return false if profile.blank?
+    return false if trusted_sip_profile_target? && profile.id.to_s != trusted_target_sip_profile_id.to_s
 
     extension_matches = target_operator_extension.blank? || profile.internal_extension.to_s == target_operator_extension
     aor_matches = target_operator_aor.blank? || normalized_sip_aor(profile.agent_aor) == normalized_sip_aor(target_operator_aor)
@@ -935,8 +938,14 @@ class Telephony::InboundRoutingService
   end
 
   def operator_distribution_mode
+    return Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_TARGETED if trusted_sip_profile_target?
+
     @operator_distribution_mode ||= routing_policy&.operator_distribution_mode ||
                                     Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+  end
+
+  def trusted_sip_profile_target?
+    trusted_target_sip_profile_id.present? && number_binding&.provider.in?(PBX_SELECTED_SIP_PROVIDERS) && routing_policy&.operator_mode?
   end
 
   def targeted_operator_distribution?

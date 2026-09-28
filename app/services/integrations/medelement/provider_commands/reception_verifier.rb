@@ -1,4 +1,12 @@
 class Integrations::Medelement::ProviderCommands::ReceptionVerifier
+  def self.valid_reception_code?(value)
+    code = value.to_s.strip
+    return false if code.blank?
+
+    numeric = Float(code, exception: false)
+    numeric.nil? || numeric.positive?
+  end
+
   def initialize(command:, provider_patient_code: nil)
     @command = command
     @provider_patient_code = provider_patient_code.presence || snapshot['provider_patient_code'].presence ||
@@ -21,8 +29,15 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
       services_match?(reception)
   end
 
+  def removed_destination_match?(reception, expected_reception_code:)
+    reception.is_a?(Hash) && reception['REMOVED'].to_s == '1' &&
+      reference_matches?(reception, expected_code: expected_reception_code) &&
+      removed_patient_matches?(reception) && destination_matches?(reception) && destination_time_matches?(reception) &&
+      removed_services_match?(reception)
+  end
+
   def reference_matches?(reception, expected_code: source_reception_code)
-    reception.is_a?(Hash) && reception['RECEPTION_CODE'].present? &&
+    reception.is_a?(Hash) && self.class.valid_reception_code?(reception['RECEPTION_CODE']) &&
       reception['RECEPTION_CODE'].to_s == expected_code.to_s
   end
 
@@ -61,12 +76,22 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
 
   attr_reader :command, :provider_patient_code
 
+  def removed_patient_matches?(reception)
+    codes = %w[PROFILE_CODE PATIENT_CODE].filter_map { |key| reception[key].to_s.presence }.uniq
+    provider_patient_code.present? && codes == [provider_patient_code.to_s]
+  end
+
+  def removed_services_match?(reception)
+    Integrations::Medelement::ReceptionServiceRows.identity_authoritative?(reception) && services_match?(reception)
+  end
+
   def snapshot
     command.request_snapshot
   end
 
   def destination_reference_matches?(reception, expected_code)
-    return reception.is_a?(Hash) && reception['RECEPTION_CODE'].present? if expected_code.blank?
+    return false unless reception.is_a?(Hash) && self.class.valid_reception_code?(reception['RECEPTION_CODE'])
+    return true if expected_code.blank?
 
     reference_matches?(reception, expected_code: expected_code)
   end

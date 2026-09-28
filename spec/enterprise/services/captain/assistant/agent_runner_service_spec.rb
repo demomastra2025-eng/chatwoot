@@ -1035,7 +1035,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).not_to have_key('error_class')
     end
 
-    it 'rejects a confirmed booking claim without completed mutation evidence' do
+    it 'does not inspect Russian booking wording to determine tool success' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1047,11 +1047,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
+      expect(result).to include('response' => 'Запись создана и подтверждена.')
+      expect(result).not_to have_key('error_class')
     end
 
-    it 'rejects an English confirmed booking claim without completed mutation evidence' do
+    it 'does not inspect English booking wording to determine tool success' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1063,8 +1063,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
+      expect(result).to include('response' => 'Your appointment has been created.')
+      expect(result).not_to have_key('error_class')
     end
 
     it 'passes negative, pending, and future booking statements through unchanged' do
@@ -1092,7 +1092,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       end
     end
 
-    it 'rejects an unsupported update claim without completed mutation evidence' do
+    it 'does not inspect update wording for scheduling evidence' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1104,11 +1104,11 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
+      expect(result).to include('response' => 'Your appointment has been successfully updated.')
+      expect(result).not_to have_key('error_class')
     end
 
-    it 'leaves even a fast provider confirmation to the outcome job instead of replying twice' do
+    it 'lets the assistant reply after a provider-backed create in the same run' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1144,7 +1144,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true)
+      expect(result).to include('response' => 'Запись создана и подтверждена.')
+      expect(result).not_to have_key('response_suppressed')
       expect(result).not_to have_key('error_class')
     end
 
@@ -1252,7 +1253,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).not_to have_key('error_class')
     end
 
-    it 'leaves a same-turn provider read-back to the outcome job' do
+    it 'does not defer the create reply even when a provider status lookup also completed' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1285,7 +1286,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result).to include('response' => '', 'response_mode' => 'suppress', 'response_suppressed' => true)
+      expect(result).to include('response' => 'Your appointment is confirmed.')
+      expect(result).not_to have_key('response_suppressed')
     end
 
     it 'answers a provider status lookup when no booking mutation occurred in this turn' do
@@ -1313,7 +1315,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(service.generate_response(message_history: message_history)).to include('response' => 'Your appointment is confirmed.')
     end
 
-    it 'rejects a provider status claim without a concrete reception ID' do
+    it 'does not use wording to infer a reception ID from a status lookup' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
           Captain::Runtime::Result,
@@ -1336,8 +1338,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
 
       result = service.generate_response(message_history: message_history)
 
-      expect(result['response']).to eq(described_class::PROVIDER_ERROR_RESPONSE)
-      expect(result['error_class']).to eq('Captain::Assistant::AgentRunnerService::AppointmentGroundingError')
+      expect(result).to include('response' => 'Your appointment is confirmed.')
+      expect(result).not_to have_key('error_class')
     end
 
     context 'when no scenarios are enabled' do

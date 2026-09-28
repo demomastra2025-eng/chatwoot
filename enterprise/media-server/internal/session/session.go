@@ -208,6 +208,14 @@ func NewSessionWithOptions(
 		}
 	}
 	sess.Recorder = recorder
+	if recorder != nil {
+		if err := recorder.SetRecordingIdentity(callID, accountID); err != nil {
+			recorder.Cleanup()
+			metaPeer.Close()
+			cancel()
+			return nil, "", fmt.Errorf("bind recording identity: %w", err)
+		}
+	}
 
 	// Create the audio bridge.
 	sess.Bridge = media.NewBridge(id, metaPeer, recorder)
@@ -838,14 +846,30 @@ func (s *Session) sendTerminationCallbacks(reason string) {
 	}
 
 	// Notify recording ready if we have one.
-	if s.Recorder != nil && s.Recorder.FileSize() > 0 {
-		if err := s.railsClient.NotifyRecordingReady(ctx, callback.RecordingReadyPayload{
-			SessionID:     s.ID,
-			CallID:        s.CallID,
-			AccountID:     s.AccountID,
-			FilePath:      s.Recorder.CombinedFilePath(),
-			DurationSec:   durationSec,
-			FileSizeBytes: s.Recorder.FileSize(),
+	if s.Recorder != nil {
+		// One publication retry runs after live forwarding has stopped.
+		if _, ready := s.Recorder.RecordingBundleDigest(); !ready {
+			if err := s.Recorder.Finalize(); err != nil {
+				slog.Warn("session: recording publication retry failed", "session_id", s.ID, "error", err)
+			}
+		}
+		digest, bundleReady := s.Recorder.RecordingBundleDigest()
+		if !bundleReady && s.Recorder.FileSize() <= 0 {
+			return
+		}
+		version := 0
+		if bundleReady {
+			version = media.RecordingManifestVersion
+		}
+		if err := s.notifyRecordingReady(ctx, callback.RecordingReadyPayload{
+			SessionID:                s.ID,
+			CallID:                   s.CallID,
+			AccountID:                s.AccountID,
+			FilePath:                 s.Recorder.CombinedFilePath(),
+			DurationSec:              durationSec,
+			FileSizeBytes:            s.Recorder.FileSize(),
+			RecordingManifestVersion: version,
+			RecordingManifestSHA256:  digest,
 		}); err != nil {
 			slog.Error("session: failed to notify Rails of recording",
 				"session_id", s.ID,
@@ -853,4 +877,39 @@ func (s *Session) sendTerminationCallbacks(reason string) {
 			)
 		}
 	}
+}
+
+const recordingReadyAttempts = 3
+const recordingReadyRetryDelay = 250 * time.Millisecond
+const recordingReadyTimeout = 5 * time.Second
+
+// V1 retries reuse the exact final digest. Legacy delivery keeps its single
+// attempt. This bounded delivery is not a durable producer outbox.
+func (s *Session) notifyRecordingReady(ctx context.Context, payload callback.RecordingReadyPayload) error {
+	if payload.RecordingManifestVersion != media.RecordingManifestVersion {
+		return s.railsClient.NotifyRecordingReady(ctx, payload)
+	}
+	ctx, cancel := context.WithTimeout(ctx, recordingReadyTimeout)
+	defer cancel()
+	var lastErr error
+	for attempt := 0; attempt < recordingReadyAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		lastErr = s.railsClient.NotifyRecordingReady(ctx, payload)
+		if lastErr == nil {
+			return nil
+		}
+		if attempt == recordingReadyAttempts-1 {
+			break
+		}
+		timer := time.NewTimer(recordingReadyRetryDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return lastErr
 }

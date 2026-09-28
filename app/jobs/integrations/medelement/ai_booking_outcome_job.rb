@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
   queue_as :medelement_provider_commands
 
@@ -15,7 +16,12 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     command.with_lock do
       command.reload
       appointment = command.appointment&.reload
-      conversation = appointment&.conversation
+      conversation = if command.create_reception?
+                       Conversation.find_by(id: command.request_snapshot['conversation_id'], account_id: command.account_id,
+                                            contact_id: command.contact_id)
+                     else
+                       appointment&.conversation
+                     end
       assistant = Captain::Assistant.find_by(id: command.request_snapshot.dig('actor', 'id'), account_id: command.account_id)
       next unless booking_context_valid?(command, appointment, conversation, assistant)
 
@@ -27,10 +33,13 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   def booking_context_valid?(command, appointment, conversation, assistant)
     appointment && conversation && assistant&.usage_mode == 'external_agent' &&
-      conversation.account_id == command.account_id && conversation.contact_id == appointment.contact_id
+      conversation.account_id == command.account_id &&
+      conversation.contact_id == (command.create_reception? ? command.contact_id : appointment.contact_id)
   end
 
   def process_outcome!(command, appointment, conversation, assistant)
+    return review_failed_create!(command, appointment, conversation, assistant) if command.create_reception?
+
     if failed_or_unknown?(command)
       notify_staff!(command, conversation, assistant) unless staff_notified?(command)
       return
@@ -38,8 +47,58 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
     return if outcome_recorded?(command)
     return deliver_confirmation!(command, appointment, conversation, assistant) if provider_acknowledged?(command)
+  end
 
-    notify_staff!(command, conversation, assistant) if command.create_reception? && command.succeeded?
+  def review_failed_create!(command, appointment, conversation, assistant)
+    return if staff_notified?(command)
+
+    appointment.with_lock do
+      current_failure = failed_create_needs_review?(command) && current_failed_booking?(command, appointment, conversation)
+      orphaned_write = !current_failure && orphaned_write_needs_review?(command, appointment)
+      next unless current_failure || orphaned_write
+      raise BindingNotReadyError, 'Captain booking response fence is not available yet' if
+        command.execution_state.to_h[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY].blank?
+
+      Captain::Tools::ProviderBookingHandoffService.new(
+        assistant: assistant, conversation: conversation, appointment: appointment, command: command, orphaned_write: orphaned_write
+      ).perform
+    end
+  end
+
+  def orphaned_write_needs_review?(command, appointment)
+    return false unless Captain::Tools::ProviderBookingOutcomeService.write_receipt?(command)
+    return false if current_create_booking?(command, appointment)
+
+    # A command may complete before the appointment's first projection. Wait for
+    # that binding instead of treating a still-current unprojected write as stale.
+    attributes = appointment.custom_attributes.to_h
+    status = Integrations::Medelement::AppointmentProviderStatus
+    if attributes[status::ATTRIBUTE_KEY] == status::PENDING && attributes[status::COMMAND_ID_KEY].blank? &&
+       appointment.updated_at <= command.created_at
+      raise BindingNotReadyError, 'Provider command completed before appointment projection'
+    end
+
+    true
+  end
+
+  def failed_create_needs_review?(command)
+    failed_or_unknown?(command) || command.reconciliation_required? || (command.succeeded? && !provider_acknowledged?(command))
+  end
+
+  def current_failed_booking?(command, appointment, conversation)
+    current_conversation_for_command?(command, appointment, conversation) &&
+      !superseded_before_binding?(command, appointment) && current_create_booking?(command, appointment)
+  end
+
+  def current_create_booking?(command, appointment)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    attrs = appointment.custom_attributes.to_h
+    appointment.status.in?(%w[scheduled confirmed]) &&
+      attrs[status::ATTRIBUTE_KEY].in?([status::PENDING, status::UNKNOWN, status::FAILED, status::SUCCEEDED]) &&
+      status.bound_to_command?(appointment, command) && provider_snapshot_matches?(command, appointment) &&
+      Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).current_booking?(allow_completed: true)
+  rescue ArgumentError, KeyError
+    false
   end
 
   def failed_or_unknown?(command)
@@ -179,3 +238,4 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     command.update!(execution_state: command.execution_state.to_h.merge(key => message_id))
   end
 end
+# rubocop:enable Metrics/ClassLength

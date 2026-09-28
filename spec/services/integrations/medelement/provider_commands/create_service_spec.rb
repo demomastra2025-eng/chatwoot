@@ -91,6 +91,34 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
   end
 
+  it 'rejects a second reception create when the manual appointment is already linked' do
+    appointment.update!(external_ref: 'medelement:reception:71', custom_attributes: { 'medelement_reception_code' => '71' })
+
+    expect { perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_RECEPTION_ALREADY_LINKED')
+    end
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+  end
+
+  it 'holds an ambiguous previous reception write for verification rather than creating a new command' do
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account, hook: hook, appointment: appointment, contact: contact,
+      operation: 'create_reception', status: 'failed', idempotency_key: 'previous-unknown-create',
+      company_cabinet_code: 'cabinet-1', execution_state: { 'write_phase' => 'reception_create' }
+    )
+
+    expect { perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_RECEPTION_ALREADY_LINKED')
+    end
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment).count).to eq(1)
+  end
+
+  it 'allows the first Captain reservation to create its command while pending without a provider write' do
+    appointment.update!(custom_attributes: { 'medelement_provider_sync_status' => 'pending' })
+
+    expect(perform).to be_awaiting_confirmation
+  end
+
   it 'uses the appointment phone when the contact phone is blank without mutating the contact' do
     appointment_phone = ['+7', '700', '123', '4567'].join
     contact.update!(phone_number: nil)

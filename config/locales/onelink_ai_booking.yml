@@ -5,6 +5,7 @@ en:
       ai_booking_moved: 'Your appointment has been rescheduled: %{date} at %{time} with %{specialist}.'
       ai_booking_needs_review: 'Medelement booking needs manual review. No booking confirmation was sent to the customer.'
       ai_booking_readback_needs_review: 'Medelement has not shown a previously acknowledged booking. The customer was already notified; please verify manually.'
+      ai_booking_handoff_needs_review: 'Medelement booking failed or is uncertain. Verify the provider result before advising the customer.'
 ru:
   conversations:
     captain:
@@ -12,6 +13,7 @@ ru:
       ai_booking_moved: 'Ваша запись перенесена: %{date} в %{time}, специалист %{specialist}.'
       ai_booking_needs_review: 'Запись MedElement требует проверки сотрудником. Подтверждение клиенту не отправлено.'
       ai_booking_readback_needs_review: 'MedElement пока не показывает запись с полученным ID. Клиент уже получил подтверждение; проверьте запись вручную.'
+      ai_booking_handoff_needs_review: 'Запись в MedElement не подтверждена или её результат неизвестен. Проверьте результат у провайдера перед ответом клиенту.'
 kk:
   conversations:
     captain:
@@ -19,3 +21,4 @@ kk:
       ai_booking_moved: 'Жазылуыңыз ауыстырылды: %{date} күні сағат %{time}, маман: %{specialist}.'
       ai_booking_needs_review: 'MedElement жазылуын қызметкер тексеруі керек. Клиентке растау жіберілген жоқ.'
       ai_booking_readback_needs_review: 'Алынған ID бойынша MedElement жазылуды әлі көрсетпейді. Клиентке растау жіберілді; қызметкер тексеруі керек.'
+      ai_booking_handoff_needs_review: 'MedElement жазылуы расталмады немесе нәтижесі белгісіз. Клиентке жауап бермес бұрын провайдер нәтижесін тексеріңіз.'

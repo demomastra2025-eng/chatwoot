@@ -194,7 +194,6 @@
       "CUSTOM_FIELDS_TITLE": "Пользовательские поля",
       "EDIT_TITLE": "Редактировать запись",
       "ENDS_AT": "Окончание",
-
       "INTAKE_FIELDS_DESCRIPTION": "Собирайте управляемые поля, которые должны заполняться прямо во время оформления записи.",
       "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
@@ -208,6 +207,15 @@
       "STARTS_AT": "Начало",
       "STATUS": "Статус",
       "SUCCESS_CANCEL": "Запись отменена",
+      "CANCELLATION_PENDING": "Запрос на отмену отправлен. Отмена в MedElement ещё не подтверждена.",
+      "CHECK_PROVIDER_BOOKING": "Проверить в MedElement",
+      "CHECK_STARTED": "Проверка MedElement запущена. После её завершения обновите запись и при подтверждённом ID отмените её отдельно.",
+      "CHECK_CANCELLED_STARTED": "Сверка MedElement запущена. Удаление удалённого приёма не выполняется; после проверки требуется ручное разрешение.",
+      "CHECK_NOT_AVAILABLE": "Автоматическая сверка недоступна. Запись не отменена; требуется ручная проверка.",
+      "MANUAL_CANCELLATION_INSTRUCTIONS": "Для приёма №{code} проверьте в MedElement пациента, врача, кабинет, время и услуги. Для отмены удалите этот приём там, затем проверьте удаление здесь. OneLink освободит слот только после подтверждения удаления.",
+      "VERIFY_MANUAL_CANCELLATION": "Проверить удаление в MedElement",
+      "MANUAL_CANCELLATION_VERIFIED": "Удаление в MedElement подтверждено. Запись отменена.",
+      "CANCELLATION_CANDIDATES": "Возможный приём MedElement №{codes}. Местная запись отменена, но удаление приёма не подтверждено. Проверьте пациента, врача, кабинет, время и услугу в MedElement и разрешите случай вручную.",
       "SUCCESS_DELETE": "Запись удалена",
       "SUCCESS_SAVE": "Запись сохранена",
       "ERRORS": {
@@ -228,7 +236,10 @@
       "confirmed": "Подтверждено",
       "completed": "Завершено",
       "cancelled": "Отменено",
-      "no_show": "Не пришёл"
+      "no_show": "Не пришёл",
+      "PROVIDER_REVIEW": "Не подтверждена в MedElement — требуется проверка",
+      "CANCELLATION_PENDING": "Ожидаем подтверждения отмены в MedElement",
+      "CANCELLATION_REVIEW": "Отмена в MedElement не подтверждена — требуется ручная проверка"
     },
     "PAYMENT_STATUS": {
       "awaiting_payment": "Ожидает оплаты",
@@ -391,6 +402,12 @@
       "MEDELEMENT_SERVICE_REQUIRED": "Выберите услугу из каталога MedElement.",
       "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "Выбранная услуга недоступна для этого специалиста MedElement.",
       "MEDELEMENT_SERVICE_UNMAPPED": "Выбранная услуга не связана с MedElement.",
+      "MEDELEMENT_CANCELLATION_RESOLUTION_UNAVAILABLE": "Этот приём нельзя разрешить автоматически: исходная команда или запись изменилась. Требуется ручная проверка.",
+      "MEDELEMENT_CANCELLATION_NOT_VERIFIED": "Удаление именно этого приёма в MedElement не подтверждено. Запись в OneLink сохранена без изменений.",
+      "MEDELEMENT_CANCELLATION_CHECK_FAILED": "Не удалось проверить удаление в MedElement. Повторите проверку позже; запись в OneLink сохранена без изменений.",
+      "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "Эту запись об отмене нужно сохранить для проверки и синхронизации с MedElement.",
+      "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Запись не отменена: сначала проверьте приём в MedElement. Если он подтвердится, отмените запись отдельно.",
+      "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "Проверка MedElement сейчас недоступна или уже запущена. Не отменяйте запись без подтверждения.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "Только запланированную или подтверждённую запись можно создать в MedElement.",
       "END_BEFORE_START": "Время окончания должно быть позже времени начала.",
       "EXPENSE_NOT_FOUND": "Расход не найден.",
@@ -414,7 +431,8 @@
       "SET_SERVICE_AMOUNT_FIRST": "Сначала укажите стоимость услуги, затем добавляйте оплату.",
       "SINGLE_DAY_REQUIRED": "Запись должна укладываться в один локальный день.",
       "SLOT_CONFLICT": "Этот слот уже занят.",
-      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Общая сумма полученных оплат не может превышать стоимость услуги."
+      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Общая сумма полученных оплат не может превышать стоимость услуги.",
+      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Данные пациента противоречат связанной карточке MedElement. Выберите карточку пациента или создайте отдельную запись."
     },
     "WEEKDAYS": {
       "0": "Воскресенье",

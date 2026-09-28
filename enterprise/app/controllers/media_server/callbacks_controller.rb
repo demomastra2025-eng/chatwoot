@@ -14,6 +14,8 @@ class MediaServer::CallbacksController < ApplicationController
   end
 
   def recording_ready
+    return recording_bundle_ready if params.key?(:recording_manifest_version)
+
     call = find_call_by_session
     return head :not_found unless call
 
@@ -87,6 +89,57 @@ class MediaServer::CallbacksController < ApplicationController
   end
 
   private
+
+  def recording_bundle_ready
+    return head :unprocessable_entity unless params[:recording_manifest_version].to_s == '1'
+
+    return head :bad_request unless valid_recording_bundle_signal?
+
+    call = Call.find_by(account_id: params[:account_id], provider_call_id: params[:call_id])
+    return head :not_found unless call
+
+    status = bind_recording_bundle_signal(call)
+    return head :conflict if status == :conflict
+
+    Whatsapp::CallRecordingFetchJob.perform_later(call.id) if status == :enqueue
+    head :ok
+  end
+
+  def valid_recording_bundle_signal?
+    params[:recording_manifest_sha256].to_s.match?(/\A[0-9a-f]{64}\z/) &&
+      params[:session_id].to_s.match?(/\A[A-Za-z0-9_-]{1,128}\z/) && params[:call_id].present?
+  end
+
+  def bind_recording_bundle_signal(call)
+    digest = params[:recording_manifest_sha256].to_s
+    call.with_lock do
+      call.reload
+      bundle = (call.meta || {})['recording_bundle'] || {}
+      status = recording_bundle_signal_status(call, bundle, digest)
+      if status == :enqueue
+        meta = (call.meta || {}).deep_dup
+        meta['recording_bundle'] = bundle.merge('version' => 1, 'expected_sha256' => digest)
+        call.update!(media_session_id: params[:session_id].to_s, meta: meta)
+      end
+      status
+    end
+  end
+
+  def recording_bundle_signal_status(call, bundle, digest)
+    return :conflict if recording_bundle_scope_conflict?(call)
+    return :conflict if bundle['completed_sha256'].present? && bundle['completed_sha256'] != digest
+    return :complete if bundle['completed_sha256'] == digest && call.recording_manifest.attached?
+
+    :enqueue
+  end
+
+  def recording_bundle_scope_conflict?(call)
+    !recording_bundle_call_matches?(call) || (call.media_session_id.present? && call.media_session_id != params[:session_id].to_s)
+  end
+
+  def recording_bundle_call_matches?(call)
+    call.account_id.to_s == params[:account_id].to_s && call.provider_call_id == params[:call_id].to_s
+  end
 
   def validate_media_server_token
     expected = ENV.fetch('MEDIA_SERVER_AUTH_TOKEN', '').to_s

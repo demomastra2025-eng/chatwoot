@@ -5,8 +5,8 @@ class Integrations::Medelement::AppointmentImporterService
   PRIMARY_APPOINTMENT_TYPE = 'primary'.freeze
   MIN_DURATION_MINUTES = 5
   NO_SHOW_PROVIDER_STATUSES = ['no_show', 'no show', 'неявка', 'не явился', 'не явилась'].freeze
-  CANCELLED_PROVIDER_STATUSES = ['cancelled', 'canceled', 'отменена', 'отменено'].freeze
-  COMPLETED_PROVIDER_STATUSES = ['completed', 'complete', 'завершена', 'завершено', 'оказана'].freeze
+  CANCELLED_PROVIDER_STATUSES = %w[cancelled canceled отменена отменено].freeze
+  COMPLETED_PROVIDER_STATUSES = %w[completed complete завершена завершено оказана].freeze
   RECONCILIATION_ATTRIBUTE_KEYS = %w[
     medelement_missing_since
     medelement_missing_syncs
@@ -56,6 +56,7 @@ class Integrations::Medelement::AppointmentImporterService
       snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
     ).validate!
     provider_binding(appointment, reception).validate!
+    contact = preserved_identity_contact(appointment, reception, contact)
     record_unresolved_patient_conflict(reception) if contact.blank?
     appointment.assign_attributes(
       appointment_attributes(
@@ -105,9 +106,33 @@ class Integrations::Medelement::AppointmentImporterService
       )
     }
 
-    base_attributes.merge(client_attributes(contact)).merge(financial_attributes(appointment, reception))
+    identity_attributes = preserve_local_patient_identity?(appointment) ? {} : client_attributes(contact)
+    base_attributes.merge(identity_attributes).merge(financial_attributes(appointment, reception))
   end
   # rubocop:enable Metrics/MethodLength
+
+  def preserved_identity_contact(appointment, reception, contact)
+    return contact unless preserve_local_patient_identity?(appointment)
+
+    validate_local_patient_reference!(appointment, reception)
+    appointment.contact
+  end
+
+  def preserve_local_patient_identity?(appointment)
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    appointment.persisted? && appointment.source != MEDELEMENT_SOURCE &&
+      (policy.owned?(appointment.custom_attributes) || policy.explicit_identifier?(appointment.custom_attributes))
+  end
+
+  def validate_local_patient_reference!(appointment, reception)
+    expected = Integrations::Medelement::AppointmentPatientIdentity.provider_code(appointment: appointment, contact: appointment.contact)
+    actual = [reception['PATIENT_CODE'], reception['PROFILE_CODE']].filter_map { |value| value.to_s.presence }.uniq
+    return if expected.present? && actual == [expected.to_s]
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'Imported reception belongs to another patient', status: :conflict
+    )
+  end
 
   def provider_status_resolution(appointment, reception)
     provider_status = provider_status_value(reception)

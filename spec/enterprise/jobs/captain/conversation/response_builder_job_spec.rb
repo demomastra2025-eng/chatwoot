@@ -107,6 +107,36 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       ).once
     end
 
+    it 'does not issue a standalone conversation-status query before responding' do
+      queries = []
+      observer = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] }
+      ActiveSupport::Notifications.subscribed(observer, 'sql.active_record') do
+        described_class.perform_now(conversation, assistant)
+      end
+
+      expect(conversation.messages.outgoing.where(sender: assistant).count).to eq(1)
+      expect(queries.grep(/SELECT "conversations"\."status" FROM/)).to be_empty
+    end
+
+    it 'does not delete a newer buffer installed while the completed response clears its old token' do
+      incoming = conversation.messages.incoming.last
+      key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+      old_state = { token: 'old-run', assistant_id: assistant.id, last_message_id: incoming.id, control_generation: 0 }.to_json
+      new_state = { token: 'new-run', assistant_id: assistant.id, last_message_id: incoming.id, control_generation: 0 }.to_json
+      Redis::Alfred.set(key, old_state, ex: 60)
+      allow(Redis::Alfred).to receive(:delete_if_value).and_wrap_original do |method, target, expected|
+        Redis::Alfred.set(key, new_state, ex: 60) if target == key
+        method.call(target, expected)
+      end
+
+      described_class.perform_now(conversation, assistant, buffer_token: 'old-run', expected_last_message_id: incoming.id)
+
+      expect(conversation.messages.outgoing.where(sender: assistant).count).to eq(1)
+      expect(Redis::Alfred.get(key)).to eq(new_state)
+    ensure
+      Redis::Alfred.delete(key) if defined?(key)
+    end
+
     it 'passes message history to the agent runner service' do
       expect(agent_runner_service).to receive(:generate_response).with(
         message_history: [{ content: 'Hello', role: 'user' }]

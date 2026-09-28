@@ -57,6 +57,17 @@ class SchedulingProviderCommandsAPI extends ApiClient {
     return axios.post(`${this.url}/${id}/retry`, { provider });
   }
 
+  reconcile(id, { provider }) {
+    return axios.post(`${this.url}/${id}/reconcile`, { provider });
+  }
+
+  resolveCancellation(id, { provider, receptionCode }) {
+    return axios.post(`${this.url}/${id}/resolve_cancellation`, {
+      provider,
+      reception_code: receptionCode,
+    });
+  }
+
   cancel(id, { provider }) {
     return axios.post(`${this.url}/${id}/cancel`, { provider });
   }

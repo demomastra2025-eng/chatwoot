@@ -54,10 +54,13 @@ class Captain::Conversation::BufferedResponseFlushJob < MutexApplicationJob
   end
 
   def clear_state(conversation_id, token)
-    state = buffer_state(conversation_id)
-    return unless state.present? && state['token'] == token
+    raw_state = Redis::Alfred.get(state_key(conversation_id))
+    state = JSON.parse(raw_state.to_s)
+    return unless state.is_a?(Hash) && state['token'] == token
 
-    Redis::Alfred.delete(state_key(conversation_id))
+    Redis::Alfred.delete_if_value(state_key(conversation_id), raw_state)
+  rescue JSON::ParserError
+    nil
   end
 
   def state_key(conversation_id)

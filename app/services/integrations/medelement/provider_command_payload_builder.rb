@@ -33,8 +33,18 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
       {
         reconciliation_attempts: command.reconciliation_attempts,
         reconciliation_next_at: command.reconciliation_next_at&.iso8601,
-        reconciliation_cancellable: command.reconciliation_required?
+        cancellation_review_candidates: Array(command.execution_state.to_h['cancelled_reception_candidate_codes']),
+        manual_cancellation_available: Integrations::Medelement::ProviderCommands::ManualCancellationPolicy.available?(command),
+        manual_cancellation_reception_code: manual_cancellation_reception_code(command),
+        manual_cancellation_resolution: command.execution_state.to_h['manual_cancellation_resolution'],
+        reconciliation_cancellable: command.reconciliation_required? &&
+          Integrations::Medelement::ProviderCommands::CancelService.cancellable?(command)
       }
+    end
+
+    def manual_cancellation_reception_code(command)
+      policy = Integrations::Medelement::ProviderCommands::ManualCancellationPolicy
+      policy.reception_codes(command).first if policy.available?(command)
     end
 
     def lifecycle_payload(command)
@@ -61,7 +71,9 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
     def patient_action_payload(command)
       return unless command.logical_status.in?(Integrations::Medelement::ProviderCommands::PatientActionRequired::STATUSES)
 
-      command.execution_state.to_h['patient_action'].to_h.merge('cancellable' => true)
+      command.execution_state.to_h['patient_action'].to_h.merge(
+        'cancellable' => Integrations::Medelement::ProviderCommands::CancelService.cancellable?(command)
+      )
     end
   end
 end

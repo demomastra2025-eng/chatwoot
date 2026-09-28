@@ -25,6 +25,325 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     )
   end
 
+  it 'keeps an unconfirmed Medelement booking visible instead of cancelling without a provider ID' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(status::ATTRIBUTE_KEY => status::UNKNOWN))
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload).to have_attributes(status: 'scheduled', external_ref: nil)
+    expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
+  end
+
+  it 'blocks cancellation when a reception write started before the local status was projected' do
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account, appointment: appointment, contact: appointment.contact, operation: 'create_reception',
+      company_cabinet_code: 'cabinet-1', idempotency_key: SecureRandom.uuid,
+      status: 'provider_status_unknown', execution_state: { 'write_phase' => 'reception_create' }
+    )
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'rejects a zero reception ID even when the provider status says succeeded' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(
+      external_ref: 'medelement:reception:0',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => '0'
+      )
+    )
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'does not cancel a confirmed reception when provider writes are disabled' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    hook = create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    hook.update!(settings: hook.settings.merge('write_enabled' => false))
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => 'created-1'
+      )
+    )
+
+    cancellation = described_class.new(
+      account: account, appointment: appointment, params: { status: 'cancelled' }, actor: create(:user, account: account)
+    )
+    expect { cancellation.perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'does not cancel a legacy appointment with a MedElement reference but no provider status' do
+    appointment.update!(external_ref: 'medelement:reception:created-1')
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'blocks cancellation of a previously confirmed reception while a newer provider change is unknown' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::UNKNOWN, 'medelement_reception_code' => 'created-1'
+      )
+    )
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'rejects a stale cancellation after the provider outcome becomes unknown in another transaction' do
+    stale_appointment = Scheduling::Appointment.find(appointment.id)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(custom_attributes: appointment.custom_attributes.merge(status::ATTRIBUTE_KEY => status::UNKNOWN))
+
+    expect do
+      described_class.new(account: account, appointment: stale_appointment, params: { status: 'cancelled' }).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'keeps even a verified provider appointment active until provider removal succeeds' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => 'created-1'
+      )
+    )
+
+    expect do
+      described_class.new(
+        account: account, appointment: appointment, params: { status: 'cancelled' }, actor: create(:user, account: account)
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
+  it 'does not cancel a confirmed reception while replacing its provider resource in the same update' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => 'created-1'
+      )
+    )
+    replacement = create(:scheduling_resource, account: account)
+
+    expect do
+      described_class.new(
+        account: account, appointment: appointment, params: { status: 'cancelled', resource_id: replacement.id },
+        actor: create(:user, account: account)
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
+    expect(appointment.reload).to have_attributes(status: 'scheduled', resource_id: resource.id)
+  end
+
+  it 'keeps a Captain appointment locally with a red review status when the command receipt is unavailable' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    status.assign_pending!(appointment)
+    appointment.save!
+    receipt = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: nil)
+    allow(receipt).to receive(:perform).and_raise(
+      Scheduling::Error.new(code: 'MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE', message: 'Receipt unavailable', status: :service_unavailable)
+    )
+    service = described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    allow(service).to receive(:persist_appointment!) do
+      appointment.update!(client_comment: 'Kept locally')
+      service.instance_variable_set(:@provider_receipt_service, receipt)
+    end
+
+    expect { service.perform }.to raise_error(Scheduling::Error, /Receipt unavailable/)
+    expect(service.persisted_appointment).to eq(appointment)
+    expect(appointment.reload.client_comment).to eq('Kept locally')
+    expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
+  end
+
+  it 'marks an unexpected receipt failure for staff review without losing the Captain local booking' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    status.assign_pending!(appointment)
+    appointment.save!
+    receipt = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: nil)
+    allow(receipt).to receive(:perform).and_raise(StandardError, 'Receipt storage failed')
+    service = described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    allow(service).to receive(:persist_appointment!) do
+      appointment.update!(client_comment: 'Kept locally')
+      service.instance_variable_set(:@provider_receipt_service, receipt)
+    end
+
+    expect { service.perform }.to raise_error(StandardError, 'Receipt storage failed')
+    expect(service.persisted_appointment).to eq(appointment)
+    expect(appointment.reload.client_comment).to eq('Kept locally')
+    expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
+  end
+
+  context 'when command confirmation raises after its status projection' do
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:status) { Integrations::Medelement::AppointmentProviderStatus }
+    let(:command) do
+      Integrations::Medelement::ProviderCommand.create!(
+        account: account, appointment: appointment, contact: appointment.contact, operation: 'create_reception',
+        status: 'awaiting_confirmation', idempotency_key: SecureRandom.uuid, company_cabinet_code: 'cabinet-1',
+        desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
+        execution_state: {
+          'request_fingerprint' => 'receipt-fingerprint', 'dispatch_identity' => 'receipt-dispatch',
+          'request_snapshot' => { 'version' => 2, 'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id },
+                                  'reception' => { 'resource_id' => resource.id, 'nomenclature_codes' => [] } }
+        }
+      )
+    end
+    let(:receipt) { instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: command) }
+    let(:service) do
+      described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    end
+
+    before do
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      status.assign_pending!(appointment)
+      appointment.save!
+      allow(service).to receive(:persist_appointment!) do
+        appointment.update!(client_comment: 'Kept locally')
+        service.instance_variable_set(:@provider_receipt_service, receipt)
+      end
+    end
+
+    it 'keeps the original local slot red and bound to its command' do
+      allow(receipt).to receive(:perform) do
+        status.persist!(Scheduling::Appointment.find(appointment.id), status::PENDING, command: command)
+        raise StandardError, 'Confirmation failed after projection'
+      end
+
+      expect { service.perform }.to raise_error(StandardError, 'Confirmation failed after projection')
+      expect(service.persisted_appointment).to eq(appointment)
+      expect(appointment.reload).to have_attributes(status: 'scheduled', client_comment: 'Kept locally')
+      expect(appointment.custom_attributes).to include(status::ATTRIBUTE_KEY => status::UNKNOWN, status::COMMAND_ID_KEY => command.id)
+    end
+
+    it 'does not overwrite a replacement command projected before the error returns' do
+      command.update!(status: 'succeeded')
+      replacement = command.dup
+      replacement.idempotency_key = SecureRandom.uuid
+      replacement.save!
+      allow(receipt).to receive(:perform) do
+        status.persist!(Scheduling::Appointment.find(appointment.id), status::PENDING, command: command)
+        status.persist!(Scheduling::Appointment.find(appointment.id), status::PENDING, command: replacement)
+        raise StandardError, 'Confirmation failed after replacement'
+      end
+
+      expect { service.perform }.to raise_error(StandardError, 'Confirmation failed after replacement')
+      expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::PENDING, status::COMMAND_ID_KEY => replacement.id)
+    end
+
+    it 'does not mark the old command red when the local slot changes after projection' do
+      replacement = create(:scheduling_resource, account: account)
+      allow(receipt).to receive(:perform) do
+        status.persist!(Scheduling::Appointment.find(appointment.id), status::PENDING, command: command)
+        Scheduling::Appointment.find(appointment.id).update!(resource: replacement)
+        raise StandardError, 'Confirmation failed after slot change'
+      end
+
+      expect { service.perform }.to raise_error(StandardError, 'Confirmation failed after slot change')
+      expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::PENDING, status::COMMAND_ID_KEY => command.id)
+      expect(appointment.resource_id).to eq(replacement.id)
+    end
+  end
+
+  it 'does not overwrite a newer provider success when the Captain receipt raises after the local save' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    status.assign_pending!(appointment)
+    appointment.save!
+    receipt = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: nil)
+    allow(receipt).to receive(:perform) do
+      status.persist!(Scheduling::Appointment.find(appointment.id), status::SUCCEEDED)
+      raise StandardError, 'Receipt storage failed'
+    end
+    service = described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    allow(service).to receive(:persist_appointment!) do
+      appointment.update!(client_comment: 'Kept locally')
+      service.instance_variable_set(:@provider_receipt_service, receipt)
+    end
+
+    expect { service.perform }.to raise_error(StandardError, 'Receipt storage failed')
+    expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::SUCCEEDED)
+  end
+
+  it 'does not mark another booking command unknown when a newer Captain receipt raises' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    status.assign_pending!(appointment)
+    appointment.save!
+    receipt = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: nil)
+    allow(receipt).to receive(:perform) do
+      newer = Scheduling::Appointment.find(appointment.id)
+      newer.update!(custom_attributes: newer.custom_attributes.merge(status::COMMAND_ID_KEY => 123_456))
+      raise StandardError, 'Receipt storage failed'
+    end
+    service = described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    allow(service).to receive(:persist_appointment!) do
+      appointment.update!(client_comment: 'Kept locally')
+      service.instance_variable_set(:@provider_receipt_service, receipt)
+    end
+
+    expect { service.perform }.to raise_error(StandardError, 'Receipt storage failed')
+    expect(appointment.reload.custom_attributes).to include(status::ATTRIBUTE_KEY => status::PENDING, status::COMMAND_ID_KEY => 123_456)
+  end
+
+  it 'does not mark a changed booking unknown when an older Captain receipt raises' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    status.assign_pending!(appointment)
+    appointment.save!
+    replacement = create(:scheduling_resource, account: account)
+    receipt = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptService, projected_command: nil)
+    allow(receipt).to receive(:perform) do
+      newer = Scheduling::Appointment.find(appointment.id)
+      newer.update!(resource: replacement)
+      status.assign_pending!(newer)
+      newer.save!
+      raise StandardError, 'Receipt storage failed'
+    end
+    service = described_class.new(account: account, appointment: appointment, params: { client_comment: 'Kept locally' }, actor: assistant)
+    allow(service).to receive(:persist_appointment!) do
+      appointment.update!(client_comment: 'Kept locally')
+      service.instance_variable_set(:@provider_receipt_service, receipt)
+    end
+
+    expect { service.perform }.to raise_error(StandardError, 'Receipt storage failed')
+    expect(appointment.reload).to have_attributes(resource_id: replacement.id)
+    expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::PENDING)
+  end
+
   it 'rejects generic mutations of imported Medelement appointments' do
     appointment.update!(source: 'medelement', external_ref: 'medelement:reception:upsert')
 

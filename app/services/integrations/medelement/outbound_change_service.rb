@@ -12,6 +12,9 @@ class Integrations::Medelement::OutboundChangeService
   SPECIALIST_NAME_KEY = 'medelement_specialist_name_snapshot'.freeze
   NOMENCLATURE_CODES_KEY = 'medelement_nomenclature_codes_snapshot'.freeze
   SERVICE_NAME_KEY = 'medelement_service_name_snapshot'.freeze
+  PREWRITE_PATIENT_ACTION_STATUSES = %w[awaiting_patient_selection awaiting_patient_creation awaiting_phone_refresh].freeze
+
+  attr_reader :projected_command
 
   class << self
     def contact_event_snapshot(contact)
@@ -88,35 +91,106 @@ class Integrations::Medelement::OutboundChangeService
     return unless operation
 
     command = create_appointment_command(appointment, operation)
-    project_appointment_provider_status!(appointment, command)
+    projected = project_appointment_provider_status!(appointment, command)
+    @projected_command = command if projected
+    confirm_projected_captain_command!(command) if projected
     command
   end
 
+  def confirm_projected_captain_command!(command)
+    confirm_command(command) if captain_create_reception?(command)
+  end
+
   def create_appointment_command(appointment, operation)
-    create_and_confirm(
+    command = create_and_confirm(
       appointment: appointment,
       contact: appointment.contact,
       operation: operation,
       company_cabinet_code: cabinet_code(appointment),
       desired_starts_at: reception_write?(operation) ? desired_time('starts_at', appointment.starts_at) : nil,
-      desired_ends_at: reception_write?(operation) ? desired_time('ends_at', appointment.ends_at) : nil
+      desired_ends_at: reception_write?(operation) ? desired_time('ends_at', appointment.ends_at) : nil,
+      confirm: false
     )
+    captain_create_reception?(command) ? command : confirm_command(command)
   end
 
   def project_appointment_provider_status!(appointment, command)
-    command.with_lock do
-      provider_status = case command.logical_status
-                        when 'succeeded'
-                          Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED
-                        when 'provider_status_unknown'
-                          Integrations::Medelement::AppointmentProviderStatus::UNKNOWN
-                        when 'failed', 'declined', 'cancelled'
-                          Integrations::Medelement::AppointmentProviderStatus::FAILED
-                        else
-                          Integrations::Medelement::AppointmentProviderStatus::PENDING
-                        end
-      Integrations::Medelement::AppointmentProviderStatus.persist!(appointment, provider_status, command: command)
+    projected = command.with_lock do
+      appointment.with_lock do
+        if captain_create_reception?(command)
+          guard = Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
+          unless guard.current_booking?(allow_completed: true)
+            discard_stale_prewrite_captain_command!(command)
+            next false
+          end
+        end
+
+        provider_status = projected_status_for(command)
+        status = Integrations::Medelement::AppointmentProviderStatus
+        provider_status = status::UNKNOWN if preserve_booking_review_status?(appointment, command, provider_status)
+        status.persist!(appointment, provider_status, command: command)
+        true
+      end
     end
+    expire_discarded_confirmation!(command) if !projected && command.cancelled? && captain_create_reception?(command)
+    projected
+  end
+
+  def discard_stale_prewrite_captain_command!(command)
+    return false unless command.awaiting_confirmation? || command.logical_status.in?(PREWRITE_PATIENT_ACTION_STATUSES)
+    return false if command.provider_write_started?
+
+    command.update!(status: 'cancelled', executed_at: Time.current, last_error_code: 'local_booking_changed_before_confirmation')
+    true
+  end
+
+  def retire_stale_prewrite_captain_command!(command)
+    retired = command.with_lock do
+      next false unless captain_create_reception?(command)
+
+      command.appointment.with_lock do
+        guard = Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
+        next false if guard.current_booking?(allow_completed: true)
+
+        discard_stale_prewrite_captain_command!(command)
+      end
+    end
+    expire_discarded_confirmation!(command) if retired
+    retired
+  end
+
+  def expire_discarded_confirmation!(command)
+    confirmation = command.confirmation_request
+    return if confirmation.blank?
+
+    confirmation.with_lock do
+      next unless confirmation.pending?
+
+      confirmation.update!(
+        status: 'expired', resolved_at: Time.current, resolution_source: 'system',
+        resolution_metadata: confirmation.resolution_metadata.to_h.merge('reason' => 'local_booking_changed_before_confirmation')
+      )
+    end
+  end
+
+  def captain_create_reception?(command)
+    command.create_reception? && command.request_snapshot.dig('actor', 'type') == 'Captain::Assistant'
+  end
+
+  def projected_status_for(command)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    case command.logical_status
+    when 'succeeded' then status::SUCCEEDED
+    when 'provider_status_unknown' then status::UNKNOWN
+    when 'failed', 'declined', 'cancelled' then status::FAILED
+    else status::PENDING
+    end
+  end
+
+  def preserve_booking_review_status?(appointment, command, provider_status)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    provider_status == status::PENDING && captain_create_reception?(command) &&
+      appointment.custom_attributes.to_h[status::ATTRIBUTE_KEY] == status::UNKNOWN
   end
 
   def sync_contact
@@ -191,7 +265,7 @@ class Integrations::Medelement::OutboundChangeService
   end
 
   # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
-  def create_and_confirm(appointment:, contact:, operation:, company_cabinet_code:, desired_starts_at:, desired_ends_at:)
+  def create_and_confirm(appointment:, contact:, operation:, company_cabinet_code:, desired_starts_at:, desired_ends_at:, confirm: true)
     command_desired_attributes = snapshot_desired_attributes(operation, appointment)
     command_idempotency_key = idempotency_key(operation, appointment || contact, desired_starts_at, desired_ends_at)
     expected_snapshot = request_snapshot(
@@ -204,7 +278,7 @@ class Integrations::Medelement::OutboundChangeService
       desired_attributes: command_desired_attributes
     )
     existing = matching_appointment_command(appointment, operation, expected_snapshot)
-    return confirm_command(existing) if existing
+    return confirm ? confirm_command(existing) : existing if existing
 
     command = create_command(
       appointment: appointment,
@@ -217,7 +291,7 @@ class Integrations::Medelement::OutboundChangeService
       desired_ends_at: desired_ends_at,
       desired_attributes: command_desired_attributes
     )
-    confirm_command(command)
+    confirm ? confirm_command(command) : command
   end
   # rubocop:enable Metrics/MethodLength, Metrics/ParameterLists
 
@@ -256,6 +330,7 @@ class Integrations::Medelement::OutboundChangeService
     existing = Integrations::Medelement::ProviderCommand.where(account: account, appointment: appointment).unfinished.first
     return if existing.blank?
     return existing if existing.operation == operation && same_request_snapshot?(existing.request_snapshot, expected_snapshot)
+    return if retire_stale_prewrite_captain_command!(existing)
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_COMMAND_IN_PROGRESS',

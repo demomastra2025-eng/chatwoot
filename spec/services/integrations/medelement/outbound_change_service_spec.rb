@@ -85,6 +85,233 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
   end
 
+  it 'binds a Captain booking before execution can acknowledge its create write' do
+    assistant = create(:captain_assistant, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment.update!(conversation: conversation)
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do |request_id|
+      dispatched = Integrations::Medelement::ProviderCommand.find_by!(confirmation_request_id: request_id)
+      expect(provider_status.bound_to_command?(appointment.reload, dispatched)).to be(true)
+
+      dispatched.update!(
+        status: dispatched.status_for_transition('processing'),
+        provider_patient_code: 'patient-1',
+        execution_state: dispatched.execution_state.merge(
+          'write_provider_reception_code' => 'early-reception', 'write_provider_patient_code' => 'patient-1'
+        )
+      )
+      Integrations::Medelement::ProviderCommands::SuccessApplier.new(command: dispatched)
+                                                                .reception_created!(reception_code: 'early-reception', patient_code: 'patient-1')
+    end
+
+    command = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-early-success'
+    ).perform
+
+    expect(command.reload).to be_succeeded
+    expect(appointment.reload.external_ref).to eq('medelement:reception:early-reception')
+    appointment.medelement_provider_command_receipt = command
+    expect(Captain::Tools::ProviderBookingOutcomeService.new(appointment: appointment, assistant: assistant).perform).to eq(command)
+  end
+
+  it 'exposes the projected command through the receipt when confirmation raises' do
+    assistant = create(:captain_assistant, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment.update!(conversation: conversation)
+    allow(Integrations::Medelement::ProviderCommands::AutoConfirmationService)
+      .to receive(:new).and_raise(StandardError, 'Confirmation failed')
+    receipt = Integrations::Medelement::AppointmentProviderCommandReceiptService.new(
+      appointment: appointment, actor: assistant, new_record: true
+    )
+
+    expect { receipt.perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE') }
+    expect(receipt.projected_command).to be_present
+    expect(Integrations::Medelement::AppointmentProviderStatus.bound_to_command?(appointment.reload, receipt.projected_command)).to be(true)
+    expect(appointment.custom_attributes[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY]).to eq('pending')
+  end
+
+  it 'does not dispatch a Captain command if its booking changes before binding' do
+    assistant = create(:captain_assistant, account: account)
+    replacement = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-2' })
+    service = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-changed-before-binding'
+    )
+    allow(service).to receive(:create_appointment_command).and_wrap_original do |original, *args|
+      command = original.call(*args)
+      appointment.update!(resource: replacement)
+      command
+    end
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to receive(:perform_later)
+    command = service.perform
+
+    expect(command.reload).to be_cancelled
+    expect(command.confirmation_request.reload).to be_expired
+    expect(appointment.reload.resource_id).to eq(replacement.id)
+    expect(appointment.custom_attributes[Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY]).to be_nil
+  end
+
+  it 'allows the changed Captain booking to start after its unconfirmed old command is discarded' do
+    assistant = create(:captain_assistant, account: account)
+    replacement = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-2',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    first = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-stale-first'
+    )
+    allow(first).to receive(:create_appointment_command).and_wrap_original do |original, *args|
+      command = original.call(*args)
+      appointment.update!(resource: replacement)
+      command
+    end
+
+    stale = first.perform
+    expect(stale.reload).to be_cancelled
+    expect(stale.confirmation_request.reload).to be_expired
+
+    current = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-stale-second',
+      change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+    ).perform
+
+    expect(current.id).not_to eq(stale.id)
+    expect(current.confirmation_request.reload).to be_confirmed
+  end
+
+  it 'retires a stale Captain patient-selection command before any provider write so the replacement can start' do
+    assistant = create(:captain_assistant, account: account)
+    first = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:patient-selection-first'
+    ).perform
+    first.update!(
+      status: first.status_for_transition('awaiting_patient_selection'),
+      execution_state: first.execution_state.merge('patient_action' => { 'type' => 'patient_selection' })
+    )
+    replacement = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-2',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment.update!(resource: replacement)
+    Integrations::Medelement::AppointmentProviderStatus.assign_pending!(appointment)
+    appointment.save!
+
+    current = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_updated',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:updated:patient-selection-second',
+      change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+    ).perform
+
+    expect(first.reload).to be_cancelled
+    expect(current.id).not_to eq(first.id)
+    expect(current.confirmation_request.reload).to be_confirmed
+    client = instance_double(Integrations::Medelement::Client)
+    expect(client).not_to receive(:create_reception)
+    expect(Integrations::Medelement::ProviderCommands::Executor.new(command: first, client: client).perform).to be_nil
+    expect do
+      Integrations::Medelement::ProviderCommands::PatientActionsService.new(command: first, actor: actor).confirm_creation!
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('patient_action_not_available') }
+  end
+
+  it 'does not retire a stale Captain patient-action command once any provider write may have started' do
+    assistant = create(:captain_assistant, account: account)
+    first = described_class.new(
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:patient-write-first'
+    ).perform
+    first.update!(
+      status: first.status_for_transition('awaiting_phone_refresh'),
+      execution_state: first.execution_state.merge('write_phase' => 'patient_create')
+    )
+    replacement = create(:scheduling_resource, account: account, custom_attributes: { 'medelement_specialist_code' => 'specialist-2' })
+    appointment.update!(resource: replacement)
+
+    expect do
+      described_class.new(
+        entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_updated',
+        account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+        event_key: 'appointment:updated:patient-write-second',
+        change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_IN_PROGRESS') }
+
+    expect(first.reload).to be_awaiting_phone_refresh
+    expect do
+      Integrations::Medelement::ProviderCommands::CancelService.new(command: first, actor: actor).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE') }
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment).count).to eq(1)
+  end
+
+  it 'does not clear a Captain booking review state while a retried command is still queued' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    event = {
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-retry'
+    }
+    command = described_class.new(**event).perform
+    status.persist!(appointment, status::UNKNOWN, command: command)
+
+    retried = described_class.new(**event).perform
+
+    expect(retried).to eq(command)
+    expect(appointment.reload.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::UNKNOWN)
+  end
+
+  it 'does not rebind a replacement booking when its old Captain create event is delivered again' do
+    assistant = create(:captain_assistant, account: account)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    event = {
+      entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_created',
+      account_id: account.id, actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
+      event_key: 'appointment:created:captain-original',
+      change: { desired_attributes: described_class.appointment_event_snapshot(appointment) }
+    }
+    original = described_class.new(**event).perform
+    original.update!(status: 'succeeded', provider_reception_code: 'old-reception')
+
+    replacement = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => 'specialist-2' }
+    )
+    appointment.update!(
+      resource: replacement,
+      custom_attributes: appointment.custom_attributes.merge(
+        status::COMMAND_ID_KEY => original.id + 1,
+        status::ATTRIBUTE_KEY => status::PENDING
+      )
+    )
+
+    expect(described_class.new(**event).perform.id).to eq(original.id)
+    expect(appointment.reload.resource_id).to eq(replacement.id)
+    expect(appointment.custom_attributes[status::COMMAND_ID_KEY]).to eq(original.id + 1)
+    expect(appointment.custom_attributes[status::ATTRIBUTE_KEY]).to eq(status::PENDING)
+  end
+
   it 'creates and system-confirms a Captain reception command without a user requester' do
     command = described_class.new(
       entity_type: 'appointment',

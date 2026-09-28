@@ -48,6 +48,8 @@ class Call < ApplicationRecord
   belongs_to :accepted_by_agent, class_name: 'User', optional: true
 
   has_one_attached :recording
+  has_one_attached :recording_manifest
+  has_many_attached :recording_tracks
 
   validates :provider_call_id, presence: true
   validates :provider, presence: true

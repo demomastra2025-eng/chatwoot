@@ -6,15 +6,16 @@ class Captain::Conversation::ControlService
     return false if message_id.blank?
 
     messages_scope(conversation).outgoing.where(private: false).where('messages.id > ?', message_id).find_each.any? do |message|
-      message.send(:captain_human_control_candidate?)
+      message.send(:captain_public_human_reply?)
     end
   end
 
   def self.messages_scope(conversation)
     thread = conversation.communication_thread
-    return conversation.messages unless thread
+    return conversation.messages.where(account_id: conversation.account_id) unless thread
 
-    Message.where(conversation_id: thread.conversations.select(:id))
+    conversations = thread.conversations.where(account_id: conversation.account_id)
+    Message.where(account_id: conversation.account_id, conversation_id: conversations.select(:id))
   end
 
   def initialize(conversation)
@@ -39,15 +40,16 @@ class Captain::Conversation::ControlService
 
   def activate_human!(source:, actor: nil)
     changed = false
-    persist_control_owner!
+    with_locked_conversation_preserving_changes do
+      persist_control_owner!
+      with_control_owner_lock do
+        # Public reply callbacks require a pending Captain target in any channel.
+        next if block_given? ? !yield(control_owner.captain_control_generation) : human_active?
 
-    control_owner.with_lock do
-      next if human_active?
-
-      control_owner.captain_control_state = HUMAN_CONTROL
-      control_owner.captain_control_generation += 1
-      control_owner.save!
-      changed = true
+        control_owner.captain_control_generation += 1
+        control_owner.save!
+        changed = true
+      end
     end
 
     publish('captain.control.human_activated', source: source, actor: actor) if changed
@@ -60,7 +62,6 @@ class Captain::Conversation::ControlService
     control_owner.with_lock do
       next unless human_active?
 
-      control_owner.captain_control_state = AI_CONTROL
       control_owner.captain_control_generation += 1
       control_owner.captain_handoff_applied_at = nil
       control_owner.save!
@@ -145,7 +146,6 @@ class Captain::Conversation::ControlService
 
   def apply_handoff_transition!(status_reason:, actor:, source:)
     conversation.waiting_since ||= Time.current
-    control_owner.captain_control_state = HUMAN_CONTROL
     control_owner.captain_control_generation += 1
     control_owner.captain_handoff_applied_at = Time.current
     control_owner.save!
@@ -197,7 +197,6 @@ class Captain::Conversation::ControlService
   end
 
   def activate_human_for_existing_assignment!
-    control_owner.captain_control_state = HUMAN_CONTROL
     control_owner.captain_control_generation += 1
     control_owner.save!
     Conversations::StatusTransitionService.new(

@@ -380,6 +380,115 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(client).not_to have_received(:get_receptions)
     end
 
+    it 'finds the remote reception on an employee-requested read-only check before a separate cancellation' do
+      provider_status = Integrations::Medelement::AppointmentProviderStatus
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge(provider_status::ATTRIBUTE_KEY => provider_status::UNKNOWN))
+      command.update!(
+        status: 'provider_status_unknown',
+        execution_state: command.execution_state.merge(
+          'reconciliation_next_at' => 24.hours.from_now.iso8601,
+          'reconciliation_last_attempt_at' => 2.minutes.ago.iso8601
+        )
+      )
+      lifecycle = Integrations::Medelement::ProviderCommands::ReconciliationLifecycle.new(command: command)
+      allow(client).to receive(:get_receptions).and_return([reception('created-1')])
+      allow(client).to receive(:remove_reception)
+
+      expect(lifecycle.request_manual_check!).to be(true)
+      expect(lifecycle.request_manual_check!).to be(false)
+      expect(client).not_to have_received(:remove_reception)
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'created-1')
+      expect(appointment.reload.external_ref).to eq('medelement:reception:created-1')
+      expect(appointment.custom_attributes[provider_status::ATTRIBUTE_KEY]).to eq(provider_status::SUCCEEDED)
+      expect(client).not_to have_received(:remove_reception)
+    end
+
+    it 'retains a read-matched reception for manual review after the local booking was already cancelled' do
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      command.update!(desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at)
+      appointment.update!(status: 'cancelled', custom_attributes: appointment.custom_attributes.merge(
+        'medelement_provider_sync_status' => 'provider_status_unknown'
+      ))
+      expect(Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command)
+        .current_cancelled_booking?).to be(true)
+      expect(Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(command: command)
+        .destination_match?(reception('created-1'))).to be(true)
+      allow(client).to receive(:get_receptions).and_return([reception('created-1')])
+      allow(client).to receive(:remove_reception)
+
+      perform
+
+      expect(command.reload).to have_attributes(
+        status: 'provider_status_unknown', provider_reception_code: nil,
+        execution_state: hash_including(
+          'cancelled_reception_candidate_codes' => ['created-1'],
+          'provider_status_unknown_reason' => 'cancelled_reception_found'
+        )
+      )
+      expect(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command)[:cancellation_review_candidates]).to eq(['created-1'])
+      expect(appointment.reload).to have_attributes(
+        status: 'cancelled', external_ref: nil,
+        custom_attributes: hash_including('medelement_provider_sync_status' => 'provider_status_unknown')
+      )
+      expect(client).not_to have_received(:remove_reception)
+    end
+
+    it 'keeps a cancelled ambiguous booking in review without a candidate ID when matching is uncertain' do
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      command.update!(desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at)
+      appointment.update!(status: 'cancelled')
+      allow(client).to receive(:get_receptions).and_return([reception('created-1'), reception('created-2')])
+
+      perform
+
+      expect(command.reload).to be_reconciliation_required
+      expect(command.execution_state['cancelled_reception_candidate_codes']).to be_blank
+      expect(appointment.reload).to have_attributes(status: 'cancelled', external_ref: nil)
+    end
+
+    it 'retains the written reception ID only after an exact read when the local booking was cancelled' do
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      command.update!(
+        desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
+        provider_reception_code: 'created-1',
+        execution_state: command.execution_state.merge('write_provider_reception_code' => 'created-1')
+      )
+      appointment.update!(status: 'cancelled')
+      allow(client).to receive(:get_reception)
+        .with(reception_code: 'created-1', version: :v2)
+        .and_return(reception('created-1'))
+      allow(client).to receive(:get_receptions)
+
+      perform
+
+      expect(command.reload).to be_provider_status_unknown
+      expect(command.execution_state['cancelled_reception_candidate_codes']).to eq(['created-1'])
+      expect(appointment.reload).to have_attributes(status: 'cancelled', external_ref: nil)
+      expect(client).not_to have_received(:get_receptions)
+    end
+
+    it 'does not substitute a timetable candidate after the known ID becomes unreadable on a cancelled booking' do
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1'))
+      command.update!(
+        desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at,
+        provider_reception_code: 'created-1',
+        execution_state: command.execution_state.merge('write_provider_reception_code' => 'created-1')
+      )
+      appointment.update!(status: 'cancelled')
+      allow(client).to receive(:get_reception)
+        .and_raise(Integrations::Medelement::Client::ApiError.new('unavailable', status: 503))
+      allow(client).to receive(:get_receptions)
+
+      perform
+
+      expect(command.reload).to be_reconciliation_required
+      expect(command.execution_state['cancelled_reception_candidate_codes']).to be_blank
+      expect(appointment.reload.external_ref).to be_nil
+      expect(client).not_to have_received(:get_receptions)
+    end
+
     it 'combines the v2 detail and cabinet-scoped list responses when neither response is complete' do
       command.update!(
         provider_reception_code: 'created-1',

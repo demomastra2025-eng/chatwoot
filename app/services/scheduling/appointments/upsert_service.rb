@@ -13,6 +13,8 @@ class Scheduling::Appointments::UpsertService
     @actor = actor
   end
 
+  attr_reader :persisted_appointment
+
   def perform
     Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
     Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
@@ -20,13 +22,47 @@ class Scheduling::Appointments::UpsertService
     with_actor_context { persist_appointment! }
 
     appointment.reload
-    @provider_receipt_service&.perform
+    @persisted_appointment = appointment
+    persisted_booking_updated_at = appointment.updated_at
+    begin
+      @provider_receipt_service&.perform
+    rescue StandardError
+      mark_provider_result_unknown!(persisted_booking_updated_at) if defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant)
+      raise
+    end
     appointment
   end
 
   private
 
   attr_reader :account, :actor, :appointment, :params
+
+  def provider_confirmation_pending?
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.custom_attributes.to_h[status::ATTRIBUTE_KEY] == status::PENDING
+  end
+
+  def mark_provider_result_unknown!(persisted_booking_updated_at)
+    appointment.with_lock do
+      next unless provider_confirmation_pending?
+
+      status = Integrations::Medelement::AppointmentProviderStatus
+      command = @provider_receipt_service&.projected_command
+      next unless original_provider_booking?(command, persisted_booking_updated_at)
+
+      status.persist!(appointment, status::UNKNOWN, command: command)
+    end
+  end
+
+  def original_provider_booking?(command, persisted_booking_updated_at)
+    status = Integrations::Medelement::AppointmentProviderStatus
+    if command
+      status.bound_to_command?(appointment, command) &&
+        Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).current_booking?(allow_completed: true)
+    else
+      appointment.updated_at == persisted_booking_updated_at && appointment.custom_attributes.to_h[status::COMMAND_ID_KEY].blank?
+    end
+  end
 
   def user_actor
     actor if actor.is_a?(User)
@@ -42,7 +78,10 @@ class Scheduling::Appointments::UpsertService
 
   def persist_appointment!
     ApplicationRecord.transaction do
+      verify_provider_before_cancellation!
+      verify_provider_removal_not_pending!
       apply_attributes!
+      Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
       validate_medelement_cabinet!
@@ -55,6 +94,43 @@ class Scheduling::Appointments::UpsertService
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
+  end
+
+  def verify_provider_before_cancellation!
+    return unless appointment.persisted? && params[:status].to_s.strip == 'cancelled'
+
+    appointment.lock!
+    return if appointment.status == 'cancelled'
+    return unless provider_cancellation_policy.provider_related?
+
+    provider_cancellation_unavailable!
+  end
+
+  def verify_provider_removal_not_pending!
+    return unless appointment.persisted?
+
+    if appointment.has_changes_to_save?
+      locked_appointment = account.scheduling_appointments.lock.find(appointment.id)
+      provider_cancellation_unavailable! if locked_appointment.updated_at != appointment.updated_at
+    else
+      appointment.lock!
+      locked_appointment = appointment
+    end
+    return unless Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: locked_appointment).removal_unresolved?
+
+    provider_cancellation_unavailable!
+  end
+
+  def provider_cancellation_policy
+    Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
+  end
+
+  def provider_cancellation_unavailable!
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_BOOKING_REQUIRES_VERIFICATION',
+      message: 'Medelement reception must be verified before local cancellation',
+      status: :conflict
+    )
   end
 
   def capture_provider_receipt_service!(new_record)
@@ -96,6 +172,7 @@ class Scheduling::Appointments::UpsertService
     prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
     client_identity = resolve_client_identity(contact, resource)
+    resolve_appointment_patient_identity!(contact, resource, client_identity)
 
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
     requested_payment_status = 'cancelled' if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled' &&
@@ -188,20 +265,49 @@ class Scheduling::Appointments::UpsertService
   def resolve_client_birth_date(contact)
     return resolve_date(:client_birth_date, current: appointment.client_birth_date) if params.key?(:client_birth_date)
 
-    current_value = appointment.client_birth_date || contact&.custom_attributes&.dig('birth_date')
+    current_value = client_birth_date_fallback(contact)
     current_value.is_a?(String) ? Date.iso8601(current_value) : current_value
   rescue Date::Error
     nil
   end
 
+  def client_birth_date_fallback(contact)
+    return if @separate_patient_transition
+    return appointment.client_birth_date if @appointment_patient_owned
+
+    appointment.client_birth_date || contact&.custom_attributes&.dig('birth_date')
+  end
+
   def resolve_client_gender(contact)
-    resolve_optional_text(:client_gender, current: appointment.client_gender || contact&.custom_attributes&.dig('gender'))
+    current = @separate_patient_transition ? nil : appointment.client_gender
+    current ||= contact&.custom_attributes&.dig('gender') unless @appointment_patient_owned
+    resolve_optional_text(:client_gender, current: current)
+  end
+
+  def patient_identity_policy
+    Integrations::Medelement::AppointmentPatientIdentity
+  end
+
+  def resolve_appointment_patient_identity!(contact, resource, identity)
+    decision = Integrations::Medelement::AppointmentPatientIdentityDecision.new(
+      appointment: appointment, contact: contact, params: params, identity: identity, mapped: medelement_resource?(resource)
+    ).resolve!
+    @appointment_identifier_explicit = decision.explicit
+    @appointment_patient_owned = decision.owned
+    @separate_patient_transition = decision.transition
+    identity[:middle_name] = nil if decision.transition && !params.key?(:client_middle_name)
+  end
+
+  def appointment_identifier_fallback(contact)
+    return appointment.client_identifier if @appointment_identifier_explicit || @appointment_patient_owned
+
+    appointment.client_identifier || contact&.identifier || contact&.custom_attributes&.dig('iin')
   end
 
   def resolve_client_identifier(contact)
     identifier = resolve_optional_text(
       :client_identifier,
-      current: appointment.client_identifier || contact&.identifier || contact&.custom_attributes&.dig('iin')
+      current: appointment_identifier_fallback(contact)
     )
 
     Scheduling::IinValidator.validate!(identifier)
@@ -444,6 +550,9 @@ class Scheduling::Appointments::UpsertService
                           end
 
     attributes = apply_intake_system_custom_attributes(resolved_attributes, incoming)
+    attributes[patient_identity_policy::EXPLICIT_IDENTIFIER_KEY] = true if @appointment_identifier_explicit
+    attributes[patient_identity_policy::OWNED_IDENTITY_KEY] = true if @appointment_patient_owned
+    attributes = attributes.except('medelement_patient_code') if @separate_patient_transition
     attributes = clear_local_service_binding(attributes) if explicit_service_selection?
     attributes.merge(service_custom_attributes(services))
               .merge(local_service_binding_attributes(resource, services))
@@ -637,7 +746,7 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_ends_at(starts_at:, duration_min:, current:)
-    return current unless starts_at.present?
+    return current if starts_at.blank?
 
     explicit_ends_at = params.key?(:ends_at) ? resolve_datetime(:ends_at, current: current) : nil
     ends_at = explicit_ends_at || (starts_at + duration_min.minutes)
