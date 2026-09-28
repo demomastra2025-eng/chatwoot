@@ -4,6 +4,13 @@ require 'timeout'
 RSpec.describe Captain::Tools::ProviderBookingHandoffService do
   self.use_transactional_tests = false
 
+  # Rows committed here are not rolled back, and Account#destroy! leaves conversations, inboxes and
+  # contacts to destroy_async jobs that never run in specs. Clear them so later specs start clean.
+  after do
+    connection = ActiveRecord::Base.connection
+    connection.truncate_tables(*(connection.tables - %w[schema_migrations ar_internal_metadata]))
+  end
+
   def run_retry(conversation:, assistant:, fence:, results:, backend_pids:)
     Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do |connection|
