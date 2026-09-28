@@ -17,6 +17,7 @@ const FORWARDED_EVENTS = [
   'call:connected',
   'call:disconnected',
   'call:incoming',
+  'call:microphone-state',
   'call:registered',
   'call:stage',
   'call:unregistered',
@@ -1227,6 +1228,38 @@ class WebphoneClient extends EventTarget {
     return client.bindCurrentCallReference({
       callRef: payload.callRef || payload.call_ref || payload.callSid,
       janusCallRef: payload.janusCallRef || payload.janus_call_ref,
+    });
+  }
+
+  microphoneClient(payload = {}) {
+    const provider = payload.provider;
+    if (
+      !WebphoneClient.isNativeSipProvider(provider) ||
+      !(payload.sessionKey || payload.sipProfileId) ||
+      !(payload.callRef || payload.janusCallRef)
+    ) {
+      return null;
+    }
+    const sessionKey = this.resolveSessionKey(payload);
+    return this.getClient(provider, { ...payload, sessionKey });
+  }
+
+  microphoneState(payload = {}) {
+    const client = this.microphoneClient(payload);
+    return (
+      client?.microphoneState?.({
+        callRef: payload.callRef,
+        janusCallRef: payload.janusCallRef,
+      }) || { available: false, muted: false }
+    );
+  }
+
+  toggleMicrophone(payload = {}) {
+    const client = this.microphoneClient(payload);
+    if (!client?.toggleMicrophone) return false;
+    return client.toggleMicrophone({
+      callRef: payload.callRef,
+      janusCallRef: payload.janusCallRef,
     });
   }
 

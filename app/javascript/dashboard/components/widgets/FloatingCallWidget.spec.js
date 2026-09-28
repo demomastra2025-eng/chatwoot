@@ -1,5 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { ref as makeRef } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const microphoneState = vi.hoisted(() => ({
+  available: null,
+  muted: null,
+  toggle: vi.fn(),
+}));
 
 const mockSession = vi.hoisted(() => ({
   activeCall: null,
@@ -152,6 +159,13 @@ vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
     ringtoneState.isActive = isActive;
   },
 }));
+vi.mock('dashboard/composables/useSipMicrophone', () => ({
+  useSipMicrophone: () => ({
+    microphoneAvailable: microphoneState.available,
+    microphoneMuted: microphoneState.muted,
+    toggleMicrophone: microphoneState.toggle,
+  }),
+}));
 
 import FloatingCallWidget from './FloatingCallWidget.vue';
 
@@ -167,6 +181,9 @@ const mountComponent = () =>
 
 describe('FloatingCallWidget', () => {
   beforeEach(() => {
+    microphoneState.available = makeRef(false);
+    microphoneState.muted = makeRef(false);
+    microphoneState.toggle.mockReset();
     mockSession.activeCall = null;
     mockSession.incomingCalls = [];
     mockSession.hasActiveCall = false;
@@ -267,6 +284,41 @@ describe('FloatingCallWidget', () => {
         janusSessionKey: 'sip_profile:78',
       })
     );
+    wrapper.unmount();
+  });
+
+  it('exposes the active-call microphone even when the phone panel is hidden', async () => {
+    mockSession.activeCall = {
+      callSid: 'sipuni:connected-1',
+      provider: 'sipuni',
+      inboxId: 194,
+      sipProfileId: 72,
+      janusSessionKey: 'sip_profile:72',
+      isActive: true,
+      status: 'in_progress',
+    };
+    mockSession.hasActiveCall = true;
+    storeGetters.getInbox.mockReturnValue({
+      id: 194,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+    const wrapper = mountComponent();
+
+    const microphone = wrapper.get('[data-testid="floating-call-microphone"]');
+    expect(microphone.attributes('disabled')).toBeDefined();
+    microphone.element.click();
+    expect(microphoneState.toggle).not.toHaveBeenCalled();
+
+    microphoneState.available.value = true;
+    await wrapper.vm.$nextTick();
+    expect(microphone.attributes('disabled')).toBeUndefined();
+    await microphone.trigger('click');
+    expect(microphoneState.toggle).toHaveBeenCalledOnce();
+    microphoneState.muted.value = true;
+    await wrapper.vm.$nextTick();
+    expect(microphone.find('.i-lucide-mic-off').exists()).toBe(true);
+    expect(microphone.attributes('aria-pressed')).toBe('true');
     wrapper.unmount();
   });
 

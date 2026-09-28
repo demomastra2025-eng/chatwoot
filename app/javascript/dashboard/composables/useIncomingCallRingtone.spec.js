@@ -21,11 +21,11 @@ vi.mock('dashboard/helper/AudioAlerts/IncomingCallRingtone', () => ({
 
 import { useIncomingCallRingtone } from './useIncomingCallRingtone';
 
-const mountComposable = isActive =>
+const mountComposable = (isActive, source = 'voice') =>
   mount(
     defineComponent({
       setup() {
-        useIncomingCallRingtone('voice', isActive);
+        useIncomingCallRingtone(source, isActive);
         return () => null;
       },
     })
@@ -60,5 +60,34 @@ describe('useIncomingCallRingtone', () => {
 
     wrapper.unmount();
     expect(testState.removeSource).toHaveBeenCalledWith('voice');
+  });
+
+  it('starts enabled and stops only the voice ringtone when turned off', async () => {
+    const voice = mountComposable(ref(true));
+    const whatsapp = mountComposable(ref(true), 'whatsapp');
+    expect(testState.setSourceState).toHaveBeenCalledWith(
+      'voice',
+      expect.objectContaining({ active: true })
+    );
+
+    testState.uiSettings.value = { voice_call_ringtone_enabled: false };
+    await nextTick();
+    expect(testState.setSourceState).toHaveBeenCalledWith(
+      'voice',
+      expect.objectContaining({ active: false })
+    );
+    expect(testState.setSourceState).toHaveBeenCalledWith(
+      'whatsapp',
+      expect.objectContaining({ active: true })
+    );
+
+    testState.uiSettings.value = { voice_call_ringtone_enabled: true };
+    await nextTick();
+    expect(testState.setSourceState).toHaveBeenCalledWith(
+      'voice',
+      expect.objectContaining({ active: true })
+    );
+    voice.unmount();
+    whatsapp.unmount();
   });
 });

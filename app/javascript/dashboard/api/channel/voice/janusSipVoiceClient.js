@@ -215,6 +215,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.remoteStream = null;
     this.remoteTracks = {};
     this.localTracks = {};
+    this.microphoneMuted = false;
     this.sessionConfig = null;
     this.sessionSignature = null;
     this.sessionKey = null;
@@ -1253,11 +1254,55 @@ export class JanusSipVoiceClient extends EventTarget {
       this.localTracks[trackId]?.stop?.();
       track.stop?.();
       delete this.localTracks[trackId];
+      this.dispatchMicrophoneState();
       return;
     }
 
+    track.enabled = !this.microphoneMuted;
     this.localTracks[trackId] = track;
     this.startRecordingIfReady();
+    this.dispatchMicrophoneState();
+  }
+
+  microphoneState({ callRef = null, janusCallRef = null } = {}) {
+    const tracks = Object.values(this.localTracks).filter(
+      track => track?.kind === 'audio' && track.readyState !== 'ended'
+    );
+    return {
+      available: Boolean(
+        (callRef || janusCallRef) &&
+          this.currentCallMatches({ callRef, janusCallRef }) &&
+          this.hasActiveCall &&
+          this.callMediaAccepted &&
+          !this.currentCallHandledByAi &&
+          tracks.length
+      ),
+      muted: this.microphoneMuted,
+    };
+  }
+
+  dispatchMicrophoneState() {
+    if (!this.callMediaAccepted || !this.hasActiveCall) return;
+    this.dispatchEvent(
+      new CustomEvent('call:microphone-state', {
+        detail: {
+          ...this.callEventDetail(),
+          ...this.microphoneState({ callRef: this.currentCallRef }),
+        },
+      })
+    );
+  }
+
+  toggleMicrophone(options = {}) {
+    if (!this.microphoneState(options).available) return false;
+    this.microphoneMuted = !this.microphoneMuted;
+    Object.values(this.localTracks).forEach(track => {
+      if (track?.kind === 'audio' && track.readyState !== 'ended') {
+        track.enabled = !this.microphoneMuted;
+      }
+    });
+    this.dispatchMicrophoneState();
+    return true;
   }
 
   stopLocalTracks() {
@@ -1548,6 +1593,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
     this.currentCallHandledByAi = false;
+    this.microphoneMuted = false;
   }
 
   clearRegistrationRecoveryTimer() {

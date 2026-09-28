@@ -131,6 +131,54 @@ describe('webphoneClient', () => {
     WebphoneClient.nativeCallUnloadGuardRegistered = false;
   });
 
+  it('routes microphone control only to the scoped native SIP client', () => {
+    const first = {
+      microphoneState: vi.fn(() => ({ available: true, muted: false })),
+      toggleMicrophone: vi.fn(() => true),
+    };
+    const second = {
+      microphoneState: vi.fn(() => ({ available: true, muted: true })),
+      toggleMicrophone: vi.fn(() => true),
+    };
+    WebphoneClient.sessions['sip_profile:40'] = {
+      provider: 'sipuni',
+      sipProfileId: 40,
+      sessionKey: 'sip_profile:40',
+    };
+    WebphoneClient.sessions['sip_profile:41'] = {
+      provider: 'sipuni',
+      sipProfileId: 41,
+      sessionKey: 'sip_profile:41',
+    };
+    WebphoneClient.nativeSipClients['sip_profile:40'] = first;
+    WebphoneClient.nativeSipClients['sip_profile:41'] = second;
+    const scope = {
+      provider: 'sipuni',
+      sipProfileId: 41,
+      callRef: 'sipuni:call-41',
+    };
+
+    expect(WebphoneClient.microphoneState(scope)).toEqual({
+      available: true,
+      muted: true,
+    });
+    expect(WebphoneClient.toggleMicrophone(scope)).toBe(true);
+    expect(second.toggleMicrophone).toHaveBeenCalledWith({
+      callRef: 'sipuni:call-41',
+      janusCallRef: undefined,
+    });
+    expect(first.toggleMicrophone).not.toHaveBeenCalled();
+    expect(WebphoneClient.toggleMicrophone({ ...scope, callRef: null })).toBe(
+      false
+    );
+    expect(
+      WebphoneClient.toggleMicrophone({ ...scope, provider: 'twilio' })
+    ).toBe(false);
+    expect(
+      WebphoneClient.toggleMicrophone({ ...scope, sipProfileId: null })
+    ).toBe(false);
+  });
+
   it('routes Wazo sessions through the native Janus SIP client', () => {
     expect(WebphoneClient.clients.wazo).toBe(WebphoneClient.clients.sipuni);
     expect(WebphoneClient.constructor.isNativeSipProvider('wazo')).toBe(true);

@@ -356,6 +356,78 @@ describe('janusSipVoiceClient', () => {
     vi.useRealTimers();
   });
 
+  it('mutes only a connected operator audio track for the exact SIP call', () => {
+    const client = createJanusSipVoiceClient();
+    const track = fakeAudioTrack('operator-microphone');
+    client.sessionConfig = sipuniSession;
+    client.currentCallRef = 'sipuni:call-1';
+    client.currentCallDirection = 'outbound';
+    client.hasActiveCall = true; // Janus also sets this during dialing.
+    client.startRecordingIfReady = vi.fn();
+    client.handleLocalTrack(track, true);
+
+    expect(client.microphoneState({ callRef: 'sipuni:call-1' }).available).toBe(
+      false
+    );
+    expect(client.toggleMicrophone({ callRef: 'sipuni:call-1' })).toBe(false);
+    expect(track.enabled).toBe(true);
+
+    client.callMediaAccepted = true;
+    expect(client.microphoneState({ callRef: 'other-call' }).available).toBe(
+      false
+    );
+    expect(client.microphoneState().available).toBe(false);
+    expect(client.toggleMicrophone({ callRef: 'other-call' })).toBe(false);
+    const changed = vi.fn();
+    client.addEventListener('call:microphone-state', changed);
+    expect(client.toggleMicrophone({ callRef: 'sipuni:call-1' })).toBe(true);
+    expect(track.enabled).toBe(false);
+    expect(changed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({ muted: true, available: true }),
+      })
+    );
+
+    client.currentCallHandledByAi = true;
+    expect(client.toggleMicrophone({ callRef: 'sipuni:call-1' })).toBe(false);
+    expect(track.enabled).toBe(false);
+    client.currentCallHandledByAi = false;
+    expect(client.toggleMicrophone({ callRef: 'sipuni:call-1' })).toBe(true);
+    expect(track.enabled).toBe(true);
+  });
+
+  it('preserves mute across audio track replacement and resets it after hangup', () => {
+    const client = createJanusSipVoiceClient();
+    const original = fakeAudioTrack('original');
+    const replacement = fakeAudioTrack('replacement');
+    client.currentCallRef = 'sipuni:call-1';
+    client.hasActiveCall = true;
+    client.callMediaAccepted = true;
+    client.startRecordingIfReady = vi.fn();
+    client.handleLocalTrack(original, true);
+    client.toggleMicrophone({ callRef: 'sipuni:call-1' });
+    client.handleLocalTrack(replacement, true);
+    expect(replacement.enabled).toBe(false);
+    client.handleLocalTrack(original, false);
+    expect(client.microphoneState({ callRef: 'sipuni:call-1' })).toEqual({
+      available: true,
+      muted: true,
+    });
+
+    client.handleCallDisconnected({ reason: 'remote_hangup' });
+    expect(replacement.stop).toHaveBeenCalled();
+    expect(client.microphoneState({ callRef: 'sipuni:call-1' }).available).toBe(
+      false
+    );
+    expect(client.microphoneMuted).toBe(false);
+    client.currentCallRef = 'sipuni:call-2';
+    client.hasActiveCall = true;
+    client.callMediaAccepted = true;
+    const next = fakeAudioTrack('next-call');
+    client.handleLocalTrack(next, true);
+    expect(next.enabled).toBe(true);
+  });
+
   it('fences a Janus connect callback that arrives after destroy', async () => {
     const client = createJanusSipVoiceClient();
     janusState.autoConnect = false;

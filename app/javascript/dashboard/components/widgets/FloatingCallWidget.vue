@@ -6,6 +6,7 @@ import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
+import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
@@ -32,6 +33,17 @@ const {
   rejectIncomingCall,
   formattedCallDuration,
 } = useCallSession();
+
+const { microphoneAvailable, microphoneMuted, toggleMicrophone } =
+  useSipMicrophone(activeCall);
+const microphoneLabel = computed(() => {
+  if (!microphoneAvailable.value) {
+    return t('PHONE_WIDGET.MICROPHONE_UNAVAILABLE');
+  }
+  return microphoneMuted.value
+    ? t('PHONE_WIDGET.UNMUTE_MICROPHONE')
+    : t('PHONE_WIDGET.MUTE_MICROPHONE');
+});
 
 const operatorBusy = computed(
   () =>
@@ -845,6 +857,22 @@ onUnmounted(stopElapsedTimer);
             </p>
 
             <div class="flex items-center gap-2 mt-2">
+              <button
+                v-if="callIsActive(call) && !isWhatsappCall(call)"
+                type="button"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1 disabled:opacity-50"
+                :disabled="!microphoneAvailable"
+                :title="microphoneLabel"
+                :aria-label="microphoneLabel"
+                :aria-pressed="microphoneMuted"
+                data-testid="floating-call-microphone"
+                @click="toggleMicrophone"
+              >
+                <i
+                  class="text-base"
+                  :class="microphoneMuted ? 'i-lucide-mic-off' : 'i-lucide-mic'"
+                />
+              </button>
               <button
                 v-if="callIsActive(call)"
                 type="button"

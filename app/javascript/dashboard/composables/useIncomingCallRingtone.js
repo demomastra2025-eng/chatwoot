@@ -9,11 +9,19 @@ export const useIncomingCallRingtone = (sourceId, isActive) => {
   const selectedTone = computed(() =>
     resolveIncomingCallRingtone(uiSettings.value?.incoming_call_ringtone)
   );
+  const ringtoneEnabled = computed(
+    () =>
+      sourceId !== 'voice' ||
+      uiSettings.value?.voice_call_ringtone_enabled !== false
+  );
 
   watch(
-    [isActive, selectedTone],
-    ([active, tone]) => {
-      IncomingCallRingtone.setSourceState(sourceId, { active, tone });
+    [isActive, selectedTone, ringtoneEnabled],
+    ([active, tone, enabled]) => {
+      IncomingCallRingtone.setSourceState(sourceId, {
+        active: active && enabled,
+        tone,
+      });
     },
     { immediate: true }
   );

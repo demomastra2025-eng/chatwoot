@@ -2,10 +2,15 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
+import { useUISettings } from 'dashboard/composables/useUISettings';
+import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
+import Button from 'dashboard/components-next/button/Button.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 
 const SIP_PROVIDERS = new Set([
   'asterisk_analog',
@@ -22,24 +27,12 @@ const STATUS_KEYS = {
   standby: 'SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB',
   error: 'SIDEBAR.SIP_TELEPHONY.STATUS.ERROR',
 };
-const dialKeys = [
-  ['1', ''],
-  ['2', 'ABC'],
-  ['3', 'DEF'],
-  ['4', 'GHI'],
-  ['5', 'JKL'],
-  ['6', 'MNO'],
-  ['7', 'PQRS'],
-  ['8', 'TUV'],
-  ['9', 'WXYZ'],
-  ['*', ''],
-  ['0', '+'],
-  ['#', ''],
-];
+const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 const { t } = useI18n();
 const inboxes = useMapGetter('inboxes/getInboxes');
 const accountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
 const callsStore = useCallsStore();
 const phone = ref('');
 const selectedInboxId = ref(null);
@@ -87,6 +80,29 @@ const canDial = computed(() => /^\+?\d{3,20}$/.test(dialNumber.value));
 const hasCall = computed(
   () => callsStore.hasActiveCall || callsStore.hasIncomingCall
 );
+const activeCall = computed(() => callsStore.activeCall);
+const { microphoneAvailable, microphoneMuted, toggleMicrophone } =
+  useSipMicrophone(activeCall);
+const microphoneLabel = computed(() => {
+  if (!microphoneAvailable.value) {
+    return t('PHONE_WIDGET.MICROPHONE_UNAVAILABLE');
+  }
+  return microphoneMuted.value
+    ? t('PHONE_WIDGET.UNMUTE_MICROPHONE')
+    : t('PHONE_WIDGET.MUTE_MICROPHONE');
+});
+const { uiSettings, updateUISettings } = useUISettings();
+const ringtoneEnabled = computed(
+  () => uiSettings.value?.voice_call_ringtone_enabled !== false
+);
+const ringtoneLabel = computed(() =>
+  ringtoneEnabled.value
+    ? t('PHONE_WIDGET.DISABLE_RINGTONE')
+    : t('PHONE_WIDGET.ENABLE_RINGTONE')
+);
+const toggleRingtone = () => {
+  updateUISettings({ voice_call_ringtone_enabled: !ringtoneEnabled.value });
+};
 
 const syncSessions = () => {
   const inboxIds = new Set(voiceInboxes.value.map(inbox => String(inbox.id)));
@@ -113,12 +129,36 @@ const sessionStatus = session => {
 };
 const status = computed(() => sessionStatus(selectedSession.value));
 const statusLabel = computed(() =>
-  hasCall.value ? t('PHONE_WIDGET.IN_CALL') : t(STATUS_KEYS[status.value])
+  hasCall.value && status.value === 'ready'
+    ? t('PHONE_WIDGET.IN_CALL')
+    : t(STATUS_KEYS[status.value])
+);
+const employeeName = computed(
+  () =>
+    currentUser.value?.name?.trim() ||
+    currentUser.value?.available_name?.trim() ||
+    t('PHONE_WIDGET.EMPLOYEE')
+);
+const employeeStatusLabel = computed(
+  () => `${employeeName.value} · ${statusLabel.value}`
+);
+const connectionLabel = computed(() => {
+  if (status.value === 'ready') return t('PHONE_WIDGET.ACTIVE');
+  if (status.value === 'standby') return t('PHONE_WIDGET.OTHER_TAB');
+  return statusLabel.value;
+});
+const canRefreshConnection = computed(() =>
+  ['disconnected', 'error'].includes(status.value)
+);
+const connectionActionLabel = computed(() =>
+  canRefreshConnection.value
+    ? t('PHONE_WIDGET.REFRESH_CONNECTION')
+    : connectionLabel.value
 );
 const statusColor = computed(() => {
-  if (hasCall.value || status.value === 'ready') return 'bg-n-teal-9';
+  if (status.value === 'ready') return 'bg-n-teal-9';
   if (status.value === 'connecting') return 'bg-n-amber-9';
-  if (status.value === 'standby') return 'bg-n-slate-9';
+  if (['standby', 'disconnected'].includes(status.value)) return 'bg-n-slate-9';
   return 'bg-n-ruby-9';
 });
 
@@ -205,25 +245,43 @@ onUnmounted(() => {
 <template>
   <div
     v-if="availableVoiceInboxes.length"
-    class="fixed ltr:right-4 rtl:left-4 top-16 z-40 w-[320px] max-w-[calc(100vw-2rem)]"
+    class="fixed ltr:right-4 rtl:left-4 top-16 z-40 w-[336px] max-w-[calc(100vw-2rem)]"
     data-testid="phone-widget"
   >
-    <button
-      v-if="isHidden"
-      type="button"
-      class="ms-auto flex items-center gap-2 rounded-full border border-n-strong bg-n-solid-2 px-3 py-2.5 text-n-slate-12 shadow-xl hover:bg-n-alpha-2"
-      :aria-label="t('PHONE_WIDGET.OPEN')"
-      :title="statusLabel"
-      data-testid="phone-widget-launcher"
-      @click="isHidden = false"
-    >
-      <i class="i-lucide-phone size-5" aria-hidden="true" />
-      <span
-        class="size-2 rounded-full"
-        :class="statusColor"
-        aria-hidden="true"
+    <div v-if="isHidden" class="flex items-center justify-end gap-1.5">
+      <Button
+        type="button"
+        variant="ghost"
+        color="slate"
+        size="sm"
+        class="!rounded-full bg-n-solid-2 shadow-xl"
+        :icon="microphoneMuted ? 'i-lucide-mic-off' : 'i-lucide-mic'"
+        :disabled="!microphoneAvailable"
+        :aria-label="microphoneLabel"
+        :title="microphoneLabel"
+        :aria-pressed="microphoneMuted"
+        data-testid="phone-widget-microphone"
+        @click="toggleMicrophone"
       />
-    </button>
+      <Button
+        type="button"
+        variant="solid"
+        color="slate"
+        size="md"
+        icon="i-lucide-phone"
+        class="!flex w-fit !rounded-full shadow-xl"
+        :aria-label="t('PHONE_WIDGET.OPEN')"
+        :title="statusLabel"
+        data-testid="phone-widget-launcher"
+        @click="isHidden = false"
+      >
+        <span
+          class="size-2 rounded-full"
+          :class="statusColor"
+          aria-hidden="true"
+        />
+      </Button>
+    </div>
     <section
       v-else
       class="overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
@@ -231,67 +289,101 @@ onUnmounted(() => {
       data-testid="phone-widget-panel"
     >
       <header
-        class="flex items-center gap-2 border-b border-n-weak px-3 py-2.5"
+        class="flex items-center gap-1.5 border-b border-n-weak px-4 py-3"
       >
-        <span
-          class="flex size-8 items-center justify-center rounded-lg bg-n-teal-3 text-n-teal-11"
+        <div
+          class="flex min-w-0 flex-1 items-center gap-1.5"
+          role="status"
+          :aria-label="employeeStatusLabel"
+          :title="employeeStatusLabel"
+          data-testid="phone-widget-employee"
         >
-          <i class="i-lucide-phone size-4" aria-hidden="true" />
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-sm font-semibold">
-            {{ t('PHONE_WIDGET.TITLE') }}
-          </div>
-          <div
-            class="flex items-center gap-1.5 text-xs text-n-slate-11"
-            role="status"
-          >
-            <span
-              class="size-1.5 rounded-full"
-              :class="statusColor"
-              aria-hidden="true"
-            />
-            {{ statusLabel }}
-          </div>
+          <span
+            class="size-2 shrink-0 rounded-full"
+            :class="statusColor"
+            aria-hidden="true"
+          />
+          <span class="min-w-0 truncate text-sm font-medium">
+            {{ employeeName }}
+          </span>
         </div>
-        <button
+        <Button
           type="button"
-          class="flex size-8 items-center justify-center rounded-md hover:bg-n-alpha-2"
+          variant="ghost"
+          color="slate"
+          size="sm"
+          class="shrink-0"
+          :icon="microphoneMuted ? 'i-lucide-mic-off' : 'i-lucide-mic'"
+          :disabled="!microphoneAvailable"
+          :aria-label="microphoneLabel"
+          :title="microphoneLabel"
+          :aria-pressed="microphoneMuted"
+          data-testid="phone-widget-microphone"
+          @click="toggleMicrophone"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          color="slate"
+          size="sm"
+          class="shrink-0"
+          :icon="ringtoneEnabled ? 'i-lucide-bell' : 'i-lucide-bell-off'"
+          :aria-label="ringtoneLabel"
+          :title="ringtoneLabel"
+          :aria-pressed="ringtoneEnabled"
+          data-testid="phone-widget-ringtone"
+          @click="toggleRingtone"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          :color="canRefreshConnection ? 'teal' : 'slate'"
+          size="sm"
+          icon="i-lucide-refresh-cw"
+          class="shrink-0"
+          :disabled="!canRefreshConnection"
+          :aria-label="connectionActionLabel"
+          :title="connectionActionLabel"
+          data-testid="phone-widget-reconnect"
+          @click="reconnect(selectedSession)"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          color="slate"
+          size="sm"
+          class="shrink-0"
+          :icon="isExpanded ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
           :aria-label="
+            isExpanded ? t('PHONE_WIDGET.MINIMIZE') : t('PHONE_WIDGET.EXPAND')
+          "
+          :title="
             isExpanded ? t('PHONE_WIDGET.MINIMIZE') : t('PHONE_WIDGET.EXPAND')
           "
           data-testid="phone-widget-expand"
           @click="isExpanded = !isExpanded"
-        >
-          <i
-            :class="isExpanded ? 'i-lucide-minus' : 'i-lucide-grid-3x3'"
-            class="size-4"
-            aria-hidden="true"
-          />
-        </button>
-        <button
+        />
+        <Button
           type="button"
-          class="flex size-8 items-center justify-center rounded-md hover:bg-n-alpha-2"
+          variant="ghost"
+          color="slate"
+          size="sm"
+          icon="i-lucide-x"
+          class="shrink-0"
           :aria-label="t('PHONE_WIDGET.HIDE')"
+          :title="t('PHONE_WIDGET.HIDE')"
           data-testid="phone-widget-hide"
           @click="isHidden = true"
-        >
-          <i class="i-lucide-x size-4" aria-hidden="true" />
-        </button>
+        />
       </header>
 
-      <div class="px-3 py-3">
-        <div v-if="availableVoiceInboxes.length > 1" class="mb-3">
-          <label
-            class="mb-1 block text-xs text-n-slate-11"
-            for="phone-widget-inbox"
-          >
-            {{ t('PHONE_WIDGET.LINE') }}
-          </label>
-          <select
+      <div class="px-4 py-3">
+        <div v-if="availableVoiceInboxes.length > 1" class="mb-2">
+          <Select
             id="phone-widget-inbox"
             v-model="selectedInboxId"
-            class="w-full rounded-md border border-n-strong bg-n-solid-1 px-2 py-1.5 text-sm text-n-slate-12"
+            class="w-full"
+            :aria-label="t('PHONE_WIDGET.LINE')"
             data-testid="phone-widget-inbox"
           >
             <option
@@ -301,20 +393,19 @@ onUnmounted(() => {
             >
               {{ inbox.name }}
             </option>
-          </select>
+          </Select>
         </div>
-
         <div class="flex items-center gap-2">
-          <input
+          <Input
+            id="phone-widget-number"
             v-model="phone"
             type="tel"
             inputmode="tel"
             autocomplete="off"
-            class="min-w-0 flex-1 rounded-lg border border-n-strong bg-n-solid-1 px-3 py-2 text-sm outline-none focus:border-n-teal-9"
+            class="min-w-0 flex-1"
             :placeholder="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
             :aria-label="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
-            data-testid="phone-widget-number"
-            @keyup.enter="dialOnEnter"
+            @enter="dialOnEnter"
           />
           <VoiceCallButton
             v-if="canDial && selectedInbox"
@@ -322,74 +413,80 @@ onUnmounted(() => {
             :phone="dialNumber"
             :inbox-id="selectedInbox.id"
             :disabled="hasCall"
-            :label="t('PHONE_WIDGET.CALL')"
+            :tooltip-label="t('PHONE_WIDGET.CALL')"
+            :aria-label="t('PHONE_WIDGET.CALL')"
             icon="i-lucide-phone-call"
+            size="md"
+            teal
+            class="shrink-0"
             @call-initiated="isExpanded = false"
           />
-          <button
+          <Button
             v-else
             type="button"
             disabled
-            class="rounded-lg bg-n-teal-9 px-3 py-2 text-sm font-medium text-white opacity-50"
+            variant="solid"
+            color="slate"
+            size="md"
+            icon="i-lucide-phone-call"
+            class="shrink-0"
             :aria-label="t('PHONE_WIDGET.CALL')"
-          >
-            <i class="i-lucide-phone-call size-4" aria-hidden="true" />
-          </button>
+            :title="t('PHONE_WIDGET.CALL')"
+          />
         </div>
         <div
           v-if="isExpanded"
-          class="mt-3 border-t border-n-weak pt-3"
+          class="mt-4 border-t border-n-weak pt-4"
           data-testid="phone-widget-expanded"
         >
-          <div class="mb-3 grid grid-cols-3 gap-2">
-            <button
-              v-for="[key, letters] in dialKeys"
+          <div class="grid grid-cols-3 gap-2">
+            <Button
+              v-for="key in dialKeys"
               :key="key"
               type="button"
-              class="flex h-12 flex-col items-center justify-center rounded-lg border border-n-weak bg-n-solid-1 text-lg font-medium leading-5 hover:border-n-teal-9 hover:bg-n-teal-2"
+              variant="outline"
+              color="slate"
+              size="lg"
+              class="w-full"
               :aria-label="key"
               :data-testid="`phone-key-${key}`"
               @click="appendKey(key)"
             >
-              {{ key }}
-              <span
-                class="text-[9px] font-normal tracking-wider text-n-slate-10"
-                >{{ letters || '\u00a0' }}</span
-              >
-            </button>
-          </div>
-          <div
-            class="flex items-center justify-between gap-2 text-xs text-n-slate-11"
-          >
-            <button
+              <span class="text-lg font-medium">{{ key }}</span>
+            </Button>
+            <Button
               type="button"
-              class="rounded-md px-2 py-1 text-base font-medium hover:bg-n-alpha-2"
+              variant="outline"
+              color="slate"
+              size="lg"
+              class="w-full !text-lg"
+              label="+"
               :aria-label="t('PHONE_WIDGET.ADD_PLUS')"
               data-testid="phone-widget-plus"
               @click="appendPlus"
-            >
-              +
-            </button>
-            <button
+            />
+            <Button
               type="button"
-              class="flex items-center gap-1 hover:text-n-slate-12"
+              variant="outline"
+              color="slate"
+              size="lg"
+              class="w-full !text-lg"
+              :label="String(0)"
+              data-testid="phone-key-0"
+              @click="appendKey('0')"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              color="slate"
+              size="lg"
+              class="w-full"
+              icon="i-lucide-delete"
               :aria-label="t('PHONE_WIDGET.DELETE_DIGIT')"
+              :title="t('PHONE_WIDGET.DELETE_DIGIT')"
+              data-testid="phone-widget-delete"
               @click="removeLastKey"
-            >
-              <i class="i-lucide-delete size-4" aria-hidden="true" />
-              {{ t('PHONE_WIDGET.DELETE_DIGIT') }}
-            </button>
-            <button
-              v-if="
-                selectedSession && ['disconnected', 'error'].includes(status)
-              "
-              type="button"
-              class="text-n-teal-11 hover:underline"
-              data-testid="phone-widget-reconnect"
-              @click="reconnect(selectedSession)"
-            >
-              {{ t('SIDEBAR.SIP_TELEPHONY.RECONNECT') }}
-            </button>
+            />
           </div>
         </div>
       </div>
