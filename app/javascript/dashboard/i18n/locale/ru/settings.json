@@ -13,8 +13,10 @@
     "CONNECT": "Подключить",
     "RECONNECT": "Переподключить",
     "REFRESH_CONNECTION": "Обновить подключение",
+    "MOVE_HERE": "Перенести телефон в эту вкладку",
     "ACTIVE": "Активен",
     "OTHER_TAB": "Другая вкладка",
+    "OWNER_TAB_BUSY": "Телефон занят звонком в другой вкладке",
     "IN_CALL": "Идёт звонок",
     "MICROPHONE_UNAVAILABLE": "Микрофон доступен только во время разговора",
     "MUTE_MICROPHONE": "Выключить микрофон",
@@ -502,7 +504,6 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP-телефония",
       "RECONNECT": "Переподключить SIP",
-      "MOVE_HERE": "Перенести телефон в эту вкладку",
       "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Канал #{id}",
       "STATUS": {

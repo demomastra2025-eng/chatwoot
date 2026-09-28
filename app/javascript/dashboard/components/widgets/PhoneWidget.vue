@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
@@ -20,13 +22,20 @@ const SIP_PROVIDERS = new Set([
   'wazo',
 ]);
 const STANDBY_REASON = 'sip_profile_registration_lease_owned_by_another_tab';
+const OWNER_TAB_BUSY_REASON = 'webphone_owner_tab_busy';
+// Moving the phone between tabs removes its SIP session in both tabs until the
+// new owner registers; keep the line on screen as "connecting" meanwhile
+// instead of hiding the whole phone.
+const HANDOVER_GRACE_MS = 15_000;
 const STATUS_KEYS = {
   ready: 'SIDEBAR.SIP_TELEPHONY.STATUS.READY',
+  ownerTab: 'SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB',
   connecting: 'SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING',
   disconnected: 'SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED',
   standby: 'SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB',
   error: 'SIDEBAR.SIP_TELEPHONY.STATUS.ERROR',
 };
+const ACTIONABLE_STATUSES = ['disconnected', 'error', 'ownerTab'];
 const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 const { t } = useI18n();
@@ -43,6 +52,7 @@ const hasBootstrapped = ref(false);
 const sipSessions = ref([]);
 const connectingKeys = ref(new Set());
 const callButton = ref(null);
+let handoverTimer = null;
 
 const voiceInboxes = computed(() =>
   (inboxes.value || []).filter(
@@ -75,8 +85,8 @@ const selectedSession = computed(
     selectedSessions.value.find(session => session.registered === true) ||
     selectedSessions.value[0]
 );
-const dialNumber = computed(() => phone.value.replace(/[\s()-]/g, ''));
-const canDial = computed(() => /^\+?\d{3,20}$/.test(dialNumber.value));
+const dialNumber = computed(() => normalizeDialNumber(phone.value));
+const canDial = computed(() => Boolean(dialNumber.value));
 const hasCall = computed(
   () => callsStore.hasActiveCall || callsStore.hasIncomingCall
 );
@@ -104,19 +114,48 @@ const toggleRingtone = () => {
   updateUISettings({ voice_call_ringtone_enabled: !ringtoneEnabled.value });
 };
 
+const clearHandoverTimer = () => {
+  if (handoverTimer) clearTimeout(handoverTimer);
+  handoverTimer = null;
+};
 const syncSessions = () => {
   const inboxIds = new Set(voiceInboxes.value.map(inbox => String(inbox.id)));
-  sipSessions.value = Object.values(WebphoneClient.sessions)
+  const liveSessions = Object.values(WebphoneClient.sessions)
     .filter(
       session =>
         SIP_PROVIDERS.has(session?.provider) &&
         inboxIds.has(String(session.inboxId))
     )
     .map(session => ({ ...session }));
+  const liveKeys = new Set(liveSessions.map(session => session.sessionKey));
+  const now = Date.now();
+  const handoverSessions = sipSessions.value
+    .filter(
+      session =>
+        !liveKeys.has(session.sessionKey) &&
+        inboxIds.has(String(session.inboxId))
+    )
+    .map(session => ({
+      ...session,
+      handoverUntil: session.handoverUntil || now + HANDOVER_GRACE_MS,
+    }))
+    .filter(session => session.handoverUntil > now);
+  sipSessions.value = [...liveSessions, ...handoverSessions];
+
+  clearHandoverTimer();
+  if (handoverSessions.length) {
+    const expiresAt = Math.min(
+      ...handoverSessions.map(session => session.handoverUntil)
+    );
+    handoverTimer = setTimeout(syncSessions, expiresAt - now);
+  }
 };
 const sessionStatus = session => {
   if (!session) return isBootstrapping.value ? 'connecting' : 'disconnected';
+  if (session.handoverUntil) return 'connecting';
   if (connectingKeys.value.has(session.sessionKey)) return 'connecting';
+  // Another tab of this browser owns the phone and mirrors its registration.
+  if (session.mirrored && session.registered === true) return 'ownerTab';
   if (session.registered === true) return 'ready';
   if (session.reason === STANDBY_REASON) return 'standby';
   if (
@@ -147,16 +186,24 @@ const connectionLabel = computed(() => {
   if (status.value === 'standby') return t('PHONE_WIDGET.OTHER_TAB');
   return statusLabel.value;
 });
-const canRefreshConnection = computed(() =>
-  ['disconnected', 'error'].includes(status.value)
+const canUseConnectionAction = computed(() =>
+  ACTIONABLE_STATUSES.includes(status.value)
 );
-const connectionActionLabel = computed(() =>
-  canRefreshConnection.value
-    ? t('PHONE_WIDGET.REFRESH_CONNECTION')
-    : connectionLabel.value
+// A mirrored line is registered by another tab: the action moves the phone
+// here instead of refreshing a connection this tab does not hold.
+const movesPhoneHere = computed(
+  () => canUseConnectionAction.value && selectedSession.value?.mirrored === true
 );
+const connectionActionIcon = computed(() =>
+  movesPhoneHere.value ? 'i-lucide-monitor-down' : 'i-lucide-refresh-cw'
+);
+const connectionActionLabel = computed(() => {
+  if (movesPhoneHere.value) return t('PHONE_WIDGET.MOVE_HERE');
+  if (canUseConnectionAction.value) return t('PHONE_WIDGET.REFRESH_CONNECTION');
+  return connectionLabel.value;
+});
 const statusColor = computed(() => {
-  if (status.value === 'ready') return 'bg-n-teal-9';
+  if (['ready', 'ownerTab'].includes(status.value)) return 'bg-n-teal-9';
   if (status.value === 'connecting') return 'bg-n-amber-9';
   if (['standby', 'disconnected'].includes(status.value)) return 'bg-n-slate-9';
   return 'bg-n-ruby-9';
@@ -176,18 +223,23 @@ const bootstrap = async () => {
   }
 };
 const reconnect = async session => {
-  if (['ready', 'connecting', 'standby'].includes(sessionStatus(session)))
-    return;
+  if (!session || !ACTIONABLE_STATUSES.includes(sessionStatus(session))) return;
   connectingKeys.value = new Set([...connectingKeys.value, session.sessionKey]);
   try {
+    // An explicit connect means "use the phone in this tab": a tab that only
+    // mirrors the owner takes the phone over (the owner refuses mid-call).
     await WebphoneClient.initializeDevice(session.inboxId, {
       native: true,
       provider: session.provider,
       sipProfileId: session.sipProfileId,
       sessionKey: session.sessionKey,
+      claimOwnership: true,
     });
-  } catch {
+  } catch (error) {
     // The session status is still displayed and can be retried.
+    if (error?.reason === OWNER_TAB_BUSY_REASON) {
+      useAlert(t('PHONE_WIDGET.OWNER_TAB_BUSY'));
+    }
   } finally {
     connectingKeys.value = new Set(
       [...connectingKeys.value].filter(key => key !== session.sessionKey)
@@ -203,6 +255,18 @@ const appendPlus = () => {
 };
 const removeLastKey = () => {
   phone.value = phone.value.slice(0, -1);
+};
+// A pasted contact line ("8 (701) 123-45-67, Айгерим", several lines, ...)
+// becomes the exact E.164 number that will be dialled; anything without a
+// complete number is pasted as usual so it can be edited.
+const pasteNumber = event => {
+  // The design-system input also forwards this listener to its wrapper.
+  if (event.defaultPrevented) return;
+  const number = normalizeDialNumber(event.clipboardData?.getData('text'));
+  if (!number) return;
+
+  event.preventDefault();
+  phone.value = number;
 };
 const dialOnEnter = () => {
   if (canDial.value && selectedInbox.value) callButton.value?.onClick();
@@ -239,6 +303,7 @@ onMounted(() => {
 });
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
+  clearHandoverTimer();
 });
 </script>
 
@@ -337,11 +402,11 @@ onUnmounted(() => {
         <Button
           type="button"
           variant="ghost"
-          :color="canRefreshConnection ? 'teal' : 'slate'"
+          :color="canUseConnectionAction ? 'teal' : 'slate'"
           size="sm"
-          icon="i-lucide-refresh-cw"
+          :icon="connectionActionIcon"
           class="shrink-0"
-          :disabled="!canRefreshConnection"
+          :disabled="!canUseConnectionAction"
           :aria-label="connectionActionLabel"
           :title="connectionActionLabel"
           data-testid="phone-widget-reconnect"
@@ -405,6 +470,7 @@ onUnmounted(() => {
             class="min-w-0 flex-1"
             :placeholder="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
             :aria-label="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
+            @paste="pasteNumber"
             @enter="dialOnEnter"
           />
           <VoiceCallButton

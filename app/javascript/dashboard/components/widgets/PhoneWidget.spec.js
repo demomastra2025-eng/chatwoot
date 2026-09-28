@@ -2,39 +2,51 @@ import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
 import PhoneWidget from './PhoneWidget.vue';
 
-const { webphoneClient, callsState, values, settingsState, microphoneState } =
-  vi.hoisted(() => {
-    const listeners = {};
-    return {
-      values: {
-        'inboxes/getInboxes': [],
-        getCurrentAccountId: 1,
-        getCurrentUser: { name: 'Иван Иванов' },
-      },
-      callsState: {
-        activeCall: null,
-        hasActiveCall: false,
-        hasIncomingCall: false,
-      },
-      settingsState: { settings: null, update: vi.fn() },
-      microphoneState: { available: null, muted: null, toggle: vi.fn() },
-      webphoneClient: {
-        sessions: {},
-        bootstrapIncomingSupport: vi.fn(() => Promise.resolve()),
-        initializeDevice: vi.fn(() => Promise.resolve()),
-        addEventListener: vi.fn((event, callback) => {
-          listeners[event] = callback;
-        }),
-        removeEventListener: vi.fn((event, callback) => {
-          if (listeners[event] === callback) delete listeners[event];
-        }),
-        emit: event => listeners[event]?.(),
-      },
-    };
-  });
+const {
+  webphoneClient,
+  callsState,
+  values,
+  settingsState,
+  microphoneState,
+  alertMock,
+  dialMock,
+} = vi.hoisted(() => {
+  const listeners = {};
+  return {
+    alertMock: vi.fn(),
+    dialMock: vi.fn(),
+    values: {
+      'inboxes/getInboxes': [],
+      getCurrentAccountId: 1,
+      getCurrentUser: { name: 'Иван Иванов' },
+    },
+    callsState: {
+      activeCall: null,
+      hasActiveCall: false,
+      hasIncomingCall: false,
+    },
+    settingsState: { settings: null, update: vi.fn() },
+    microphoneState: { available: null, muted: null, toggle: vi.fn() },
+    webphoneClient: {
+      sessions: {},
+      bootstrapIncomingSupport: vi.fn(() => Promise.resolve()),
+      initializeDevice: vi.fn(() => Promise.resolve()),
+      addEventListener: vi.fn((event, callback) => {
+        listeners[event] = callback;
+      }),
+      removeEventListener: vi.fn((event, callback) => {
+        if (listeners[event] === callback) delete listeners[event];
+      }),
+      emit: event => listeners[event]?.(),
+    },
+  };
+});
 
 vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   default: webphoneClient,
+}));
+vi.mock('dashboard/composables', () => ({
+  useAlert: alertMock,
 }));
 vi.mock('dashboard/stores/calls', () => ({
   useCallsStore: () => callsState,
@@ -95,6 +107,7 @@ const mountComponent = () =>
             '<button data-testid="phone-widget-call" :disabled="disabled" :title="tooltipLabel" @click="$emit(\'callInitiated\')"><span v-if="icon" :class="icon" />{{ label }} · {{ phone }} · {{ inboxId }}</button>',
           methods: {
             onClick() {
+              dialMock(this.phone, this.inboxId);
               this.$emit('callInitiated');
             },
           },
@@ -126,6 +139,8 @@ describe('PhoneWidget', () => {
     webphoneClient.initializeDevice.mockReset().mockResolvedValue();
     webphoneClient.addEventListener.mockClear();
     webphoneClient.removeEventListener.mockClear();
+    alertMock.mockReset();
+    dialMock.mockReset();
   });
 
   it('does not expose the phone to users without a browser voice inbox', async () => {
@@ -347,6 +362,7 @@ describe('PhoneWidget', () => {
       provider: 'sipuni',
       sipProfileId: 83,
       sessionKey: 'sip_profile:83',
+      claimOwnership: true,
     });
   });
 
@@ -534,6 +550,7 @@ describe('PhoneWidget', () => {
       provider: 'sipuni',
       sipProfileId: 84,
       sessionKey: 'sip_profile:84',
+      claimOwnership: true,
     });
   });
 
@@ -558,5 +575,254 @@ describe('PhoneWidget', () => {
       'PHONE_WIDGET.REFRESH_CONNECTION'
     );
     expect(refresh.attributes('disabled')).toBeUndefined();
+  });
+
+  describe('when another tab of this browser owns the phone', () => {
+    const mirroredSession = (overrides = {}) =>
+      sipSession({
+        mirrored: true,
+        registered: true,
+        reason: 'webphone_active_in_owner_tab',
+        ...overrides,
+      });
+
+    it('shows a green ready state and offers to move the phone here', async () => {
+      webphoneClient.sessions['sip_profile:83'] = mirroredSession();
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const status = wrapper.get('[role="status"]');
+      expect(status.attributes('aria-label')).toBe(
+        'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB'
+      );
+      expect(status.find('span').classes()).toContain('bg-n-teal-9');
+      const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
+      expect(action.attributes('disabled')).toBeUndefined();
+      expect(action.attributes('aria-label')).toBe('PHONE_WIDGET.MOVE_HERE');
+      expect(action.attributes('title')).toBe('PHONE_WIDGET.MOVE_HERE');
+      expect(action.find('.i-lucide-monitor-down').exists()).toBe(true);
+      expect(action.find('.i-lucide-refresh-cw').exists()).toBe(false);
+      expect(action.text()).toBe('');
+
+      await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
+      expect(
+        wrapper.get('[data-testid="phone-widget-launcher"]').attributes('title')
+      ).toBe('SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB');
+    });
+
+    it('claims the phone for this tab from the status action', async () => {
+      webphoneClient.sessions['sip_profile:83'] = mirroredSession();
+      let finishClaim;
+      webphoneClient.initializeDevice.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            finishClaim = resolve;
+          })
+      );
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="phone-widget-reconnect"]')
+        .trigger('click');
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(43, {
+        native: true,
+        provider: 'sipuni',
+        sipProfileId: 83,
+        sessionKey: 'sip_profile:83',
+        claimOwnership: true,
+      });
+      const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
+      expect(action.attributes('disabled')).toBeDefined();
+      expect(wrapper.get('[role="status"] span').classes()).toContain(
+        'bg-n-amber-9'
+      );
+
+      webphoneClient.sessions['sip_profile:83'] = sipSession();
+      finishClaim(webphoneClient.sessions['sip_profile:83']);
+      await flushPromises();
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe(
+        'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.READY'
+      );
+      expect(action.attributes('disabled')).toBeDefined();
+      expect(action.find('.i-lucide-refresh-cw').exists()).toBe(true);
+      expect(alertMock).not.toHaveBeenCalled();
+    });
+
+    it('explains when the owner tab keeps the phone for a call in progress', async () => {
+      webphoneClient.sessions['sip_profile:83'] = mirroredSession();
+      webphoneClient.initializeDevice.mockRejectedValueOnce(
+        Object.assign(new Error('webphone_owner_tab_busy'), {
+          reason: 'webphone_owner_tab_busy',
+        })
+      );
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await wrapper
+        .get('[data-testid="phone-widget-reconnect"]')
+        .trigger('click');
+      await flushPromises();
+
+      expect(alertMock).toHaveBeenCalledWith('PHONE_WIDGET.OWNER_TAB_BUSY');
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
+        'READY_IN_OWNER_TAB'
+      );
+      expect(
+        wrapper
+          .get('[data-testid="phone-widget-reconnect"]')
+          .attributes('disabled')
+      ).toBeUndefined();
+    });
+
+    it('moves the phone here when the owner tab lost its registration', async () => {
+      webphoneClient.sessions['sip_profile:83'] = mirroredSession({
+        registered: false,
+        reason: 'sip_unregistered',
+      });
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
+        'DISCONNECTED'
+      );
+      const action = wrapper.get('[data-testid="phone-widget-reconnect"]');
+      expect(action.attributes('aria-label')).toBe('PHONE_WIDGET.MOVE_HERE');
+      expect(action.find('.i-lucide-monitor-down').exists()).toBe(true);
+      await action.trigger('click');
+      expect(webphoneClient.initializeDevice).toHaveBeenCalledWith(
+        43,
+        expect.objectContaining({ claimOwnership: true })
+      );
+    });
+
+    it('keeps the phone on screen as connecting while it moves between tabs', async () => {
+      webphoneClient.sessions['sip_profile:83'] = mirroredSession();
+      const wrapper = mountComponent();
+      await flushPromises();
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+
+      try {
+        delete webphoneClient.sessions['sip_profile:83'];
+        webphoneClient.emit('call:sessions-changed');
+        await wrapper.vm.$nextTick();
+
+        expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(
+          true
+        );
+        expect(
+          wrapper.get('[role="status"]').attributes('aria-label')
+        ).toContain('CONNECTING');
+        expect(
+          wrapper
+            .get('[data-testid="phone-widget-reconnect"]')
+            .attributes('disabled')
+        ).toBeDefined();
+
+        webphoneClient.sessions['sip_profile:83'] = sipSession();
+        webphoneClient.emit('call:sessions-changed');
+        await wrapper.vm.$nextTick();
+        expect(wrapper.get('[role="status"]').attributes('aria-label')).toBe(
+          'Иван Иванов · SIDEBAR.SIP_TELEPHONY.STATUS.READY'
+        );
+
+        delete webphoneClient.sessions['sip_profile:83'];
+        webphoneClient.emit('call:sessions-changed');
+        await wrapper.vm.$nextTick();
+        vi.advanceTimersByTime(14_999);
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(
+          true
+        );
+
+        vi.advanceTimersByTime(1);
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(
+          false
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('dialing a copied number', () => {
+    const paste = async (wrapper, text) => {
+      const input = wrapper.get('input#phone-widget-number');
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', {
+        value: { getData: type => (type === 'text' ? text : '') },
+      });
+      input.element.dispatchEvent(event);
+      await wrapper.vm.$nextTick();
+      return event;
+    };
+
+    it.each([
+      '8 (701) 123-45-67',
+      '+7 701 123 45 67',
+      '7-701-123-45-67',
+      '87011234567\n',
+      '8 701 123 45 67 Айгерим\nперезвонить после 15:00',
+    ])('replaces the field with E.164 when pasting %j', async text => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const event = await paste(wrapper, text);
+
+      expect(event.defaultPrevented).toBe(true);
+      expect(wrapper.get('input#phone-widget-number').element.value).toBe(
+        '+77011234567'
+      );
+      expect(wrapper.get('[data-testid="phone-widget-call"]').text()).toContain(
+        '+77011234567'
+      );
+    });
+
+    it('leaves pasted text without a complete number to the browser', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const event = await paste(wrapper, '+7 701');
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(wrapper.get('input#phone-widget-number').element.value).toBe('');
+      expect(wrapper.find('[data-testid="phone-widget-call"]').exists()).toBe(
+        false
+      );
+    });
+
+    it('calls the pasted number immediately on Enter', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await paste(wrapper, 'Телефон: 8 (701) 123-45-67');
+      await wrapper.get('input#phone-widget-number').trigger('keyup.enter');
+
+      expect(dialMock).toHaveBeenCalledOnce();
+      expect(dialMock).toHaveBeenCalledWith('+77011234567', 43);
+    });
+
+    it('dials a typed number in a local format as E.164', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      const input = wrapper.get('input#phone-widget-number');
+
+      await input.setValue('8 (701) 123-45-67');
+      expect(input.element.value).toBe('8 (701) 123-45-67');
+      expect(wrapper.get('[data-testid="phone-widget-call"]').text()).toContain(
+        '+77011234567'
+      );
+      await input.trigger('keyup.enter');
+      expect(dialMock).toHaveBeenCalledWith('+77011234567', 43);
+      dialMock.mockClear();
+
+      await input.setValue('+7 701');
+      expect(wrapper.find('[data-testid="phone-widget-call"]').exists()).toBe(
+        false
+      );
+      await input.trigger('keyup.enter');
+      expect(dialMock).not.toHaveBeenCalled();
+    });
   });
 });

@@ -13,8 +13,10 @@
     "CONNECT": "Connect",
     "RECONNECT": "Reconnect",
     "REFRESH_CONNECTION": "Refresh connection",
+    "MOVE_HERE": "Move the phone to this tab",
     "ACTIVE": "Active",
     "OTHER_TAB": "Other tab",
+    "OWNER_TAB_BUSY": "The phone is busy with a call in another tab",
     "IN_CALL": "Call in progress",
     "MICROPHONE_UNAVAILABLE": "Microphone available only during a call",
     "MUTE_MICROPHONE": "Mute microphone",
@@ -502,7 +504,6 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP telephony",
       "RECONNECT": "Reconnect SIP",
-      "MOVE_HERE": "Move the phone to this tab",
       "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Channel #{id}",
       "STATUS": {
