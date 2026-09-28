@@ -930,8 +930,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
       it 'routes the selected profile only to the tab that took the phone over in the same browser' do
         stale_event = incoming_event
+        same_browser_tabs = [%w[test-tab browser-1], %w[tab-reloaded browser-1]]
         with_modified_env("TELEPHONY_#{provider_kind.upcase}_JANUS_WS_URL" => 'wss://app.example.test/janus-pbx') do
-          [%w[test-tab browser-1], %w[tab-reloaded browser-1]].each do |client_instance_id, browser_instance_id|
+          same_browser_tabs.each do |client_instance_id, browser_instance_id|
             post path, params: { client_instance_id: client_instance_id, browser_instance_id: browser_instance_id,
                                  inbox_id: channel.inbox.id }, headers: selected_headers, as: :json
           end

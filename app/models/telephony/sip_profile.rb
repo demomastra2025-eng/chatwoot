@@ -288,21 +288,11 @@ class Telephony::SipProfile < ApplicationRecord
         next
       end
 
-      registration_instance_id = if lease['client_instance_id'].to_s == client_instance_id.to_s
-                                   lease['registration_instance_id'].presence || SecureRandom.uuid
-                                 else
-                                   SecureRandom.uuid
-                                 end
-      lease = {
-        'client_instance_id' => client_instance_id,
-        'browser_instance_id' => browser_instance_id.presence,
-        'registration_instance_id' => registration_instance_id,
-        'user_id' => user_id,
-        'acquired_at' => occurred_at.iso8601,
-        'expires_at' => (occurred_at + registration_ttl.seconds).iso8601
-      }.compact
+      lease = next_browser_registration_lease(
+        lease, client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: user_id, occurred_at: occurred_at
+      )
       store_browser_registration_lease!(lease, release_previous: same_browser_takeover, occurred_at: occurred_at)
-      result = { acquired: true, registration_instance_id: registration_instance_id, expires_at: lease['expires_at'] }
+      result = { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
     end
 
     result
@@ -478,6 +468,23 @@ class Telephony::SipProfile < ApplicationRecord
     return false if lease['client_instance_id'].to_s == client_instance_id.to_s
 
     lease['browser_instance_id'].to_s == browser_instance_id.to_s && lease['user_id'].to_s == user_id.to_s
+  end
+
+  # The same tab keeps its registration instance; any other tab gets a new one.
+  def next_browser_registration_lease(lease, client_instance_id:, browser_instance_id:, user_id:, occurred_at:)
+    registration_instance_id = if lease['client_instance_id'].to_s == client_instance_id.to_s
+                                 lease['registration_instance_id'].presence || SecureRandom.uuid
+                               else
+                                 SecureRandom.uuid
+                               end
+    {
+      'client_instance_id' => client_instance_id,
+      'browser_instance_id' => browser_instance_id.presence,
+      'registration_instance_id' => registration_instance_id,
+      'user_id' => user_id,
+      'acquired_at' => occurred_at.iso8601,
+      'expires_at' => (occurred_at + registration_ttl.seconds).iso8601
+    }.compact
   end
 
   def store_browser_registration_lease!(lease, release_previous:, occurred_at:)
