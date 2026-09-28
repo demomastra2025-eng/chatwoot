@@ -49,6 +49,7 @@
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "Бұл болдырмау жазбасын MedElement тексеруі мен синхрондауы үшін сақтау қажет.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Жазба болдырылмады: алдымен MedElement жүйесіндегі қабылдауды тексеріңіз, расталса бөлек болдырмаңыз.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "MedElement тексеруі қолжетімсіз немесе әлдеқашан басталған. Растаусыз жазбаны болдырмаңыз.",
+      "MEDELEMENT_RECEPTION_ALREADY_LINKED": "Жазба MedElement жүйесіндегі қабылдаумен әлдеқашан байланыстырылған немесе оның нәтижесін тексеру қажет. Жаңасын жасаудың орнына MedElement жүйесіндегі қабылдауды тексеріңіз.",
       "INVALID_IIN": "ЖСН дұрыс емес",
       "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Пациент деректері байланыстырылған MedElement картасына сәйкес келмейді. Пациент картасын таңдаңыз немесе бөлек жазба жасаңыз."
     }

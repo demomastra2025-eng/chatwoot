@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import enScheduling from '../../i18n/locale/en/scheduling.json';
+import kkScheduling from '../../i18n/locale/kk/scheduling.json';
+import ruScheduling from '../../i18n/locale/ru/scheduling.json';
 import { formatSchedulingErrorMessage, toIntegerNumeric } from './shared';
+
+const lookupMessage = (messages, key) =>
+  key.split('.').reduce((node, part) => node?.[part], messages);
 
 describe('scheduling shared helpers', () => {
   it('formats the outside-working-hours API response for the user', () => {
@@ -65,6 +71,32 @@ describe('scheduling shared helpers', () => {
 
     expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
   });
+
+  it.each([
+    ['en', enScheduling],
+    ['ru', ruScheduling],
+    ['kk', kkScheduling],
+  ])(
+    'localizes an already linked MedElement reception in %s',
+    (_locale, messages) => {
+      const error = {
+        response: {
+          data: {
+            code: 'MEDELEMENT_RECEPTION_ALREADY_LINKED',
+            error:
+              'The appointment is already linked to a Medelement reception or requires verification',
+          },
+          status: 409,
+        },
+      };
+      const t = key => lookupMessage(messages, key) ?? key;
+      const translation =
+        messages.SCHEDULING.ERRORS.MEDELEMENT_RECEPTION_ALREADY_LINKED;
+
+      expect(translation).toEqual(expect.any(String));
+      expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
+    }
+  );
 
   describe('toIntegerNumeric', () => {
     it('accepts integer values and decimal zero values', () => {

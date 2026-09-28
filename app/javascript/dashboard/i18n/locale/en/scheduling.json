@@ -408,6 +408,7 @@
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "This cancellation record must be kept for MedElement verification and synchronization.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Appointment not cancelled: verify the reception in MedElement first. If confirmed, cancel it separately.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "MedElement verification is unavailable or already running. Do not cancel without confirmation.",
+      "MEDELEMENT_RECEPTION_ALREADY_LINKED": "This appointment is already linked to a MedElement reception or its result needs verification. Check the reception in MedElement instead of creating a new one.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "Only scheduled or confirmed appointments can be created in MedElement.",
       "END_BEFORE_START": "End time must be later than the start time.",
       "EXPENSE_NOT_FOUND": "Expense not found.",

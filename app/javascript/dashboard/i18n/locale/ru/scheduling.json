@@ -408,6 +408,7 @@
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "Эту запись об отмене нужно сохранить для проверки и синхронизации с MedElement.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Запись не отменена: сначала проверьте приём в MedElement. Если он подтвердится, отмените запись отдельно.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "Проверка MedElement сейчас недоступна или уже запущена. Не отменяйте запись без подтверждения.",
+      "MEDELEMENT_RECEPTION_ALREADY_LINKED": "Запись уже связана с приёмом в MedElement или её результат требует проверки. Проверьте приём в MedElement вместо создания нового.",
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "Только запланированную или подтверждённую запись можно создать в MedElement.",
       "END_BEFORE_START": "Время окончания должно быть позже времени начала.",
       "EXPENSE_NOT_FOUND": "Расход не найден.",
