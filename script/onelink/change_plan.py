@@ -57,6 +57,17 @@ SIDECAR_ROOTS = (
     "services/onelink-ai-voice-pipecat/",
 )
 IMMUTABLE_RELEASE_SIDECAR_ROOTS = ("services/onelink-ai-voice/",)
+# Captain control is enforced through model callbacks, so its regression specs
+# (including the legacy-column rollout bridge) live with the models.
+CAPTAIN_CONTROL_SPECS = (
+    "spec/models/conversation_spec.rb",
+    "spec/enterprise/models/message_spec.rb",
+)
+COMPANION_SPECS = {
+    "enterprise/app/services/captain/conversation/": CAPTAIN_CONTROL_SPECS,
+    "enterprise/app/models/enterprise/conversation.rb": CAPTAIN_CONTROL_SPECS,
+    "enterprise/app/models/enterprise/message.rb": CAPTAIN_CONTROL_SPECS,
+}
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"
     r"change_column_null|change_column_default|remove_index|rename_table)\b"
@@ -128,6 +139,9 @@ def related_specs(paths: Iterable[str]) -> list[str]:
             continue
         if path.suffix != ".rb":
             continue
+        for prefix, companions in COMPANION_SPECS.items():
+            if raw_path.startswith(prefix):
+                specs.update(spec for spec in companions if Path(spec).is_file())
         if raw_path.startswith("enterprise/app/"):
             candidate = Path("spec/enterprise") / Path(raw_path).relative_to("enterprise/app")
         elif raw_path.startswith("app/"):

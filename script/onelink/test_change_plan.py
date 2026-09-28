@@ -173,6 +173,19 @@ class ChangePlanTest(unittest.TestCase):
 
         self.assertEqual(specs, ["spec/lib/example_spec.rb", "spec/services/example_spec.rb"])
 
+    def test_captain_control_changes_select_model_callback_specs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for spec in ("spec/models/conversation_spec.rb", "spec/enterprise/models/message_spec.rb"):
+                (root / spec).parent.mkdir(parents=True, exist_ok=True)
+                (root / spec).touch()
+            with chdir(root):
+                specs = related_specs(["enterprise/app/services/captain/conversation/control_service.rb"])
+
+        self.assertEqual(
+            specs, ["spec/enterprise/models/message_spec.rb", "spec/models/conversation_spec.rb"]
+        )
+
     def test_deleted_specs_are_excluded_from_related_specs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
