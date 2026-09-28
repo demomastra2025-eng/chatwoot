@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::RecordingBundleManifestValidator do
-  let(:contract) { JSON.parse(Rails.root.join('enterprise/media-server/internal/media/testdata/recording_bundle_limits.json').read) }
+  let(:contract) { JSON.parse(file_fixture('whatsapp/recording_bundle_limits.json').read) }
   let(:manifest) do
     {
       'version' => contract.fetch('version'), 'session_id' => 'session_test', 'account_id' => '42', 'call_id' => 'call_test',
