@@ -40,7 +40,7 @@ const mountComponent = () =>
   });
 
 describe('SidebarProfileMenuStatus', () => {
-  it('keeps availability settings in the profile without hiding telephony status there', () => {
+  it('keeps availability settings in the profile and leaves the SIP status to the phone', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('SIDEBAR.SET_YOUR_AVAILABILITY');

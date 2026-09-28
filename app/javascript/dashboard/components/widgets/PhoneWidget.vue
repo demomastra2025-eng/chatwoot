@@ -27,14 +27,6 @@ const OWNER_TAB_BUSY_REASON = 'webphone_owner_tab_busy';
 // new owner registers; keep the line on screen as "connecting" meanwhile
 // instead of hiding the whole phone.
 const HANDOVER_GRACE_MS = 15_000;
-const STATUS_KEYS = {
-  ready: 'SIDEBAR.SIP_TELEPHONY.STATUS.READY',
-  ownerTab: 'SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB',
-  connecting: 'SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING',
-  disconnected: 'SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED',
-  standby: 'SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB',
-  error: 'SIDEBAR.SIP_TELEPHONY.STATUS.ERROR',
-};
 const ACTIONABLE_STATUSES = ['disconnected', 'error', 'ownerTab'];
 const dialKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -167,10 +159,27 @@ const sessionStatus = session => {
   return 'disconnected';
 };
 const status = computed(() => sessionStatus(selectedSession.value));
+// Literal keys keep every status label visible to the i18n tooling.
+const statusText = value => {
+  switch (value) {
+    case 'ready':
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.READY');
+    case 'ownerTab':
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB');
+    case 'connecting':
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING');
+    case 'standby':
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB');
+    case 'error':
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.ERROR');
+    default:
+      return t('SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED');
+  }
+};
 const statusLabel = computed(() =>
   hasCall.value && status.value === 'ready'
     ? t('PHONE_WIDGET.IN_CALL')
-    : t(STATUS_KEYS[status.value])
+    : statusText(status.value)
 );
 const employeeName = computed(
   () =>
