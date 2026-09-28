@@ -167,10 +167,13 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
     record_outcome!(command, CUSTOMER_MESSAGE_ID_KEY, message.id)
   end
 
+  # Same v4 takeover predicate as the late human-response fence: a staff public
+  # reply in any channel of the thread, including a non-Captain sibling that
+  # leaves this conversation pending, hands the thread to a human.
   def human_replied_after_command?(command, conversation)
     messages = Captain::Conversation::ControlService.messages_scope(conversation).outgoing.where(private: false)
     messages.where('messages.created_at >= ?', command.created_at).find_each.any? do |message|
-      message.send(:captain_human_control_candidate?)
+      message.send(:captain_public_human_reply?)
     end
   end
 
