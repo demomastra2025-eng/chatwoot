@@ -96,4 +96,17 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     expect(staff_notes.count).to eq(1)
     expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
   end
+
+  it 'leaves a staff note when a handoff opened the conversation before the booking failed' do
+    bind_failed_provider_status!
+    capture_booking_fence!
+    expect(conversation.bot_handoff!(actor: agent)).to eq(:applied)
+    command.update!(status: 'failed')
+
+    described_class.perform_now(command.id)
+
+    expect(conversation.reload.status).to eq('open')
+    expect(staff_notes.count).to eq(1)
+    expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
+  end
 end

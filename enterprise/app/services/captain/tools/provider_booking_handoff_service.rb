@@ -127,10 +127,13 @@ class Captain::Tools::ProviderBookingHandoffService
   end
 
   # The fenced conversation was taken over by a human of the original run when
-  # the control generation is unchanged, or moved by exactly one through an
-  # agent's public reply or through an agent already assigned to it. A newer
-  # Captain run also moves the generation, but leaves neither signal. The legacy
-  # captain_control_state column is not written by Captain v4 and is not read.
+  # the control generation is unchanged, or moved by exactly one through that
+  # takeover: the conversation left pending after the fence (an agent reply,
+  # a handoff by the tool, a newer run of the same pending episode or the agent
+  # API, an existing assignment) or an agent replied publicly after the fence
+  # message. A return to pending after the fence starts a newer Captain run,
+  # which never gets a late note. The legacy captain_control_state column is
+  # only mirrored for the previous release image and is not read.
   def original_human_takeover?
     return false unless conversation.current_captain_control_state == 'human'
 
@@ -138,9 +141,18 @@ class Captain::Tools::ProviderBookingHandoffService
     expected = response_fence['control_generation'].to_i
     return true if generation == expected
     return false unless generation == expected + 1
+    return false if status_transitions_after_fence.exists?(to_status: 'pending')
 
-    conversation.assignee_id.present? ||
+    status_transitions_after_fence.exists?(from_status: 'pending') ||
       Captain::Conversation::ControlService.human_response_after?(conversation, response_fence['last_message_id'])
+  end
+
+  # Without a status epoch in the fence there is no transition evidence.
+  def status_transitions_after_fence
+    fence_transition_id = response_fence['status_transition_id']
+    return conversation.status_transitions.none if fence_transition_id.nil? || fence_transition_id.to_i.negative?
+
+    conversation.status_transitions.where(id: (fence_transition_id.to_i + 1)..)
   end
 
   def existing_staff_note

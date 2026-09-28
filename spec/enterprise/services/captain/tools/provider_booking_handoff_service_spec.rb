@@ -89,6 +89,57 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
     expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
   end
 
+  context 'when a handoff opened the conversation before the booking failed late' do
+    def perform_late_failure(captured_fence)
+      conversation.reload
+      expect(conversation.current_captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 1)
+      described_class.new(assistant: assistant, conversation: conversation, fence: captured_fence).perform
+    end
+
+    def expect_one_late_staff_note(captured_fence)
+      expect(perform_late_failure(captured_fence)).to eq(:stale)
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+    end
+
+    it 'records a staff note after the handoff tool of the same Captain run' do
+      captured_fence = fence
+      expect(conversation.bot_handoff!(source: 'captain', actor: assistant, fence: captured_fence)).to eq(:applied)
+
+      expect_one_late_staff_note(captured_fence)
+    end
+
+    it 'records a staff note after a newer Captain run of the same pending episode handed off' do
+      captured_fence = fence
+      newer_incoming = create(:message, conversation: conversation, message_type: :incoming)
+      newer_fence = captured_fence.merge(last_message_id: newer_incoming.id)
+      expect(conversation.bot_handoff!(source: 'captain', actor: assistant, fence: newer_fence)).to eq(:applied)
+
+      expect_one_late_staff_note(captured_fence)
+    end
+
+    it 'records a staff note after an agent handed the conversation off through the API' do
+      captured_fence = fence
+      expect(conversation.bot_handoff!(actor: create(:user, account: account, role: :agent))).to eq(:applied)
+
+      expect_one_late_staff_note(captured_fence)
+    end
+  end
+
+  it 'does not leave a late note after the conversation returned to Captain and was opened again' do
+    captured_fence = fence
+    agent = create(:user, account: account, role: :agent)
+    %w[open pending open].each do |status|
+      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: status }, actor: agent, source: 'api').perform
+    end
+    conversation.reload
+
+    expect(conversation.status).to eq('open')
+    expect(conversation.current_captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 1)
+    expect(described_class.new(assistant: assistant, conversation: conversation, fence: captured_fence).perform).to eq(:stale)
+    expect(conversation.messages.outgoing).to be_empty
+  end
+
   it 'does not let the legacy captain_control_state column decide a late note' do
     captured_fence = fence
     conversation.update!(status: :open)
