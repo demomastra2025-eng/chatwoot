@@ -127,24 +127,30 @@ class Captain::Tools::ProviderBookingHandoffService
   end
 
   # The fenced conversation was taken over by a human of the original run when
-  # the control generation is unchanged, or moved by exactly one through that
-  # takeover: the conversation left pending after the fence (an agent reply,
-  # a handoff by the tool, a newer run of the same pending episode or the agent
-  # API, an existing assignment) or an agent replied publicly after the fence
-  # message. A return to pending after the fence starts a newer Captain run,
-  # which never gets a late note. The legacy captain_control_state column is
-  # only mirrored for the previous release image and is not read.
+  # the control generation is unchanged and the conversation is human-owned, or
+  # the generation moved by exactly one through that takeover: the conversation
+  # left pending after the fence (an agent reply, a handoff by the tool, a newer
+  # run of the same pending episode or the agent API, an existing assignment),
+  # or a public human reply anywhere in the communication thread followed the
+  # fence message. A public reply in a non-Captain sibling channel moves the
+  # thread generation while this conversation stays pending; it is the same
+  # takeover and gets the note without reopening. A return to pending after the
+  # fence starts a newer Captain run, which never gets a late note. The legacy
+  # captain_control_state column is only mirrored for the previous release image
+  # and is not read.
   def original_human_takeover?
-    return false unless conversation.current_captain_control_state == 'human'
-
     generation = conversation.current_captain_control_generation.to_i
     expected = response_fence['control_generation'].to_i
-    return true if generation == expected
+    return conversation.captain_human_control_active? if generation == expected
     return false unless generation == expected + 1
     return false if status_transitions_after_fence.exists?(to_status: 'pending')
 
-    status_transitions_after_fence.exists?(from_status: 'pending') ||
+    left_pending_after_fence? ||
       Captain::Conversation::ControlService.human_response_after?(conversation, response_fence['last_message_id'])
+  end
+
+  def left_pending_after_fence?
+    conversation.captain_human_control_active? && status_transitions_after_fence.exists?(from_status: 'pending')
   end
 
   # Without a status epoch in the fence there is no transition evidence.

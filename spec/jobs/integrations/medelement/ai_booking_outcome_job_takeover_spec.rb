@@ -109,4 +109,35 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
     expect(staff_notes.count).to eq(1)
     expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
   end
+
+  context 'when a staff member replied in a non-Captain channel of the same communication thread' do
+    let(:sibling) { create(:conversation, account: account, contact: contact, status: :open) }
+    let(:thread) { create(:communication_thread, account: account, contact: contact) }
+
+    before do
+      [conversation, sibling].each do |candidate|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+        candidate.association(:communication_thread_conversation).reset
+        candidate.association(:communication_thread).reset
+      end
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+    end
+
+    after { Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)) }
+
+    it 'leaves a staff note while the Captain conversation stays pending' do
+      bind_failed_provider_status!
+      capture_booking_fence!
+      create(:message, conversation: sibling, account: account, inbox: sibling.inbox, message_type: :outgoing,
+                       sender: agent, private: false, content: 'agent reply')
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload).to be_pending
+      expect(staff_notes.count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
+    end
+  end
 end
