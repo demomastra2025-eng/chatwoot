@@ -1239,6 +1239,28 @@ describe('webphoneClient', () => {
     }
   });
 
+  it('joins the owner election of the account the tab works in now', () => {
+    const previousPath = window.location.pathname;
+    const { tabLeadership } = WebphoneClient;
+    const initialScope = tabLeadership.scope;
+    WebphoneClient.sessions['sip_profile:41'] = {
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:41',
+      mirrored: true,
+    };
+    try {
+      window.history.pushState({}, '', '/app/accounts/2/dashboard');
+
+      expect(WebphoneClient.syncTabLeadershipScope()).toBe(true);
+      expect(tabLeadership.scope).toMatch(/^account:2:user:/);
+      expect(WebphoneClient.sessions['sip_profile:41']).toBe(undefined);
+      expect(WebphoneClient.syncTabLeadershipScope()).toBe(false);
+    } finally {
+      window.history.pushState({}, '', previousPath);
+      tabLeadership.setScope(initialScope);
+    }
+  });
+
   it('keeps a low-frequency recovery loop after the fast retry window', async () => {
     vi.useFakeTimers();
     const sessionKey = 'sip_profile:41';

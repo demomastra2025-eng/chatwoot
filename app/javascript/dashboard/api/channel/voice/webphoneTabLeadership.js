@@ -1,12 +1,37 @@
-// Exactly one browser tab owns the SIP registration. The owner holds a Web
-// Lock; the browser releases it the moment that tab closes, reloads or
-// crashes, so the next queued tab takes over without waiting for the server
-// lease to expire. Other tabs mirror the owner's status over BroadcastChannel.
+// Exactly one browser tab per account and user owns the SIP registration. The
+// owner holds a Web Lock; the browser releases it the moment that tab closes,
+// reloads or crashes, so the next queued tab takes over without waiting for
+// the server lease to expire. Other tabs of the same account and user mirror
+// the owner's status over BroadcastChannel.
+import Cookies from 'js-cookie';
 
 const BROWSER_INSTANCE_STORAGE_KEY = 'onelink:webphone:browser-instance-id';
 const LOCK_NAME = 'onelink:webphone:sip-owner';
 const CHANNEL_NAME = 'onelink:webphone:tabs';
+const SESSION_COOKIE_NAME = 'cw_d_session_info';
 const HANDOVER_TIMEOUT_MS = 8_000;
+
+// Same rule as ApiClient: account-scoped requests take the account from the URL.
+const currentAccountId = () => {
+  const pathname = window.location?.pathname || '';
+  if (!pathname.includes('/app/accounts')) return '';
+
+  return pathname.split('/')[3] || '';
+};
+
+const currentUserUid = () => {
+  try {
+    const session = Cookies.get(SESSION_COOKIE_NAME);
+    return session ? JSON.parse(session).uid || '' : '';
+  } catch {
+    return '';
+  }
+};
+
+// SIP tokens and registration leases are account-scoped, so every account a
+// user has open elects its own owner tab and registers its own profiles.
+export const webphoneTabScope = () =>
+  `account:${currentAccountId() || 'none'}:user:${currentUserUid() || 'none'}`;
 
 const randomId = prefix =>
   window.crypto?.randomUUID?.() ||
@@ -41,9 +66,11 @@ export default class WebphoneTabLeadership extends EventTarget {
       : null,
     canHandOver = () => true,
     releaseOwnership = async () => {},
+    scope = '',
   } = {}) {
     super();
     this.locks = locks;
+    this.BroadcastChannelImpl = BroadcastChannelImpl;
     this.tabId = randomId('webphone-tab');
     this.canHandOver = canHandOver;
     this.releaseOwnership = releaseOwnership;
@@ -53,12 +80,40 @@ export default class WebphoneTabLeadership extends EventTarget {
     this.releaseLock = null;
     this.lockAbort = null;
     this.pendingHandover = null;
-    this.channel = this.supported
-      ? new BroadcastChannelImpl(CHANNEL_NAME)
-      : null;
-    this.channel?.addEventListener('message', event =>
+    this.scope = scope;
+    this.channel = null;
+    this.openChannel();
+  }
+
+  get lockName() {
+    return this.scope ? `${LOCK_NAME}:${this.scope}` : LOCK_NAME;
+  }
+
+  openChannel() {
+    if (!this.supported) return;
+
+    const name = this.scope ? `${CHANNEL_NAME}:${this.scope}` : CHANNEL_NAME;
+    this.channel = new this.BroadcastChannelImpl(name);
+    this.channel.addEventListener('message', event =>
       this.handleMessage(event.data || {})
     );
+  }
+
+  // Moves this tab to the owner election of another account or user. Returns
+  // true when the scope changed; the tab then starts as a follower there.
+  setScope(scope) {
+    if (scope === this.scope) return false;
+
+    this.scope = scope;
+    if (!this.supported) return true;
+
+    const wasStarted = this.started;
+    this.pendingHandover?.settle(false);
+    this.stop();
+    this.setLeader(false);
+    this.openChannel();
+    if (wasStarted) this.start();
+    return true;
   }
 
   start() {
@@ -77,10 +132,15 @@ export default class WebphoneTabLeadership extends EventTarget {
 
     this.locks
       .request(
-        LOCK_NAME,
+        this.lockName,
         options,
         () =>
           new Promise(resolve => {
+            // Granted after this tab moved to another scope or stopped.
+            if (this.lockAbort !== abort) {
+              resolve();
+              return;
+            }
             this.releaseLock = resolve;
             this.setLeader(true);
           })
@@ -104,6 +164,8 @@ export default class WebphoneTabLeadership extends EventTarget {
 
     this.isLeader = isLeader;
     tabOwnsWebphone = isLeader;
+    // No owner answered (e.g. right after a scope change): the lock came free.
+    if (isLeader) this.pendingHandover?.settle(true);
     this.dispatchEvent(
       new CustomEvent('leadership-changed', { detail: { isLeader } })
     );
@@ -191,8 +253,11 @@ export default class WebphoneTabLeadership extends EventTarget {
 
   stop() {
     this.lockAbort?.abort();
+    this.lockAbort = null;
     this.releaseLock?.();
+    this.releaseLock = null;
     this.channel?.close();
+    this.channel = null;
     this.started = false;
   }
 }

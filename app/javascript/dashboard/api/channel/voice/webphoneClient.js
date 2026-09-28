@@ -3,7 +3,9 @@ import TwilioVoiceClient from './twilioVoiceClient';
 import JanusSipVoiceClient, {
   createJanusSipVoiceClient,
 } from './janusSipVoiceClient';
-import WebphoneTabLeadership from './webphoneTabLeadership';
+import WebphoneTabLeadership, {
+  webphoneTabScope,
+} from './webphoneTabLeadership';
 
 // Capped low on purpose: an operator waiting a minute for the phone to come
 // back after a short network drop misses calls.
@@ -133,6 +135,7 @@ class WebphoneClient extends EventTarget {
     this.tabLeadership = new WebphoneTabLeadership({
       canHandOver: () => !this.hasNativeCallInProgress(),
       releaseOwnership: () => this.releaseNativeOwnership(),
+      scope: webphoneTabScope(),
     });
     this.tabLeadership.addEventListener('leadership-changed', event =>
       this.handleTabLeadershipChanged(event.detail?.isLeader)
@@ -145,6 +148,17 @@ class WebphoneClient extends EventTarget {
 
   ownsNativeSip() {
     return this.tabLeadership.isLeader;
+  }
+
+  // The app can load before the router settles on an account (or before
+  // login), so the owner election follows the account and user this tab
+  // works in now. The old account's phone stays with that account's tabs.
+  syncTabLeadershipScope() {
+    const scope = webphoneTabScope();
+    if (scope === this.tabLeadership.scope) return false;
+
+    this.dropMirroredSessions();
+    return this.tabLeadership.setScope(scope);
   }
 
   handleTabLeadershipChanged(isLeader) {
@@ -192,6 +206,7 @@ class WebphoneClient extends EventTarget {
   // Moves the phone into this tab (for an outbound call or an explicit
   // "use here"). The owner tab refuses while it has a call in progress.
   async ensureNativeSipOwnership() {
+    this.syncTabLeadershipScope();
     if (!this.ownsNativeSip()) {
       const handedOver = await this.tabLeadership.claim();
       if (!handedOver || !(await this.waitForTabLeadership())) {
@@ -1019,6 +1034,7 @@ class WebphoneClient extends EventTarget {
 
   bootstrapIncomingSupport() {
     this.nativeBootstrapRequested = true;
+    this.syncTabLeadershipScope();
     if (this.bootstrapIncomingPromise) return this.bootstrapIncomingPromise;
 
     const bootstrapPromise = (async () => {
@@ -1047,6 +1063,7 @@ class WebphoneClient extends EventTarget {
     } = {}
   ) {
     this.nativeBootstrapRequested = true;
+    this.syncTabLeadershipScope();
     const initializationKey = [
       native ? 'native' : 'default',
       inboxId || 'global',
