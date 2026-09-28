@@ -38,7 +38,6 @@ RSpec.describe Captain::Tools::Account::UpdateAppointmentService do
 
   describe '#execute' do
     it 'recomputes ends_at from duration and returns a structured payload' do
-      allow(service).to receive(:appointment_finance_visible?).and_return(false)
       payload = JSON.parse(
         execute_confirmed(
           resource_id: new_resource.id,
@@ -66,7 +65,7 @@ RSpec.describe Captain::Tools::Account::UpdateAppointmentService do
         'service_id' => follow_up.id,
         'duration_min' => 20
       )
-      expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+      expect(payload['appointment']).not_to include('payment_status', 'prepaid_amount', 'settlement_amount', 'payments', 'expense')
       expect(appointment).to have_attributes(
         resource_id: new_resource.id,
         service_id: follow_up.id,
@@ -100,6 +99,45 @@ RSpec.describe Captain::Tools::Account::UpdateAppointmentService do
       expect(result).not_to start_with('ERROR:')
       expect(appointment.reload.client_comment).to eq('Selected appointment')
       expect(other.reload.client_comment).to be_nil
+    end
+
+    it 'returns the move command receipt for a confirmed employee update' do
+      availability = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+        status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+      )
+      allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new)
+        .and_return(instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: availability))
+      settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+      create(:integrations_hook, :medelement, account: account, settings: settings)
+      contact.update!(
+        name: 'Aruzhan', last_name: 'Testova', phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: contact.custom_attributes.merge(
+          'medelement_first_name' => 'Aruzhan', 'medelement_last_name' => 'Testova',
+          'medelement_middle_name' => 'Serikovna', 'medelement_patient_code' => 'patient-1'
+        )
+      )
+      resource.update!(
+        custom_attributes: {
+          'medelement_specialist_code' => 'specialist-1',
+          'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+        }
+      )
+      consultation.update!(custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
+      appointment.update!(
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+      )
+
+      result = execute_confirmed(appointment_id: appointment.id, starts_at: updated_start.iso8601)
+      raise result if result.start_with?('ERROR:')
+
+      payload = JSON.parse(result)
+      receipt = payload.fetch('provider_command_receipt')
+      expect(receipt).to include('appointment_id' => appointment.id, 'expected_operation' => 'move_reception', 'linked' => true)
+      expect(receipt.fetch('command')).to include(
+        'operation' => 'move_reception', 'requested_by' => { 'type' => 'User', 'id' => user.id }
+      )
+      expect(Integrations::Medelement::ProviderCommand.find(receipt.dig('command', 'id')).appointment_id).to eq(appointment.id)
     end
 
     it 'returns an error when explicit ends_at conflicts with duration_min' do

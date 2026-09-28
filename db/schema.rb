@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
+ActiveRecord::Schema[7.2].define(version: 2026_09_25_140400) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -34,10 +34,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["access_role_id"], name: "index_access_role_grants_on_access_role_id"
     t.index ["account_id", "resource", "capability", "access_scope"], name: "index_access_role_grants_on_account_lookup"
     t.index ["account_id"], name: "index_access_role_grants_on_account_id"
-    t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying::text, 'own'::character varying::text, 'team'::character varying::text, 'all'::character varying::text])", name: "access_role_grants_supported_scope"
-    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'override_schedule'::character varying::text, 'complete_cancel'::character varying::text, 'view_finance'::character varying::text, 'manage_finance'::character varying::text, 'manage'::character varying::text])", name: "access_role_grants_supported_capability"
-    t.check_constraint "resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_finance'::character varying::text, 'manage_finance'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'override_schedule'::character varying::text])) OR resource::text <> 'appointments'::text AND (resource::text = 'contacts'::text AND capability::text = 'view'::text OR resource::text = 'contacts'::text AND capability::text = 'create'::text OR resource::text = 'contacts'::text AND capability::text = 'update_fields'::text OR resource::text = 'contacts'::text AND capability::text = 'assign'::text OR resource::text = 'contacts'::text AND capability::text = 'delete_archive'::text OR resource::text = 'contacts'::text AND capability::text = 'view_configuration'::text OR resource::text = 'contacts'::text AND capability::text = 'configure'::text OR resource::text = 'contacts'::text AND capability::text = 'export'::text OR resource::text = 'contacts'::text AND capability::text = 'view_reports'::text OR resource::text = 'conversations'::text AND capability::text = 'view'::text OR resource::text = 'conversations'::text AND capability::text = 'create'::text OR resource::text = 'conversations'::text AND capability::text = 'update_fields'::text OR resource::text = 'conversations'::text AND capability::text = 'assign'::text OR resource::text = 'conversations'::text AND capability::text = 'transition'::text OR resource::text = 'conversations'::text AND capability::text = 'take'::text OR resource::text = 'conversations'::text AND capability::text = 'delete_archive'::text OR resource::text = 'conversations'::text AND capability::text = 'view_configuration'::text OR resource::text = 'conversations'::text AND capability::text = 'configure'::text OR resource::text = 'conversations'::text AND capability::text = 'export'::text OR resource::text = 'conversations'::text AND capability::text = 'view_reports'::text OR resource::text = 'deals'::text AND capability::text = 'view'::text OR resource::text = 'deals'::text AND capability::text = 'create'::text OR resource::text = 'deals'::text AND capability::text = 'update_fields'::text OR resource::text = 'deals'::text AND capability::text = 'assign'::text OR resource::text = 'deals'::text AND capability::text = 'transition'::text OR resource::text = 'deals'::text AND capability::text = 'delete_archive'::text OR resource::text = 'deals'::text AND capability::text = 'view_configuration'::text OR resource::text = 'deals'::text AND capability::text = 'configure'::text OR resource::text = 'deals'::text AND capability::text = 'export'::text OR resource::text = 'deals'::text AND capability::text = 'view_reports'::text OR resource::text = 'tasks'::text AND capability::text = 'view'::text OR resource::text = 'tasks'::text AND capability::text = 'create'::text OR resource::text = 'tasks'::text AND capability::text = 'update_fields'::text OR resource::text = 'tasks'::text AND capability::text = 'assign'::text OR resource::text = 'tasks'::text AND capability::text = 'transition'::text OR resource::text = 'tasks'::text AND capability::text = 'complete_cancel'::text OR resource::text = 'tasks'::text AND capability::text = 'delete_archive'::text OR resource::text = 'tasks'::text AND capability::text = 'view_configuration'::text OR resource::text = 'tasks'::text AND capability::text = 'configure'::text OR resource::text = 'tasks'::text AND capability::text = 'export'::text OR resource::text = 'tasks'::text AND capability::text = 'view_reports'::text OR resource::text = 'automation_rules'::text AND capability::text = 'manage'::text AND (access_scope::text = ANY (ARRAY['none'::character varying::text, 'all'::character varying::text])))", name: "access_role_grants_supported_resource_capability"
-    t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying::text, 'conversations'::character varying::text, 'appointments'::character varying::text, 'deals'::character varying::text, 'tasks'::character varying::text, 'automation_rules'::character varying::text])", name: "access_role_grants_supported_resource"
+    t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying, 'own'::character varying, 'team'::character varying, 'all'::character varying]::text[])", name: "access_role_grants_supported_scope"
+    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'transition'::character varying, 'take'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying, 'override_schedule'::character varying, 'complete_cancel'::character varying, 'manage'::character varying]::text[])", name: "access_role_grants_supported_capability"
+    t.check_constraint "resource::text = 'contacts'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'conversations'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'take'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_finance'::character varying, 'manage_finance'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'override_schedule'::character varying]::text[])) OR resource::text = 'deals'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'tasks'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'complete_cancel'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'automation_rules'::text AND capability::text = 'manage'::text AND (access_scope::text = ANY (ARRAY['none'::character varying, 'all'::character varying]::text[])) OR resource::text = 'telephony_calls'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'view_reports'::character varying]::text[]))", name: "access_role_grants_supported_resource_capability"
+    t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying, 'conversations'::character varying, 'appointments'::character varying, 'deals'::character varying, 'tasks'::character varying, 'automation_rules'::character varying, 'telephony_calls'::character varying]::text[])", name: "access_role_grants_supported_resource"
   end
 
   create_table "access_roles", force: :cascade do |t|
@@ -57,8 +57,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["account_id"], name: "index_access_roles_on_account_id"
     t.index ["legacy_custom_role_id"], name: "index_access_roles_on_legacy_custom_role", unique: true, where: "(legacy_custom_role_id IS NOT NULL)"
     t.check_constraint "btrim(name::text) <> ''::text", name: "access_roles_non_blank_name"
-    t.check_constraint "grant_source::text = ANY (ARRAY['legacy'::character varying::text, 'canonical'::character varying::text])", name: "chk_access_roles_grant_source"
-    t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying::text, 'department_lead'::character varying::text, 'employee'::character varying::text, 'commercial_director'::character varying::text, 'observer'::character varying::text]))", name: "access_roles_supported_system_key"
+    t.check_constraint "grant_source::text = ANY (ARRAY['legacy'::character varying, 'canonical'::character varying]::text[])", name: "chk_access_roles_grant_source"
+    t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying, 'department_lead'::character varying, 'employee'::character varying, 'commercial_director'::character varying, 'observer'::character varying]::text[]))", name: "access_roles_supported_system_key"
     t.check_constraint "system_key IS NULL OR legacy_custom_role_id IS NULL", name: "access_roles_single_identity_source"
   end
 
@@ -70,8 +70,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "updated_at", null: false
     t.index ["owner_type", "owner_id"], name: "index_access_tokens_on_owner_type_and_owner_id"
     t.index ["token"], name: "index_access_tokens_on_token", unique: true
-    t.check_constraint "owner_type::text IS DISTINCT FROM 'AgentBot'::text", name: "access_tokens_agent_bot_owner_retired"
   end
+
+  add_check_constraint "access_tokens", "owner_type::text IS DISTINCT FROM 'AgentBot'::text", name: "access_tokens_agent_bot_owner_retired", validate: false
 
   create_table "account_saml_settings", force: :cascade do |t|
     t.bigint "account_id", null: false
@@ -83,8 +84,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_account_saml_settings_on_account_id"
-    t.check_constraint "false", name: "account_saml_settings_retired"
   end
+
+  add_check_constraint "account_saml_settings", "false", name: "account_saml_settings_retired", validate: false
 
   create_table "account_user_lifecycle_snapshots", force: :cascade do |t|
     t.bigint "account_id", null: false
@@ -136,7 +138,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
 
   create_table "accounts", id: :serial, force: :cascade do |t|
     t.string "name", null: false
-    t.string "access_control_mode", default: "legacy", null: false
     t.datetime "created_at", precision: nil, null: false
     t.datetime "updated_at", precision: nil, null: false
     t.integer "locale", default: 0
@@ -151,11 +152,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.jsonb "settings", default: {}
     t.jsonb "feature_flags_overflow", default: [], null: false
     t.bigint "billing_organization_id"
+    t.string "access_control_mode", default: "legacy", null: false
     t.datetime "access_role_canonicalized_at"
     t.index ["access_role_canonicalized_at"], name: "index_accounts_on_access_role_canonicalized_at"
     t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
-    t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying::text, 'shadow'::character varying::text, 'enforced'::character varying::text])", name: "accounts_supported_access_control_mode"
+    t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying, 'shadow'::character varying, 'enforced'::character varying]::text[])", name: "accounts_supported_access_control_mode"
   end
 
   create_table "action_mailbox_inbound_emails", force: :cascade do |t|
@@ -175,8 +177,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "created_at", precision: nil, null: false
     t.index ["blob_id"], name: "index_active_storage_attachments_on_blob_id"
     t.index ["record_type", "record_id", "name", "blob_id"], name: "index_active_storage_attachments_uniqueness", unique: true
-    t.check_constraint "record_type::text IS DISTINCT FROM 'AgentBot'::text", name: "attachments_agent_bot_record_retired"
   end
+
+  add_check_constraint "active_storage_attachments", "record_type::text IS DISTINCT FROM 'AgentBot'::text", name: "attachments_agent_bot_record_retired", validate: false
 
   create_table "active_storage_blobs", force: :cascade do |t|
     t.string "key", null: false
@@ -203,8 +206,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "account_id"
-    t.check_constraint "false", name: "agent_bot_inboxes_retired"
   end
+
+  add_check_constraint "agent_bot_inboxes", "false", name: "agent_bot_inboxes_retired", validate: false
 
   create_table "agent_bots", force: :cascade do |t|
     t.string "name"
@@ -217,8 +221,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.jsonb "bot_config", default: {}
     t.string "secret"
     t.index ["account_id"], name: "index_agent_bots_on_account_id"
-    t.check_constraint "false", name: "agent_bots_retired"
   end
+
+  add_check_constraint "agent_bots", "false", name: "agent_bots_retired", validate: false
 
   create_table "agent_capacity_policies", force: :cascade do |t|
     t.bigint "account_id", null: false
@@ -480,7 +485,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.check_constraint "schema_version > 0", name: "automation_events_positive_schema_version"
     t.check_constraint "status::text = 'dead'::text AND dead_at IS NOT NULL OR status::text <> 'dead'::text AND dead_at IS NULL", name: "automation_events_complete_dead_state"
     t.check_constraint "status::text = 'processing'::text AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL OR status::text <> 'processing'::text AND lease_owner IS NULL AND lease_expires_at IS NULL", name: "automation_events_status_lease_coherence"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'processing'::character varying::text, 'retrying'::character varying::text, 'completed'::character varying::text, 'dead'::character varying::text])", name: "automation_events_supported_status"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'processing'::character varying, 'retrying'::character varying, 'completed'::character varying, 'dead'::character varying]::text[])", name: "automation_events_supported_status"
   end
 
   create_table "automation_executions", force: :cascade do |t|
@@ -525,7 +530,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.check_constraint "schema_version > 0", name: "automation_executions_positive_schema_version"
     t.check_constraint "status::text = 'needs_attention'::text AND needs_attention_at IS NOT NULL OR status::text <> 'needs_attention'::text AND needs_attention_at IS NULL", name: "automation_executions_attention_state"
     t.check_constraint "status::text = 'processing'::text AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL OR status::text <> 'processing'::text AND lease_owner IS NULL AND lease_expires_at IS NULL", name: "automation_executions_status_lease_coherence"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'scheduled'::character varying::text, 'processing'::character varying::text, 'retrying'::character varying::text, 'succeeded'::character varying::text, 'cancelled'::character varying::text, 'needs_attention'::character varying::text])", name: "automation_executions_supported_status"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'scheduled'::character varying, 'processing'::character varying, 'retrying'::character varying, 'succeeded'::character varying, 'cancelled'::character varying, 'needs_attention'::character varying]::text[])", name: "automation_executions_supported_status"
   end
 
   create_table "automation_rule_groups", force: :cascade do |t|
@@ -818,6 +823,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["account_id", "group_name"], name: "index_captain_custom_tools_on_account_id_and_group_name"
     t.index ["account_id", "slug"], name: "index_captain_custom_tools_on_account_id_and_slug", unique: true
     t.index ["account_id"], name: "index_captain_custom_tools_on_account_id"
+  end
+
+  create_table "captain_delivery_receipt_replay_cursors", force: :cascade do |t|
+    t.bigint "last_message_id", default: 0, null: false
+    t.bigint "last_reminder_id", default: 0, null: false
+    t.bigint "message_high_water_id", default: 0, null: false
+    t.bigint "reminder_high_water_id", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "captain_document_chunks", force: :cascade do |t|
@@ -1302,36 +1316,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["inbox_id"], name: "index_communication_thread_conversations_on_inbox_id"
   end
 
-  create_table "communication_thread_participant_lifecycle_facts", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.bigint "communication_thread_id", null: false
-    t.string "participant_type", default: "User", null: false
-    t.bigint "participant_id", null: false
-    t.string "actor_kind", null: false
-    t.string "actor_type", null: false
-    t.bigint "actor_id"
-    t.string "action", null: false
-    t.string "reason", null: false
-    t.datetime "occurred_at", null: false
-    t.datetime "reliable_since"
-    t.uuid "correlation_id", null: false
-    t.string "idempotency_key", null: false
-    t.integer "schema_version", default: 1, null: false
-    t.datetime "created_at", null: false
-    t.index ["account_id", "action", "occurred_at", "id"], name: "idx_thread_participant_facts_action_time"
-    t.index ["account_id", "communication_thread_id", "occurred_at", "id"], name: "idx_thread_participant_facts_thread_time"
-    t.index ["account_id", "idempotency_key"], name: "idx_thread_participant_facts_idempotency", unique: true
-    t.index ["account_id", "participant_id", "occurred_at", "id"], name: "idx_thread_participant_facts_participant_time"
-    t.index ["account_id"], name: "idx_on_account_id_f6029513b5"
-    t.check_constraint "action::text = ANY (ARRAY['add'::character varying, 'remove'::character varying, 'clear'::character varying, 'retain'::character varying, 'promote'::character varying, 'resolve'::character varying]::text[])", name: "chk_thread_participant_facts_action"
-    t.check_constraint "actor_kind::text = 'system'::text AND actor_id IS NULL OR actor_kind::text <> 'system'::text AND actor_id IS NOT NULL", name: "chk_thread_participant_facts_actor_identity"
-    t.check_constraint "actor_kind::text = ANY (ARRAY['system'::character varying, 'user'::character varying, 'customer'::character varying, 'captain'::character varying, 'automation'::character varying]::text[])", name: "chk_thread_participant_facts_actor_kind"
-    t.check_constraint "actor_kind::text = 'system'::text AND actor_type::text = 'System'::text OR actor_kind::text = 'user'::text AND actor_type::text = 'User'::text OR actor_kind::text = 'customer'::text AND actor_type::text = 'Contact'::text OR actor_kind::text = 'captain'::text AND actor_type::text = 'Captain::Assistant'::text OR actor_kind::text = 'automation'::text AND actor_type::text = ANY (ARRAY['AssignmentPolicy'::character varying, 'AutomationRule'::character varying, 'Inbox'::character varying]::text[])", name: "chk_thread_participant_facts_actor_type"
-    t.check_constraint "participant_type::text = 'User'::text", name: "chk_thread_participant_facts_participant_type"
-    t.check_constraint "reliable_since IS NULL OR reliable_since <= occurred_at", name: "chk_thread_participant_facts_reliable_since"
-    t.check_constraint "schema_version = 1", name: "chk_thread_participant_facts_schema_version"
-  end
-
   create_table "communication_thread_manual_call_occurrences", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "communication_thread_id", null: false
@@ -1355,6 +1339,36 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.check_constraint "source_kind::text = 'telephony_call_session'::text", name: "chk_thread_manual_calls_source_kind"
   end
 
+  create_table "communication_thread_participant_lifecycle_facts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id", null: false
+    t.string "participant_type", default: "User", null: false
+    t.bigint "participant_id", null: false
+    t.string "actor_kind", null: false
+    t.string "actor_type", null: false
+    t.bigint "actor_id"
+    t.string "action", null: false
+    t.string "reason", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "reliable_since"
+    t.uuid "correlation_id", null: false
+    t.string "idempotency_key", null: false
+    t.integer "schema_version", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "action", "occurred_at", "id"], name: "idx_thread_participant_facts_action_time"
+    t.index ["account_id", "communication_thread_id", "occurred_at", "id"], name: "idx_thread_participant_facts_thread_time"
+    t.index ["account_id", "idempotency_key"], name: "idx_thread_participant_facts_idempotency", unique: true
+    t.index ["account_id", "participant_id", "occurred_at", "id"], name: "idx_thread_participant_facts_participant_time"
+    t.index ["account_id"], name: "idx_on_account_id_f6029513b5"
+    t.check_constraint "action::text = ANY (ARRAY['add'::character varying, 'remove'::character varying, 'clear'::character varying, 'retain'::character varying, 'promote'::character varying, 'resolve'::character varying]::text[])", name: "chk_thread_participant_facts_action"
+    t.check_constraint "actor_kind::text = 'system'::text AND actor_id IS NULL OR actor_kind::text <> 'system'::text AND actor_id IS NOT NULL", name: "chk_thread_participant_facts_actor_identity"
+    t.check_constraint "actor_kind::text = 'system'::text AND actor_type::text = 'System'::text OR actor_kind::text = 'user'::text AND actor_type::text = 'User'::text OR actor_kind::text = 'customer'::text AND actor_type::text = 'Contact'::text OR actor_kind::text = 'captain'::text AND actor_type::text = 'Captain::Assistant'::text OR actor_kind::text = 'automation'::text AND (actor_type::text = ANY (ARRAY['AssignmentPolicy'::character varying, 'AutomationRule'::character varying, 'Inbox'::character varying]::text[]))", name: "chk_thread_participant_facts_actor_type"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['system'::character varying, 'user'::character varying, 'customer'::character varying, 'captain'::character varying, 'automation'::character varying]::text[])", name: "chk_thread_participant_facts_actor_kind"
+    t.check_constraint "participant_type::text = 'User'::text", name: "chk_thread_participant_facts_participant_type"
+    t.check_constraint "reliable_since IS NULL OR reliable_since <= occurred_at", name: "chk_thread_participant_facts_reliable_since"
+    t.check_constraint "schema_version = 1", name: "chk_thread_participant_facts_schema_version"
+  end
+
   create_table "communication_thread_participants", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "communication_thread_id", null: false
@@ -1367,6 +1381,58 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["added_by_id"], name: "index_communication_thread_participants_on_added_by_id"
     t.index ["communication_thread_id", "user_id"], name: "idx_thread_participants_thread_user", unique: true
     t.index ["user_id"], name: "index_communication_thread_participants_on_user_id"
+  end
+
+  create_table "communication_thread_state_transition_facts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "communication_thread_id_snapshot", null: false
+    t.bigint "thread_display_id_snapshot", null: false
+    t.bigint "contact_id_snapshot", null: false
+    t.string "event_kind", null: false
+    t.datetime "occurred_at", null: false
+    t.datetime "requested_occurred_at", null: false
+    t.datetime "reliable_since", null: false
+    t.integer "source_version", default: 1, null: false
+    t.string "request_fingerprint", limit: 64
+    t.bigint "from_assignee_id"
+    t.string "from_assignee_name"
+    t.bigint "to_assignee_id"
+    t.string "to_assignee_name"
+    t.bigint "from_team_id"
+    t.string "from_team_name"
+    t.bigint "to_team_id"
+    t.string "to_team_name"
+    t.string "from_status"
+    t.string "to_status", null: false
+    t.string "source", null: false
+    t.string "source_record_type"
+    t.bigint "source_record_id"
+    t.uuid "source_event_id", null: false
+    t.string "actor_kind", null: false
+    t.bigint "actor_id"
+    t.string "actor_name"
+    t.string "idempotency_key", null: false
+    t.datetime "created_at", null: false
+    t.index ["account_id", "communication_thread_id_snapshot", "occurred_at", "id"], name: "idx_thread_state_facts_thread_time"
+    t.index ["account_id", "event_kind", "occurred_at", "id"], name: "idx_thread_state_facts_kind_time"
+    t.index ["account_id", "idempotency_key"], name: "idx_thread_state_facts_idempotency", unique: true
+    t.index ["account_id", "occurred_at", "id"], name: "idx_thread_state_facts_account_time"
+    t.index ["account_id", "to_assignee_id", "occurred_at", "id"], name: "idx_thread_state_facts_assignee_time"
+    t.index ["account_id", "to_team_id", "occurred_at", "id"], name: "idx_thread_state_facts_team_time"
+    t.index ["account_id"], name: "idx_on_account_id_e354bf1064"
+    t.check_constraint "(actor_kind::text = ANY (ARRAY['system'::character varying, 'unknown'::character varying]::text[])) AND actor_id IS NULL OR (actor_kind::text = ANY (ARRAY['user'::character varying, 'contact'::character varying, 'captain'::character varying, 'automation'::character varying]::text[])) AND actor_id IS NOT NULL", name: "chk_thread_state_facts_actor_identity"
+    t.check_constraint "(source_record_type IS NULL) = (source_record_id IS NULL)", name: "chk_thread_state_facts_source_record"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['user'::character varying, 'contact'::character varying, 'captain'::character varying, 'system'::character varying, 'automation'::character varying, 'unknown'::character varying]::text[])", name: "chk_thread_state_facts_actor_kind"
+    t.check_constraint "btrim(source::text) <> ''::text AND btrim(idempotency_key::text) <> ''::text", name: "chk_thread_state_facts_nonblank_identity"
+    t.check_constraint "event_kind::text <> 'reopened'::text OR from_status::text = 'resolved'::text AND to_status::text <> 'resolved'::text", name: "chk_thread_state_facts_reopened"
+    t.check_constraint "event_kind::text <> 'resolved'::text OR from_status::text <> 'resolved'::text AND to_status::text = 'resolved'::text", name: "chk_thread_state_facts_resolved"
+    t.check_constraint "event_kind::text <> 'routing_changed'::text OR from_assignee_id IS DISTINCT FROM to_assignee_id OR from_team_id IS DISTINCT FROM to_team_id", name: "chk_thread_state_facts_routing_changed"
+    t.check_constraint "event_kind::text = 'created'::text AND from_assignee_id IS NULL AND from_team_id IS NULL AND from_status IS NULL OR event_kind::text <> 'created'::text AND from_status IS NOT NULL AND (from_assignee_id IS DISTINCT FROM to_assignee_id OR from_team_id IS DISTINCT FROM to_team_id OR from_status::text IS DISTINCT FROM to_status::text)", name: "chk_thread_state_facts_effective_change"
+    t.check_constraint "event_kind::text = ANY (ARRAY['created'::character varying, 'routing_changed'::character varying, 'resolved'::character varying, 'reopened'::character varying, 'state_changed'::character varying]::text[])", name: "chk_thread_state_facts_event_kind"
+    t.check_constraint "reliable_since <= occurred_at", name: "chk_thread_state_facts_reliable_since"
+    t.check_constraint "requested_occurred_at <= occurred_at", name: "chk_thread_state_facts_requested_occurred_at"
+    t.check_constraint "source::text = 'database_projection_fallback'::text AND request_fingerprint IS NULL OR source::text <> 'database_projection_fallback'::text AND request_fingerprint IS NOT NULL AND request_fingerprint::text ~ '^[0-9a-f]{64}$'::text", name: "chk_thread_state_facts_request_fingerprint"
+    t.check_constraint "source_version = 1", name: "chk_thread_state_facts_source_version"
   end
 
   create_table "communication_threads", force: :cascade do |t|
@@ -1382,6 +1448,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.datetime "session_started_at"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "contact_id"], name: "idx_communication_threads_one_per_contact", unique: true
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
@@ -1598,6 +1667,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "waiting_since"
     t.text "cached_label_list"
     t.bigint "assignee_agent_bot_id"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.string "identity_key"
     t.index ["account_id", "display_id"], name: "index_conversations_on_account_id_and_display_id", unique: true
     t.index ["account_id", "id"], name: "index_conversations_on_id_and_account_id"
@@ -1617,8 +1689,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["team_id"], name: "index_conversations_on_team_id"
     t.index ["uuid"], name: "index_conversations_on_uuid", unique: true
     t.index ["waiting_since"], name: "index_conversations_on_waiting_since"
-    t.check_constraint "assignee_agent_bot_id IS NULL", name: "conversations_agent_bot_assignment_retired"
   end
+
+  add_check_constraint "conversations", "assignee_agent_bot_id IS NULL", name: "conversations_agent_bot_assignment_retired", validate: false
 
   create_table "copilot_messages", force: :cascade do |t|
     t.bigint "copilot_thread_id", null: false
@@ -1734,11 +1807,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.string "event_type", null: false
     t.jsonb "meta", default: {}, null: false
     t.datetime "created_at", null: false
+    t.uuid "correlation_id", default: -> { "gen_random_uuid()" }, null: false
     t.string "source", default: "system", null: false
     t.string "actor_kind"
     t.jsonb "before_data", default: {}, null: false
     t.jsonb "after_data", default: {}, null: false
-    t.uuid "correlation_id", null: false
     t.uuid "causation_id"
     t.integer "schema_version", default: 1, null: false
     t.string "command_key"
@@ -1861,7 +1934,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
-    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY (ARRAY[('won'::character varying)::text, ('lost'::character varying)::text])))"
+    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
   end
@@ -1990,7 +2063,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.check_constraint "all_day = true AND due_on IS NOT NULL AND due_at IS NULL AND start_at IS NULL OR all_day = false AND due_on IS NULL", name: "crm_tasks_deadline_shape"
     t.check_constraint "cancelled_at IS NULL AND cancellation_reason IS NULL OR cancelled_at IS NOT NULL AND length(btrim(cancellation_reason)) > 0", name: "crm_tasks_cancellation_state_complete"
     t.check_constraint "context_kind::text <> 'sales'::text OR deal_id IS NOT NULL", name: "crm_tasks_sales_context_requires_deal"
-    t.check_constraint "context_kind::text = ANY (ARRAY['sales'::character varying::text, 'personal'::character varying::text])", name: "crm_tasks_context_kind_allowed"
+    t.check_constraint "context_kind::text = ANY (ARRAY['sales'::character varying, 'personal'::character varying]::text[])", name: "crm_tasks_context_kind_allowed"
     t.check_constraint "reschedule_count >= 0", name: "crm_tasks_reschedule_count_non_negative"
   end
 
@@ -2650,6 +2723,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.text "processed_message_content"
     t.jsonb "sentiment", default: {}
     t.index "((additional_attributes -> 'campaign_id'::text))", name: "index_messages_on_additional_attributes_campaign_id", using: :gin
+    t.index ["id"], name: "idx_messages_captain_deferred_cloud_replay", where: "((additional_attributes ->> 'captain_delivery_state'::text) = 'deferred'::text)"
+    t.index ["id"], name: "idx_messages_captain_known_receipt_replay", where: "(((additional_attributes ->> 'captain_delivery_state') = 'dispatching' AND source_id IS NOT NULL) OR ((additional_attributes ->> 'captain_delivery_state') = 'submitted' AND (additional_attributes -> 'captain_delivery_pending_ack' ->> 'status') = 'delivered') OR ((additional_attributes ->> 'captain_delivery_state') = 'provider_failed' AND (additional_attributes -> 'captain_delivery_pending_ack' ->> 'status') = 'failed'))"
     t.index "to_tsvector('english'::regconfig, COALESCE(content, ''::text))", name: "index_messages_on_english_search_vector", using: :gin
     t.index ["account_id", "content_type", "created_at"], name: "idx_messages_account_content_created"
     t.index ["account_id", "conversation_id", "created_at"], name: "idx_messages_account_conversation_public_chat_time", order: { created_at: :desc }, where: "((private = false) AND (message_type <> 2))"
@@ -2664,8 +2739,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["inbox_id"], name: "index_messages_on_inbox_id"
     t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
     t.index ["source_id"], name: "index_messages_on_source_id"
-    t.check_constraint "sender_type::text IS DISTINCT FROM 'AgentBot'::text", name: "messages_agent_bot_sender_retired"
   end
+
+  add_check_constraint "messages", "sender_type::text IS DISTINCT FROM 'AgentBot'::text", name: "messages_agent_bot_sender_retired", validate: false
 
   create_table "meta_ad_referrals", force: :cascade do |t|
     t.bigint "account_id", null: false
@@ -2839,8 +2915,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["permissible_type", "permissible_id"], name: "index_platform_app_permissibles_on_permissibles"
     t.index ["platform_app_id", "permissible_id", "permissible_type"], name: "unique_permissibles_index", unique: true
     t.index ["platform_app_id"], name: "index_platform_app_permissibles_on_platform_app_id"
-    t.check_constraint "permissible_type::text IS DISTINCT FROM 'AgentBot'::text", name: "platform_permissions_agent_bot_retired"
   end
+
+  add_check_constraint "platform_app_permissibles", "permissible_type::text IS DISTINCT FROM 'AgentBot'::text", name: "platform_permissions_agent_bot_retired", validate: false
 
   create_table "platform_apps", force: :cascade do |t|
     t.string "name", null: false
@@ -2957,6 +3034,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.string "response_action"
     t.integer "response_button_index"
     t.string "idempotency_key"
+    t.index ["id"], name: "idx_reminders_captain_unfinished_delivery", where: "((status IN (2, 3)) AND ((metadata ->> 'processing_claim_token'::text) IS NOT NULL) AND ((metadata ->> 'delivery_materialized_message_id'::text) IS NOT NULL) AND ((metadata ->> 'delivery_dispatched_message_id'::text) IS DISTINCT FROM (metadata ->> 'delivery_materialized_message_id'::text)))"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
     t.index ["account_id", "idempotency_key"], name: "idx_reminders_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
@@ -2973,7 +3051,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"
     t.index ["target_inbox_id"], name: "index_reminders_on_target_inbox_id"
     t.check_constraint "post_delivery_action IS NULL OR post_delivery_action::text = 'resolve_conversation'::text AND action_type = 0 AND repeat_mode = 0 AND remindable_type::text = 'Conversation'::text AND remindable_id IS NOT NULL AND conversation_id = remindable_id AND target_conversation_id = remindable_id", name: "reminders_post_delivery_action_supported"
-    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index >= 0 AND response_button_index <= 2 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
+    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index = 0 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
   end
 
   create_table "reporting_events", force: :cascade do |t|
@@ -3031,6 +3109,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.string "status", default: "scheduled", null: false
     t.string "appointment_type", default: "primary", null: false
     t.string "client_name", null: false
+    t.string "client_first_name"
+    t.string "client_last_name"
+    t.string "client_middle_name"
     t.string "client_phone"
     t.string "client_identifier"
     t.date "client_birth_date"
@@ -3052,11 +3133,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
-    t.string "client_first_name"
-    t.string "client_last_name"
-    t.string "client_middle_name"
     t.string "title"
     t.bigint "team_id"
+    t.index "account_id, regexp_replace((client_identifier)::text, '[^0-9]'::text, ''::text, 'g'::text)", name: "idx_scheduling_appointments_account_normalized_identifier", where: "(client_identifier IS NOT NULL)"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -3370,64 +3449,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["provider_model_id"], name: "index_fish_voices_on_provider_model_id", unique: true
   end
 
-  create_table "telephony_logical_call_occurrences", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.string "logical_call_identity", null: false
-    t.string "logical_call_ref", null: false
-    t.string "occurrence_kind", null: false
-    t.string "source_kind", null: false
-    t.bigint "source_id", null: false
-    t.string "source_ref", null: false
-    t.string "correlation_ref"
-    t.string "provider", null: false
-    t.string "direction", null: false
-    t.bigint "inbox_id_snapshot"
-    t.bigint "contact_id_snapshot"
-    t.bigint "conversation_id_snapshot"
-    t.bigint "communication_thread_id_snapshot"
-    t.string "actor_kind", default: "unknown", null: false
-    t.bigint "actor_id_snapshot"
-    t.string "actor_name_snapshot"
-    t.bigint "actor_team_id_snapshot"
-    t.string "actor_team_name_snapshot"
-    t.bigint "assistant_id_snapshot"
-    t.string "assistant_name_snapshot"
-    t.datetime "occurred_at", null: false
-    t.datetime "connected_at"
-    t.datetime "terminal_at"
-    t.integer "duration_seconds"
-    t.string "duration_source"
-    t.string "terminal_status"
-    t.string "terminal_reason"
-    t.string "reliability", default: "exact", null: false
-    t.datetime "reliable_since", null: false
-    t.integer "source_version", default: 1, null: false
-    t.integer "definition_version", default: 1, null: false
-    t.integer "revision", default: 1, null: false
-    t.bigint "supersedes_occurrence_id"
-    t.datetime "created_at", null: false
-    t.index ["account_id", "actor_kind", "actor_id_snapshot", "occurred_at", "id"], name: "idx_telephony_occurrences_actor_time"
-    t.index ["account_id", "logical_call_identity", "occurrence_kind", "source_version", "revision"], name: "idx_telephony_occurrences_logical_grain", unique: true
-    t.index ["account_id", "logical_call_identity", "occurred_at", "id"], name: "idx_telephony_occurrences_logical_time"
-    t.index ["account_id", "occurrence_kind", "occurred_at", "id"], name: "idx_telephony_occurrences_account_kind_time"
-    t.index ["account_id"], name: "index_telephony_logical_call_occurrences_on_account_id"
-    t.index ["supersedes_occurrence_id"], name: "idx_telephony_occurrences_one_successor", unique: true, where: "(supersedes_occurrence_id IS NOT NULL)"
-    t.check_constraint "actor_kind = 'ai_agent'::text OR assistant_id_snapshot IS NULL AND assistant_name_snapshot IS NULL", name: "chk_telephony_occurrences_ai_actor"
-    t.check_constraint "actor_kind = 'human'::text OR actor_id_snapshot IS NULL AND actor_team_id_snapshot IS NULL", name: "chk_telephony_occurrences_human_actor"
-    t.check_constraint "actor_kind::text = ANY (ARRAY['human'::character varying, 'ai_agent'::character varying, 'system'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_actor_kind"
-    t.check_constraint "direction::text = ANY (ARRAY['inbound'::character varying, 'outbound'::character varying]::text[])", name: "chk_telephony_occurrences_direction"
-    t.check_constraint "duration_seconds IS NULL OR duration_seconds >= 0", name: "chk_telephony_occurrences_duration"
-    t.check_constraint "duration_source IS NULL OR duration_source::text = ANY (ARRAY['connected_to_terminal'::character varying, 'provider_reported'::character varying]::text[])", name: "chk_telephony_occurrences_duration_source"
-    t.check_constraint "occurrence_kind::text = ANY (ARRAY['attempted'::character varying, 'connected'::character varying, 'terminal'::character varying]::text[])", name: "chk_telephony_occurrences_kind"
-    t.check_constraint "reliability::text = ANY (ARRAY['exact'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_reliability"
-    t.check_constraint "revision >= 1", name: "chk_telephony_occurrences_revision"
-    t.check_constraint "source_kind::text = 'telephony_call_session'::text", name: "chk_telephony_occurrences_source_kind"
-    t.check_constraint "occurrence_kind::text = 'terminal'::text OR duration_seconds IS NULL AND duration_source IS NULL AND terminal_status IS NULL", name: "chk_telephony_occurrences_terminal_fields"
-    t.check_constraint "revision = 1 AND supersedes_occurrence_id IS NULL OR revision > 1 AND supersedes_occurrence_id IS NOT NULL", name: "chk_telephony_occurrences_supersession"
-    t.check_constraint "occurrence_kind::text = 'attempted'::text AND connected_at IS NULL AND terminal_at IS NULL OR occurrence_kind::text = 'connected'::text AND (connected_at IS NOT NULL OR reliability::text = 'unknown'::text) AND terminal_at IS NULL OR occurrence_kind::text = 'terminal'::text AND terminal_at IS NOT NULL", name: "chk_telephony_occurrences_timestamps"
-    t.check_constraint "source_version = 1 AND definition_version = 1", name: "chk_telephony_occurrences_versions"
-  end
-
   create_table "telephony_call_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "conversation_id"
@@ -3510,6 +3531,64 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["account_id", "event_type", "created_at"], name: "index_telephony_events_on_account_event_type_created_at"
     t.index ["account_id"], name: "index_telephony_events_on_account_id"
     t.index ["call_session_id"], name: "index_telephony_events_on_call_session_id"
+  end
+
+  create_table "telephony_logical_call_occurrences", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "logical_call_identity", null: false
+    t.string "logical_call_ref", null: false
+    t.string "occurrence_kind", null: false
+    t.string "source_kind", null: false
+    t.bigint "source_id", null: false
+    t.string "source_ref", null: false
+    t.string "correlation_ref"
+    t.string "provider", null: false
+    t.string "direction", null: false
+    t.bigint "inbox_id_snapshot"
+    t.bigint "contact_id_snapshot"
+    t.bigint "conversation_id_snapshot"
+    t.bigint "communication_thread_id_snapshot"
+    t.string "actor_kind", default: "unknown", null: false
+    t.bigint "actor_id_snapshot"
+    t.string "actor_name_snapshot"
+    t.bigint "actor_team_id_snapshot"
+    t.string "actor_team_name_snapshot"
+    t.bigint "assistant_id_snapshot"
+    t.string "assistant_name_snapshot"
+    t.datetime "occurred_at", null: false
+    t.datetime "connected_at"
+    t.datetime "terminal_at"
+    t.integer "duration_seconds"
+    t.string "duration_source"
+    t.string "terminal_status"
+    t.string "terminal_reason"
+    t.string "reliability", default: "exact", null: false
+    t.datetime "reliable_since", null: false
+    t.integer "source_version", default: 1, null: false
+    t.integer "definition_version", default: 1, null: false
+    t.integer "revision", default: 1, null: false
+    t.bigint "supersedes_occurrence_id"
+    t.datetime "created_at", null: false
+    t.index ["account_id", "actor_kind", "actor_id_snapshot", "occurred_at", "id"], name: "idx_telephony_occurrences_actor_time"
+    t.index ["account_id", "logical_call_identity", "occurred_at", "id"], name: "idx_telephony_occurrences_logical_time"
+    t.index ["account_id", "logical_call_identity", "occurrence_kind", "source_version", "revision"], name: "idx_telephony_occurrences_logical_grain", unique: true
+    t.index ["account_id", "occurrence_kind", "occurred_at", "id"], name: "idx_telephony_occurrences_account_kind_time"
+    t.index ["account_id"], name: "index_telephony_logical_call_occurrences_on_account_id"
+    t.index ["supersedes_occurrence_id"], name: "idx_telephony_occurrences_one_successor", unique: true, where: "(supersedes_occurrence_id IS NOT NULL)"
+    t.check_constraint "actor_kind::text = 'ai_agent'::text OR assistant_id_snapshot IS NULL AND assistant_name_snapshot IS NULL", name: "chk_telephony_occurrences_ai_actor"
+    t.check_constraint "actor_kind::text = 'human'::text OR actor_id_snapshot IS NULL AND actor_team_id_snapshot IS NULL", name: "chk_telephony_occurrences_human_actor"
+    t.check_constraint "actor_kind::text = ANY (ARRAY['human'::character varying, 'ai_agent'::character varying, 'system'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_actor_kind"
+    t.check_constraint "direction::text = ANY (ARRAY['inbound'::character varying, 'outbound'::character varying]::text[])", name: "chk_telephony_occurrences_direction"
+    t.check_constraint "duration_seconds IS NULL OR duration_seconds >= 0", name: "chk_telephony_occurrences_duration"
+    t.check_constraint "duration_source IS NULL OR (duration_source::text = ANY (ARRAY['connected_to_terminal'::character varying, 'provider_reported'::character varying]::text[]))", name: "chk_telephony_occurrences_duration_source"
+    t.check_constraint "occurrence_kind::text = 'attempted'::text AND connected_at IS NULL AND terminal_at IS NULL OR occurrence_kind::text = 'connected'::text AND (connected_at IS NOT NULL OR reliability::text = 'unknown'::text) AND terminal_at IS NULL OR occurrence_kind::text = 'terminal'::text AND terminal_at IS NOT NULL", name: "chk_telephony_occurrences_timestamps"
+    t.check_constraint "occurrence_kind::text = 'terminal'::text OR duration_seconds IS NULL AND duration_source IS NULL AND terminal_status IS NULL", name: "chk_telephony_occurrences_terminal_fields"
+    t.check_constraint "occurrence_kind::text = ANY (ARRAY['attempted'::character varying, 'connected'::character varying, 'terminal'::character varying]::text[])", name: "chk_telephony_occurrences_kind"
+    t.check_constraint "reliability::text = ANY (ARRAY['exact'::character varying, 'unknown'::character varying]::text[])", name: "chk_telephony_occurrences_reliability"
+    t.check_constraint "revision = 1 AND supersedes_occurrence_id IS NULL OR revision > 1 AND supersedes_occurrence_id IS NOT NULL", name: "chk_telephony_occurrences_supersession"
+    t.check_constraint "revision >= 1", name: "chk_telephony_occurrences_revision"
+    t.check_constraint "source_kind::text = 'telephony_call_session'::text", name: "chk_telephony_occurrences_source_kind"
+    t.check_constraint "source_version = 1 AND definition_version = 1", name: "chk_telephony_occurrences_versions"
   end
 
   create_table "telephony_number_bindings", force: :cascade do |t|
@@ -3717,7 +3796,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.bigint "automation_rule_id"
     t.string "source_action_id"
     t.bigint "source_generation", default: 1
-    t.index ["account_id", "automation_rule_id", "source_generation", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action_generation", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
+    t.index ["account_id", "automation_rule_id", "source_generation", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action_generation", unique: true, where: "(((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
     t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
@@ -3772,8 +3851,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
     t.index ["pubsub_token"], name: "index_users_on_pubsub_token", unique: true
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
     t.index ["uid", "provider"], name: "index_users_on_uid_and_provider", unique: true
-    t.check_constraint "provider::text IS DISTINCT FROM 'saml'::text", name: "users_saml_provider_retired"
   end
+
+  add_check_constraint "users", "provider::text IS DISTINCT FROM 'saml'::text", name: "users_saml_provider_retired", validate: false
 
   create_table "webhooks", force: :cascade do |t|
     t.integer "account_id"
@@ -4054,6 +4134,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "communication_thread_participants", "communication_threads", column: ["account_id", "communication_thread_id"], primary_key: ["account_id", "id"], name: "fk_thread_participants_thread_account"
   add_foreign_key "communication_thread_participants", "users"
   add_foreign_key "communication_thread_participants", "users", column: "added_by_id"
+  add_foreign_key "communication_thread_state_transition_facts", "accounts", on_delete: :cascade
   add_foreign_key "communication_threads", "accounts"
   add_foreign_key "communication_threads", "contacts"
   add_foreign_key "communication_threads", "teams"
@@ -4077,6 +4158,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "conversation_user_read_states", "accounts", on_delete: :cascade
   add_foreign_key "conversation_user_read_states", "conversations", on_delete: :cascade
   add_foreign_key "conversation_user_read_states", "users", on_delete: :cascade
+  add_foreign_key "conversations", "teams", name: "fk_conversations_team_for_thread_state_facts", on_delete: :nullify, validate: false
   add_foreign_key "crm_comments", "accounts"
   add_foreign_key "crm_comments", "users"
   add_foreign_key "crm_deal_contacts", "accounts"
@@ -4152,12 +4234,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "accounts"
-  add_foreign_key "meta_ad_referrals", "communication_threads"
-  add_foreign_key "meta_ad_referrals", "contacts"
-  add_foreign_key "meta_ad_referrals", "conversations"
-  add_foreign_key "meta_ad_referrals", "inboxes"
-  add_foreign_key "meta_ad_referrals", "messages"
+  add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
+  add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "conversations", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "inboxes", on_delete: :cascade
+  add_foreign_key "meta_ad_referrals", "messages", on_delete: :nullify
   add_foreign_key "meta_channel_credential_healths", "accounts", on_delete: :cascade
   add_foreign_key "meta_messaging_webhook_event_routes", "accounts", on_delete: :cascade
   add_foreign_key "meta_messaging_webhook_event_routes", "meta_messaging_webhook_events", on_delete: :cascade
@@ -4210,7 +4292,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "telephony_agent_bindings", "users"
   add_foreign_key "telephony_ai_voice_fish_voices", "accounts", on_delete: :cascade
   add_foreign_key "telephony_ai_voice_fish_voices", "users", column: "created_by_id", on_delete: :nullify
-  add_foreign_key "telephony_logical_call_occurrences", "accounts"
   add_foreign_key "telephony_call_sessions", "accounts"
   add_foreign_key "telephony_call_sessions", "contacts"
   add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
@@ -4223,6 +4304,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_22_170000) do
   add_foreign_key "telephony_contact_endpoints", "telephony_number_bindings", column: "number_binding_id", on_delete: :nullify
   add_foreign_key "telephony_events", "accounts"
   add_foreign_key "telephony_events", "telephony_call_sessions", column: "call_session_id"
+  add_foreign_key "telephony_logical_call_occurrences", "accounts"
   add_foreign_key "telephony_number_bindings", "accounts"
   add_foreign_key "telephony_number_bindings", "inboxes"
   add_foreign_key "telephony_number_bindings", "telephony_provider_connections", column: "provider_connection_id"
@@ -4285,21 +4367,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.bump_automation_rule_definition_version()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF (
-    NEW.event_name IS DISTINCT FROM OLD.event_name OR
-    NEW.conditions IS DISTINCT FROM OLD.conditions OR
-    NEW.actions IS DISTINCT FROM OLD.actions OR
-    NEW.execution_schedule IS DISTINCT FROM OLD.execution_schedule OR
-    NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR
-    NEW.position IS DISTINCT FROM OLD.position
-  ) AND NEW.definition_version <= OLD.definition_version THEN
-    NEW.definition_version := OLD.definition_version + 1;
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ BEGIN IF ( NEW.event_name IS DISTINCT FROM OLD.event_name OR NEW.conditions IS DISTINCT FROM OLD.conditions OR NEW.actions IS DISTINCT FROM OLD.actions OR NEW.execution_schedule IS DISTINCT FROM OLD.execution_schedule OR NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR NEW.position IS DISTINCT FROM OLD.position ) AND NEW.definition_version <= OLD.definition_version THEN NEW.definition_version := OLD.definition_version + 1; END IF; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
@@ -4350,6 +4418,17 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.clear_thread_routing_before_account_user_delete()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN RETURN OLD; END IF; UPDATE contacts SET owner_id = NULL WHERE account_id = OLD.account_id AND owner_id = OLD.user_id; UPDATE conversations SET assignee_id = NULL WHERE account_id = OLD.account_id AND assignee_id = OLD.user_id; UPDATE communication_threads SET assignee_id = NULL WHERE account_id = OLD.account_id AND assignee_id = OLD.user_id; RETURN OLD; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER clear_thread_routing_before_account_user_delete BEFORE DELETE ON \"account_users\" FOR EACH ROW EXECUTE FUNCTION clear_thread_routing_before_account_user_delete()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.conversations_before_insert_row_tr()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -4364,50 +4443,12 @@ $function$
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER conversations_before_insert_row_tr BEFORE INSERT ON \"conversations\" FOR EACH ROW EXECUTE FUNCTION conversations_before_insert_row_tr()")
 
-  execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.automation_action_signature(action_snapshot jsonb)
- RETURNS text
- LANGUAGE sql
- IMMUTABLE STRICT
-AS $function$
-  SELECT encode(digest(convert_to(action_snapshot::text, 'UTF8'), 'sha256'), 'hex');
-$function$
-  SQL
-
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.derive_automation_action_receipt_identity()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-DECLARE
-  action_snapshot jsonb;
-  expected_action_id text;
-  expected_signature text;
-BEGIN
-  SELECT actions_snapshot -> NEW.position
-  INTO action_snapshot
-  FROM automation_executions
-  WHERE account_id = NEW.account_id AND id = NEW.automation_execution_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'automation action receipt execution does not exist in account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF action_snapshot IS NULL THEN
-    RAISE EXCEPTION 'automation action receipt position is absent from execution snapshot' USING ERRCODE = 'check_violation';
-  END IF;
-  expected_action_id := COALESCE(NULLIF(btrim(action_snapshot ->> 'action_id'), ''), 'legacy-index:' || NEW.position);
-  expected_signature := automation_action_signature(action_snapshot);
-  IF NEW.action_id IS NOT NULL AND NEW.action_id IS DISTINCT FROM expected_action_id THEN
-    RAISE EXCEPTION 'automation action receipt id does not match execution snapshot' USING ERRCODE = 'check_violation';
-  END IF;
-  IF NEW.action_signature IS NOT NULL AND NEW.action_signature IS DISTINCT FROM expected_signature THEN
-    RAISE EXCEPTION 'automation action receipt signature does not match execution snapshot' USING ERRCODE = 'check_violation';
-  END IF;
-  NEW.action_id := expected_action_id;
-  NEW.action_signature := expected_signature;
-  RETURN NEW;
-END;
-$function$
+AS $function$ DECLARE action_snapshot jsonb; expected_action_id text; expected_signature text; BEGIN SELECT actions_snapshot -> NEW.position INTO action_snapshot FROM automation_executions WHERE account_id = NEW.account_id AND id = NEW.automation_execution_id; IF NOT FOUND THEN RAISE EXCEPTION 'automation action receipt execution does not exist in account' USING ERRCODE = 'foreign_key_violation'; END IF; IF action_snapshot IS NULL THEN RAISE EXCEPTION 'automation action receipt position is absent from execution snapshot' USING ERRCODE = 'check_violation'; END IF; expected_action_id := COALESCE(NULLIF(btrim(action_snapshot ->> 'action_id'), ''), 'legacy-index:' || NEW.position); expected_signature := automation_action_signature(action_snapshot); IF NEW.action_id IS NOT NULL AND NEW.action_id IS DISTINCT FROM expected_action_id THEN RAISE EXCEPTION 'automation action receipt id does not match execution snapshot' USING ERRCODE = 'check_violation'; END IF; IF NEW.action_signature IS NOT NULL AND NEW.action_signature IS DISTINCT FROM expected_signature THEN RAISE EXCEPTION 'automation action receipt signature does not match execution snapshot' USING ERRCODE = 'check_violation'; END IF; NEW.action_id := expected_action_id; NEW.action_signature := expected_signature; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
@@ -4418,14 +4459,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_automation_action_receipt_identity_changes()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_execution_id IS DISTINCT FROM OLD.automation_execution_id OR NEW.action_id IS DISTINCT FROM OLD.action_id OR NEW.position IS DISTINCT FROM OLD.position OR NEW.action_signature IS DISTINCT FROM OLD.action_signature OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-    RAISE EXCEPTION 'automation action receipt identity is immutable' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ BEGIN IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_execution_id IS DISTINCT FROM OLD.automation_execution_id OR NEW.action_id IS DISTINCT FROM OLD.action_id OR NEW.position IS DISTINCT FROM OLD.position OR NEW.action_signature IS DISTINCT FROM OLD.action_signature OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN RAISE EXCEPTION 'automation action receipt identity is immutable' USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
@@ -4436,14 +4470,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_automation_event_envelope_changes()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.event_uuid IS DISTINCT FROM OLD.event_uuid OR NEW.dedupe_key IS DISTINCT FROM OLD.dedupe_key OR NEW.event_name IS DISTINCT FROM OLD.event_name OR NEW.subject_type IS DISTINCT FROM OLD.subject_type OR NEW.subject_id IS DISTINCT FROM OLD.subject_id OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.payload_snapshot IS DISTINCT FROM OLD.payload_snapshot OR NEW.changes_snapshot IS DISTINCT FROM OLD.changes_snapshot OR NEW.producer IS DISTINCT FROM OLD.producer OR NEW.provenance IS DISTINCT FROM OLD.provenance OR NEW.trace_id IS DISTINCT FROM OLD.trace_id OR NEW.causation_id IS DISTINCT FROM OLD.causation_id OR NEW.depth IS DISTINCT FROM OLD.depth OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-    RAISE EXCEPTION 'automation event envelope is immutable' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ BEGIN IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.event_uuid IS DISTINCT FROM OLD.event_uuid OR NEW.dedupe_key IS DISTINCT FROM OLD.dedupe_key OR NEW.event_name IS DISTINCT FROM OLD.event_name OR NEW.subject_type IS DISTINCT FROM OLD.subject_type OR NEW.subject_id IS DISTINCT FROM OLD.subject_id OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.payload_snapshot IS DISTINCT FROM OLD.payload_snapshot OR NEW.changes_snapshot IS DISTINCT FROM OLD.changes_snapshot OR NEW.producer IS DISTINCT FROM OLD.producer OR NEW.provenance IS DISTINCT FROM OLD.provenance OR NEW.trace_id IS DISTINCT FROM OLD.trace_id OR NEW.causation_id IS DISTINCT FROM OLD.causation_id OR NEW.depth IS DISTINCT FROM OLD.depth OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN RAISE EXCEPTION 'automation event envelope is immutable' USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
@@ -4451,50 +4478,10 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.validate_automation_event_causation()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-DECLARE
-  parent_trace_id uuid;
-  parent_depth integer;
-BEGIN
-  IF NEW.causation_id IS NULL THEN
-    IF NEW.depth <> 0 THEN
-      RAISE EXCEPTION 'root automation event depth must be zero' USING ERRCODE = 'check_violation';
-    END IF;
-    RETURN NEW;
-  END IF;
-  SELECT trace_id, depth INTO parent_trace_id, parent_depth
-  FROM automation_events
-  WHERE account_id = NEW.account_id AND event_uuid = NEW.causation_id;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'automation event causation parent does not exist in account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.trace_id IS DISTINCT FROM parent_trace_id OR NEW.depth <> parent_depth + 1 THEN
-    RAISE EXCEPTION 'automation event causation must preserve trace and increment depth' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
-  SQL
-
-  # no candidate create_trigger statement could be found, creating an adapter-specific one
-  execute("CREATE TRIGGER validate_automation_event_causation BEFORE INSERT ON \"automation_events\" FOR EACH ROW EXECUTE FUNCTION validate_automation_event_causation()")
-
-  # no candidate create_trigger statement could be found, creating an adapter-specific one
-  execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.prevent_automation_execution_snapshot_changes()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_event_id IS DISTINCT FROM OLD.automation_event_id OR NEW.automation_rule_id IS DISTINCT FROM OLD.automation_rule_id OR NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR NEW.lifecycle_generation IS DISTINCT FROM OLD.lifecycle_generation OR NEW.definition_version IS DISTINCT FROM OLD.definition_version OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.conditions_snapshot IS DISTINCT FROM OLD.conditions_snapshot OR NEW.actions_snapshot IS DISTINCT FROM OLD.actions_snapshot OR NEW.execution_schedule_snapshot IS DISTINCT FROM OLD.execution_schedule_snapshot OR NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
-    RAISE EXCEPTION 'automation execution snapshot is immutable' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ BEGIN IF NEW.account_id IS DISTINCT FROM OLD.account_id OR NEW.automation_event_id IS DISTINCT FROM OLD.automation_event_id OR NEW.automation_rule_id IS DISTINCT FROM OLD.automation_rule_id OR NEW.automation_rule_group_id IS DISTINCT FROM OLD.automation_rule_group_id OR NEW.lifecycle_generation IS DISTINCT FROM OLD.lifecycle_generation OR NEW.definition_version IS DISTINCT FROM OLD.definition_version OR NEW.schema_version IS DISTINCT FROM OLD.schema_version OR NEW.conditions_snapshot IS DISTINCT FROM OLD.conditions_snapshot OR NEW.actions_snapshot IS DISTINCT FROM OLD.actions_snapshot OR NEW.execution_schedule_snapshot IS DISTINCT FROM OLD.execution_schedule_snapshot OR NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN RAISE EXCEPTION 'automation execution snapshot is immutable' USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
@@ -4502,284 +4489,123 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_telephony_logical_call_occurrence_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF TG_OP = 'DELETE' AND current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN RETURN OLD; END IF; RAISE EXCEPTION 'telephony logical call occurrences are append-only' USING ERRCODE = 'check_violation'; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_telephony_logical_call_occurrence_changes BEFORE DELETE OR UPDATE ON \"telephony_logical_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_telephony_logical_call_occurrence_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_manual_call_occurrence_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF TG_OP = 'DELETE' AND current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN RETURN OLD; END IF; RAISE EXCEPTION 'communication thread manual call occurrences are append-only' USING ERRCODE = 'check_violation'; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_thread_manual_call_occurrence_changes BEFORE DELETE OR UPDATE ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_manual_call_occurrence_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_participant_fact_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF TG_OP = 'DELETE' AND current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN RETURN OLD; END IF; RAISE EXCEPTION 'communication thread participant lifecycle facts are append-only' USING ERRCODE = 'check_violation'; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_thread_participant_fact_changes BEFORE DELETE OR UPDATE ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_participant_fact_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.prevent_thread_state_transition_fact_changes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF TG_OP = 'DELETE' AND NOT EXISTS (SELECT 1 FROM accounts WHERE id = OLD.account_id) THEN RETURN OLD; END IF; RAISE EXCEPTION 'communication thread state transition facts are append-only' USING ERRCODE = 'check_violation'; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER prevent_thread_state_transition_fact_changes BEFORE DELETE OR UPDATE ON \"communication_thread_state_transition_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_state_transition_fact_changes()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.record_thread_state_transition_fallback()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ DECLARE operation_id uuid := gen_random_uuid(); transition_time timestamp without time zone := clock_timestamp(); requested_time timestamp without time zone := transition_time; transition_kind text; previous_status text; current_status text; previous_assignee_name text; current_assignee_name text; previous_team_name text; current_team_name text; BEGIN IF NULLIF(current_setting('onelink.thread_state_fact_writer', true), '') IS NOT NULL THEN RETURN NEW; END IF; IF TG_OP = 'UPDATE' AND OLD.assignee_id IS NOT DISTINCT FROM NEW.assignee_id AND OLD.team_id IS NOT DISTINCT FROM NEW.team_id AND OLD.status IS NOT DISTINCT FROM NEW.status THEN RETURN NEW; END IF; current_status := CASE NEW.status WHEN 0 THEN 'open' WHEN 1 THEN 'resolved' WHEN 2 THEN 'pending' WHEN 3 THEN 'snoozed' END; IF TG_OP = 'INSERT' THEN transition_kind := 'created'; ELSE previous_status := CASE OLD.status WHEN 0 THEN 'open' WHEN 1 THEN 'resolved' WHEN 2 THEN 'pending' WHEN 3 THEN 'snoozed' END; transition_kind := CASE WHEN OLD.status <> 1 AND NEW.status = 1 THEN 'resolved' WHEN OLD.status = 1 AND NEW.status <> 1 THEN 'reopened' WHEN OLD.assignee_id IS DISTINCT FROM NEW.assignee_id OR OLD.team_id IS DISTINCT FROM NEW.team_id THEN 'routing_changed' ELSE 'state_changed' END; SELECT users.name INTO previous_assignee_name FROM users INNER JOIN account_users ON account_users.user_id = users.id WHERE account_users.account_id = NEW.account_id AND users.id = OLD.assignee_id; SELECT name INTO previous_team_name FROM teams WHERE account_id = NEW.account_id AND id = OLD.team_id; END IF; SELECT users.name INTO current_assignee_name FROM users INNER JOIN account_users ON account_users.user_id = users.id WHERE account_users.account_id = NEW.account_id AND users.id = NEW.assignee_id; SELECT name INTO current_team_name FROM teams WHERE account_id = NEW.account_id AND id = NEW.team_id; transition_time := GREATEST(transition_time, COALESCE(( SELECT occurred_at + interval '1 microsecond' FROM communication_thread_state_transition_facts WHERE account_id = NEW.account_id AND communication_thread_id_snapshot = NEW.id ORDER BY occurred_at DESC, id DESC LIMIT 1 ), transition_time)); INSERT INTO communication_thread_state_transition_facts ( account_id, communication_thread_id_snapshot, thread_display_id_snapshot, contact_id_snapshot, event_kind, occurred_at, requested_occurred_at, reliable_since, source_version, from_assignee_id, from_assignee_name, to_assignee_id, to_assignee_name, from_team_id, from_team_name, to_team_id, to_team_name, from_status, to_status, source, source_record_type, source_record_id, source_event_id, actor_kind, actor_id, actor_name, idempotency_key, created_at ) VALUES ( NEW.account_id, NEW.id, NEW.display_id, NEW.contact_id, transition_kind, transition_time, requested_time, transition_time, 1, CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.assignee_id END, CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_assignee_name END, NEW.assignee_id, current_assignee_name, CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.team_id END, CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_team_name END, NEW.team_id, current_team_name, CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE previous_status END, current_status, 'database_projection_fallback', 'CommunicationThread', NEW.id, operation_id, 'system', NULL, 'System', CASE WHEN TG_OP = 'INSERT' THEN 'thread:' || NEW.id || ':created:v1' ELSE 'thread:' || NEW.id || ':state:' || operation_id || ':v1' END, transition_time ) ON CONFLICT (account_id, idempotency_key) DO NOTHING; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER record_thread_state_transition_fallback AFTER INSERT OR UPDATE ON \"communication_threads\" FOR EACH ROW EXECUTE FUNCTION record_thread_state_transition_fallback()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_automation_event_causation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ DECLARE parent_trace_id uuid; parent_depth integer; BEGIN IF NEW.causation_id IS NULL THEN IF NEW.depth <> 0 THEN RAISE EXCEPTION 'root automation event depth must be zero' USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END IF; SELECT trace_id, depth INTO parent_trace_id, parent_depth FROM automation_events WHERE account_id = NEW.account_id AND event_uuid = NEW.causation_id; IF NOT FOUND THEN RAISE EXCEPTION 'automation event causation parent does not exist in account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.trace_id IS DISTINCT FROM parent_trace_id OR NEW.depth <> parent_depth + 1 THEN RAISE EXCEPTION 'automation event causation must preserve trace and increment depth' USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_automation_event_causation BEFORE INSERT ON \"automation_events\" FOR EACH ROW EXECUTE FUNCTION validate_automation_event_causation()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.validate_automation_execution_insert_contract()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-DECLARE
-  selected_group_id bigint;
-BEGIN
-  SELECT automation_rule_group_id INTO selected_group_id
-  FROM automation_rules
-  WHERE account_id = NEW.account_id AND id = NEW.automation_rule_id;
-  IF FOUND AND NEW.automation_rule_group_id IS DISTINCT FROM selected_group_id THEN
-    RAISE EXCEPTION 'automation execution group must match selected rule group' USING ERRCODE = 'check_violation';
-  END IF;
-  IF EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action WHERE jsonb_typeof(action) <> 'object') THEN
-    RAISE EXCEPTION 'automation execution actions must be objects' USING ERRCODE = 'check_violation';
-  END IF;
-  IF EXISTS (
-    SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action
-    WHERE action ? 'action_id' AND (jsonb_typeof(action -> 'action_id') <> 'string' OR btrim(action ->> 'action_id') = '')
-  ) THEN
-    RAISE EXCEPTION 'automation execution explicit action ids must be non-blank strings' USING ERRCODE = 'check_violation';
-  END IF;
-  IF (
-    SELECT count(action ->> 'action_id') <> count(DISTINCT action ->> 'action_id')
-    FROM jsonb_array_elements(NEW.actions_snapshot) action
-    WHERE action ? 'action_id'
-  ) THEN
-    RAISE EXCEPTION 'automation execution explicit action ids must be unique' USING ERRCODE = 'unique_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ DECLARE selected_group_id bigint; BEGIN SELECT automation_rule_group_id INTO selected_group_id FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.automation_rule_id; IF FOUND AND NEW.automation_rule_group_id IS DISTINCT FROM selected_group_id THEN RAISE EXCEPTION 'automation execution group must match selected rule group' USING ERRCODE = 'check_violation'; END IF; IF EXISTS ( SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action WHERE jsonb_typeof(action) <> 'object' ) THEN RAISE EXCEPTION 'automation execution actions must be objects' USING ERRCODE = 'check_violation'; END IF; IF EXISTS ( SELECT 1 FROM jsonb_array_elements(NEW.actions_snapshot) action WHERE action ? 'action_id' AND (jsonb_typeof(action -> 'action_id') <> 'string' OR btrim(action ->> 'action_id') = '') ) THEN RAISE EXCEPTION 'automation execution explicit action ids must be non-blank strings' USING ERRCODE = 'check_violation'; END IF; IF ( SELECT count(action ->> 'action_id') <> count(DISTINCT action ->> 'action_id') FROM jsonb_array_elements(NEW.actions_snapshot) action WHERE action ? 'action_id' ) THEN RAISE EXCEPTION 'automation execution explicit action ids must be unique' USING ERRCODE = 'unique_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER validate_automation_execution_insert_contract BEFORE INSERT ON \"automation_executions\" FOR EACH ROW EXECUTE FUNCTION validate_automation_execution_insert_contract()")
 
-  execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.validate_thread_participant_fact_insert()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM communication_threads
-    WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'participant fact thread must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM account_users
-    WHERE account_id = NEW.account_id AND user_id = NEW.participant_id
-  ) THEN
-    RAISE EXCEPTION 'participant fact user must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.actor_kind = 'user' AND NOT EXISTS (
-    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id
-  ) THEN
-    RAISE EXCEPTION 'participant fact user actor must belong to account' USING ERRCODE = 'foreign_key_violation';
-  ELSIF NEW.actor_kind = 'customer' AND NOT EXISTS (
-    SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.actor_id
-  ) THEN
-    RAISE EXCEPTION 'participant fact customer actor must belong to account' USING ERRCODE = 'foreign_key_violation';
-  ELSIF NEW.actor_kind = 'captain' AND NOT EXISTS (
-    SELECT 1 FROM captain_assistants WHERE account_id = NEW.account_id AND id = NEW.actor_id
-  ) THEN
-    RAISE EXCEPTION 'participant fact captain actor must belong to account' USING ERRCODE = 'foreign_key_violation';
-  ELSIF NEW.actor_kind = 'automation' AND (
-    (NEW.actor_type = 'AssignmentPolicy' AND NOT EXISTS (
-      SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.actor_id
-    )) OR
-    (NEW.actor_type = 'AutomationRule' AND NOT EXISTS (
-      SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.actor_id
-    )) OR
-    (NEW.actor_type = 'Inbox' AND NOT EXISTS (
-      SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.actor_id
-    )) OR
-    NEW.actor_type NOT IN ('AssignmentPolicy', 'AutomationRule', 'Inbox')
-  ) THEN
-    RAISE EXCEPTION 'participant fact automation actor must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
-  SQL
-
-  execute("CREATE TRIGGER validate_thread_participant_fact_insert BEFORE INSERT ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION validate_thread_participant_fact_insert()")
-
-  execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.prevent_thread_participant_fact_changes()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF TG_OP = 'DELETE' AND
-     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
-    RETURN OLD;
-  END IF;
-  RAISE EXCEPTION 'communication thread participant lifecycle facts are append-only' USING ERRCODE = 'check_violation';
-END;
-$function$
-  SQL
-
-  execute("CREATE TRIGGER prevent_thread_participant_fact_changes BEFORE UPDATE OR DELETE ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_participant_fact_changes()")
-
-  execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.validate_thread_manual_call_occurrence_insert()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM communication_threads
-    WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'manual call occurrence thread must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM account_users
-    WHERE account_id = NEW.account_id AND user_id = NEW.actor_id
-  ) THEN
-    RAISE EXCEPTION 'manual call occurrence actor must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.source_kind = 'telephony_call_session' AND NOT EXISTS (
-    SELECT 1 FROM telephony_call_sessions
-    WHERE id = NEW.source_id
-      AND account_id = NEW.account_id
-      AND external_call_ref = NEW.source_ref
-      AND direction = 'outbound'
-      AND metadata -> 'metadata' ->> 'source' = 'onelink_browser_janus_sip'
-      AND metadata -> 'metadata' ->> 'route_action' = 'operator'
-      AND metadata -> 'metadata' ->> 'chatwoot_user_id' = NEW.actor_id::text
-      AND NOT (metadata ? 'ai_voice')
-      AND NOT (metadata -> 'metadata' ? 'ai_voice')
-  ) THEN
-    RAISE EXCEPTION 'manual call occurrence source must be an outbound call session in the same account'
-      USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
-  SQL
-
-  execute("CREATE TRIGGER validate_thread_manual_call_occurrence_insert BEFORE INSERT ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION validate_thread_manual_call_occurrence_insert()")
-
-  execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.prevent_thread_manual_call_occurrence_changes()
- RETURNS trigger
- LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF TG_OP = 'DELETE' AND
-     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
-    RETURN OLD;
-  END IF;
-  RAISE EXCEPTION 'communication thread manual call occurrences are append-only' USING ERRCODE = 'check_violation';
-END;
-$function$
-  SQL
-
-  execute("CREATE TRIGGER prevent_thread_manual_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_thread_manual_call_occurrence_changes()")
-
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.validate_telephony_logical_call_occurrence_insert()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM telephony_call_sessions
-    WHERE id = NEW.source_id
-      AND account_id = NEW.account_id
-      AND external_call_ref = NEW.source_ref
-      AND provider = NEW.provider
-      AND direction = NEW.direction
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence source must belong to account and match its immutable source snapshot'
-      USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.inbox_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM inboxes WHERE id = NEW.inbox_id_snapshot AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence inbox snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.contact_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM contacts WHERE id = NEW.contact_id_snapshot AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence contact snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.conversation_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM conversations WHERE id = NEW.conversation_id_snapshot AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence conversation snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.communication_thread_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id_snapshot AND account_id = NEW.account_id
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence thread snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.actor_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id_snapshot
-  ) AND NOT (
-    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
-      SELECT 1 FROM telephony_logical_call_occurrences
-      WHERE account_id = NEW.account_id
-        AND logical_call_identity = NEW.logical_call_identity
-        AND occurrence_kind = 'connected'
-        AND source_version = NEW.source_version
-        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
-        AND actor_id_snapshot = NEW.actor_id_snapshot
-    )
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence actor snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.actor_team_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM teams WHERE id = NEW.actor_team_id_snapshot AND account_id = NEW.account_id
-  ) AND NOT (
-    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
-      SELECT 1 FROM telephony_logical_call_occurrences
-      WHERE account_id = NEW.account_id
-        AND logical_call_identity = NEW.logical_call_identity
-        AND occurrence_kind = 'connected'
-        AND source_version = NEW.source_version
-        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
-        AND actor_team_id_snapshot = NEW.actor_team_id_snapshot
-    )
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence team snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.assistant_id_snapshot IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM captain_assistants WHERE id = NEW.assistant_id_snapshot AND account_id = NEW.account_id
-  ) AND NOT (
-    NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS (
-      SELECT 1 FROM telephony_logical_call_occurrences
-      WHERE account_id = NEW.account_id
-        AND logical_call_identity = NEW.logical_call_identity
-        AND occurrence_kind = 'connected'
-        AND source_version = NEW.source_version
-        AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id)
-        AND assistant_id_snapshot = NEW.assistant_id_snapshot
-    )
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence assistant snapshot must belong to account' USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  IF NEW.supersedes_occurrence_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM telephony_logical_call_occurrences
-    WHERE id = NEW.supersedes_occurrence_id
-      AND account_id = NEW.account_id
-      AND logical_call_identity = NEW.logical_call_identity
-      AND occurrence_kind = NEW.occurrence_kind
-      AND source_version = NEW.source_version
-      AND revision = NEW.revision - 1
-  ) THEN
-    RAISE EXCEPTION 'telephony occurrence supersession must extend the same logical fact by one revision'
-      USING ERRCODE = 'foreign_key_violation';
-  END IF;
-  RETURN NEW;
-END;
-$function$
+AS $function$ BEGIN IF NOT EXISTS ( SELECT 1 FROM telephony_call_sessions WHERE id = NEW.source_id AND account_id = NEW.account_id AND external_call_ref = NEW.source_ref AND provider = NEW.provider AND direction = NEW.direction ) THEN RAISE EXCEPTION 'telephony occurrence source must belong to account and match its immutable source snapshot' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.inbox_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM inboxes WHERE id = NEW.inbox_id_snapshot AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'telephony occurrence inbox snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.contact_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM contacts WHERE id = NEW.contact_id_snapshot AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'telephony occurrence contact snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.conversation_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM conversations WHERE id = NEW.conversation_id_snapshot AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'telephony occurrence conversation snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.communication_thread_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id_snapshot AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'telephony occurrence thread snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.actor_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id_snapshot ) AND NOT ( NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS ( SELECT 1 FROM telephony_logical_call_occurrences WHERE account_id = NEW.account_id AND logical_call_identity = NEW.logical_call_identity AND occurrence_kind = 'connected' AND source_version = NEW.source_version AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id) AND actor_id_snapshot = NEW.actor_id_snapshot ) ) THEN RAISE EXCEPTION 'telephony occurrence actor snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.actor_team_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM teams WHERE id = NEW.actor_team_id_snapshot AND account_id = NEW.account_id ) AND NOT ( NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS ( SELECT 1 FROM telephony_logical_call_occurrences WHERE account_id = NEW.account_id AND logical_call_identity = NEW.logical_call_identity AND occurrence_kind = 'connected' AND source_version = NEW.source_version AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id) AND actor_team_id_snapshot = NEW.actor_team_id_snapshot ) ) THEN RAISE EXCEPTION 'telephony occurrence team snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.assistant_id_snapshot IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM captain_assistants WHERE id = NEW.assistant_id_snapshot AND account_id = NEW.account_id ) AND NOT ( NEW.occurrence_kind IN ('connected', 'terminal') AND EXISTS ( SELECT 1 FROM telephony_logical_call_occurrences WHERE account_id = NEW.account_id AND logical_call_identity = NEW.logical_call_identity AND occurrence_kind = 'connected' AND source_version = NEW.source_version AND (NEW.occurrence_kind = 'terminal' OR id = NEW.supersedes_occurrence_id) AND assistant_id_snapshot = NEW.assistant_id_snapshot ) ) THEN RAISE EXCEPTION 'telephony occurrence assistant snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.supersedes_occurrence_id IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM telephony_logical_call_occurrences WHERE id = NEW.supersedes_occurrence_id AND account_id = NEW.account_id AND logical_call_identity = NEW.logical_call_identity AND occurrence_kind = NEW.occurrence_kind AND source_version = NEW.source_version AND revision = NEW.revision - 1 ) THEN RAISE EXCEPTION 'telephony occurrence supersession must extend the same logical fact by one revision' USING ERRCODE = 'foreign_key_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER validate_telephony_logical_call_occurrence_insert BEFORE INSERT ON \"telephony_logical_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION validate_telephony_logical_call_occurrence_insert()")
 
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
-CREATE OR REPLACE FUNCTION public.prevent_telephony_logical_call_occurrence_changes()
+CREATE OR REPLACE FUNCTION public.validate_thread_manual_call_occurrence_insert()
  RETURNS trigger
  LANGUAGE plpgsql
-AS $function$
-BEGIN
-  IF TG_OP = 'DELETE' AND
-     current_setting('onelink.account_teardown_id', true) = OLD.account_id::text THEN
-    RETURN OLD;
-  END IF;
-  RAISE EXCEPTION 'telephony logical call occurrences are append-only' USING ERRCODE = 'check_violation';
-END;
-$function$
+AS $function$ BEGIN IF NOT EXISTS ( SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'manual call occurrence thread must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id ) THEN RAISE EXCEPTION 'manual call occurrence actor must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.source_kind = 'telephony_call_session' AND NOT EXISTS ( SELECT 1 FROM telephony_call_sessions WHERE id = NEW.source_id AND account_id = NEW.account_id AND external_call_ref = NEW.source_ref AND direction = 'outbound' AND metadata -> 'metadata' ->> 'source' = 'onelink_browser_janus_sip' AND metadata -> 'metadata' ->> 'route_action' = 'operator' AND metadata -> 'metadata' ->> 'chatwoot_user_id' = NEW.actor_id::text AND NOT (metadata ? 'ai_voice') AND NOT (metadata -> 'metadata' ? 'ai_voice') ) THEN RAISE EXCEPTION 'manual call occurrence source must be an outbound call session in the same account' USING ERRCODE = 'foreign_key_violation'; END IF; RETURN NEW; END; $function$
   SQL
 
-  execute("CREATE TRIGGER prevent_telephony_logical_call_occurrence_changes BEFORE UPDATE OR DELETE ON \"telephony_logical_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION prevent_telephony_logical_call_occurrence_changes()")
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_thread_manual_call_occurrence_insert BEFORE INSERT ON \"communication_thread_manual_call_occurrences\" FOR EACH ROW EXECUTE FUNCTION validate_thread_manual_call_occurrence_insert()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_thread_participant_fact_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF NOT EXISTS ( SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'participant fact thread must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.participant_id ) THEN RAISE EXCEPTION 'participant fact user must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.actor_kind = 'user' AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id ) THEN RAISE EXCEPTION 'participant fact user actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'customer' AND NOT EXISTS ( SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.actor_id ) THEN RAISE EXCEPTION 'participant fact customer actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'captain' AND NOT EXISTS ( SELECT 1 FROM captain_assistants WHERE account_id = NEW.account_id AND id = NEW.actor_id ) THEN RAISE EXCEPTION 'participant fact captain actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'automation' AND ( (NEW.actor_type = 'AssignmentPolicy' AND NOT EXISTS ( SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.actor_id )) OR (NEW.actor_type = 'AutomationRule' AND NOT EXISTS ( SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.actor_id )) OR (NEW.actor_type = 'Inbox' AND NOT EXISTS ( SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.actor_id )) OR NEW.actor_type NOT IN ('AssignmentPolicy', 'AutomationRule', 'Inbox') ) THEN RAISE EXCEPTION 'participant fact automation actor must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_thread_participant_fact_insert BEFORE INSERT ON \"communication_thread_participant_lifecycle_facts\" FOR EACH ROW EXECUTE FUNCTION validate_thread_participant_fact_insert()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.validate_thread_state_transition_fact_insert()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF NOT EXISTS ( SELECT 1 FROM communication_threads WHERE id = NEW.communication_thread_id_snapshot AND account_id = NEW.account_id AND contact_id = NEW.contact_id_snapshot AND display_id = NEW.thread_display_id_snapshot ) THEN RAISE EXCEPTION 'thread state fact snapshot must match its account thread' USING ERRCODE = 'foreign_key_violation'; END IF; IF NOT EXISTS ( SELECT 1 FROM contacts WHERE id = NEW.contact_id_snapshot AND account_id = NEW.account_id ) THEN RAISE EXCEPTION 'thread state fact contact snapshot must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.from_assignee_id IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.from_assignee_id ) THEN RAISE EXCEPTION 'thread state fact from assignee must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.to_assignee_id IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.to_assignee_id ) THEN RAISE EXCEPTION 'thread state fact to assignee must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.from_team_id IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.from_team_id ) THEN RAISE EXCEPTION 'thread state fact from team must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.to_team_id IS NOT NULL AND NOT EXISTS ( SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.to_team_id ) THEN RAISE EXCEPTION 'thread state fact to team must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; IF NEW.source_record_type = 'Contact' AND NOT EXISTS ( SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source contact must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'Conversation' AND NOT EXISTS ( SELECT 1 FROM conversations WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source conversation must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'CommunicationThread' AND NOT EXISTS ( SELECT 1 FROM communication_threads WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source thread must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'Team' AND NOT EXISTS ( SELECT 1 FROM teams WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source team must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'AssignmentPolicy' AND NOT EXISTS ( SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source assignment policy must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'AutomationRule' AND NOT EXISTS ( SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source automation rule must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'Inbox' AND NOT EXISTS ( SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source inbox must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type = 'AccountUser' AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND id = NEW.source_record_id ) THEN RAISE EXCEPTION 'thread state fact source account user must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.source_record_type IS NOT NULL AND NEW.source_record_type NOT IN ( 'Contact', 'Conversation', 'CommunicationThread', 'Team', 'AssignmentPolicy', 'AutomationRule', 'Inbox', 'AccountUser' ) THEN RAISE EXCEPTION 'thread state fact source record type is unsupported' USING ERRCODE = 'check_violation'; END IF; IF NEW.actor_kind = 'user' AND NOT EXISTS ( SELECT 1 FROM account_users WHERE account_id = NEW.account_id AND user_id = NEW.actor_id ) THEN RAISE EXCEPTION 'thread state fact actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'contact' AND NOT EXISTS ( SELECT 1 FROM contacts WHERE account_id = NEW.account_id AND id = NEW.actor_id ) THEN RAISE EXCEPTION 'thread state fact contact actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'captain' AND NOT EXISTS ( SELECT 1 FROM captain_assistants WHERE account_id = NEW.account_id AND id = NEW.actor_id ) THEN RAISE EXCEPTION 'thread state fact captain actor must belong to account' USING ERRCODE = 'foreign_key_violation'; ELSIF NEW.actor_kind = 'automation' AND NOT ( (NEW.source_record_type = 'AssignmentPolicy' AND EXISTS ( SELECT 1 FROM assignment_policies WHERE account_id = NEW.account_id AND id = NEW.actor_id )) OR (NEW.source_record_type = 'AutomationRule' AND EXISTS ( SELECT 1 FROM automation_rules WHERE account_id = NEW.account_id AND id = NEW.actor_id )) OR (NEW.source_record_type = 'Inbox' AND EXISTS ( SELECT 1 FROM inboxes WHERE account_id = NEW.account_id AND id = NEW.actor_id )) ) THEN RAISE EXCEPTION 'thread state fact automation actor must belong to account' USING ERRCODE = 'foreign_key_violation'; END IF; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER validate_thread_state_transition_fact_insert BEFORE INSERT ON \"communication_thread_state_transition_facts\" FOR EACH ROW EXECUTE FUNCTION validate_thread_state_transition_fact_insert()")
 
 end

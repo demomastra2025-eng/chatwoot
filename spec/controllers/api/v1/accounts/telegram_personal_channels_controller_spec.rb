@@ -130,7 +130,9 @@ RSpec.describe 'Api::V1::Accounts::TelegramPersonalChannelsController', type: :r
     end
 
     it 'returns runtime errors as unprocessable content' do
-      allow_any_instance_of(TelegramPersonal::GatewayClient).to receive(:diagnostics)
+      gateway_client = instance_double(TelegramPersonal::GatewayClient, sync_channel!: {})
+      allow(TelegramPersonal::GatewayClient).to receive(:new).with(channel: channel).and_return(gateway_client)
+      allow(gateway_client).to receive(:diagnostics)
         .and_raise(TelegramPersonal::GatewayClient::GatewayError, 'gateway unavailable')
 
       get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/telegram_personal_diagnostics",

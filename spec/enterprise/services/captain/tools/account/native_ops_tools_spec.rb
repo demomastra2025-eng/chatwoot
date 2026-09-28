@@ -270,59 +270,6 @@ RSpec.describe 'Captain native ops tools' do
     end
   end
 
-  describe Captain::Tools::Account::AddAppointmentPaymentService do
-    it 'adds a payment to the current appointment' do
-      account.enable_features!('scheduling', 'scheduling_finance')
-      appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
-      allow(Captain::ContextFields).to receive(:appointment_for).and_return(appointment)
-      finance_service = instance_double(Scheduling::Appointments::FinanceSyncService, add_payment!: appointment)
-      allow(Scheduling::Appointments::FinanceSyncService).to receive(:new).and_return(finance_service)
-      copilot_thread = create(:captain_copilot_thread, account: account, user: user, assistant: assistant)
-      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
-
-      first_payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
-      payload = first_payload
-      if first_payload.dig('data', 'confirmation_required')
-        confirmation_token = copilot_thread.copilot_messages.assistant_thinking.last.message.dig('confirmation_gate', 'confirmation_token')
-        create(
-          :captain_copilot_message,
-          account: account,
-          copilot_thread: copilot_thread,
-          message_type: 'user',
-          message: { 'content' => "Подтверждаю #{confirmation_token}" }
-        )
-        payload = JSON.parse(service.execute(payment_method: 'cash', amount: 1500))
-      end
-
-      expect(payload).to include(
-        'action' => 'add_appointment_payment',
-        'appointment_id' => appointment.id,
-        'status' => appointment.status,
-        'resource_id' => appointment.resource_id,
-        'contact_id' => appointment.contact_id,
-        'service_id' => appointment.service_id,
-        'starts_at' => payload.dig('appointment', 'starts_at'),
-        'ends_at' => payload.dig('appointment', 'ends_at')
-      )
-      expect(Scheduling::Appointments::FinanceSyncService).to have_received(:new)
-    end
-
-    it 'enforces admin permission inside execute before adding appointment payments' do
-      account.enable_features!('scheduling', 'scheduling_finance')
-      agent = create(:user, account: account)
-      appointment = create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation)
-      allow(Captain::ContextFields).to receive(:appointment_for).and_return(appointment)
-      finance_service = instance_double(Scheduling::Appointments::FinanceSyncService, add_payment!: appointment)
-      allow(Scheduling::Appointments::FinanceSyncService).to receive(:new).and_return(finance_service)
-      service = described_class.new(assistant, user: agent, conversation: conversation, copilot_thread: copilot_thread)
-
-      allow(service).to receive(:active?).and_return(true)
-      result = service.execute(payment_method: 'cash', amount: 1500)
-
-      expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
-      expect(Scheduling::Appointments::FinanceSyncService).not_to have_received(:new)
-    end
-  end
 
   describe Captain::Tools::Account::ExecuteMacroService do
     it 'enqueues macro execution for the current conversation by default' do

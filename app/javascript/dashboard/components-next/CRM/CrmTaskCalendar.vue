@@ -15,6 +15,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  canCreate: {
+    type: Boolean,
+    default: null,
+  },
   assigneeNames: {
     type: Object,
     default: () => ({}),
@@ -57,6 +61,7 @@ const emit = defineEmits([
   'selectTask',
 ]);
 const { t } = useI18n();
+const allowCreate = computed(() => props.canCreate ?? props.canManage);
 
 const activityTypeLabelByValue = computed(() => ({
   call: t('CRM.TASKS.ACTIVITY_TYPE.call'),
@@ -170,6 +175,7 @@ const calendarTasks = computed(() =>
         resourceName: '',
         muted: false,
         cancelled: false,
+        readOnly: task.readOnly,
         task,
       };
     })
@@ -181,6 +187,7 @@ const handleSelectTask = appointment => {
 };
 
 const handleCreateTask = payload => {
+  if (!allowCreate.value) return;
   emit('createTask', payload);
 };
 
@@ -205,11 +212,14 @@ const handleResizeTask = payload => {
     class="min-h-0 flex-1"
     :anchor-date="anchorDate"
     :appointments="calendarTasks"
-    :allow-create-without-resources="canManage"
+    :allow-create-without-resources="allowCreate"
+    :allow-create="allowCreate"
+    :allow-edit="canManage"
+    :create-only="!canManage && allowCreate"
     :break-rules="[]"
     :custom-field-definitions="fieldDefinitions"
     :holidays="[]"
-    :read-only="!canManage"
+    :read-only="!canManage && !allowCreate"
     :resources="[]"
     :slots="[]"
     :time-offs="[]"

@@ -40,8 +40,7 @@ properties:
     type: array
     description: |
       Array of actions which you want to perform when condition matches.
-      For appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,
-      when `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.
+      For appointment events the native actions are `send_webhook_event` and `change_appointment_status`.
       Deal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,
       `assign_deal_team`, `archive_deal`, and `unarchive_deal`.
       Task events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,
@@ -71,7 +70,6 @@ properties:
             - send_email_transcript
             - add_private_note
             - change_appointment_status
-            - cancel_appointment_payment
             - change_deal_stage
             - assign_deal_owner
             - assign_deal_team
@@ -87,7 +85,6 @@ properties:
           type: array
           description: |
             Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.
-            `cancel_appointment_payment` does not require params.
             `change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,
             `assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.
             `change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.
@@ -101,7 +98,7 @@ properties:
     type: array
     description: |
       Array of conditions on which automation filter would work.
-      Appointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`
+      Appointment automations support native fields `status`, `appointment_type`, `source`
       and active managed appointment custom field keys.
       Deal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,
       `title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,

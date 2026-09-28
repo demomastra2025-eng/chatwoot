@@ -110,7 +110,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeJob do
     )
   end
 
-  it 'passes an actor descriptor from the versioned change envelope' do
+  it 'passes a human actor descriptor from the versioned change envelope' do
     service = instance_double(Integrations::Medelement::OutboundChangeService, perform: true)
     expect(Integrations::Medelement::OutboundChangeService).to receive(:new).with(
       entity_type: 'appointment',
@@ -119,7 +119,7 @@ RSpec.describe Integrations::Medelement::OutboundChangeJob do
       change: {},
       account_id: 7,
       actor_id: nil,
-      actor_descriptor: { 'type' => 'Captain::Assistant', 'id' => 9 },
+      actor_descriptor: { 'type' => 'User', 'id' => 9 },
       event_key: nil
     ).and_return(service)
 
@@ -130,9 +130,30 @@ RSpec.describe Integrations::Medelement::OutboundChangeJob do
       change: {
         account_id: 7,
         payload_version: described_class::PAYLOAD_VERSION,
-        actor_descriptor: { type: 'Captain::Assistant', id: 9 }
+        actor_descriptor: { type: 'User', id: 9 }
       }
     )
+  end
+
+  it 'drops a queued Captain retry before constructing a provider service' do
+    expect(Integrations::Medelement::OutboundChangeService).not_to receive(:new)
+
+    described_class.perform_now(
+      entity_type: 'appointment', entity_id: 11, event_name: 'appointment_created',
+      change: { account_id: 7, payload_version: described_class::PAYLOAD_VERSION,
+                actor_descriptor: { type: 'Captain::Assistant', id: 9 } }
+    )
+  end
+
+  it 'isolates a Captain retry producer from legacy workers while preserving the human lane' do
+    attributes = {
+      entity_type: 'appointment', entity_id: 11, event_name: 'appointment_created',
+      change: { account_id: 7, payload_version: described_class::PAYLOAD_VERSION,
+                actor_descriptor: { type: 'Captain::Assistant', id: 9 } }
+    }
+    expect(described_class.new(**attributes).queue_name).to eq('medelement_provider_commands_v2')
+    attributes[:change][:actor_descriptor] = { type: 'User', id: 9 }
+    expect(described_class.new(**attributes).queue_name).to eq('medelement_provider_commands')
   end
 
   it 'keeps its keyword shape compatible with the legacy worker' do

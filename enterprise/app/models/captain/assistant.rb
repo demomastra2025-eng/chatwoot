@@ -226,7 +226,14 @@ class Captain::Assistant < ApplicationRecord
       id: 'assistant_human_handoff',
       group: RULE_GROUP_ASSISTANT_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_ASSISTANT_HUMAN_HANDOFF,
-      content: "Transfer to a human agent when:\n- The user explicitly requests human assistance.\n- You cannot find the needed information after checking the approved knowledge sources.\n- The issue requires permissions, judgment, or actions beyond your tools.\n- Multiple attempts to help have been unsuccessful.\n\nWhen using the `captain--tools--handoff` tool, provide a clear reason that helps the human agent continue from the same context.",
+      content: "Transfer to a human agent when:\n" \
+               "- The user explicitly requests human assistance.\n" \
+               "- You cannot find the needed information after checking the approved knowledge sources.\n" \
+               "- The issue requires permissions, judgment, or actions beyond your tools.\n" \
+               "- Multiple attempts to help have been unsuccessful.\n\n" \
+               'Call the `captain--tools--handoff` tool at most once and provide a clear reason that helps the human agent ' \
+               'continue from the same context. Do not claim that the transfer succeeded and do not send a separate transfer ' \
+               'confirmation; the backend confirms a successfully applied handoff.',
       editable: true,
       deletable: false
     },
@@ -266,7 +273,13 @@ class Captain::Assistant < ApplicationRecord
       id: 'scenario_human_handoff',
       group: RULE_GROUP_SCENARIO_STRUCTURE,
       slot: SYSTEM_TEMPLATE_SLOT_SCENARIO_HUMAN_HANDOFF,
-      content: "Transfer to a human agent when:\n- The user explicitly asks for a human.\n- The request requires permissions, judgment, or actions beyond your tools.\n- You have gathered the needed context but the issue still requires manual handling.\n\nWhen using the `captain--tools--handoff` tool, provide a short reason that helps the human agent continue from the same context.",
+      content: "Transfer to a human agent when:\n" \
+               "- The user explicitly asks for a human.\n" \
+               "- The request requires permissions, judgment, or actions beyond your tools.\n" \
+               "- You have gathered the needed context but the issue still requires manual handling.\n\n" \
+               'Call the `captain--tools--handoff` tool at most once and provide a short reason that helps the human agent ' \
+               'continue from the same context. Do not claim that the transfer succeeded and do not send a separate transfer ' \
+               'confirmation; the backend confirms a successfully applied handoff.',
       editable: true,
       deletable: false
     },
@@ -369,8 +382,9 @@ class Captain::Assistant < ApplicationRecord
 
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
-                 :auto_reply_on_last_incoming, :context_access, :tool_access,
-                 :model, :feature_image_understanding, :use_audio_transcriptions
+                 :auto_reply_on_last_incoming,
+                 :model, :feature_image_understanding, :use_audio_transcriptions,
+                 :context_access, :tool_access
 
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
@@ -771,6 +785,10 @@ class Captain::Assistant < ApplicationRecord
 
   def handoff_message_mode_value
     message_mode_value('handoff_message_mode')
+  end
+
+  def handoff_requires_explicit_consent?
+    ActiveModel::Type::Boolean.new.cast(config['handoff_requires_explicit_consent'])
   end
 
   def resolution_message_enabled?

@@ -19,7 +19,11 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
       ensure_api_inbox!
       return if performed?
 
-      Messages::StatusUpdateService.new(message, permitted_params[:status], permitted_params[:external_error]).perform
+      updated = Messages::StatusUpdateService.new(message, permitted_params[:status], permitted_params[:external_error]).perform
+      if message.sender_type == 'Captain::Assistant' && updated == false
+        return render json: { error: 'Captain delivery status requires provider reconciliation' }, status: :unprocessable_content
+      end
+
       @message = message
     else
       render json: { error: 'No supported message update params were provided' }, status: :unprocessable_content
@@ -34,6 +38,9 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
   def retry
     return if message.blank?
+    if message.sender_type == 'Captain::Assistant'
+      return render_could_not_create_error('Captain delivery cannot be retried; reconcile provider outcome and create a new reply')
+    end
 
     service = Messages::StatusUpdateService.new(message, 'sent')
     service.perform

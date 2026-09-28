@@ -5,11 +5,13 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
 
   def initialize(account:, params:, task: nil, actor: nil, **publication_options)
     @task = task || account.crm_tasks.new
+    @inherited_team_sync = publication_options.fetch(:inherited_team_sync, false)
     @broadcast_linked_deal = publication_options.fetch(:broadcast_linked_deal, true)
     @broadcast = publication_options.fetch(:broadcast, true)
     @catalogs_provisioned = publication_options.fetch(:catalogs_provisioned, false)
     assert_known_publication_options!(publication_options)
     super(account: account, params: params, record: @task, actor: actor)
+    validate_inherited_team_sync!
   end
 
   def perform
@@ -25,8 +27,15 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   attr_reader :task, :broadcast_linked_deal
 
   def assert_known_publication_options!(options)
-    unknown_options = options.keys - %i[broadcast broadcast_linked_deal catalogs_provisioned]
+    unknown_options = options.keys - %i[broadcast broadcast_linked_deal catalogs_provisioned inherited_team_sync]
     raise ArgumentError, "Unknown publication options: #{unknown_options.join(', ')}" if unknown_options.present?
+  end
+
+  def validate_inherited_team_sync!
+    return unless @inherited_team_sync
+    return if @task.persisted? && @task.deal_id.present? && params.keys == [:lock_version]
+
+    raise ArgumentError, 'inherited team sync requires an existing linked task and only lock_version'
   end
 
   def persist_task!(new_record)
@@ -42,6 +51,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   def resolve_task_context!
     @requested_position = resolve_requested_position
     @deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
+    authorize_new_deal_link!
     @context_kind = resolve_context_kind(deal: @deal)
     @status = resolve_status!
     @task_type = resolve_task_type!
@@ -54,8 +64,30 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     @idempotency_key = resolve_optional_text(:idempotency_key, current: task.idempotency_key)
   end
 
+  def authorize_new_deal_link!
+    return if actor.blank? || @deal.blank? || task.deal_id == @deal.id
+
+    unless account.feature_enabled?('crm_deals')
+      raise ::Crm::Error.new(
+        code: 'FEATURE_DISABLED', message: 'CRM deals are not enabled for this account', status: :forbidden
+      )
+    end
+
+    user_context = {
+      user: actor,
+      account: account,
+      account_user: account.account_users.find_by(user_id: actor.id)
+    }
+    return if ::Crm::DealPolicy.new(user_context, @deal).show?
+
+    raise Pundit::NotAuthorizedError, 'Deal is not accessible for task linking'
+  end
+
   def assignment_authorization_required?
-    actor.present? && (task.new_record? || params.key?(:assignee_id) || params.key?(:team_id))
+    actor.present? && (
+      task.new_record? || params.key?(:assignee_id) || params.key?(:team_id) ||
+        (@team&.id != task.team_id && !@inherited_team_sync)
+    )
   end
 
   def authorize_assignment!

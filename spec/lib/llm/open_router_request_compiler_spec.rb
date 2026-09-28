@@ -4,6 +4,7 @@ require 'rails_helper'
 
 OpenRouterRequestCompilerSpecRequest = Struct.new(
   :feature_key,
+  :models,
   :tools_required,
   :tool_objects,
   :schema_required,
@@ -24,6 +25,16 @@ OpenRouterRequestCompilerSpecRequest = Struct.new(
 end
 
 RSpec.describe Llm::OpenRouterRequestCompiler do
+  before do
+    # Routing cases intentionally use models beyond the production Luna default.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini openai/gpt-5.4 moonshotai/kimi-k2.6
+         deepseek/deepseek-v4-pro anthropic/claude-sonnet-4]
+    )
+    # Lightweight account doubles for privacy routing have no BYOK hooks.
+    allow(Llm::Config).to receive(:account_provider_byok_allowed?).and_return(false)
+  end
+
   def compile(feature:, model: 'moonshotai/kimi-k2.6', base_params: {}, stream: false, **options)
     request = OpenRouterRequestCompilerSpecRequest.new(
       feature_key: feature.to_s,
@@ -108,6 +119,32 @@ RSpec.describe Llm::OpenRouterRequestCompiler do
       openrouter_plugin_policy: 'structured_output_and_overflow_only'
     )
     expect(compiled.metadata[:fallback_models]).to include('openai/gpt-5.4-mini')
+  end
+
+  it 'compiles a strict selected-model route without cross-model fallbacks' do
+    compiled = compile(
+      feature: :captain_agent,
+      model: 'openai/gpt-5.6-luna',
+      runtime_preferences: { openrouter_allow_model_fallbacks: false }
+    )
+
+    expect(compiled.models).to eq(['openai/gpt-5.6-luna'])
+    expect(compiled.params[:models]).to eq(['openai/gpt-5.6-luna'])
+    expect(compiled.params[:provider]).to include(allow_fallbacks: true)
+    expect(compiled.metadata).to include(
+      fallback_models: [],
+      openrouter_allow_model_fallbacks: false
+    )
+  end
+
+  it 'does not permit explicit fallback models when the opt-out is set' do
+    request = OpenRouterRequestCompilerSpecRequest.new(
+      feature_key: 'captain_agent', models: %w[openai/gpt-5.6-luna openai/gpt-5.4],
+      runtime_preferences: { openrouter_allow_model_fallbacks: false }
+    )
+
+    expect { described_class.call(request: request, model: 'openai/gpt-5.6-luna') }
+      .to raise_error(ArgumentError, /Cross-model fallbacks are disabled/)
   end
 
   it 'does not add response healing for streaming structured output requests' do

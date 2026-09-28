@@ -45,7 +45,7 @@ RSpec.describe Shopify::IntegrationHelper do
     let(:account_id) { 1 }
     let(:client_secret) { 'test_secret' }
     let(:valid_token) do
-      JWT.encode({ sub: account_id, iat: Time.current.to_i }, client_secret, 'HS256')
+      JWT.encode({ sub: account_id, iat: Time.current.to_i }, 'test_secret', 'HS256')
     end
 
     before do

@@ -171,6 +171,27 @@ RSpec.describe Captain::Mcp::ToolCatalog do
       )
     end
 
+    it 'classifies a read-only MCP tool without an idempotent hint as read-only for the runtime fence' do
+      allow(annotations).to receive(:idempotent_hint).and_return(nil)
+
+      definition = service.tools(refresh: true).first
+
+      expect(definition).to include(risk_level: 'low', idempotent: true)
+      metadata = mcp_server.to_tool_metadata(definition)
+      tool = Captain::Tools::McpTool.new(create(:captain_assistant, account: account), mcp_server, metadata)
+      expect(Llm::ToolRiskPolicy.read_only?(tool)).to be(true)
+    end
+
+    it 'keeps contradictory read-only and non-idempotent hints fail-closed' do
+      allow(annotations).to receive(:idempotent_hint).and_return(false)
+
+      definition = service.tools(refresh: true).first
+
+      metadata = mcp_server.to_tool_metadata(definition)
+      tool = Captain::Tools::McpTool.new(create(:captain_assistant, account: account), mcp_server, metadata)
+      expect(Llm::ToolRiskPolicy.mutating?(tool)).to be(true)
+    end
+
     it 'retries one transient timeout before succeeding' do
       attempts = 0
       allow(service).to receive(:sleep)

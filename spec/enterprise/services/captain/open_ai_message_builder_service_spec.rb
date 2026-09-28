@@ -5,12 +5,14 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
 
   let(:message) { create(:message, content: 'Hello world') }
   let(:assistant) do
-    create(:captain_assistant, account: message.account, config: { 'feature_document_reading' => true })
+    create(:captain_assistant, account: message.account,
+                               config: { 'feature_document_reading' => true, 'feature_image_understanding' => true })
   end
   let(:image_recognition_service) { instance_double(Captain::ImageRecognitionService, perform: 'Recognized image content') }
 
   before do
     allow(Captain::ImageRecognitionService).to receive(:new).and_return(image_recognition_service)
+    allow(Captain::ImageRecognitionService).to receive(:cached_description).and_return('Recognized image content')
     allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
   end
 
@@ -171,7 +173,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         result = service.generate_content
         expect(result).to be_an(Array)
         expect(result).to include({ type: 'text', text: 'Hello world' })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).not_to include(hash_including(type: 'image_url'))
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
@@ -184,14 +186,8 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment.save!
       end
 
-      it 'returns image URL and recognized image text without original text' do
-        result = service.generate_content
-        expect(result).to eq(
-          [
-            { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } },
-            { type: 'text', text: 'Image attachment: Recognized image content' }
-          ]
-        )
+      it 'returns recognized image text without forwarding an external URL' do
+        expect(service.generate_content).to eq('Image attachment: Recognized image content')
       end
     end
   end
@@ -208,7 +204,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
 
       it 'includes image parts' do
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).not_to include(hash_including(type: 'image_url'))
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end
@@ -336,7 +332,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(Messages::AudioTranscriptionService).not_to receive(:new)
 
         result = service.send(:attachment_parts, attachments)
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } })
+        expect(result).not_to include(hash_including(type: 'image_url'))
         expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
         expect(result).to include({ type: 'text', text: 'Audio text' })
         expect(result).to include({ type: 'text', text: 'User has shared an attachment' })
@@ -347,7 +343,48 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
   describe '#image_parts' do
     let(:message) { create(:message, content: nil) }
 
-    context 'with valid image attachments' do
+    it 'does not send an extensionless loopback URL to RubyLLM even with a cached description' do
+      attachment = message.attachments.create!(account: message.account, file_type: :image,
+                                               external_url: 'http://127.0.0.1/internal')
+      allow(Captain::ImageRecognitionService).to receive(:cached_description).and_return('Cached receipt')
+      expect(Captain::ImageRecognitionService).not_to receive(:new)
+      parts = described_class.new(message: message, assistant: assistant,
+                                  image_description_attachment_ids: [attachment.id]).generate_content
+
+      expect(parts).to eq('Image attachment: Cached receipt')
+      expect(Llm::MessageFormat.extract_text_and_attachments(parts).last).to be_empty
+    end
+
+    it 'sends a bounded stored image through RubyLLM without fetching an untrusted URL' do
+      attachment = message.attachments.create!(account: message.account, file_type: :image,
+                                               external_url: 'http://127.0.0.1/internal')
+      attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open,
+                             filename: 'avatar.png', content_type: 'image/png')
+      parts = described_class.new(message: message, assistant: assistant,
+                                  image_description_attachment_ids: [attachment.id]).generate_content
+
+      expect(parts).not_to include(hash_including(image_url: hash_including(url: 'http://127.0.0.1/internal')))
+      content = Llm::MessageFormat.build_content(parts)
+      expect(content.attachments.one?).to be(true)
+      expect(content.attachments.first.source).to eq(attachment.file.blob)
+      expect(RubyLLM::Providers::OpenAI::Media.format_content(content).last.dig(:image_url, :url)).to start_with('data:image/png;base64,')
+    end
+
+    it 'limits raw image media to the selected recent attachments while retaining older descriptions' do
+      attachments = 4.times.map do
+        item = message.attachments.create!(account: message.account, file_type: :image)
+        item.file.attach(io: Rails.root.join('spec/assets/avatar.png').open,
+                         filename: "image-#{item.id}.png", content_type: 'image/png')
+        item
+      end
+      parts = described_class.new(message: message, assistant: assistant,
+                                  image_description_attachment_ids: attachments.last(2).map(&:id)).generate_content
+
+      expect(parts.count { |part| part[:type] == 'image_url' }).to eq(2)
+      expect(parts.count { |part| part[:type] == 'text' && part[:text].start_with?('Image attachment:') }).to eq(4)
+    end
+
+    context 'with external image attachments' do
       let(:image1) do
         attachment = message.attachments.build(account_id: message.account_id, file_type: :image, external_url: 'https://example.com/image1.jpg')
         attachment.save!
@@ -360,15 +397,14 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         attachment
       end
 
-      it 'returns image parts for all valid images' do
+      it 'keeps the descriptions for all images without forwarding their URLs' do
         image1 # trigger creation
         image2 # trigger creation
 
         image_attachments = message.attachments.where(file_type: :image)
         result = service.send(:image_parts, image_attachments)
 
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image1.jpg' } })
-        expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image2.jpg' } })
+        expect(result).not_to include(hash_including(type: 'image_url'))
         expect(result.count { |part| part == { type: 'text', text: 'Image attachment: Recognized image content' } }).to eq(2)
       end
     end
@@ -384,18 +420,38 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         allow(image_attachment).to receive(:file).and_return(instance_double(ActiveStorage::Attached::One, attached?: false))
       end
 
-      it 'skips images without valid URLs' do
+      it 'keeps the image description without exposing a URL when none is available' do
         image_attachment # trigger creation
 
         image_attachments = message.attachments.where(file_type: :image)
         result = service.send(:image_parts, image_attachments)
 
-        expect(result).to be_empty
+        expect(result).not_to include(hash_including(type: 'image_url'))
+        expect(result).to include({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
+    end
+
+    it 'does not expose the URL or cached image text when image understanding is disabled' do
+      assistant.update!(config: assistant.config.merge('feature_image_understanding' => false))
+      message.attachments.create!(account: message.account, file_type: :image,
+                                  external_url: 'https://example.com/private-receipt.jpg')
+
+      expect(Captain::ImageRecognitionService).not_to receive(:new)
+      result = service.send(:image_parts, message.attachments.where(file_type: :image))
+
+      expect(result).to eq([{ type: 'text', text: 'Image attachment: User shared an image' }])
+    end
+
+    it 'does not expose an unsafe image URL even when vision is enabled' do
+      message.attachments.create!(account: message.account, file_type: :image, external_url: 'file:///etc/passwd')
+
+      result = service.send(:image_parts, message.attachments.where(file_type: :image))
+
+      expect(result).not_to include(hash_including(type: 'image_url'))
     end
   end
 
-  describe '#get_attachment_url' do
+  describe '#image_source' do
     let(:attachment) do
       attachment = message.attachments.build(account_id: message.account_id, file_type: :image)
       attachment.save!
@@ -405,21 +461,30 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
     context 'when attachment has external_url' do
       before { attachment.update(external_url: 'https://example.com/image.jpg') }
 
-      it 'returns external_url' do
-        expect(service.send(:get_attachment_url, attachment)).to eq('https://example.com/image.jpg')
+      it 'does not trust the external URL' do
+        expect(service.send(:image_source, attachment)).to be_nil
       end
     end
 
     context 'when attachment has attached file' do
       before do
-        attachment.update(external_url: nil)
-        allow(attachment).to receive(:file).and_return(instance_double(ActiveStorage::Attached::One, attached?: true))
-        allow(attachment).to receive(:file_url).and_return('https://local.com/file.jpg')
-        allow(attachment).to receive(:download_url).and_return('')
+        attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open,
+                               filename: 'avatar.png', content_type: 'image/png')
       end
 
-      it 'returns file_url' do
-        expect(service.send(:get_attachment_url, attachment)).to eq('https://local.com/file.jpg')
+      it 'returns the stored blob rather than a redirect or download URL' do
+        expect(service.send(:image_source, attachment)).to eq(attachment.file.blob)
+      end
+
+      it 'rejects an oversized image without downloading it' do
+        allow(attachment.file.blob).to receive(:byte_size).and_return(described_class::MAX_IMAGE_BYTES + 1)
+        expect(attachment.file.blob).not_to receive(:download)
+        expect(service.send(:image_source, attachment)).to be_nil
+      end
+
+      it 'rejects a non-image blob even when the attachment is labelled image' do
+        allow(attachment.file.blob).to receive(:content_type).and_return('text/html')
+        expect(service.send(:image_source, attachment)).to be_nil
       end
     end
 
@@ -430,7 +495,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       it 'returns nil' do
-        expect(service.send(:get_attachment_url, attachment)).to be_nil
+        expect(service.send(:image_source, attachment)).to be_nil
       end
     end
   end
@@ -536,7 +601,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       it 'returns recognized image text part format' do
-        result = service.send(:image_description_part, attachment, 'https://example.com/image.jpg')
+        result = service.send(:image_description_part, attachment)
         expect(result).to eq({ type: 'text', text: 'Image attachment: Recognized image content' })
       end
     end

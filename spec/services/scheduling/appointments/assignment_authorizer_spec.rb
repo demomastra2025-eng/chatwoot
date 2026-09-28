@@ -49,18 +49,16 @@ RSpec.describe Scheduling::Appointments::AssignmentAuthorizer do
     end.to raise_error(Pundit::NotAuthorizedError)
   end
 
-  it 'rejects assigning an owned contact to another owner with own scope' do
+  it 'ignores a historical appointment owner when booking an owned contact' do
     appointment = build(
       :scheduling_appointment,
       account: account,
       contact: create(:contact, account: account, owner: agent),
-      owner: other_user,
+      owner_id: other_user.id,
       resource: other_resource
     )
 
-    expect do
-      described_class.call(account: account, actor: agent, appointment: appointment)
-    end.to raise_error(Pundit::NotAuthorizedError)
+    expect { described_class.call(account: account, actor: agent, appointment: appointment) }.not_to raise_error
   end
 
   it 'allows assigning an owned contact to a teammate with team scope' do
@@ -74,7 +72,7 @@ RSpec.describe Scheduling::Appointments::AssignmentAuthorizer do
       :scheduling_appointment,
       account: account,
       contact: create(:contact, account: account, owner: agent),
-      owner: other_user,
+      owner_id: other_user.id,
       resource: other_resource,
       team: team
     )

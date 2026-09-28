@@ -1,49 +1,88 @@
 require 'digest'
 
-class Conversations::CommunicationThreadResolver
-  def initialize(conversation:)
+class Conversations::CommunicationThreadResolver # rubocop:disable Metrics/ClassLength
+  def self.lock_contact_thread!(account_id, contact_id)
+    return if account_id.blank? || contact_id.blank?
+
+    identity = "communication-thread:#{account_id}:#{contact_id}"
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
+  # rubocop:disable Metrics/ParameterLists, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  def initialize(conversation:, actor: nil, source: nil, source_record: nil, source_event_id: nil, occurred_at: nil)
+    @actor = resolve_actor(conversation, actor)
+    @source = source.presence || conversation&.communication_thread_event_source.presence || 'conversation_callback'
+    @source_record = source_record || conversation&.communication_thread_event_source_record || conversation
+    @source_event_id = source_event_id.presence || conversation&.communication_thread_event_id.presence || SecureRandom.uuid
+    @occurred_at = occurred_at || conversation&.communication_thread_event_occurred_at || Time.current
     # Conversation DB triggers populate display_id/uuid after insert and the
     # originating instance can still report those attributes as dirty. Locking
     # that instance raises in Active Record, so resolve against a fresh copy
     # without clearing the caller's saved_changes used by event dispatchers.
     @conversation = conversation&.persisted? ? conversation.class.find(conversation.id) : conversation
   end
+  # rubocop:enable Metrics/ParameterLists, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def perform
     return unless linkable_conversation?
 
     CommunicationThread.transaction do
-      conversation.lock!
-      next unless linkable_conversation?
-
       locked_account_id = conversation.account_id
       locked_contact_id = conversation.contact_id
-      lock_contact_thread!(locked_account_id, locked_contact_id)
+      self.class.lock_contact_thread!(locked_account_id, locked_contact_id)
+      thread = existing_thread
+      thread.lock! if thread&.persisted?
+      conversation.lock!
+      next unless linkable_conversation?
       next unless conversation.account_id == locked_account_id && conversation.contact_id == locked_contact_id
 
-      previous_thread = raw_communication_thread
-      thread = existing_thread || build_thread
-      thread.save! if thread.new_record?
-      create_or_update_link!(thread)
-      reset_conversation_thread_associations
-      refresh_thread!(thread)
-      refresh_previous_thread!(previous_thread, thread)
-      thread
+      resolve_thread!(thread)
     end
   end
 
   private
 
-  attr_reader :conversation
+  attr_reader :conversation, :actor, :source, :source_record, :source_event_id, :occurred_at
 
-  def lock_contact_thread!(account_id, contact_id)
-    identity = "communication-thread:#{account_id}:#{contact_id}"
-    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
-
-    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  def resolve_thread!(thread)
+    previous_thread = raw_communication_thread
+    thread ||= build_thread
+    created = thread.new_record?
+    persist_new_thread!(thread)
+    create_or_update_link!(thread)
+    reset_conversation_thread_associations
+    merge_captain_control!(thread) if previous_thread&.id != thread.id
+    refresh_thread!(thread, created: created)
+    refresh_previous_thread!(previous_thread, thread)
+    thread
   end
 
-  def linkable_conversation?
+  def persist_new_thread!(thread)
+    return unless thread.new_record?
+
+    CommunicationThreads::StateTransitionWriter.with_database_fallback_suppressed(thread.class.connection) { thread.save! }
+  end
+
+  def merge_captain_control!(thread)
+    return unless thread.captain_control_state == 'human' || conversation.captain_control_state == 'human'
+    return if thread.captain_control_state == 'human'
+
+    thread.update!(
+      captain_control_state: 'human',
+      captain_control_generation: [thread.captain_control_generation.to_i, conversation.captain_control_generation.to_i].max + 1,
+      captain_handoff_applied_at: [thread.captain_handoff_applied_at, conversation.captain_handoff_applied_at].compact.max
+    )
+  end
+
+  def resolve_actor(source_conversation, explicit_actor)
+    return explicit_actor if explicit_actor.present?
+    return source_conversation.communication_thread_event_actor if source_conversation&.communication_thread_event_id.present?
+
+    Current.executed_by || Current.user
+  end
+
+  def linkable_conversation? # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     return false if conversation.blank? || conversation.destroyed? || conversation.marked_for_destruction?
     return false if conversation.account_id.blank? || conversation.contact_id.blank?
     return false if conversation.inbox_id.blank? || conversation.contact_inbox_id.blank?
@@ -68,7 +107,7 @@ class Conversations::CommunicationThreadResolver
   end
 
   def build_thread
-    CommunicationThread.new(
+    attributes = {
       account_id: conversation.account_id,
       contact_id: conversation.contact_id,
       status: conversation.status,
@@ -77,7 +116,16 @@ class Conversations::CommunicationThreadResolver
       team_id: conversation.team_id,
       last_activity_at: conversation.last_activity_at,
       unread_count: conversation.unread_incoming_messages_count
-    )
+    }
+    CommunicationThread.new(attributes.merge(captain_control_attributes))
+  end
+
+  def captain_control_attributes
+    {
+      captain_control_state: conversation.captain_control_state,
+      captain_control_generation: conversation.captain_control_generation.to_i + (conversation.captain_control_state == 'human' ? 1 : 0),
+      captain_handoff_applied_at: conversation.captain_handoff_applied_at
+    }
   end
 
   def create_or_update_link!(thread)
@@ -147,15 +195,24 @@ class Conversations::CommunicationThreadResolver
       .first&.update!(primary: true)
   end
 
-  def refresh_thread!(thread)
-    thread.update!(
-      status: aggregate_status(thread),
-      priority: aggregate_priority(thread),
-      assignee_id: aggregate_assignee_id(thread),
-      team_id: aggregate_team_id(thread),
-      last_activity_at: aggregate_last_activity_at(thread),
-      unread_count: aggregate_unread_count(thread)
-    )
+  def refresh_thread!(thread, created: false)
+    CommunicationThreads::StateTransitionWriter.new(
+      thread: thread,
+      attributes: {
+        status: aggregate_status(thread),
+        priority: aggregate_priority(thread),
+        assignee_id: aggregate_assignee_id(thread),
+        team_id: aggregate_team_id(thread),
+        last_activity_at: aggregate_last_activity_at(thread),
+        unread_count: aggregate_unread_count(thread)
+      },
+      actor: actor,
+      source: source,
+      source_record: source_record,
+      source_event_id: source_event_id,
+      occurred_at: occurred_at,
+      created: created
+    ).perform
   end
 
   def aggregate_status(thread)

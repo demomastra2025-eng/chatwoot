@@ -17,9 +17,7 @@
 {% if appointment_visible_fields contains 'duration_min' -%}
 - Duration (minutes): {{ appointment.duration_min }}
 {% endif -%}
-{% if appointment_visible_fields contains 'payment_status' -%}
-- Payment Status: {{ appointment.payment_status }}
-{% endif -%}
+
 {% if appointment_visible_fields contains 'service_name_snapshot' -%}
 - Service Name: {{ appointment.service_name_snapshot | default: "None" }}
 {% endif -%}
@@ -74,27 +72,7 @@
 {% if appointment_visible_fields contains 'external_ref' -%}
 - External Reference: {{ appointment.external_ref | default: "None" }}
 {% endif -%}
-{% if appointment_visible_fields contains 'compensation_type_snapshot' -%}
-- Compensation Type: {{ appointment.compensation_type_snapshot | default: "None" }}
-{% endif -%}
-{% if appointment_visible_fields contains 'compensation_value_snapshot' -%}
-- Compensation Value: {{ appointment.compensation_value_snapshot }}
-{% endif -%}
-{% if appointment_visible_fields contains 'compensation_percent_snapshot' -%}
-- Compensation Percent: {{ appointment.compensation_percent_snapshot }}
-{% endif -%}
-{% if appointment_visible_fields contains 'prepaid_amount' -%}
-- Prepaid Amount: {{ appointment.prepaid_amount }}
-{% endif -%}
-{% if appointment_visible_fields contains 'prepaid_payment_method' -%}
-- Prepaid Payment Method: {{ appointment.prepaid_payment_method | default: "None" }}
-{% endif -%}
-{% if appointment_visible_fields contains 'settlement_amount' -%}
-- Settlement Amount: {{ appointment.settlement_amount }}
-{% endif -%}
-{% if appointment_visible_fields contains 'settlement_payment_method' -%}
-- Settlement Payment Method: {{ appointment.settlement_payment_method | default: "None" }}
-{% endif -%}
+
 {% if appointment.custom_attributes -%}
 {% for attribute in appointment.custom_attributes -%}
 {% assign attribute_key = attribute[0] | append: '' -%}

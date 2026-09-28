@@ -4,6 +4,49 @@ require 'timeout'
 RSpec.describe Integrations::Medelement::AppointmentImporterService do
   self.use_transactional_tests = false
 
+  it 'locks the patient Contact before the existing Appointment on import' do
+    records = create_race_records
+    held = Queue.new
+    release = Queue.new
+    contact_locker = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        Contact.find(records.fetch(:contact).id).with_lock do
+          held << ActiveRecord::Base.connection.select_value('SELECT pg_backend_pid()').to_s
+          release.pop
+        end
+      end
+    end
+    blocker_pid = Timeout.timeout(8) { held.pop }
+    started = Queue.new
+    importer = Thread.new do
+      ActiveRecord::Base.connection_pool.with_connection do
+        started << ActiveRecord::Base.connection.select_value('SELECT pg_backend_pid()').to_s
+        importer_for(records).upsert!(
+          resource: records.fetch(:resource), contact: records.fetch(:contact),
+          reception: reception_for(records.fetch(:reception_code)),
+          import_context: import_context(records.fetch(:appointment).updated_at)
+        )
+      end
+    end
+    waiting_pid = Timeout.timeout(8) { started.pop }
+    Timeout.timeout(8) do
+      blockers = []
+      loop do
+        blockers = ActiveRecord::Base.connection.select_value("SELECT pg_blocking_pids(#{waiting_pid})")
+        break if blockers.include?(blocker_pid)
+
+        sleep 0.01
+      end
+      expect(blockers).to include(blocker_pid)
+    end
+    release << true
+    Timeout.timeout(15) { [contact_locker, importer].each(&:value) }
+  ensure
+    release&.push(true)
+    [contact_locker, importer].compact.each { |worker| Timeout.timeout(15) { worker.value } if worker.alive? }
+    cleanup_race_records(records) if defined?(records)
+  end
+
   it 'does not overwrite a local mutation committed after lookup and before the importer lock' do
     records = create_race_records
     mutation_locked = Queue.new

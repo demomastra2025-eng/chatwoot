@@ -11,7 +11,6 @@ RSpec.describe Telephony::LogicalCallOccurrencePolicy, type: :policy do
 
   def stub_scopes(view:, view_reports:, mode: 'enforced')
     scopes = { 'view' => view, 'view_reports' => view_reports }
-    allow(described_class).to receive(:rbac_supported?).and_return(true)
     allow(AccessControl::ModeResolver).to receive(:call) do |account_user:, resource:, capability:|
       expect(account_user).to eq(self.account_user)
       expect(resource).to eq('telephony_calls')
@@ -99,19 +98,27 @@ RSpec.describe Telephony::LogicalCallOccurrencePolicy, type: :policy do
     expect(described_class.new(user_context, Telephony::LogicalCallOccurrence)).to be_view_reports
   end
 
-  it 'fails closed in real shadow and enforced modes while telephony RBAC is unsupported' do
-    fact = insert_human_fact(identity: 'rbac-unregistered', actor: viewer)
+  it 'uses actual grants in shadow and enforced modes and fails closed for denials/unknown capabilities' do # rubocop:disable RSpec/MultipleExpectations
+    fact = insert_human_fact(identity: 'rbac-supported', actor: viewer)
     administrator = create(:user, :administrator, account: account)
     admin_context = { user: administrator, account: account, account_user: account.account_users.find_by!(user: administrator) }
 
     expect(described_class.new(admin_context, Telephony::LogicalCallOccurrence)).to be_view_reports
     expect(described_class::Scope.new(admin_context, account.telephony_logical_call_occurrences).resolve).to include(fact)
 
-    %w[shadow enforced].each do |mode|
-      account.authorize_access_control_mode_transition { account.update!(access_control_mode: mode) }
-      expect(described_class.new(admin_context, Telephony::LogicalCallOccurrence)).not_to be_view_reports
-      expect(described_class::Scope.new(admin_context, account.telephony_logical_call_occurrences).resolve).to be_empty
-    end
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    expect(described_class.new(admin_context, Telephony::LogicalCallOccurrence)).to be_view_reports
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    expect(described_class.new(admin_context, Telephony::LogicalCallOccurrence)).to be_view_reports
+    expect(described_class::Scope.new(admin_context, account.telephony_logical_call_occurrences).resolve).to include(fact)
+
+    role = admin_context.fetch(:account_user).reload.access_role
+    role.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports').update!(access_scope: 'none')
+    expect(described_class.new(admin_context, Telephony::LogicalCallOccurrence)).not_to be_view_reports
+    expect(described_class::Scope.new(admin_context, account.telephony_logical_call_occurrences).resolve).to be_empty
+    expect(described_class::Scope.intersection(admin_context, account.telephony_logical_call_occurrences,
+                                               capabilities: ['unknown'])).to be_empty
   end
 
   it 'intersects own, team, all and none over captured attribution and visible Voice inboxes' do

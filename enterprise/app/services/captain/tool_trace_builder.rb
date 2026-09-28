@@ -2,10 +2,33 @@ class Captain::ToolTraceBuilder
   VERSION = 1
   TYPE = 'captain_tool_event'.freeze
   PREVIEW_LIMIT = 4000
+  PREVIEW_REDACTION_LOOKAHEAD = 512
+  JSON_PARSE_LIMIT = 256 * 1024
+  SUMMARY_FACT_LIMIT = 25
+  SUMMARY_FACT_BYTES_LIMIT = 3072
+  SUMMARY_PATH_LIMIT = 256
+  SUMMARY_VALUE_LIMIT = 256
+  SUMMARY_COLLECTION_LIMIT = 20
+  SUMMARY_COLLECTION_KEY_LIMIT = 128
+  SUMMARY_FIELDS = %w[
+    appointment_id provider_appointment_id provider_command_id command_id operation status
+    resource_id service_id slot_id starts_at ends_at from to start end time date timezone duration_min
+  ].freeze
+  SUMMARY_COLLECTION_PATTERN = /slot|appointment|result|item|resource|service/i
   START_STATUSES = %w[start progress].freeze
   TERMINAL_SUCCESS_STATUSES = %w[finish].freeze
   TERMINAL_FAILURE_STATUSES = %w[failed].freeze
-  SENSITIVE_KEY_PATTERN = /token|secret|password|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|credential|cookie|phone|телефон/i
+  SENSITIVE_KEY_PATTERN = /
+    token|secret|password|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|credential|cookie|
+    phone|телефон|patient|client|email|iin|notes?
+  /ix
+  EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i
+  PHONE_WITH_PLUS_PATTERN = /(?<!\w)\+\d(?:[\s().-]*\d){9,14}(?!\w)/
+  PHONE_CONTEXT_PATTERN = /(phone|телефон)\s*[:=]?\s*(?:\+?\d[\s().-]*){10,15}/i
+  IIN_CONTEXT_PATTERN = /(iin|иин)\s*[:=]?\s*\d{12}/i
+  JSON_STRUCTURE_ROOT_PATTERN = /\A(?:\uFEFF)?[ \t\r\n]*(?:\{|\[|")/
+  JSON_SCALAR_PATTERN = /\A(?:\uFEFF)?[ \t\r\n]*(?:-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)[ \t\r\n]*\z/
+  JSON_PARSE_FAILED = Object.new.freeze
   STATUS_BY_EVENT = {
     'start' => 'start',
     'progress' => 'progress',
@@ -195,17 +218,70 @@ class Captain::ToolTraceBuilder
   def self.safe_payload(value)
     return if value.nil?
 
-    truncate_payload(redact_payload(Captain::EncodingNormalizer.utf8(value)))
+    normalized = Captain::EncodingNormalizer.utf8(value)
+    return safe_string_payload(normalized) if normalized.is_a?(String)
+
+    redact_payload(normalized)
   rescue StandardError
-    truncate_payload(redact_payload(value.to_s))
+    safe_string_payload(value.to_s)
   end
   private_class_method :safe_payload
+
+  def self.safe_string_payload(value)
+    original_bytes = value.bytesize
+    sha256 = Digest::SHA256.hexdigest(value)
+    safe_value, summary_value, force_truncated = safe_string_components(value)
+
+    truncate_string(
+      safe_value,
+      original_bytes: original_bytes,
+      sha256: sha256,
+      json_value: summary_value,
+      force_truncated: force_truncated
+    )
+  end
+  private_class_method :safe_string_payload
+
+  def self.safe_string_components(value)
+    return [redact_plain_string(bounded_preview_source(value)), nil, false] unless json_candidate?(value)
+    return ['[REDACTED: oversized JSON payload]', nil, true] if value.bytesize > JSON_PARSE_LIMIT
+
+    parsed = parse_json(value)
+    return ['[REDACTED: invalid JSON payload]', nil, true] if parsed.equal?(JSON_PARSE_FAILED)
+
+    redacted_value = redact_structured_value(parsed)
+    summary_value = redacted_value if redacted_value.is_a?(Hash) || redacted_value.is_a?(Array)
+    [JSON.generate(redacted_value), summary_value, false]
+  rescue JSON::GeneratorError
+    ['[REDACTED: unserializable JSON payload]', nil, true]
+  end
+  private_class_method :safe_string_components
+
+  def self.json_candidate?(value)
+    value.match?(JSON_STRUCTURE_ROOT_PATTERN) || value.match?(JSON_SCALAR_PATTERN)
+  end
+  private_class_method :json_candidate?
+
+  def self.bounded_preview_source(value)
+    limit = PREVIEW_LIMIT + PREVIEW_REDACTION_LOOKAHEAD
+    return value if value.bytesize <= limit
+
+    value.byteslice(0, limit).scrub('')
+  end
+  private_class_method :bounded_preview_source
+
+  def self.parse_json(value)
+    JSON.parse(value.delete_prefix("\uFEFF"))
+  rescue JSON::ParserError
+    JSON_PARSE_FAILED
+  end
+  private_class_method :parse_json
 
   def self.redact_payload(value)
     return redact_hash(value) if value.is_a?(Hash)
     return value.map { |item| redact_payload(item) } if value.is_a?(Array)
-    return redact_string("#{value.class.name}: #{value.message}") if value.is_a?(StandardError)
-    return redact_string(value) if value.is_a?(String)
+    return safe_string_payload("#{value.class.name}: #{value.message}") if value.is_a?(StandardError)
+    return safe_string_payload(value) if value.is_a?(String)
 
     value
   end
@@ -224,32 +300,138 @@ class Captain::ToolTraceBuilder
   end
   private_class_method :sensitive_key?
 
-  def self.redact_string(value)
+  def self.redact_structured_value(value)
+    return redact_structured_hash(value) if value.is_a?(Hash)
+    return value.map { |item| redact_structured_value(item) } if value.is_a?(Array)
+    return redact_plain_string(value) if value.is_a?(String)
+
+    value
+  end
+  private_class_method :redact_structured_value
+
+  def self.redact_structured_hash(value)
+    value.each_with_object({}) do |(key, child_value), memo|
+      normalized_key = key.to_s
+      memo[normalized_key] = sensitive_key?(normalized_key) ? '[REDACTED]' : redact_structured_value(child_value)
+    end
+  end
+  private_class_method :redact_structured_hash
+
+  def self.redact_plain_string(value)
     value
       .gsub(/Bearer\s+[A-Za-z0-9._\-]+/, 'Bearer [REDACTED]')
       .gsub(/(api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password)=([^\s&]+)/i, '\\1=[REDACTED]')
+      .gsub(EMAIL_PATTERN, '[REDACTED]')
+      .gsub(PHONE_WITH_PLUS_PATTERN, '[REDACTED]')
+      .gsub(PHONE_CONTEXT_PATTERN, '\\1=[REDACTED]')
+      .gsub(IIN_CONTEXT_PATTERN, '\\1=[REDACTED]')
   end
-  private_class_method :redact_string
+  private_class_method :redact_plain_string
 
-  def self.truncate_payload(value)
-    case value
-    when Hash
-      value.transform_values { |child_value| truncate_payload(child_value) }
-    when Array
-      value.map { |item| truncate_payload(item) }
-    when String
-      truncate_string(value)
-    else
-      value
-    end
-  end
-  private_class_method :truncate_payload
+  def self.truncate_string(value, original_bytes: value.bytesize, sha256: Digest::SHA256.hexdigest(value), json_value: nil,
+                           force_truncated: false)
+    return value if !force_truncated && original_bytes <= PREVIEW_LIMIT && value.bytesize <= PREVIEW_LIMIT
 
-  def self.truncate_string(value)
-    return value if value.bytesize <= PREVIEW_LIMIT
-
-    preview = value.byteslice(0, PREVIEW_LIMIT).scrub('')
-    "#{preview}…"
+    ellipsis = '…'
+    preview = value.byteslice(0, PREVIEW_LIMIT - ellipsis.bytesize).scrub('')
+    {
+      'preview' => "#{preview}#{ellipsis}",
+      'truncated' => true,
+      'original_bytes' => original_bytes,
+      'sha256' => sha256
+    }.merge(json_summary(json_value)).compact
   end
   private_class_method :truncate_string
+
+  def self.json_summary(parsed)
+    return {} unless parsed
+
+    facts = []
+    fact_budget = { remaining: SUMMARY_FACT_BYTES_LIMIT }
+    fact_count = collect_summary_facts(parsed, '$', facts, fact_budget)
+
+    {
+      'content_type' => 'application/json',
+      'json_summary' => {
+        'type' => parsed.is_a?(Array) ? 'array' : parsed.class.name.downcase,
+        'count' => (parsed.size if parsed.respond_to?(:size)),
+        'collection_counts' => collection_counts(parsed).presence,
+        'facts' => facts.presence,
+        'fact_count' => fact_count,
+        'facts_truncated' => fact_count > facts.size
+      }.compact
+    }
+  end
+  private_class_method :json_summary
+
+  def self.collection_counts(value)
+    return {} unless value.is_a?(Hash)
+
+    value.each_with_object({}) do |(key, child_value), counts|
+      next unless child_value.is_a?(Array) && key.to_s.match?(SUMMARY_COLLECTION_PATTERN)
+      next if counts.size >= SUMMARY_COLLECTION_LIMIT
+
+      counts[bounded_summary_text(key.to_s, SUMMARY_COLLECTION_KEY_LIMIT)] = child_value.size
+    end
+  end
+  private_class_method :collection_counts
+
+  def self.collect_summary_facts(value, path, facts, budget)
+    return collect_hash_summary_facts(value, path, facts, budget) if value.is_a?(Hash)
+    return collect_array_summary_facts(value, path, facts, budget) if value.is_a?(Array)
+
+    0
+  end
+  private_class_method :collect_summary_facts
+
+  def self.collect_hash_summary_facts(value, path, facts, budget)
+    value.sum do |key, child_value|
+      child_path = bounded_summary_text("#{path}.#{key}", SUMMARY_PATH_LIMIT)
+      if SUMMARY_FIELDS.include?(key.to_s) && !child_value.is_a?(Hash) && !child_value.is_a?(Array)
+        append_summary_fact(facts, budget, child_path, child_value)
+        1
+      else
+        collect_summary_facts(child_value, child_path, facts, budget)
+      end
+    end
+  end
+  private_class_method :collect_hash_summary_facts
+
+  def self.collect_array_summary_facts(value, path, facts, budget)
+    value.each_with_index.sum do |child_value, index|
+      child_path = bounded_summary_text("#{path}[#{index}]", SUMMARY_PATH_LIMIT)
+      collect_summary_facts(child_value, child_path, facts, budget)
+    end
+  end
+  private_class_method :collect_array_summary_facts
+
+  def self.append_summary_fact(facts, budget, path, value)
+    return if facts.size >= SUMMARY_FACT_LIMIT || budget[:remaining] <= 0
+
+    fact = {
+      'path' => bounded_summary_text(path, SUMMARY_PATH_LIMIT),
+      'value' => bounded_summary_value(value)
+    }
+    fact_bytes = JSON.generate(fact).bytesize
+    return if fact_bytes > budget[:remaining]
+
+    facts << fact
+    budget[:remaining] -= fact_bytes
+  end
+  private_class_method :append_summary_fact
+
+  def self.bounded_summary_value(value)
+    return value unless value.is_a?(String)
+
+    bounded_summary_text(value, SUMMARY_VALUE_LIMIT)
+  end
+  private_class_method :bounded_summary_value
+
+  def self.bounded_summary_text(value, limit)
+    return value if value.bytesize <= limit
+
+    ellipsis = '…'
+    "#{value.byteslice(0, limit - ellipsis.bytesize).scrub('')}#{ellipsis}"
+  end
+  private_class_method :bounded_summary_text
 end

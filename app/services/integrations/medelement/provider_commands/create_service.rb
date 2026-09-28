@@ -4,6 +4,16 @@ class Integrations::Medelement::ProviderCommands::CreateService
   DUPLICATE_LOOKUP_DELAYS = [0, 0.01, 0.05].freeze
   IDEMPOTENCY_UNIQUE_CONSTRAINT = 'idx_medelement_commands_account_idempotency'.freeze
 
+  def self.reject_captain_actor!(actor: nil, actor_descriptor: nil)
+    return unless actor&.class&.name == 'Captain::Assistant' || actor_descriptor.to_h.stringify_keys['type'] == 'Captain::Assistant'
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE',
+      message: 'Customer AI cannot create a Medelement provider command',
+      status: :forbidden
+    )
+  end
+
   # This boundary mirrors the command API payload; keyword arguments keep call sites explicit.
   # rubocop:disable Metrics/ParameterLists
   def initialize(
@@ -27,6 +37,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
   # rubocop:enable Metrics/ParameterLists
 
   def perform
+    self.class.reject_captain_actor!(actor: actor, actor_descriptor: normalized_actor_descriptor)
+
     validator.validate_identity!
     intent_fingerprint = idempotency_fingerprint
     existing = command_scope.find_by(idempotency_key: idempotency_key)
@@ -103,8 +115,11 @@ class Integrations::Medelement::ProviderCommands::CreateService
         'request_snapshot' => snapshot,
         'request_fingerprint' => request_fingerprint,
         'idempotency_fingerprint' => intent_fingerprint,
-        'dispatch_identity' => dispatch_identity
-      }
+        'dispatch_identity' => dispatch_identity,
+        'captain_action_origin' => Captain::Conversation::ActionFenceService.origin_for(
+          actor_descriptor: normalized_actor_descriptor, appointment: appointment
+        )
+      }.compact
     }
   end
 

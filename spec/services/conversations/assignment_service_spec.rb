@@ -85,6 +85,7 @@ describe Conversations::AssignmentService do
     it 'atomically applies an agent and team to every channel projection' do
       contact = create(:contact, account: account)
       team = create(:team, account: account)
+      create(:team_member, team: team, user: agent)
       first_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
       second_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
 
@@ -102,11 +103,28 @@ describe Conversations::AssignmentService do
       expect(second_conversation.reload).to have_attributes(assignee_id: agent.id, team_id: team.id)
     end
 
+    it 'stops Captain on a linked channel when assigning an unlinked channel to a human' do
+      contact = create(:contact, account: account)
+      inbox = create(:channel_widget, account: account).inbox
+      assistant = create(:captain_assistant, account: account)
+      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+      linked_conversation = create(:conversation, account: account, contact: contact, inbox: inbox, status: :pending)
+      unlinked_conversation = create(:conversation, account: account, contact: contact, status: :pending)
+      unlinked_conversation.communication_thread_conversation.destroy!
+      unlinked_conversation.reload
+
+      expect(unlinked_conversation.communication_thread).to be_nil
+      expect(linked_conversation.current_captain_control_state).to eq('ai')
+
+      described_class.new(conversation: unlinked_conversation, assignee_id: agent.id).perform
+
+      expect(linked_conversation.reload.current_captain_control_state).to eq('human')
+    end
+
     it 'rejects retired non-user assignee types' do
       expect do
         described_class.new(conversation: conversation, assignee_id: agent.id, assignee_type: 'AgentBot').perform
       end.to raise_error(ArgumentError, 'assignee_type must be User')
     end
-
   end
 end

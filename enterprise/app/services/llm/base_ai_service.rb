@@ -68,7 +68,10 @@ class Llm::BaseAiService
 
   def runtime_ask_kwargs(observability:)
     account = llm_model_account
-    { account: account, model: account.present? || observability.present? ? model : nil, observability: observability }
+    kwargs = { account: account, model: account.present? || observability.present? ? model : nil,
+               observability: observability }
+    kwargs[:feature] = llm_feature_key if llm_feature_key.present?
+    kwargs
   end
 
   def llm_context_for_model(model_name, account)

@@ -9,8 +9,7 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { CRM_DEAL_MANAGE_PERMISSIONS } from 'dashboard/constants/permissions';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
+import { hasCrmManagePermission } from 'dashboard/helper/permissionsHelper';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
@@ -124,17 +123,16 @@ const currentUserId = computed(() => {
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
 );
-const currentAccountPermissions = computed(() => {
-  const currentAccount = currentUser.value?.accounts?.find(
-    account => Number(account.id) === Number(accountId.value)
-  );
-
-  return currentAccount?.permissions || [];
-});
 const canManageConversationDeals = computed(() => {
   return (
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
-    hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
+    hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      selectedDeal.value ? 'update_fields' : ['create', 'assign'],
+      selectedDeal.value || { ownerId: currentUser.value?.id }
+    )
   );
 });
 
@@ -617,6 +615,46 @@ const buildPayload = () =>
   });
 
 const saveDeal = async () => {
+  if (!canManageConversationDeals.value) return;
+  if (
+    selectedDeal.value &&
+    Number(form.stageId) !== Number(selectedDeal.value.stageId) &&
+    !hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      'transition',
+      selectedDeal.value
+    )
+  )
+    return;
+  if (
+    selectedDeal.value &&
+    (Number(form.ownerId || 0) !== Number(selectedDeal.value.ownerId || 0) ||
+      Number(form.teamId || 0) !== Number(selectedDeal.value.teamId || 0)) &&
+    !hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      'assign',
+      selectedDeal.value
+    )
+  )
+    return;
+  if (
+    !selectedDeal.value &&
+    !hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      ['create', 'assign'],
+      {
+        ownerId: form.ownerId,
+        teamId: form.teamId,
+      }
+    )
+  )
+    return;
   ui.isSaving = true;
 
   try {
@@ -626,6 +664,10 @@ const saveDeal = async () => {
     if (selectedDeal.value) {
       const currentStageId = selectedDeal.value.stageId;
       const { stage_id: _stageId, ...updatePayload } = payload;
+      if (Number(form.ownerId || 0) === Number(selectedDeal.value.ownerId || 0))
+        delete updatePayload.owner_id;
+      if (Number(form.teamId || 0) === Number(selectedDeal.value.teamId || 0))
+        delete updatePayload.team_id;
       const response = await CrmDealsAPI.update(
         selectedDeal.value.id,
         updatePayload

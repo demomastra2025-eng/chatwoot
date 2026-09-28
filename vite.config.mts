@@ -200,6 +200,9 @@ export default defineConfig({
     globals: true,
     outputFile: 'coverage/sonar-report.xml',
     pool: 'threads',
+    minWorkers: 2,
+    maxWorkers: 4,
+    testTimeout: 20_000,
     poolOptions: {
       threads: {
         singleThread: false,

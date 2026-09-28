@@ -10,6 +10,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/demomastra2025-eng/chatwoot
+  VOICE_IMAGE_NAME: ghcr.io/demomastra2025-eng/onelink-ai-voice
 
 jobs:
   release-gate:
@@ -23,6 +24,8 @@ jobs:
       cancel-in-progress: true
     outputs:
       runtime: ${{ steps.plan.outputs.runtime }}
+      sidecar: ${{ steps.plan.outputs.sidecar }}
+      deploy_verb: ${{ steps.plan.outputs.deploy_verb }}
     services:
       postgres:
         image: pgvector/pgvector@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
@@ -83,6 +86,16 @@ jobs:
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
             BASE_SHA="${HEAD_SHA}^"
           fi
+          linear_reconciliation=false
+          read -r stale_deployment_sha reconciled_live_sha extra < script/onelink/dev_reconciled_live_shas.txt
+          if [[ -z "${extra:-}" && "$BASE_SHA" == "$stale_deployment_sha" && \
+                "$stale_deployment_sha" =~ ^[0-9a-f]{40}$ && "$reconciled_live_sha" =~ ^[0-9a-f]{40}$ ]] && \
+             ! git merge-base --is-ancestor "$reconciled_live_sha" "$HEAD_SHA" && \
+             git cat-file -e "${reconciled_live_sha}^{commit}"; then
+              BASE_SHA="$reconciled_live_sha"
+              linear_reconciliation=true
+              echo "::notice::Using audited actual live DEV ${BASE_SHA} instead of the stale GitHub deployment record."
+          fi
           git diff --check "$BASE_SHA" "$HEAD_SHA"
           python3 -m unittest script/onelink/test_change_plan.py
           python3 -m unittest script/onelink/test_dev_release_gate.py
@@ -92,6 +105,12 @@ jobs:
             --github-output "$GITHUB_OUTPUT" \
             --validate-migrations --validate-release-surface
           echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          deploy_verb=deploy
+          if [[ "$linear_reconciliation" == true ]]; then
+            deploy_verb=rollback
+            echo "::notice::Using the audited rollback verb for the one-time linear reconciliation of live DEV ${BASE_SHA}."
+          fi
+          echo "deploy_verb=$deploy_verb" >> "$GITHUB_OUTPUT"
           if [[ "$HAS_DEV_PROOF" != true ]]; then
             echo 'runtime=true' >> "$GITHUB_OUTPUT"
             echo '::notice::No successful DEV deployment proof exists; forcing bootstrap deployment.'
@@ -102,6 +121,10 @@ jobs:
           bundler-cache: true
       - if: steps.plan.outputs.frontend == 'true' || steps.plan.outputs.backend == 'true' || steps.plan.outputs.migrations == 'true'
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - if: steps.plan.outputs.sidecar == 'true' && steps.plan.outputs.frontend != 'true' && steps.plan.outputs.backend != 'true' && steps.plan.outputs.migrations != 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
       - if: steps.plan.outputs.frontend == 'true' || steps.plan.outputs.backend == 'true' || steps.plan.outputs.migrations == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -139,6 +162,12 @@ jobs:
           else
             pnpm run build:app
           fi
+      - name: Run AI voice sidecar checks
+        if: steps.plan.outputs.sidecar == 'true'
+        working-directory: services/onelink-ai-voice
+        run: |
+          npm ci
+          npm test
 
   image:
     needs: release-gate
@@ -155,6 +184,8 @@ jobs:
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image_ref: ${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+      voice_digest: ${{ steps.voice-build.outputs.digest }}
+      voice_image_ref: ${{ env.VOICE_IMAGE_NAME }}@${{ steps.voice-build.outputs.digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -185,16 +216,40 @@ jobs:
           cache-to: type=gha,mode=max,scope=onelink-production
           provenance: mode=max
           sbom: true
+      - name: Build and publish immutable AI voice image
+        id: voice-build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: services/onelink-ai-voice
+          file: services/onelink-ai-voice/Dockerfile
+          push: true
+          tags: |
+            ${{ env.VOICE_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.VOICE_IMAGE_NAME }}:dev
+          build-args: SOURCE_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=onelink-ai-voice-production
+          cache-to: type=gha,mode=max,scope=onelink-ai-voice-production
+          provenance: mode=max
+          sbom: true
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Sign image digest with GitHub OIDC
+      - name: Sign image digests with GitHub OIDC
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
-      - name: Attest build provenance
+          VOICE_DIGEST: ${{ steps.voice-build.outputs.digest }}
+        run: |
+          cosign sign --yes "${IMAGE_NAME}@${DIGEST}"
+          cosign sign --yes "${VOICE_IMAGE_NAME}@${VOICE_DIGEST}"
+      - name: Attest Chatwoot build provenance
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Attest AI voice build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
+        with:
+          subject-name: ${{ env.VOICE_IMAGE_NAME }}
+          subject-digest: ${{ steps.voice-build.outputs.digest }}
           push-to-registry: true
 
   deploy-dev:
@@ -216,6 +271,7 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           DEPLOY_IMAGE: ${{ needs.image.outputs.image_ref }}
+          DEPLOY_VOICE_IMAGE: ${{ needs.image.outputs.voice_image_ref }}
         with:
           script: |
             const deployment = await github.rest.repos.createDeployment({
@@ -228,7 +284,15 @@ jobs:
               payload: {
                 source: 'onelink-dev',
                 workflow_run_id: context.runId,
-                image: process.env.DEPLOY_IMAGE
+                runtime: {
+                  kind: 'bare-metal-source-release',
+                  app_sha: context.sha,
+                  voice_sha: context.sha
+                },
+                promotion_artifacts: {
+                  app_image: process.env.DEPLOY_IMAGE,
+                  voice_image: process.env.DEPLOY_VOICE_IMAGE
+                }
               }
             });
             core.setOutput('id', deployment.data.id);
@@ -245,12 +309,14 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
+          DEPLOY_VERB: ${{ needs.release-gate.outputs.deploy_verb }}
         run: |
+          [[ "$DEPLOY_VERB" == deploy || "$DEPLOY_VERB" == rollback ]]
           for ((attempt = 1; attempt <= 40; attempt++)); do
             if ssh -i ~/.ssh/onelink-dev \
               -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
               -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
-              "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"; then
+              "$DEPLOY_USER@$DEPLOY_HOST" "$DEPLOY_VERB $GITHUB_SHA"; then
               exit 0
             else
               status=$?

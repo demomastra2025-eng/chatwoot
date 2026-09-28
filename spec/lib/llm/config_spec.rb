@@ -5,6 +5,8 @@ require 'rails_helper'
 RSpec.describe Llm::Config do
   before do
     described_class.reset!
+    # Selection examples exercise provider precedence, not installation policy.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed?).and_return(true)
   end
 
   describe 'defaults' do
@@ -48,6 +50,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers account integration hook credentials over installation credentials' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(
         :integrations_hook,
         account: account,
@@ -64,6 +67,7 @@ RSpec.describe Llm::Config do
 
     it 'uses account hook settings api_key when access_token is blank' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       hook = create(
         :integrations_hook,
         account: account,
@@ -78,6 +82,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers account hook access_token over settings api_key' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(
         :integrations_hook,
         account: account,
@@ -133,6 +138,7 @@ RSpec.describe Llm::Config do
 
     it 'reuses account provider hook lookups inside the block' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
       hooks = account.hooks
 
@@ -216,7 +222,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
     end
 
     it 'uses the OpenRouter default even when a direct provider key is configured alongside OpenRouter' do
@@ -230,7 +236,7 @@ RSpec.describe Llm::Config do
         }
       )
 
-      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.4')
+      expect(described_class.model_for(feature: 'assistant')).to eq('openai/gpt-5.6-luna')
     end
 
     it 'maps legacy account-selected direct model ids to OpenRouter equivalents for normal Captain features' do
@@ -253,6 +259,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers an account-selected model when that account has provider credentials' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {

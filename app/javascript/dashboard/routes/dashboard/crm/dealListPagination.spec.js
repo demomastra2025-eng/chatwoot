@@ -1,9 +1,11 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
   runtime: {
     accountId: null,
+    currentUser: null,
     dispatch: vi.fn(),
     routeQuery: {},
     routerReplace: vi.fn(),
@@ -75,12 +77,20 @@ vi.mock('dashboard/composables/usePolicy', () => ({
 vi.mock('dashboard/composables/store', async () => {
   const { ref } = await vi.importActual('vue');
   runtime.accountId ||= ref(1);
+  runtime.currentUser ||= ref({
+    id: 1,
+    accounts: [1, 2].map(id => ({
+      id,
+      access_control_mode: 'legacy',
+      permissions: ['agent'],
+    })),
+  });
 
   return {
     useMapGetter: key => {
       const values = {
         getCurrentAccountId: runtime.accountId,
-        getCurrentUser: { __v_isRef: true, value: { id: 1 } },
+        getCurrentUser: runtime.currentUser,
         'agents/getAgents': {
           __v_isRef: true,
           value: [{ id: 1, name: 'Agent' }],
@@ -139,6 +149,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   runtime.accountId.value = 1;
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [1, 2].map(id => ({
+      id,
+      access_control_mode: 'legacy',
+      permissions: ['agent'],
+    })),
+  };
   Object.keys(runtime.routeQuery).forEach(
     key => delete runtime.routeQuery[key]
   );
@@ -170,6 +188,85 @@ beforeEach(() => {
 
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+});
+
+it('keeps an enforced Observer in read-only Deals while allowing role-scoped create grants', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        permissions: ['agent'],
+        access_control_mode: 'enforced',
+        crm_capabilities: { deals: ['view'], tasks: ['view'] },
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'all' } },
+      },
+    ],
+  };
+  const { state } = await mountPage();
+
+  expect(state.canViewDeals).toBe(true);
+  expect(state.canCreateDeals).toBe(false);
+  expect(state.canManageDeals).toBe(false);
+  expect(await state.openCreateDrawer()).toBe(false);
+  expect(state.drawerOpen).toBe(false);
+
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        permissions: ['agent'],
+        access_control_mode: 'enforced',
+        crm_capabilities: {
+          deals: ['view', 'create', 'assign'],
+          tasks: ['view'],
+        },
+        crm_grant_scopes: {
+          deals: { view: 'all', create: 'own', assign: 'own' },
+          tasks: { view: 'all' },
+        },
+      },
+    ],
+  };
+  await nextTick();
+  expect(state.canCreateDeals).toBe(true);
+  expect(state.canManageDeals).toBe(false);
+  expect(state.canEditDealForm).toBe(true);
+});
+
+it('loads deals without forbidden task references or a tasks tab when Tasks view is denied', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        permissions: ['agent'],
+        access_control_mode: 'enforced',
+        crm_capabilities: { deals: ['view'], tasks: [] },
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: {} },
+      },
+    ],
+  };
+  referencesStore.loadTaskStatuses.mockRejectedValueOnce(
+    new Error('forbidden')
+  );
+
+  const { state, wrapper } = await mountPage();
+
+  expect(state.ui.error).toBeNull();
+  expect(CrmDealsAPI.get).toHaveBeenCalled();
+  expect(referencesStore.loadTaskStatuses).not.toHaveBeenCalled();
+  expect(referencesStore.loadTaskTypes).not.toHaveBeenCalled();
+  expect(referencesStore.loadFieldDefinitions).not.toHaveBeenCalledWith('task');
+  state.selectedDeal = deal(1);
+  state.drawerOpen = true;
+  state.dealActivityTab = 'tasks';
+  await nextTick();
+  expect(state.shouldRenderDealTasksPanel).toBe(false);
+  expect(wrapper.find('[role="tab"][aria-selected="true"]').exists()).toBe(
+    false
+  );
 });
 
 it('exposes a localized string when the initial load fails', async () => {
@@ -1086,25 +1183,35 @@ it('ignores an older list response after a newer request wins', async () => {
   expect(state.deals.map(item => item.id)).toEqual([2]);
 });
 
-it('invalidates the old workspace request before loading the new workspace', async () => {
+it('invalidates the old workspace request without leaking preferences to the new workspace', async () => {
   const { state } = await mountPage();
   state.currentPresentation = 'list';
+  state.listQuickFilters.q = 'account one';
+  await nextTick();
   const oldWorkspace = deferred();
+  const newWorkspace = response([deal(2, 'Account two')], {
+    count: 1,
+    has_more: false,
+    page: 1,
+    per_page: 8,
+    total_count: 1,
+  });
   CrmDealsAPI.get
     .mockReset()
     .mockReturnValueOnce(oldWorkspace.promise)
-    .mockResolvedValueOnce(
-      response([deal(2, 'Account two')], {
-        count: 1,
-        has_more: false,
-        page: 1,
-        per_page: 25,
-        total_count: 1,
-      })
-    );
+    .mockResolvedValue(newWorkspace);
 
   const oldRequest = state.loadDeals();
+  state.listQuickFilters.q = 'pending edit';
   runtime.accountId.value = 2;
+  await vi.waitFor(
+    () => {
+      expect(CrmDealsAPI.get).toHaveBeenCalledWith(
+        expect.objectContaining({ board: true, page: 1, per_page: 8 })
+      );
+    },
+    { timeout: 10_000 }
+  );
   await flushPromises();
   oldWorkspace.resolve(
     response([deal(1, 'Old workspace')], {
@@ -1119,10 +1226,10 @@ it('invalidates the old workspace request before loading the new workspace', asy
   await flushPromises();
 
   expect(state.deals.map(item => item.id)).toEqual([2]);
-  expect(CrmDealsAPI.get).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      page: 1,
-      per_page: 25,
-    })
+  expect(state.currentPresentation).toBe('board');
+  expect(state.listQuickFilters.q).toBe('');
+  const boardCall = CrmDealsAPI.get.mock.calls.find(
+    ([params]) => params.board && params.per_page === 8
   );
-});
+  expect(boardCall[0]).not.toHaveProperty('q');
+}, 15_000);

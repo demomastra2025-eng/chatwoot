@@ -22,7 +22,8 @@ RSpec.describe Captain::Tools::UpdateContactTool, type: :model do
     )
   end
 
-  it 'exposes custom_attributes as an object parameter' do
+  it 'advertises current-contact fields without an identifier parameter' do
+    expect(described_class.parameters.keys).to contain_exactly(:name, :email, :phone_number, :custom_attributes)
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
 end

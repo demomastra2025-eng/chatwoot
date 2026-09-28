@@ -48,7 +48,18 @@ class AccessControl::EnforcementReadiness
   end
 
   def grants_for(role)
-    role.grants.map { |grant| [grant.resource, grant.capability, grant.access_scope] }.sort
+    role.grants.filter_map do |grant|
+      next if grant.retired?
+
+      if AccessControl::FutureTelephonyGrant.valid?(grant)
+        next if AccessControl::FutureTelephonyGrant.bridge_only? || role.system_key != 'administrator'
+
+        # An explicit administrator denial is intentional, not a missing preset.
+        [grant.resource, grant.capability, grant.access_scope == 'none' ? 'all' : grant.access_scope]
+      else
+        [grant.resource, grant.capability, grant.access_scope]
+      end
+    end.sort
   end
 
   def expected_grants_for(system_key)

@@ -129,6 +129,12 @@ export default {
           currentThread.agent_last_seen_at === previousLastSeen);
       if (!stateMatchesOptimisticRead) {
         refreshCommunicationThreadStats(dispatch, state);
+        if (readState.sidebar_counts_refresh_required !== false) {
+          dispatch('fetchRealtimeSidebarUnreadCounts', {
+            ...(state?.conversationFilters || {}),
+            communicationThreadMode: true,
+          });
+        }
         return undefined;
       }
       const lastSeen = readState.agent_last_seen_at || optimisticLastSeen;
@@ -140,7 +146,15 @@ export default {
       };
       if (readState.channels) unreadPayload.channels = readState.channels;
       commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, unreadPayload);
-      refreshCommunicationThreadStats(dispatch, state);
+      if (readState.read_state_changed !== false) {
+        refreshCommunicationThreadStats(dispatch, state);
+      }
+      if (readState.sidebar_counts_refresh_required !== false) {
+        dispatch('fetchRealtimeSidebarUnreadCounts', {
+          ...(state?.conversationFilters || {}),
+          communicationThreadMode: true,
+        });
+      }
     } catch (error) {
       const currentThread = (state?.allConversations || []).find(
         chat =>

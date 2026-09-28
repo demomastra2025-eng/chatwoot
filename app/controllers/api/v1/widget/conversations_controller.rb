@@ -7,8 +7,10 @@ class Api::V1::Widget::ConversationsController < Api::V1::Widget::BaseController
   end
 
   def create
-    ActiveRecord::Base.transaction do
-      process_update_contact
+    with_locked_contact_identity do |locked_contact_ids|
+      process_update_contact(locked_thread_contact_ids: locked_contact_ids)
+      raise Conversations::IdentityResolver::ContactChanged if @contact_inbox.reload.contact_id != @contact.id
+
       @conversation = create_conversation
       conversation.messages.create!(message_params)
       # TODO: Temporary fix for message type cast issue, since message_type is returning as string instead of integer
@@ -16,13 +18,18 @@ class Api::V1::Widget::ConversationsController < Api::V1::Widget::BaseController
     end
   end
 
-  def process_update_contact
-    @contact = ContactIdentifyAction.new(
+  def process_update_contact(locked_thread_contact_ids: nil)
+    @contact = contact_identify_action.perform(locked_thread_contact_ids: locked_thread_contact_ids)
+    Current.contact = @contact
+  end
+
+  def contact_identify_action
+    ContactIdentifyAction.new(
       contact: @contact,
       params: { email: contact_email, phone_number: contact_phone_number, name: contact_name },
       retain_original_contact_name: true,
       discard_invalid_attrs: true
-    ).perform
+    )
   end
 
   def update_last_seen
@@ -83,6 +90,31 @@ class Api::V1::Widget::ConversationsController < Api::V1::Widget::BaseController
   end
 
   private
+
+  def with_locked_contact_identity
+    loop do
+      return ActiveRecord::Base.transaction(requires_new: true) do
+        # ContactIdentifyAction can change phone or merge contacts. Merge
+        # takes phone -> ordered thread advisors -> Contact, so reserve the
+        # same order before the widget's outer transaction updates Contact.
+        Contacts::PhoneIdentityLock.acquire!(account_id: @current_account.id)
+        contact_id = @contact_inbox.reload.contact_id
+        @contact = @current_account.contacts.find(contact_id)
+        locked_ids = contact_identify_action.thread_lock_contact_ids
+        locked_ids.each do |id|
+          Conversations::CommunicationThreadResolver.lock_contact_thread!(@current_account.id, id)
+        end
+        raise Conversations::IdentityResolver::ContactChanged if @contact_inbox.reload.contact_id != contact_id
+
+        @contact.reload
+        yield locked_ids
+      end
+    rescue Conversations::IdentityResolver::ContactChanged, ContactIdentifyAction::ThreadContactChanged
+      # A concurrent identity change must restart before any Contact lock is
+      # retained. The transaction rolls back both the advisors and edits.
+      @contact_inbox.reload
+    end
+  end
 
   def send_transcript_email
     return if conversation.contact&.email.blank?

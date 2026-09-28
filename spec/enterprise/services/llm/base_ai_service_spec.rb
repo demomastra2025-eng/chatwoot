@@ -30,6 +30,15 @@ RSpec.describe Llm::BaseAiService do
 
       service.send(:ask_chat, chat, 'hello')
     end
+
+    it 'passes its feature explicitly when asking a stateful Captain chat' do
+      allow(service).to receive(:llm_feature_key).and_return(:captain_agent)
+      expect(Llm::Runtime).to receive(:ask).with(
+        chat, 'hello', account: nil, model: nil, observability: {}, feature: :captain_agent
+      )
+
+      service.send(:ask_chat, chat, 'hello')
+    end
   end
 
   describe '#apply_chat_features' do

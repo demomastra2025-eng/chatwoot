@@ -22,34 +22,47 @@ jobs:
   resolve:
     runs-on: ubuntu-24.04
     outputs:
+      publish_proof: ${{ steps.target.outputs.publish_proof }}
       sha: ${{ steps.target.outputs.sha }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: onelink-dev
+          ref: ${{ github.ref }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Freeze an exact onelink-dev revision
+      - name: Freeze an exact verification revision
         id: target
         env:
+          EVENT_NAME: ${{ github.event_name }}
           WORKFLOW_REF: ${{ github.ref }}
           REQUESTED_SHA: ${{ inputs.sha }}
         run: |
-          [[ "$WORKFLOW_REF" == refs/heads/onelink-dev ]] || {
-            echo "full verification must run from refs/heads/onelink-dev" >&2
-            exit 65
-          }
-          if [[ -n "$REQUESTED_SHA" ]]; then
-            sha="$REQUESTED_SHA"
+          if [[ "$WORKFLOW_REF" == refs/heads/onelink-dev ]]; then
+            if [[ -n "$REQUESTED_SHA" ]]; then
+              sha="$REQUESTED_SHA"
+            else
+              sha="$(git rev-parse HEAD)"
+            fi
+            publish_proof=true
           else
+            [[ "$EVENT_NAME" == workflow_dispatch ]] || {
+              echo "feature-branch verification must be started with workflow_dispatch" >&2
+              exit 65
+            }
             sha="$(git rev-parse HEAD)"
+            [[ -z "$REQUESTED_SHA" || "$REQUESTED_SHA" == "$sha" ]] || {
+              echo "requested SHA must equal the selected feature-branch HEAD" >&2
+              exit 65
+            }
+            publish_proof=false
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           git cat-file -e "$sha^{commit}"
           git merge-base --is-ancestor "$sha" HEAD || {
-            echo "$sha is not contained in onelink-dev" >&2
+            echo "$sha is not contained in the selected workflow ref" >&2
             exit 65
           }
+          echo "publish_proof=$publish_proof" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   backend:
@@ -149,10 +162,37 @@ jobs:
           bundle exec bundler-audit check --update --ignore CVE-2026-67991
           bundle exec brakeman --no-pager --ensure-ignore-notes --ensure-no-obsolete-ignore-entries
 
+  ai-voice:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/onelink-ai-voice/package-lock.json
+      - name: Test AI voice runtime
+        working-directory: services/onelink-ai-voice
+        run: |
+          npm ci
+          npm test
+      - name: Verify immutable AI voice image contract
+        env:
+          TESTED_SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          docker build --build-arg "SOURCE_SHA=$TESTED_SHA" \
+            -t onelink-ai-voice-nightly "services/onelink-ai-voice"
+          embedded_sha="$(docker run --rm --entrypoint cat onelink-ai-voice-nightly /app/.git_sha)"
+          [[ "$embedded_sha" == "$TESTED_SHA" ]]
+
   gate:
     name: OneLink Nightly Gate
     if: always()
-    needs: [resolve, backend, frontend, security]
+    needs: [resolve, backend, frontend, security, ai-voice]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -163,12 +203,14 @@ jobs:
           BACKEND: ${{ needs.backend.result }}
           FRONTEND: ${{ needs.frontend.result }}
           SECURITY: ${{ needs.security.result }}
+          AI_VOICE: ${{ needs.ai-voice.result }}
         run: |
           [[ "$BACKEND" == success ]]
           [[ "$FRONTEND" == success ]]
           [[ "$SECURITY" == success ]]
+          [[ "$AI_VOICE" == success ]]
       - name: Publish immutable nightly proof
-        if: github.event_name != 'workflow_call'
+        if: needs.resolve.outputs.publish_proof == 'true' && github.event_name != 'workflow_call'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           TESTED_SHA: ${{ needs.resolve.outputs.sha }}

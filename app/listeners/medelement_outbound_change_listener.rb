@@ -83,10 +83,8 @@ class MedelementOutboundChangeListener < BaseListener
     !event.data[:medelement_provider_reconciled] && appointment.present? && appointment_outbound_actor?(actor, appointment)
   end
 
-  def appointment_outbound_actor?(actor, appointment)
-    return true if actor.is_a?(User)
-
-    defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == appointment.account_id
+  def appointment_outbound_actor?(actor, _appointment)
+    actor.is_a?(User)
   end
 
   def outbound_actor_id(actor)

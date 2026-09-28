@@ -46,6 +46,11 @@ class CommunicationThread < ApplicationRecord
   has_many :conversations, through: :communication_thread_conversations
   has_many :communication_thread_participants, dependent: :destroy
   has_many :participants, through: :communication_thread_participants, source: :user
+  has_many :communication_thread_state_transition_facts,
+           primary_key: :id,
+           foreign_key: :communication_thread_id_snapshot,
+           inverse_of: false,
+           dependent: nil
   has_many :meta_ad_referrals, dependent: :nullify
 
   before_validation :ensure_display_id, on: :create

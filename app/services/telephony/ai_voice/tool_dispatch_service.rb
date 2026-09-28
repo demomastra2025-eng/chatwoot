@@ -9,7 +9,6 @@ class Telephony::AiVoice::ToolDispatchService
   # roughly one second to make a queued acknowledgement audible, so starting a
   # filler earlier only adds latency and races the already-ready FAQ result.
   REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 2_800
-  VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
   VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS = 5.0
   VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_MAX_ENTRIES = 128
   VOICE_CANONICAL_KNOWLEDGE_TOOL = 'faq_lookup'.freeze
@@ -130,6 +129,7 @@ class Telephony::AiVoice::ToolDispatchService
   def self.catalog(policy: nil, captain_assistant: nil, voice_settings: nil)
     settings = normalized_voice_settings(policy, captain_assistant, voice_settings)
     voice_tools = VOICE_TOOL_CATALOG.filter_map do |tool|
+      next unless Captain::CustomerToolExecutionScope.allowed_tool_name?(tool[:name])
       next if tool[:name] == 'request_transfer' && settings['manager_handoff_mode'] == 'disabled'
 
       contextualized_tool = tool.deep_dup
@@ -174,7 +174,7 @@ class Telephony::AiVoice::ToolDispatchService
       cache_version = captain_assistant.cache_key_with_version
       return cache_entry[:value].deep_dup if cache_entry[:version] == cache_version && cache_entry[:expires_at].to_f > now
 
-      catalog = build_bounded_captain_tool_catalog(captain_assistant, cache_entry: cache_entry, cache_version: cache_version)
+      catalog = build_bounded_captain_tool_catalog(captain_assistant)
       cache_entry[:version] = cache_version
       cache_entry[:value] = catalog
       cache_entry[:expires_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC) +
@@ -183,65 +183,10 @@ class Telephony::AiVoice::ToolDispatchService
     end
   end
 
-  def self.build_bounded_captain_tool_catalog(captain_assistant, cache_entry:, cache_version:)
-    local_catalog = Captain::Mcp::ToolCatalog.without_discovery do
+  def self.build_bounded_captain_tool_catalog(captain_assistant)
+    Captain::Mcp::ToolCatalog.without_discovery do
       captain_tool_catalog(captain_assistant)
     end
-    return local_catalog unless captain_assistant.account.captain_mcp_servers.enabled.exists?
-
-    bounded_captain_discovery(captain_assistant, cache_entry: cache_entry, cache_version: cache_version) || local_catalog
-  rescue StandardError => e
-    raise if local_catalog.nil?
-
-    Rails.logger.warn(
-      "#{name}: Captain MCP catalog failed for assistant_id=#{captain_assistant.id}; " \
-      "returning local Captain tools (#{e.class})"
-    )
-    local_catalog
-  end
-
-  def self.bounded_captain_discovery(captain_assistant, cache_entry:, cache_version:)
-    state = reusable_captain_discovery(cache_entry, cache_version)
-    state ||= start_captain_discovery(captain_assistant, cache_entry, cache_version)
-
-    return captain_discovery_timeout(captain_assistant) unless state[:thread].join(VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS)
-    return if state[:version] != cache_version
-
-    raise state[:error] if state[:error]
-
-    state[:catalog]
-  end
-
-  def self.start_captain_discovery(captain_assistant, cache_entry, cache_version)
-    state = { version: cache_version }
-    state[:thread] = Thread.new do
-      Thread.current.report_on_exception = false
-      Rails.application.executor.wrap do
-        state[:catalog] = Captain::Mcp::ToolCatalog.with_runtime_cache do
-          captain_tool_catalog(captain_assistant)
-        end
-      end
-    rescue StandardError => e
-      state[:error] = e
-    ensure
-      state[:completed_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    end
-    cache_entry[:discovery] = state
-  end
-
-  def self.reusable_captain_discovery(cache_entry, cache_version)
-    state = cache_entry[:discovery]
-    return if state.nil?
-    return state if state[:thread].alive?
-    return if state[:version] != cache_version
-
-    completed_at = state[:completed_at].to_f
-    state if completed_at + VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS > Process.clock_gettime(Process::CLOCK_MONOTONIC)
-  end
-
-  def self.captain_discovery_timeout(captain_assistant)
-    Rails.logger.warn("#{name}: Captain MCP catalog timed out for assistant_id=#{captain_assistant.id}; returning local Captain tools")
-    nil
   end
 
   def self.captain_catalog_cache_entry(captain_assistant)
@@ -261,8 +206,7 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def self.captain_catalog_cache_entry_expired?(entry, now)
-    discovery_running = entry.dig(:discovery, :thread)&.alive?
-    entry[:expires_at].to_f <= now && !entry[:mutex].locked? && !discovery_running
+    entry[:expires_at].to_f <= now && !entry[:mutex].locked?
   end
 
   private_class_method :normalized_voice_settings,
@@ -270,10 +214,6 @@ class Telephony::AiVoice::ToolDispatchService
                        :transfer_tool_description,
                        :bounded_captain_tool_catalog,
                        :build_bounded_captain_tool_catalog,
-                       :bounded_captain_discovery,
-                       :start_captain_discovery,
-                       :reusable_captain_discovery,
-                       :captain_discovery_timeout,
                        :captain_catalog_cache_entry,
                        :prune_captain_catalog_cache,
                        :captain_catalog_cache_entry_expired?
@@ -281,7 +221,7 @@ class Telephony::AiVoice::ToolDispatchService
   def self.captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?
 
-    Array(captain_tool_definitions(captain_assistant)).filter_map do |tool_definition|
+    customer_captain_tool_definitions(captain_assistant).filter_map do |tool_definition|
       tool = tool_definition.with_indifferent_access
       tool_id = tool[:id].to_s
       next if tool_id.blank?
@@ -302,24 +242,29 @@ class Telephony::AiVoice::ToolDispatchService
     end
   end
 
+  def self.customer_captain_tool_definitions(captain_assistant)
+    customer_tool_ids = Captain::ToolRegistry.customer_agent_tools.pluck(:id)
+    Array(captain_tool_definitions(captain_assistant)).select do |tool|
+      customer_tool_ids.include?(tool.with_indifferent_access[:id].to_s)
+    end
+  end
+
   def self.captain_tool_definitions(captain_assistant)
     return [] if captain_assistant.blank?
 
-    definitions = if captain_assistant.respond_to?(:voice_runtime_agent_tools)
-                    captain_assistant.voice_runtime_agent_tools
-                  elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools) && captain_assistant.respond_to?(:direct_agent_tools)
-                    (captain_assistant.direct_agent_tools + captain_assistant.prompt_runtime_agent_tools).uniq { |tool| tool[:id].to_s }
-                  elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools)
-                    captain_assistant.prompt_runtime_agent_tools
-                  elsif captain_assistant.respond_to?(:direct_agent_tools)
-                    captain_assistant.direct_agent_tools
-                  elsif captain_assistant.respond_to?(:allowed_agent_tools)
-                    captain_assistant.allowed_agent_tools
-                  else
-                    []
-                  end
-
-    Array(definitions).reject { |tool| tool.with_indifferent_access[:id].to_s == 'handoff' }
+    if captain_assistant.respond_to?(:voice_runtime_agent_tools)
+      captain_assistant.voice_runtime_agent_tools
+    elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools) && captain_assistant.respond_to?(:direct_agent_tools)
+      (captain_assistant.direct_agent_tools + captain_assistant.prompt_runtime_agent_tools).uniq { |tool| tool[:id].to_s }
+    elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools)
+      captain_assistant.prompt_runtime_agent_tools
+    elsif captain_assistant.respond_to?(:direct_agent_tools)
+      captain_assistant.direct_agent_tools
+    elsif captain_assistant.respond_to?(:allowed_agent_tools)
+      captain_assistant.allowed_agent_tools
+    else
+      []
+    end
   end
 
   def self.captain_tool_parameters(captain_assistant, tool)
@@ -394,11 +339,23 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform
-    ensure_call_session!
-    return send("perform_#{tool_name}") if voice_tool?
+    verify_customer_tool_scope!
     return perform_captain_tool if captain_tool_definition.present?
 
     raise UnknownToolError, "Unknown voice AI tool: #{tool_name}"
+  end
+
+  # This guard is also called under the execution lease before dispatch starts.
+  # Keep it on the direct entry point so no caller can skip the customer scope.
+  def verify_customer_tool_scope!
+    ensure_call_session!
+    return unless voice_tool? || !Captain::CustomerToolExecutionScope.allowed_tool_name?(tool_name)
+
+    raise Telephony::Error.new(
+      code: 'CUSTOMER_AI_TOOL_SCOPE_DENIED',
+      message: Captain::CustomerToolExecutionScope::DENIED_MESSAGE,
+      status: :forbidden
+    )
   end
 
   def captain_assistant_id
@@ -553,7 +510,7 @@ class Telephony::AiVoice::ToolDispatchService
   def handoff_conversation(reason)
     return if conversation.blank?
 
-    conversation.with_lock do
+    Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
       next if conversation.status == 'open' && conversation.waiting_since.present?
 
       if captain_assistant.present?
@@ -597,9 +554,8 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_captain_tool
-    selection_attempt = begin_selected_deal_attempt!
-    result = nil
-    ensure_voice_crm_source!
+    ensure_customer_voice_scope!
+
     tool = Captain::ToolCatalog.build_tool(
       captain_tool_definition,
       assistant: captain_assistant,
@@ -608,6 +564,10 @@ class Telephony::AiVoice::ToolDispatchService
     )
     raise UnknownToolError, "Unknown voice AI tool: #{tool_name}" unless tool
 
+    authorize_customer_voice_tool!(tool)
+    selection_attempt = begin_selected_deal_attempt!
+    result = nil
+    ensure_voice_crm_source!
     @claimed_selected_deal_context = claim_selected_deal_context! if tool_name == 'update_deal'
     result = tool.execute(captain_tool_context, **captain_tool_execution_arguments)
     captain_tool_result_envelope(result)
@@ -615,6 +575,27 @@ class Telephony::AiVoice::ToolDispatchService
     captain_tool_result_envelope(Captain::ToolResult.failure_output(error: e, retryable: false))
   ensure
     finalize_selected_deal_attempt!(selection_attempt, result) if selection_attempt
+  end
+
+  def ensure_customer_voice_scope!
+    valid = Captain::CustomerToolExecutionScope.allowed_tool_name?(tool_name) &&
+            conversation.present? && call_session.conversation_id == conversation.id &&
+            call_session.contact_id == conversation.contact_id
+    raise Captain::CustomerToolExecutionScope::Denied, Captain::CustomerToolExecutionScope::DENIED_MESSAGE unless valid
+  end
+
+  def authorize_customer_voice_tool!(tool)
+    Captain::CustomerToolExecutionScope.ensure_allowed!(
+      tool: tool,
+      state: {
+        assistant_id: captain_assistant.id,
+        account_id: account.id,
+        conversation: { id: conversation.id },
+        contact: { id: call_session.contact_id }
+      },
+      params: captain_tool_execution_arguments,
+      assistant: captain_assistant
+    )
   end
 
   def captain_tool_result_envelope(result)

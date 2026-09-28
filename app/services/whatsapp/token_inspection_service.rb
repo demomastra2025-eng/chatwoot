@@ -82,9 +82,12 @@ class Whatsapp::TokenInspectionService
     @metadata['available_phone_number_ids'] = phone_number_ids
     assign_reauthorization_status(PHONE_NUMBER_MISMATCH_STATUS)
   rescue StandardError => e
+    classification = provider_error_classification(e)
+    raise if classification.transient?
+
     @metadata['waba_access'] = false
     @metadata['error'] = error_metadata(e)
-    assign_reauthorization_status(oauth_token_error?(e) ? INVALID_STATUS : WABA_ACCESS_MISSING_STATUS)
+    assign_reauthorization_status(classification.kind == :reauthorization_required ? INVALID_STATUS : WABA_ACCESS_MISSING_STATUS)
   end
 
   def fetch_phone_number_ids
@@ -225,11 +228,10 @@ class Whatsapp::TokenInspectionService
     REQUIRED_PERMISSIONS.index_with { nil }
   end
 
-  def oauth_token_error?(error)
+  def provider_error_classification(error)
     payload = error.respond_to?(:payload) ? error.payload : {}
-    provider_error = Channel::Whatsapp.normalize_provider_error(payload)
-    provider_error['code'].to_i == Channel::Whatsapp::AUTHORIZATION_ERROR_CODE ||
-      provider_error['message'].to_s.match?(/access token|session has expired|validating access token/i)
+    http_status = error.status if error.respond_to?(:status)
+    Meta::AuthorizationErrorClassifier.classify(payload, http_status: http_status)
   end
 
   def error_metadata(error)

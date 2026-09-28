@@ -3,6 +3,9 @@
 require 'uri'
 
 module Llm::MessageFormat
+  MAX_STORED_IMAGE_BYTES = 5.megabytes
+  STORED_IMAGE_TYPES = %w[image/jpeg image/png image/webp image/gif].freeze
+
   module_function
 
   def restore_messages(chat, history)
@@ -112,7 +115,7 @@ module Llm::MessageFormat
   end
 
   def image_part_payload(source)
-    { type: 'image_url', image_url: { url: source.to_s } }
+    { type: 'image_url', image_url: { url: source.is_a?(ActiveStorage::Blob) ? source : source.to_s } }
   end
 
   def text_part_payload(text)
@@ -160,8 +163,35 @@ module Llm::MessageFormat
       source = attachment.respond_to?(:source) ? attachment.source : attachment
       next source.to_s if source.is_a?(URI::Generic)
       next source if source.is_a?(String)
+      next source if stored_image_blob?(source)
 
       nil
+    end
+  end
+
+  def stored_image_blob?(source)
+    source.is_a?(ActiveStorage::Blob) && source.persisted? && STORED_IMAGE_TYPES.include?(source.content_type) &&
+      source.byte_size.to_i.between?(1, MAX_STORED_IMAGE_BYTES)
+  end
+
+  # ActiveRecord#dup clears the blob's id. Keep the immutable media reference
+  # while copying mutable conversation history across retries and agent handoffs.
+  def deep_dup_preserving_blobs(value)
+    case value
+    when ActiveStorage::Blob
+      value
+    when Array
+      value.map { |item| deep_dup_preserving_blobs(item) }
+    when Hash
+      value.dup.tap do |copy|
+        value.each_pair do |key, item|
+          copied_key = key.is_a?(String) || key.is_a?(Symbol) ? key : key.deep_dup
+          copy.delete(key) unless copied_key.equal?(key)
+          copy[copied_key] = deep_dup_preserving_blobs(item)
+        end
+      end
+    else
+      value.deep_dup
     end
   end
 

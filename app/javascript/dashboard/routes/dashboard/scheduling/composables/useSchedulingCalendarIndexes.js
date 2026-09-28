@@ -1,11 +1,11 @@
-import { computed } from 'vue';
+import { computed, unref } from 'vue';
 
 import { MINUTE_STEP } from '../constants';
 import {
   dayMatchesHoliday,
   formatDateKey,
-  minuteOfDayFromDate,
   toDate,
+  workspaceWallTime,
 } from '../helpers';
 
 const createMonthStat = () => ({
@@ -33,7 +33,11 @@ export const useSchedulingCalendarIndexes = ({
   resources,
   slots,
   timeOffs,
+  workspaceTimezone = 'UTC',
 }) => {
+  const workspaceDate = value =>
+    workspaceWallTime(value, unref(workspaceTimezone) || 'UTC');
+
   const slotStepMin = computed(() => {
     if (!resources.value.length) {
       return MINUTE_STEP;
@@ -57,11 +61,11 @@ export const useSchedulingCalendarIndexes = ({
     const result = new Map();
 
     slots.value.forEach(slot => {
-      const startsAt = toDate(slot.startsAt);
-      if (Number.isNaN(startsAt.getTime())) return;
+      const startsAt = workspaceDate(slot.startsAt);
+      if (!startsAt) return;
 
-      const dateKey = formatDateKey(startsAt);
-      const minute = minuteOfDayFromDate(startsAt);
+      const dateKey = startsAt.dateKey;
+      const minute = startsAt.minuteOfDay;
       const bucketMinute =
         Math.floor(minute / slotStepMin.value) * slotStepMin.value;
 
@@ -78,19 +82,19 @@ export const useSchedulingCalendarIndexes = ({
     }, new Map());
 
     appointments.value.forEach(appointment => {
-      const key = formatDateKey(appointment.startsAt);
+      const key = workspaceDate(appointment.startsAt)?.dateKey;
       const stat = stats.get(key);
       if (stat) stat.appointments += 1;
     });
 
     slots.value.forEach(slot => {
-      const key = formatDateKey(slot.startsAt);
+      const key = workspaceDate(slot.startsAt)?.dateKey;
       const stat = stats.get(key);
       if (stat) stat.availableSlots += 1;
     });
 
     timeOffs.value.forEach(timeOff => {
-      const key = formatDateKey(timeOff.startsAt);
+      const key = workspaceDate(timeOff.startsAt)?.dateKey;
       const stat = stats.get(key);
       if (stat) stat.timeOff += 1;
     });
@@ -132,13 +136,14 @@ export const useSchedulingCalendarIndexes = ({
       return false;
     }
 
-    const dateKey = formatDateKey(startDate);
-    if (formatDateKey(endDate) !== dateKey) {
+    const workspaceStart = workspaceDate(startDate);
+    const dateKey = workspaceStart?.dateKey;
+    if (!dateKey || workspaceDate(endDate)?.dateKey !== dateKey) {
       return false;
     }
 
     const durationMs = endDate.getTime() - startDate.getTime();
-    const minute = minuteOfDayFromDate(startDate);
+    const minute = workspaceStart.minuteOfDay;
     const bucketMinute =
       Math.floor(minute / slotStepMin.value) * slotStepMin.value;
     const candidates =
@@ -170,7 +175,7 @@ export const useSchedulingCalendarIndexes = ({
     const preferredIds = preferredResourceIds.map(Number);
 
     const slotsForDay = slots.value
-      .filter(slot => formatDateKey(slot.startsAt) === dateKey)
+      .filter(slot => workspaceDate(slot.startsAt)?.dateKey === dateKey)
       .sort(
         (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
       );

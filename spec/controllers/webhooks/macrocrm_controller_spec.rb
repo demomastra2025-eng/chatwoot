@@ -40,7 +40,7 @@ RSpec.describe 'Webhooks::MacrocrmController', type: :request do
       end.to have_enqueued_job(Integrations::Macrocrm::ManagerChangedJob).with(
         hook.id,
         hash_including(
-          'action' => 'estate.managerChanged',
+          'macrocrm' => hash_including('action' => 'estate.managerChanged'),
           'data' => hash_including(
             'event' => 'estate.managerChanged',
             'object' => hash_including('estate_id' => 6841608)
@@ -76,7 +76,7 @@ RSpec.describe 'Webhooks::MacrocrmController', type: :request do
 
       expect(Integrations::Macrocrm::ManagerChangedProcessorService)
         .to have_received(:new)
-        .with(hook: hook, payload: hash_including('action' => 'estate.managerChanged'))
+        .with(hook: hook, payload: hash_including('macrocrm' => hash_including('action' => 'estate.managerChanged')))
       expect(processor).to have_received(:perform)
       expect(response).to have_http_status(:success)
     end

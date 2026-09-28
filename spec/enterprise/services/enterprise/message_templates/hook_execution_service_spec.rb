@@ -132,6 +132,18 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.reload.status).to eq('open')
       end
 
+      it 'does not create transfer notifications when the handoff was already applied' do
+        message = build(:message, conversation: conversation, message_type: :incoming, account: account)
+        service = described_class.new(message: message)
+        allow(conversation).to receive(:bot_handoff!)
+          .with(source: 'system', fence: { last_message_id: nil })
+          .and_return(:already_applied)
+        allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
+
+        expect { service.send(:perform_handoff) }.not_to(change { conversation.messages.count })
+        expect(MessageTemplates::Template::OutOfOffice).not_to have_received(:perform_if_applicable)
+      end
+
       it 'does not send out of office message when Captain is handling' do
         out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
         allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)
@@ -201,16 +213,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
       'telegram personal' => [:channel_telegram_personal, {}],
       'sms' => [:channel_sms, {}],
       'email' => [:channel_email, {}],
-      'voice' => [:channel_voice, {
-        provider: 'sipuni',
-        provider_config: {
-          number_ref: SecureRandom.uuid,
-          app_ref: SecureRandom.uuid,
-          trunk_ref: SecureRandom.uuid,
-          routing_mode: 'operator',
-          operator_agent_aor: "sip:agent-#{SecureRandom.hex(4)}@example.test"
-        }
-      }],
+      'voice' => [[:channel_voice, :sipuni], {}],
       'line' => [:channel_line, {}],
       'facebook page' => [:channel_facebook_page, {}],
       'instagram' => [:channel_instagram, {}]
@@ -236,7 +239,7 @@ RSpec.describe MessageTemplates::HookExecutionService do
           custom_attributes: { plan_name: 'startups' },
           limits: { non_web_inboxes: ChatwootApp.max_limit }
         )
-        channel = create(factory_name, account: channel_account, **factory_options)
+        channel = create(*Array(factory_name), account: channel_account, **factory_options)
         channel_inbox = channel.reload.inbox
         channel_contact = create(:contact, account: channel_account)
         channel_assistant = create(

@@ -10,8 +10,9 @@ class Captain::Conversation::BufferedResponseSchedulerService
 
   def perform
     token = SecureRandom.uuid
+    control_generation = @conversation.stamp_captain_control_generation!(@message)
 
-    Redis::Alfred.set(state_key, state_payload(token).to_json, ex: state_ttl_seconds)
+    Redis::Alfred.set(state_key, state_payload(token, control_generation).to_json, ex: state_ttl_seconds)
 
     Rails.logger.info(
       '[CAPTAIN][BufferedResponse] Scheduled response builder ' \
@@ -43,11 +44,12 @@ class Captain::Conversation::BufferedResponseSchedulerService
     effective_wait_seconds + STATE_TTL_BUFFER.to_i
   end
 
-  def state_payload(token)
+  def state_payload(token, control_generation)
     {
       token: token,
       assistant_id: @assistant.id,
-      last_message_id: @message.id
+      last_message_id: @message.id,
+      control_generation: control_generation
     }
   end
 

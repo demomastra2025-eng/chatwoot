@@ -3,7 +3,7 @@ require 'rails_helper'
 describe Sms::DeliveryStatusService do
   describe '#perform' do
     let!(:account) { create(:account) }
-    let!(:sms_channel) { create(:channel_sms) }
+    let!(:sms_channel) { create(:channel_sms, account: account) }
     let!(:contact) { create(:contact, account: account, phone_number: '+12345') }
     let(:contact_inbox) { create(:contact_inbox, source_id: '+12345', contact: contact, inbox: sms_channel.inbox) }
     let!(:conversation) { create(:conversation, contact: contact, inbox: sms_channel.inbox, contact_inbox: contact_inbox) }

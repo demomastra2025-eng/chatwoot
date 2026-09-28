@@ -49,6 +49,16 @@ const mountPanel = props =>
       ...props,
     },
     global: {
+      config: {
+        globalProperties: {
+          $store: {
+            getters: {
+              getCurrentAccountId: 1,
+              getCurrentUser: { id: 1 },
+            },
+          },
+        },
+      },
       mocks: { $t: key => key },
       stubs: { Dialog: DialogStub },
     },

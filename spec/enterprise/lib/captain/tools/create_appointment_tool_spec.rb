@@ -17,7 +17,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
-  it 'returns normalized create_appointment payload' do
+  it 'rejects direct customer-AI creation before changing an appointment' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
@@ -26,23 +26,12 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     create(:scheduling_service_price, account: account, service: scheduling_service, resource: resource, active: true, price: 20_000)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, resource_id: resource.id, service_id: scheduling_service.id,
-                                                    starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
-                                                    duration_min: 30, custom_attributes: { source: 'agent' }))
-
-    expect(payload).to include(
-      'action' => 'create_appointment',
-      'appointment_id' => payload.dig('appointment', 'id'),
-      'status' => payload.dig('appointment', 'status'),
-      'resource_id' => resource.id,
-      'contact_id' => contact.id,
-      'service_id' => scheduling_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
-    )
-    expect(payload['appointment']).to include('resource_id' => resource.id, 'contact_id' => contact.id, 'service_id' => scheduling_service.id)
-    expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
-    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+    expect do
+      expect(tool.perform(tool_context, resource_id: resource.id, service_id: scheduling_service.id,
+                                        starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
+                                        duration_min: 30, custom_attributes: { source: 'agent' }))
+        .to include('ERROR: Pundit::NotAuthorizedError')
+    end.not_to change(account.scheduling_appointments, :count)
   end
 
   it 'exposes custom_attributes as an object parameter' do
@@ -53,7 +42,7 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     expect(tool.description).to include('pending_provider_confirmation', 'provider_confirmed is true')
   end
 
-  it 'returns the exact provider command receipt with the Captain actor descriptor' do
+  it 'does not mint a provider receipt for a direct customer-AI create' do
     stub_provider_availability
     hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: hook_settings)
@@ -86,24 +75,9 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       duration_min: 30,
       custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     }
-    payload = JSON.parse(tool.perform(tool_context, **arguments))
-
-    command_id = payload.dig('provider_command_receipt', 'command', 'id')
-    command = Integrations::Medelement::ProviderCommand.find(command_id)
-    appointment = account.scheduling_appointments.find(payload.fetch('appointment_id'))
-    allow(Captain::ToolExecutionIdempotency).to receive(:fetch_record).and_return(appointment.reload)
-    replay_payload = JSON.parse(tool.perform(tool_context, **arguments))
-    expect(payload.fetch('provider_command_receipt')).to include(
-      'appointment_id' => payload.fetch('appointment_id'),
-      'expected_operation' => 'create_reception',
-      'linked' => true
-    )
-    expect(payload.dig('provider_command_receipt', 'command')).to include(
-      'operation' => 'create_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(replay_payload.fetch('provider_command_receipt')).to eq(payload.fetch('provider_command_receipt'))
-    expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id, operation: 'create_reception').count).to eq(1)
-    expect(command.request_snapshot.fetch('actor')).to eq('type' => 'Captain::Assistant', 'id' => assistant.id)
+    expect do
+      expect(tool.perform(tool_context, **arguments)).to include('ERROR: Pundit::NotAuthorizedError')
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+    expect(account.scheduling_appointments.count).to eq(0)
   end
 end

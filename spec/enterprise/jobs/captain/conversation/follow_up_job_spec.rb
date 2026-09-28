@@ -27,7 +27,11 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       inbox: inbox,
       sender: assistant,
       message_type: :outgoing,
-      content: 'Initial AI response'
+      content: 'Initial AI response',
+      additional_attributes: {
+        'captain_delivery_fence' => { 'control_generation' => conversation.current_captain_control_generation },
+        'captain_delivery_state' => 'submitted'
+      }
     )
   end
   let(:completion_evaluator) { instance_double(Captain::ConversationCompletionEvaluator) }
@@ -71,6 +75,19 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     end.not_to change(conversation.messages, :count)
   end
 
+  it 'stops when the same contact replies on another unlinked channel' do
+    other_inbox = create(:inbox, account: account)
+    contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: other_inbox)
+    other_conversation = create(:conversation, account: account, contact: conversation.contact,
+                                               inbox: other_inbox, contact_inbox: contact_inbox)
+    create(:message, conversation: other_conversation, message_type: :incoming, content: 'Reply elsewhere')
+    expect(completion_evaluator).not_to receive(:perform)
+
+    expect do
+      described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
+    end.not_to change(conversation.messages, :count)
+  end
+
   it 'sends the configured message and schedules the next step when the conversation is incomplete' do
     allow(completion_evaluator).to receive(:perform).and_return(
       complete: false,
@@ -89,6 +106,26 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     scheduled_touch = Reminder.captain_follow_up.last
     expect(scheduled_touch).to be_pending
     expect(scheduled_touch.metadata.dig('captain_follow_up', 'step_index')).to eq(1)
+  end
+
+  it 'dispatches a persisted follow-up once and cancels a later follow-up after a customer reply' do
+    allow(completion_evaluator).to receive(:perform).and_return(complete: false, evaluated: true)
+    provider = instance_double(Messages::SendEmailNotificationService, perform: nil)
+    allow(Messages::SendEmailNotificationService).to receive(:new).and_return(provider)
+
+    described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
+    follow_up = conversation.messages.order(:id).last
+    expect(follow_up.additional_attributes.dig('captain_delivery_fence', 'kind')).to eq('follow_up')
+    SendReplyJob.perform_now(follow_up.id)
+    SendReplyJob.perform_now(follow_up.id)
+    expect(provider).to have_received(:perform).once
+
+    described_class.perform_now(conversation.id, assistant.id, follow_up.id, 1)
+    later_follow_up = conversation.messages.order(:id).last
+    create(:message, account: account, conversation: conversation, inbox: inbox, message_type: :incoming)
+    SendReplyJob.perform_now(later_follow_up.id)
+    expect(later_follow_up.reload.additional_attributes['captain_delivery_state']).to eq('cancelled')
+    expect(provider).to have_received(:perform).once
   end
 
   it 'generates an AI step from current conversation context before sending it' do
@@ -184,8 +221,53 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     end.not_to change(conversation.messages, :count)
   end
 
+  it 'stops when a human responds on another inbox without a Captain assistant' do
+    other_inbox = create(:inbox, account: account)
+    contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: other_inbox)
+    other_conversation = create(:conversation, account: account, contact: conversation.contact,
+                                               inbox: other_inbox, contact_inbox: contact_inbox)
+    create(:message, conversation: other_conversation, message_type: :outgoing,
+                     sender: create(:user, account: account), content: 'I will take it from here.')
+    expect(completion_evaluator).not_to receive(:perform)
+
+    expect do
+      described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
+    end.not_to change(conversation.messages, :count)
+  end
+
   it 'stops when the anchor message failed delivery' do
     anchor_message.update!(status: :failed)
+    expect(completion_evaluator).not_to receive(:perform)
+
+    expect do
+      described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
+    end.not_to change(conversation.messages, :count)
+  end
+
+  it 'does not follow up a claimed reply until provider submission is known' do
+    anchor_message.update!(additional_attributes: {
+      'captain_delivery_fence' => { 'control_generation' => conversation.current_captain_control_generation },
+      'captain_delivery_state' => 'dispatching'
+    })
+    expect(completion_evaluator).not_to receive(:perform)
+
+    expect do
+      described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
+    end.not_to change(conversation.messages, :count)
+  end
+
+  it 'does not revive a scheduled follow-up from a previous human-to-AI control epoch' do
+    generation = conversation.current_captain_control_generation
+    anchor_message.update!(additional_attributes: {
+      'captain_delivery_fence' => { 'control_generation' => generation },
+      'captain_delivery_state' => 'submitted'
+    })
+    reminder = described_class.schedule!(conversation: conversation, assistant: assistant, anchor_message: anchor_message,
+                                         step_index: 0, delay_seconds: 3600)
+    conversation.activate_captain_human_control!(source: 'manual_assignment')
+    conversation.prepare_captain_ai_control!
+    expect(conversation.reload.current_captain_control_generation).to be > generation
+    expect(reminder.metadata.dig('captain_follow_up', 'control_generation')).to eq(generation)
     expect(completion_evaluator).not_to receive(:perform)
 
     expect do

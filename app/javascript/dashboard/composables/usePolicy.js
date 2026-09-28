@@ -5,6 +5,7 @@ import { useConfig } from 'dashboard/composables/useConfig';
 import {
   getUserPermissions,
   hasPermissions,
+  hasRouteViewPermission,
 } from 'dashboard/helper/permissionsHelper';
 import { PREMIUM_FEATURES } from 'dashboard/featureFlags';
 
@@ -30,7 +31,15 @@ export function usePolicy() {
     return isFeatureEnabled.value(accountId.value, featureFlag);
   };
 
-  const checkPermissions = requiredPermissions => {
+  const checkPermissions = (requiredPermissions, crmResources = []) => {
+    if (crmResources.length) {
+      return hasRouteViewPermission(
+        user.value,
+        accountId.value,
+        requiredPermissions,
+        crmResources
+      );
+    }
     if (!requiredPermissions || !requiredPermissions.length) return true;
     const userPermissions = getUserPermissionsForAccount();
     return hasPermissions(requiredPermissions, userPermissions);
@@ -61,16 +70,24 @@ export function usePolicy() {
     return true;
   });
 
-  const shouldShow = (featureFlag, permissions, installationTypes) => {
+  const shouldShow = (
+    featureFlag,
+    permissions,
+    installationTypes,
+    crmResources
+  ) => {
     const flag = unref(featureFlag);
     const perms = unref(permissions);
     const installation = unref(installationTypes);
+    const resources = unref(crmResources) || [];
 
     // if the user does not have permissions or installation type is not supported
     // return false;
     // This supersedes everything
-    if (!checkPermissions(perms)) return false;
+    if (!checkPermissions(perms, resources)) return false;
     if (!checkInstallationType(installation)) return false;
+    // CRM route guards require both the effective view grant and the flag.
+    if (resources.length && !isFeatureFlagEnabled(flag)) return false;
 
     if (isACustomBrandedInstance.value) {
       // if this is a custom branded instance, we just use the feature flag as a reference

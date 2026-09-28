@@ -115,6 +115,38 @@ describe ContactMergeAction do
         expect(base_contact.conversations.reload.pluck(:priority).uniq).to eq(['high'])
       end
 
+      it 'preserves a source human takeover and cancels a queued base Captain reply without an actor' do
+        base_conversation = base_contact.conversations.first
+        source_conversation = mergee_contact.conversations.first
+        assistant = create(:captain_assistant, account: account)
+        create(:captain_inbox, captain_assistant: assistant, inbox: base_conversation.inbox)
+        incoming = create(:message, account: account, conversation: base_conversation, message_type: :incoming)
+        base_thread = create(:communication_thread, account: account, contact: base_contact,
+                                                    captain_control_state: 'ai', captain_control_generation: 2)
+        source_thread = create(:communication_thread, account: account, contact: mergee_contact,
+                                                      captain_control_state: 'human', captain_control_generation: 3,
+                                                      captain_handoff_applied_at: 1.hour.ago)
+        create(:communication_thread_conversation, account: account, conversation: base_conversation, communication_thread: base_thread)
+        create(:communication_thread_conversation, account: account, conversation: source_conversation,
+                                                   communication_thread: source_thread)
+        queued = create(:message, account: account, conversation: base_conversation, inbox: base_conversation.inbox,
+                                  sender: assistant, message_type: :outgoing,
+                                  additional_attributes: { captain_delivery_fence: {
+                                    control_generation: 2, assistant_id: assistant.id,
+                                    trigger_message_id: incoming.id, kind: 'reply'
+                                  } })
+        Current.user = nil
+
+        contact_merge
+
+        expect(base_thread.reload).to have_attributes(captain_control_state: 'human', captain_control_generation: 4)
+        expect(base_thread.captain_handoff_applied_at).to be_present
+        expect(CommunicationThread.exists?(source_thread.id)).to be(false)
+        expect(base_conversation.reload.current_captain_control_generation).to eq(4)
+        expect { SendReplyJob.perform_now(queued.id) }.not_to raise_error
+        expect(queued.reload.additional_attributes['captain_delivery_state']).to eq('cancelled')
+      end
+
       it 'records correlated target-add and source-remove facts before deleting a merged source thread', :aggregate_failures do
         participant = create(:user, account: account)
         base_thread = create(:communication_thread, account: account, contact: base_contact)
@@ -206,6 +238,20 @@ describe ContactMergeAction do
     end
 
     context 'when mergee contact has operational relations' do
+      it 'resyncs merged appointment reminders to the surviving Contact owner' do
+        base_owner = create(:user, account: account)
+        mergee_owner = create(:user, account: account)
+        base_contact.update!(owner: base_owner)
+        mergee_contact.update!(owner: mergee_owner)
+        appointment = create(:scheduling_appointment, account: account, contact: mergee_contact, created_by: mergee_owner)
+        reminder = create(:reminder, account: account, remindable: appointment, body: 'Visit', scheduled_at: 2.days.from_now)
+
+        contact_merge
+
+        expect(appointment.reload.contact_id).to eq(base_contact.id)
+        expect(reminder.reload).to have_attributes(owner_id: base_owner.id, target_contact_id: base_contact.id)
+      end
+
       it 'moves scheduling, telephony, confirmation, reminder, lead, and assignment records' do
         appointment = create(:scheduling_appointment, account: account, contact: mergee_contact)
         call_session = create(:telephony_call_session, account: account, contact: mergee_contact)

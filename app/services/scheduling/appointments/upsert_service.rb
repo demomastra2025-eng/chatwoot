@@ -20,11 +20,18 @@ class Scheduling::Appointments::UpsertService
     @required_capabilities = required_capabilities
   end
 
+  def self.reject_retired_finance_fields!(params)
+    Scheduling::Appointments::RetiredFinanceGuard.reject_fields!(params)
+  end
+
   def perform
+    ensure_supported_params!
+
     Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
     Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
 
     ApplicationRecord.transaction do
+      lock_appointment_contacts!
       apply_attributes!
       lock_resource_for_availability!
       mark_medelement_provider_confirmation_pending!
@@ -35,7 +42,6 @@ class Scheduling::Appointments::UpsertService
       notify_assignment!(new_record: new_record)
       auto_apply_default_touch_plan! if new_record
       sync_or_cancel_related_touches!
-      Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
     end
 
     appointment.reload
@@ -47,11 +53,40 @@ class Scheduling::Appointments::UpsertService
 
   attr_reader :account, :actor, :appointment, :params, :required_capabilities
 
+  def ensure_supported_params!
+    self.class.reject_retired_finance_fields!(params)
+    raise ArgumentError, 'Appointment owner_id is no longer writable' if params.key?(:owner_id)
+  end
+
+  def lock_appointment_contacts!
+    # A contact transfer/merge owns Contact before Appointment/Reminder. Lock
+    # both sides of a rebind first, in ID order, before saving the appointment.
+    contact_ids = appointment_contact_ids
+    account.contacts.where(id: contact_ids).order(:id).lock.load if contact_ids.present?
+    return unless appointment.persisted?
+
+    appointment.reload(lock: true)
+    return if appointment.contact_id.blank? || contact_ids.include?(appointment.contact_id)
+
+    raise Scheduling::Error.new(
+      code: 'APPOINTMENT_CONTEXT_CHANGED',
+      message: 'Appointment contact changed before editing',
+      status: :conflict
+    )
+  end
+
+  def appointment_contact_ids
+    [appointment.contact_id, params[:contact_id]].compact_blank.map(&:to_i).uniq.sort
+  end
+
   def lock_resource_for_availability!
     account.scheduling_resources.lock.find(appointment.resource_id)
   end
 
   def capture_provider_receipt_service!(new_record)
+    @provider_receipt_service = nil
+    return if actor&.class&.name == 'Captain::Assistant' && !@medelement_provider_write_required
+
     @provider_receipt_service = Integrations::Medelement::AppointmentProviderCommandReceiptService.new(
       appointment: appointment,
       actor: actor,
@@ -69,8 +104,7 @@ class Scheduling::Appointments::UpsertService
     company = resolve_company(contact)
     conversation = resolve_conversation
     ensure_conversation_belongs_to_contact!(conversation, contact)
-    created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
-    owner = resolve_owner(contact: contact, resource: resource)
+    created_by = resolve_creator
     team = appointment.new_record? || previous_resource_id != resource.id ? resource.team : appointment.team
 
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
@@ -82,24 +116,13 @@ class Scheduling::Appointments::UpsertService
     )
     ends_at = resolve_ends_at(starts_at: starts_at, duration_min: duration_min, current: appointment.ends_at)
 
-    service_snapshot = preserve_compensation_snapshot(
-      resolve_service_snapshot(resource: resource, services: services),
-      resource: resource,
-      services: services
-    )
+    service_snapshot = resolve_service_snapshot(resource: resource, services: services)
     service_amount = resolve_service_amount(
       resource: resource,
       services: services,
       resolved_price: service_snapshot[:resolved_price]
     )
-    prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
-    prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
-    settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
     client_identity = resolve_client_identity(contact, resource)
-
-    requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
-    requested_payment_status = 'cancelled' if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled' &&
-                                              !params.key?(:payment_status)
 
     appointment.assign_attributes(
       account: account,
@@ -109,7 +132,6 @@ class Scheduling::Appointments::UpsertService
       company: company,
       conversation: conversation,
       created_by: created_by,
-      owner: owner,
       team: team,
       starts_at: starts_at,
       ends_at: ends_at,
@@ -133,23 +155,10 @@ class Scheduling::Appointments::UpsertService
       service_type_snapshot: service_snapshot[:service_type_snapshot],
       service_duration_min_snapshot: service_snapshot[:service_duration_min_snapshot],
       service_amount: service_amount,
-      compensation_type_snapshot: service_snapshot[:compensation_type_snapshot],
-      compensation_value_snapshot: service_snapshot[:compensation_value_snapshot],
-      compensation_percent_snapshot: service_snapshot[:compensation_percent_snapshot],
-      prepaid_amount: prepaid_amount,
-      prepaid_payment_method: prepaid_payment_method,
-      settlement_amount: settlement_amount,
-      settlement_payment_method: resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method),
-      payment_status: derive_payment_status(
-        service_amount: service_amount,
-        prepaid_amount: prepaid_amount,
-        settlement_amount: settlement_amount,
-        requested_status: requested_payment_status
-      ),
       custom_attributes: resolve_custom_attributes(resource: resource, services: services)
     )
 
-    authorize_assignment! if appointment.new_record? || params.keys.intersect?(%i[resource_id contact_id owner_id])
+    authorize_assignment! if appointment.new_record? || params.keys.intersect?(%i[resource_id contact_id])
     required_capabilities.each { |capability| authorize_target_scope!(capability) }
   end
 
@@ -164,14 +173,6 @@ class Scheduling::Appointments::UpsertService
       appointment: appointment,
       capability: capability
     )
-  end
-
-  def resolve_prepaid_payment_method(prepaid_amount)
-    return nil if prepaid_amount.to_i <= 0
-
-    resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method) ||
-      resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method) ||
-      'cash'
   end
 
   def availability_service
@@ -191,16 +192,6 @@ class Scheduling::Appointments::UpsertService
                            .to_a,
       ignore_appointment_id: appointment.id
     )
-  end
-
-  def derive_payment_status(service_amount:, prepaid_amount:, settlement_amount:, requested_status:)
-    return 'cancelled' if requested_status == 'cancelled'
-
-    total_received = prepaid_amount.to_i + settlement_amount.to_i
-    return 'awaiting_payment' if total_received <= 0
-    return 'paid' if service_amount.to_i <= 0 || total_received >= service_amount.to_i
-
-    'prepaid'
   end
 
   def resolve_client_birth_date(contact)
@@ -412,8 +403,10 @@ class Scheduling::Appointments::UpsertService
   end
 
   def mark_medelement_provider_confirmation_pending!
-    return unless medelement_provider_write_required?
+    @medelement_provider_write_required = medelement_provider_write_required?
+    return unless @medelement_provider_write_required
 
+    Integrations::Medelement::ProviderCommands::CreateService.reject_captain_actor!(actor: actor)
     Integrations::Medelement::AppointmentProviderStatus.assign_pending!(appointment)
   end
 
@@ -455,13 +448,6 @@ class Scheduling::Appointments::UpsertService
     return nil unless company_attachment_enabled?
 
     resolve_optional_record(:company_id, account.companies, current: appointment.company || contact&.company)
-  end
-
-  def resolve_owner(contact:, resource:)
-    return resolve_optional_record(:owner_id, account.users, current: appointment.owner) if params.key?(:owner_id)
-    return appointment.owner if appointment.persisted?
-
-    contact&.owner || resource&.user || actor
   end
 
   def resolve_custom_attributes(resource:, services:)
@@ -705,7 +691,7 @@ class Scheduling::Appointments::UpsertService
   def sync_or_cancel_related_touches!
     return cancel_related_touches! if appointment.status == 'cancelled'
 
-    Reminders::SyncRemindableService.new(remindable: appointment).perform
+    Reminders::SyncRemindableService.new(remindable: appointment, allow_processing: true).perform
   end
 
   def cancel_related_touches!
@@ -723,6 +709,26 @@ class Scheduling::Appointments::UpsertService
     return nil if params[key].blank?
 
     scope.find(params[key])
+  end
+
+  def resolve_creator
+    return persisted_creator if appointment.persisted?
+    return user_creator if actor.is_a?(User)
+
+    resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
+  end
+
+  def persisted_creator
+    return appointment.created_by unless params.key?(:created_by_id)
+    raise ArgumentError, 'Appointment creator is immutable' if params[:created_by_id].to_s != appointment.created_by_id.to_s
+
+    appointment.created_by
+  end
+
+  def user_creator
+    raise ArgumentError, 'Appointment creator must match the actor' if params.key?(:created_by_id) && params[:created_by_id].to_i != actor.id
+
+    actor
   end
 
   def resolve_conversation
@@ -808,15 +814,9 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_service_amount(resource:, services:, resolved_price:)
-    return resolve_int(:service_amount, current: appointment.service_amount || 0) if params.key?(:service_amount)
-    return 0 if services.blank?
-
     pricing_changed = pricing_link_changed?(resource: resource, services: services)
-    return resolved_price if resolved_price.present? && pricing_changed
-
-    current_amount = appointment.service_amount.to_i
-    return current_amount if appointment.persisted? && !pricing_changed
-    return current_amount if current_amount.positive?
+    return appointment.service_amount if appointment.persisted? && !pricing_changed
+    return 0 if services.blank?
     return resolved_price if resolved_price.present?
 
     raise ArgumentError, 'service_amount is required and must be greater than 0'
@@ -831,37 +831,20 @@ class Scheduling::Appointments::UpsertService
           current: appointment.service_name_snapshot
         ),
         service_type_snapshot: nil,
-        service_duration_min_snapshot: nil,
-        compensation_type_snapshot: resource.compensation_type,
-        compensation_value_snapshot: resource.compensation_value,
-        compensation_percent_snapshot: resource.compensation_percent
+        service_duration_min_snapshot: nil
       }
     end
 
     return resolve_single_service_snapshot(resource: resource, service: services.first) if services.one?
 
     items = services.map { |service| resolve_single_service_snapshot(resource: resource, service: service) }
-    total_expense = items.sum { |item| compute_snapshot_expense_amount(item) }
 
     {
       resolved_price: items.sum { |item| item[:resolved_price].to_i },
       service_name_snapshot: services.map(&:name).join(', '),
       service_type_snapshot: services.map(&:service_type).filter_map(&:presence).uniq.join(', ').presence,
-      service_duration_min_snapshot: services.sum { |service| service.duration_min.to_i },
-      compensation_type_snapshot: 'fixed',
-      compensation_value_snapshot: total_expense,
-      compensation_percent_snapshot: 0
+      service_duration_min_snapshot: services.sum { |service| service.duration_min.to_i }
     }
-  end
-
-  def preserve_compensation_snapshot(service_snapshot, resource:, services:)
-    return service_snapshot if pricing_link_changed?(resource: resource, services: services)
-
-    service_snapshot.merge(
-      compensation_type_snapshot: appointment.compensation_type_snapshot,
-      compensation_value_snapshot: appointment.compensation_value_snapshot,
-      compensation_percent_snapshot: appointment.compensation_percent_snapshot
-    )
   end
 
   def resolve_single_service_snapshot(resource:, service:)
@@ -880,47 +863,12 @@ class Scheduling::Appointments::UpsertService
       )
     end
 
-    compensation_type = if price&.active? && price.price.to_i.positive?
-                          price.compensation_type
-                        else
-                          resource.compensation_type
-                        end
-    compensation_value = if price&.active? && price.price.to_i.positive?
-                           price.compensation_value
-                         else
-                           resource.compensation_value
-                         end
-    compensation_percent = if price&.active? && price.price.to_i.positive?
-                             price.compensation_percent
-                           else
-                             resource.compensation_percent
-                           end
-
     {
       resolved_price: resolved_price,
       service_name_snapshot: service.name,
       service_type_snapshot: service.service_type,
-      service_duration_min_snapshot: service.duration_min,
-      compensation_type_snapshot: compensation_type,
-      compensation_value_snapshot: compensation_value,
-      compensation_percent_snapshot: compensation_percent
+      service_duration_min_snapshot: service.duration_min
     }
-  end
-
-  def compute_snapshot_expense_amount(snapshot)
-    service_amount = snapshot[:resolved_price].to_i
-
-    case snapshot[:compensation_type_snapshot]
-    when 'fixed'
-      snapshot[:compensation_value_snapshot].to_i
-    when 'fixed_plus_percent'
-      snapshot[:compensation_value_snapshot].to_i +
-        ((service_amount * snapshot[:compensation_percent_snapshot].to_i) / 100.0).round
-    when 'percent'
-      ((service_amount * snapshot[:compensation_value_snapshot].to_i) / 100.0).round
-    else
-      0
-    end
   end
 
   def resolve_string(key, current:)

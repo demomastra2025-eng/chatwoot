@@ -2,6 +2,7 @@ require 'digest'
 
 class Conversations::IdentityResolver
   PRIMARY_KEY = 'primary'.freeze
+  class ContactChanged < StandardError; end
 
   def self.resolve_primary!(contact_inbox:, attributes:, &)
     new(contact_inbox: contact_inbox, identity_key: PRIMARY_KEY, attributes: attributes).perform(&)
@@ -16,8 +17,7 @@ class Conversations::IdentityResolver
   def perform
     validate_inputs!
 
-    Conversation.transaction do
-      contact_inbox.lock!
+    with_current_contact_lock do
       lock_identity!
       existing_conversation = conversation_scope.reload.find_by(identity_key: identity_key)
       next reconcile_contact_inbox!(existing_conversation) if existing_conversation.present?
@@ -31,6 +31,34 @@ class Conversations::IdentityResolver
   private
 
   attr_reader :contact_inbox, :identity_key, :attributes
+
+  def with_current_contact_lock
+    loop do
+      contact_id = ContactInbox.where(id: contact_inbox.id).pick(:contact_id)
+      begin
+        return Conversation.transaction(requires_new: true) do
+          # Conversation#create resolves the aggregate in an after_create callback.
+          # Claim its advisory before Contact, like Thread routing and merge.
+          lock_current_thread!(contact_id)
+
+          Contact.lock.find(contact_id)
+          contact_inbox.lock!
+          raise ContactChanged if contact_inbox.contact_id != contact_id
+
+          yield
+        end
+      rescue ContactChanged, ActiveRecord::RecordNotFound
+        # A merge may move this identity while we wait for the old Contact.
+        # Roll back the savepoint (and its locks), then use the new owner.
+        raise if ContactInbox.where(id: contact_inbox.id).pick(:contact_id) == contact_id
+      end
+    end
+  end
+
+  def lock_current_thread!(contact_id)
+    Conversations::CommunicationThreadResolver.lock_contact_thread!(contact_inbox.inbox.account_id, contact_id)
+    raise ContactChanged if ContactInbox.where(id: contact_inbox.id).pick(:contact_id) != contact_id
+  end
 
   def validate_inputs!
     raise ArgumentError, 'contact_inbox is required' if contact_inbox.blank?

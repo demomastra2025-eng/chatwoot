@@ -34,11 +34,32 @@ class OpenRouterRequestPolicySpecChat
 end
 
 RSpec.describe Llm::OpenRouterRequestPolicy do
+  before do
+    # Recompile contract examples use non-default Captain models.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini openai/gpt-5.4 moonshotai/kimi-k2.6 deepseek/deepseek-v4-pro]
+    )
+  end
+
   it 'installs the RubyLLM OpenRouter server-tool payload patch' do
     expect(RubyLLM::Providers::OpenRouter.ancestors).to include(Llm::OpenRouterServerToolsPatch)
   end
 
   describe '.require_parameters!' do
+    it 'preserves the explicit cross-model fallback opt-out during late tool recompile' do
+      chat = OpenRouterRequestPolicySpecChat.new(
+        model: OpenRouterRequestPolicySpecModel.new('openai/gpt-5.6-luna', 'openrouter'),
+        params: { models: ['openai/gpt-5.6-luna'] }
+      )
+      described_class.tag!(chat, feature: :captain_agent, model: 'openai/gpt-5.6-luna',
+                            routing_metadata: { openrouter_allow_model_fallbacks: false })
+
+      described_class.require_parameters!(chat, tools: true)
+
+      expect(chat.params[:models]).to eq(['openai/gpt-5.6-luna'])
+      expect(described_class.routing_metadata(chat)).to include(openrouter_allow_model_fallbacks: false)
+    end
+
     it 'adds provider require_parameters for OpenRouter chats and preserves existing params' do
       chat = OpenRouterRequestPolicySpecChat.new(
         model: OpenRouterRequestPolicySpecModel.new('deepseek/deepseek-v4-pro', 'openrouter'),

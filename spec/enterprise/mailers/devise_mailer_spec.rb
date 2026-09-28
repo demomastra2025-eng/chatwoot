@@ -21,6 +21,12 @@ RSpec.describe 'Devise::Mailer' do
         expect(mail.body).to match('has invited you to try out')
         expect(mail.body).to include('app/auth/password/edit')
       end
+
+      it 'uses OneLink branding without SSO references' do
+        expect(mail.body).to match('has invited you to try out Onelink')
+        expect(mail.body).not_to match('via Single Sign-On')
+        expect(mail.body).not_to match('SSO portal')
+      end
     end
 
     context 'when user has no inviter' do

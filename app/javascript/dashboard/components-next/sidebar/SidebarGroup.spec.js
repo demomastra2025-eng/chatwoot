@@ -47,6 +47,7 @@ vi.mock('./provider', () => ({
     setExpandedItem,
     resolvePath: to => to?.path || `/${to?.name || ''}`,
     resolvePermissions: () => [],
+    resolveCrmResources: () => [],
     resolveFeatureFlag: () => '',
     isAllowed: () => true,
     isCollapsed: sidebarCollapsed.value,

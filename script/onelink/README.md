@@ -55,7 +55,8 @@ git switch -c feature/<короткое-название>
 - `.github/workflows/onelink_release.yml` — проверки каждого push в `onelink-dev`,
   быстрый DEV deploy и сборка подписанного production image.
 - `.github/workflows/onelink_nightly.yml` — полный Ruby/Vue/security suite: по расписанию,
-  вручную или для точного SHA по запросу production promotion.
+  вручную или для точного SHA по запросу production promotion. Ручной запуск с feature-ветки
+  проверяет exact HEAD, но не публикует `nightly` proof, пригодный для promotion.
 - `.github/workflows/onelink_promote_production.yml` — ручное продвижение проверенного
   DEV SHA в PROD.
 
@@ -70,11 +71,21 @@ runtime из разных SHA.
 
 ## Поведение DEV
 
-DEV deploy принимает только текущий полный SHA ветки `origin/onelink-dev`:
+Ручной запуск DEV для пользовательской ветки не требует вводить SHA:
 
 ```text
-deploy <40-character-sha>
+deploy
 ```
+
+Команда выбирает текущий HEAD `origin/aset/dev`, фиксирует его SHA в immutable release
+и пропускает через серверный gate совместимости с live и проверки контрактов/runtime.
+Она **не** запускает GitHub CI (включая migration policy и тесты изменённого кода):
+перед ручной выкладкой кандидат должен пройти эти проверки и review отдельно.
+Пока `aset/dev` расходится с работающей DEV-версией, gate блокирует выкладку —
+отсутствие аргумента SHA не разрешает такой rollback. Автоматический workflow
+`onelink-dev` по-прежнему вызывает `deploy <40-character-sha>` и принимает только
+текущий HEAD `origin/onelink-dev`.
+Откат и проверка уже развёрнутой версии по-прежнему адресуют точный SHA.
 
 Сервер:
 
@@ -121,6 +132,14 @@ Workflow допускает promotion только если:
 
 Rollout идёт workers → второй web → первый web. При ошибке сервисы возвращаются на
 предыдущий image, а `.env.production` обновляется только после полной проверки.
+Для T2 Telephony RBAC сначала нужен отдельный rollout совместимого bridge B с расширенными
+CHECK и полным оттоком старых web/workers. `db:chatwoot_prepare` T2 проверяет схему, но
+не выдаёт grants: старый bootstrapper удалил бы их до cutover. После замены всех
+web/workers оба deploy-скрипта вызывают `finalize_release.rb`, который идемпотентно
+добавляет недостающие administrator `telephony_calls` view/view_reports, включая аккаунты,
+созданные между prepare и cutover; явные `none` и opt-in других ролей не перезаписываются.
+Откат бинарника после этого шага допустим только до B (с расширенной схемой); прямой
+old → B+T2 rollout и откат к pre-B требуют отдельного решения оператора и запрещены.
 Promotion script намеренно использует orchestration boundary `/root/crafty`:
 `.env.production` и `docker-compose.production.yml`, а не repo-local
 `docker-compose.production.yaml`.

@@ -56,7 +56,11 @@ describe HookListener do
 
     context 'when app_id is not in the allowed list' do
       it 'does not enqueue the job' do
-        create(:integrations_hook, account: account, app_id: 'unsupported_app')
+        hook = create(:integrations_hook, account: account)
+        # Persist a legacy unsupported identifier that current model validation rejects.
+        # rubocop:disable Rails/SkipsModelValidations
+        Integrations::Hook.where(id: hook.id).update_all(app_id: 'unsupported_app')
+        # rubocop:enable Rails/SkipsModelValidations
         expect(HookJob).not_to receive(:perform_later)
 
         listener.message_created(event)
@@ -112,7 +116,11 @@ describe HookListener do
 
     context 'with unsupported app_id and event combination' do
       it 'does not enqueue job for unsupported app_id' do
-        create(:integrations_hook, account: account, app_id: 'unsupported_app')
+        hook = create(:integrations_hook, account: account)
+        # Persist a legacy unsupported identifier that current model validation rejects.
+        # rubocop:disable Rails/SkipsModelValidations
+        Integrations::Hook.where(id: hook.id).update_all(app_id: 'unsupported_app')
+        # rubocop:enable Rails/SkipsModelValidations
         expect(HookJob).not_to receive(:perform_later)
 
         listener.message_created(event)

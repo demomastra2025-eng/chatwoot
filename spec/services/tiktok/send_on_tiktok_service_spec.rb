@@ -31,11 +31,12 @@ RSpec.describe Tiktok::SendOnTiktokService do
       message = create(:message, message_type: :outgoing, inbox: inbox, conversation: conversation, account: inbox.account, content: 'Hello')
       message.update!(source_id: nil)
 
-      described_class.new(message: message).perform
+      result = described_class.new(message: message).perform
 
       expect(tiktok_client).to have_received(:send_text_message).with('tt-conv-1', 'Hello', referenced_message_id: nil)
       expect(message.reload.source_id).to eq('tt-msg-123')
       expect(Messages::StatusUpdateService).to have_received(:new).with(message, 'delivered')
+      expect(result).to eq(:delivered)
     end
 
     it 'sends outgoing image message when a single attachment is present' do

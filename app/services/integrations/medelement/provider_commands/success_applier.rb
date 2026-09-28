@@ -5,14 +5,22 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   end
 
   def patient!(patient_code:)
-    with_owned_command do
-      link_contact_patient_ref!(patient_code)
-      apply_contact_field_resolution!
-      complete_command!(provider_patient_code: patient_code)
+    with_contact_field_phone_lock do
+      with_owned_command do
+        link_contact_patient_ref!(patient_code)
+        apply_contact_field_resolution!
+        complete_command!(provider_patient_code: patient_code)
+      end
     end
   end
 
   def patient_resolved_for_reception!(patient_code:)
+    if Captain::Conversation::ActionFenceService.captain_command?(command)
+      return Captain::Conversation::ActionFenceService.park_partial_patient!(
+        command, patient_code: patient_code, claim_token: reconciliation_claim_token
+      )
+    end
+
     with_owned_command do
       command.update!(
         status: command.status_for_transition('queued'),
@@ -55,7 +63,6 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     with_owned_command do
       appointment.update!(
         status: 'cancelled',
-        payment_status: 'cancelled',
         custom_attributes: appointment.custom_attributes.to_h.merge(
           Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY =>
             Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED,
@@ -69,6 +76,18 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   private
 
   attr_reader :command, :reconciliation_claim_token
+
+  def with_contact_field_phone_lock
+    metadata = command.execution_state.to_h['contact_field_resolution'].to_h
+    return yield unless metadata.dig('directions', 'phone') == 'medelement_to_onelink'
+
+    ActiveRecord::Base.transaction do
+      # Link the patient reference writes Contact before field resolution;
+      # take the same advisory lock as a merge before either row is locked.
+      Contacts::PhoneIdentityLock.acquire!(account_id: command.account_id)
+      yield
+    end
+  end
 
   def with_owned_command
     command.with_lock do

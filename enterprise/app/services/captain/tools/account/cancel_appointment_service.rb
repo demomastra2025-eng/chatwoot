@@ -11,8 +11,7 @@ class Captain::Tools::Account::CancelAppointmentService < Captain::Tools::Accoun
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(
         action: 'cancel_appointment',
-        appointment: appointment,
-        include_finance: appointment_finance_visible?(appointment)
+        appointment: appointment
       )
     )
   rescue StandardError => e

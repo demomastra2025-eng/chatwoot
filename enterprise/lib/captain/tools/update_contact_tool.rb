@@ -3,15 +3,13 @@ class Captain::Tools::UpdateContactTool < Captain::Tools::BasePublicTool
   param :name, type: 'string', desc: 'Updated contact name', required: false
   param :email, type: 'string', desc: 'Updated contact email', required: false
   param :phone_number, type: 'string', desc: 'Updated contact phone number in E.164 format', required: false
-  param :identifier, type: 'string', desc: 'Updated contact identifier', required: false
   param :custom_attributes, type: 'object', desc: 'Optional custom attributes object', required: false
 
-  def perform(tool_context, name: nil, email: nil, phone_number: nil, identifier: nil, custom_attributes: nil)
+  def perform(tool_context, name: nil, email: nil, phone_number: nil, custom_attributes: nil)
     contact = operations(tool_context.state).update_current_contact(
       name: name,
       email: email,
       phone_number: phone_number,
-      identifier: identifier,
       custom_attributes: custom_attributes
     )
 

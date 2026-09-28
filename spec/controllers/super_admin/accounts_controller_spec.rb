@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe 'Super Admin accounts API', type: :request do
+RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
   include ActiveJob::TestHelper
 
   let!(:super_admin) { create(:super_admin) }

@@ -208,9 +208,13 @@ Rails.application.routes.draw do
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
               post :conversation, action: :create_conversation, on: :member
-              resources :payments, only: [:create], controller: 'appointment_payments'
-              delete :payments, on: :member, to: 'appointment_payments#destroy'
             end
+            # Old finance reads remain retired; only stale write URLs return a
+            # fail-closed 422 with an actionable message.
+            post 'appointments/:appointment_id/payments', to: 'retired_finance_mutations#reject'
+            delete 'appointments/:appointment_id/payments', to: 'retired_finance_mutations#reject'
+            post 'expenses/pay_all', to: 'retired_finance_mutations#reject'
+            post 'expenses/:id/pay', to: 'retired_finance_mutations#reject'
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
               post :cancel, on: :member
@@ -219,15 +223,7 @@ Rails.application.routes.draw do
               post :confirm_patient_creation, on: :member
               post :retry, on: :member
             end
-            resources :payments, only: [:index]
-            resources :expenses, only: [:index] do
-              collection do
-                post :pay_all
-              end
-              member do
-                post :pay
-              end
-            end
+
             resources :holidays, only: [:index, :create, :update, :destroy]
             resources :workday_overrides, only: [:index, :create, :update, :destroy]
             resources :time_offs, only: [:index, :create, :update, :destroy]
@@ -507,6 +503,8 @@ Rails.application.routes.draw do
           end
 
           namespace :telephony do
+            get 'reports/logical_calls', to: 'reports#logical_calls'
+            get 'reports/logical_call_details', to: 'reports#logical_call_details'
             resources :calls, only: [:index, :show], param: :call_ref, constraints: { call_ref: %r{[^/]+} } do
               member do
                 get :recording

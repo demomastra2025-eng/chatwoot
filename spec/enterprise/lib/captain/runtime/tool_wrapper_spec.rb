@@ -2,6 +2,8 @@
 
 require 'rails_helper'
 
+# Test tool constants intentionally live with the examples that exercise them.
+# rubocop:disable Lint/ConstantDefinitionInBlock
 RSpec.describe Captain::Runtime::ToolWrapper do
   class ToolWrapperSpecTool < Captain::Runtime::Tool
     param :result, type: :string, required: false
@@ -118,12 +120,44 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     end
   end
 
+  class ToolWrapperSpecSchedulingTool < Captain::Runtime::Tool
+    param :service_id, type: :integer, required: false
+    param :resource_ids, type: :array, required: false
+
+    attr_reader :calls
+    attr_writer :result
+
+    def initialize(tool_name: 'search_available_slots')
+      super()
+      @tool_name = tool_name
+      @calls = 0
+    end
+
+    def name
+      @tool_name
+    end
+
+    def description
+      'Scheduling wrapper spec tool'
+    end
+
+    def metadata
+      { read_only: true, risk_level: 'low' }
+    end
+
+    def perform(_tool_context, **params)
+      @calls += 1
+      @result || params.fetch(:result, 'slots')
+    end
+  end
+
   let(:events) { [] }
   let(:requested_calls) { [] }
   let(:context_wrapper) do
     Captain::Runtime::RunContext.new(
       {
         state: {
+          captain_scheduling_grounding_guard_enabled: true,
           captain_runtime: runtime_preferences
         }
       },
@@ -137,6 +171,118 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   let(:runtime_preferences) { {} }
   let(:tool) { ToolWrapperSpecTool.new }
   let(:wrapper) { described_class.new(tool, context_wrapper) }
+
+  describe 'service-specific scheduling context' do
+    let(:scheduling_tool) { ToolWrapperSpecSchedulingTool.new(tool_name: 'account__search_available_slots') }
+    let(:scheduling_wrapper) { described_class.new(scheduling_tool, context_wrapper) }
+
+    before do
+      allow(Llm::EventBus).to receive(:publish)
+    end
+
+    it 'blocks a generic downgrade after a failed service-specific attempt before executing the tool' do
+      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false)
+      scheduling_tool.result = failure
+
+      expect_tool_error(scheduling_wrapper.call(service_id: 469, resource_ids: ['157']),
+                        'Service is not available for the requested specialists',
+                        retryable: false)
+      blocked = scheduling_wrapper.call(resource_ids: ['157'])
+
+      expect_tool_error(blocked, 'Service-specific availability requires a confirmed service_id.', retryable: false)
+      expect(scheduling_tool.calls).to eq(1)
+      expect(events.last[2]).to include(
+        success: false,
+        data: include(code: 'service_context_required'),
+        audit: include(failure_reason: 'service_context_required', provider_call_blocked: true)
+      )
+      expect(Llm::EventBus).to have_received(:publish)
+        .with(
+          'captain.generic_after_service_specific_attempt',
+          hash_including(tool_name: 'search_available_slots', provider_call_blocked: true)
+        )
+    end
+
+    it 'allows a generic first call in a fresh run' do
+      expect(scheduling_wrapper.call(resource_ids: ['157'])).to eq('slots')
+      expect(scheduling_tool.calls).to eq(1)
+    end
+
+    it 'allows a different positive service id after a failed service-specific attempt' do
+      failure = Captain::ToolResult.failure(error: 'Service is not available for the requested specialists', retryable: false)
+      scheduling_tool.result = failure
+
+      scheduling_wrapper.call(service_id: 469, resource_ids: ['157'])
+      scheduling_tool.result = 'confirmed slots'
+
+      expect(scheduling_wrapper.call(service_id: 466, resource_ids: ['151'])).to eq('confirmed slots')
+      expect(scheduling_tool.calls).to eq(2)
+    end
+
+    it 'reports but does not block the downgrade while the account guard is disabled' do
+      shadow_context = Captain::Runtime::RunContext.new(
+        { state: { captain_scheduling_grounding_guard_enabled: false } },
+        callbacks: { tool_complete: [->(name, result, _context) { events << [:complete, name, result] }] }
+      )
+      shadow_tool = ToolWrapperSpecSchedulingTool.new
+      shadow_wrapper = described_class.new(shadow_tool, shadow_context)
+      allow(Llm::EventBus).to receive(:publish)
+
+      shadow_wrapper.call(service_id: 469, resource_ids: ['157'])
+
+      expect(shadow_wrapper.call(resource_ids: ['157'])).to eq('slots')
+      expect(shadow_tool.calls).to eq(2)
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.generic_after_service_specific_attempt', hash_including(enforced: false, provider_call_blocked: false))
+    end
+  end
+
+  describe 'Captain response run fencing' do
+    let(:assistant) { instance_double(Captain::Assistant, id: 42) }
+    let(:fenced_context) do
+      Captain::Runtime::RunContext.new(
+        {
+          state: {
+            account_id: 7,
+            assistant_id: assistant.id,
+            conversation: { id: 11 },
+            captain_response_fence: { control_generation: 3, last_message_id: 19, buffer_token: 'buffer-token' }
+          }
+        },
+        callbacks: { tool_start: [->(*args) { events << args }] }
+      )
+    end
+    let(:fenced_wrapper) { described_class.new(tool, fenced_context) }
+    let(:fence_service) { instance_double(Captain::Conversation::RunFenceService) }
+
+    before do
+      allow(Captain::Assistant).to receive(:find_by).with(id: assistant.id).and_return(assistant)
+      allow(Captain::Conversation::RunFenceService).to receive(:new)
+        .with(assistant: assistant, state: fenced_context.context[:state])
+        .and_return(fence_service)
+      # The synthetic tool in these fence tests has no customer action identity.
+      # Authorization denial is exercised with real tools in customer_tool_execution_scope_spec.
+      allow(Captain::CustomerToolExecutionScope).to receive(:ensure_allowed!).and_return(true)
+    end
+
+    it 'checks the current run fence before emitting tool_start or executing the tool' do
+      expect(fence_service).to receive(:ensure_current!).and_return(nil)
+
+      expect(fenced_wrapper.call(result: 'safe')).to eq('safe')
+      expect(events).not_to be_empty
+    end
+
+    it 'does not emit tool_start or execute the tool when the response run is stale' do
+      allow(fence_service).to receive(:ensure_current!).and_raise(
+        Captain::Conversation::ControlGenerationStaleError,
+        'Captain response run is stale'
+      )
+      expect(tool).not_to receive(:execute)
+
+      expect { fenced_wrapper.call(result: 'unsafe') }.to raise_error(Captain::Conversation::ControlGenerationStaleError)
+      expect(events).to be_empty
+    end
+  end
 
   it 'unwraps provider tool call envelopes before tracing and execution' do
     result = wrapper.call(
@@ -382,6 +528,29 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'halts immediately after a denied handoff and prevents retrying it or calling another tool' do
+    denial = Captain::ToolResult.failure(
+      error: 'Automatic handoff is unavailable until a verified consent policy is enabled.',
+      retryable: false,
+      audit: { failure_stage: 'authorization', failure_reason: 'handoff_not_authorized' }
+    )
+    later_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'later_tool')
+
+    result = wrapper.call(result: denial)
+    repeated_result = wrapper.call(result: 'try another explanation')
+    later_result = described_class.new(later_tool, context_wrapper).call(result: 'must not execute')
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(result, denial[:error], retryable: false)
+    expect(context_wrapper.context[:captain_v2_terminal_tool_stop]).to include(
+      result: include(audit: include(failure_reason: 'handoff_not_authorized'))
+    )
+    expect(repeated_result).to be_a(RubyLLM::Tool::Halt)
+    expect(later_result).to be_a(RubyLLM::Tool::Halt)
+    expect(later_tool.calls).to eq(0)
+    expect(events.count { |event| event.first == :start }).to eq(1)
+  end
+
   it 'reports model requests separately from accepted backend executions' do
     context_wrapper.context[:current_agent] = 'scenario_agent'
     context_wrapper.context[:captain_v2_bound_tool_gate] = true
@@ -485,6 +654,83 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       tool_name: 'tool_wrapper_read_only_spec',
       result: include(retryable: false, audit: include(failure_reason: 'tool_request_limit'))
     )
+  end
+
+  it 'blocks scheduling service searches beyond their dedicated budget before tool execution' do
+    allow(Llm::EventBus).to receive(:publish)
+    search_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'account__search_scheduling_services')
+    search_wrapper = described_class.new(search_tool, context_wrapper)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
+
+    allowed.times do |index|
+      expect(search_wrapper.call(result: "search #{index}")).to eq("search #{index}")
+    end
+    blocked = search_wrapper.call(result: 'over budget')
+
+    expect(blocked).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(blocked, 'Scheduling service search budget exceeded. Use the available service results.', retryable: false)
+    expect(search_tool.calls).to eq(allowed)
+    expect(events.last[2]).to include(
+      success: false,
+      data: include(code: 'tool_budget_exceeded', allowed: allowed, attempted: allowed + 1),
+      audit: include(failure_reason: 'tool_budget_exceeded')
+    )
+    expect(Llm::EventBus).to have_received(:publish)
+      .with(
+        'captain.scheduling_tool_budget_blocked',
+        hash_including(tool_name: 'search_scheduling_services', allowed: allowed, attempted: allowed + 1)
+      )
+  end
+
+  it 'shares the scheduling service budget across canonical and account-prefixed names' do
+    canonical_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'search_scheduling_services')
+    prefixed_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'account__search_scheduling_services')
+    canonical_wrapper = described_class.new(canonical_tool, context_wrapper)
+    prefixed_wrapper = described_class.new(prefixed_tool, context_wrapper)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
+
+    allowed.times do |index|
+      wrapper = index.even? ? canonical_wrapper : prefixed_wrapper
+      expect(wrapper.call(result: "search #{index}")).to eq("search #{index}")
+    end
+    blocked = canonical_wrapper.call(result: 'over budget')
+
+    expect(blocked).to be_a(RubyLLM::Tool::Halt)
+    expect(canonical_tool.calls + prefixed_tool.calls).to eq(allowed)
+    expect(context_wrapper.context.dig(:captain_v2_tool_request_counts, :by_tool, 'search_scheduling_services')).to eq(allowed + 1)
+  end
+
+  it 'reports the global limit when the scheduling tool has not exceeded its own budget' do
+    wrappers = Array.new(3) do |index|
+      described_class.new(ToolWrapperSpecReadOnlyTool.new(tool_name: "global_budget_tool_#{index}"), context_wrapper)
+    end
+    described_class::MAX_TOOL_REQUESTS_PER_RUN.times do |index|
+      wrappers.fetch(index % wrappers.size).call(result: "lookup #{index}")
+    end
+
+    search_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'search_scheduling_services')
+    result = described_class.new(search_tool, context_wrapper).call(result: 'blocked')
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(result, 'Tool request limit reached. Stop calling tools and answer using the available results.', retryable: false)
+    expect(events.last[2]).to include(audit: include(failure_reason: 'tool_request_limit'))
+    expect(search_tool.calls).to eq(0)
+  end
+
+  it 'reports the third scheduling service search without blocking while the account guard is disabled' do
+    allow(Llm::EventBus).to receive(:publish)
+    shadow_context = Captain::Runtime::RunContext.new(
+      { state: { captain_scheduling_grounding_guard_enabled: false } }
+    )
+    search_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'search_scheduling_services')
+    search_wrapper = described_class.new(search_tool, shadow_context)
+    allowed = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch('search_scheduling_services')
+
+    (allowed + 1).times { |index| expect(search_wrapper.call(result: "search #{index}")).to eq("search #{index}") }
+
+    expect(search_tool.calls).to eq(allowed + 1)
+    expect(Llm::EventBus).to have_received(:publish)
+      .with('captain.scheduling_tool_budget_blocked', hash_including(allowed: allowed, attempted: allowed + 1, enforced: false))
   end
 
   it 'halts the whole run after the global request budget across different tools' do
@@ -664,3 +910,4 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(payload).to include('error' => message, 'retryable' => retryable)
   end
 end
+# rubocop:enable Lint/ConstantDefinitionInBlock

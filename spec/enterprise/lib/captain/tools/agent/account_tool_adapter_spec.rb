@@ -11,30 +11,31 @@ RSpec.describe Captain::Tools::Agent::AccountToolAdapter, type: :model do
     allow(tool).to receive(:audit_tool_execution)
   end
 
-  it 'propagates customer-agent scope to an account-tool delegate' do
+  it 'denies a legacy deal search even when its delegate would filter to the current contact' do
     conversation = create(:conversation, account: account)
     current_contact_deal = create(:crm_deal, account: account, title: 'Shared renewal')
     create(:crm_deal_contact, account: account, deal: current_contact_deal, contact: conversation.contact, primary: true)
     create(:crm_deal, account: account, title: 'Shared renewal')
     tool_context = Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {})
 
-    payload = JSON.parse(tool.execute(tool_context, query: 'Shared renewal'))
-
+    expect(tool).not_to receive(:invoke_delegate)
+    expect { tool.execute(tool_context, query: 'Shared renewal') }
+      .to raise_error(Captain::CustomerToolExecutionScope::Denied)
     expect(tool.send(:delegate_class)).to eq(Captain::Tools::Account::SearchDealsService)
-    expect(payload['filters']).to include('contact_id' => conversation.contact_id)
-    expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(current_contact_deal.id)
+    expect(current_contact_deal.reload.title).to eq('Shared renewal')
   end
 
-  it 'keeps an update delegate inside the current contact scope' do
+  it 'denies a legacy deal update before its delegate sees a foreign deal' do
     conversation = create(:conversation, account: account)
     foreign_deal = create(:crm_deal, account: account, title: 'Foreign deal')
     update_tool = described_class.new(assistant, tool_id: 'update_deal')
     allow(update_tool).to receive(:audit_tool_execution)
     tool_context = Struct.new(:state, :context).new({ conversation: { id: conversation.id } }, {})
 
-    result = update_tool.execute(tool_context, deal_id: foreign_deal.id, title: 'Leaked update')
+    expect(update_tool).not_to receive(:invoke_delegate)
+    expect { update_tool.execute(tool_context, deal_id: foreign_deal.id, title: 'Leaked update') }
+      .to raise_error(Captain::CustomerToolExecutionScope::Denied)
 
-    expect(result).to include('ERROR:', 'ActiveRecord::RecordNotFound')
     expect(foreign_deal.reload.title).to eq('Foreign deal')
   end
 end

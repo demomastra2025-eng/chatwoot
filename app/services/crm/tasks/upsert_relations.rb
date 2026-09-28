@@ -125,6 +125,9 @@ module Crm::Tasks::UpsertRelations
   end
 
   def inherited_deal_team(deal)
+    return task.team if task.deal_id == deal.id && params.exclude?(:team_id) &&
+                        (task.archived_at.present? || %w[open in_progress].exclude?(task.status&.category))
+
     requested_team = resolve_optional_record(:team_id, account.teams, current: deal.team)
     validation_error!('team_id', 'is inherited from deal') if requested_team != deal.team
     deal.team

@@ -64,6 +64,20 @@ RSpec.describe Scheduling::Appointments::CancelService do
     expect(result.custom_attributes['medelement_provider_sync_status']).to eq('pending')
   end
 
+  it 'does not enqueue a provider removal for a Captain actor whose id matches an account user' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    assistant = create(:captain_assistant, account: account, id: actor.id)
+
+    expect do
+      described_class.new(appointment: appointment, actor: assistant).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE') }
+
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
   it 'fails explicitly when provider cancellation cannot be queued' do
     expect do
       described_class.new(appointment: appointment, actor: actor).perform
@@ -89,12 +103,12 @@ RSpec.describe Scheduling::Appointments::CancelService do
     )
   end
 
-  it 'normalizes payment state for an appointment that is already cancelled' do
+  it 'leaves the retained historical fields untouched for an already cancelled appointment' do
     appointment.update!(status: 'cancelled', payment_status: 'awaiting_payment')
 
     result = described_class.new(appointment: appointment, actor: actor).perform
 
-    expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+    expect(result).to have_attributes(status: 'cancelled', payment_status: 'awaiting_payment')
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
   end
 
@@ -112,6 +126,20 @@ RSpec.describe Scheduling::Appointments::CancelService do
 
     result = described_class.new(appointment: local_appointment, actor: actor).perform
 
-    expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+    expect(result).to have_attributes(status: 'cancelled', payment_status: 'awaiting_payment')
+  end
+
+  it 'preserves the historical no-service price and payment state when cancelling locally' do
+    local_resource = create(:scheduling_resource, account: account)
+    local_appointment = create(
+      :scheduling_appointment, account: account, contact: contact, resource: local_resource,
+                               service: nil, service_amount: 12_000, prepaid_amount: 1_000,
+                               prepaid_payment_method: 'cash', payment_status: 'prepaid', source: 'manual'
+    )
+
+    result = described_class.new(appointment: local_appointment, actor: actor).perform
+
+    expect(result.reload).to have_attributes(status: 'cancelled', service_id: nil,
+                                             service_amount: 12_000, prepaid_amount: 1_000, payment_status: 'prepaid')
   end
 end

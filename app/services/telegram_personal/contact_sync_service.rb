@@ -263,55 +263,33 @@ class TelegramPersonal::ContactSyncService
   end
 
   def merge_contact_records!(source_contact:, target_contact:)
-    now = Time.current
-
-    source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
-    ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
-    Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
-    Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
-    Contacts::ReferenceMergeService.merge_reminder_references!(
-      base_contact: target_contact,
-      mergee_contact: source_contact
-    )
-
-    {
-      'Note' => :contact_id,
-      'CampaignDelivery' => :contact_id,
-      'CsatSurveyResponse' => :contact_id,
-      'Scheduling::Appointment' => :contact_id
-    }.each do |class_name, foreign_key|
-      klass = class_name.safe_constantize
-      next if klass.blank?
-
-      klass.where(foreign_key => source_contact.id).update_all(foreign_key => target_contact.id, :updated_at => now)
+    provider_attributes = nil
+    provider_name = nil
+    ContactMergeAction.new(account: inbox.account, base_contact: target_contact, mergee_contact: source_contact,
+                           emit_merge_event: false).perform do |target, source|
+      # Snapshot provider precedence only after the canonical phone, sorted
+      # Thread and Contact locks (the failed phone validation dirties source).
+      provider_attributes = merge_provider_additional_attributes(target, source)
+      provider_name = preferred_contact_name(target, source)
     end
+    target_contact.reload
+    target_contact.skip_runtime_events = true
+    target_contact.update!(additional_attributes: provider_attributes, name: provider_name)
+  end
 
-    source_attributes = (source_contact.additional_attributes || {}).deep_stringify_keys
-    target_attributes = (target_contact.additional_attributes || {}).deep_stringify_keys
-    merged_additional_attributes = source_attributes.merge(target_attributes)
-
-    merged_channel_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
-                                                                           .merge((target_attributes['channel_profiles'] || {}).deep_stringify_keys) do |_key, old_value, new_value|
+  def merge_provider_additional_attributes(target, source) # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+    source_attributes = (source.additional_attributes || {}).deep_stringify_keys
+    target_attributes = (target.additional_attributes || {}).deep_stringify_keys
+    source_profiles = (source_attributes['channel_profiles'] || {}).deep_stringify_keys
+    target_profiles = (target_attributes['channel_profiles'] || {}).deep_stringify_keys
+    profiles = source_profiles.merge(target_profiles) do |_key, old_value, new_value|
       old_hash = old_value.is_a?(Hash) ? old_value.deep_stringify_keys : {}
       new_hash = new_value.is_a?(Hash) ? new_value.deep_stringify_keys : {}
       old_hash.merge(new_hash)
     end
-    merged_additional_attributes['channel_profiles'] = merged_channel_profiles if merged_channel_profiles.present?
-
-    source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
-
-    target_contact.skip_runtime_events = true
-    target_contact.update!(
-      additional_attributes: merged_additional_attributes,
-      name: preferred_contact_name(target_contact, source_contact),
-      phone_number: target_contact.phone_number.presence || source_contact.phone_number,
-      identifier: target_contact.identifier.presence || source_contact.identifier
-    )
-
-    source_contact.skip_runtime_events = true
-    source_contact.destroy!
-  rescue ActiveRecord::RecordNotDestroyed
-    source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
+    source_attributes.merge(target_attributes).tap do |attributes|
+      attributes['channel_profiles'] = profiles if profiles.present?
+    end
   end
 
   def preferred_contact_name(target_contact, source_contact)

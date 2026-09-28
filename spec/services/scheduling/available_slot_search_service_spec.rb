@@ -39,11 +39,42 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:total_slots]).to eq(2)
   end
 
+  it 'marks service-linked availability as customer-offer eligible' do
+    payload = perform(resource_ids: [resource.id], service_id: service_record.id, limit: 1)
+
+    expect(payload).to include(
+      availability_scope: 'service_confirmed',
+      requested_service_id: service_record.id,
+      customer_offer_eligible: true
+    )
+    expect(payload[:service_match]).to include(
+      confirmed: true,
+      service_id: service_record.id,
+      resource_id: resource.id,
+      resource_ids: [resource.id]
+    )
+  end
+
   it 'filters by service when no explicit specialists are provided' do
     payload = perform(service_id: service_record.id, limit: 1)
 
     expect(payload[:resources].pluck(:id)).to eq([resource.id])
     expect(payload[:resources].pluck(:id)).not_to include(other_resource.id, external_resource.id)
+  end
+
+  it 'marks service availability as unconfirmed when no specialist offers the service' do
+    unsupported_service = create(:scheduling_service, account: account, name: 'Unsupported service', duration_min: 30)
+    expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
+
+    payload = perform(service_id: unsupported_service.id, limit: 1)
+
+    expect(payload).to include(
+      availability_scope: 'service_unconfirmed',
+      requested_service_id: unsupported_service.id,
+      customer_offer_eligible: false
+    )
+    expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
+    expect(payload[:slots]).to be_empty
   end
 
   it 'treats non-positive and blank service ids as an omitted filter' do
@@ -52,6 +83,12 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
       expect(payload[:service]).to be_nil
       expect(payload[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
+      expect(payload).to include(
+        availability_scope: 'generic',
+        requested_service_id: nil,
+        customer_offer_eligible: false
+      )
+      expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
     end
   end
 
@@ -62,6 +99,8 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
   end
 
   it 'raises when the requested specialist cannot perform the requested service' do
+    expect(Scheduling::ResourceAvailabilityQueryService).not_to receive(:new)
+
     expect do
       perform(resource_ids: [other_resource.id],
               service_id: service_record.id)

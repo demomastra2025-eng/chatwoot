@@ -70,6 +70,16 @@ export function useSidebarContext() {
     return router.resolve(to)?.meta?.permissions ?? [];
   };
 
+  const resolveCrmResources = to => {
+    if (!to) return [];
+    if (to.params?.navigationPath) {
+      return (
+        findRouteByName(to.params.navigationPath)?.meta?.crmResources || []
+      );
+    }
+    return router.resolve(to)?.meta?.crmResources || [];
+  };
+
   const resolveFeatureFlag = to => {
     if (!to) return '';
 
@@ -98,14 +108,16 @@ export function useSidebarContext() {
     const permissions = resolvePermissions(to);
     const featureFlag = resolveFeatureFlag(to);
     const installationType = resolveInstallationType(to);
+    const crmResources = resolveCrmResources(to);
 
-    return shouldShow(featureFlag, permissions, installationType);
+    return shouldShow(featureFlag, permissions, installationType, crmResources);
   };
 
   return {
     ...context,
     resolvePath,
     resolvePermissions,
+    resolveCrmResources,
     resolveFeatureFlag,
     isAllowed,
   };

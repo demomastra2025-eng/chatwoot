@@ -28,6 +28,18 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
     )
   end
 
+  describe '#retry_failed_message' do
+    it 'refuses to replay a failed Captain reply with an unknown provider outcome' do
+      message = create(:message, account: account, inbox: inbox, conversation: conversation,
+                                 sender: assistant, message_type: :outgoing, status: :failed,
+                                 additional_attributes: { 'captain_delivery_state' => 'outcome_unknown' })
+
+      expect { operations.retry_failed_message(message_id: message.id) }
+        .to raise_error(ArgumentError, /Reconcile Captain delivery/)
+      expect(message.reload).to be_failed
+    end
+  end
+
   describe '#send_message_to_conversation' do
     it 'sends selected attachment ids through the native message builder pipeline' do
       message = operations.send_message_to_conversation(
@@ -156,6 +168,20 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
     end
   end
 
+  describe '#retry_failed_message' do
+    it 'does not reset or enqueue an ambiguous Captain delivery' do
+      reply = create(:message, account: account, inbox: inbox, conversation: conversation,
+                               sender: assistant, message_type: :outgoing, status: :failed,
+                               additional_attributes: { captain_delivery_state: 'outcome_unknown' })
+      clear_enqueued_jobs
+
+      expect { operations.retry_failed_message(message_id: reply.id) }
+        .to raise_error(ArgumentError, /Captain delivery/)
+      expect(reply.reload.status).to eq('failed')
+      expect(SendReplyJob).not_to have_been_enqueued.with(reply.id)
+    end
+  end
+
   describe '#assign_conversation' do
     it 'records assignee and team activities with the Captain actor' do
       assignee = create(:user, account: account)
@@ -233,6 +259,23 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
   describe '#handoff' do
     let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox, status: 'pending') }
 
+    it 'locks a conversation with a dirty display id and writes the handoff note with the transition' do
+      conversation.display_id = 999_999
+
+      operations.handoff(reason: 'Customer needs a human agent')
+
+      expect(conversation.reload).to have_attributes(status: 'open', display_id: 999_999)
+      expect(conversation.messages.where(private: true).last.content).to eq('Customer needs a human agent')
+    end
+
+    it 'rolls back the handoff transition when writing its note fails' do
+      allow(operations).to receive(:add_private_note).and_raise(ActiveRecord::RecordInvalid)
+
+      expect { operations.handoff(reason: 'Customer needs a human agent') }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(conversation.reload).to have_attributes(status: 'pending', captain_control_state: 'ai')
+      expect(conversation.messages.where(private: true)).to be_empty
+    end
+
     it 'records the configured assistant handoff outcome' do
       assistant.update!(
         config: {
@@ -249,6 +292,11 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
 
       expect(conversation.reload).to be_open
       expect(conversation.status_transitions.last.reason).to eq('Needs agent')
+      expect(conversation.status_transitions.last.metadata).to include(
+        'outcome_reason_id' => 'needs_agent',
+        'outcome_reason_type' => 'handoff',
+        'assistant_id' => assistant.id
+      )
     end
 
     it 'requires a concrete explanation before recording an agent-scoped other handoff' do
@@ -277,7 +325,7 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
         'outcome_reason_type' => 'handoff',
         'outcome_reason_explanation' => 'Клиент просит нестандартную отсрочку платежа'
       )
-      expect(conversation.messages.private.last.content).to eq('Клиент просит нестандартную отсрочку платежа')
+      expect(conversation.messages.where(private: true).last.content).to eq('Клиент просит нестандартную отсрочку платежа')
     end
   end
 end

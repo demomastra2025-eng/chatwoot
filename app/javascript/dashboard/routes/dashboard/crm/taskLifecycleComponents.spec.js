@@ -17,8 +17,10 @@ const { referencesStore, runtime, taskFieldDefinitions } = vi.hoisted(() => ({
     ],
   },
   runtime: {
+    accountFeatures: {},
     accountId: null,
     accountTimezone: 'Asia/Almaty',
+    currentUser: null,
     dispatch: vi.fn(),
     routeQuery: {},
     routerReplace: vi.fn(),
@@ -58,7 +60,7 @@ vi.mock('dashboard/composables/store', () => ({
   useMapGetter: key => {
     const values = {
       getCurrentAccountId: runtime.accountId,
-      getCurrentUser: ref({ id: 1 }),
+      getCurrentUser: runtime.currentUser,
       'accounts/getAccount': ref(() => ({
         settings: { workspace_timezone: runtime.accountTimezone },
       })),
@@ -66,7 +68,13 @@ vi.mock('dashboard/composables/store', () => ({
     };
     return values[key] || ref(null);
   },
-  useStore: () => ({ dispatch: runtime.dispatch }),
+  useStore: () => ({
+    dispatch: runtime.dispatch,
+    getters: {
+      'accounts/isFeatureEnabledonAccount': (accountId, feature) =>
+        Boolean(runtime.accountFeatures[accountId]?.[feature]),
+    },
+  }),
 }));
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => referencesStore,
@@ -80,6 +88,8 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
 import CrmTasksPage from './pages/CrmTasksPage.vue';
+import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
+import DateTimePicker from 'dashboard/components/ui/DateTimePicker.vue';
 
 const initialTask = {
   id: 7,
@@ -138,7 +148,7 @@ const publish = async task => {
   await publishTaskId(task.id);
 };
 const wrappers = [];
-const mountEditor = async (kind, extraProps = {}) => {
+const mountEditor = async (kind, extraProps = {}, globalStubs = {}) => {
   const wrapper = shallowMount(
     kind === 'panel' ? CrmDealTasksPanel : CrmTasksPage,
     {
@@ -157,6 +167,7 @@ const mountEditor = async (kind, extraProps = {}) => {
       global: {
         mocks: { $t: key => key },
         stubs: {
+          ...globalStubs,
           CrmTaskCompletionDialog: {
             name: 'CrmTaskCompletionDialog',
             emits: ['close', 'confirm'],
@@ -184,8 +195,21 @@ const open = (kind, state) =>
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  runtime.accountFeatures = {
+    1: { crm_deals: true, crm_tasks: true },
+    2: { crm_deals: true, crm_tasks: true },
+  };
   runtime.accountId ||= ref(1);
   runtime.accountId.value = 1;
+  runtime.currentUser ||= ref(null);
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [1, 2].map(id => ({
+      id,
+      access_control_mode: 'legacy',
+      permissions: ['agent'],
+    })),
+  };
   runtime.accountTimezone = 'Asia/Almaty';
   Object.keys(runtime.routeQuery).forEach(
     key => delete runtime.routeQuery[key]
@@ -231,6 +255,520 @@ beforeEach(() => {
 });
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+});
+
+it('loads granted team tasks without calling a denied deals index or exposing deal controls', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: ['crm_deal_view'],
+        crm_grant_scopes: {
+          deals: { view: 'none' },
+          tasks: { view: 'team', create: 'team', assign: 'team' },
+        },
+      },
+    ],
+  };
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({ 1: { filters: { dealId: 4 } } })
+  );
+  CrmTasksAPI.get.mockResolvedValue(
+    response([{ ...initialTask, title: 'Team task' }])
+  );
+  CrmDealsAPI.get.mockRejectedValue(new Error('401 unauthorized'));
+
+  const { state } = await mountEditor('page');
+  expect(state.ui.error).toBeNull();
+  expect(state.tasks.map(task => task.title)).toContain('Team task');
+  expect(state.filters.dealId).toBe('');
+  expect(state.taskContextOptions.map(option => option.value)).toEqual([
+    'personal',
+  ]);
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  await state.openCreateDrawer({ contextKind: 'sales', dealId: 4 });
+  expect(state.form.contextKind).toBe('personal');
+  expect(state.form.dealId).toBe('');
+  expect(state.buildPayload()).not.toHaveProperty('deal_id');
+  await state.openEditDrawer(initialTask);
+  expect(state.taskContextOptions.map(option => option.value)).toEqual([
+    'personal',
+    'sales',
+  ]);
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(state.dealOptions).toEqual([]);
+});
+
+it('still loads deal choices for a task viewer with a deal view grant', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        crm_grant_scopes: { deals: { view: 'team' }, tasks: { view: 'team' } },
+      },
+    ],
+  };
+  CrmDealsAPI.get.mockResolvedValue(
+    response([{ id: 4, title: 'Granted deal' }])
+  );
+  const { state } = await mountEditor('page');
+  expect(CrmDealsAPI.get).toHaveBeenCalled();
+  expect(state.dealOptions).toEqual([{ value: 4, label: 'Granted deal' }]);
+  expect(state.ui.error).toBeNull();
+});
+
+it('uses the fresh profile feature when the account cache is missing or stale', async () => {
+  runtime.accountFeatures[1].crm_deals = false;
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        features: { crm_deals: true, crm_tasks: true },
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'team' } },
+      },
+    ],
+  };
+  CrmDealsAPI.get.mockResolvedValue(
+    response([{ id: 4, title: 'Newly enabled' }])
+  );
+  const { state } = await mountEditor('page');
+  expect(CrmDealsAPI.get).toHaveBeenCalled();
+  expect(state.dealOptions).toEqual([{ value: 4, label: 'Newly enabled' }]);
+  expect(state.ui.error).toBeNull();
+});
+
+it('treats a missing profile feature and missing account cache as unavailable', async () => {
+  runtime.accountFeatures = {};
+  const { state } = await mountEditor('page');
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(CrmTasksAPI.get).toHaveBeenCalled();
+  expect(state.canViewDeals).toBe(false);
+});
+
+it('loads permitted tasks while an optional Deals lookup is pending or denied', async () => {
+  const dealRequest = deferred();
+  CrmDealsAPI.get.mockReturnValue(dealRequest.promise);
+  const { state } = await mountEditor('page');
+  expect(state.tasks).toHaveLength(1);
+  expect(state.ui.error).toBeNull();
+
+  dealRequest.reject(new Error('401 unauthorized'));
+  await flushPromises();
+  expect(state.tasks).toHaveLength(1);
+  expect(state.ui.error).toBeNull();
+  expect(state.ui.dealOptionsError).toBe(true);
+  expect(state.dealOptions).toEqual([]);
+});
+
+it('reloads Deal choices when Deals access returns without remounting Tasks', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        crm_grant_scopes: { deals: { view: 'none' }, tasks: { view: 'team' } },
+      },
+    ],
+  };
+  CrmDealsAPI.get.mockResolvedValue(response([{ id: 4, title: 'Recovered' }]));
+  const { state } = await mountEditor('page');
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  runtime.currentUser.value = {
+    ...runtime.currentUser.value,
+    accounts: [
+      {
+        ...runtime.currentUser.value.accounts[0],
+        crm_grant_scopes: {
+          deals: { view: 'all' },
+          tasks: { view: 'team' },
+        },
+      },
+    ],
+  };
+  await flushPromises();
+  expect(CrmDealsAPI.get).toHaveBeenCalled();
+  expect(state.dealOptions).toEqual([{ value: 4, label: 'Recovered' }]);
+  expect(state.ui.dealOptionsError).toBe(false);
+});
+
+it('discards a pending new Deal link when access is revoked mid-edit', async () => {
+  CrmTasksAPI.get.mockResolvedValue(
+    response([{ ...initialTask, dealId: null, contextKind: 'personal' }])
+  );
+  const { state } = await mountEditor('page');
+  await state.openEditDrawer({
+    ...initialTask,
+    dealId: null,
+    contextKind: 'personal',
+  });
+  state.form.title = 'Draft title';
+  state.form.contextKind = 'sales';
+  state.form.dealId = 5;
+
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        crm_grant_scopes: { deals: { view: 'none' }, tasks: { view: 'own' } },
+      },
+    ],
+  };
+  await flushPromises();
+
+  expect(state.form).toMatchObject({
+    title: 'Draft title',
+    dealId: '',
+    contextKind: 'personal',
+  });
+  expect(state.buildPayload()).toMatchObject({
+    deal_id: null,
+    context_kind: 'personal',
+  });
+  state.form.dealId = 5;
+  expect(state.buildPayload().deal_id).toBeNull();
+});
+
+it('retains only the persisted Deal link after access is revoked mid-edit, with an accessible explanation', async () => {
+  const { wrapper, state } = await mountEditor(
+    'page',
+    {},
+    {
+      SchedulingDrawer: { template: '<div><slot /></div>' },
+      SchedulingFormFieldGroup: { template: '<div><slot /></div>' },
+    }
+  );
+  await state.openEditDrawer(initialTask);
+  state.form.title = 'Draft title';
+  state.form.dealId = 5;
+
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        crm_grant_scopes: { deals: { view: 'none' }, tasks: { view: 'own' } },
+      },
+    ],
+  };
+  await flushPromises();
+
+  expect(state.form).toMatchObject({
+    title: 'Draft title',
+    dealId: 4,
+    contextKind: 'sales',
+  });
+  expect(state.buildPayload()).toMatchObject({
+    deal_id: 4,
+    context_kind: 'sales',
+  });
+  const explanation = wrapper.find(
+    '[aria-label="CRM.TASKS.FORM.CONTEXT_KIND"]'
+  );
+  expect(explanation.attributes('role')).toBe('group');
+  expect(explanation.text()).toContain('CRM.TASKS.FORM.LINKED_DEAL_RESTRICTED');
+  state.form.dealId = 5;
+  expect(state.buildPayload().deal_id).toBe(4);
+});
+
+it('announces the persisted Personal context of a linked task after Deal access is revoked', async () => {
+  CrmTasksAPI.get.mockResolvedValue(
+    response([{ ...initialTask, contextKind: 'personal' }])
+  );
+  const { wrapper, state } = await mountEditor(
+    'page',
+    {},
+    {
+      SchedulingDrawer: { template: '<div><slot /></div>' },
+      SchedulingFormFieldGroup: { template: '<div><slot /></div>' },
+    }
+  );
+  await state.openEditDrawer({ ...initialTask, contextKind: 'personal' });
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        features: { crm_deals: true, crm_tasks: true },
+        crm_grant_scopes: { deals: { view: 'none' }, tasks: { view: 'own' } },
+      },
+    ],
+  };
+  await flushPromises();
+
+  const explanation = wrapper.find(
+    '[aria-label="CRM.TASKS.FORM.CONTEXT_KIND"]'
+  );
+  expect(explanation.text()).toContain('CRM.TASKS.CONTEXT_KIND.personal');
+  expect(explanation.text()).not.toContain('CRM.TASKS.CONTEXT_KIND.sales');
+  expect(state.buildPayload()).toMatchObject({
+    context_kind: 'personal',
+    deal_id: 4,
+  });
+});
+
+it('loads tasks without a denied deals index when Deals is disabled but its view grant exists', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        features: { crm_deals: false, crm_tasks: true },
+        crm_grant_scopes: {
+          deals: { view: 'team' },
+          tasks: { view: 'team' },
+        },
+      },
+    ],
+  };
+  CrmDealsAPI.get.mockRejectedValue(new Error('403 FEATURE_DISABLED'));
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({ 1: { filters: { dealId: 4 } } })
+  );
+
+  const { state } = await mountEditor('page');
+  expect(state.ui.error).toBeNull();
+  expect(state.tasks).toHaveLength(1);
+  expect(state.filters.dealId).toBe('');
+  expect(state.taskContextOptions.map(option => option.value)).toEqual([
+    'personal',
+  ]);
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  await state.openCreateDrawer();
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  state.filters.dealId = 99;
+  expect(state.buildTaskQuery().deal_id).toBeUndefined();
+  expect(
+    state.taskMatchesRealtimeFilters({ ...initialTask, dealId: null })
+  ).toBe(true);
+});
+
+it('ignores a denied deal prefill in a Tasks creation URL and its save payload', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        features: { crm_deals: false, crm_tasks: true },
+        crm_grant_scopes: {
+          deals: { view: 'team' },
+          tasks: { view: 'team', create: 'team', assign: 'team' },
+        },
+      },
+    ],
+  };
+  runtime.routeQuery.action = 'new';
+  runtime.routeQuery.contextKind = 'sales';
+  runtime.routeQuery.dealId = '4';
+  CrmDealsAPI.get.mockRejectedValue(new Error('403 FEATURE_DISABLED'));
+
+  const { state } = await mountEditor('page');
+  await flushPromises();
+  expect(state.drawerOpen).toBe(true);
+  expect(state.form.contextKind).toBe('personal');
+  expect(state.form.dealId).toBe('');
+  expect(state.buildPayload().context_kind).toBe('personal');
+  expect(state.buildPayload()).not.toHaveProperty('deal_id');
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  state.form.contextKind = 'sales';
+  state.form.dealId = 4;
+  expect(state.buildPayload().context_kind).toBe('personal');
+  expect(state.buildPayload()).not.toHaveProperty('deal_id');
+});
+
+it('drops a hidden deal filter and reloads tasks when the current account loses deal view', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'team' } },
+      },
+    ],
+  };
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({ 1: { filters: { dealId: 4 } } })
+  );
+  const { state } = await mountEditor('page');
+  expect(state.filters.dealId).toBe(4);
+  const previousLoads = CrmTasksAPI.get.mock.calls.length;
+
+  runtime.currentUser.value = {
+    ...runtime.currentUser.value,
+    accounts: [
+      {
+        ...runtime.currentUser.value.accounts[0],
+        crm_grant_scopes: {
+          deals: { view: 'none' },
+          tasks: { view: 'team' },
+        },
+      },
+    ],
+  };
+  await flushPromises();
+
+  expect(state.filters.dealId).toBe('');
+  expect(state.filterDraft.dealId).toBe('');
+  expect(state.dealOptions).toEqual([]);
+  expect(state.buildTaskQuery().deal_id).toBeUndefined();
+  const refreshedQueries = CrmTasksAPI.get.mock.calls
+    .slice(previousLoads)
+    .map(([query]) => query);
+  expect(refreshedQueries.length).toBeGreaterThan(0);
+  expect(refreshedQueries.every(query => query.deal_id === undefined)).toBe(
+    true
+  );
+  expect(
+    JSON.parse(localStorage.getItem('crm-tasks-page-preferences'))['1'].filters
+      .dealId
+  ).toBe('');
+});
+
+it('keeps Observer read-only on Tasks and separates create from record mutation', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: ['agent'],
+        crm_capabilities: { deals: ['view'], tasks: ['view'] },
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'all' } },
+      },
+    ],
+  };
+  const { state } = await mountEditor('page');
+
+  expect(state.canViewTasks).toBe(true);
+  expect(state.canCreateTasks).toBe(false);
+  expect(state.canManageTasks).toBe(false);
+  await state.openCreateDrawer();
+  await state.saveTask();
+  expect(state.drawerOpen).toBe(false);
+  expect(CrmTasksAPI.create).not.toHaveBeenCalled();
+
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: ['agent'],
+        crm_capabilities: {
+          deals: ['view'],
+          tasks: ['view', 'create', 'assign'],
+        },
+        crm_grant_scopes: {
+          deals: { view: 'all' },
+          tasks: { view: 'all', create: 'own', assign: 'own' },
+        },
+      },
+    ],
+  };
+  expect(state.canCreateTasks).toBe(true);
+  expect(state.canManageTasks).toBe(false);
+  expect(state.canEditTaskForm).toBe(true);
+});
+
+it('selects the workspace day in the CRM picker and keeps the API anchor on that day', async () => {
+  const { wrapper, state } = await mountEditor(
+    'page',
+    {},
+    {
+      SchedulingPageHeader: { template: '<div><slot name="actions" /></div>' },
+    }
+  );
+  state.currentPresentation = 'calendar';
+  state.currentCalendarView = 'day';
+  state.calendarAnchorDate = new Date('2026-09-27T19:00:00.000Z');
+  await flushPromises();
+  const pickerDate = wrapper.findComponent(DateTimePicker).props('value');
+  expect([
+    pickerDate.getFullYear(),
+    pickerDate.getMonth() + 1,
+    pickerDate.getDate(),
+  ]).toEqual([2026, 9, 28]);
+  expect(state.calendarLabel).toContain('September 28, 2026');
+  await state.selectCalendarDate(new Date(2026, 8, 28));
+  expect(state.calendarAnchorDate.toISOString()).toBe(
+    '2026-09-27T19:00:00.000Z'
+  );
+  expect(CrmTasksAPI.get).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      calendar_from: '2026-09-27T19:00:00.000Z',
+      calendar_from_date: '2026-09-28',
+    })
+  );
+});
+
+it('never offers create for task-update-only scopes while preserving record drag', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        crm_grant_scopes: { tasks: { view: 'all', update_fields: 'own' } },
+      },
+    ],
+  };
+  CrmTasksAPI.get.mockResolvedValue(
+    response([
+      { ...initialTask, id: 7, assigneeId: 1, dueAt: '2026-09-04T12:00:00Z' },
+      { ...initialTask, id: 8, assigneeId: 2, dueAt: '2026-09-04T13:00:00Z' },
+    ])
+  );
+  const { wrapper, state } = await mountEditor('page');
+  state.currentPresentation = 'calendar';
+  await state.loadTasks();
+  const calendar = wrapper.findComponent(CrmTaskCalendar);
+  expect(calendar.props('canCreate')).toBe(false);
+  expect(calendar.props('canManage')).toBe(true);
+  expect(calendar.props('tasks').map(task => task.readOnly)).toEqual([
+    false,
+    true,
+  ]);
+});
+
+it('offers partial completion grants in a deal panel without task creation or editing', async () => {
+  const { state } = await mountEditor('panel', {
+    canManageTasks: false,
+    canMutateTask: (action, task) =>
+      action === 'complete_cancel' && Number(task?.id) === initialTask.id,
+    statuses: [
+      { id: 1, code: 'todo', category: 'open', default: true },
+      { id: 2, code: 'done', category: 'done' },
+    ],
+  });
+
+  expect(state.canCreateTask).toBe(false);
+  expect(state.canEditTask(initialTask)).toBe(false);
+  expect(state.canSetTaskResult(initialTask)).toBe(true);
+  expect(state.canSetTaskResult({ ...initialTask, id: 8 })).toBe(false);
 });
 
 describe('deal task panel all-day schedule', () => {
@@ -1893,6 +2431,249 @@ it('cancels pending reloads and restores preferences before loading a different 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('keeps a granted deal filter in account A when switching through a tasks-only account B', async () => {
+  runtime.currentUser.value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: [],
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'all' } },
+      },
+      {
+        id: 2,
+        access_control_mode: 'enforced',
+        permissions: [],
+        crm_grant_scopes: { deals: { view: 'none' }, tasks: { view: 'team' } },
+      },
+    ],
+  };
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({
+      1: { currentPresentation: 'list', filters: { dealId: 4 } },
+      2: { currentPresentation: 'list', filters: { dealId: 99 } },
+    })
+  );
+  const { state } = await mountEditor('page');
+  expect(state.filters.dealId).toBe(4);
+
+  state.listQuickFilters.q = 'account A search';
+  state.accountId = 2;
+  await flushPromises();
+  const stored = JSON.parse(localStorage.getItem('crm-tasks-page-preferences'));
+  expect(stored['1']).toMatchObject({
+    filters: { dealId: 4 },
+    listQuickFilters: { q: 'account A search' },
+  });
+  expect(state.filters.dealId).toBe('');
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.filters.dealId).toBe(4);
+});
+
+it('keeps same-tick edits in the old account without overwriting the next account preferences', async () => {
+  localStorage.setItem(
+    'crm-tasks-page-preferences',
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: {
+        currentPresentation: 'list',
+        listQuickFilters: { q: 'account B search' },
+      },
+    })
+  );
+  const { state } = await mountEditor('page');
+  CrmTasksAPI.get.mockClear();
+  vi.useFakeTimers();
+
+  try {
+    state.currentPresentation = 'list';
+    state.listQuickFilters.q = 'account A latest search';
+    state.accountId = 2;
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+
+    const stored = JSON.parse(
+      localStorage.getItem('crm-tasks-page-preferences')
+    );
+    expect(stored['1']).toMatchObject({
+      currentPresentation: 'list',
+      listQuickFilters: { q: 'account A latest search' },
+    });
+    expect(stored['2']).toMatchObject({
+      currentPresentation: 'list',
+      listQuickFilters: { q: 'account B search' },
+    });
+    expect(state.currentPresentation).toBe('list');
+    expect(state.listQuickFilters.q).toBe('account B search');
+    expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ page: 1, per_page: 25, q: 'account B search' })
+    );
+
+    CrmTasksAPI.get.mockClear();
+    state.accountId = 1;
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(state.currentPresentation).toBe('list');
+    expect(state.listQuickFilters.q).toBe('account A latest search');
+    expect(CrmTasksAPI.get).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        page: 1,
+        per_page: 25,
+        q: 'account A latest search',
+      })
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('does not overwrite newer preferences from another tab when leaving an unchanged account', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: {
+        currentPresentation: 'list',
+        listQuickFilters: { q: 'account B search' },
+      },
+    })
+  );
+  const { state } = await mountEditor('page');
+  const oldValue = localStorage.getItem(storageKey);
+  const updated = JSON.parse(oldValue);
+  updated['1'].currentPresentation = 'calendar';
+  const newValue = JSON.stringify(updated);
+  localStorage.setItem(storageKey, newValue);
+  window.dispatchEvent(
+    new StorageEvent('storage', {
+      key: storageKey,
+      oldValue,
+      newValue,
+      storageArea: localStorage,
+    })
+  );
+  await flushPromises();
+
+  CrmTasksAPI.get.mockClear();
+  state.accountId = 2;
+  await flushPromises();
+
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'calendar',
+  });
+  expect(state.listQuickFilters.q).toBe('account B search');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ page: 1, per_page: 25, q: 'account B search' })
+  );
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('calendar');
+});
+
+it('preserves other accounts and merges same-tick edits before a storage event arrives', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: { currentPresentation: 'list', listQuickFilters: { q: 'B search' } },
+    })
+  );
+  const { state } = await mountEditor('page');
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['1'].currentPresentation = 'calendar';
+  updated['2'].listQuickFilters.q = 'B newer search';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+
+  state.listQuickFilters.q = 'A latest search';
+  state.accountId = 2;
+  await flushPromises();
+
+  const stored = JSON.parse(localStorage.getItem(storageKey));
+  expect(stored['1']).toMatchObject({
+    currentPresentation: 'calendar',
+    listQuickFilters: { q: 'A latest search' },
+  });
+  expect(stored['2'].listQuickFilters.q).toBe('B newer search');
+  expect(state.listQuickFilters.q).toBe('B newer search');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ q: 'B newer search' })
+  );
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('calendar');
+  expect(state.listQuickFilters.q).toBe('A latest search');
+});
+
+it('keeps an explicit local choice when another tab changes the same preference first', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({ 1: { currentPresentation: 'board' } })
+  );
+  const { state } = await mountEditor('page');
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['1'].currentPresentation = 'calendar';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+
+  state.currentPresentation = 'list';
+  state.accountId = 2;
+  await flushPromises();
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'list',
+  });
+
+  state.accountId = 1;
+  await flushPromises();
+  expect(state.currentPresentation).toBe('list');
+
+  state.currentPresentation = 'board';
+  await flushPromises();
+  expect(JSON.parse(localStorage.getItem(storageKey))['1']).toMatchObject({
+    currentPresentation: 'board',
+  });
+});
+
+it('writes the merged preferences before another tab changes a different account', async () => {
+  const storageKey = 'crm-tasks-page-preferences';
+  localStorage.setItem(
+    storageKey,
+    JSON.stringify({
+      1: { currentPresentation: 'board' },
+      2: { currentPresentation: 'list', listQuickFilters: { q: 'old B' } },
+    })
+  );
+  const { state } = await mountEditor('page');
+  state.currentPresentation = 'list';
+  state.persistTasksPreferences();
+
+  const updated = JSON.parse(localStorage.getItem(storageKey));
+  updated['2'].listQuickFilters.q = 'new B';
+  localStorage.setItem(storageKey, JSON.stringify(updated));
+  await flushPromises();
+
+  const stored = JSON.parse(localStorage.getItem(storageKey));
+  expect(stored['1'].currentPresentation).toBe('list');
+  expect(stored['2'].listQuickFilters.q).toBe('new B');
+
+  CrmTasksAPI.get.mockClear();
+  state.accountId = 2;
+  await flushPromises();
+  expect(state.listQuickFilters.q).toBe('new B');
+  expect(CrmTasksAPI.get).toHaveBeenCalledWith(
+    expect.objectContaining({ q: 'new B' })
+  );
 });
 
 it('reclassifies a sales task as standalone personal in one form save', async () => {

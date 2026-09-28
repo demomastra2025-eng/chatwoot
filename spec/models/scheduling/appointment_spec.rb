@@ -1,43 +1,88 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::Appointment do
-  describe 'contact owner sync' do
+  describe 'reminder ownership' do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account, role: :agent) }
     let(:new_owner) { create(:user, account: account, role: :agent) }
     let(:contact) { create(:contact, account: account, owner: owner) }
 
-    it 'inherits the contact owner on create' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
+    it 'resolves the contact owner even when the legacy column disagrees' do
+      appointment = create(:scheduling_appointment, account: account, contact: contact, owner_id: new_owner.id)
 
-      expect(appointment.owner).to eq(owner)
+      expect(appointment.reminder_owner).to eq(owner)
+      expect(appointment.reload.owner_id).to eq(new_owner.id)
+      expect(contact.reload.owner).to eq(owner)
     end
 
-    it 'inherits the linked resource user when the contact has no owner' do
+    it 'uses the creator, not the specialist, when the contact has no owner' do
       resource_owner = create(:user, account: account, role: :agent)
       resource = create(:scheduling_resource, account: account, user: resource_owner)
       unowned_contact = create(:contact, account: account, owner: nil)
 
-      appointment = create(:scheduling_appointment, account: account, contact: unowned_contact, resource: resource, owner: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: unowned_contact, resource: resource,
+                                                    created_by: new_owner)
 
-      expect(appointment.owner).to eq(resource_owner)
-      expect(unowned_contact.reload.owner).to eq(resource_owner)
+      expect(appointment.reminder_owner).to eq(new_owner)
+      expect(unowned_contact.reload.owner).to be_nil
     end
 
-    it 'syncs owner changes back to the contact' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+    it 'does not sync writes to the historical column back to the contact' do
+      appointment = create(:scheduling_appointment, account: account, contact: contact)
 
-      appointment.update!(owner: new_owner)
+      appointment.update!(owner_id: new_owner.id)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
+      expect(appointment.reminder_owner).to eq(owner)
     end
 
-    it 'allows clearing the owner and clears the contact owner' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+    it 'resyncs an open reminder after a direct contact rebind' do
+      replacement = create(:contact, account: account, owner: new_owner)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: owner)
+      reminder = create(:reminder, account: account, remindable: appointment, body: 'Visit', scheduled_at: 2.days.from_now)
 
-      appointment.update!(owner: nil)
+      appointment.update!(contact: replacement)
 
-      expect(contact.reload.owner).to be_nil
+      expect(reminder.reload).to have_attributes(owner_id: new_owner.id, target_contact_id: replacement.id)
+    end
+
+    it 'resyncs an unmaterialized processing reminder after a direct contact rebind' do
+      replacement = create(:contact, account: account, owner: new_owner)
+      original_conversation = create(:conversation, account: account, contact: contact)
+      replacement_conversation = create(:conversation, account: account, contact: replacement, inbox: original_conversation.inbox)
+      appointment = create(:scheduling_appointment, account: account, contact: contact,
+                                                    conversation: original_conversation, created_by: owner)
+      reminder = create(:reminder, account: account, remindable: appointment, touch_conversation: original_conversation,
+                                   body: 'Visit', scheduled_at: 2.days.from_now)
+      expect(reminder.reload).to be_pending
+      claim = reminder.mark_processing!
+      expect(reminder.reload).to have_attributes(
+        status: 'processing', owner_id: owner.id, target_contact_id: contact.id,
+        target_conversation_id: original_conversation.id
+      )
+
+      appointment.update!(contact: replacement, conversation: replacement_conversation)
+
+      expect(reminder.reload).to have_attributes(
+        owner_id: new_owner.id, target_contact_id: replacement.id,
+        target_conversation_id: replacement_conversation.id, status: 'processing'
+      )
+      expect(reminder.processing_claim_token).to eq(claim)
+    end
+
+    it 'leaves the materialized delivery addressed to its original contact after a direct rebind' do
+      replacement = create(:contact, account: account, owner: new_owner)
+      appointment = create(:scheduling_appointment, account: account, contact: contact)
+      reminder = create(:reminder, account: account, remindable: appointment,
+                                   body: 'Already sent', scheduled_at: 2.days.from_now)
+      reminder.mark_processing!
+      reminder.mark_delivery_materialized!(123)
+      original = reminder.reload.attributes.slice('owner_id', 'target_contact_id', 'target_conversation_id', 'metadata')
+
+      appointment.update!(contact: replacement)
+
+      expect(reminder.reload.attributes.slice(*original.keys)).to eq(original)
+      expect(reminder).to be_processing
     end
   end
 

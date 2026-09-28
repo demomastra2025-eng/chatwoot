@@ -1430,7 +1430,7 @@
             "DUPLICATE_EXTERNAL_REF",
             "DUPLICATE_IDEMPOTENCY_KEY",
             "APPOINTMENT_NOT_FOUND",
-            "EXPENSE_NOT_FOUND",
+            "HISTORICAL_DATA_RETAINED",
             "NOT_FOUND"
           ]
         },
@@ -1483,18 +1483,6 @@
         },
         "inherit_working_hours_from_account": {
           "type": "boolean"
-        },
-        "compensation_type": {
-          "type": "string",
-          "nullable": true
-        },
-        "compensation_value": {
-          "type": "integer",
-          "nullable": true
-        },
-        "compensation_percent": {
-          "type": "integer",
-          "nullable": true
         },
         "active": {
           "type": "boolean"
@@ -1551,18 +1539,6 @@
               },
               "price": {
                 "type": "integer"
-              },
-              "compensation_type": {
-                "type": "string",
-                "nullable": true
-              },
-              "compensation_value": {
-                "type": "integer",
-                "nullable": true
-              },
-              "compensation_percent": {
-                "type": "integer",
-                "nullable": true
               },
               "active": {
                 "type": "boolean"
@@ -1681,16 +1657,7 @@
           "type": "string",
           "nullable": true
         },
-        "payment_status": {
-          "type": "string"
-        },
         "service_amount": {
-          "type": "integer"
-        },
-        "prepaid_amount": {
-          "type": "integer"
-        },
-        "settlement_amount": {
           "type": "integer"
         },
         "external_ref": {
@@ -1700,41 +1667,6 @@
         "idempotency_key": {
           "type": "string",
           "nullable": true
-        },
-        "payments": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "integer"
-              },
-              "amount": {
-                "type": "integer"
-              },
-              "payment_method": {
-                "type": "string"
-              },
-              "payment_kind": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "expense": {
-          "type": "object",
-          "nullable": true,
-          "properties": {
-            "id": {
-              "type": "integer"
-            },
-            "amount": {
-              "type": "integer"
-            },
-            "status": {
-              "type": "string"
-            }
-          }
         }
       }
     },
@@ -1891,60 +1823,6 @@
         "custom_attributes": {
           "type": "object",
           "additionalProperties": true
-        }
-      }
-    },
-    "x-scheduling-payment-schema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer"
-        },
-        "appointment_id": {
-          "type": "integer"
-        },
-        "recorded_by_id": {
-          "type": "integer",
-          "nullable": true
-        },
-        "amount": {
-          "type": "integer"
-        },
-        "payment_method": {
-          "type": "string"
-        },
-        "payment_kind": {
-          "type": "string"
-        }
-      }
-    },
-    "x-scheduling-expense-schema": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "integer"
-        },
-        "appointment_id": {
-          "type": "integer"
-        },
-        "resource_id": {
-          "type": "integer",
-          "nullable": true
-        },
-        "amount": {
-          "type": "integer"
-        },
-        "status": {
-          "type": "string"
-        },
-        "paid_at": {
-          "type": "string",
-          "format": "date-time",
-          "nullable": true
-        },
-        "paid_by_id": {
-          "type": "integer",
-          "nullable": true
         }
       }
     },
@@ -2222,18 +2100,6 @@
                               "inherit_working_hours_from_account": {
                                 "type": "boolean"
                               },
-                              "compensation_type": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "compensation_value": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "compensation_percent": {
-                                "type": "integer",
-                                "nullable": true
-                              },
                               "active": {
                                 "type": "boolean"
                               },
@@ -2486,16 +2352,7 @@
                                 "type": "string",
                                 "nullable": true
                               },
-                              "payment_status": {
-                                "type": "string"
-                              },
                               "service_amount": {
-                                "type": "integer"
-                              },
-                              "prepaid_amount": {
-                                "type": "integer"
-                              },
-                              "settlement_amount": {
                                 "type": "integer"
                               },
                               "external_ref": {
@@ -2504,101 +2361,6 @@
                               },
                               "idempotency_key": {
                                 "type": "string",
-                                "nullable": true
-                              },
-                              "payments": {
-                                "type": "array",
-                                "items": {
-                                  "type": "object",
-                                  "properties": {
-                                    "id": {
-                                      "type": "integer"
-                                    },
-                                    "amount": {
-                                      "type": "integer"
-                                    },
-                                    "payment_method": {
-                                      "type": "string"
-                                    },
-                                    "payment_kind": {
-                                      "type": "string"
-                                    }
-                                  }
-                                }
-                              },
-                              "expense": {
-                                "type": "object",
-                                "nullable": true,
-                                "properties": {
-                                  "id": {
-                                    "type": "integer"
-                                  },
-                                  "amount": {
-                                    "type": "integer"
-                                  },
-                                  "status": {
-                                    "type": "string"
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "appointment_id": {
-                                "type": "integer"
-                              },
-                              "recorded_by_id": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expenses": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "appointment_id": {
-                                "type": "integer"
-                              },
-                              "resource_id": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "status": {
-                                "type": "string"
-                              },
-                              "paid_at": {
-                                "type": "string",
-                                "format": "date-time",
-                                "nullable": true
-                              },
-                              "paid_by_id": {
-                                "type": "integer",
                                 "nullable": true
                               }
                             }
@@ -2655,7 +2417,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -2706,7 +2468,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -2795,18 +2557,6 @@
                           "inherit_working_hours_from_account": {
                             "type": "boolean"
                           },
-                          "compensation_type": {
-                            "type": "string",
-                            "nullable": true
-                          },
-                          "compensation_value": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "compensation_percent": {
-                            "type": "integer",
-                            "nullable": true
-                          },
                           "active": {
                             "type": "boolean"
                           },
@@ -2867,7 +2617,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -2924,15 +2674,6 @@
                   },
                   "inherit_working_hours_from_account": {
                     "type": "boolean"
-                  },
-                  "compensation_type": {
-                    "type": "string"
-                  },
-                  "compensation_value": {
-                    "type": "integer"
-                  },
-                  "compensation_percent": {
-                    "type": "integer"
                   },
                   "active": {
                     "type": "boolean"
@@ -2992,18 +2733,6 @@
                         "inherit_working_hours_from_account": {
                           "type": "boolean"
                         },
-                        "compensation_type": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "compensation_value": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "compensation_percent": {
-                          "type": "integer",
-                          "nullable": true
-                        },
                         "active": {
                           "type": "boolean"
                         },
@@ -3055,7 +2784,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3106,7 +2835,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3191,18 +2920,6 @@
                         "inherit_working_hours_from_account": {
                           "type": "boolean"
                         },
-                        "compensation_type": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "compensation_value": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "compensation_percent": {
-                          "type": "integer",
-                          "nullable": true
-                        },
                         "active": {
                           "type": "boolean"
                         },
@@ -3254,7 +2971,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3305,7 +3022,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3359,15 +3076,6 @@
                   },
                   "inherit_working_hours_from_account": {
                     "type": "boolean"
-                  },
-                  "compensation_type": {
-                    "type": "string"
-                  },
-                  "compensation_value": {
-                    "type": "integer"
-                  },
-                  "compensation_percent": {
-                    "type": "integer"
                   },
                   "active": {
                     "type": "boolean"
@@ -3427,18 +3135,6 @@
                         "inherit_working_hours_from_account": {
                           "type": "boolean"
                         },
-                        "compensation_type": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "compensation_value": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "compensation_percent": {
-                          "type": "integer",
-                          "nullable": true
-                        },
                         "active": {
                           "type": "boolean"
                         },
@@ -3490,7 +3186,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3541,7 +3237,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3592,7 +3288,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3660,7 +3356,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3711,7 +3407,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3805,18 +3501,6 @@
                             },
                             "inherit_working_hours_from_account": {
                               "type": "boolean"
-                            },
-                            "compensation_type": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "compensation_value": {
-                              "type": "integer",
-                              "nullable": true
-                            },
-                            "compensation_percent": {
-                              "type": "integer",
-                              "nullable": true
                             },
                             "active": {
                               "type": "boolean"
@@ -3937,7 +3621,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -3988,7 +3672,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4158,18 +3842,6 @@
                             "inherit_working_hours_from_account": {
                               "type": "boolean"
                             },
-                            "compensation_type": {
-                              "type": "string",
-                              "nullable": true
-                            },
-                            "compensation_value": {
-                              "type": "integer",
-                              "nullable": true
-                            },
-                            "compensation_percent": {
-                              "type": "integer",
-                              "nullable": true
-                            },
                             "active": {
                               "type": "boolean"
                             },
@@ -4289,7 +3961,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4340,7 +4012,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4391,7 +4063,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4442,7 +4114,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4571,7 +4243,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4722,7 +4394,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4773,7 +4445,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -4906,7 +4578,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5064,7 +4736,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5115,7 +4787,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5268,7 +4940,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5430,7 +5102,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5481,7 +5153,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5657,7 +5329,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5708,7 +5380,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -5759,7 +5431,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -6794,18 +6466,6 @@
                                 "price": {
                                   "type": "integer"
                                 },
-                                "compensation_type": {
-                                  "type": "string",
-                                  "nullable": true
-                                },
-                                "compensation_value": {
-                                  "type": "integer",
-                                  "nullable": true
-                                },
-                                "compensation_percent": {
-                                  "type": "integer",
-                                  "nullable": true
-                                },
                                 "active": {
                                   "type": "boolean"
                                 }
@@ -6865,7 +6525,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -6939,15 +6599,6 @@
                         "price": {
                           "type": "integer"
                         },
-                        "compensation_type": {
-                          "type": "string"
-                        },
-                        "compensation_value": {
-                          "type": "integer"
-                        },
-                        "compensation_percent": {
-                          "type": "integer"
-                        },
                         "active": {
                           "type": "boolean"
                         }
@@ -7018,18 +6669,6 @@
                               "price": {
                                 "type": "integer"
                               },
-                              "compensation_type": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "compensation_value": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "compensation_percent": {
-                                "type": "integer",
-                                "nullable": true
-                              },
                               "active": {
                                 "type": "boolean"
                               }
@@ -7080,7 +6719,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7131,7 +6770,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7228,18 +6867,6 @@
                               "price": {
                                 "type": "integer"
                               },
-                              "compensation_type": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "compensation_value": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "compensation_percent": {
-                                "type": "integer",
-                                "nullable": true
-                              },
                               "active": {
                                 "type": "boolean"
                               }
@@ -7290,7 +6917,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7341,7 +6968,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7408,15 +7035,6 @@
                           "type": "integer"
                         },
                         "price": {
-                          "type": "integer"
-                        },
-                        "compensation_type": {
-                          "type": "string"
-                        },
-                        "compensation_value": {
-                          "type": "integer"
-                        },
-                        "compensation_percent": {
                           "type": "integer"
                         },
                         "active": {
@@ -7489,18 +7107,6 @@
                               "price": {
                                 "type": "integer"
                               },
-                              "compensation_type": {
-                                "type": "string",
-                                "nullable": true
-                              },
-                              "compensation_value": {
-                                "type": "integer",
-                                "nullable": true
-                              },
-                              "compensation_percent": {
-                                "type": "integer",
-                                "nullable": true
-                              },
                               "active": {
                                 "type": "boolean"
                               }
@@ -7551,7 +7157,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7602,7 +7208,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7653,7 +7259,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7721,7 +7327,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7772,7 +7378,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -7833,13 +7439,6 @@
           {
             "in": "query",
             "name": "status",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "payment_status",
             "schema": {
               "type": "string"
             }
@@ -7935,16 +7534,7 @@
                             "type": "string",
                             "nullable": true
                           },
-                          "payment_status": {
-                            "type": "string"
-                          },
                           "service_amount": {
-                            "type": "integer"
-                          },
-                          "prepaid_amount": {
-                            "type": "integer"
-                          },
-                          "settlement_amount": {
                             "type": "integer"
                           },
                           "external_ref": {
@@ -7954,41 +7544,6 @@
                           "idempotency_key": {
                             "type": "string",
                             "nullable": true
-                          },
-                          "payments": {
-                            "type": "array",
-                            "items": {
-                              "type": "object",
-                              "properties": {
-                                "id": {
-                                  "type": "integer"
-                                },
-                                "amount": {
-                                  "type": "integer"
-                                },
-                                "payment_method": {
-                                  "type": "string"
-                                },
-                                "payment_kind": {
-                                  "type": "string"
-                                }
-                              }
-                            }
-                          },
-                          "expense": {
-                            "type": "object",
-                            "nullable": true,
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "status": {
-                                "type": "string"
-                              }
-                            }
                           }
                         }
                       }
@@ -8043,7 +7598,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8146,24 +7701,6 @@
                     "type": "string"
                   },
                   "idempotency_key": {
-                    "type": "string"
-                  },
-                  "service_amount": {
-                    "type": "integer"
-                  },
-                  "prepaid_amount": {
-                    "type": "integer"
-                  },
-                  "prepaid_payment_method": {
-                    "type": "string"
-                  },
-                  "settlement_amount": {
-                    "type": "integer"
-                  },
-                  "settlement_payment_method": {
-                    "type": "string"
-                  },
-                  "payment_status": {
                     "type": "string"
                   },
                   "confirm_outside_working_hours": {
@@ -8273,16 +7810,7 @@
                           "type": "string",
                           "nullable": true
                         },
-                        "payment_status": {
-                          "type": "string"
-                        },
                         "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
                           "type": "integer"
                         },
                         "external_ref": {
@@ -8292,41 +7820,6 @@
                         "idempotency_key": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
                         }
                       }
                     }
@@ -8411,16 +7904,7 @@
                           "type": "string",
                           "nullable": true
                         },
-                        "payment_status": {
-                          "type": "string"
-                        },
                         "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
                           "type": "integer"
                         },
                         "external_ref": {
@@ -8430,41 +7914,6 @@
                         "idempotency_key": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
                         }
                       }
                     }
@@ -8510,7 +7959,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8561,7 +8010,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8612,7 +8061,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8731,16 +8180,7 @@
                           "type": "string",
                           "nullable": true
                         },
-                        "payment_status": {
-                          "type": "string"
-                        },
                         "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
                           "type": "integer"
                         },
                         "external_ref": {
@@ -8750,41 +8190,6 @@
                         "idempotency_key": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
                         }
                       }
                     }
@@ -8830,7 +8235,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8881,7 +8286,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -8973,24 +8378,6 @@
                     "type": "string"
                   },
                   "external_ref": {
-                    "type": "string"
-                  },
-                  "service_amount": {
-                    "type": "integer"
-                  },
-                  "prepaid_amount": {
-                    "type": "integer"
-                  },
-                  "prepaid_payment_method": {
-                    "type": "string"
-                  },
-                  "settlement_amount": {
-                    "type": "integer"
-                  },
-                  "settlement_payment_method": {
-                    "type": "string"
-                  },
-                  "payment_status": {
                     "type": "string"
                   },
                   "confirm_outside_working_hours": {
@@ -9099,16 +8486,7 @@
                           "type": "string",
                           "nullable": true
                         },
-                        "payment_status": {
-                          "type": "string"
-                        },
                         "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
                           "type": "integer"
                         },
                         "external_ref": {
@@ -9118,41 +8496,6 @@
                         "idempotency_key": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
                         }
                       }
                     }
@@ -9198,7 +8541,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -9249,7 +8592,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -9300,7 +8643,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -9351,7 +8694,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -9470,16 +8813,7 @@
                           "type": "string",
                           "nullable": true
                         },
-                        "payment_status": {
-                          "type": "string"
-                        },
                         "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
                           "type": "integer"
                         },
                         "external_ref": {
@@ -9489,41 +8823,6 @@
                         "idempotency_key": {
                           "type": "string",
                           "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
                         }
                       }
                     }
@@ -9569,7 +8868,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -9620,1305 +8919,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/appointments/{appointment_id}/payments": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        },
-        {
-          "in": "path",
-          "name": "appointment_id",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "post": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "create-scheduling-appointment-payment",
-        "summary": "Record a payment on an appointment",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "amount": {
-                    "type": "integer"
-                  },
-                  "payment_method": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Appointment payment state updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "integer"
-                        },
-                        "account_id": {
-                          "type": "integer"
-                        },
-                        "resource_id": {
-                          "type": "integer"
-                        },
-                        "contact_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "service_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "company_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "conversation_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "created_by_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "starts_at": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "ends_at": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "duration_min": {
-                          "type": "integer"
-                        },
-                        "status": {
-                          "type": "string"
-                        },
-                        "appointment_type": {
-                          "type": "string"
-                        },
-                        "client_name": {
-                          "type": "string"
-                        },
-                        "client_phone": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "client_identifier": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "client_birth_date": {
-                          "type": "string",
-                          "format": "date",
-                          "nullable": true
-                        },
-                        "client_gender": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "payment_status": {
-                          "type": "string"
-                        },
-                        "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
-                          "type": "integer"
-                        },
-                        "external_ref": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "idempotency_key": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Appointment not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Invalid payment mutation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/appointments/{id}/payments": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        },
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "delete": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "cancel-scheduling-appointment-payments",
-        "summary": "Cancel all appointment payments",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Appointment payments cancelled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "integer"
-                        },
-                        "account_id": {
-                          "type": "integer"
-                        },
-                        "resource_id": {
-                          "type": "integer"
-                        },
-                        "contact_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "service_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "company_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "conversation_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "created_by_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "starts_at": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "ends_at": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "duration_min": {
-                          "type": "integer"
-                        },
-                        "status": {
-                          "type": "string"
-                        },
-                        "appointment_type": {
-                          "type": "string"
-                        },
-                        "client_name": {
-                          "type": "string"
-                        },
-                        "client_phone": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "client_identifier": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "client_birth_date": {
-                          "type": "string",
-                          "format": "date",
-                          "nullable": true
-                        },
-                        "client_gender": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "payment_status": {
-                          "type": "string"
-                        },
-                        "service_amount": {
-                          "type": "integer"
-                        },
-                        "prepaid_amount": {
-                          "type": "integer"
-                        },
-                        "settlement_amount": {
-                          "type": "integer"
-                        },
-                        "external_ref": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "idempotency_key": {
-                          "type": "string",
-                          "nullable": true
-                        },
-                        "payments": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "amount": {
-                                "type": "integer"
-                              },
-                              "payment_method": {
-                                "type": "string"
-                              },
-                              "payment_kind": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "expense": {
-                          "type": "object",
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "integer"
-                            },
-                            "amount": {
-                              "type": "integer"
-                            },
-                            "status": {
-                              "type": "string"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Appointment not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Payment cancellation is not allowed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/payments": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "list-scheduling-payments",
-        "summary": "List payment journal entries",
-        "description": "Requires `scheduling_finance` and admin access.",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "payment_kinds",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "payment_methods",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "resource_ids",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "from",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
-            "in": "query",
-            "name": "to",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Payment journal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer"
-                          },
-                          "appointment_id": {
-                            "type": "integer"
-                          },
-                          "recorded_by_id": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "amount": {
-                            "type": "integer"
-                          },
-                          "payment_method": {
-                            "type": "string"
-                          },
-                          "payment_kind": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    },
-                    "meta": {
-                      "type": "object",
-                      "properties": {
-                        "count": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled or caller is not an admin",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/expenses": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "list-scheduling-expenses",
-        "summary": "List resource expenses and payouts",
-        "description": "Requires `scheduling_finance` and admin access.",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "resource_ids",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "from",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          {
-            "in": "query",
-            "name": "to",
-            "schema": {
-              "type": "string",
-              "format": "date-time"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Expense journal",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer"
-                          },
-                          "appointment_id": {
-                            "type": "integer"
-                          },
-                          "resource_id": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "amount": {
-                            "type": "integer"
-                          },
-                          "status": {
-                            "type": "string"
-                          },
-                          "paid_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "nullable": true
-                          },
-                          "paid_by_id": {
-                            "type": "integer",
-                            "nullable": true
-                          }
-                        }
-                      }
-                    },
-                    "meta": {
-                      "type": "object",
-                      "properties": {
-                        "count": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled or caller is not an admin",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/expenses/{id}/pay": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        },
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "post": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "pay-scheduling-expense",
-        "summary": "Mark a single resource expense as paid",
-        "description": "Requires `scheduling_finance` and admin access.",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Expense marked paid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "integer"
-                        },
-                        "appointment_id": {
-                          "type": "integer"
-                        },
-                        "resource_id": {
-                          "type": "integer",
-                          "nullable": true
-                        },
-                        "amount": {
-                          "type": "integer"
-                        },
-                        "status": {
-                          "type": "string"
-                        },
-                        "paid_at": {
-                          "type": "string",
-                          "format": "date-time",
-                          "nullable": true
-                        },
-                        "paid_by_id": {
-                          "type": "integer",
-                          "nullable": true
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled or caller is not an admin",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Expense not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
-                        "NOT_FOUND"
-                      ]
-                    },
-                    "details": {
-                      "type": "object",
-                      "nullable": true,
-                      "additionalProperties": true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/scheduling/expenses/pay_all": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        }
-      ],
-      "post": {
-        "tags": [
-          "Scheduling"
-        ],
-        "operationId": "pay-all-scheduling-expenses",
-        "summary": "Pay all filtered unpaid expenses",
-        "description": "Requires `scheduling_finance` and admin access.",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "resource_ids": {
-                    "type": "string"
-                  },
-                  "from": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "to": {
-                    "type": "string",
-                    "format": "date-time"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Paid expense list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "payload": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "integer"
-                          },
-                          "appointment_id": {
-                            "type": "integer"
-                          },
-                          "resource_id": {
-                            "type": "integer",
-                            "nullable": true
-                          },
-                          "amount": {
-                            "type": "integer"
-                          },
-                          "status": {
-                            "type": "string"
-                          },
-                          "paid_at": {
-                            "type": "string",
-                            "format": "date-time",
-                            "nullable": true
-                          },
-                          "paid_by_id": {
-                            "type": "integer",
-                            "nullable": true
-                          }
-                        }
-                      }
-                    },
-                    "meta": {
-                      "type": "object",
-                      "properties": {
-                        "count": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Scheduling finance is disabled or caller is not an admin",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string",
-                      "enum": [
-                        "VALIDATION_ERROR",
-                        "FEATURE_DISABLED",
-                        "OUTSIDE_WORKING_HOURS",
-                        "BLOCKED_BY_HOLIDAY",
-                        "BLOCKED_BY_BREAK",
-                        "BLOCKED_BY_VACATION",
-                        "SLOT_CONFLICT",
-                        "OVERRIDE_REASON_REQUIRED",
-                        "OVERRIDE_FORBIDDEN",
-                        "RESOURCE_READ_ONLY",
-                        "WORK_RULES_INHERITED",
-                        "BREAK_RULES_INHERITED",
-                        "DUPLICATE_WORKDAY",
-                        "INVALID_SCHEDULE_PAYLOAD",
-                        "SCHEDULE_VERSION_CONFLICT",
-                        "SERVICE_NOT_AVAILABLE_FOR_RESOURCE",
-                        "INVALID_IIN",
-                        "DUPLICATE_EXTERNAL_REF",
-                        "DUPLICATE_IDEMPOTENCY_KEY",
-                        "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11048,7 +9049,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11183,7 +9184,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11234,7 +9235,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11381,7 +9382,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11432,7 +9433,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11483,7 +9484,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11551,7 +9552,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11602,7 +9603,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11760,7 +9761,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11918,7 +9919,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -11969,7 +9970,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12137,7 +10138,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12188,7 +10189,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12239,7 +10240,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12307,7 +10308,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12358,7 +10359,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12514,7 +10515,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12667,7 +10668,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12718,7 +10719,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12882,7 +10883,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12933,7 +10934,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -12984,7 +10985,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -13052,7 +11053,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -13103,7 +11104,7 @@
                         "DUPLICATE_EXTERNAL_REF",
                         "DUPLICATE_IDEMPOTENCY_KEY",
                         "APPOINTMENT_NOT_FOUND",
-                        "EXPENSE_NOT_FOUND",
+                        "HISTORICAL_DATA_RETAINED",
                         "NOT_FOUND"
                       ]
                     },
@@ -20666,7 +18667,7 @@
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `payment_status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
+            "description": "Array of conditions on which conversation/message filter would work.\nAppointment automations use `status`, `appointment_type`, `source`,\nand active managed appointment custom field keys.\nDeal automations use standard CRM deal fields and active managed deal custom field keys.\nTask automations use standard CRM task fields and active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -20699,7 +18700,7 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
+            "description": "Array of actions which we perform when condition matches.\nAppointment automations support `send_webhook_event` and `change_appointment_status`.\nDeal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -20709,7 +18710,7 @@
                 },
                 "action_params": {
                   "type": "array",
-                  "description": "Action params. `cancel_appointment_payment` uses an empty array.",
+                  "description": "Action params for supported actions.",
                   "items": {
                     "type": "string"
                   }
@@ -24166,7 +22167,7 @@
           },
           "actions": {
             "type": "array",
-            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event`, `change_appointment_status`, and,\nwhen `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
+            "description": "Array of actions which you want to perform when condition matches.\nFor appointment events the native actions are `send_webhook_event` and `change_appointment_status`.\nDeal events support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,\n`assign_deal_team`, `archive_deal`, and `unarchive_deal`.\nTask events support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,\n`assign_task_team`, `change_task_priority`, `archive_task`, and `unarchive_task`.\n",
             "items": {
               "type": "object",
               "properties": {
@@ -24192,7 +22193,6 @@
                     "send_email_transcript",
                     "add_private_note",
                     "change_appointment_status",
-                    "cancel_appointment_payment",
                     "change_deal_stage",
                     "assign_deal_owner",
                     "assign_deal_team",
@@ -24208,7 +22208,7 @@
                 },
                 "action_params": {
                   "type": "array",
-                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`cancel_appointment_payment` does not require params.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
+                  "description": "Action parameters. `change_appointment_status` expects one status value such as `confirmed` or `cancelled`.\n`change_deal_stage` expects a stage id. `assign_deal_owner`, `assign_deal_team`,\n`assign_task_assignee`, and `assign_task_team` expect an account-scoped user or team id, or `nil`.\n`change_task_status` expects a task status id. `change_task_priority` expects a supported task priority.\n",
                   "items": {
                     "type": "string"
                   }
@@ -24224,7 +22224,7 @@
           },
           "conditions": {
             "type": "array",
-            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `payment_status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
+            "description": "Array of conditions on which automation filter would work.\nAppointment automations support native fields `status`, `appointment_type`, `source`\nand active managed appointment custom field keys.\nDeal automations support standard CRM deal fields such as `pipeline_id`, `stage_id`, `owner_id`, `team_id`,\n`title`, `description`, `currency`, `external_ref`, `amount_minor`, `win_probability`,\n`expected_close_on`, `closed_at`, `archived_at`, plus active managed deal custom field keys.\nTask automations support standard CRM task fields such as `status_id`, `assignee_id`, `team_id`,\n`priority`, `title`, `description`, `external_ref`, `start_at`, `due_at`, `completed_at`, `archived_at`,\nplus active managed task custom field keys.\n",
             "items": {
               "type": "object",
               "properties": {

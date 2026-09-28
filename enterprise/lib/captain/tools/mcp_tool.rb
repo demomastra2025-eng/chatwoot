@@ -26,6 +26,15 @@ class Captain::Tools::McpTool < Captain::Tools::BasePublicTool
   end
 
   def perform(_tool_context, **params)
+    # MCP idempotent_hint alone has no provider-side receipt/ordering contract.
+    # The remote read_only_hint is the only supported AI execution mode.
+    unless @tool_definition[:risk_level].to_s == 'low' && Llm::ToolRiskPolicy.read_only?(self)
+      return Captain::ToolResult.failure_output(
+        error: 'Mutating MCP actions require a provider idempotency and reconciliation contract',
+        audit: { failure_stage: 'policy', failure_reason: 'unsafe_provider_mutation' }
+      )
+    end
+
     Captain::Mcp::ExecutionService.new(
       mcp_server: @mcp_server,
       tool_name: @tool_definition[:mcp_tool_name],

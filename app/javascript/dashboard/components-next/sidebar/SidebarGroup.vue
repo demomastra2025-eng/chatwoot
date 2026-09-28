@@ -36,6 +36,7 @@ const {
   setExpandedItem,
   resolvePath,
   resolvePermissions,
+  resolveCrmResources,
   resolveFeatureFlag,
   isAllowed,
   isCollapsed,
@@ -431,6 +432,7 @@ watch(
   <Policy
     v-if="!hasChildren || hasAccessibleChildren"
     :permissions="resolvePermissions(to)"
+    :crm-resources="resolveCrmResources(to)"
     :feature-flag="resolveFeatureFlag(to)"
     as="li"
     class="grid gap-1 text-sm cursor-pointer select-none min-w-0"

@@ -14,6 +14,229 @@ RSpec.describe 'CRM Tasks enforced access boundary', type: :request do
     AccessControl::ModeTransition.call(account: account, to: :enforced)
   end
 
+  it 'allows team tasks while denying deals for a tasks-only Lead' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'tasks', capability: 'view').update!(access_scope: 'team')
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'none')
+    team = create(:team, account: account)
+    create(:team_member, team: team, user: viewer)
+    teammate = create(:user, account: account)
+    team_task = create(:crm_task, account: account, team: team, assignee: teammate)
+
+    get path, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to include(team_task.id)
+
+    get "/api/v1/accounts/#{account.id}/crm/deals", headers: headers, as: :json
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'serves granted team tasks while Deals is disabled despite a deal view grant' do
+    account.disable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'tasks', capability: 'view').update!(access_scope: 'team')
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'team')
+    team = create(:team, account: account)
+    create(:team_member, team: team, user: viewer)
+    teammate = create(:user, account: account)
+    team_task = create(:crm_task, account: account, team: team, assignee: teammate)
+
+    get path, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').pluck('id')).to include(team_task.id)
+
+    get "/api/v1/accounts/#{account.id}/crm/deals", headers: headers, as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.fetch('code')).to eq('FEATURE_DISABLED')
+  end
+
+  it 'refuses to link a new task to a deal when Deals is disabled' do
+    account.disable_features!('crm_deals')
+    deal = create(:crm_deal, account: account, owner: viewer)
+
+    expect do
+      post path, params: { title: 'Unreachable linked task', deal_id: deal.id, assignee_id: viewer.id },
+                 headers: headers, as: :json
+    end.not_to change(account.crm_tasks, :count)
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.fetch('code')).to eq('FEATURE_DISABLED')
+  end
+
+  it 'refuses to link a new task to a deal outside the actor view grant' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'none')
+    deal = create(:crm_deal, account: account, owner: viewer)
+
+    expect do
+      post path, params: { title: 'Denied linked task', deal_id: deal.id, assignee_id: viewer.id },
+                 headers: headers, as: :json
+    end.not_to change(account.crm_tasks, :count)
+    expect(response).to have_http_status(:unauthorized)
+  end
+
+  it 'keeps an existing task deal link when editing its fields without Deals access' do
+    account.disable_features!('crm_deals')
+    deal = create(:crm_deal, account: account, owner: viewer)
+    task = create(:crm_task, account: account, assignee: viewer, deal: deal, context_kind: 'sales')
+
+    patch "#{path}/#{task.id}",
+          params: { title: 'Edited linked task', deal_id: deal.id, lock_version: task.lock_version },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(task.reload).to have_attributes(title: 'Edited linked task', deal_id: deal.id)
+  end
+
+  it 'does not bypass task assignment grants by inheriting a different team from a linked deal' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'all')
+    grants.find_by!(resource: 'tasks', capability: 'update_fields').update!(access_scope: 'own')
+    grants.find_by!(resource: 'tasks', capability: 'assign').update!(access_scope: 'none')
+    other_team = create(:team, account: account)
+    deal = create(:crm_deal, account: account, owner: viewer, team: other_team)
+    task = create(:crm_task, account: account, assignee: viewer, team: nil, context_kind: 'personal')
+
+    patch "#{path}/#{task.id}",
+          params: { deal_id: deal.id, context_kind: 'sales', lock_version: task.lock_version },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.fetch('code')).to eq('TASK_ASSIGNMENT_FORBIDDEN')
+    expect(task.reload).to have_attributes(deal_id: nil, team_id: nil, context_kind: 'personal')
+
+    post "#{path}/#{task.id}/save_form",
+         params: { deal_id: deal.id, context_kind: 'sales', lock_version: task.lock_version,
+                   idempotency_key: SecureRandom.uuid },
+         headers: headers, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body.fetch('code')).to eq('TASK_ASSIGNMENT_FORBIDDEN')
+    expect(task.reload).to have_attributes(deal_id: nil, team_id: nil, context_kind: 'personal')
+  end
+
+  it 'allows linking a deal without task assignment rights when the existing team does not change' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'all')
+    grants.find_by!(resource: 'tasks', capability: 'update_fields').update!(access_scope: 'own')
+    grants.find_by!(resource: 'tasks', capability: 'assign').update!(access_scope: 'none')
+    team = create(:team, account: account)
+    create(:team_member, team: team, user: viewer)
+    deal = create(:crm_deal, account: account, owner: viewer, team: team)
+    task = create(:crm_task, account: account, assignee: viewer, team: team, context_kind: 'personal')
+
+    patch "#{path}/#{task.id}",
+          params: { deal_id: deal.id, context_kind: 'sales', lock_version: task.lock_version },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(task.reload).to have_attributes(deal_id: deal.id, team_id: team.id, context_kind: 'sales')
+  end
+
+  it 'syncs inherited task teams on an authorized deal transfer without a task assignment grant' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    grants.find_by!(resource: 'deals', capability: 'view').update!(access_scope: 'all')
+    grants.find_by!(resource: 'deals', capability: 'update_fields').update!(access_scope: 'all')
+    grants.find_by!(resource: 'deals', capability: 'assign').update!(access_scope: 'all')
+    grants.find_by!(resource: 'tasks', capability: 'assign').update!(access_scope: 'none')
+    old_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    [old_team, new_team].each { |team| create(:team_member, team: team, user: viewer) }
+    deal = create(:crm_deal, account: account, owner: viewer, team: old_team)
+    task = create(:crm_task, account: account, assignee: viewer, team: old_team, deal: deal, context_kind: 'sales')
+
+    patch "/api/v1/accounts/#{account.id}/crm/deals/#{deal.id}",
+          params: { team_id: new_team.id, lock_version: deal.lock_version }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(deal.reload.team).to eq(new_team)
+    expect(task.reload.team).to eq(new_team)
+  end
+
+  it 'keeps historical linked task teams editable after a deal transfer without task assignment rights' do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    %w[view update_fields assign].each do |capability|
+      grants.find_by!(resource: 'deals', capability: capability).update!(access_scope: 'all')
+    end
+    grants.find_by!(resource: 'tasks', capability: 'update_fields').update!(access_scope: 'own')
+    grants.find_by!(resource: 'tasks', capability: 'assign').update!(access_scope: 'none')
+    old_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    deal = create(:crm_deal, account: account, owner: viewer, team: old_team)
+    done_status = create(:crm_task_status, account: account, category: 'done')
+    completed = create(:crm_task, account: account, assignee: viewer, team: old_team, deal: deal,
+                                  context_kind: 'sales', status: done_status)
+    archived = create(:crm_task, account: account, assignee: viewer, team: old_team, deal: deal,
+                                 context_kind: 'sales', archived_at: Time.current)
+
+    patch "/api/v1/accounts/#{account.id}/crm/deals/#{deal.id}",
+          params: { team_id: new_team.id, lock_version: deal.lock_version }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(completed.reload.team).to eq(old_team)
+    expect(archived.reload.team).to eq(old_team)
+
+    patch "#{path}/#{completed.id}",
+          params: { title: 'Updated completed', context_kind: 'sales', deal_id: deal.id,
+                    lock_version: completed.lock_version }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(completed.reload).to have_attributes(title: 'Updated completed', team_id: old_team.id)
+
+    post "#{path}/#{archived.id}/save_form",
+         params: { title: 'Updated archived', context_kind: 'sales', deal_id: deal.id,
+                   lock_version: archived.lock_version, idempotency_key: SecureRandom.uuid },
+         headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(archived.reload).to have_attributes(title: 'Updated archived', team_id: old_team.id)
+  end
+
+  it 'reconciles the inherited team when reopening a linked task after a deal transfer', :aggregate_failures do
+    account.enable_features!('crm_deals')
+    grants = viewer.account_users.find_by!(account: account).access_role.grants
+    %w[view update_fields assign].each do |capability|
+      grants.find_by!(resource: 'deals', capability: capability).update!(access_scope: 'all')
+    end
+    grants.find_by!(resource: 'tasks', capability: 'update_fields').update!(access_scope: 'own')
+    grants.find_by!(resource: 'tasks', capability: 'transition').update!(access_scope: 'own')
+    grants.find_by!(resource: 'tasks', capability: 'assign').update!(access_scope: 'none')
+    old_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    deal = create(:crm_deal, account: account, owner: viewer, team: old_team)
+    task = create(:crm_task, account: account, assignee: viewer, team: old_team, deal: deal,
+                             context_kind: 'sales')
+    outcome = task.task_type.outcomes.find_by!(code: 'completed')
+
+    post "#{path}/#{task.id}/complete",
+         params: { task_outcome_id: outcome.id, lock_version: task.lock_version }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+
+    patch "/api/v1/accounts/#{account.id}/crm/deals/#{deal.id}",
+          params: { team_id: new_team.id, lock_version: deal.lock_version }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(task.reload.team).to eq(old_team)
+
+    post "#{path}/#{task.id}/reopen", params: { lock_version: task.lock_version }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(task.reload.team).to eq(new_team)
+    expect(task.events.where(event_type: 'task_reopened').last.after_data['team_id']).to eq(new_team.id)
+
+    patch "#{path}/#{task.id}",
+          params: { title: 'Edited after reopen', deal_id: deal.id, lock_version: task.lock_version },
+          headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(task.reload).to have_attributes(title: 'Edited after reopen', team_id: new_team.id)
+
+    post "#{path}/#{task.id}/save_form",
+         params: { title: 'Saved after reopen', deal_id: deal.id, lock_version: task.lock_version,
+                   idempotency_key: SecureRandom.uuid }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(task.reload).to have_attributes(title: 'Saved after reopen', team_id: new_team.id)
+  end
+
   it 'paginates only tasks in the authoritative own scope' do
     own_tasks = create_list(:crm_task, 2, account: account, assignee: viewer)
     foreign_user = create(:user, account: account, role: :agent)

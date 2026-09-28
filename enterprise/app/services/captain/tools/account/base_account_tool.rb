@@ -170,12 +170,6 @@ class Captain::Tools::Account::BaseAccountTool < Captain::Tools::BaseTool
     ).resolve
   end
 
-  def appointment_finance_visible?(appointment)
-    account_user = account.account_users.find_by(user_id: @user&.id)
-    user_context = { user: @user, account: account, account_user: account_user }
-
-    ::Scheduling::AppointmentPolicy.new(user_context, appointment).view_finance_legacy?
-  end
 
   def find_permissible_conversation(conversation_id)
     return nil if conversation_id.blank?

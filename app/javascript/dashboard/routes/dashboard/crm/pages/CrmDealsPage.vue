@@ -22,10 +22,9 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  CRM_DEAL_VIEW_PERMISSIONS,
-  CRM_TASK_MANAGE_PERMISSIONS,
-} from 'dashboard/constants/permissions';
+  hasCrmManagePermission,
+  hasCrmViewPermission,
+} from 'dashboard/helper/permissionsHelper';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -212,6 +211,7 @@ const dealConversationDraft = reactive({
 const contactableInboxesByContactId = ref({});
 const communicationThreadsByContactId = ref({});
 const hasRestoredPreferences = ref(false);
+let restoredPreferencesAccountKey = null;
 const persistedPreferencesByAccount = useLocalStorage(
   DEALS_PREFERENCES_STORAGE_KEY,
   {}
@@ -305,13 +305,34 @@ const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
+const canDeal = (capabilities, deal) =>
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'deals',
+    capabilities,
+    deal
+  );
 const canManageDeals = computed(() =>
-  checkPermissions(CRM_DEAL_MANAGE_PERMISSIONS)
+  canDeal('update_fields', selectedDeal.value)
 );
-const canManageTasks = computed(
-  () =>
-    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
-    checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
+const canCreateDeals = computed(() =>
+  canDeal(['create', 'assign'], { ownerId: currentUser.value?.id })
+);
+const canEditDealForm = computed(() =>
+  selectedDeal.value ? canManageDeals.value : canCreateDeals.value
+);
+const canTask = (action, task) =>
+  isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'tasks',
+    action,
+    task
+  );
+const canManageTasks = computed(() =>
+  canTask(['create', 'assign'], { assigneeId: currentUser.value?.id })
 );
 const canAccessDealSettings = computed(
   () =>
@@ -323,7 +344,12 @@ const canAccessDealSettings = computed(
     ])
 );
 const canViewDeals = computed(() =>
-  checkPermissions(CRM_DEAL_VIEW_PERMISSIONS)
+  hasCrmViewPermission(currentUser.value, accountId.value, 'deals')
+);
+const canViewTasks = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+    hasCrmViewPermission(currentUser.value, accountId.value, 'tasks')
 );
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
@@ -500,6 +526,7 @@ const drawerModalClass = computed(() => [
 ]);
 const shouldRenderDealTasksPanel = computed(
   () =>
+    canViewTasks.value &&
     drawerOpen.value &&
     (dealActivityTab.value === 'tasks' || hasVisitedDealTasksTab.value)
 );
@@ -1014,8 +1041,8 @@ const sanitizeDealsPreferences = preferences => {
 };
 
 const restoreDealsPreferences = () => {
-  const stored =
-    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferenceKey = accountPreferenceKey.value;
+  const stored = persistedPreferencesByAccount.value?.[preferenceKey] || {};
   const preferences = sanitizeDealsPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
@@ -1027,10 +1054,15 @@ const restoreDealsPreferences = () => {
   Object.assign(boardSortDirections, preferences.boardSortDirections);
   Object.assign(filters, preferences.filters);
   listQuickFilters.q = preferences.listQuickFilters.q;
+  restoredPreferencesAccountKey = preferenceKey;
 };
 
 const persistDealsPreferences = () => {
-  if (!hasRestoredPreferences.value) return;
+  if (
+    !hasRestoredPreferences.value ||
+    restoredPreferencesAccountKey !== accountPreferenceKey.value
+  )
+    return;
 
   persistedPreferencesByAccount.value = {
     ...(persistedPreferencesByAccount.value || {}),
@@ -1918,6 +1950,7 @@ const loadTimeline = async dealId => {
 };
 
 const openCreateDrawer = async prefill => {
+  if (!canCreateDeals.value) return false;
   dealEditorGeneration += 1;
   const editorGeneration = dealEditorGeneration;
   ui.isSaving = false;
@@ -2298,7 +2331,28 @@ const createDealConversation = async ({ contactId, inbox }) => {
 };
 
 const saveDeal = async () => {
-  if (!canManageDeals.value) return;
+  if (!canEditDealForm.value) return;
+  if (
+    !selectedDeal.value &&
+    !canDeal(['create', 'assign'], {
+      ownerId: form.ownerId,
+      teamId: form.teamId,
+    })
+  )
+    return;
+  if (
+    selectedDeal.value &&
+    (Number(form.ownerId || 0) !== Number(selectedDeal.value.ownerId || 0) ||
+      Number(form.teamId || 0) !== Number(selectedDeal.value.teamId || 0)) &&
+    !canDeal('assign', selectedDeal.value)
+  )
+    return;
+  if (
+    selectedDeal.value &&
+    Number(form.stageId) !== Number(selectedDeal.value.stageId) &&
+    !canDeal('transition', selectedDeal.value)
+  )
+    return;
 
   const targetStage = findStageById(form.stageId);
   const stageChanging =
@@ -2632,7 +2686,7 @@ const handleCrmDealRealtimeEvent = payload => {
 };
 
 const startEditingDealTitle = deal => {
-  if (!canManageDeals.value) {
+  if (!canDeal('update_fields', deal)) {
     openEditDrawer(deal);
     return;
   }
@@ -2943,6 +2997,15 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     deals.value.find(item => Number(item.id) === Number(deal.id)) || deal;
   const nextStageId = Number(stageId);
   const nextPosition = Number(position);
+  if (
+    !canDeal(
+      Number(currentDeal.stageId) === nextStageId
+        ? 'update_fields'
+        : 'transition',
+      currentDeal
+    )
+  )
+    return;
 
   if (
     !nextStageId ||
@@ -3181,7 +3244,11 @@ const callDealLifecycleApi = (action, dealId, payload) => {
 };
 
 const performDealLifecycleAction = async action => {
-  if (!canManageDeals.value || !selectedDeal.value || isDealFormDirty.value) {
+  if (
+    !canDeal('transition', selectedDeal.value) ||
+    !selectedDeal.value ||
+    isDealFormDirty.value
+  ) {
     return;
   }
 
@@ -3271,7 +3338,7 @@ const consumeDealPrefillQuery = async isCurrent => {
   if (queryValue('action') !== 'new') return;
   if (!isCurrent()) return;
 
-  if (!canManageDeals.value) {
+  if (!canCreateDeals.value) {
     await clearDealPrefillQuery(isCurrent);
     return;
   }
@@ -3537,13 +3604,18 @@ const initializeDealsPage = async ({ reloadDirectory = false } = {}) => {
     }
     if (!isCurrent()) return;
 
-    await Promise.all([
+    const referenceLoads = [
       loadPipelineReferences(),
-      referencesStore.loadTaskStatuses(),
-      referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('deal'),
-      referencesStore.loadFieldDefinitions('task'),
-    ]);
+    ];
+    if (canViewTasks.value) {
+      referenceLoads.push(
+        referencesStore.loadTaskStatuses(),
+        referencesStore.loadTaskTypes(),
+        referencesStore.loadFieldDefinitions('task')
+      );
+    }
+    await Promise.all(referenceLoads);
     if (!isCurrent()) return;
 
     ensurePipelineFilterSelection();
@@ -3715,7 +3787,7 @@ watch(
             @update:model-value="handleBoardSortChange"
           />
           <Button
-            v-if="canManageDeals"
+            v-if="canCreateDeals"
             size="sm"
             icon="i-lucide-plus"
             :label="$t('CRM.DEALS.NEW_DEAL')"
@@ -3777,7 +3849,7 @@ watch(
           <CrmDealBoard
             v-else-if="currentPresentation === 'board'"
             class="min-h-0 flex-1"
-            :can-manage="canManageDeals"
+            :can-manage="(deal, capability) => canDeal(capability, deal)"
             :can-reorder="!hasListSearchQuery"
             :deals="boardDeals"
             :field-definitions="dealFieldDefinitions"
@@ -3809,7 +3881,7 @@ watch(
                 : $t('CRM.DEALS.EMPTY_DESCRIPTION')
             "
             :action-label="
-              canManageDeals && !hasListSearchQuery
+              canCreateDeals && !hasListSearchQuery
                 ? $t('CRM.DEALS.NEW_DEAL')
                 : ''
             "
@@ -3861,7 +3933,7 @@ watch(
                   <span class="flex min-w-0 items-center gap-2 overflow-hidden">
                     <Input
                       v-if="
-                        canManageDeals &&
+                        canDeal('update_fields', row) &&
                         Number(editingDealTitleId) === Number(row.id)
                       "
                       autofocus
@@ -3886,7 +3958,7 @@ watch(
                       </span>
                     </button>
                     <Button
-                      v-if="canManageDeals"
+                      v-if="canDeal('update_fields', row)"
                       v-tooltip.top="$t('CRM.DEALS.EDIT_TITLE')"
                       size="sm"
                       color="slate"
@@ -3930,7 +4002,7 @@ watch(
 
               <template #cell-stage="{ row }">
                 <CrmDealStageMenu
-                  v-if="canManageDeals"
+                  v-if="canDeal('transition', row)"
                   display-variant="list"
                   :model-value="row.stageId"
                   :stages="listStageOptionsForDeal(row)"
@@ -4020,13 +4092,13 @@ watch(
                     ? $t('CRM.DEALS.FORM.TITLE')
                     : $t('CRM.DEALS.CREATE_TITLE')
                 "
-                :readonly="!canManageDeals"
+                :readonly="!canEditDealForm"
                 :value="form.title"
                 @input="form.title = $event.target.value"
               />
 
               <Button
-                v-if="selectedDeal && canManageDeals"
+                v-if="selectedDeal && canDeal('delete_archive', selectedDeal)"
                 v-tooltip.top="archiveTooltip"
                 size="sm"
                 color="slate"
@@ -4039,7 +4111,7 @@ watch(
                 @click="toggleArchived(selectedDeal)"
               />
               <Button
-                v-if="canManageDeals && shouldShowDealSaveAction"
+                v-if="canEditDealForm && shouldShowDealSaveAction"
                 size="sm"
                 :is-loading="ui.isSaving"
                 :disabled="disableDealSave"
@@ -4062,7 +4134,7 @@ watch(
             <CrmDealLifecycleActions
               v-if="
                 selectedDeal &&
-                canManageDeals &&
+                canDeal('transition', selectedDeal) &&
                 !selectedDeal.archivedAt &&
                 !pendingStageEntry
               "
@@ -4142,7 +4214,7 @@ watch(
                       id="crm-deal-drawer-pipeline"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.PIPELINE')"
-                      :disabled="!canManageDeals"
+                      :disabled="!canEditDealForm"
                       :model-value="form.pipelineId"
                       :options="pipelineOptions"
                       :placeholder="$t('CRM.DEALS.FORM.PIPELINE')"
@@ -4154,7 +4226,10 @@ watch(
                       id="crm-deal-drawer-stage"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.STAGE')"
-                      :disabled="!canManageDeals"
+                      :disabled="
+                        !canEditDealForm ||
+                        (selectedDeal && !canDeal('transition', selectedDeal))
+                      "
                       :model-value="form.stageId"
                       :options="stageOptions"
                       :placeholder="$t('CRM.DEALS.FORM.STAGE')"
@@ -4166,7 +4241,10 @@ watch(
                       id="crm-deal-drawer-owner"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.OWNER')"
-                      :disabled="!canManageDeals"
+                      :disabled="
+                        !canEditDealForm ||
+                        (selectedDeal && !canDeal('assign', selectedDeal))
+                      "
                       :model-value="form.ownerId"
                       :options="ownerOptions"
                       :placeholder="$t('CRM.DEALS.FORM.OWNER')"
@@ -4189,7 +4267,10 @@ watch(
                       id="crm-deal-drawer-team"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.TEAM')"
-                      :disabled="!canManageDeals"
+                      :disabled="
+                        !canEditDealForm ||
+                        (selectedDeal && !canDeal('assign', selectedDeal))
+                      "
                       :model-value="form.teamId"
                       :options="teamOptions"
                       :placeholder="$t('CRM.DEALS.FORM.TEAM')"
@@ -4275,7 +4356,7 @@ watch(
                       id="crm-deal-drawer-contacts"
                       class="crm-deal-drawer-control crm-deal-drawer-multi-control"
                       :aria-label="$t('CRM.DEALS.FORM.CONTACTS')"
-                      :disabled="!canManageDeals"
+                      :disabled="!canEditDealForm"
                       :model-value="form.contactIds"
                       :options="contactOptions"
                       :placeholder="$t('CRM.DEALS.FORM.CONTACTS')"
@@ -4310,7 +4391,7 @@ watch(
                       id="crm-deal-drawer-primary-contact"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-                      :disabled="!canManageDeals"
+                      :disabled="!canEditDealForm"
                       :model-value="form.primaryContactId"
                       dropdown-placement="auto"
                       :options="primaryContactOptions"
@@ -4335,7 +4416,7 @@ watch(
                       id="crm-deal-drawer-company"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.COMPANY')"
-                      :disabled="!canManageDeals"
+                      :disabled="!canEditDealForm"
                       :model-value="form.companyId"
                       dropdown-placement="auto"
                       :options="companyOptions"
@@ -4416,6 +4497,7 @@ watch(
                       {{ $t('CRM.DEALS.TABS.HISTORY') }}
                     </button>
                     <button
+                      v-if="canViewTasks"
                       type="button"
                       class="inline-flex h-8 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors"
                       :class="
@@ -4455,8 +4537,9 @@ watch(
                   >
                     <CrmDealTasksPanel
                       :assignees="ownerOptions"
-                      :can-manage-deals="canManageDeals"
+                      :can-manage-deals="canDeal('transition', selectedDeal)"
                       :can-manage-tasks="canManageTasks"
+                      :can-mutate-task="canTask"
                       :deal="selectedDeal"
                       :statuses="taskStatuses"
                       :task-field-definitions="taskFieldDefinitions"

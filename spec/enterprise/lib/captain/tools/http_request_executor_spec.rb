@@ -269,7 +269,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: HTTP request failed with status 502')
+    expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 502', retryable: true))
     expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
 
@@ -281,7 +281,9 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: HTTP request failed with status 422: {"error":"invalid flat id"}')
+    expect(result).to eq(
+      Captain::ToolResult.failure_output(error: 'HTTP request failed with status 422: {"error":"invalid flat id"}', retryable: false)
+    )
     expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
 
@@ -294,7 +296,12 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: HTTP request failed with status 422: {"error":"phone [REDACTED_PHONE] is invalid"}')
+    expect(result).to eq(
+      Captain::ToolResult.failure_output(
+        error: 'HTTP request failed with status 422: {"error":"phone [REDACTED_PHONE] is invalid"}',
+        retryable: false
+      )
+    )
     expect(Rails.logger).to have_received(:error).with(/\[REDACTED_PHONE\]/)
     expect(Rails.logger).not_to have_received(:error).with(/\+770\*\*\*\*4567|secret-value|"phone"|"token"/)
   end
@@ -308,7 +315,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: HTTP request failed with status 422')
+    expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 422', retryable: false))
     expect(Rails.logger).not_to have_received(:error).with(/Alice|\+770\*\*\*\*4567|customer/)
   end
 
@@ -321,7 +328,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: HTTP request failed with status 502')
+    expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 502', retryable: true))
     expect(WebMock).to have_requested(:put, 'https://example.com/leads').once
   end
 
@@ -334,7 +341,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('lead_name' => 'Alice')
 
-    expect(result).to eq('ERROR: An error occurred while executing the request')
+    expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: true))
     expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
 
@@ -497,7 +504,7 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
 
     result = executor.call('items' => [1, 2])
 
-    expect(result).to eq('ERROR: An error occurred while executing the request')
+    expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: true))
     expect(WebMock).not_to have_requested(:get, 'https://example.com/leads').with(query: { 'items' => '[2]' })
   end
 

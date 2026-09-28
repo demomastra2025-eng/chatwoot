@@ -29,8 +29,13 @@ class Captain::ResponseSchema < RubyLLM::Schema
       'Do not include hidden chain-of-thought.'
     ].join
   ).freeze
+  RESPONSE_MODE_DESCRIPTION = (
+    'Use reply when a customer-facing response is required. Use suppress when the correct outcome is to send nothing, ' \
+    'for example after a simple acknowledgement or when a human already answered.'
+  ).freeze
 
   string :response, description: 'The message to send to the user'
+  string :response_mode, description: RESPONSE_MODE_DESCRIPTION
   string :reasoning, description: REASONING_DESCRIPTION
   array :artifact_ids, of: :string, description: ARTIFACT_IDS_DESCRIPTION
   string :handoff_message, description: HANDOFF_MESSAGE_DESCRIPTION

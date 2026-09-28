@@ -82,6 +82,25 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     )
   end
 
+  it 'rejects a Captain actor despite an incompatible user descriptor before inserting a receipt' do
+    assistant = create(:captain_assistant, account: account)
+    command_service = described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'create_reception',
+      idempotency_key: idempotency_key,
+      company_cabinet_code: 'cabinet-1',
+      actor: assistant,
+      actor_descriptor: { type: 'User', id: user.id }
+    )
+
+    expect { command_service.perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE')
+    end
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+  end
+
   it 'rejects reception creation for a cancelled appointment before persisting a command' do
     appointment.update!(status: 'cancelled')
 
@@ -350,7 +369,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     }
   end
 
-  it 'includes a non-user actor identity in the idempotency fingerprint' do
+  it 'includes an actor descriptor identity in the idempotency fingerprint' do
     first = described_class.new(
       account: account,
       hook: hook,
@@ -358,7 +377,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       operation: 'create_reception',
       idempotency_key: idempotency_key,
       company_cabinet_code: 'cabinet-1',
-      actor_descriptor: { type: 'Captain::Assistant', id: 41 }
+      actor_descriptor: { type: 'User', id: 41 }
     ).perform
 
     expect do
@@ -369,7 +388,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
         operation: 'create_reception',
         idempotency_key: idempotency_key,
         company_cabinet_code: 'cabinet-1',
-        actor_descriptor: { type: 'Captain::Assistant', id: 42 }
+        actor_descriptor: { type: 'User', id: 42 }
       ).perform
     end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_IDEMPOTENCY_KEY_REUSED') }
     expect(first.reload).to be_awaiting_confirmation

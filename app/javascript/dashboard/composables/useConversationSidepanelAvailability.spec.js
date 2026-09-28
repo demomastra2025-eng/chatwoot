@@ -56,6 +56,25 @@ describe('useConversationSidepanelAvailability', () => {
     stop();
   });
 
+  it('keeps Observer CRM panel available for viewing without mutation grants', () => {
+    testState.currentUser.value = {
+      accounts: [
+        {
+          id: 530,
+          access_control_mode: 'enforced',
+          permissions: ['agent'],
+          crm_capabilities: { deals: ['view'], tasks: ['view'] },
+        },
+      ],
+    };
+    testState.uiSettings.value = { is_crm_deal_panel_open: true };
+    const { activePanel, dealsAvailable, stop } = buildAvailability();
+
+    expect(dealsAvailable.value).toBe(true);
+    expect(activePanel.value).toBe('deals');
+    stop();
+  });
+
   it('ignores persisted scheduling and touch panels when their features are disabled', () => {
     testState.isFeatureEnabledonAccount.value = vi.fn(
       (_accountId, feature) => feature === 'crm_deals'

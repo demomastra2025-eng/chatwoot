@@ -1,6 +1,20 @@
 require 'rails_helper'
 
 RSpec.describe Captain::ToolRegistry do
+  describe '.customer_agent_tools' do
+    it 'publishes only the server-executable current-contact and customer-task actions' do
+      expect(described_class.customer_agent_tools.pluck(:id))
+        .to match_array(Captain::CustomerToolExecutionScope::ALLOWED_TOOL_NAMES)
+    end
+
+    it 'leaves employee metadata and legacy prompt validation separate from customer grants' do
+      expect(described_class.customer_agent_tools.pluck(:id))
+        .not_to include('handoff', 'create_deal', 'create_task', 'merge_contacts', 'faq_lookup')
+      expect(described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id))
+        .to include('handoff', 'create_deal', 'create_task', 'merge_contacts', 'faq_lookup')
+    end
+  end
+
   describe '.tools_for_scope' do
     it 'keeps shared agent tools available in the assistant scope' do
       agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
@@ -67,7 +81,6 @@ RSpec.describe Captain::ToolRegistry do
         'create_contact',
         'complete_task',
         'merge_contacts',
-        'add_appointment_payment',
         'list_macros',
         'get_macro',
         'create_macro',
@@ -106,7 +119,7 @@ RSpec.describe Captain::ToolRegistry do
       )
     end
 
-    it 'opens non-admin business tools to the customer-facing agent scope' do
+    it 'opens legacy business tools except broad task operations to the agent configuration scope' do
       agent_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
 
       expect(agent_tool_ids).to include(*expected_agent_business_tool_ids)
@@ -272,7 +285,7 @@ RSpec.describe Captain::ToolRegistry do
       update_captain_custom_tool
       set_captain_custom_tool_status
       delete_captain_custom_tool
-      add_appointment_payment
+
 
       create_canned_response
       get_canned_response
@@ -286,6 +299,13 @@ RSpec.describe Captain::ToolRegistry do
       execute_macro
       create_contact
       complete_task
+      get_task
+      search_tasks
+      list_task_custom_fields
+      get_task_timeline
+      create_task
+      update_task
+      change_task_status
       get_conversation
       add_deal_comment
       add_task_comment

@@ -91,6 +91,18 @@ RSpec.describe Telephony::AiVoice::ToolCapability do
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_NOT_ALLOWED_FOR_RUNTIME') }
   end
 
+  it 'establishes a runtime lease with an empty catalog but grants no tools' do
+    token = described_class.issue(call_session: call_session, runtime_session_id: runtime_session_id,
+                                  runtime_engine: runtime_engine, assistant_id: nil, tools: [])
+
+    expect(token).to be_present
+    expect(call_session.reload.metadata.dig('runtime_lease', 'generation')).to be_present
+    expect do
+      described_class.verify!(token: token, call_session: call_session, assistant_id: nil,
+                              tool_name: 'get_contact', payload: scoped_payload)
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_NOT_ALLOWED_FOR_RUNTIME') }
+  end
+
   it 'rejects a tampered or missing token' do
     [nil, "#{issue_capability}tampered"].each do |token|
       expect do

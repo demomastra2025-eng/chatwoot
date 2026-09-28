@@ -277,14 +277,16 @@ RSpec.describe Whatsapp::AiVoiceCallService do
 
   it 'lets only the reservation owner create media or accept a concurrent duplicate callback' do
     owner = described_class.new(call: call, routing_decision: routing_decision)
-    expect(owner.send(:reserve_call!)).to be(true)
     expect(media_client).not_to receive(:create_session)
     expect(runtime_client).not_to receive(:preflight_call)
     expect(runtime_client).not_to receive(:attach_call)
     expect(provider).not_to receive(:pre_accept_call)
     expect(provider).not_to receive(:accept_call)
 
-    duplicate_result = described_class.new(call: call.reload, routing_decision: routing_decision).perform
+    duplicate_result = with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      expect(owner.send(:reserve_call!)).to be(true)
+      described_class.new(call: call.reload, routing_decision: routing_decision).perform
+    end
 
     expect(duplicate_result).to eq(call)
     expect(call.reload.meta.dig('ai_voice', 'state')).to eq('reserving')

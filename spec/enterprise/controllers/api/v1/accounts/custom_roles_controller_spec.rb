@@ -1,6 +1,8 @@
 require 'rails_helper'
 
 RSpec.describe 'Custom Roles API', type: :request do
+  include FutureTelephonyGrantSpecHelper
+
   let!(:account) { create(:account) }
   let!(:administrator) { create(:user, account: account, role: :administrator) }
   let!(:agent) { create(:user, account: account, role: :agent) }
@@ -145,6 +147,22 @@ RSpec.describe 'Custom Roles API', type: :request do
         expect(body).to include('name' => 'Updated Role')
       end
 
+      it 'preserves future opt-in grants when the legacy permissions editor saves' do
+        custom_role.update!(permissions: %w[crm_deal_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+        grant = insert_future_telephony_grant(role: mapped_role, scope: 'own')
+
+        put "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+            params: { custom_role: { name: 'Updated Role', permissions: %w[crm_task_view] } },
+            headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(grant.reload.access_scope).to eq('own')
+        expect(mapped_role.grants.reload.pluck(:resource, :capability, :access_scope)).to contain_exactly(
+          %w[tasks view all], %w[telephony_calls view own]
+        )
+      end
+
       it 'updates an existing canonical role in the same request' do
         custom_role.update!(permissions: %w[crm_task_view])
         mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
@@ -204,6 +222,18 @@ RSpec.describe 'Custom Roles API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(AccessRole.where(id: mapped_role.id)).not_to exist
+      end
+
+      it 'deprovisions future grants when the whole unassigned role is explicitly deleted' do
+        custom_role.update!(permissions: %w[crm_task_view])
+        mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+        future = insert_future_telephony_grant(role: mapped_role)
+
+        delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+               headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:success)
+        expect(AccessRoleGrant.where(id: future.id)).not_to exist
       end
 
       it 'returns a diagnostic error when the canonical role is assigned to an account user' do

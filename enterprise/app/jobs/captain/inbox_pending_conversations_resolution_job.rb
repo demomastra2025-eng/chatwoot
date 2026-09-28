@@ -1,4 +1,4 @@
-class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
+class Captain::InboxPendingConversationsResolutionJob < ApplicationJob # rubocop:disable Metrics/ClassLength
   CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON = 'no outstanding questions'.freeze
   CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON = 'pending clarification from customer'.freeze
   TIME_BASED_COMPLETION_EXPLANATION = 'Customer did not respond within the configured inactivity period.'.freeze
@@ -30,7 +30,9 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Current.executed_by = inbox.captain_assistant
 
     resolvable_pending_conversations(inbox).each do |conversation|
-      conversation.with_lock do
+      Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
+        next unless resolvable_under_lock?(conversation)
+
         transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
         create_private_note(conversation, inbox, "Auto-resolved: #{TIME_BASED_COMPLETION_EXPLANATION}")
         create_resolution_message(conversation, inbox)
@@ -96,27 +98,48 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Time.now.utc - auto_resolve_after.minutes
   end
 
-  def resolve_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
-    raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
+  # The candidate/evaluation is not a claim: another job or customer turn may
+  # change it while waiting for the contact/thread and conversation locks.
+  def resolvable_under_lock?(conversation)
+    cutoff_time = auto_resolve_cutoff_time(conversation.account)
+    return false unless cutoff_time && conversation.pending? && conversation.last_activity_at < cutoff_time
 
-    conversation.with_lock do
+    # Message COMMIT releases the contact advisor before its after_commit
+    # callback reopens/projects activity. Reject that committed turn regardless
+    # of its client-supplied timestamp or sequence ID.
+    incoming = Captain::Conversation::ControlService.contact_messages_scope(conversation).incoming
+    !incoming.where("messages.additional_attributes ->> 'captain_contact_activity_pending' = 'true'").exists?
+  end
+
+  def resolve_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
+    applied = Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
+      next unless resolvable_under_lock?(conversation)
+
+      raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
+
       transition_agent_outcome(conversation, inbox.captain_assistant, :completion, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
       create_resolution_message(conversation, inbox, generated_message: generated_message)
+      true
     end
-    conversation.dispatch_captain_inference_resolved_event
+    conversation.dispatch_captain_inference_resolved_event if applied
   end
 
   def handoff_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
     return unless inbox.captain_assistant&.handoff_enabled?
 
-    raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
+    applied = Conversations::StatusTransitionService.with_locked_conversations_for(conversation) do
+      next unless resolvable_under_lock?(conversation)
 
-    conversation.with_lock do
+      raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
+
       transition_agent_outcome(conversation, inbox.captain_assistant, :handoff, status_reason, explanation: reason)
       create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
       create_handoff_message(conversation, inbox, generated_message: generated_message)
+      true
     end
+    return unless applied
+
     conversation.dispatch_captain_inference_handoff_event
     send_out_of_office_message_if_applicable(conversation.reload)
   end
@@ -183,7 +206,8 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
           account_id: conversation.account_id,
           inbox_id: conversation.inbox_id,
           content: assistant.render_runtime_text(content, conversation: conversation),
-          sender: assistant
+          sender: assistant,
+          additional_attributes: { captain_delivery_fence: delivery_snapshot(conversation, assistant, 'resolution') }
         }
       )
     end
@@ -208,8 +232,13 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       account_id: conversation.account_id,
       inbox_id: conversation.inbox_id,
       content: assistant.render_runtime_text(handoff_message, conversation: conversation),
-      preserve_waiting_since: true
+      preserve_waiting_since: true,
+      additional_attributes: { captain_delivery_fence: delivery_snapshot(conversation, assistant, 'handoff') }
     )
+  end
+
+  def delivery_snapshot(conversation, assistant, kind)
+    Captain::Conversation::DeliveryFenceService.snapshot(conversation: conversation, assistant: assistant, kind: kind)
   end
 
   def handoff_message_content(assistant, generated_message: nil)

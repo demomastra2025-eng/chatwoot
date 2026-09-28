@@ -4,7 +4,17 @@ RSpec.describe Captain::Llm::ArticleSearchTermsService do
   let(:account) { create(:account) }
   let(:portal) { create(:portal, account: account) }
   let(:author) { create(:user, account_ids: [account.id]) }
-  let(:article) { create(:article, account: account, portal: portal, author: author, title: 'Billing FAQ', description: 'How billing works', content: 'Detailed billing article') }
+  let(:article) do
+    create(
+      :article,
+      account: account,
+      portal: portal,
+      author: author,
+      title: 'Billing FAQ',
+      description: 'How billing works',
+      content: 'Detailed billing article'
+    )
+  end
   let(:service) { described_class.new(article) }
   let(:mock_chat) { instance_double(RubyLLM::Chat) }
   let(:mock_response) do
@@ -13,9 +23,13 @@ RSpec.describe Captain::Llm::ArticleSearchTermsService do
 
   before do
     upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', 'test-key')
+    upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-key')
     upsert_installation_config('CAPTAIN_OPEN_AI_ENDPOINT', '')
+    upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'openai/gpt-5.4')
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
+    allow(service).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_params).and_return(mock_chat)
     allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
     allow(mock_chat).to receive(:ask).and_return(mock_response)
@@ -43,6 +57,7 @@ RSpec.describe Captain::Llm::ArticleSearchTermsService do
     context 'when the provider api key is missing' do
       before do
         upsert_installation_config('CAPTAIN_OPEN_AI_API_KEY', '')
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '')
         allow(Rails.logger).to receive(:warn)
       end
 

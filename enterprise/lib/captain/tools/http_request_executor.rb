@@ -122,6 +122,16 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def call(params = {})
+    # Human-initiated admin previews remain explicit test requests; an AI
+    # runtime state must never use the preview path to bypass HttpTool's gate.
+    runtime = @state[:captain_control_generation].present? || @state[:captain_response_fence].present?
+    if runtime && !(%w[GET HEAD].include?(@custom_tool.http_method.to_s.upcase) && @custom_tool.read_only_custom_tool?)
+      return Captain::ToolResult.failure_output(
+        error: 'Mutating custom HTTP actions require a provider idempotency and reconciliation contract',
+        audit: { failure_stage: 'policy', failure_reason: 'unsafe_provider_mutation' }
+      )
+    end
+
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
     execution_headers = request_preview.delete(:execution_headers)

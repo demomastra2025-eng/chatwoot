@@ -5,9 +5,11 @@ import { reactive } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 export default {
   components: {
+    Checkbox,
     NextButton,
     FormInput,
   },

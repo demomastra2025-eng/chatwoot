@@ -29,6 +29,105 @@ RSpec.describe 'Profile API', type: :request do
         expect(json_response['custom_attributes']['test']).to eq('test')
         expect(json_response['message_signature']).to be_nil
       end
+
+      it 'keeps legacy permissions in shadow mode without publishing AccessRole mutation grants' do
+        AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+        AccessControl::ModeTransition.call(account: account, to: :shadow)
+
+        get '/api/v1/profile', headers: agent.create_new_auth_token, as: :json
+
+        membership = response.parsed_body.fetch('accounts').find { |item| item['id'] == account.id }
+        expect(membership).to include('access_control_mode' => 'shadow', 'permissions' => ['agent'])
+        expect(membership).not_to have_key('crm_capabilities')
+        expect(membership).not_to have_key('crm_grant_scopes')
+        expect(membership).not_to have_key('crm_team_ids')
+      end
+
+      it 'publishes only active CRM grants in enforced mode for Employee, Observer, Lead and Administrator' do
+        account_user = agent.account_users.find_by!(account: account)
+        AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+        AccessControl::ModeTransition.call(account: account, to: :shadow)
+        AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+        ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true', ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+          %w[employee observer department_lead administrator].each do |key|
+            role = account.access_roles.find_by!(system_key: key)
+            account_user.reload
+            unless account_user.access_role_id == role.id
+              AccessControl::AccessRoleAssigner.assign(
+                account: account,
+                account_user: account_user,
+                access_role_id: role.id,
+                expected_access_role_id: account_user.access_role_id
+              )
+            end
+
+            headers = agent.reload.create_new_auth_token
+            agent.reload.activate_auth_client!(headers.fetch('client'))
+            get '/api/v1/profile', headers: headers, as: :json
+
+            expect(response).to have_http_status(:ok)
+            membership = response.parsed_body.fetch('accounts').find { |item| item['id'] == account.id }
+            expect(membership).to include(
+              'access_control_mode' => 'enforced',
+              'permissions' => key == 'administrator' ? ['administrator'] : ['agent']
+            )
+            capabilities = membership.fetch('crm_capabilities')
+            expect(capabilities.values_at('deals', 'tasks').all? { |grants| grants.include?('view') }).to be(true)
+            if key == 'observer'
+              expect(capabilities.fetch('deals')).not_to include('create', 'update_fields', 'delete_archive')
+              expect(capabilities.fetch('tasks')).not_to include('create', 'update_fields', 'complete_cancel')
+            else
+              expect(capabilities.fetch('deals')).to include('create', 'update_fields', 'assign', 'transition', 'delete_archive')
+              expect(capabilities.fetch('tasks')).to include(*%w[create update_fields assign transition complete_cancel delete_archive])
+            end
+          end
+        end
+      end
+
+      it 'includes actor team memberships and exact CRM grant scopes in enforced mode' do
+        AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+        AccessControl::ModeTransition.call(account: account, to: :shadow)
+        AccessControl::ModeTransition.call(account: account, to: :enforced)
+        team = create(:team, account: account)
+        create(:team_member, team: team, user: agent)
+
+        get '/api/v1/profile', headers: agent.create_new_auth_token, as: :json
+
+        membership = response.parsed_body.fetch('accounts').find { |item| item['id'] == account.id }
+        role = agent.account_users.find_by!(account: account).access_role
+        scopes = membership.fetch('crm_grant_scopes')
+        resources = %w[deals tasks]
+        expect(membership.fetch('crm_team_ids')).to eq([team.id])
+        resources.each do |resource|
+          expected = role.grants.where(resource: resource).index_by(&:capability).transform_values(&:access_scope)
+          expect(scopes.fetch(resource)).to eq(expected)
+          active_capabilities = expected.filter_map { |capability, scope| capability if scope != 'none' }
+          expect(membership.fetch('crm_capabilities').fetch(resource)).to match_array(active_capabilities)
+        end
+      end
+
+      it 'preloads grants and memberships for multiple enforced accounts without per-account queries' do
+        second_account = create(:account)
+        create(:account_user, account: second_account, user: agent)
+        [account, second_account].each do |member_account|
+          AccessControl::LegacyRoleAssigner.call(account: member_account, apply: true)
+          AccessControl::ModeTransition.call(account: member_account, to: :shadow)
+          AccessControl::ModeTransition.call(account: member_account, to: :enforced)
+        end
+
+        statements = []
+        subscriber = lambda do |*, payload|
+          statements << payload[:sql] if payload[:sql].start_with?('SELECT')
+        end
+        ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+          get '/api/v1/profile', headers: agent.create_new_auth_token, as: :json
+        end
+
+        expect(response.parsed_body.fetch('accounts').pluck('id')).to contain_exactly(account.id, second_account.id)
+        expect(statements.grep(/FROM "?account_users"?/).size).to be <= 2
+        expect(statements.grep(/FROM "?access_role_grants"?/).size).to be <= 2
+      end
     end
   end
 

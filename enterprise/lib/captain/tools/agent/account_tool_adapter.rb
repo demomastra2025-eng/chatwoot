@@ -38,10 +38,14 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def execute(tool_context, **params)
-    ensure_tool_execution_allowed!
-    result = invoke_delegate(tool_context, params)
-    audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
-    result
+    Captain::CustomerToolExecutionScope.with_allowed_execution(
+      tool: self, state: tool_context&.state, params: params, assistant: assistant
+    ) do
+      ensure_tool_execution_allowed!
+      result = invoke_delegate(tool_context, params)
+      audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
+      result
+    end
   rescue StandardError => e
     audit_tool_execution(arguments: params, error: e, runtime_context: runtime_context(tool_context))
     raise

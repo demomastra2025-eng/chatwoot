@@ -21,6 +21,15 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
   end
   let(:runtime_session_id) { 'runtime-tool-execution-1' }
   let(:runtime_engine) { 'pipecat' }
+  let(:contact_tool_assistant) do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: { tool_access: { agent: { enabled: true, tool_ids: ['get_contact'] } } }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_channel.inbox)
+    assistant
+  end
 
   def tool_capability(*tool_names, assistant_id: nil)
     Telephony::AiVoice::ToolCapability.issue(
@@ -32,9 +41,9 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
   end
 
-  def execution(arguments:, key: 'tool-call-1', capability: nil, assistant_id: nil)
+  def execution(arguments:, key: 'tool-call-1', capability: nil, assistant_id: nil, tool_name: 'create_note')
     described_class.new(
-      tool_name: 'create_note',
+      tool_name: tool_name,
       payload: {
         account_id: account.id,
         call_session_id: call_session.id,
@@ -44,38 +53,81 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
         assistant_id: assistant_id,
         runtime_session_id: runtime_session_id,
         runtime_engine: runtime_engine,
-        tool_capability: capability || tool_capability('create_note', assistant_id: assistant_id),
+        tool_capability: capability || tool_capability(tool_name, assistant_id: assistant_id),
         tool_call_id: key,
         arguments: arguments
       }
     )
   end
 
-  it 'replays a processed result without repeating the mutation' do
+  # Keep transport/idempotency tests on a real permitted tool; create_note is
+  # denied for customer AI even with a valid call-scoped capability.
+  def current_contact_execution(arguments: nil)
+    assistant_id = contact_tool_assistant.id
+    execution(tool_name: 'get_contact', assistant_id: assistant_id,
+              arguments: arguments || { contact_id: conversation.contact_id })
+  end
+
+  it 'replays a processed contact result without executing the tool twice' do
     first_result = nil
     second_result = nil
 
     expect do
-      first_result = execution(arguments: { content: 'One note' }).perform
-      second_result = execution(arguments: { content: 'One note' }).perform
-    end.to change { conversation.messages.where(private: true).count }.by(1)
+      first_result = current_contact_execution.perform
+      second_result = current_contact_execution.perform
+    end.not_to(change { conversation.messages.where(private: true).count })
 
     expect(second_result).to eq(first_result)
+    expect(JSON.parse(first_result.fetch('result')).dig('contact', 'id')).to eq(conversation.contact_id)
     event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
     expect(event).to have_attributes(status: 'processed', call_session_id: call_session.id)
     expect(event.payload).to include('phase' => 'completed', 'result_digest' => be_present, 'result_ciphertext' => be_present)
     expect(event.payload).not_to have_key('result')
-    expect(event.payload.to_json).not_to include('One note')
+    expect(event.payload.to_json).not_to include(conversation.contact.name)
   end
 
   it 'rejects reuse of the same key for different arguments' do
-    execution(arguments: { content: 'Original note' }).perform
+    current_contact_execution.perform
+
+    expect do
+      current_contact_execution(arguments: { contact_id: conversation.contact_id, unexpected: true }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_IDEMPOTENCY_CONFLICT') }
+
+    expect(account.telephony_events.where(event_type: described_class::EVENT_TYPE).count).to eq(1)
+  end
+
+  it 'persists a pre-effect customer scope denial and replays the same 403 without dispatch' do
+    first = execution(arguments: { content: 'Never write this note' })
+    duplicate = execution(arguments: { content: 'Never write this note' })
+    expect(first.send(:dispatch_service)).not_to receive(:perform)
+    expect(duplicate.send(:dispatch_service)).not_to receive(:perform)
+
+    [first, duplicate].each do |service|
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error).to have_attributes(
+          code: 'CUSTOMER_AI_TOOL_SCOPE_DENIED',
+          status: :forbidden,
+          message: Captain::CustomerToolExecutionScope::DENIED_MESSAGE
+        )
+      end
+    end
+
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'CUSTOMER_AI_TOOL_SCOPE_DENIED')
+    expect(event.payload).to include('phase' => 'scope_denied', 'error_code' => 'CUSTOMER_AI_TOOL_SCOPE_DENIED')
+    expect(event.payload).not_to have_key('owner_token_hash')
+  end
+
+  it 'keeps a denied key fingerprint and does not write notes or tasks' do
+    expect do
+      execution(arguments: { content: 'Never write this note' }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CUSTOMER_AI_TOOL_SCOPE_DENIED') }
 
     expect do
       execution(arguments: { content: 'Different note' }).perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_IDEMPOTENCY_CONFLICT') }
-
-    expect(conversation.messages.where(private: true).count).to eq(1)
+    expect(conversation.messages.where(private: true)).not_to exist
+    expect(Crm::Task.where(account_id: account.id)).not_to exist
   end
 
   it 'suppresses a concurrent duplicate while the owner is still running' do
@@ -95,27 +147,31 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     expect(conversation.messages.where(private: true)).not_to exist
   end
 
-  it 'records dispatch exceptions as outcome unknown and does not replay a possibly partial mutation' do
+  it 'records dispatch exceptions as outcome unknown without retrying' do
+    service = current_contact_execution
+    allow(service.send(:dispatch_service)).to receive(:perform).and_raise(
+      Telephony::Error.new(code: 'DISPATCH_TEST_ERROR', message: 'synthetic dispatch failure')
+    )
     expect do
-      execution(arguments: { content: '' }).perform
-    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('NOTE_CONTENT_REQUIRED') }
+      service.perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('DISPATCH_TEST_ERROR') }
 
     event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
     expect(event).to have_attributes(status: 'failed', call_session_id: call_session.id)
     expect(event.error_message).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN')
-    expect(event.payload.to_json).not_to include('note content is required')
+    expect(event.payload.to_json).not_to include('synthetic dispatch failure')
 
     expect do
-      execution(arguments: { content: '' }).perform
+      current_contact_execution.perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
   end
 
   it 'returns and replays typed non-retryable Captain business failures while marking the event failed' do
-    service = execution(arguments: { content: 'Ambiguous mutation' })
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     business_failure = {
       action: 'captain_tool',
-      tool_name: 'create_note',
+      tool_name: 'get_contact',
       status: 'failed',
       error: 'captain_tool_business_failed',
       code: 'CAPTAIN_TOOL_BUSINESS_FAILED',
@@ -125,7 +181,7 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     allow(dispatch_service).to receive(:perform).and_return(business_failure)
 
     first_result = service.perform
-    replayed_result = execution(arguments: { content: 'Ambiguous mutation' }).perform
+    replayed_result = current_contact_execution.perform
 
     expect(first_result).to eq(business_failure.deep_stringify_keys)
     expect(replayed_result).to eq(first_result)
@@ -161,7 +217,7 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
   end
 
   it 'marks a lost acknowledgement after dispatch as outcome unknown without repeating the mutation' do
-    service = execution(arguments: { content: 'Ambiguous dispatched note' })
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
       original.call
@@ -179,13 +235,14 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
 
     expect do
-      execution(arguments: { content: 'Ambiguous dispatched note' }).perform
+      current_contact_execution.perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
-    expect(conversation.messages.where(private: true).count).to eq(1)
+    expect(conversation.messages.where(private: true)).not_to exist
+    expect(dispatch_service).to have_received(:perform).once
   end
 
   it 'marks post-dispatch argument errors as outcome unknown without repeating the mutation' do
-    service = execution(arguments: { content: 'Ambiguous normalized note' })
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
       original.call
@@ -203,20 +260,20 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
 
     expect do
-      execution(arguments: { content: 'Ambiguous normalized note' }).perform
+      current_contact_execution.perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
-    expect(conversation.messages.where(private: true).count).to eq(1)
+    expect(dispatch_service).to have_received(:perform).once
   end
 
-  it 'marks post-dispatch domain errors as outcome unknown without repeating the mutation' do
-    service = execution(arguments: { content: 'Ambiguous domain acknowledgement' })
+  it 'does not trust a post-dispatch scope denial code as proof of no effect' do
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
       original.call
-      raise Telephony::Error.new(code: 'PROVIDER_ACK_INVALID', message: 'invalid provider acknowledgement')
+      raise Telephony::Error.new(code: 'CUSTOMER_AI_TOOL_SCOPE_DENIED', message: 'late denial', status: :forbidden)
     end
 
-    expect { service.perform }.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('PROVIDER_ACK_INVALID') }
+    expect { service.perform }.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CUSTOMER_AI_TOOL_SCOPE_DENIED') }
 
     event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
     expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
@@ -227,13 +284,13 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
 
     expect do
-      execution(arguments: { content: 'Ambiguous domain acknowledgement' }).perform
+      current_contact_execution.perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
-    expect(conversation.messages.where(private: true).count).to eq(1)
+    expect(dispatch_service).to have_received(:perform).once
   end
 
   it 'marks post-dispatch unknown-tool errors as outcome unknown without repeating the mutation' do
-    service = execution(arguments: { content: 'Ambiguous tool acknowledgement' })
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
       original.call
@@ -251,13 +308,13 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
 
     expect do
-      execution(arguments: { content: 'Ambiguous tool acknowledgement' }).perform
+      current_contact_execution.perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
-    expect(conversation.messages.where(private: true).count).to eq(1)
+    expect(dispatch_service).to have_received(:perform).once
   end
 
   it 'reclaims a stale reservation that never entered dispatch' do
-    service = execution(arguments: { content: 'Recovered reservation' })
+    service = current_contact_execution
     stale_payload = service.send(:event_payload, phase: 'reserved').merge('lease_expires_at' => 1.minute.ago.iso8601)
     account.telephony_events.create!(
       call_session: call_session,
@@ -267,8 +324,8 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
       payload: stale_payload
     )
 
-    expect { execution(arguments: { content: 'Recovered reservation' }).perform }
-      .to change { conversation.messages.where(private: true).count }.by(1)
+    expect(JSON.parse(current_contact_execution.perform.fetch('result')).dig('contact', 'id')).to eq(conversation.contact_id)
+    expect(account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)).to have_attributes(status: 'processed')
   end
 
   it 'rejects a capability after the call is reassigned to another assistant' do
@@ -342,7 +399,7 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
   end
 
   it 'holds the assistant assignment fence without retaining a transaction during the tool body' do
-    service = execution(arguments: { content: 'Outside assignment lock' })
+    service = current_contact_execution
     dispatch_service = service.send(:dispatch_service)
     baseline_transactions = ActiveRecord::Base.connection.open_transactions
     assignment_fenced = false
@@ -362,8 +419,8 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
       original.call
     end
 
-    expect { service.perform }
-      .to change { conversation.messages.where(private: true).count }.by(1)
+    expect(JSON.parse(service.perform.fetch('result')).dig('contact', 'id')).to eq(conversation.contact_id)
+    expect(conversation.messages.where(private: true)).not_to exist
   end
 
   it 'requires account scope, an idempotency key and a per-call capability' do

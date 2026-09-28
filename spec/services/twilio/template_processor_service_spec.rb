@@ -476,14 +476,22 @@ RSpec.describe Twilio::TemplateProcessorService do
         let(:template_params) do
           {
             'name' => 'hello_world'
-            # No language specified, should default to 'en'
+            # No language specified, should use the application default locale.
           }
         end
 
-        it 'defaults to English when no language specified' do
+        before do
+          russian_template = content_templates['templates'].find { |template| template['friendly_name'] == 'hello_world' }.merge(
+            'content_sid' => 'HX_RUSSIAN_DEFAULT',
+            'language' => 'ru'
+          )
+          twilio_channel.update!(content_templates: { 'templates' => content_templates['templates'] + [russian_template] })
+        end
+
+        it 'uses the application default locale when no language is specified' do
           content_sid, content_variables = processor_service.call
 
-          expect(content_sid).to eq('HX123456789')
+          expect(content_sid).to eq('HX_RUSSIAN_DEFAULT')
           expect(content_variables).to eq({})
         end
       end

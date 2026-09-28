@@ -84,6 +84,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
   it 'issues a per-call tool capability bound to the runtime and catalog' do
     runtime_session_id = 'context-runtime-1'
     runtime_engine = 'pipecat'
+    assistant.update!(config: { tool_access: { agent: { enabled: true, tool_ids: ['get_contact'] } } })
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       get '/internal/voice/ai/context',
           params: {
@@ -107,18 +108,42 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'tool_capability' => be_present
     )
     expect(body['runtime_generation']).to eq(call_session.reload.metadata.dig('runtime_lease', 'generation'))
-    expect(body.fetch('tools').pluck('name')).to include('find_contact')
+    expect(body.fetch('tools').pluck('name')).to eq(['get_contact'])
     expect do
       Telephony::AiVoice::ToolCapability.verify!(
         token: body.fetch('tool_capability'),
         call_session: call_session,
         assistant_id: assistant.id,
-        tool_name: 'find_contact',
+        tool_name: 'get_contact',
         payload: body.slice(
           'account_id', 'call_session_id', 'call_ref', 'conversation_id', 'inbox_id', 'assistant_id', 'runtime_session_id', 'runtime_engine'
         )
       )
     end.not_to raise_error
+  end
+
+  it 'keeps the voice runtime available with no configured tools and grants no tool access' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id,
+                    runtime_session_id: 'empty-catalog-runtime', runtime_engine: 'pipecat' },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    expect(body.fetch('tools')).to eq([])
+    expect(body.fetch('tool_capability')).to be_present
+    expect(body.fetch('runtime_generation')).to be_present
+    expect do
+      Telephony::AiVoice::ToolCapability.verify!(
+        token: body.fetch('tool_capability'), call_session: call_session, assistant_id: assistant.id,
+        tool_name: 'get_contact',
+        payload: body.slice('account_id', 'call_session_id', 'call_ref', 'conversation_id', 'inbox_id',
+                            'assistant_id', 'runtime_session_id', 'runtime_engine')
+      )
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_NOT_ALLOWED_FOR_RUNTIME') }
   end
 
   it 'returns low-latency context for the OneLink managed voice service' do
@@ -217,11 +242,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'source' => 'onelink_runtime',
       'storage_provider' => 'onelink_storage'
     )
-    expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
-    transfer_tool = body['tools'].find { |tool| tool['name'] == 'request_transfer' }
-    expect(transfer_tool['description']).to include('manager for a callback')
-    end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
-    expect(end_call_tool['timeout_ms']).to be >= 5000
+    expect(body['tools']).to eq([])
   end
 
   it 'fails closed for callback handoff when the runtime lacks callback capability' do
@@ -329,8 +350,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response.parsed_body.dig('ai', 'manager_handoff_mode')).to eq('callback')
     expect(response.parsed_body['transfer']).to include('enabled' => true, 'mode' => 'callback')
     expect(response.parsed_body['transfer']).not_to have_key('operator_agent_aor')
-    transfer_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'request_transfer' }
-    expect(transfer_tool['description']).to include('manager for a callback')
+    expect(response.parsed_body['tools'].pluck('name')).not_to include('request_transfer')
   end
 
   it 'adds prioritized language instructions for native Gemini auto language' do
@@ -663,7 +683,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
   end
 
-  it 'uses the inbox Captain assistant as the voice brain and preserves voice default tools' do
+  it 'uses the inbox Captain assistant as the voice brain without advertising custom tools' do
     captain_tool = create(
       :captain_custom_tool,
       account: account,
@@ -734,17 +754,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body.dig('transfer', 'message')).to eq('Қазір операторға қосамын.')
 
     tool_names = body['tools'].pluck('name')
-    expect(tool_names).to include('end_call', 'request_transfer', captain_tool.slug)
-    booking_tool = body['tools'].find { |tool| tool['name'] == captain_tool.slug }
-    expect(booking_tool).to include(
-      'source' => 'captain',
-      'scope' => 'agent',
-      'description' => 'Find a booking by booking code'
-    )
-    expect(booking_tool.dig('parameters', 'properties', 'booking_code', 'type')).to eq('string')
+    expect(tool_names).to eq([])
   end
 
-  it 'returns a bounded realtime timeout for FAQ lookup in the tool catalog' do
+  it 'does not advertise FAQ lookup in the customer voice catalog' do
     faq_assistant = create(
       :captain_assistant,
       account: account,
@@ -767,11 +780,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
-    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 2_800)
+    expect(response.parsed_body['tools'].pluck('name')).not_to include('faq_lookup')
   end
 
-  it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
+  it 'does not advertise prompt-referenced Captain CRM tools in the voice runtime catalog' do
     account.enable_features!('crm_deals')
     crm_assistant = create(
       :captain_assistant,
@@ -801,15 +813,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     tool_names = response.parsed_body['tools'].pluck('name')
-    expect(tool_names).to include(
-      'create_deal',
-      'update_deal',
-      'transition_deal_stage',
-      'get_deal',
-      'search_deals',
-      'list_deal_pipelines',
-      'list_deal_stages'
-    )
+    expect(tool_names).not_to include('create_deal', 'update_deal', 'transition_deal_stage', 'get_deal',
+                                      'search_deals', 'list_deal_pipelines', 'list_deal_stages')
   end
 
   it 'does not resolve context from an unscoped call_ref even when it is globally unique' do

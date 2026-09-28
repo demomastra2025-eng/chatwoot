@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { addDays, startOfDay } from 'date-fns';
+import { zonedTimeToUtc } from 'date-fns-tz';
 
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import {
@@ -98,15 +100,13 @@ const localeCode = computed(
 );
 
 const listDays = computed(() =>
-  buildDayListForView(props.view, props.anchorDate)
+  buildDayListForView(props.view, props.anchorDate, props.workspaceTimezone)
 );
 
 const getDayRange = day => {
-  const start = new Date(day);
-  start.setHours(0, 0, 0, 0);
-
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const workspaceDay = startOfDay(day);
+  const start = zonedTimeToUtc(workspaceDay, props.workspaceTimezone);
+  const end = zonedTimeToUtc(addDays(workspaceDay, 1), props.workspaceTimezone);
 
   return { end, start };
 };
@@ -166,6 +166,7 @@ const formatAppointmentDateTime = value =>
   new Intl.DateTimeFormat(localeCode.value, {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: props.workspaceTimezone,
   }).format(new Date(value));
 
 const formatAppointmentTimeRange = (appointment, day) => {

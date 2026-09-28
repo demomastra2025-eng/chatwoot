@@ -57,6 +57,7 @@ class WhatsappWeb::RetryFailedProvisionalMessagesService
     Message.transaction do
       locked_message = Message.lock.find(message.id)
       return unless locked_message.failed?
+      return if locked_message.sender_type == 'Captain::Assistant'
       return if locked_message.source_id.present?
       return unless provisional_lid_failure?(locked_message)
       return if retry_attempted?(locked_message)

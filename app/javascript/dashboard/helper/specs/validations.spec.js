@@ -84,7 +84,7 @@ describe('validateAutomation', () => {
     expect(errors).toEqual({});
   });
 
-  it('should not require action params for native appointment cancel payment action', () => {
+  it('does not exempt retired appointment payment actions from parameter validation', () => {
     const automationWithNoParamAction = {
       name: 'Test',
       description: 'Test',
@@ -100,7 +100,7 @@ describe('validateAutomation', () => {
     };
 
     const errors = validateAutomation(automationWithNoParamAction);
-    expect(errors).toEqual({});
+    expect(errors).toHaveProperty('action_0');
   });
 
   it('should not require action params for native CRM archive actions', () => {

@@ -41,7 +41,8 @@ RSpec.describe 'Agent Capacity Policy Inbox Limits API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:unprocessable_content)
-        expect(response.parsed_body['error']).to eq(I18n.t('agent_capacity_policy.inbox_already_assigned'))
+        expected_error = I18n.with_locale(account.locale) { I18n.t('agent_capacity_policy.inbox_already_assigned') }
+        expect(response.parsed_body['error']).to eq(expected_error)
       end
     end
   end

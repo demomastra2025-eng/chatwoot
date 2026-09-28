@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-describe Integrations::Dyte::ProcessorService do
+describe Integrations::Dyte::ProcessorService, locale: :en do
   let(:headers) { { 'Content-Type' => 'application/json' } }
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }

@@ -23,7 +23,7 @@ const props = defineProps({
     default: () => [],
   },
   canManage: {
-    type: Boolean,
+    type: [Boolean, Function],
     default: false,
   },
   bucketLoading: {
@@ -61,6 +61,13 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['changeDueDate', 'loadMore', 'selectTask']);
+const canChangeTask = task =>
+  typeof props.canManage === 'function'
+    ? props.canManage(task)
+    : props.canManage;
+const canDragTasks = computed(() =>
+  props.tasks.some(task => canChangeTask(task))
+);
 const { locale, t } = useI18n();
 const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const assigneeNameById = computed(() =>
@@ -136,9 +143,10 @@ const boardColumns = computed(() =>
 );
 
 const handleColumnChange = (event, bucket) => {
-  if (!event.added || !props.canManage) return;
+  if (!event.added) return;
 
   const task = groupedTasks.value[bucket][event.added.newIndex];
+  if (!canChangeTask(task)) return;
   emit('changeDueDate', { bucket, task });
 };
 
@@ -148,6 +156,7 @@ const taskBucket = task =>
   );
 
 const handleBucketSelect = (event, task) => {
+  if (!canChangeTask(task)) return;
   const bucket = event.target.value;
   if (!TASK_TIME_BUCKETS.includes(bucket) || bucket === taskBucket(task)) {
     return;
@@ -207,7 +216,8 @@ const activityTypeMeta = task =>
 
         <Draggable
           :list="groupedTasks[column.key]"
-          :disabled="!canManage"
+          :disabled="!canDragTasks"
+          :move="event => canChangeTask(event.draggedContext.element)"
           :animation="prefersReducedMotion ? 0 : 180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
           ghost-class="crm-task-board-card-ghost"
@@ -272,7 +282,7 @@ const activityTypeMeta = task =>
               </div>
 
               <select
-                v-if="canManage"
+                v-if="canChangeTask(task)"
                 data-test="move-task-bucket"
                 class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 :aria-label="

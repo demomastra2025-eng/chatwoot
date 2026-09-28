@@ -167,5 +167,33 @@ RSpec.describe Whatsapp::TokenInspectionService do
       expect(result['status']).to eq('healthy')
       expect(result['phone_number_access']).to be(true)
     end
+
+    it 'keeps Meta WABA rate limits transient instead of reporting missing access' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging]
+        }
+      )
+      error_payload = {
+        'error' => {
+          'code' => 80_008,
+          'type' => 'OAuthException',
+          'message' => 'Too many calls to this WhatsApp Business account'
+        }
+      }
+      response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+      provider_error = Whatsapp::FacebookApiClient::Error.new('WABA phone numbers fetch failed', response)
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_raise(provider_error)
+
+      expect do
+        described_class.new(
+          access_token: access_token,
+          waba_id: waba_id,
+          phone_number_id: phone_number_id,
+          api_client: api_client
+        ).perform
+      end.to raise_error(Whatsapp::FacebookApiClient::Error)
+    end
   end
 end

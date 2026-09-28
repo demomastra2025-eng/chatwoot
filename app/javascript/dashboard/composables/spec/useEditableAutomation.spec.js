@@ -217,10 +217,6 @@ describe('useEditableAutomation', () => {
           action_name: 'change_appointment_status',
           action_params: ['confirmed'],
         },
-        {
-          action_name: 'cancel_appointment_payment',
-          action_params: [],
-        },
       ],
     };
 
@@ -238,13 +234,11 @@ describe('useEditableAutomation', () => {
 
     const formatted = formatAutomation(automation, [], automationTypes, [
       { key: 'change_appointment_status', inputType: 'search_select' },
-      { key: 'cancel_appointment_payment', inputType: null },
     ]);
 
     expect(formatted.actions[0].action_params).toEqual([
       { id: 'confirmed', name: 'Confirmed' },
     ]);
-    expect(formatted.actions[1].action_params).toEqual([]);
   });
 
   it('formats deal standard and managed conditions with CRM-aware dropdown values', () => {

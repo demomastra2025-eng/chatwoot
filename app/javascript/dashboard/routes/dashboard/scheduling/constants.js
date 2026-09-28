@@ -66,26 +66,7 @@ export const APPOINTMENT_STATUS_STICKER_CLASSES = {
   no_show: 'border-n-ruby-4 bg-n-ruby-3 text-n-ruby-11',
 };
 
-export const PAYMENT_STATUS_VALUES = [
-  'awaiting_payment',
-  'prepaid',
-  'paid',
-  'cancelled',
-];
-
-export const PAYMENT_METHOD_VALUES = ['cash', 'bank_transfer', 'card', 'other'];
-
-export const PAYMENT_KIND_VALUES = ['prepaid', 'payment', 'adjustment'];
-
 export const APPOINTMENT_TYPE_VALUES = ['primary', 'secondary', 'other'];
-
-export const EXPENSE_STATUS_VALUES = ['unpaid', 'paid'];
-
-export const COMPENSATION_TYPE_VALUES = [
-  'percent',
-  'fixed',
-  'fixed_plus_percent',
-];
 
 export const WEEKDAY_VALUES = [1, 2, 3, 4, 5, 6, 0];
 

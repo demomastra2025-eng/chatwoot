@@ -17,7 +17,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
-  it 'returns normalized update_appointment payload' do
+  it 'rejects direct customer-AI updates before changing an appointment' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
     new_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 20)
     contact = create(:contact, account: account)
@@ -32,30 +32,18 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
                                                   conversation_id: conversation.id)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, contact: { id: contact.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, resource_id: new_resource.id, service_id: new_service.id,
-                                                    starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601,
-                                                    custom_attributes: { source: 'agent' }))
-
-    expect(payload).to include(
-      'action' => 'update_appointment',
-      'appointment_id' => appointment.id,
-      'status' => payload.dig('appointment', 'status'),
-      'resource_id' => new_resource.id,
-      'contact_id' => contact.id,
-      'service_id' => new_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
-    )
-    expect(payload['appointment']).to include('id' => appointment.id, 'resource_id' => new_resource.id, 'service_id' => new_service.id)
-    expect(payload.dig('appointment', 'custom_attributes')).to include('source' => 'agent')
-    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+    expect(tool.perform(tool_context, resource_id: new_resource.id, service_id: new_service.id,
+                                      starts_at: Time.zone.parse('2026-04-20 11:00:00 +0500').iso8601,
+                                      custom_attributes: { source: 'agent' }))
+      .to include('ERROR: Pundit::NotAuthorizedError')
+    expect(appointment.reload).to have_attributes(resource_id: resource.id, service_id: scheduling_service.id)
   end
 
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
 
-  it 'updates the explicitly selected appointment when the conversation has multiple appointments' do
+  it 'does not update the explicitly selected appointment as customer AI' do
     resource = create(:scheduling_resource, account: account)
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
@@ -79,8 +67,8 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, appointment_id: selected.id, client_comment: 'Selected appointment')
 
-    expect(result).not_to start_with('ERROR:')
-    expect(selected.reload.client_comment).to eq('Selected appointment')
+    expect(result).to include('ERROR: Pundit::NotAuthorizedError')
+    expect(selected.reload.client_comment).to be_nil
     expect(other.reload.client_comment).to be_nil
   end
 
@@ -143,7 +131,7 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
       result = tool.perform(tool_context, client_comment: 'Must not be applied')
     end.not_to change(Integrations::Medelement::ProviderCommand, :count)
 
-    expect(result).to include('ERROR: ArgumentError: appointment_id is required when the conversation has multiple appointments')
+    expect(result).to include('ERROR: Pundit::NotAuthorizedError')
     expect(appointments.map { |appointment| appointment.reload.client_comment }).to all(be_nil)
   end
 
@@ -164,11 +152,11 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     result = tool.perform(tool_context, client_comment: 'Changed by Captain')
 
-    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
+    expect(result).to include('ERROR: Pundit::NotAuthorizedError')
     expect(appointment.reload.client_comment).to be_nil
   end
 
-  it 'returns the exact move command receipt for a provider-backed appointment' do
+  it 'does not mint a move command receipt for a customer-AI appointment' do
     stub_provider_availability
     settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: settings)
@@ -210,17 +198,11 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
 
     moved_starts_at = Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601
-    result = tool.perform(tool_context, appointment_id: appointment.id, starts_at: moved_starts_at)
-    raise result if result.start_with?('ERROR:')
-
-    payload = JSON.parse(result)
-
-    command_payload = payload.dig('provider_command_receipt', 'command')
-    expect(command_payload).to include(
-      'operation' => 'move_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(Integrations::Medelement::ProviderCommand.find(command_payload.fetch('id')).appointment_id).to eq(appointment.id)
+    expect do
+      expect(tool.perform(tool_context, appointment_id: appointment.id, starts_at: moved_starts_at))
+        .to include('ERROR: Pundit::NotAuthorizedError')
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+    expect(appointment.reload.starts_at).not_to eq(Time.zone.parse(moved_starts_at))
     expect(other.reload.starts_at).to eq(other_starts_at)
   end
 

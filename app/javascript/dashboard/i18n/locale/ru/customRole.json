@@ -28,6 +28,7 @@
         "APPOINTMENTS": "Записи",
         "DEALS": "Сделки",
         "TASKS": "Задачи",
+        "TELEPHONY_CALLS": "Звонки",
         "AUTOMATION_RULES": "Правила автоматизации"
       },
       "CAPABILITIES": {
@@ -43,8 +44,6 @@
         "CONFIGURE": "Настройка",
         "EXPORT": "Экспорт",
         "VIEW_REPORTS": "Просмотр отчётов",
-        "VIEW_FINANCE": "Просмотр финансов",
-        "MANAGE_FINANCE": "Управление финансами",
         "OVERRIDE_SCHEDULE": "Подтверждение конфликтов расписания",
         "MANAGE": "Управление"
       },

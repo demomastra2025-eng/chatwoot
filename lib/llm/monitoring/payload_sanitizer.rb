@@ -6,6 +6,7 @@ class Llm::Monitoring::PayloadSanitizer
   MAX_HASH_KEYS = 50
   REDACTED = '[REDACTED]'
   TRUNCATED_SUFFIX = '...[TRUNCATED]'
+  IMAGE_ATTACHMENT = '[IMAGE_ATTACHMENT]'
   TOKEN_USAGE_KEYS = %w[
     cached_tokens completion_tokens input_tokens openrouter_context_estimated_tokens output_tokens
     prompt_tokens reasoning_tokens thinking_tokens token_count total_tokens
@@ -27,6 +28,7 @@ class Llm::Monitoring::PayloadSanitizer
 
     def sanitize_value(value, key: nil, redact_raw_content: false)
       return REDACTED if sensitive_key?(key, redact_raw_content: redact_raw_content)
+      return IMAGE_ATTACHMENT if value.is_a?(ActiveStorage::Blob)
 
       case value
       when Hash

@@ -2,11 +2,11 @@ import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { SCHEDULING_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions';
 import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  SCHEDULING_ACCESS_PERMISSIONS,
-} from 'dashboard/constants/permissions';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
+  hasCrmViewPermission,
+  hasPermissions,
+} from 'dashboard/helper/permissionsHelper';
 
 export const useConversationSidepanelAvailability = () => {
   const { uiSettings } = useUISettings();
@@ -28,10 +28,7 @@ export const useConversationSidepanelAvailability = () => {
         currentAccountId.value,
         FEATURE_FLAGS.CRM_DEALS
       ) &&
-      hasPermissions(
-        CRM_DEAL_MANAGE_PERMISSIONS,
-        currentAccountPermissions.value
-      )
+      hasCrmViewPermission(currentUser.value, currentAccountId.value, 'deals')
   );
   const touchAvailable = computed(() =>
     isFeatureEnabledonAccount.value(

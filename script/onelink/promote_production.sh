@@ -2,27 +2,36 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: promote_production.sh <40-char-git-sha> <ghcr-image@sha256:digest>" >&2
+  echo "usage: promote_production.sh <40-char-git-sha> <chatwoot-image@sha256:digest> <voice-image@sha256:digest>" >&2
   exit 64
 }
 
-[[ $# -eq 2 ]] || usage
+[[ $# -eq 3 ]] || usage
 [[ ${EUID} -eq 0 ]] || { echo "must run as root" >&2; exit 77; }
 
 SHA="$1"
-IMAGE_REF="$2"
+APP_IMAGE_REF="$2"
+VOICE_IMAGE_REF="$3"
 [[ "${SHA}" =~ ^[0-9a-f]{40}$ ]] || usage
-[[ "${IMAGE_REF}" =~ ^ghcr\.io/demomastra2025-eng/chatwoot@sha256:[0-9a-f]{64}$ ]] || usage
+[[ "${APP_IMAGE_REF}" =~ ^ghcr\.io/demomastra2025-eng/chatwoot@sha256:[0-9a-f]{64}$ ]] || usage
+[[ "${VOICE_IMAGE_REF}" =~ ^ghcr\.io/demomastra2025-eng/onelink-ai-voice@sha256:[0-9a-f]{64}$ ]] || usage
 
 ROOT=/root/crafty
 ENV_FILE="${ROOT}/.env.production"
 COMPOSE_FILE="${ROOT}/docker-compose.production.yml"
 LOCK_FILE="${ROOT}/logs/production-deploy.lock"
-DRY_RUN="${DRY_RUN:-false}"
+case "${DRY_RUN:-false}" in
+  true|1|yes) DRY_RUN=true ;;
+  false|0|no|'') DRY_RUN=false ;;
+  *) echo "DRY_RUN must be true/false or 1/0" >&2; exit 64 ;;
+esac
 COMPOSE=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
 
 log() { printf '[onelink-prod-promote] %s\n' "$*"; }
-with_image() { CHATWOOT_IMAGE="${IMAGE_REF}" SOURCE_SHA="${SHA}" "${COMPOSE[@]}" "$@"; }
+with_images() {
+  CHATWOOT_IMAGE="${APP_IMAGE_REF}" ONELINK_AI_VOICE_IMAGE="${VOICE_IMAGE_REF}" \
+    SOURCE_SHA="${SHA}" "${COMPOSE[@]}" "$@"
+}
 
 [[ -f "${ENV_FILE}" && -f "${COMPOSE_FILE}" ]] || {
   echo "production compose or env file is missing" >&2
@@ -34,25 +43,34 @@ flock -n 9 || { echo "another production deployment is active" >&2; exit 75; }
 
 log "validating immutable image reference and compose plan"
 if [[ "${DRY_RUN}" != true ]]; then
-  docker pull "${IMAGE_REF}"
-  EMBEDDED_SHA="$(docker run --rm --entrypoint cat "${IMAGE_REF}" /app/.git_sha | tr -d '\r\n')"
-  [[ "${EMBEDDED_SHA}" == "${SHA}" ]] || {
-    echo "image provenance mismatch: expected ${SHA}, got ${EMBEDDED_SHA:-missing}" >&2
-    exit 65
-  }
+  for image in "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}"; do
+    docker pull "${image}"
+    embedded_sha="$(docker run --rm --entrypoint cat "${image}" /app/.git_sha | tr -d '\r\n')"
+    [[ "${embedded_sha}" == "${SHA}" ]] || {
+      echo "image provenance mismatch for ${image%%@*}: expected ${SHA}, got ${embedded_sha:-missing}" >&2
+      exit 65
+    }
+  done
 fi
-with_image config --quiet
+with_images config --quiet
 
-mapfile -t APP_SERVICES < <(
-  with_image config --format json | python3 -c '
+config_json="$(with_images config --format json)" || { echo "compose inventory unavailable" >&2; exit 65; }
+service_names="$(python3 -c '
 import json, sys
 config = json.load(sys.stdin)
-target = sys.argv[1]
+target, voice = sys.argv[1:]
+if config.get("services", {}).get("onelink_ai_voice", {}).get("image") != voice:
+    sys.exit("voice service image does not match the requested digest")
 for name, service in sorted(config.get("services", {}).items()):
-    if service.get("image") == target:
+    if name.startswith("chatwoot_"):
+        if service.get("image") != target:
+            sys.exit("Chatwoot service outside image inventory: " + name)
         print(name)
-' "${IMAGE_REF}"
-)
+' "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" <<< "${config_json}")" || {
+  echo "compose image inventory is incomplete" >&2
+  exit 65
+}
+mapfile -t APP_SERVICES <<< "${service_names}"
 
 contains_service() {
   local expected="$1" service
@@ -63,9 +81,14 @@ if ! contains_service chatwoot_rails || ! contains_service chatwoot_rails_2; the
   echo "compose plan does not contain both rolling web services" >&2
   exit 65
 fi
+FENCED_CONSUMERS=(chatwoot_outbound_messages_worker chatwoot_medelement_commands_worker)
+for service in "${FENCED_CONSUMERS[@]}"; do
+  contains_service "${service}" || { echo "missing fenced consumer ${service}" >&2; exit 65; }
+done
 ((${#APP_SERVICES[@]} > 2)) || { echo "no Chatwoot workers selected" >&2; exit 65; }
 
-printf 'sha=%s\nimage=%s\nservices=%s\n' "${SHA}" "${IMAGE_REF}" "${APP_SERVICES[*]}"
+printf 'sha=%s\napp_image=%s\nvoice_image=%s\nservices=%s\n' \
+  "${SHA}" "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" "${APP_SERVICES[*]}"
 if [[ "${DRY_RUN}" == true ]]; then
   log "DRY_RUN=true: no pull, migration, recreation, env update, or rollback tag"
   exit 0
@@ -73,18 +96,76 @@ fi
 
 RAILS_ID="$("${COMPOSE[@]}" ps -q chatwoot_rails)"
 [[ -n "${RAILS_ID}" ]] || { echo "chatwoot_rails is not running" >&2; exit 69; }
+VOICE_ID="$("${COMPOSE[@]}" ps -q onelink_ai_voice)"
+[[ -n "${VOICE_ID}" ]] || { echo "onelink_ai_voice is not running" >&2; exit 69; }
 OLD_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${RAILS_ID}")"
+OLD_VOICE_IMAGE_ID="$(docker inspect -f '{{.Image}}' "${VOICE_ID}")"
 OLD_SHA="$(docker exec "${RAILS_ID}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n')"
 [[ "${OLD_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "running Chatwoot revision is unprovable" >&2; exit 69; }
-ROLLBACK_TAG="onelink-chatwoot-rollback:$(date -u +%Y%m%dT%H%M%SZ)"
+target_telephony="$(docker run --rm --network none --entrypoint sh "${APP_IMAGE_REF}" -c \
+  'if test -f /app/db/migrate/20260924120000_seed_telephony_call_report_administrator_grants.rb; then echo yes; else echo no; fi')" || exit 69
+[[ "${target_telephony}" == yes || "${target_telephony}" == no ]] || {
+  echo "target T2 phase is unprovable" >&2; exit 65;
+}
+# The promoter has no separately approved B rollback floor or T2 recovery path.
+# In particular, a B *file* in an old image is not proof of a drained B rollout.
+[[ "${target_telephony}" == no ]] || {
+  echo "NEEDS_BUSINESS: T2 cannot run through promoter; verify the separately deployed B fleet and approved B rollback floor using the canonical full rollout before DB prepare" >&2
+  exit 65
+}
+# This orchestration assumes both upgraded consumers can poll the isolated v2
+# queues and enforce the Captain ownership fences. Reject an RC-only image.
+docker run --rm --network none --entrypoint sh "${APP_IMAGE_REF}" -c '
+  test -f /app/enterprise/app/services/captain/conversation/delivery_fence_service.rb &&
+  test -f /app/enterprise/app/services/captain/conversation/action_fence_service.rb &&
+  grep -q captain_outbound_messages_v2 /app/config/sidekiq_outbound_messages.yml &&
+  grep -q medelement_provider_commands_v2 /app/config/sidekiq_medelement_commands.yml &&
+  grep -q captain_outbound_messages_v2 /app/app/jobs/send_reply_job.rb &&
+  grep -q medelement_provider_commands_v2 /app/app/jobs/integrations/medelement/provider_command_job.rb
+' || { echo "target image lacks both fenced consumer/queue contracts; refusing DB prepare" >&2; exit 65; }
+for service in "${APP_SERVICES[@]}"; do
+  all_id="$("${COMPOSE[@]}" ps --all -q "${service}")"
+  cid="$("${COMPOSE[@]}" ps -q "${service}")"
+  [[ -n "${cid}" && "${cid}" == "${all_id}" ]] && \
+    [[ "$(docker inspect -f '{{.State.Status}}' "${cid}")" == running ]] && \
+    [[ "$(docker inspect -f '{{.Image}}' "${cid}")" == "${OLD_IMAGE_ID}" ]] && \
+    [[ "$(docker exec "${cid}" cat /app/.git_sha | tr -d '\r\n')" == "${OLD_SHA}" ]] && \
+    docker exec "${cid}" test ! -f /app/db/migrate/20260924120000_seed_telephony_call_report_administrator_grants.rb || {
+    echo "${service} is missing, mixed, or has T2; refusing promotion before DB prepare" >&2
+    exit 65
+  }
+done
+db_t2_phase="$("${COMPOSE[@]}" exec -T chatwoot_rails bundle exec rails runner \
+  'puts(ActiveRecord::Base.connection.select_value("SELECT 1 FROM schema_migrations WHERE version = '\''20260924120000'\'' LIMIT 1") ? "present" : "absent")')" || {
+  echo "database T2 phase is unprovable" >&2; exit 65;
+}
+[[ "${db_t2_phase}" == absent ]] || { echo "database T2 is applied or unprovable; operator recovery required" >&2; exit 65; }
+bridge_tag_id="$(docker image ls --quiet --no-trunc --filter reference=onelink-chatwoot-telephony-bridge-b:rollback)" || exit 65
+[[ -z "${bridge_tag_id}" ]] || { echo "B rollback tag exists; refusing non-T2 rollout without operator review" >&2; exit 65; }
+OLD_VOICE_SHA="$(docker exec "${VOICE_ID}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+[[ "${OLD_VOICE_SHA}" == "${OLD_SHA}" && "${OLD_VOICE_IMAGE_ID}" == sha256:* ]] || {
+  echo "running AI voice revision/image is not the paired old release" >&2
+  exit 69
+}
+CUTOVER_STARTED=false
+FENCED_UPGRADE_STARTED=false
+PROMOTION_SUCCEEDED=false
+ROLLBACK_IN_PROGRESS=false
+ROLLBACK_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+ROLLBACK_TAG="onelink-chatwoot-rollback:${ROLLBACK_STAMP}"
+VOICE_ROLLBACK_TAG="onelink-ai-voice-rollback:${ROLLBACK_STAMP}"
+ENV_BACKUP="${ENV_FILE}.pre-promote.${ROLLBACK_STAMP}.$$"
 docker tag "${OLD_IMAGE_ID}" "${ROLLBACK_TAG}"
+docker tag "${OLD_VOICE_IMAGE_ID}" "${VOICE_ROLLBACK_TAG}"
+cp -a "${ENV_FILE}" "${ENV_BACKUP}"
 log "preserved rollback image ${ROLLBACK_TAG} (${OLD_IMAGE_ID})"
+log "preserved voice rollback image ${VOICE_ROLLBACK_TAG} (${OLD_VOICE_IMAGE_ID})"
 
 wait_service() {
   local service="$1" timeout="$2" start now cid status health stable=0
   start="$(date +%s)"
   while true; do
-    cid="$(with_image ps -q "${service}")"
+    cid="$("${COMPOSE[@]}" ps -q "${service}")"
     if [[ -n "${cid}" ]]; then
       status="$(docker inspect -f '{{.State.Status}}' "${cid}")"
       health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "${cid}")"
@@ -104,55 +185,192 @@ wait_service() {
 }
 
 recreate() {
-  local image="$1" service="$2" source_sha="${3:-${SHA}}" timeout=240
+  local app_image="$1" voice_image="$2" service="$3" source_sha="${4:-${SHA}}" timeout=240
   case "${service}" in
     chatwoot_rails|chatwoot_rails_2) timeout=600 ;;
+    chatwoot_action_cable_realtime_worker|chatwoot_action_cable_realtime_worker_2) timeout=480 ;;
   esac
-  CHATWOOT_IMAGE="${image}" SOURCE_SHA="${source_sha}" "${COMPOSE[@]}" \
-    up -d --no-deps --no-build --force-recreate "${service}"
-  wait_service "${service}" "${timeout}"
+  CHATWOOT_IMAGE="${app_image}" ONELINK_AI_VOICE_IMAGE="${voice_image}" SOURCE_SHA="${source_sha}" "${COMPOSE[@]}" \
+    up -d --no-deps --no-build --force-recreate "${service}" || return 1
+  wait_service "${service}" "${timeout}" || return 1
+}
+
+voice_readiness() {
+  local voice_id="$1"
+  docker exec "${voice_id}" sh -lc 'wget -qO- "http://127.0.0.1:${VOICE_AGENT_API_PORT:-8081}/ready"' |
+    python3 -c 'import json, sys; json.load(sys.stdin)'
+}
+
+restore_app_service() {
+  local service="$1" cid running_sha="" running_image=""
+  cid="$("${COMPOSE[@]}" ps -q "${service}" 2>/dev/null || true)"
+  if [[ -n "${cid}" ]]; then
+    running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+    running_image="$(docker inspect -f '{{.Image}}' "${cid}" 2>/dev/null || true)"
+  fi
+  if [[ "${running_sha}" != "${OLD_SHA}" || "${running_image}" != "${OLD_IMAGE_ID}" ]]; then
+    recreate "${ROLLBACK_TAG}" "${VOICE_ROLLBACK_TAG}" "${service}" "${OLD_SHA}"
+  else
+    wait_service "${service}" 600
+  fi
 }
 
 rollback() {
-  local reason="$1" service cid running_sha rollback_failed=false
-  echo "production verification failed: ${reason}; rolling back" >&2
+  local reason="$1" service cid running_sha running_image voice_sha rollback_failed=false
+  ROLLBACK_IN_PROGRESS=true
+  trap - EXIT HUP INT TERM
+  set +e
+  echo "production verification failed: ${reason}; attempting safe recovery" >&2
+
+  # Restore the durable image references before best-effort runtime recovery.
+  # Docker inspection/recreation failures below must not skip this step.
+  if cp -a "${ENV_BACKUP}" "${ENV_FILE}"; then
+    rm -f "${ENV_BACKUP}"
+  else
+    echo "rollback mismatch: failed to restore ${ENV_FILE}" >&2
+    rollback_failed=true
+  fi
+
+  if [[ "${FENCED_UPGRADE_STARTED}" == false ]]; then
+    # Only before touching either legacy consumer is a full old-fleet restore safe.
+    for service in "${APP_SERVICES[@]}"; do
+      case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
+      restore_app_service "${service}" || rollback_failed=true
+    done
+  else
+    # Even a partial `up` can have retired one consumer. Do not restart the old
+    # unfenced workers after new Captain work could have entered legacy queues.
+    for service in "${FENCED_CONSUMERS[@]}"; do
+      cid="$("${COMPOSE[@]}" ps -q "${service}" 2>/dev/null)"
+      [[ -n "${cid}" ]] || continue
+      running_image="$(docker inspect -f '{{.Image}}' "${cid}" 2>/dev/null)"
+      running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n')"
+      if [[ "${running_image}" != "$(docker image inspect -f '{{.Id}}' "${APP_IMAGE_REF}" 2>/dev/null)" ||
+            "${running_sha}" != "${SHA}" ]]; then
+        "${COMPOSE[@]}" stop "${service}" || rollback_failed=true
+        [[ -z "$("${COMPOSE[@]}" ps -q "${service}" 2>/dev/null)" ]] || rollback_failed=true
+      fi
+    done
+  fi
+  restore_app_service chatwoot_rails_2 || rollback_failed=true
+  restore_app_service chatwoot_rails || rollback_failed=true
+
+  cid="$("${COMPOSE[@]}" ps -q onelink_ai_voice 2>/dev/null || true)"
+  running_image=""
+  [[ -n "${cid}" ]] && running_image="$(docker inspect -f '{{.Image}}' "${cid}" 2>/dev/null || true)"
+  if [[ "${running_image}" != "${OLD_VOICE_IMAGE_ID}" ]]; then
+    recreate "${ROLLBACK_TAG}" "${VOICE_ROLLBACK_TAG}" onelink_ai_voice "${OLD_SHA}" || rollback_failed=true
+  else
+    wait_service onelink_ai_voice 240 || rollback_failed=true
+  fi
+
   for service in "${APP_SERVICES[@]}"; do
-    case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
-    recreate "${ROLLBACK_TAG}" "${service}" "${OLD_SHA}" || rollback_failed=true
-  done
-  recreate "${ROLLBACK_TAG}" chatwoot_rails_2 "${OLD_SHA}" || rollback_failed=true
-  recreate "${ROLLBACK_TAG}" chatwoot_rails "${OLD_SHA}" || rollback_failed=true
-  for service in "${APP_SERVICES[@]}"; do
-    cid="$(CHATWOOT_IMAGE="${ROLLBACK_TAG}" SOURCE_SHA="${OLD_SHA}" "${COMPOSE[@]}" ps -q "${service}")"
+    if [[ "${FENCED_UPGRADE_STARTED}" == true ]]; then
+      case "${service}" in
+        chatwoot_rails|chatwoot_rails_2) ;;
+        *) continue ;; # Other workers may be mixed; operator must inspect them.
+      esac
+    fi
+    cid="$("${COMPOSE[@]}" ps -q "${service}" 2>/dev/null || true)"
     running_sha=""
+    running_image=""
     if [[ -n "${cid}" ]]; then
       running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+      running_image="$(docker inspect -f '{{.Image}}' "${cid}" 2>/dev/null || true)"
     fi
-    if [[ "${running_sha}" != "${OLD_SHA}" ]]; then
-      echo "rollback mismatch: ${service} runs ${running_sha:-unknown}, expected ${OLD_SHA}" >&2
+    if [[ "${running_sha}" != "${OLD_SHA}" || "${running_image}" != "${OLD_IMAGE_ID}" ]]; then
+      echo "rollback mismatch: ${service} revision/image is not the preserved runtime" >&2
       rollback_failed=true
     fi
   done
-  [[ "${rollback_failed}" == false ]] || echo "rollback verification failed; operator intervention required" >&2
+  cid="$("${COMPOSE[@]}" ps -q onelink_ai_voice 2>/dev/null || true)"
+  voice_sha=""
+  [[ -n "${cid}" ]] && voice_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+  if [[ -z "${cid}" || "$(docker inspect -f '{{.Image}}' "${cid}" 2>/dev/null || true)" != "${OLD_VOICE_IMAGE_ID}" || \
+    ( -n "${OLD_VOICE_SHA}" && "${voice_sha}" != "${OLD_VOICE_SHA}" ) ]] || ! voice_readiness "${cid}"; then
+    echo "rollback mismatch: onelink_ai_voice did not restore ${OLD_VOICE_IMAGE_ID}" >&2
+    rollback_failed=true
+  fi
+  if [[ "${FENCED_UPGRADE_STARTED}" == true ]]; then
+    echo "mixed-version/operator gate: fenced consumers were NOT rolled back; inspect all worker SHAs, legacy queues and pending/unknown provider outcomes before any restart or retry" >&2
+  fi
+  [[ "${rollback_failed}" == false ]] || echo "safe recovery verification failed; operator intervention required" >&2
   exit 1
 }
 
+on_exit() {
+  local status=$?
+  trap - EXIT HUP INT TERM
+  if [[ "${status}" -ne 0 && "${CUTOVER_STARTED}" == true && "${PROMOTION_SUCCEEDED}" == false && \
+    "${ROLLBACK_IN_PROGRESS}" == false ]]; then
+    rollback "unexpected deploy process exit status=${status}"
+  fi
+  exit "${status}"
+}
+trap on_exit EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+voice_activity() {
+  docker exec "${VOICE_ID}" sh -lc 'wget -qO- "http://127.0.0.1:${VOICE_AGENT_API_PORT:-8081}/ready"' |
+    python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+runtime = payload.get("janus_server_runtime") or {}
+print(max(int(payload.get("sessions") or 0), int(runtime.get("active_calls") or 0)))
+'
+}
+
+log "waiting for the AI voice runtime to become idle"
+idle_deadline=$((SECONDS + 300))
+while true; do
+  active_voice_sessions="$(voice_activity 2>/dev/null || true)"
+  [[ "${active_voice_sessions}" =~ ^[0-9]+$ ]] || {
+    echo "AI voice readiness payload is unavailable or invalid" >&2
+    exit 69
+  }
+  ((active_voice_sessions == 0)) && break
+  ((SECONDS < idle_deadline)) || {
+    echo "AI voice runtime still has ${active_voice_sessions} active session(s); refusing rollout" >&2
+    exit 75
+  }
+  sleep 5
+done
+
 log "running expand-compatible database preparation with the target image"
-if ! with_image run --rm --no-deps chatwoot_rails bundle exec rails db:chatwoot_prepare; then
+if ! with_images run --rm --no-deps chatwoot_rails bundle exec rails db:chatwoot_prepare; then
   echo "database preparation failed before rollout; running services were not changed" >&2
   exit 1
 fi
 
 log "recreating workers before rolling web cutover"
-for service in "${APP_SERVICES[@]}"; do
-  case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
-  recreate "${IMAGE_REF}" "${service}" || rollback "${service} did not become ready"
+CUTOVER_STARTED=true
+FENCED_UPGRADE_STARTED=true
+# Stop BOTH old consumers before starting either fenced one. If stop fails, do
+# not allow a new producer to start; the failure trap still keeps old consumers
+# out of automatic rollback, even when Compose failed halfway through `stop`.
+for service in "${FENCED_CONSUMERS[@]}"; do
+  "${COMPOSE[@]}" stop "${service}" || rollback "cannot retire ${service}"
+  [[ -z "$("${COMPOSE[@]}" ps -q "${service}")" ]] || rollback "${service} still consumes the legacy queue"
 done
-recreate "${IMAGE_REF}" chatwoot_rails_2 || rollback "chatwoot_rails_2 did not become healthy"
-recreate "${IMAGE_REF}" chatwoot_rails || rollback "chatwoot_rails did not become healthy"
+for service in "${FENCED_CONSUMERS[@]}"; do
+  recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" "${service}" || rollback "${service} did not become ready"
+done
+for service in "${APP_SERVICES[@]}"; do
+  case "${service}" in
+    chatwoot_rails|chatwoot_rails_2|chatwoot_outbound_messages_worker|chatwoot_medelement_commands_worker) continue ;;
+  esac
+  recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" "${service}" || rollback "${service} did not become ready"
+done
+recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" chatwoot_rails_2 || rollback "chatwoot_rails_2 did not become healthy"
+recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" chatwoot_rails || rollback "chatwoot_rails did not become healthy"
+active_voice_sessions="$(voice_activity 2>/dev/null || true)"
+[[ "${active_voice_sessions}" == 0 ]] || rollback "AI voice runtime became busy before cutover"
+recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" onelink_ai_voice || rollback "onelink_ai_voice did not become healthy"
 
 for service in "${APP_SERVICES[@]}"; do
-  if ! cid="$(with_image ps -q "${service}")" || [[ -z "${cid}" ]]; then
+  if ! cid="$("${COMPOSE[@]}" ps -q "${service}")" || [[ -z "${cid}" ]]; then
     rollback "${service} has no running container"
   fi
   if ! running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n')"; then
@@ -161,30 +379,39 @@ for service in "${APP_SERVICES[@]}"; do
   [[ "${running_sha}" == "${SHA}" ]] || rollback "${service} runs ${running_sha:-unknown}"
 done
 
+VOICE_ID="$("${COMPOSE[@]}" ps -q onelink_ai_voice)"
+VOICE_SHA="$(docker exec "${VOICE_ID}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+[[ "${VOICE_SHA}" == "${SHA}" ]] || rollback "onelink_ai_voice runs ${VOICE_SHA:-unknown}"
+
 log "running idempotent post-deploy finalizers after all runtimes match"
-with_image exec -T chatwoot_rails \
+with_images exec -T chatwoot_rails \
   bundle exec rails runner script/onelink/finalize_release.rb || rollback "post-deploy finalizers"
 
-persist_image_ref() {
-  python3 - "${ENV_FILE}" "${IMAGE_REF}" <<'PY'
+persist_image_refs() {
+  python3 - "${ENV_FILE}" "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" <<'PY'
 from pathlib import Path
 import os
 import sys
 
 path = Path(sys.argv[1])
-image = sys.argv[2]
+values = {
+    "CHATWOOT_IMAGE": sys.argv[2],
+    "ONELINK_AI_VOICE_IMAGE": sys.argv[3],
+}
 lines = path.read_text(encoding="utf-8").splitlines()
 out = []
-written = False
+written = set()
 for line in lines:
-    if line.startswith("CHATWOOT_IMAGE="):
-        if not written:
-            out.append(f"CHATWOOT_IMAGE={image}")
-            written = True
-    else:
-        out.append(line)
-if not written:
-    out.append(f"CHATWOOT_IMAGE={image}")
+    key = line.split("=", 1)[0]
+    if key in values:
+        if key not in written:
+            out.append(f"{key}={values[key]}")
+            written.add(key)
+        continue
+    out.append(line)
+for key, value in values.items():
+    if key not in written:
+        out.append(f"{key}={value}")
 temporary = path.with_suffix(path.suffix + ".tmp")
 temporary.write_text("\n".join(out) + "\n", encoding="utf-8")
 os.chmod(temporary, path.stat().st_mode & 0o777)
@@ -192,6 +419,9 @@ os.replace(temporary, path)
 PY
 }
 
-persist_image_ref || rollback "persisting CHATWOOT_IMAGE"
+persist_image_refs || rollback "persisting immutable image references"
 
-log "production promotion complete sha=${SHA} image=${IMAGE_REF}"
+PROMOTION_SUCCEEDED=true
+trap - EXIT HUP INT TERM
+rm -f "${ENV_BACKUP}"
+log "production promotion complete sha=${SHA} app_image=${APP_IMAGE_REF} voice_image=${VOICE_IMAGE_REF}"

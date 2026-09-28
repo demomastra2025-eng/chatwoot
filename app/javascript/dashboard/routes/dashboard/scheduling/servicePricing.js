@@ -19,12 +19,6 @@ export const buildServicePricePayload = (priceRow, basePrice) => {
 
   return {
     active: priceRow.active,
-    compensation_percent:
-      toIntegerNumeric(priceRow.compensationPercent, 'compensation_percent') ||
-      0,
-    compensation_type: priceRow.compensationType,
-    compensation_value:
-      toIntegerNumeric(priceRow.compensationValue, 'compensation_value') || 0,
     price: toIntegerNumeric(resolvedPrice, 'price') || 0,
     resource_id: priceRow.resourceId,
   };

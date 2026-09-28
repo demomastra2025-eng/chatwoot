@@ -2,6 +2,8 @@ import {
   hasPermissions,
   getUserPermissions,
   getCurrentAccount,
+  hasCrmViewPermission,
+  hasRouteViewPermission,
 } from './permissionsHelper';
 
 import {
@@ -37,14 +39,26 @@ const isFeatureEnabled = (account, featureFlag) => {
 export const routeIsAccessibleFor = (
   route,
   userPermissions = [],
-  currentAccount = null
+  currentAccount = null,
+  user = null
 ) => {
   const {
-    meta: { permissions: routePermissions = [], featureFlag = null } = {},
+    meta: {
+      permissions: routePermissions = [],
+      featureFlag = null,
+      crmResources = [],
+    } = {},
   } = route;
+  const canView = crmResources.length
+    ? hasRouteViewPermission(
+        user || { accounts: [currentAccount].filter(Boolean) },
+        currentAccount?.id,
+        routePermissions,
+        crmResources
+      )
+    : hasPermissions(routePermissions, userPermissions);
   return (
-    hasPermissions(routePermissions, userPermissions) &&
-    (!featureFlag || isFeatureEnabled(currentAccount, featureFlag))
+    canView && (!featureFlag || isFeatureEnabled(currentAccount, featureFlag))
   );
 };
 
@@ -76,11 +90,13 @@ export const defaultRedirectPage = (
     { permissions: [PORTAL_PERMISSIONS], path: 'portals' },
     {
       permissions: CRM_DEAL_VIEW_PERMISSIONS,
+      crmResource: 'deals',
       path: 'deals',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_DEALS),
     },
     {
       permissions: CRM_TASK_VIEW_PERMISSIONS,
+      crmResource: 'tasks',
       path: 'tasks',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_TASKS),
     },
@@ -97,8 +113,11 @@ export const defaultRedirectPage = (
   ];
 
   const route = permissionRoutes.find(
-    ({ permissions: routePermissions, enabled = true }) =>
-      enabled && hasPermissions(routePermissions, permissions)
+    ({ permissions: routePermissions, crmResource, enabled = true }) =>
+      enabled &&
+      (crmResource && user
+        ? hasCrmViewPermission(user, accountId, crmResource)
+        : hasPermissions(routePermissions, permissions))
   );
 
   return `accounts/${accountId}/${route ? route.path : 'dashboard'}`;
@@ -127,7 +146,8 @@ const validateActiveAccountRoutes = (to, user, accountFeatureSource = null) => {
   const isAccessible = routeIsAccessibleFor(
     to,
     userPermissions,
-    currentAccount
+    currentAccount,
+    user
   );
   // If the route is not accessible for the user, return to dashboard screen
   return isAccessible

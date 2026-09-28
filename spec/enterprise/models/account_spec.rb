@@ -247,6 +247,13 @@ RSpec.describe Account, type: :model do
 
     it 'counts messaging and call channels separately' do
       create(:channel_api, account: account)
+      create(:channel_telegram_personal, account: account)
+      create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      create(:channel_whatsapp_web, account: account)
+      stub_request(:post, %r{\Ahttps://graph\.facebook\.com/v3\.2/me/subscribed_apps})
+        .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+      create(:channel_facebook_page, account: account)
+      create(:channel_tiktok, account: account)
       create(:channel_email, account: account)
       create(:channel_voice, :sipuni, account: account)
 

@@ -2,6 +2,44 @@
 #
 # Table name: crm_events
 #
+#  id             :bigint           not null, primary key
+#  event_type     :string           not null
+#  eventable_type :string           not null
+#  meta           :jsonb            not null
+#  correlation_id :uuid             default("gen_random_uuid()"), not null
+#  created_at     :datetime         not null
+#  account_id     :bigint           not null
+#  actor_id       :bigint
+#  eventable_id   :bigint           not null
+#  source         :string           default("system"), not null
+#  actor_kind     :string
+#  before_data    :jsonb            default({}), not null
+#  after_data     :jsonb            default({}), not null
+#  causation_id   :uuid
+#  schema_version :integer          default(1), not null
+#  command_key    :string
+#  performed_by_type :string
+#  performed_by_id   :bigint
+#  published_at       :datetime
+#  publication_attempts :integer   default(0), not null
+#  publication_error    :text
+#  publication_next_attempt_at :datetime default(CURRENT_TIMESTAMP), not null
+#
+# Indexes
+#
+#  index_crm_events_on_account_eventable_created_at  (account_id,eventable_type,eventable_id,created_at)
+#  index_crm_events_on_account_id_and_correlation_id (account_id,correlation_id)
+#  index_crm_events_on_command_dedupe                (account_id,eventable_type,eventable_id,event_type,command_key)
+#  index_crm_events_on_account_id                    (account_id)
+#  index_crm_events_on_actor_id                      (actor_id)
+#  idx_crm_events_ready_for_publication              (publication_next_attempt_at,id)
+#  index_crm_events_on_unpublished                   (published_at,id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (actor_id => users.id)
+#
 class Crm::Event < ApplicationRecord
   self.table_name = 'crm_events'
 
@@ -177,4 +215,5 @@ class Crm::Event < ApplicationRecord
     self.before_data = {} if before_data.blank?
     self.after_data = {} if after_data.blank?
   end
+
 end

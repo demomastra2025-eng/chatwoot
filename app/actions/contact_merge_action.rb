@@ -1,15 +1,20 @@
-class ContactMergeAction
+class ContactMergeAction # rubocop:disable Metrics/ClassLength
   include Events::Types
-  pattr_initialize [:account!, :base_contact!, :mergee_contact!]
+  pattr_initialize [:account!, :base_contact!, :mergee_contact!, { emit_merge_event: true }]
 
-  def perform
+  def perform # rubocop:disable Metrics/MethodLength
     # This case happens when an agent updates a contact email in dashboard,
     # while the contact also update his email via email collect box
     return @base_contact if base_contact.id == mergee_contact.id
 
     ActiveRecord::Base.transaction do
       validate_contacts
+      # A phone save acquires this advisory lock before its Contact row.
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
+      lock_contact_threads!
+      lock_contacts
       lock_contact_inboxes
+      yield @base_contact, @mergee_contact if block_given?
       merge_owner
       merge_conversations
       merge_contact_inboxes
@@ -36,6 +41,22 @@ class ContactMergeAction
     @account.id == contact.account_id
   end
 
+  def lock_contact_threads!
+    [@base_contact.id, @mergee_contact.id].sort.each do |contact_id|
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(@account.id, contact_id)
+    end
+  end
+
+  def lock_contacts
+    # Owner synchronization locks Contact before Conversation and Thread. A
+    # merge must take both Contact locks in a stable order before either side
+    # can lock a Thread, including when the base already has an owner.
+    contacts = @account.contacts.where(id: [@base_contact.id, @mergee_contact.id]).order(:id).lock.index_by(&:id)
+    @base_contact = contacts.fetch(@base_contact.id)
+    @base_contact.skip_runtime_events = true unless emit_merge_event
+    @mergee_contact = contacts.fetch(@mergee_contact.id)
+  end
+
   def lock_contact_inboxes
     ContactInbox.where(contact_id: [@base_contact.id, @mergee_contact.id]).order(:id).lock.load
   end
@@ -47,7 +68,7 @@ class ContactMergeAction
     )
   end
 
-  def merge_communication_threads
+  def merge_communication_threads # rubocop:disable Metrics/AbcSize
     source_threads = CommunicationThread.where(account_id: @account.id, contact_id: @mergee_contact.id).lock.order(:id).to_a
     target_thread = CommunicationThread.where(account_id: @account.id, contact_id: @base_contact.id).lock.order(:id).first
     return if source_threads.empty? && target_thread.blank?
@@ -59,6 +80,7 @@ class ContactMergeAction
 
     source_threads.each do |source_thread|
       merge_thread_participants!(source_thread, target_thread)
+      merge_thread_captain_control!(source_thread, target_thread)
       source_thread.communication_thread_conversations.find_each do |link|
         link.update!(communication_thread: target_thread)
       end
@@ -67,6 +89,18 @@ class ContactMergeAction
 
     attach_conversations_to_thread!
     sync_merged_thread_routing!(target_thread)
+  end
+
+  def merge_thread_captain_control!(source_thread, target_thread)
+    return unless source_thread.captain_control_state == 'human' || target_thread.captain_control_state == 'human'
+
+    # Bulk-moving links bypasses the resolver's control reconciliation.
+    # Invalidate pending sends from either contact before deleting the source.
+    target_thread.update!(
+      captain_control_state: 'human',
+      captain_control_generation: [target_thread.captain_control_generation.to_i, source_thread.captain_control_generation.to_i].max + 1,
+      captain_handoff_applied_at: [target_thread.captain_handoff_applied_at, source_thread.captain_handoff_applied_at].compact.max
+    )
   end
 
   def merge_thread_participants!(source_thread, target_thread)
@@ -183,8 +217,10 @@ class ContactMergeAction
     merged_attributes = mergee_contact_attributes.deep_merge(base_contact_attributes)
 
     @mergee_contact.reload.destroy!
-    Rails.configuration.dispatcher.dispatch(CONTACT_MERGED, Time.zone.now, contact: @base_contact,
-                                                                           tokens: [@base_contact.contact_inboxes.filter_map(&:pubsub_token)])
+    if emit_merge_event
+      Rails.configuration.dispatcher.dispatch(CONTACT_MERGED, Time.zone.now, contact: @base_contact,
+                                                                             tokens: [@base_contact.contact_inboxes.filter_map(&:pubsub_token)])
+    end
     @base_contact.update!(merged_attributes)
   end
 

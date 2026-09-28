@@ -11,7 +11,7 @@ module LlmFormatter::Scheduling
       sections << "Client Phone: #{@record.client_phone.presence || 'Not set'}"
       sections << "Specialist: #{@record.resource&.name || 'Not set'}"
       sections << "Service: #{@record.service_name_snapshot.presence || @record.service&.name || 'Not set'}"
-      sections << "Payment Status: #{@record.payment_status}"
+
       sections << "Service Amount: #{@record.service_amount}"
       sections << "Company: #{@record.company&.name || 'Not set'}"
       sections << "Custom Attributes: #{@record.custom_attributes.to_json}"

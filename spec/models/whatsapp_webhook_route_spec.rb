@@ -2,6 +2,8 @@ require 'rails_helper'
 require 'timeout'
 
 RSpec.describe WhatsappWebhookRoute do
+  self.use_transactional_tests = false
+
   describe '.with_waba_registry_lock' do
     it 'serializes all registry mutations for the same WABA' do
       first_acquired = Queue.new
@@ -17,7 +19,7 @@ RSpec.describe WhatsappWebhookRoute do
           end
         end
       end
-      first_acquired.pop
+      Timeout.timeout(2) { first_acquired.pop }
 
       second = Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
@@ -27,7 +29,7 @@ RSpec.describe WhatsappWebhookRoute do
           end
         end
       end
-      second_started.pop
+      Timeout.timeout(2) { second_started.pop }
 
       expect { Timeout.timeout(0.2) { second_acquired.pop } }.to raise_error(Timeout::Error)
       release_first << true
@@ -36,9 +38,11 @@ RSpec.describe WhatsappWebhookRoute do
       first.value
       second.value
     ensure
-      release_first << true if defined?(release_first)
-      first&.join
-      second&.join
+      release_first&.push(true) if first&.alive?
+      [first, second].compact.each do |thread|
+        thread.join(2)
+        thread.kill if thread.alive?
+      end
     end
   end
 end

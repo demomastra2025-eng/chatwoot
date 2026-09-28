@@ -8,6 +8,7 @@ const testState = vi.hoisted(() => ({
   batchUpdateStages: vi.fn(() => Promise.resolve()),
   checkStageDeletion: vi.fn(() => Promise.resolve({ deletable: true })),
   deleteStage: vi.fn(() => Promise.resolve()),
+  loadFieldDefinitions: vi.fn(() => Promise.resolve()),
   loadPipelines: vi.fn(() => Promise.resolve()),
   reorderStages: vi.fn(() => Promise.resolve()),
   savePipeline: vi.fn(payload => Promise.resolve(payload)),
@@ -101,12 +102,14 @@ const pipeline = {
 
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => ({
+    dealFieldDefinitions: [],
     pipelines: [pipeline],
     ui: {
       error: null,
       isLoadingPipelines: false,
       isSaving: false,
     },
+    loadFieldDefinitions: testState.loadFieldDefinitions,
     loadPipelines: testState.loadPipelines,
     batchUpdateStages: testState.batchUpdateStages,
     checkStageDeletion: testState.checkStageDeletion,
@@ -244,6 +247,7 @@ describe('CRM pipeline settings', () => {
     testState.batchUpdateStages.mockReset();
     testState.batchUpdateStages.mockResolvedValue(pipeline);
     testState.deleteStage.mockClear();
+    testState.loadFieldDefinitions.mockClear();
     testState.loadPipelines.mockClear();
     testState.reorderStages.mockClear();
     testState.savePipeline.mockClear();
@@ -262,6 +266,7 @@ describe('CRM pipeline settings', () => {
   it('keeps a new stage frontend-only until the global save', async () => {
     const wrapper = mountComponent();
     await flushPromises();
+    expect(testState.loadFieldDefinitions).toHaveBeenCalledWith('deal');
     const saveButton = wrapper.get('[data-testid="save-settings-button"]');
 
     expect(saveButton.attributes()).toHaveProperty('disabled');

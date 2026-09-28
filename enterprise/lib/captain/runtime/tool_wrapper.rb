@@ -15,6 +15,7 @@ class Captain::Runtime::ToolWrapper
   TOOL_REQUEST_COUNTS_KEY = Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY
   TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+  SERVICE_SPECIFIC_SCHEDULING_KEY = :captain_v2_service_specific_scheduling
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
   OPTIONAL_ARGUMENT_DESCRIPTION =
     'If this value was not explicitly provided or resolved, omit the key entirely; never invent a placeholder value.'
@@ -38,7 +39,7 @@ class Captain::Runtime::ToolWrapper
     'search_scheduling_resources' => %i[limit].freeze,
     'search_tasks' => %i[limit].freeze
   }.freeze
-  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call mutation_retry_blocked].freeze
+  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call handoff_not_authorized mutation_retry_blocked customer_tool_scope_denied].freeze
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_TOOL = 12
   MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
@@ -52,6 +53,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
+    ensure_response_run_current!
     normalized_args = normalize_args(args)
 
     request_stop = requested_tool_stop_result(normalized_args)
@@ -65,6 +67,8 @@ class Captain::Runtime::ToolWrapper
     return complete_and_halt(attempt_error) if attempt_error
 
     execute_registered_tool(normalized_args)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue InvalidToolArgumentsError => e
     invalid_tool_arguments_result(e)
   rescue StandardError => e
@@ -111,11 +115,30 @@ class Captain::Runtime::ToolWrapper
 
   private
 
+  def ensure_response_run_current!
+    state = @context_wrapper.context[:state] || {}
+    fence = state[:captain_response_fence] || state['captain_response_fence']
+    return if fence.blank?
+
+    assistant_id = state[:assistant_id] || state['assistant_id']
+    assistant = Captain::Assistant.find_by(id: assistant_id)
+    Captain::Conversation::RunFenceService.new(assistant: assistant, state: state).ensure_current!
+  end
+
   def execute_registered_tool(normalized_args)
     tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
     @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
     track_mutating_tool_execution(normalized_args)
-    execute_tool(tool_context, normalized_args)
+    state = @context_wrapper.context[:state] || {}
+    # Customer tools already take phone -> contact advisory -> Contact ->
+    # shared-owner locks inside their execution boundary. Wrapping that call
+    # in another transaction would roll back its failure audit.
+    return execute_tool(tool_context, normalized_args) if !mutating_tool? || customer_execution_scope_applies?(state)
+
+    assistant = Captain::Assistant.find_by(id: state[:assistant_id] || state['assistant_id'])
+    Captain::Conversation::ActionFenceService.new(assistant: assistant, state: state).with_effect! do
+      execute_tool(tool_context, normalized_args)
+    end
   end
 
   def handle_execution_error(error)
@@ -157,6 +180,7 @@ class Captain::Runtime::ToolWrapper
     record_mutating_tool_result(final_result)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
     return final_result if halt_result?(final_result)
+    return halt_completed_result(final_result) if terminal_failure_result?(final_result)
 
     Captain::ToolResult.render(final_result)
   end
@@ -328,7 +352,96 @@ class Captain::Runtime::ToolWrapper
 
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
-      tool_safety_error_for(:tool_arguments, normalized_args)
+      customer_execution_scope_error(normalized_args) ||
+      tool_safety_error_for(:tool_arguments, normalized_args) ||
+      scheduling_context_error(normalized_args)
+  end
+
+  def customer_execution_scope_error(normalized_args)
+    state = context_wrapper_context[:state] || context_wrapper_context['state'] || {}
+    return unless customer_execution_scope_applies?(state)
+
+    Captain::CustomerToolExecutionScope.ensure_allowed!(tool: @tool, state: state, params: normalized_args)
+    nil
+  rescue Captain::CustomerToolExecutionScope::Denied => e
+    Captain::ToolResult.failure(
+      error: e.message,
+      retryable: false,
+      audit: { failure_stage: 'authorization', failure_reason: 'customer_tool_scope_denied' }
+    )
+  end
+
+  def customer_execution_scope_applies?(state)
+    tool_classes = [Captain::Tools::BasePublicTool, Captain::Tools::Agent::AccountToolAdapter,
+                    Captain::Tools::HttpTool, Captain::Runtime::HandoffTool]
+    return true if tool_classes.any? { |tool_class| @tool.is_a?(tool_class) }
+
+    state.is_a?(Hash) && state.keys.map(&:to_s).intersect?(%w[assistant_id account_id conversation])
+  end
+
+  def scheduling_context_error(normalized_args)
+    return unless canonical_tool_name == 'search_available_slots'
+
+    @context_wrapper.tool_loop_guard_mutex.synchronize do
+      return remember_service_specific_scheduling! if positive_service_id?(normalized_args[:service_id])
+      return unless service_specific_scheduling?
+
+      publish_generic_after_service_specific_attempt
+      return unless scheduling_grounding_guard_enabled?
+
+      Captain::ToolResult.failure(
+        error: 'Service-specific availability requires a confirmed service_id.',
+        data: { code: 'service_context_required' },
+        retryable: false,
+        audit: {
+          failure_stage: 'tool_arguments',
+          failure_reason: 'service_context_required',
+          tool_name: canonical_tool_name,
+          provider_call_blocked: true
+        }
+      )
+    end
+  end
+
+  def positive_service_id?(value)
+    value.present? && value.to_i.positive?
+  end
+
+  def remember_service_specific_scheduling!
+    context_wrapper_context[SERVICE_SPECIFIC_SCHEDULING_KEY] = true
+    nil
+  end
+
+  def service_specific_scheduling?
+    ActiveModel::Type::Boolean.new.cast(context_wrapper_context[SERVICE_SPECIFIC_SCHEDULING_KEY])
+  end
+
+  def scheduling_grounding_guard_enabled?
+    state = context_wrapper_context[:state].to_h.with_indifferent_access
+    ActiveModel::Type::Boolean.new.cast(state[:captain_scheduling_grounding_guard_enabled])
+  end
+
+  def canonical_tool_name
+    name = @tool.name.to_s
+    %w[search_available_slots search_scheduling_resources search_scheduling_services].find do |candidate|
+      name == candidate || name.end_with?("__#{candidate}") || name.end_with?(":#{candidate}")
+    end || name
+  end
+
+  def publish_generic_after_service_specific_attempt
+    state = context_wrapper_context[:state].to_h.with_indifferent_access
+    Llm::EventBus.publish(
+      'captain.generic_after_service_specific_attempt',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: state[:account_id],
+      conversation_id: state.dig(:conversation, :id),
+      tool_name: canonical_tool_name,
+      enforced: scheduling_grounding_guard_enabled?,
+      provider_call_blocked: scheduling_grounding_guard_enabled?
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ToolWrapper] Failed to publish scheduling context block: #{e.class}: #{e.message}")
   end
 
   def complete_and_render(result)
@@ -339,6 +452,11 @@ class Captain::Runtime::ToolWrapper
   def complete_and_halt(result)
     normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     @context_wrapper.callback_manager.emit_tool_complete(@tool.name, normalized_result, @context_wrapper)
+    halt_completed_result(normalized_result)
+  end
+
+  def halt_completed_result(result)
+    normalized_result = Captain::ToolResult.normalize(result, retryable: false)
     remember_terminal_tool_stop(normalized_result)
     RubyLLM::Tool::Halt.new(Captain::ToolResult.render(normalized_result))
   end
@@ -355,7 +473,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def terminal_early_result?(result)
-    return false if result.blank?
+    terminal_failure_result?(result)
+  end
+
+  def terminal_failure_result?(result)
+    return false if result.blank? || halt_result?(result)
 
     failure_reason = Captain::ToolResult.normalize(result).dig(:audit, :failure_reason).to_s
     failure_reason.in?(TERMINAL_FAILURE_REASONS)
@@ -551,7 +673,10 @@ class Captain::Runtime::ToolWrapper
     entry = mutating_tool_executions[@tool.name.to_s]
     return if entry.blank?
 
-    entry[:retryable] = Captain::ToolResult.normalize(result)[:retryable] == true
+    normalized_result = Captain::ToolResult.normalize(result)
+    entry[:retryable] = normalized_result[:retryable] == true
+    entry[:failure_stage] = normalized_result.dig(:audit, :failure_stage).to_s.presence
+    entry[:failure_reason] = normalized_result.dig(:audit, :failure_reason).to_s.presence
   rescue StandardError
     entry[:retryable] = false
   end

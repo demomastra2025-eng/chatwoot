@@ -24,10 +24,8 @@ class Captain::ContextFields
     id resource_id resource_name contact_id service_id company_id conversation_id created_by_id
     starts_at ends_at duration_min status appointment_type
     client_name client_phone client_identifier client_birth_date client_gender
-    client_comment source external_ref payment_status
+    client_comment source external_ref
     service_name_snapshot service_type_snapshot service_duration_min_snapshot service_amount
-    compensation_type_snapshot compensation_value_snapshot compensation_percent_snapshot
-    prepaid_amount prepaid_payment_method settlement_amount settlement_payment_method
     start_date start_time end_date end_time
     custom_attributes
   ].freeze
@@ -132,18 +130,12 @@ class Captain::ContextFields
     { key: 'client_comment', title: 'Client Comment', description: 'appointment.client_comment' },
     { key: 'source', title: 'Source', description: 'appointment.source' },
     { key: 'external_ref', title: 'External Reference', description: 'appointment.external_ref' },
-    { key: 'payment_status', title: 'Payment Status', description: 'appointment.payment_status' },
+
     { key: 'service_name_snapshot', title: 'Service Name', description: 'appointment.service_name_snapshot' },
     { key: 'service_type_snapshot', title: 'Service Type', description: 'appointment.service_type_snapshot' },
     { key: 'service_duration_min_snapshot', title: 'Service Duration (minutes)', description: 'appointment.service_duration_min_snapshot' },
     { key: 'service_amount', title: 'Service Amount', description: 'appointment.service_amount' },
-    { key: 'compensation_type_snapshot', title: 'Compensation Type', description: 'appointment.compensation_type_snapshot' },
-    { key: 'compensation_value_snapshot', title: 'Compensation Value', description: 'appointment.compensation_value_snapshot' },
-    { key: 'compensation_percent_snapshot', title: 'Compensation Percent', description: 'appointment.compensation_percent_snapshot' },
-    { key: 'prepaid_amount', title: 'Prepaid Amount', description: 'appointment.prepaid_amount' },
-    { key: 'prepaid_payment_method', title: 'Prepaid Payment Method', description: 'appointment.prepaid_payment_method' },
-    { key: 'settlement_amount', title: 'Settlement Amount', description: 'appointment.settlement_amount' },
-    { key: 'settlement_payment_method', title: 'Settlement Payment Method', description: 'appointment.settlement_payment_method' }
+
   ].freeze
 
   ATTRIBUTE_MODELS = {

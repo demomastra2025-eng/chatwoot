@@ -64,16 +64,31 @@ RSpec.describe Llm::ObservabilityPayload do
 
   describe '.attach_chat_response!' do
     it 'extracts OpenRouter generation ids from response methods' do
-      response = Struct.new(:content, :input_tokens, :output_tokens, :generation_id, keyword_init: true)
-                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, generation_id: 'gen-method-123')
+      response = Struct.new(:content, :input_tokens, :output_tokens, :generation_id, :model_id, keyword_init: true)
+                       .new(
+                         content: 'Done', input_tokens: 3, output_tokens: 4,
+                         generation_id: 'gen-method-123', model_id: 'openai/gpt-5.4'
+                       )
       payload = { 'provider' => 'openrouter' }
 
       described_class.attach_chat_response!(payload, response)
 
       expect(payload).to include(
         'status' => 'success',
+        'actual_model' => 'openai/gpt-5.4',
         'openrouter_generation_id' => 'gen-method-123'
       )
+    end
+
+    it 'extracts OpenRouter generation ids from the raw HTTP response body' do
+      raw_response = Struct.new(:body).new({ 'id' => 'gen-body-123' })
+      response = Struct.new(:content, :input_tokens, :output_tokens, :raw, keyword_init: true)
+                       .new(content: 'Done', input_tokens: 3, output_tokens: 4, raw: raw_response)
+      payload = { 'provider' => 'openrouter' }
+
+      described_class.attach_chat_response!(payload, response)
+
+      expect(payload['openrouter_generation_id']).to eq('gen-body-123')
     end
 
     it 'extracts OpenRouter generation ids from raw response metadata' do

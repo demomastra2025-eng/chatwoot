@@ -65,6 +65,7 @@ module Llm::Config
 
     def model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
       feature_key = feature.to_s.presence
+      fallback = Llm::CaptainModelPolicy::DEFAULT_MODEL if Llm::CaptainModelPolicy.captain_feature?(feature_key)
 
       if installation_managed_model_feature?(feature_key)
         managed_model = installation_managed_model_for(feature_key, account: account)
@@ -79,9 +80,14 @@ module Llm::Config
 
       if feature_key.present?
         feature_default_model = Llm::Models.default_model_for(feature_key, account: account)
-        return feature_default_model if default_model_available?(feature_default_model, account: account)
+        if (!Llm::CaptainModelPolicy.captain_feature?(feature_key) || feature_model_allowed?(feature_key, feature_default_model, account: account)) &&
+           default_model_available?(feature_default_model, account: account)
+          return feature_default_model
+        end
         return if Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
       end
+
+      return if Llm::CaptainModelPolicy.captain_feature?(feature_key) && !Llm::CaptainModelPolicy.allowed?(fallback)
 
       default_model_available?(fallback, account: account) ? Llm::Models.canonical_model_name(fallback) : nil
     end
@@ -361,6 +367,10 @@ module Llm::Config
     end
 
     def feature_model_allowed?(feature_key, model_name, account: nil)
+      if Llm::CaptainModelPolicy.captain_feature?(feature_key) && !Llm::CaptainModelPolicy.allowed?(model_name)
+        return false
+      end
+
       return true if Llm::Models.model_allowed_for_feature?(feature_key, model_name, account: account)
       return false if feature_key.to_s == 'help_center_search' && Llm::Models.openrouter_no_fallback_active_for?(feature_key, account: account)
 

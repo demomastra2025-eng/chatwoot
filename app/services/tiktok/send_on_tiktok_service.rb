@@ -1,4 +1,5 @@
 class Tiktok::SendOnTiktokService < Base::SendOnChannelService
+  UnsupportedMessage = Class.new(StandardError)
   SUPPORTED_IMAGE_CONTENT_TYPES = %w[image/jpeg image/png].freeze
   MAX_IMAGE_SIZE = 3.megabytes
 
@@ -11,27 +12,53 @@ class Tiktok::SendOnTiktokService < Base::SendOnChannelService
   def perform_reply
     validate_message_support!
     message_id = send_message
+    return :outcome_unknown if message_id.blank?
 
-    message.update!(source_id: message_id)
-    Messages::StatusUpdateService.new(message, 'delivered').perform
+    if captain_dispatching?
+      # Do not emit a message update (and reminder post-delivery action) before
+      # the Captain fence has committed its submitted state and receipt.
+      message.update_columns(source_id: message_id, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    else
+      message.update!(source_id: message_id)
+      Messages::StatusUpdateService.new(message, 'delivered').perform
+    end
+    :delivered
   rescue StandardError => e
     Rails.logger.error "Failed to send Tiktok message: #{e.message}"
+    # A provider id means the send succeeded; a later DB/status error must not
+    # turn an accepted message into a rejected one.
+    raise if message_id.present?
+
+    return captain_error_result(e) if captain_dispatching?
+
     Messages::StatusUpdateService.new(message, 'failed', e.message).perform
+    :provider_failed
+  end
+
+  def captain_dispatching?
+    message.sender_type == 'Captain::Assistant' && message.additional_attributes.to_h['captain_delivery_state'] == 'dispatching'
+  end
+
+  def captain_error_result(error)
+    return [:provider_failed, error.message] if error.is_a?(UnsupportedMessage) || error.is_a?(Tiktok::Client::ProviderRejection)
+
+    # A transport error or dispatch deadline may follow an accepted POST.
+    :outcome_unknown
   end
 
   def validate_message_support!
     return unless message.attachments.any?
-    raise 'Sending attachments with text is not supported on TikTok.' if message.outgoing_content.present?
-    raise 'Sending multiple attachments in a single TikTok message is not supported.' unless message.attachments.one?
+    raise UnsupportedMessage, 'Sending attachments with text is not supported on TikTok.' if message.outgoing_content.present?
+    raise UnsupportedMessage, 'Sending multiple attachments in a single TikTok message is not supported.' unless message.attachments.one?
 
     validate_attachment_support!(message.attachments.first)
   end
 
   def validate_attachment_support!(attachment)
-    raise 'Sending image attachments is not supported for this TikTok conversation.' unless image_send_capable?
-    raise 'Only image attachments are supported on TikTok.' unless attachment.image?
-    raise 'TikTok supports only JPG and PNG images.' unless SUPPORTED_IMAGE_CONTENT_TYPES.include?(attachment.file.content_type)
-    raise 'TikTok image attachments must be smaller than 3 MB.' if attachment.file.byte_size > MAX_IMAGE_SIZE
+    raise UnsupportedMessage, 'Sending image attachments is not supported for this TikTok conversation.' unless image_send_capable?
+    raise UnsupportedMessage, 'Only image attachments are supported on TikTok.' unless attachment.image?
+    raise UnsupportedMessage, 'TikTok supports only JPG and PNG images.' unless SUPPORTED_IMAGE_CONTENT_TYPES.include?(attachment.file.content_type)
+    raise UnsupportedMessage, 'TikTok image attachments must be smaller than 3 MB.' if attachment.file.byte_size > MAX_IMAGE_SIZE
   end
 
   def image_send_capable?

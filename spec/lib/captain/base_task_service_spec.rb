@@ -150,11 +150,13 @@ RSpec.describe Captain::BaseTaskService do
     let(:mock_chat) { instance_double(RubyLLM::Chat) }
     let(:mock_context) { instance_double(RubyLLM::Context, chat: mock_chat) }
     let(:mock_response) { instance_double(RubyLLM::Message, content: 'Response', input_tokens: 10, output_tokens: 20) }
+    let(:mock_runner) { instance_double(Llm::ChatRequestRunner, call: mock_response) }
 
     before do
       allow(Llm::Config).to receive(:initialize!)
       allow(Llm::Config).to receive(:context).and_return(mock_context)
       allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+      allow(Llm::ChatRequestRunner).to receive(:new).and_return(mock_runner)
       allow(mock_chat).to receive(:model).and_return(model)
       allow(mock_chat).to receive(:with_instructions)
       allow(mock_chat).to receive(:ask).and_return(mock_response)
@@ -265,11 +267,13 @@ RSpec.describe Captain::BaseTaskService do
     let(:mock_chat) { instance_double(RubyLLM::Chat) }
     let(:mock_context) { instance_double(RubyLLM::Context, chat: mock_chat) }
     let(:mock_response) { instance_double(RubyLLM::Message, content: 'Response', input_tokens: 10, output_tokens: 20) }
+    let(:mock_runner) { instance_double(Llm::ChatRequestRunner, call: mock_response) }
 
     before do
       allow(Llm::Config).to receive(:initialize!)
       allow(Llm::Config).to receive(:context).and_return(mock_context)
       allow(Llm::Config).to receive(:provider_for_model).and_return('openai')
+      allow(Llm::ChatRequestRunner).to receive(:new).and_return(mock_runner)
       allow(mock_chat).to receive(:model).and_return(model)
       allow(mock_response).to receive(:input_tokens).and_return(10)
       allow(mock_response).to receive(:output_tokens).and_return(20)
@@ -279,8 +283,7 @@ RSpec.describe Captain::BaseTaskService do
       let(:messages) { [{ role: 'system', content: 'You are helpful' }, { role: 'user', content: 'Hello' }] }
 
       it 'applies system instructions to chat' do
-        expect(mock_chat).to receive(:with_instructions).with('You are helpful')
-        expect(mock_chat).to receive(:ask).with('Hello').and_return(mock_response)
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(messages: messages)).and_return(mock_runner)
 
         service.send(:make_api_call, model: model, messages: messages)
       end
@@ -297,20 +300,9 @@ RSpec.describe Captain::BaseTaskService do
       end
 
       it 'adds conversation history before asking' do
-        history_messages = []
-
-        expect(mock_chat).to receive(:with_instructions).with('You are helpful')
-        allow(mock_chat).to receive(:add_message) { |message| history_messages << message }
-        expect(mock_chat).to receive(:ask).with('Second message').and_return(mock_response)
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(messages: messages)).and_return(mock_runner)
 
         service.send(:make_api_call, model: model, messages: messages)
-
-        expect(history_messages.map(&:role)).to eq(%i[user assistant])
-        history_contents = history_messages.map do |message|
-          message.content.respond_to?(:text) ? message.content.text : message.content
-        end
-
-        expect(history_contents).to eq(['First message', 'First response'])
       end
     end
 
@@ -318,9 +310,7 @@ RSpec.describe Captain::BaseTaskService do
       let(:messages) { [{ role: 'system', content: 'You are helpful' }, { role: 'user', content: 'Hello' }] }
 
       it 'does not add conversation history' do
-        expect(mock_chat).to receive(:with_instructions).with('You are helpful')
-        expect(mock_chat).not_to receive(:add_message)
-        expect(mock_chat).to receive(:ask).with('Hello').and_return(mock_response)
+        expect(Llm::ChatRequestRunner).to receive(:new).with(hash_including(messages: messages)).and_return(mock_runner)
 
         service.send(:make_api_call, model: model, messages: messages)
       end
@@ -382,13 +372,13 @@ RSpec.describe Captain::BaseTaskService do
       before { hook }
 
       it 'uses api key from hook' do
-        expect(service.send(:api_key)).to eq('hook-key')
+        expect(service.send(:api_key, 'openai')).to eq('hook-key')
       end
     end
 
     context 'when openai hook is not configured' do
       it 'uses system api key' do
-        expect(service.send(:api_key)).to eq('test-key')
+        expect(service.send(:api_key, 'openai')).to eq('test-key')
       end
     end
 
@@ -398,7 +388,7 @@ RSpec.describe Captain::BaseTaskService do
       end
 
       it 'returns nil' do
-        expect(service.send(:api_key)).to be_nil
+        expect(service.send(:api_key, 'openai')).to be_nil
       end
     end
   end

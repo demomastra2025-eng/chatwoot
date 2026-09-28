@@ -7,6 +7,9 @@ RSpec.describe Llm::OpenRouterRuntime do
   let(:runtime) { described_class.new(account: account) }
 
   before do
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini openai/gpt-5.4]
+    )
     allow(Llm::Config).to receive(:api_key).and_call_original
     allow(Llm::Config).to receive(:api_key).with('openrouter', account: account).and_return('openrouter-key')
     allow(Llm::Config).to receive(:api_base).and_call_original
@@ -155,6 +158,7 @@ RSpec.describe Llm::OpenRouterRuntime do
       'hello',
       model: 'openai/gpt-5.4-mini',
       account: account,
+      feature: 'captain_agent',
       observability: hash_including(
         trace_id: 'trace-1',
         provider: 'openrouter',
@@ -167,6 +171,24 @@ RSpec.describe Llm::OpenRouterRuntime do
     ).and_return(response)
 
     expect(runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })).to eq(response)
+  end
+
+  it 'handles an untagged legacy chat with nil observability without inventing a Captain feature' do
+    unscoped_runtime = described_class.new
+    chat = instance_double(RubyLLM::Chat)
+    expect(Llm::ChatClient).to receive(:ask).with(chat, 'hello', model: nil, account: nil, observability: nil).and_return(:response)
+
+    expect(unscoped_runtime.ask(chat, 'hello')).to eq(:response)
+  end
+
+  it 'preserves an explicit Captain feature on an untagged chat through the runtime facade' do
+    unscoped_runtime = described_class.new
+    chat = instance_double(RubyLLM::Chat, model: 'openai/gpt-5.4', params: {})
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(['openai/gpt-5.6-luna'])
+    expect(chat).not_to receive(:ask)
+
+    expect { unscoped_runtime.ask(chat, 'hello', feature: :captain_agent) }
+      .to raise_error(Llm::CaptainModelPolicy::DisallowedModelError, /gpt-5.4/)
   end
 
   it 'falls back to the assistant budget profile for non-profile instrumentation names' do

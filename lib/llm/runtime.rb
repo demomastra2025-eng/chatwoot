@@ -23,11 +23,12 @@ class Llm::Runtime
     def ask(chat, content, **options)
       provider = options.delete(:provider) || :openrouter
       account = options[:account]
+      ask_options = { model: options[:model], observability: options[:observability] }
+      ask_options[:feature] = options[:feature] if options[:feature].present?
       provider_runtime(provider: provider, account: account).ask(
         chat,
         content,
-        model: options[:model],
-        observability: options[:observability]
+        **ask_options
       )
     end
 

@@ -22,7 +22,7 @@ RSpec.describe Llm::Runtime do
     request = Llm::FeatureRequest.new(
       feature: :captain_agent,
       account: account,
-      model: 'openai/gpt-5.4-mini'
+      model: 'openai/gpt-5.6-luna'
     )
     openrouter_runtime = instance_double(Llm::OpenRouterRuntime, build_chat: :chat)
 
@@ -68,6 +68,19 @@ RSpec.describe Llm::Runtime do
       .and_return(:response)
 
     expect(described_class.ask(chat, 'hello', account: account, model: 'openai/gpt-5.4-mini', observability: {})).to eq(:response)
+  end
+
+  it 'passes the feature to stateful asks even if a cloned chat lost its routing metadata' do
+    chat = instance_double(RubyLLM::Chat)
+    openrouter_runtime = instance_double(Llm::OpenRouterRuntime, ask: :response)
+    allow(Llm::OpenRouterRuntime).to receive(:new).with(account: account).and_return(openrouter_runtime)
+
+    expect(openrouter_runtime).to receive(:ask)
+      .with(chat, 'hello', model: 'openai/gpt-5.6-luna', observability: nil, feature: :captain_agent)
+      .and_return(:response)
+
+    expect(described_class.ask(chat, 'hello', account: account, model: 'openai/gpt-5.6-luna', feature: :captain_agent))
+      .to eq(:response)
   end
 
   it 'builds feature requests from keyword arguments' do

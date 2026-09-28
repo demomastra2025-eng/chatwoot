@@ -41,7 +41,11 @@ class AccessControl::SystemRoleBootstrapper
     expected = definitions.index_by { |grant| [grant[:resource], grant[:capability]] }
     role.grants.find_each do |grant|
       definition = expected.delete([grant.resource, grant.capability])
-      definition ? reconcile_scope(grant, definition[:access_scope]) : grant.destroy!
+      if definition
+        reconcile_scope(grant, definition[:access_scope])
+      elsif !grant.retired? && !AccessControl::FutureTelephonyGrant.valid?(grant)
+        grant.destroy!
+      end
     end
 
     missing = expected.values
@@ -52,6 +56,9 @@ class AccessControl::SystemRoleBootstrapper
   end
 
   def reconcile_scope(grant, expected_scope)
+    # A deliberate administrator denial is not a stale preset.
+    return if grant.resource == 'telephony_calls' && grant.access_scope == 'none' && grant.access_role.system_key == 'administrator'
+
     grant.update!(access_scope: expected_scope) unless grant.access_scope == expected_scope
   end
 end

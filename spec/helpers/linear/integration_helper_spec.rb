@@ -9,7 +9,7 @@ RSpec.describe Linear::IntegrationHelper do
     let(:current_time) { Time.current }
 
     before do
-      allow(ENV).to receive(:fetch).with('LINEAR_CLIENT_SECRET', nil).and_return(client_secret)
+      allow(GlobalConfigService).to receive(:load).with('LINEAR_CLIENT_SECRET', nil).and_return(client_secret)
       allow(Time).to receive(:current).and_return(current_time)
     end
 
@@ -45,11 +45,11 @@ RSpec.describe Linear::IntegrationHelper do
     let(:account_id) { 1 }
     let(:client_secret) { 'test_secret' }
     let(:valid_token) do
-      JWT.encode({ sub: account_id, iat: Time.current.to_i }, client_secret, 'HS256')
+      JWT.encode({ sub: account_id, iat: Time.current.to_i }, 'test_secret', 'HS256')
     end
 
     before do
-      allow(ENV).to receive(:fetch).with('LINEAR_CLIENT_SECRET', nil).and_return(client_secret)
+      allow(GlobalConfigService).to receive(:load).with('LINEAR_CLIENT_SECRET', nil).and_return(client_secret)
     end
 
     it 'successfully verifies and returns account_id from valid token' do

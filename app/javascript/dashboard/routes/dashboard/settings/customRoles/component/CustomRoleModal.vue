@@ -13,6 +13,7 @@ import {
 } from 'dashboard/constants/permissions.js';
 
 import Button from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 
 const props = defineProps({
   mode: {

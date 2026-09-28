@@ -2,13 +2,22 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
   class BusyError < StandardError; end
   PAYLOAD_VERSION = 2
 
-  queue_as :medelement_provider_commands
+  # Retry producers carrying a Captain origin must not run on an old worker:
+  # the old process cannot enforce the v2 command fence after a handoff.
+  queue_as do
+    change = arguments.first.to_h.with_indifferent_access[:change].to_h.with_indifferent_access
+    actor_type = change.dig(:actor_descriptor, :type)
+    actor_type == 'Captain::Assistant' ? 'medelement_provider_commands_v2' : 'medelement_provider_commands'
+  end
 
   retry_on BusyError, wait: 30.seconds, attempts: 20
   discard_on ActiveRecord::RecordNotFound
 
   # rubocop:disable Metrics/ParameterLists
   def perform(entity_type:, entity_id:, event_name:, change: {}, actor_id: nil, event_key: nil)
+    actor_descriptor = change.to_h.with_indifferent_access[:actor_descriptor]
+    return if actor_descriptor.to_h.with_indifferent_access[:type] == 'Captain::Assistant'
+
     account_id = account_binding(change)
     attributes = {
       entity_type: entity_type,
@@ -19,7 +28,6 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
       actor_id: actor_id,
       event_key: event_key
     }
-    actor_descriptor = change.to_h.with_indifferent_access[:actor_descriptor]
     attributes[:actor_descriptor] = actor_descriptor if actor_descriptor.present?
     Integrations::Medelement::OutboundChangeService.new(**attributes).perform
   rescue Scheduling::Error => e

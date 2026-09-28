@@ -174,6 +174,9 @@ class Llm::OpenRouterRequestPolicy
     def recompile_runtime_preferences(metadata, privacy_profile)
       {}.tap do |preferences|
         preferences[:privacy_profile] = privacy_profile if privacy_profile.present?
+        if metadata.key?(:openrouter_allow_model_fallbacks)
+          preferences[:openrouter_allow_model_fallbacks] = metadata[:openrouter_allow_model_fallbacks]
+        end
         cache_policy = metadata[:openrouter_cache_policy].to_s.presence
         preferences[:openrouter_cache_policy] = cache_policy if cache_policy.present?
       end

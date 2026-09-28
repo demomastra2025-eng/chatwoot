@@ -86,7 +86,7 @@ RSpec.describe Integrations::Medelement::CatalogImportService do
       hash_including('companyCabinetCode' => 'ME-CAB-001', 'cabinetName' => 'MRI room')
     )
     expect(service).to have_attributes(name: 'MRI', duration_min: 30, base_price: 15_000)
-    expect(service_price).to have_attributes(price: 17_000, compensation_type: 'percent', compensation_value: 20)
+    expect(service_price).to have_attributes(price: 17_000, active: true)
   end
 
   it 'rejects links to specialists or services outside the snapshot' do

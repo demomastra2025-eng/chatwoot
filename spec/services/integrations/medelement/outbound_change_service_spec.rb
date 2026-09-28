@@ -60,6 +60,23 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('pending')
   end
 
+  it 'rejects Captain-origin changes before matching or confirming an existing command' do
+    service = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      actor_id: actor.id,
+      actor_descriptor: { 'type' => 'Captain::Assistant', 'id' => actor.id }
+    )
+
+    expect(service).not_to receive(:matching_appointment_command)
+    expect { service.perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE')
+    end
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+  end
+
   it 'does not regress the provider status when execution finishes before status projection' do
     allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do |confirmation_request_id|
       completed_command = Integrations::Medelement::ProviderCommand.find_by!(

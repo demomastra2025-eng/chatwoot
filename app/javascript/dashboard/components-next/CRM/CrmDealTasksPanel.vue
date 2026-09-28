@@ -62,6 +62,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  canMutateTask: {
+    type: Function,
+    default: null,
+  },
   canManageDeals: {
     type: Boolean,
     default: false,
@@ -95,6 +99,7 @@ const props = defineProps({
 const emit = defineEmits(['created', 'dealUpdated', 'updated']);
 const { t } = useI18n();
 const accountId = useMapGetter('getCurrentAccountId');
+const currentUser = useMapGetter('getCurrentUser');
 
 const taskDialogRef = ref(null);
 const resultDialogRef = ref(null);
@@ -305,8 +310,12 @@ const taskResultNotePrefix = task =>
 
 const taskResultNoteLabel = task => `${taskResultNotePrefix(task)}:`;
 
+const taskActionAllowed = (action, task) =>
+  props.canMutateTask
+    ? props.canMutateTask(action, task)
+    : props.canManageTasks;
 const canEditTask = task =>
-  props.canManageTasks &&
+  taskActionAllowed('update_fields', task) &&
   !task.archivedAt &&
   taskStatusCategory(task) !== 'done';
 const canOpenTaskDialog = task =>
@@ -314,7 +323,9 @@ const canOpenTaskDialog = task =>
   (!task.archivedAt && taskStatusCategory(task) === 'done');
 
 const canSetTaskResult = task =>
-  props.canManageTasks && !task.archivedAt && Boolean(doneStatus.value);
+  taskActionAllowed('complete_cancel', task) &&
+  !task.archivedAt &&
+  Boolean(doneStatus.value);
 
 const sortedTasks = computed(() =>
   [...tasks.value].sort((left, right) => {
@@ -333,7 +344,15 @@ const sortedTasks = computed(() =>
 );
 
 const hasDeal = computed(() => !!props.deal?.id);
-const canCreateTask = computed(() => props.canManageTasks && hasDeal.value);
+const canCreateTask = computed(
+  () =>
+    props.canManageTasks &&
+    hasDeal.value &&
+    taskActionAllowed(['create', 'assign'], {
+      assigneeId: form.assigneeId || currentUser.value?.id,
+      teamId: form.teamId,
+    })
+);
 const isDealWaiting = computed(() =>
   ['waiting', 'waitingExpired'].includes(props.deal?.nextAction?.kind)
 );
@@ -381,10 +400,18 @@ const buildCreateTaskTitle = () =>
   });
 
 const resetForm = () => {
+  const assignment = {
+    assigneeId: props.deal?.ownerId || currentUser.value?.id || '',
+    teamId: props.deal?.teamId || '',
+  };
+  if (!taskActionAllowed(['create', 'assign'], assignment)) {
+    assignment.assigneeId = currentUser.value?.id || '';
+    assignment.teamId = '';
+  }
   Object.assign(form, {
     activityType: 'task',
     allDay: false,
-    assigneeId: props.deal?.ownerId || '',
+    assigneeId: assignment.assigneeId,
     contextKind: 'sales',
     customAttributes: buildDefaultCustomAttributes(
       taskFieldDefinitionsForContext('sales')
@@ -396,7 +423,7 @@ const resetForm = () => {
     priority: 'medium',
     startAt: '',
     statusId: defaultStatus.value?.id || '',
-    teamId: props.deal?.teamId || '',
+    teamId: assignment.teamId,
     title: buildCreateTaskTitle(),
   });
 };
@@ -837,6 +864,15 @@ onBeforeUnmount(() => {
 
 const saveTask = async () => {
   if (isTaskReadOnly.value || isTaskFormDisabled.value || ui.isSaving) return;
+  if (!selectedTask.value && !canCreateTask.value) return;
+  if (
+    selectedTask.value &&
+    (Number(form.assigneeId) !== Number(selectedTask.value.assigneeId) ||
+      Number(form.teamId) !== Number(selectedTask.value.teamId)) &&
+    !taskActionAllowed('assign', selectedTask.value)
+  ) {
+    return;
+  }
 
   ui.isSaving = true;
   const editorGeneration = taskEditorGeneration;
@@ -927,6 +963,11 @@ const closeTaskResultDialog = () => {
 const saveTaskResult = async ({ task, note, taskOutcomeId }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  if (
+    !taskActionAllowed('complete_cancel', currentTask) ||
+    currentTask.archivedAt
+  )
+    return;
   const resultGeneration = taskResultGeneration;
   const resultTaskId = Number(task.id);
   const isCurrentResultDialog = () =>
@@ -1227,7 +1268,7 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     :is-loading="ui.isSaving"
     @confirm="saveTask"
   >
-    <div class="crm-task-dialog-form">
+    <div class="crm-task-dialog-form" :inert="isTaskReadOnly">
       <CrmConflictNotice
         v-if="taskConflict.active"
         :is-reloading="taskConflict.isReloading"

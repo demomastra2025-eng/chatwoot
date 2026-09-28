@@ -32,12 +32,11 @@ import {
 } from 'dashboard/components-next/CRM/crmConversationDealContext';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
-import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  CRM_TASK_MANAGE_PERMISSIONS,
-} from 'dashboard/constants/permissions';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
+import {
+  hasCrmManagePermission,
+  hasCrmViewPermission,
+} from 'dashboard/helper/permissionsHelper';
 import {
   buildMetaAdReferralRows,
   formatMetaAdReferralUrl,
@@ -165,23 +164,73 @@ const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
-const currentAccountPermissions = computed(() => {
-  const currentAccount = currentUser.value?.accounts?.find(
-    account => Number(account.id) === Number(accountId.value)
-  );
-
-  return currentAccount?.permissions || [];
-});
-const canManageDeals = computed(
+const canViewDeals = computed(
   () =>
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
-    hasPermissions(CRM_DEAL_MANAGE_PERMISSIONS, currentAccountPermissions.value)
+    hasCrmViewPermission(currentUser.value, accountId.value, 'deals')
 );
+const canCreateDeals = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS) &&
+    hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      ['create', 'assign'],
+      {
+        ownerId: currentUserId.value,
+      }
+    )
+);
+const canEditDeal = deal =>
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'deals',
+    'update_fields',
+    deal
+  );
+const canAssignDeal = deal =>
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'deals',
+    'assign',
+    deal
+  );
+const canTransitionDeal = deal =>
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'deals',
+    'transition',
+    deal
+  );
 const canManageTasks = computed(
   () =>
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
-    hasPermissions(CRM_TASK_MANAGE_PERMISSIONS, currentAccountPermissions.value)
+    hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'tasks',
+      ['create', 'assign'],
+      { assigneeId: currentUserId.value }
+    )
 );
+const canViewTasks = computed(
+  () =>
+    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+    hasCrmViewPermission(currentUser.value, accountId.value, 'tasks')
+);
+const canMutateTask = (action, task) =>
+  isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS) &&
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'tasks',
+    action,
+    task
+  );
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
 );
@@ -207,7 +256,7 @@ const accordionItems = computed(() => {
     key: dealKey(deal),
   }));
 
-  if (!canManageDeals.value) return items;
+  if (!canCreateDeals.value) return items;
   if (isCreating.value || !items.length) {
     return [{ deal: null, isNew: true, key: NEW_DEAL_KEY }, ...items];
   }
@@ -215,7 +264,7 @@ const accordionItems = computed(() => {
   return items;
 });
 const headerButtons = computed(() =>
-  !canManageDeals.value || ui.error || ui.isInitializing || isCreating.value
+  !canCreateDeals.value || ui.error || ui.isInitializing || isCreating.value
     ? []
     : [
         {
@@ -357,6 +406,17 @@ const buildNewDealForm = () => {
   const resolvedDefaultPipeline = defaultPipeline.value;
   const defaultStage = defaultStageForPipeline(resolvedDefaultPipeline);
   const contactId = currentDealSourceContext.value.contactId || '';
+  const conversationAssignment = {
+    ownerId: props.currentChat?.meta?.assignee?.id || currentUserId.value,
+    teamId: props.currentChat?.meta?.team?.id || '',
+  };
+  const canUseConversationAssignment = hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'deals',
+    ['create', 'assign'],
+    conversationAssignment
+  );
 
   return {
     amount: 0,
@@ -376,11 +436,13 @@ const buildNewDealForm = () => {
       currentDealSourceContext.value.originatingConversationDisplayId,
     originatingConversationId:
       currentDealSourceContext.value.originatingConversationId,
-    ownerId: props.currentChat?.meta?.assignee?.id || currentUserId.value,
+    ownerId: canUseConversationAssignment
+      ? conversationAssignment.ownerId
+      : currentUserId.value,
     pipelineId: resolvedDefaultPipeline?.id || '',
     primaryContactId: contactId || '',
     stageId: defaultStage?.id || '',
-    teamId: props.currentChat?.meta?.team?.id || '',
+    teamId: canUseConversationAssignment ? conversationAssignment.teamId : '',
     title: buildPrefillDealTitle(),
     winProbability: '',
   };
@@ -511,34 +573,41 @@ const initializeSidebar = async () => {
   resetForms();
   isCreating.value = false;
   openDealKeys.value = [];
-  if (!props.currentChat?.id || !canManageDeals.value) return;
+  if (!props.currentChat?.id || !canViewDeals.value) return;
 
   ui.isInitializing = true;
 
   try {
-    if (!agents.value.length) await store.dispatch('agents/get');
-    if (!teams.value.length) await store.dispatch('teams/get');
-
-    const [, , , , , nextCompanyOptions] = await Promise.all([
-      referencesStore.loadPipelines(),
-      referencesStore.loadTaskStatuses(),
-      referencesStore.loadTaskTypes(),
-      referencesStore.loadFieldDefinitions('deal'),
-      referencesStore.loadFieldDefinitions('task'),
-      loadCompanies(),
-    ]);
-    if (!isCurrent()) return;
-
     const nextDeals = await loadDeals(context);
     if (!isCurrent()) return;
-
+    const canMutate = canCreateDeals.value || nextDeals.some(canEditDeal);
+    if (canMutate) {
+      if (!agents.value.length) await store.dispatch('agents/get');
+      if (!teams.value.length) await store.dispatch('teams/get');
+    }
+    const references = [
+      referencesStore.loadPipelines(),
+      referencesStore.loadFieldDefinitions('deal'),
+    ];
+    if (canViewTasks.value) {
+      references.push(
+        referencesStore.loadTaskStatuses(),
+        referencesStore.loadTaskTypes(),
+        referencesStore.loadFieldDefinitions('task')
+      );
+    }
+    const [, nextCompanyOptions] = await Promise.all([
+      Promise.all(references),
+      canMutate ? loadCompanies() : Promise.resolve([]),
+    ]);
+    if (!isCurrent()) return;
     companyOptions.value = nextCompanyOptions;
     deals.value = nextDeals;
-    isCreating.value = deals.value.length === 0;
+    isCreating.value = canCreateDeals.value && deals.value.length === 0;
     setDealForms();
-    openDealKeys.value = [
-      isCreating.value ? NEW_DEAL_KEY : dealKey(deals.value[0]),
-    ];
+    openDealKeys.value = isCreating.value
+      ? [NEW_DEAL_KEY]
+      : deals.value.map(dealKey).slice(0, 1);
   } catch (error) {
     if (isCurrent()) ui.error = error;
   } finally {
@@ -567,7 +636,7 @@ const scrollDealsToTop = async () => {
 };
 
 const startCreateDeal = () => {
-  if (!canManageDeals.value || savingDealKey.value) return;
+  if (!canCreateDeals.value || savingDealKey.value) return;
 
   isCreating.value = true;
   setNewDealForm();
@@ -734,10 +803,41 @@ const reloadDealConflict = (
 };
 
 const saveDeal = async item => {
-  if (!canManageDeals.value || savingDealKey.value) return;
+  if (
+    !(item.isNew ? canCreateDeals.value : canEditDeal(item.deal)) ||
+    savingDealKey.value
+  )
+    return;
 
   const form = forms[item.key];
   if (!form || !form.title.trim() || !form.pipelineId || !form.stageId) return;
+  if (
+    item.isNew &&
+    !hasCrmManagePermission(
+      currentUser.value,
+      accountId.value,
+      'deals',
+      ['create', 'assign'],
+      {
+        ownerId: form.ownerId,
+        teamId: form.teamId,
+      }
+    )
+  )
+    return;
+  if (item.deal?.id) {
+    if (
+      (Number(form.ownerId || 0) !== Number(item.deal.ownerId || 0) ||
+        Number(form.teamId || 0) !== Number(item.deal.teamId || 0)) &&
+      !canAssignDeal(item.deal)
+    )
+      return;
+    if (
+      Number(form.stageId) !== Number(item.deal.stageId) &&
+      !canTransitionDeal(item.deal)
+    )
+      return;
+  }
 
   dealMutationGeneration += 1;
   const mutationOwner = {
@@ -782,6 +882,10 @@ const saveDeal = async item => {
         stage_id: _stageId,
         ...draftUpdatePayload
       } = payload;
+      if (Number(form.ownerId || 0) === Number(item.deal.ownerId || 0))
+        delete draftUpdatePayload.owner_id;
+      if (Number(form.teamId || 0) === Number(item.deal.teamId || 0))
+        delete draftUpdatePayload.team_id;
       const canReuseAppliedUpdate =
         dealConflict.active &&
         dealConflict.hasAuthoritative &&
@@ -858,7 +962,11 @@ const saveDeal = async item => {
 };
 
 watch(
-  () => [currentSidebarContextKey.value, canManageDeals.value],
+  () => [
+    currentSidebarContextKey.value,
+    canViewDeals.value,
+    canCreateDeals.value,
+  ],
   initializeSidebar,
   { immediate: true }
 );
@@ -1030,7 +1138,10 @@ onBeforeUnmount(() => {
             class="border-t border-n-weak px-4 py-3"
           >
             <div v-if="forms[item.key]" class="grid gap-3">
-              <div class="crm-deal-drawer-form">
+              <div
+                class="crm-deal-drawer-form"
+                :inert="!item.isNew && !canEditDeal(item.deal)"
+              >
                 <CrmConflictNotice
                   v-if="dealConflict.active && dealConflictKey === item.key"
                   :is-reloading="dealConflict.isReloading"
@@ -1239,9 +1350,11 @@ onBeforeUnmount(() => {
               </div>
 
               <CrmDealTasksPanel
-                v-if="item.deal?.id"
+                v-if="item.deal?.id && canViewTasks"
                 :assignees="ownerOptions"
+                :can-manage-deals="canTransitionDeal(item.deal)"
                 :can-manage-tasks="canManageTasks"
+                :can-mutate-task="canMutateTask"
                 create-action-icon-only
                 :deal="item.deal"
                 :statuses="taskStatuses"
@@ -1260,7 +1373,7 @@ onBeforeUnmount(() => {
                   @click="cancelCreateDeal"
                 />
                 <Button
-                  v-if="canManageDeals"
+                  v-if="item.isNew ? canCreateDeals : canEditDeal(item.deal)"
                   size="sm"
                   color="blue"
                   :is-loading="savingDealKey === item.key"

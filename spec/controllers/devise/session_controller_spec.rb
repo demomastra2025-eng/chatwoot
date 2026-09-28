@@ -52,6 +52,29 @@ RSpec.describe 'Session', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body['data']['accounts'].first['permissions']).to eq(['agent'])
       end
+
+      it 'keeps an enforced Observer read-only in the login account payload' do
+        AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+        AccessControl::ModeTransition.call(account: account, to: :shadow)
+        AccessControl::ModeTransition.call(account: account, to: :enforced)
+        account_user = user.account_users.find_by!(account: account)
+
+        ClimateControl.modify(ACCESS_ROLE_MUTATIONS_ENABLED: 'true', ACCESS_ROLE_ASSIGNMENTS_ENABLED: 'true') do
+          AccessControl::AccessRoleAssigner.assign(
+            account: account,
+            account_user: account_user,
+            access_role_id: account.access_roles.find_by!(system_key: 'observer').id
+          )
+        end
+
+        post new_user_session_url, params: { email: user.email, password: 'Password1!' }, as: :json
+
+        expect(response).to have_http_status(:success)
+        membership = response.parsed_body.fetch('data').fetch('accounts').find { |item| item['id'] == account.id }
+        expect(membership).to include('access_control_mode' => 'enforced', 'permissions' => ['agent'])
+        expect(membership.fetch('crm_capabilities').fetch('deals')).to eq(['view'])
+        expect(membership.fetch('crm_capabilities').fetch('tasks')).to eq(['view'])
+      end
     end
 
     context 'when it is invalid sso auth token' do

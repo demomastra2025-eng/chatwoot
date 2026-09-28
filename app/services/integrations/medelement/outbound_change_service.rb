@@ -192,6 +192,9 @@ class Integrations::Medelement::OutboundChangeService
 
   # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
   def create_and_confirm(appointment:, contact:, operation:, company_cabinet_code:, desired_starts_at:, desired_ends_at:)
+    Integrations::Medelement::ProviderCommands::CreateService.reject_captain_actor!(
+      actor: actor, actor_descriptor: actor_descriptor
+    )
     command_desired_attributes = snapshot_desired_attributes(operation, appointment)
     command_idempotency_key = idempotency_key(operation, appointment || contact, desired_starts_at, desired_ends_at)
     expected_snapshot = request_snapshot(

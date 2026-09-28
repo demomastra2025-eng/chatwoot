@@ -8,17 +8,22 @@ class Line::SendOnLineService < Base::SendOnChannelService
   def perform_reply
     response = channel.client.push_message(message.conversation.contact_inbox.source_id, build_payload)
 
-    return if response.blank?
+    return :outcome_unknown if response.blank?
 
     parsed_json = JSON.parse(response.body)
 
     if response.code == '200'
-      # If the request is successful, update the message status to delivered
-      Messages::StatusUpdateService.new(message, 'delivered').perform
+      Messages::StatusUpdateService.new(message, 'delivered').perform unless captain_dispatching?
+      :delivered
     else
-      # If the request is not successful, update the message status to failed and save the external error
-      Messages::StatusUpdateService.new(message, 'failed', external_error(parsed_json)).perform
+      error = external_error(parsed_json)
+      Messages::StatusUpdateService.new(message, 'failed', error).perform unless captain_dispatching?
+      [:provider_failed, error]
     end
+  end
+
+  def captain_dispatching?
+    message.sender_type == 'Captain::Assistant' && message.additional_attributes.to_h['captain_delivery_state'] == 'dispatching'
   end
 
   def build_payload

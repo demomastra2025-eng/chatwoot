@@ -43,24 +43,27 @@ vi.mock('dashboard/api/crm/deals', () => ({
   },
 }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
-vi.mock('dashboard/composables/store', async () => {
-  const { ref } = await vi.importActual('vue');
+vi.mock('dashboard/composables/store', () => {
   const getters = {
-    getCurrentAccountId: ref(1),
-    getCurrentUser: ref({ id: 1, accounts: [{ id: 1, permissions: [] }] }),
-    'agents/getAgents': ref([{ id: 1, name: 'Agent' }]),
-    'accounts/isFeatureEnabledonAccount': ref(() => true),
-    'teams/getTeams': ref([]),
+    getCurrentAccountId: { value: 1 },
+    getCurrentUser: {
+      value: {
+        id: 1,
+        accounts: [
+          { id: 1, access_control_mode: 'legacy', permissions: ['agent'] },
+        ],
+      },
+    },
+    'agents/getAgents': { value: [{ id: 1, name: 'Agent' }] },
+    'accounts/isFeatureEnabledonAccount': { value: () => true },
+    'teams/getTeams': { value: [] },
   };
 
   return {
-    useMapGetter: key => getters[key] || ref(null),
+    useMapGetter: key => getters[key] || { value: null },
     useStore: () => store,
   };
 });
-vi.mock('dashboard/helper/permissionsHelper', () => ({
-  hasPermissions: () => true,
-}));
 vi.mock('dashboard/stores/crm/references', () => ({
   useCrmReferencesStore: () => referencesStore,
 }));
@@ -68,6 +71,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
 import CompanyAPI from 'dashboard/api/companies';
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
+import { useMapGetter } from 'dashboard/composables/store';
 import CrmConversationDealsSidebar from './CrmConversationDealsSidebar.vue';
 
 const currentChat = {
@@ -117,12 +121,126 @@ const mountWithDeals = async deals => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  referencesStore.taskStatuses = [];
+  useMapGetter('getCurrentUser').value = {
+    id: 1,
+    accounts: [
+      { id: 1, access_control_mode: 'legacy', permissions: ['agent'] },
+    ],
+  };
   CompanyAPI.get.mockResolvedValue({ data: { payload: [] } });
   CrmDealsAPI.get.mockResolvedValue({ data: { payload: [] } });
   CrmDealsAPI.create.mockReset();
   CrmDealsAPI.show.mockReset();
   CrmDealsAPI.transitionStage.mockReset();
   CrmDealsAPI.update.mockReset();
+});
+
+it('loads Observer deals with read references and keeps the drawer read-only', async () => {
+  useMapGetter('getCurrentUser').value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: ['agent'],
+        crm_capabilities: { deals: ['view'], tasks: ['view'] },
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: { view: 'all' } },
+      },
+    ],
+  };
+  const wrapper = await mountWithDeals([dealFixture()]);
+  const state = wrapper.vm.$.setupState;
+
+  expect(state.ui.error).toBeNull();
+  expect(state.accordionItems).toHaveLength(1);
+  expect(state.canViewDeals).toBe(true);
+  expect(state.canCreateDeals).toBe(false);
+  expect(wrapper.text()).toContain('Original deal');
+  expect(
+    wrapper.find('.crm-deal-drawer-form').attributes('inert')
+  ).toBeDefined();
+  expect(referencesStore.loadPipelines).toHaveBeenCalledOnce();
+  expect(referencesStore.loadTaskStatuses).toHaveBeenCalledOnce();
+  expect(store.dispatch).not.toHaveBeenCalled();
+  expect(CompanyAPI.get).not.toHaveBeenCalled();
+
+  state.forms['deal-1'].title = 'Forbidden change';
+  await state.saveDeal(state.accordionItems[0]);
+  expect(CrmDealsAPI.update).not.toHaveBeenCalled();
+  expect(CrmDealsAPI.create).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+it('renders a deal without fetching or mounting tasks when Tasks view is denied', async () => {
+  useMapGetter('getCurrentUser').value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        permissions: ['agent'],
+        crm_grant_scopes: { deals: { view: 'all' }, tasks: {} },
+      },
+    ],
+  };
+  referencesStore.loadTaskStatuses.mockRejectedValueOnce(
+    new Error('Tasks access denied')
+  );
+  const wrapper = await mountWithDeals([dealFixture()]);
+  const state = wrapper.vm.$.setupState;
+
+  expect(state.ui.error).toBeNull();
+  expect(wrapper.text()).toContain('Original deal');
+  expect(referencesStore.loadPipelines).toHaveBeenCalledOnce();
+  expect(referencesStore.loadTaskStatuses).not.toHaveBeenCalled();
+  expect(referencesStore.loadTaskTypes).not.toHaveBeenCalled();
+  expect(wrapper.findComponent({ name: 'CrmDealTasksPanel' }).exists()).toBe(
+    false
+  );
+  wrapper.unmount();
+});
+
+it('loads task statuses for a completion-only role while keeping task creation hidden', async () => {
+  referencesStore.taskStatuses = [
+    { id: 1, code: 'todo', category: 'open' },
+    { id: 2, code: 'done', category: 'done' },
+  ];
+  useMapGetter('getCurrentUser').value = {
+    id: 1,
+    accounts: [
+      {
+        id: 1,
+        access_control_mode: 'enforced',
+        crm_grant_scopes: {
+          deals: { view: 'all' },
+          tasks: { view: 'all', complete_cancel: 'own' },
+        },
+      },
+    ],
+  };
+
+  const wrapper = await mountWithDeals([dealFixture()]);
+  const panel = wrapper.findComponent({ name: 'CrmDealTasksPanel' });
+  expect(panel.exists()).toBe(true);
+  expect(panel.props('statuses')).toEqual(referencesStore.taskStatuses);
+  expect(panel.props('canManageTasks')).toBe(false);
+  expect(
+    panel.props('canMutateTask')('complete_cancel', {
+      id: 7,
+      assigneeId: 1,
+    })
+  ).toBe(true);
+  expect(
+    panel.props('canMutateTask')('complete_cancel', {
+      id: 8,
+      assigneeId: 2,
+    })
+  ).toBe(false);
+  expect(referencesStore.loadTaskStatuses).toHaveBeenCalledOnce();
+  expect(store.dispatch).not.toHaveBeenCalled();
+  expect(CompanyAPI.get).not.toHaveBeenCalled();
+  wrapper.unmount();
 });
 
 it('shows a retryable error instead of a create form when deal lookup fails', async () => {

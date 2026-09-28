@@ -10,11 +10,14 @@ class Reminders::SyncMaterializedEnrollmentReminderService
   end
 
   def perform
-    @lock ? reminder.with_lock { sync_definition! } : sync_definition!
-
-    if enrollment.remindable.present?
-      Reminders::SyncRemindableService.new(remindable: enrollment.remindable, allow_processing: true)
-                                      .perform_for(reminder, lock: @lock, raise_errors: true)
+    if @lock
+      reminder.with_lock do
+        sync_definition!
+        sync_remindable!
+      end
+    else
+      sync_definition!
+      sync_remindable!
     end
     reminder.reload
   end
@@ -32,5 +35,16 @@ class Reminders::SyncMaterializedEnrollmentReminderService
     ).call
     reminder.assign_attributes(attributes)
     reminder.save! if reminder.changed?
+  end
+
+  def sync_remindable!
+    source = enrollment.remindable
+    return if source.blank?
+
+    # Reconciliation may already hold Enrollment and Reminder in its transaction.
+    # Never acquire Contact behind Reminder; a concurrent owner transfer holds Contact first.
+    source = source.account.scheduling_appointments.find(source.id) if source.is_a?(Scheduling::Appointment)
+    Reminders::SyncRemindableService.new(remindable: source, allow_processing: true)
+                                    .perform_for(reminder, lock: false, raise_errors: true)
   end
 end

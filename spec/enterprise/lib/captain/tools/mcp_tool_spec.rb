@@ -7,6 +7,8 @@ RSpec.describe Captain::Tools::McpTool, type: :model do
   let(:tool_definition) do
     {
       id: 'mcp_lookup_order',
+      risk_level: 'low',
+      idempotent: true,
       description: 'Lookup order in MCP',
       mcp_tool_name: 'lookup_order',
       input_schema: {
@@ -33,5 +35,21 @@ RSpec.describe Captain::Tools::McpTool, type: :model do
       tool_name: 'lookup_order',
       params: { order_id: 'ORD-1' }
     )
+  end
+
+  it 'refuses an unclassified MCP action before egress' do
+    tool_definition.delete(:risk_level)
+    allow(Captain::Mcp::ExecutionService).to receive(:new)
+
+    expect(tool.perform(tool_context, order_id: 'ORD-1')).to include('provider idempotency and reconciliation contract')
+    expect(Captain::Mcp::ExecutionService).not_to have_received(:new)
+  end
+
+  it 'refuses contradictory non-idempotent metadata even if risk is labelled low' do
+    tool_definition[:idempotent] = false
+    allow(Captain::Mcp::ExecutionService).to receive(:new)
+
+    expect(tool.perform(tool_context, order_id: 'ORD-1')).to include('provider idempotency and reconciliation contract')
+    expect(Captain::Mcp::ExecutionService).not_to have_received(:new)
   end
 end

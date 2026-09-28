@@ -46,6 +46,26 @@ RSpec.context 'with valid schedule.yml' do
     )
   end
 
+  it 'replays persisted Captain Cloud deferrals on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+    expect(schedule['captain_replay_deferred_cloud_deliveries_job']).to include(
+      'cron' => '*/1 * * * *',
+      'class' => 'Captain::Conversation::ReplayDeferredCloudDeliveriesJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+  end
+
+  it 'replays known Captain provider receipts on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+    expect(schedule['captain_replay_known_delivery_receipts_job']).to include(
+      'cron' => '*/1 * * * *',
+      'class' => 'Captain::Conversation::ReplayKnownDeliveryReceiptsJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+  end
+
   it 'syncs Weixin gateway channels every minute' do
     schedule = YAML.safe_load(file.read)
 

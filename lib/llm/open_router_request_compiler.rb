@@ -74,6 +74,9 @@ class Llm::OpenRouterRequestCompiler
     params[:provider] = provider_params if provider_params.present?
     params[:plugins] = plugins if plugins.present?
     apply_server_tools!(params, server_tools)
+    if @feature.present? || request_value(:feature_key).present? || request_value(:feature).present?
+      Llm::CaptainModelPolicy.ensure_allowed!(feature: feature_key, model: @model, fallback_models: models)
+    end
     metadata = compiled_metadata(
       profile: profile,
       feature_policy: feature_policy,
@@ -138,11 +141,21 @@ class Llm::OpenRouterRequestCompiler
       params.delete('service_tier')
       params.delete(:parallel_tool_calls)
       params.delete('parallel_tool_calls')
+      # RubyLLM sends the selected model separately. Raw params must not replace it.
+      params.delete(:model)
+      params.delete('model')
+      params.delete(:models)
+      params.delete('models')
     end
   end
 
   def compiled_models(profile)
-    request_models.presence || profile.models
+    requested = request_models
+    if !profile.model_fallbacks_allowed? && requested.any? { |candidate| candidate != @model }
+      raise ArgumentError, 'Cross-model fallbacks are disabled for this OpenRouter request'
+    end
+
+    requested.presence || profile.models
   end
 
   def request_models
@@ -342,6 +355,7 @@ class Llm::OpenRouterRequestCompiler
       openrouter_provider_sort: provider_sort(provider_params),
       openrouter_preferred_max_latency: provider_params[:preferred_max_latency],
       openrouter_preferred_min_throughput: provider_params[:preferred_min_throughput],
+      openrouter_allow_model_fallbacks: profile.model_fallbacks_allowed?,
       openrouter_allow_fallbacks: provider_params[:allow_fallbacks],
       openrouter_require_parameters: provider_params[:require_parameters],
       openrouter_data_collection: provider_params[:data_collection],

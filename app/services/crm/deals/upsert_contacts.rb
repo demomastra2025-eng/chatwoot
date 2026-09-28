@@ -37,6 +37,7 @@ module Crm::Deals::UpsertContacts
       ::Crm::Tasks::UpsertService.new(
         account: account,
         actor: actor,
+        inherited_team_sync: true,
         catalogs_provisioned: task_catalogs_provisioned?,
         params: { lock_version: task.lock_version },
         task: task

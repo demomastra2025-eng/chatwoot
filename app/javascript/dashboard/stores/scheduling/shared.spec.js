@@ -23,6 +23,23 @@ describe('scheduling shared helpers', () => {
     expect(formatSchedulingErrorMessage(error, t)).toBe('Нерабочее время');
   });
 
+  it('preserves the actionable server text for an already open old form', () => {
+    // Old shared.js blob at 2a50c928 uses the same response.error fallback.
+    const message =
+      'Эта версия формы записи устарела. Денежные поля не сохранены. ' +
+      'Скопируйте нужные неденежные данные до ручного обновления вкладки ' +
+      'и внесите их заново без аванса и ручной цены.';
+    const error = {
+      response: {
+        data: { code: 'RETIRED_FINANCE_FIELDS', error: message },
+        status: 422,
+      },
+    };
+    const t = key => key;
+
+    expect(formatSchedulingErrorMessage(error, t)).toBe(message);
+  });
+
   it.each([
     [
       'MEDELEMENT_SERVICE_REQUIRED',

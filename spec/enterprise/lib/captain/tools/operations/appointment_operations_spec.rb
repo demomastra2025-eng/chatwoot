@@ -63,17 +63,70 @@ RSpec.describe Captain::Tools::Operations::AppointmentOperations do
     )
   end
 
-  it 'preserves customer-agent create semantics without a dashboard actor' do
+  it 'rejects customer-agent create without a dashboard actor, even with a claimed agent scope' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
     create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
-    customer_operation = described_class.new(assistant: assistant, conversation: conversation)
+    args = { resource_id: resource.id, starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601, duration_min: 30 }
 
-    expect(
+    [nil, assistant].each do |untrusted_actor|
+      customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: untrusted_actor,
+                                               execution_scope: Captain::ToolAccess::SCOPE_AGENT)
+      expect { customer_operation.create_appointment(**args) }.to raise_error(Pundit::NotAuthorizedError)
+    end
+    expect(account.scheduling_appointments.count).to eq(0)
+  end
+
+  it 'does not let a dashboard user bypass their appointment role with a claimed agent scope' do
+    outsider = create(:user)
+    customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: outsider,
+                                             execution_scope: Captain::ToolAccess::SCOPE_AGENT)
+    expect do
+      customer_operation.create_appointment(resource_id: create(:scheduling_resource, account: account).id,
+                                            starts_at: 1.day.from_now.iso8601, duration_min: 30)
+    end.to raise_error(Pundit::NotAuthorizedError)
+    expect(account.scheduling_appointments.count).to eq(0)
+  end
+
+  it 'does not invoke the upsert for an empty update with no actor or with an employee' do
+    appointment = create(:scheduling_appointment, account: account, conversation: conversation, contact: conversation.contact)
+    expect(Scheduling::Appointments::UpsertService).not_to receive(:new)
+
+    [nil, assistant].each do |untrusted_actor|
+      untrusted_operation = described_class.new(assistant: assistant, conversation: conversation, actor: untrusted_actor)
+      expect { untrusted_operation.update_current_appointment(appointment_id: appointment.id) }.to raise_error(Pundit::NotAuthorizedError)
+    end
+
+    expect { operation.update_current_appointment(appointment_id: appointment.id) }.to raise_error(ArgumentError, /No appointment fields/)
+  end
+
+  it 'does not grant a legacy assistant actor local appointment creation' do
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: assistant)
+
+    expect do
       customer_operation.create_appointment(
         resource_id: resource.id,
         starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
         duration_min: 30
       )
-    ).to be_persisted
+    end.to raise_error(Pundit::NotAuthorizedError)
+    expect(account.scheduling_appointments.count).to eq(0)
+  end
+
+  it 'refuses provider-backed AI appointments before invoking the upsert or provider I/O' do
+    resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => 'specialist-1' }
+    )
+    customer_operation = described_class.new(assistant: assistant, conversation: conversation, actor: assistant)
+    allow(Scheduling::Appointments::UpsertService).to receive(:new)
+
+    expect do
+      customer_operation.create_appointment(resource_id: resource.id, starts_at: Time.current.iso8601, duration_min: 30)
+    end.to raise_error(Pundit::NotAuthorizedError)
+    expect(Scheduling::Appointments::UpsertService).not_to have_received(:new)
+    expect(account.scheduling_appointments.count).to eq(0)
   end
 end

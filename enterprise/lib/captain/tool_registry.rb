@@ -850,8 +850,7 @@ class Captain::ToolRegistry
           description: 'Get details of a CRM task',
           group_name: 'CRM Tasks',
           icon: 'checklist',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::GetTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
@@ -863,8 +862,7 @@ class Captain::ToolRegistry
           description: 'Search CRM tasks by title, status, assignee, deal, type, outcome, or priority',
           group_name: 'CRM Tasks',
           icon: 'search',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::SearchTasksService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
@@ -876,8 +874,7 @@ class Captain::ToolRegistry
           description: 'List active allowed CRM custom fields for task custom_attributes with key, label, type, required flag, and select options',
           group_name: 'CRM Tasks',
           icon: 'custom-field',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::ListTaskCustomFieldsService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
@@ -890,8 +887,7 @@ class Captain::ToolRegistry
           description: 'Get the timeline for a CRM task',
           group_name: 'CRM Tasks',
           icon: 'history',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::GetTaskTimelineService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_view crm_task_manage],
@@ -903,8 +899,7 @@ class Captain::ToolRegistry
           description: 'Create a CRM task from the current context or explicit account deal/conversation/team/assignee IDs',
           group_name: 'CRM Tasks',
           icon: 'checklist',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::CreateTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
@@ -1079,8 +1074,7 @@ class Captain::ToolRegistry
           description: 'Update a CRM task by task_id or the task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'checklist-edit',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::UpdateTaskService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
@@ -1092,8 +1086,7 @@ class Captain::ToolRegistry
           description: 'Change the status of the CRM task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'shuffle',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Account::ChangeTaskStatusService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],
@@ -1138,7 +1131,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_appointments',
           title: 'Search Appointments',
-          description: 'Search appointments by client, status, payment status, contact, or specialist',
+          description: 'Search appointments by client, status, contact, or specialist',
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1777,18 +1770,6 @@ class Captain::ToolRegistry
           risk_level: 'high',
           requires_confirmation: true
         ),
-        definition(
-          id: 'add_appointment_payment',
-          title: 'Add Appointment Payment',
-          description: 'Add a payment to the appointment linked to the current conversation',
-          group_name: 'Scheduling',
-          icon: 'credit-card',
-          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Account::AddAppointmentPaymentService,
-          required_features: %w[scheduling scheduling_finance],
-          risk_level: 'high',
-          requires_confirmation: true
-        ),
 
         definition(
           id: 'list_macros',
@@ -2244,6 +2225,16 @@ class Captain::ToolRegistry
 
     def tools_for_scope(scope_name)
       definitions.select { |definition| definition.supports_scope?(scope_name) }.map(&:to_h)
+    end
+
+    # Runtime grants for customer-facing Voice callbacks. The broader agent
+    # registry remains available for legacy prompt validation and admin editing;
+    # it is not an authorization boundary for customer tool execution.
+    def customer_agent_tools
+      definitions.select do |definition|
+        definition.supports_scope?(Captain::ToolAccess::SCOPE_AGENT) &&
+          Captain::CustomerToolExecutionScope.allowed_tool_name?(definition.id)
+      end.map(&:to_h)
     end
 
     def resolve_agent_tool_class(tool_id)

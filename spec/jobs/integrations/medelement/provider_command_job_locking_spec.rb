@@ -22,10 +22,10 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
     )
   end
 
-  it 'uses a queue that legacy worker images do not poll' do
-    expect(described_class.queue_name).to eq('medelement_provider_commands')
-    expect(Integrations::Medelement::ProviderCommandConfirmationJob.queue_name).to eq('medelement_provider_commands')
-    expect(Integrations::Medelement::ProviderCommandReconciliationJob.queue_name).to eq('medelement_provider_commands')
+  it 'keeps the legacy command queue available when an old receipt has no v2 snapshot' do
+    expect(described_class.new(nil).queue_name).to eq('medelement_provider_commands')
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob.new(nil).queue_name).to eq('medelement_provider_commands')
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob.new(nil).queue_name).to eq('medelement_provider_commands')
   end
 
   it 'serializes patient identity across different appointment resources' do

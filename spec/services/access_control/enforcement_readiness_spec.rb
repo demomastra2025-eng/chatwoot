@@ -26,6 +26,24 @@ RSpec.describe AccessControl::EnforcementReadiness do
       expect(result.system_role_mismatches).to be_empty
     end
 
+    it 'does not treat preserved retired finance grants as active preset mismatches' do
+      account = create(:account)
+      role = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key.fetch('administrator')
+      create(:account_user, account: account, role: :administrator)
+      now = Time.current
+      historical_grant = {
+        account_id: account.id, access_role_id: role.id, resource: 'appointments',
+        capability: 'view_finance', access_scope: 'all', created_at: now, updated_at: now
+      }
+      AccessRoleGrant.insert_all!([historical_grant]) # rubocop:disable Rails/SkipsModelValidations
+
+      result = described_class.call(account: account)
+
+      expect(result).to be_ready
+      expect(result.system_role_mismatches).to be_empty
+      expect(role.grants.where(resource: 'appointments', capability: 'view_finance')).to exist
+    end
+
     it 'accepts an assigned legacy Automation manager' do
       account = create(:account)
       custom_role = create(:custom_role, account: account, permissions: %w[automation_manage])
@@ -36,6 +54,42 @@ RSpec.describe AccessControl::EnforcementReadiness do
 
       expect(result).to be_ready
       expect(result.compatibility_counts).to eq('matched' => 1)
+    end
+
+    it 'accepts explicit admin Telephony denial and non-admin opt-in without weakening other checks' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+      create(:account_user, account: account, role: :administrator)
+      create(:account_user, account: account, role: :agent)
+      admin = roles.fetch('administrator')
+      employee = roles.fetch('employee')
+      admin.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports').update!(access_scope: 'none')
+      employee.grants.create!(account: account, resource: 'telephony_calls', capability: 'view', access_scope: 'own')
+      employee.grants.create!(account: account, resource: 'telephony_calls', capability: 'view_reports', access_scope: 'team')
+
+      result = described_class.call(account: account)
+      expect(result).to be_ready
+      expect(result.compatibility_counts).to eq('matched' => 2)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+      expect(admin.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports').access_scope).to eq('none')
+
+      employee.grants.find_by!(resource: 'contacts', capability: 'view').update!(access_scope: 'team')
+      expect(described_class.call(account: account)).not_to be_ready
+    end
+
+    it 'blocks enforcement if an admin Telephony capability is absent or narrowed without explicit denial' do
+      account = create(:account)
+      admin = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key.fetch('administrator')
+      create(:account_user, account: account, role: :administrator)
+      grant = admin.grants.find_by!(resource: 'telephony_calls', capability: 'view_reports')
+      grant.destroy!
+      expect(described_class.call(account: account).system_role_mismatches).to include('administrator')
+
+      grant = admin.grants.create!(account: account, resource: 'telephony_calls', capability: 'view_reports', access_scope: 'own')
+      expect(described_class.call(account: account).system_role_mismatches).to include('administrator')
+      grant.update!(access_scope: 'none')
+      expect(described_class.call(account: account)).to be_ready
     end
 
     it 'rejects a modified system preset even when the assigned user still points to it' do

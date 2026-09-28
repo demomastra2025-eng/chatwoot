@@ -415,6 +415,23 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(message.reload.content_attributes['external_error']).to be_nil
         expect(message.reload.content_attributes['template_params']).to eq('name' => 'approved_template')
       end
+
+      it 'does not mark a Captain unknown delivery sent or enqueue another attempt' do
+        assistant = create(:captain_assistant, account: account)
+        reply = create(:message, account: account, inbox: message.conversation.inbox, conversation: message.conversation,
+                                 sender: assistant, message_type: :outgoing, status: :failed,
+                                 additional_attributes: { captain_delivery_state: 'outcome_unknown' })
+        clear_enqueued_jobs
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/conversations/#{reply.conversation.display_id}/messages/#{reply.id}/retry",
+               headers: agent.create_new_auth_token, as: :json
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(reply.reload.status).to eq('failed')
+        expect(reply.additional_attributes['captain_delivery_state']).to eq('outcome_unknown')
+      end
     end
 
     context 'when the message id is invalid' do
@@ -492,6 +509,20 @@ RSpec.describe 'Conversation Messages API', type: :request do
           expect(response).to have_http_status(:success)
           expect(message.reload.status).to eq('failed')
           expect(message.reload.external_error).to eq('err123')
+        end
+
+        it 'rejects a successful status for an unknown Captain delivery' do
+          assistant = create(:captain_assistant, account: account)
+          reply = create(:message, account: account, inbox: api_inbox, conversation: conversation,
+                                   sender: assistant, message_type: :outgoing, status: :failed,
+                                   additional_attributes: { captain_delivery_state: 'outcome_unknown' })
+
+          patch api_v1_account_conversation_message_url(
+            account_id: account.id, conversation_id: conversation.display_id, id: reply.id
+          ), params: { status: 'delivered' }, headers: agent.create_new_auth_token, as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(reply.reload.status).to eq('failed')
         end
       end
 

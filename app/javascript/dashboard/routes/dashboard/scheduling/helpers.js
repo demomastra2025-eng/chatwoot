@@ -221,6 +221,127 @@ export const toDate = value => {
   }
 };
 
+// A wall clock is not a JS Date: the browser may skip an hour that exists in
+// the Workspace (e.g. 02:30 in Almaty while Los Angeles springs forward).
+const wallFormatters = new Map();
+export const workspaceWallTime = (value, timezone = 'UTC') => {
+  const date = toDate(value);
+  if (Number.isNaN(date.getTime())) return null;
+  let formatter = wallFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    wallFormatters.set(timezone, formatter);
+  }
+  const parts = Object.fromEntries(
+    formatter.formatToParts(date).map(({ type, value: part }) => [type, part])
+  );
+  const year = Number(parts.year);
+  const month = Number(parts.month);
+  const day = Number(parts.day);
+  const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  return {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second: Number(parts.second),
+    millisecond: date.getUTCMilliseconds(),
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+    minuteOfDay: hour * 60 + minute,
+  };
+};
+
+export const clipWorkspaceIntervalToDay = (startsAt, endsAt, day, timezone) => {
+  const start = workspaceWallTime(startsAt, timezone);
+  const end = workspaceWallTime(endsAt, timezone);
+  if (!start || !end) return null;
+  const dateKey = format(day, 'yyyy-MM-dd');
+  let startMinute = 1440;
+  let endMinute = 0;
+  if (start.dateKey < dateKey) startMinute = 0;
+  if (start.dateKey === dateKey) startMinute = start.minuteOfDay;
+  if (end.dateKey > dateKey) endMinute = 1440;
+  if (end.dateKey === dateKey) endMinute = end.minuteOfDay;
+  return endMinute > startMinute ? { startMinute, endMinute } : null;
+};
+
+export const calendarWallToWorkspaceInstant = (
+  date,
+  timezone,
+  dayOffset = 0,
+  wallTime = null
+) => {
+  const day = new Date(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate() + dayOffset)
+  );
+  const pad = (value, length = 2) => String(value).padStart(length, '0');
+  const wall = `${day.getUTCFullYear()}-${pad(day.getUTCMonth() + 1)}-${pad(day.getUTCDate())}T${pad(wallTime?.hour ?? date.getHours())}:${pad(wallTime?.minute ?? date.getMinutes())}:${pad(wallTime?.second ?? date.getSeconds())}.${pad(wallTime?.millisecond ?? date.getMilliseconds(), 3)}`;
+  return zonedTimeToUtc(wall, timezone);
+};
+
+const workspaceOffsetMillis = (value, timezone) => {
+  const instant = toDate(value);
+  const wall = workspaceWallTime(instant, timezone);
+  return (
+    Date.UTC(
+      wall.year,
+      wall.month - 1,
+      wall.day,
+      wall.hour,
+      wall.minute,
+      wall.second,
+      wall.millisecond
+    ) - instant.getTime()
+  );
+};
+
+// VueCal has one Date per wall minute and cannot distinguish the two folds.
+// Fail closed for writes on a Workspace clock-change day, but still render
+// existing appointments using their original UTC instants.
+export const isWorkspaceClockChangeDay = (day, timezone) => {
+  const date = toDate(day);
+  const before = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() - 1,
+    12
+  );
+  const after = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12
+  );
+  return (
+    workspaceOffsetMillis(
+      calendarWallToWorkspaceInstant(before, timezone),
+      timezone
+    ) !==
+    workspaceOffsetMillis(
+      calendarWallToWorkspaceInstant(after, timezone),
+      timezone
+    )
+  );
+};
+
+// Date-only pickers emit browser-local dates; the calendar stores instants in the Workspace timezone.
+export const toWorkspaceCalendarDate = (anchorDate, timezone) =>
+  utcToZonedTime(toDate(anchorDate), timezone);
+
+export const toWorkspaceAnchorDate = (localDate, timezone) =>
+  zonedTimeToUtc(localDate, timezone);
+
 export const formatDateKey = value => format(toDate(value), 'yyyy-MM-dd');
 
 export const collapseLegacyWorkIntervals = ({
@@ -398,8 +519,10 @@ export const formatCalendarTitle = (view, anchorDate, locale, timezone) => {
   )}`;
 };
 
-export const buildDayListForView = (view, anchorDate) => {
-  const { from, to } = buildCalendarRange(view, anchorDate);
+export const buildDayListForView = (view, anchorDate, timezone) => {
+  const range = buildCalendarRange(view, anchorDate, timezone);
+  const from = timezone ? utcToZonedTime(range.from, timezone) : range.from;
+  const to = timezone ? utcToZonedTime(range.to, timezone) : range.to;
   const days = [];
 
   let cursor = startOfDay(from);

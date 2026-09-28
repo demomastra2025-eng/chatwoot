@@ -165,6 +165,7 @@ class Llm::ChatRequestRunner
   def ask_chat(chat, content)
     kwargs = { model: effective_model_name(chat) }
     kwargs[:account] = account if account.present?
+    kwargs[:feature] = feature if feature.present?
 
     Llm::ChatClient.ask(chat, content, **kwargs)
   end

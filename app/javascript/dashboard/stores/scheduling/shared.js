@@ -11,7 +11,7 @@ const ERROR_KEY_BY_CODE = {
   BLOCKED_BY_VACATION: 'SCHEDULING.ERRORS.BLOCKED_BY_VACATION',
   DUPLICATE_EXTERNAL_REF: 'SCHEDULING.ERRORS.DUPLICATE_EXTERNAL_REF',
   DUPLICATE_IDEMPOTENCY_KEY: 'SCHEDULING.ERRORS.DUPLICATE_IDEMPOTENCY_KEY',
-  EXPENSE_NOT_FOUND: 'SCHEDULING.ERRORS.EXPENSE_NOT_FOUND',
+
   INVALID_IIN: 'SCHEDULING.ERRORS.INVALID_IIN',
   MEDELEMENT_SERVICE_REQUIRED: 'SCHEDULING.ERRORS.MEDELEMENT_SERVICE_REQUIRED',
   MEDELEMENT_SERVICE_UNMAPPED: 'SCHEDULING.ERRORS.MEDELEMENT_SERVICE_UNMAPPED',
@@ -34,45 +34,32 @@ const ERROR_KEY_BY_MESSAGE = {
     'SCHEDULING.ERRORS.SINGLE_DAY_REQUIRED',
   'Appointment overlaps blocked time': 'SCHEDULING.ERRORS.BLOCKED_BY_VACATION',
   'Appointment overlaps resource break': 'SCHEDULING.ERRORS.BLOCKED_BY_BREAK',
-  'Cancelled payments cannot be updated':
-    'SCHEDULING.ERRORS.CANCELLED_PAYMENTS_LOCKED',
-  "Cannot cancel payment after the resource's expense has been paid":
-    'SCHEDULING.ERRORS.CANNOT_CANCEL_PAID_EXPENSE',
+
   'End date must be greater than start date':
     'SCHEDULING.ERRORS.END_BEFORE_START',
   'Invalid IIN': 'SCHEDULING.ERRORS.INVALID_IIN',
   'No working rules configured for this day':
     'SCHEDULING.ERRORS.NO_WORKING_RULES',
-  'Payment amount exceeds remaining balance':
-    'SCHEDULING.ERRORS.PAYMENT_AMOUNT_EXCEEDS_BALANCE',
-  'Payment amount must be greater than 0':
-    'SCHEDULING.ERRORS.PAYMENT_AMOUNT_REQUIRED',
+
   'Specialist with appointments cannot be deleted':
     'SCHEDULING.ERRORS.RESOURCE_HAS_APPOINTMENTS',
   'Specialist with active appointments cannot be deleted':
     'SCHEDULING.ERRORS.RESOURCE_HAS_APPOINTMENTS',
   'Specialist is not available for scheduling':
     'SCHEDULING.ERRORS.RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING',
-  'Scheduling finance is not enabled for this account':
-    'SCHEDULING.ERRORS.FINANCE_DISABLED',
+
   'Scheduling is not enabled for this account':
     'SCHEDULING.ERRORS.FEATURE_DISABLED',
   'Service is not available for the selected resource':
     'SCHEDULING.ERRORS.SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
-  'Set service_amount before adding payment':
-    'SCHEDULING.ERRORS.SET_SERVICE_AMOUNT_FIRST',
+
   'Slot is already occupied': 'SCHEDULING.ERRORS.SLOT_CONFLICT',
-  'Total received amount cannot exceed service_amount':
-    'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
-  'total received amount cannot exceed service_amount':
-    'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
+
   'client_name is required': 'SCHEDULING.ERRORS.CLIENT_NAME_REQUIRED',
   'resource_id is required for service prices':
     'SCHEDULING.ERRORS.RESOURCE_REQUIRED_FOR_SERVICE_PRICE',
-  'service_amount is required and must be greater than 0':
-    'SCHEDULING.ERRORS.SERVICE_AMOUNT_REQUIRED',
-  'settlement_amount cannot be less than the total of recorded payments':
-    'SCHEDULING.ERRORS.SETTLEMENT_BELOW_RECORDED_PAYMENTS',
+  'Historical finance data prevents appointment deletion':
+    'SCHEDULING.ERRORS.HISTORICAL_DATA_RETAINED',
 };
 
 const ERROR_FIELD_KEY_BY_NAME = {
@@ -80,11 +67,10 @@ const ERROR_FIELD_KEY_BY_NAME = {
   break_end_minute: 'SCHEDULING.EXCEPTIONS.BREAK_END',
   break_start_minute: 'SCHEDULING.EXCEPTIONS.BREAK_START',
   client_name: 'SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME',
-  compensation_percent: 'SCHEDULING.COMPENSATION.percent_value',
-  compensation_value: 'SCHEDULING.COMPENSATION.fixed_value',
+
   duration_min: 'SCHEDULING.SERVICES.DURATION',
   ends_at: 'SCHEDULING.APPOINTMENT_FORM.ENDS_AT',
-  prepaid_amount: 'SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT',
+
   price: 'SCHEDULING.SERVICES.PRICE',
   resource_id: 'SCHEDULING.APPOINTMENT_FORM.RESOURCE',
   service_amount: 'SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT',
@@ -122,13 +108,6 @@ const resolveSchedulingErrorPayload = error => {
   return extractSchedulingError(error);
 };
 
-const resolveMissingFieldLabels = payload => {
-  return (payload.details?.missingFields || [])
-    .map(field => field?.label)
-    .filter(Boolean)
-    .join(', ');
-};
-
 const translateOrFallback = (t, key, fallback, params = {}) => {
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   const translated = t(key, params);
@@ -154,16 +133,6 @@ const resolveFieldLabel = (field, t) => {
 
 export const formatSchedulingErrorMessage = (error, t) => {
   const payload = resolveSchedulingErrorPayload(error);
-  const missingFields = resolveMissingFieldLabels(payload);
-
-  if (payload.code === 'APPOINTMENT_PAYMENT_REQUIRES_FIELDS') {
-    return translateOrFallback(
-      t,
-      'SCHEDULING.ERRORS.APPOINTMENT_PAYMENT_REQUIRES_FIELDS',
-      payload.message,
-      { fields: missingFields }
-    );
-  }
 
   const directKey =
     ERROR_KEY_BY_CODE[payload.code] || ERROR_KEY_BY_MESSAGE[payload.message];

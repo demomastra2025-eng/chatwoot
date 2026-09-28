@@ -44,9 +44,6 @@ RSpec.describe Concerns::CaptainToolsHelpers, type: :concern do
 
   describe '.resolve_tool_class' do
     it 'resolves valid tool classes' do
-      # Mock the constantize to return a class
-      stub_const('Captain::Tools::AddContactNoteTool', Class.new)
-
       result = test_class.resolve_tool_class('add_contact_note')
       expect(result).to eq(Captain::Tools::AddContactNoteTool)
     end
@@ -57,8 +54,6 @@ RSpec.describe Concerns::CaptainToolsHelpers, type: :concern do
     end
 
     it 'converts snake_case to PascalCase' do
-      stub_const('Captain::Tools::AddPrivateNoteTool', Class.new)
-
       result = test_class.resolve_tool_class('add_private_note')
       expect(result).to eq(Captain::Tools::AddPrivateNoteTool)
     end

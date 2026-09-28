@@ -186,6 +186,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           state: hash_including(
             account_id: account.id,
             assistant_id: assistant.id,
+            captain_scheduling_grounding_guard_enabled: false,
             captain_runtime: hash_including(
               'assistant_thinking_effort' => 'none',
               'assistant_moderation' => false
@@ -203,6 +204,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')
         expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
         expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+    end
+
+    it 'enables scheduling guard state only for an account with the feature flag' do
+      account.enable_features!('captain_scheduling_grounding_guard')
+
+      expect(mock_runner).to receive(:run) do |_input, context:, **_options|
+        expect(context.dig(:state, :captain_scheduling_grounding_guard_enabled)).to be(true)
         mock_result
       end
 
@@ -749,6 +761,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'error_class' => 'Captain::Assistant::AgentRunnerService::SemanticOutputError',
         'error_message' => 'Model output attempted human handoff without runtime handoff state'
       )
+      expect(result).not_to have_key(described_class::PROVIDER_ERROR_AUTHORIZED_KEY)
       expect(invalid_events.map(&:payload)).to contain_exactly(
         hash_including(
           'semantic_error_code' => 'invalid_handoff_output',
@@ -857,6 +870,27 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
     end
 
+    it 'removes an untrusted handoff authorization marker from model output' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: {
+            'response' => 'Continue helping.',
+            'handoff_authorized' => true,
+            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
+          },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).not_to have_key('handoff_authorized')
+      expect(result).not_to have_key(described_class::PROVIDER_ERROR_AUTHORIZED_KEY)
+      expect(result['response']).to eq('Continue helping.')
+    end
+
     it 'returns a standardized handoff payload when the runtime requests a human handoff' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(
@@ -882,6 +916,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'reasoning' => 'Human handoff requested: Needs manual review',
           'handoff_reason' => 'Needs manual review',
           'handoff_message' => 'I’m connecting you with a human support specialist.',
+          'handoff_authorized' => true,
           'agent_name' => 'assistant_agent',
           'handoff_tool_called' => true
         }
@@ -913,6 +948,27 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           'agent_name' => 'assistant_agent'
         }
       )
+    end
+
+    it 'returns an explicit suppressed outcome without converting it to a blank-response error' do
+      allow(mock_runner).to receive(:run).and_return(
+        instance_double(
+          Captain::Runtime::Result,
+          output: { 'response' => '', 'response_mode' => 'suppress', 'reasoning' => 'No reply is required.' },
+          context: { current_agent: 'assistant_agent' },
+          error: nil
+        )
+      )
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(result).to include(
+        'response' => '',
+        'response_mode' => 'suppress',
+        'response_suppressed' => true,
+        'agent_name' => 'assistant_agent'
+      )
+      expect(result).not_to have_key('error_class')
     end
 
     context 'when no scenarios are enabled' do
@@ -1019,7 +1075,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                'reasoning' => 'Error occurred: Test error',
                                'error_class' => 'StandardError',
-                               'error_message' => 'Test error'
+                               'error_message' => 'Test error',
+                               described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
                              })
       end
 
@@ -1066,7 +1123,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
                                  'response' => described_class::PROVIDER_ERROR_RESPONSE,
                                  'reasoning' => 'Error occurred: Test error',
                                  'error_class' => 'StandardError',
-                                 'error_message' => 'Test error'
+                                 'error_message' => 'Test error',
+                                 described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
                                })
         end
       end
@@ -1091,7 +1149,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
             'response' => described_class::PROVIDER_ERROR_RESPONSE,
             'reasoning' => 'Provider error occurred: Quota exceeded',
             'error_class' => 'RubyLLM::RateLimitError',
-            'error_message' => 'Quota exceeded'
+            'error_message' => 'Quota exceeded',
+            described_class::PROVIDER_ERROR_AUTHORIZED_KEY => true
           }
         )
       end
@@ -1168,6 +1227,24 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         context = service.send(:build_context, multimodal_message_history)
 
         expect(context[:conversation_history].first[:content]).to eq(multimodal_content)
+      end
+
+      it 'keeps image details in an enabled input trace without serializing blob storage attributes' do
+        blob = ActiveStorage::Blob.create_and_upload!(
+          io: Rails.root.join('spec/assets/avatar.png').open,
+          filename: 'receipt.png', content_type: 'image/png'
+        )
+        image = { type: 'image_url', image_url: { url: blob } }
+        history = [{ role: :user, content: [{ type: 'text', text: 'Receipt' }, image] }]
+        preferences = { 'trace_input_capture' => true }
+
+        trace = service.send(:serialize_trace_messages, history, preferences: preferences)
+        current_trace = service.send(:serialize_trace_content, RubyLLM::Content.new('Receipt', [blob]), preferences: preferences)
+
+        [trace, current_trace].each do |payload|
+          expect(payload).to include('Receipt', 'image_url', '[IMAGE_ATTACHMENT]')
+          expect(payload).not_to include(blob.key, blob.checksum)
+        end
       end
     end
 
@@ -1325,6 +1402,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         status: conversation.status
       )
       expect(state[:channel_type]).to eq(inbox.channel_type)
+    end
+
+    it 'includes the response fence used before runtime tool execution' do
+      fenced_service = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        response_fence: { control_generation: 4, buffer_token: 'buffer-token', last_message_id: 91 }
+      )
+
+      expect(fenced_service.send(:build_state)[:captain_response_fence]).to eq(
+        control_generation: 4,
+        buffer_token: 'buffer-token',
+        last_message_id: 91
+      )
     end
 
     it 'includes contact inbox attributes when conversation is present' do
@@ -1487,7 +1578,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
   end
 
   describe '#add_usage_metadata_callback' do
-    it 'sets credit_used=false when handoff tool is used' do
+    it 'sets credit_used=false when an authorized handoff tool is used' do
       service = described_class.new(assistant: assistant, conversation: conversation)
       runner = instance_double(Captain::Runtime::AgentRunner)
       tool_complete_callback = nil
@@ -1496,12 +1587,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         def set_attribute(*); end
       end
       root_span = instance_double(span_class)
-      context_wrapper = Struct.new(:context).new(
-        {
-          __otel_tracing: { root_span: root_span },
-          pending_human_handoff: { reason: 'Customer needs a specialist' }
-        }
-      )
+      context = {
+        pending_human_handoff: { reason: 'Customer requested a human.' },
+        __otel_tracing: { root_span: root_span }
+      }
+      context[Captain::Tools::HandoffTool::AUTHORIZED_CONTEXT_KEY] = true
+      context_wrapper = Struct.new(:context).new(context)
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(true)
       allow(runner).to receive(:on_tool_complete) do |&block|
@@ -1544,6 +1635,34 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
 
       expect(context_wrapper.context).not_to have_key(:captain_v2_handoff_tool_called)
+    end
+
+    it 'does not infer handoff authorization from the completed tool name and a pending payload' do
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      runner = instance_double(Captain::Runtime::AgentRunner)
+      tool_complete_callback = nil
+      context_wrapper = Struct.new(:context).new({ pending_human_handoff: { reason: 'stale payload' } })
+
+      allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
+      allow(runner).to receive(:on_tool_complete) do |&block|
+        tool_complete_callback = block
+        runner
+      end
+
+      service.send(:add_usage_metadata_callback, runner)
+      tool_complete_callback.call(Captain::Tools::HandoffTool.new(assistant).name, 'ok', context_wrapper)
+
+      expect(context_wrapper.context[:captain_v2_handoff_tool_called]).to be_nil
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'Продолжу помогать здесь.' },
+        context: context_wrapper.context.merge(current_agent: 'assistant_agent'),
+        error: nil
+      )
+      expect(service.send(:process_agent_result, result)).to include(
+        'response' => 'Продолжу помогать здесь.',
+        'handoff_tool_called' => false
+      )
     end
 
     it 'tracks artifact ids exposed by completed tool results' do

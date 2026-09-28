@@ -65,12 +65,7 @@ class Telephony::LogicalCallOccurrencePolicy < ApplicationPolicy
     attr_reader :capabilities
 
     def scope_for(account_scope, capability)
-      unless Telephony::LogicalCallOccurrencePolicy.rbac_supported?(capability)
-        # The telephony grant contract is not registered yet. Never query an unsupported RBAC resource.
-        return account_scope if AccessControl::ModeResolver.mode_for_account(account_user.account_id) == 'legacy'
-
-        return account_scope.none
-      end
+      return account_scope.none unless Telephony::LogicalCallOccurrencePolicy.rbac_supported?(capability)
 
       resolution = AccessControl::ModeResolver.call(
         account_user: account_user,
@@ -120,7 +115,7 @@ class Telephony::LogicalCallOccurrencePolicy < ApplicationPolicy
 
   def capability_allowed?(capability)
     return false if account_user.blank?
-    return legacy_unsupported_capability_allowed?(capability) unless self.class.rbac_supported?(capability)
+    return false unless self.class.rbac_supported?(capability)
 
     resolution = AccessControl::ModeResolver.call(
       account_user: account_user,
@@ -134,12 +129,6 @@ class Telephony::LogicalCallOccurrencePolicy < ApplicationPolicy
       legacy_allowed: legacy_capability_allowed?(capability),
       access_role_allowed: access_scope != 'none'
     )
-  end
-
-  def legacy_unsupported_capability_allowed?(capability)
-    return false unless AccessControl::ModeResolver.mode_for_account(account_user.account_id) == 'legacy'
-
-    legacy_capability_allowed?(capability)
   end
 
   def legacy_capability_allowed?(capability)

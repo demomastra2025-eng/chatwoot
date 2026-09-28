@@ -73,7 +73,7 @@ RSpec.describe 'Account Context Fields API', type: :request do
         'field_type' => 'custom_attribute'
       ),
       hash_including(
-        'id' => 'appointment.custom_attributes.visit-room.v2',
+        'id' => 'appointment.custom_attributes.visit-room_v2',
         'table_name' => 'appointment',
         'field_type' => 'custom_attribute'
       )
@@ -92,12 +92,12 @@ RSpec.describe 'Account Context Fields API', type: :request do
     expect(response).to have_http_status(:success)
     expect(response.parsed_body).to include(
       hash_including(
-        'id' => 'deal.custom_attributes.sales-region.v2',
+        'id' => 'deal.custom_attributes.sales-region_v2',
         'table_name' => 'deal',
         'field_type' => 'custom_attribute'
       ),
       hash_including(
-        'id' => 'task.custom_attributes.follow-up-channel.v2',
+        'id' => 'task.custom_attributes.follow-up-channel_v2',
         'table_name' => 'task',
         'field_type' => 'custom_attribute'
       )

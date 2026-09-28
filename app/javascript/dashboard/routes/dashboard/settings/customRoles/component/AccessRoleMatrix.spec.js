@@ -10,6 +10,8 @@ vi.mock('vue-i18n', () => ({
         'CUSTOM_ROLE.ACCESS_MATRIX.SYSTEM_ROLES.EMPLOYEE': 'Localized employee',
         'CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.AUTOMATION_RULES':
           'Localized automation rules',
+        'CUSTOM_ROLE.ACCESS_MATRIX.RESOURCES.TELEPHONY_CALLS':
+          'Localized calls',
         'CUSTOM_ROLE.ACCESS_MATRIX.CAPABILITIES.MANAGE': 'Localized manage',
       };
       return translations[key] || key;
@@ -98,6 +100,31 @@ describe('AccessRoleMatrix', () => {
     expect(automationGroup.text()).toContain('Localized automation rules');
     expect(automationGroup.text()).toContain('Localized manage');
     expect(automationGroup.text()).not.toContain('automation_rules');
+  });
+
+  it('renders Telephony grants under a localized Calls resource', () => {
+    const wrapper = mountComponent({
+      roles: [
+        {
+          ...roles[0],
+          grants: [
+            {
+              resource: 'telephony_calls',
+              capability: 'view_reports',
+              access_scope: 'team',
+            },
+          ],
+        },
+      ],
+      resources: { telephony_calls: ['view', 'view_reports'] },
+    });
+    const calls = wrapper.get(
+      '[data-testid="access-role-resource-telephony_calls"]'
+    );
+
+    expect(calls.text()).toContain('Localized calls');
+    expect(calls.text()).not.toContain('telephony_calls');
+    expect(calls.find('[data-scope="team"]').exists()).toBe(true);
   });
 
   it('filters roles by the localized system role name', () => {

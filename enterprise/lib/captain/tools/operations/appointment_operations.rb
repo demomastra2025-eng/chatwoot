@@ -68,21 +68,9 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ).perform
   end
 
-  def add_payment_to_current_appointment(payment_method:, amount: nil)
-    ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    ensure_feature_enabled!('scheduling_finance', 'Scheduling finance is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
-    raise ArgumentError, 'payment_method is required' if payment_method.blank?
-
-    authorize_appointment!(current_appointment, :manage_finance_legacy?)
-
-    ::Scheduling::Appointments::FinanceSyncService.new(
-      appointment: current_appointment,
-      actor: actor
-    ).add_payment!(
-      amount: amount,
-      payment_method: payment_method
-    )
+  # Old direct callers cannot restore the removed finance tool through this operation.
+  def add_payment_to_current_appointment(**)
+    ::Scheduling::Appointments::RetiredFinanceGuard.reject_mutation!
   end
 
   private
@@ -127,6 +115,11 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   def authorize_appointment_update!(appointment, params)
+    if params.empty?
+      authorize_appointment!(appointment, :update?)
+      raise ArgumentError, 'No appointment fields to update'
+    end
+
     authorize_appointment!(appointment, :assign?) if params.key?(:resource_id)
     authorize_appointment!(appointment, :update?) if appointment_update_fields?(params)
   end
@@ -140,7 +133,10 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   def authorize_appointment!(appointment, query)
-    return if actor.blank? || customer_agent_execution?
+    # Customer-facing AI is restricted to Contact/customer_tasks at the execution
+    # boundary. Do not treat a missing actor or a caller-supplied scope as a
+    # scheduling grant when this operation is invoked directly.
+    raise Pundit::NotAuthorizedError, 'You are not authorized to access this appointment' unless actor.is_a?(User)
 
     user_context = {
       user: actor,

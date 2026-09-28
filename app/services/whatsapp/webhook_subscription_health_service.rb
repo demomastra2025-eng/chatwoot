@@ -27,7 +27,7 @@ class Whatsapp::WebhookSubscriptionHealthService
 
     raise_check_error(e)
   rescue StandardError => e
-    raise_check_error(e)
+    handle_standard_error(e)
   end
 
   private
@@ -40,6 +40,7 @@ class Whatsapp::WebhookSubscriptionHealthService
 
   def handle_authorization_error(error, snapshot)
     classification = Meta::AuthorizationErrorClassifier.classify(error.payload, http_status: error.status)
+    return skip_rate_limited_check(classification) if classification.rate_limited?
     return unless classification.kind == :reauthorization_required
 
     Whatsapp::WabaLock.new(snapshot[:waba_id]).with_lock do
@@ -53,6 +54,28 @@ class Whatsapp::WebhookSubscriptionHealthService
   rescue Whatsapp::WabaLock::LockAcquisitionError
     Rails.logger.info("[WHATSAPP WEBHOOK SUBSCRIPTION] Deferred authorization error channel=#{@channel.id}: authorization lock busy")
     :skipped
+  end
+
+  def skip_rate_limited_check(classification)
+    Rails.logger.warn(
+      "[WHATSAPP WEBHOOK SUBSCRIPTION] Rate limited channel=#{@channel.id} code=#{classification.error['code']}; deferred"
+    )
+    :skipped
+  end
+
+  def wrapped_provider_error_classification(error)
+    provider_error = error.cause
+    provider_error = provider_error.cause until provider_error.nil? || provider_error.is_a?(Whatsapp::FacebookApiClient::Error)
+    return unless provider_error
+
+    Meta::AuthorizationErrorClassifier.classify(provider_error.payload, http_status: provider_error.status)
+  end
+
+  def handle_standard_error(error)
+    classification = wrapped_provider_error_classification(error)
+    return skip_rate_limited_check(classification) if classification&.rate_limited?
+
+    raise_check_error(error)
   end
 
   def authorization_error_result(recorded, error)

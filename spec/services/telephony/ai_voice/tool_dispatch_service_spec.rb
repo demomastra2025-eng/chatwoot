@@ -5,37 +5,16 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
 
-    it 'bounds Captain discovery without interrupting local tool loading' do
-      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
-      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
-      allow(Captain::Mcp::ToolCatalog).to receive(:without_discovery).and_call_original
-      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
-      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
-      release_discovery = Queue.new
-      allow(described_class).to receive(:captain_tool_catalog) do
-        release_discovery.pop unless Thread.current == Thread.main
-        [{ 'name' => 'faq_lookup' }]
-      end
-
-      names = described_class.catalog(captain_assistant: assistant).pluck('name')
-      release_discovery << true
-      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
-
-      expect(names).to include('end_call', 'request_transfer', 'faq_lookup')
-      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
-      expect(Captain::Mcp::ToolCatalog).to have_received(:without_discovery).once
-    ensure
-      release_discovery << true
+    it 'does not advertise native Voice tools without a Captain assistant' do
+      expect(described_class.catalog).to be_empty
+      expect(described_class::VOICE_TOOL_CATALOG.pluck(:name)).to include('end_call', 'request_transfer')
     end
 
-    it 'returns local tools without starting discovery when no MCP server is enabled' do
+    it 'never discovers MCP tools even when a server is configured' do
       allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
       allow(Captain::Mcp::ToolCatalog).to receive(:without_discovery).and_call_original
-      allow(described_class).to receive(:captain_tool_catalog).and_return([{ 'name' => 'faq_lookup' }])
-
-      names = described_class.catalog(captain_assistant: assistant).pluck('name')
-
-      expect(names).to include('end_call', 'request_transfer', 'faq_lookup')
+      allow(described_class).to receive(:captain_tool_catalog).and_return([{ 'name' => 'get_contact' }])
+      expect(described_class.catalog(captain_assistant: assistant).pluck('name')).to eq(['get_contact'])
       expect(Captain::Mcp::ToolCatalog).not_to have_received(:with_runtime_cache)
       expect(Captain::Mcp::ToolCatalog).to have_received(:without_discovery).once
     end
@@ -43,139 +22,37 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     it 'coalesces concurrent catalog builds for the same assistant' do
       allow(described_class).to receive(:captain_tool_catalog) do
         sleep 0.05
-        [{ 'name' => 'faq_lookup' }]
+        [{ 'name' => 'get_contact' }]
       end
-
       results = Array.new(4) do
         Thread.new { described_class.catalog(captain_assistant: assistant).pluck('name') }
       end.map(&:value)
-
-      expect(results).to all(include('end_call', 'request_transfer', 'faq_lookup'))
+      expect(results).to all(eq(['get_contact']))
       expect(described_class).to have_received(:captain_tool_catalog).once
     end
 
-    it 'reuses an in-flight discovery after the local catalog cache expires' do
-      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
-      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS", 0.0)
-      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
-      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
-      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
-      discovery_started = Queue.new
-      release_discovery = Queue.new
-      allow(described_class).to receive(:captain_tool_catalog) do
-        if Thread.current == Thread.main
-          [{ 'name' => 'faq_lookup' }]
-        else
-          discovery_started << true
-          release_discovery.pop
-          [{ 'name' => 'mcp__calendar__availability' }]
-        end
-      end
-
-      first_names = described_class.catalog(captain_assistant: assistant).pluck('name')
-      discovery_started.pop
-      second_names = described_class.catalog(captain_assistant: assistant).pluck('name')
-
-      expect(first_names).to include('faq_lookup')
-      expect(second_names).to include('faq_lookup')
-      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
-      release_discovery << true
-      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
-    ensure
-      release_discovery << true
-    end
-
-    it 'does not start another discovery when the assistant version changes while discovery is running' do
-      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
-      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS", 0.0)
-      allow(assistant).to receive(:cache_key_with_version).and_return('captain/assistants/1-v1', 'captain/assistants/1-v2')
-      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
-      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
-      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
-      discovery_started = Queue.new
-      release_discovery = Queue.new
-      allow(described_class).to receive(:captain_tool_catalog) do
-        if Thread.current == Thread.main
-          [{ 'name' => 'faq_lookup' }]
-        else
-          discovery_started << true
-          release_discovery.pop
-          [{ 'name' => 'mcp__calendar__availability' }]
-        end
-      end
-
-      first_names = described_class.catalog(captain_assistant: assistant).pluck('name')
-      discovery_started.pop
-      second_names = described_class.catalog(captain_assistant: assistant).pluck('name')
-
-      expect(first_names).to include('faq_lookup')
-      expect(second_names).to include('faq_lookup')
-      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
-      release_discovery << true
-      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
-    ensure
-      release_discovery << true
-    end
-
-    it 'resolves only agent-scope Captain tools for the voice catalog' do
-      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'faq_lookup' }, { id: 'handoff' }])
+    it 'filters forged or stale prompt-selected tools before serializing provider schema' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
+        [{ id: 'get_contact' }, { id: 'handoff' }, { id: 'create_deal' }, { id: 'faq_lookup' },
+         { id: 'mcp__unsafe' }, { id: 'update_contact' }]
+      )
       expect(assistant).not_to receive(:available_assistant_tools)
 
-      names = described_class.catalog(captain_assistant: assistant).pluck('name')
-      definition_ids = described_class.captain_tool_definitions(assistant).pluck(:id)
-
-      expect(names).to include('faq_lookup', 'end_call')
-      expect(names).not_to include('handoff')
-      expect(definition_ids).to contain_exactly('faq_lookup')
-    end
-
-    it 'publishes native Captain parameter definitions to the realtime provider' do
-      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'faq_lookup' }])
-
-      faq = described_class.catalog(captain_assistant: assistant).find { |tool| tool.fetch('name') == 'faq_lookup' }
-
-      expect(faq.dig('parameters', 'required')).to eq(['query'])
-      expect(faq.dig('parameters', 'properties', 'query')).to include(
-        'type' => 'string',
-        'description' => a_string_including('FAQ')
-      )
-      expect(faq['foreground_wait_ms']).to eq(2_800)
-    end
-
-    it 'publishes only the canonical knowledge tool when overlapping tools are selected' do
-      allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
-        [{ id: 'faq_lookup' }, { id: 'search_documentation' }]
-      )
-
-      names = described_class.catalog(captain_assistant: assistant).pluck('name')
-
-      expect(names).to include('faq_lookup')
-      expect(names).not_to include('search_documentation')
-    end
-
-    it 'adds voice data-integrity guidance to mutating Captain tools' do
-      allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
-        [{ id: 'create_deal' }, { id: 'add_contact_note' }]
-      )
-
       catalog = described_class.catalog(captain_assistant: assistant).index_by { |tool| tool.fetch('name') }
-
-      expect(catalog.dig('create_deal', 'description')).to include('actual call channel')
-      expect(catalog.dig('create_deal', 'description')).to include('same turn')
-      expect(catalog.dig('create_deal', 'description')).to include('choose a short neutral title')
-      expect(catalog.dig('add_contact_note', 'description')).to include('explicitly confirms')
-      expect(catalog.dig('add_contact_note', 'parameters', 'properties', 'voice_caller_confirmed')).to include(
-        'type' => 'boolean',
-        'description' => a_string_including('complete phone number')
-      )
+      expect(catalog.keys).to match_array(%w[get_contact update_contact])
+      expect(described_class.customer_captain_tool_definitions(assistant).pluck(:id)).to match_array(%w[get_contact update_contact])
+      expect(catalog.dig('get_contact', 'parameters', 'properties')).to have_key('contact_id')
+      expect(catalog.dig('update_contact', 'parameters', 'properties')).to include('name', 'email', 'custom_attributes')
+      expect(catalog.dig('update_contact', 'parameters', 'properties')).not_to have_key('identifier')
     end
 
-    it 'publishes valid item schemas for native array parameters' do
-      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'create_deal' }])
-
-      create_deal = described_class.catalog(captain_assistant: assistant).find { |tool| tool.fetch('name') == 'create_deal' }
-
-      expect(create_deal.dig('parameters', 'properties', 'closing_reasons', 'items')).to eq('type' => 'string')
+    it 'advertises selected current-contact and customer-task tools only' do
+      assistant.update!(config: assistant.config.deep_merge(
+        'tool_access' => { 'agent' => { 'enabled' => true,
+                                        'tool_ids' => %w[get_contact update_contact customer_tasks create_task] } }
+      ))
+      expect(described_class.catalog(captain_assistant: assistant).pluck('name'))
+        .to match_array(%w[get_contact update_contact customer_tasks])
     end
   end
 
@@ -316,16 +193,17 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
     end
 
-    it 'keeps selection invalidated when tool construction fails before execution' do
+    it 'rejects a disabled deal tool before construction without modifying the previous selection' do
       call_session.update!(metadata: { 'captain_selected_deal' => { 'deal_id' => deal.id } })
       service = selected_deal_service('search_deals')
       allow(service).to receive(:ensure_voice_crm_source!)
       allow(service).to receive(:captain_tool_definition).and_return({})
       allow(Captain::ToolCatalog).to receive(:build_tool).and_return(nil)
 
-      expect { service.send(:perform_captain_tool) }
-        .to raise_error(Telephony::AiVoice::ToolDispatchService::UnknownToolError)
-      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+      expect(service.send(:perform_captain_tool))
+        .to include(status: 'failed', result: a_string_including('customer AI'))
+      expect(Captain::ToolCatalog).not_to have_received(:build_tool)
+      expect(call_session.reload.metadata['captain_selected_deal']).to eq('deal_id' => deal.id)
     end
 
     it 'does not let an older late result overwrite a newer ambiguous attempt' do
@@ -519,7 +397,8 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     end
   end
 
-  describe '#perform end_call' do
+  # Transport handler behavior remains testable; public #perform denies this AI tool.
+  describe '#perform_end_call transport handler' do
     let(:account) { create(:account) }
     let(:provider) { double('provider', terminate_call: true) }
     let(:media_client) { instance_double(Whatsapp::MediaServerClient, terminate_session: true) }
@@ -572,7 +451,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
             reason: 'user requested to end the call'
           }
         }
-      ).perform
+      ).send(:perform_end_call)
 
       expect(result).to include(action: 'end_call', status: 'completed', transport_terminate_requested: true)
       expect(provider).to have_received(:terminate_call).with(whatsapp_call.provider_call_id).once
@@ -611,7 +490,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
           call_ref: fonoster_session.external_call_ref,
           arguments: { reason: 'caller requested hangup' }
         }
-      ).perform
+      ).send(:perform_end_call)
 
       expect(result).to include(action: 'end_call', status: 'completed', transport_terminate_requested: false)
       expect(provider).not_to have_received(:terminate_call)
@@ -639,9 +518,9 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       )
       stale_dispatch.send(:call_session)
 
-      first_dispatch.perform
+      first_dispatch.send(:perform_end_call)
 
-      expect { stale_dispatch.perform }.to raise_error(Telephony::Error) do |error|
+      expect { stale_dispatch.send(:perform_end_call) }.to raise_error(Telephony::Error) do |error|
         expect(error.code).to eq('CALL_SESSION_TERMINAL')
       end
       expect(provider).to have_received(:terminate_call).with(whatsapp_call.provider_call_id).once
@@ -654,7 +533,8 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     end
   end
 
-  describe '#perform request_transfer' do
+  # Routing handler behavior remains testable; public #perform denies this AI tool.
+  describe '#perform_request_transfer routing handler' do
     let(:account) { create(:account) }
     let(:inbox) { create(:inbox, account: account) }
     let(:number_binding) { create(:telephony_number_binding, account: account, inbox: inbox) }
@@ -700,7 +580,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
           call_ref: call_session.external_call_ref,
           arguments: { reason: 'Клиент попросил связаться с менеджером' }
         }
-      ).perform
+      ).send(:perform_request_transfer)
 
       expect(result).to include(
         action: 'callback_handoff',
@@ -722,16 +602,15 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
             call_ref: call_session.external_call_ref,
             arguments: { reason: 'Повторный вызов' }
           }
-        ).perform
+        ).send(:perform_request_transfer)
       end.not_to(change { conversation.messages.count })
     end
 
-    it 'excludes request_transfer from the catalog when manager handoff is disabled' do
+    it 'excludes every native Voice action regardless of handoff mode' do
       catalog = described_class.catalog(voice_settings: { 'manager_handoff_mode' => 'disabled' })
       tool_names = catalog.map { |tool| tool.fetch('name') }
 
-      expect(tool_names).not_to include('request_transfer')
-      expect(tool_names).to include('end_call')
+      expect(tool_names).to be_empty
     end
 
     context 'when live transfer has no configured target' do
@@ -751,7 +630,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
             call_ref: call_session.external_call_ref,
             arguments: { reason: 'Нужен специалист' }
           }
-        ).perform
+        ).send(:perform_request_transfer)
 
         expect(result).to include(
           action: 'callback_handoff',
@@ -779,7 +658,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
             call_ref: call_session.external_call_ref,
             arguments: { reason: 'Нужен специалист' }
           }
-        ).perform
+        ).send(:perform_request_transfer)
 
         expect(result).to include(
           action: 'end_call',

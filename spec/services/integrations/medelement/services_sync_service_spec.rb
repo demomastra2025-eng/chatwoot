@@ -114,8 +114,6 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     )
     expect(service_price).to have_attributes(
       price: 17_000,
-      compensation_type: 'percent',
-      compensation_value: 25,
       active: true
     )
   end

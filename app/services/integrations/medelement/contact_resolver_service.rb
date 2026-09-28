@@ -14,6 +14,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def sync_patient!(patient_code, preferred_contact: nil)
+    validate_preferred_contact!(preferred_contact)
     existing_contact = preferred_contact || find_by_patient_code(patient_code)
     return existing_contact if fresh?(existing_contact)
 
@@ -27,6 +28,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def sync_patient_payload!(patient, preferred_contact:)
+    validate_preferred_contact!(preferred_contact)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
     validate_patient!(
       patient,
@@ -59,6 +61,12 @@ class Integrations::Medelement::ContactResolverService
   private
 
   attr_reader :account, :client, :conflict_tracker, :organization_id
+
+  def validate_preferred_contact!(preferred_contact)
+    return if preferred_contact.blank? || preferred_contact.account_id == account.id
+
+    raise ArgumentError, 'preferred contact must belong to the resolver account'
+  end
 
   def resolve_verified_demographic_candidate(patient_code, candidate_contact, patient, iin)
     existing_contact = find_by_patient_code(patient_code)
@@ -253,34 +261,9 @@ class Integrations::Medelement::ContactResolverService
 
   def secondary_phones(contact, patient, primary_phone)
     existing = Integrations::Medelement::PhoneNumber.contact_phones(contact)
-    (existing + provider_phones(patient)).uniq - Array(primary_phone)
-  end
-
-  def resolved_phone(contact, patient)
-    phones = provider_phones(patient)
-    source_phone = phones.first
-    contact_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
-    return [source_phone, contact_phone, nil] if source_phone.blank? && contact_phone.present?
-    return existing_contact_phone_resolution(source_phone, contact_phone, phones) if contact_phone.present?
-
-    new_contact_phone_resolution(contact, source_phone)
-  end
-
-  def existing_contact_phone_resolution(source_phone, contact_phone, provider_phone_values)
-    return [source_phone, contact_phone, nil] if provider_phone_values.include?(contact_phone)
-
-    [
-      contact_phone,
-      nil,
-      "Medelement phone #{source_phone} differs from the current Contact phone"
-    ]
-  end
-
-  def new_contact_phone_resolution(contact, source_phone)
-    conflicting_contact = account.contacts.where(phone_number: source_phone).where.not(id: contact.id).first if source_phone.present?
-    return [source_phone, source_phone, nil] if conflicting_contact.blank?
-
-    [source_phone, nil, "Phone #{source_phone} already belongs to contact ##{conflicting_contact.id}"]
+    (existing + provider_phones(patient)).uniq.reject do |phone|
+      phone == primary_phone || account.contacts.where(phone_number: phone).where.not(id: contact.id).exists?
+    end
   end
 
   # Coordinates identity lookup, uniqueness checks and custom-attribute persistence as one unit.
@@ -289,17 +272,46 @@ class Integrations::Medelement::ContactResolverService
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
     iin = normalize_iin(patient['IIN'])
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
-    contact = contact_for_lookup(
-      patient_code: patient_code,
-      iin: iin,
-      email: email,
-      patient: patient,
-      preferred_contact: preferred_contact
-    ) || account.contacts.new
-    return preserve_foreign_owner_contact(contact, patient_code) if foreign_owner?(contact)
+    Contact.transaction do
+      Contacts::PhoneIdentityLock.acquire!(account_id: account.id)
+      linked_contact = find_by_patient_code(patient_code) || linked_preferred_contact(preferred_contact, patient_code)
+      identity_contact = contact_for_lookup(
+        patient_code: patient_code, iin: iin, email: email, patient: patient, preferred_contact: preferred_contact
+      )
+      deduplication = Integrations::Medelement::PatientContactDeduplicationService.new(
+        account: account,
+        patient_code: patient_code,
+        provider_phones: provider_phones(patient),
+        linked_contact: linked_contact,
+        identity_contact: identity_contact
+      ).perform
+      next preserve_foreign_owner_contact(deduplication.contact, patient_code) if foreign_owner?(deduplication.contact)
 
-    _source_phone, phone, phone_conflict_comment = resolved_phone(contact, patient)
-    primary_phone = Integrations::Medelement::PhoneNumber.normalize(phone.presence || contact.phone_number)
+      persist_patient_contact!(
+        contact: deduplication.contact,
+        patient: patient,
+        identity: { patient_code: patient_code, iin: iin, email: email },
+        phone_conflict_comment: deduplication.phone_conflict_comment
+      )
+    end
+  end
+
+  def linked_preferred_contact(preferred_contact, patient_code)
+    linked_code = preferred_contact&.custom_attributes.to_h['medelement_patient_code'].to_s
+    preferred_contact if linked_code == patient_code.to_s
+  end
+
+  def persist_patient_contact!(contact:, patient:, identity:, phone_conflict_comment:)
+    provider_phone = provider_phones(patient).first
+    current_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
+    assigned_phone = if phone_conflict_comment.present?
+                       nil
+                     elsif provider_phones(patient).include?(current_phone)
+                       current_phone
+                     else
+                       provider_phone
+                     end
+    primary_phone = Integrations::Medelement::PhoneNumber.normalize(assigned_phone.presence || contact.phone_number)
 
     contact.skip_runtime_events = true
     contact.account ||= account
@@ -308,23 +320,23 @@ class Integrations::Medelement::ContactResolverService
     contact.name = first_name if first_name.present?
     contact.last_name = patient['LASTNAME'].to_s if contact.respond_to?(:last_name=) && patient['LASTNAME'].present?
     contact.middle_name = middle_name if contact.respond_to?(:middle_name=) && middle_name.present?
-    contact.email = safe_unique_value(contact, :email, email) || contact.email
-    contact.phone_number = safe_unique_value(contact, :phone_number, phone) || contact.phone_number
-    contact.identifier = safe_unique_value(contact, :identifier, iin) || contact.identifier
+    contact.email = safe_unique_value(contact, :email, identity[:email]) || contact.email
+    contact.phone_number = safe_unique_value(contact, :phone_number, assigned_phone) || contact.phone_number
+    contact.identifier = safe_unique_value(contact, :identifier, identity[:iin]) || contact.identifier
     contact.additional_attributes = (contact.additional_attributes || {}).deep_stringify_keys.reverse_merge(
       'country' => 'Kazakhstan',
       'country_code' => 'KZ'
     )
     contact.custom_attributes = contact.custom_attributes.merge(
-      provider_profile_attributes(patient, first_name, middle_name, iin)
+      provider_profile_attributes(patient, first_name, middle_name, identity[:iin])
     ).merge(
       'medelement_last_synced_at' => Time.current.iso8601,
-      'medelement_patient_code' => patient_code.to_s,
+      'medelement_patient_code' => identity[:patient_code].to_s,
       'phone_conflict_comment' => phone_conflict_comment,
       'secondary_phones' => secondary_phones(contact, patient, primary_phone)
     ).compact
     contact.save!
-    record_phone_conflict(patient_code, contact, phone_conflict_comment) if phone_conflict_comment.present?
+    record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment) if phone_conflict_comment.present?
     contact
   end
 
@@ -380,7 +392,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def provider_phone_from_comment(comment)
-    comment.to_s[/Medelement phone (\+\d+)/, 1]
+    comment.to_s[/(?:Medelement phone|Phone) (\+\d+)/, 1]
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end

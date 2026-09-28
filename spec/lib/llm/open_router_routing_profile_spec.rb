@@ -3,6 +3,13 @@
 require 'rails_helper'
 
 RSpec.describe Llm::OpenRouterRoutingProfile do
+  before do
+    # The routing profile examples use non-default Captain IDs by design.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini openai/gpt-5.4 moonshotai/kimi-k2.6]
+    )
+  end
+
   describe '.for' do
     it 'builds a tool-safe low-latency Captain agent routing profile' do
       profile = described_class.for(feature: :captain_agent, model: 'moonshotai/kimi-k2.6')
@@ -31,6 +38,29 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
         sort: { by: 'latency', partition: 'none' }
       )
       expect(profile.models).to start_with('openai/gpt-5.4')
+    end
+
+    it 'keeps provider failover while disabling cross-model fallbacks explicitly' do
+      profile = described_class.for(
+        feature: :captain_agent,
+        model: 'openai/gpt-5.6-luna',
+        runtime_preferences: { openrouter_allow_model_fallbacks: false }
+      )
+
+      expect(profile.models).to eq(['openai/gpt-5.6-luna'])
+      expect(profile.provider_preferences).to include(allow_fallbacks: true)
+      expect(profile.model_fallbacks_allowed?).to be(false)
+    end
+
+    it 'reads the cross-model fallback preference from the account runtime' do
+      account = instance_double(
+        Account,
+        captain_preferences: { runtime: { openrouter_allow_model_fallbacks: false } }
+      )
+
+      profile = described_class.for(feature: :captain_agent, model: 'openai/gpt-5.6-luna', account: account)
+
+      expect(profile.models).to eq(['openai/gpt-5.6-luna'])
     end
 
     it 'uses cost/speed routing for background editor and label features' do

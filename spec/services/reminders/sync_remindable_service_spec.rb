@@ -2,6 +2,60 @@ require 'rails_helper'
 
 RSpec.describe Reminders::SyncRemindableService do
   describe '#perform' do
+    it 'uses the contact owner on create and resync, ignoring legacy owner and creator' do
+      account = create(:account)
+      manager = create(:user, account: account, role: :agent)
+      creator = create(:user, account: account, role: :agent)
+      legacy_owner = create(:user, account: account, role: :agent)
+      contact = create(:contact, account: account, owner: manager)
+      appointment = create(:scheduling_appointment, account: account, contact: contact,
+                                                    created_by: creator, owner_id: legacy_owner.id)
+      reminder = create(:reminder, account: account, remindable: appointment,
+                                   scheduled_at: 2.days.from_now, body: 'Upcoming visit')
+      expect(reminder.reload.owner).to eq(manager)
+
+      reminder.update!(owner: creator)
+      described_class.new(remindable: appointment).perform
+      expect(reminder.reload.owner).to eq(manager)
+      expect(appointment.reload.owner_id).to eq(legacy_owner.id)
+    end
+
+    it 'does not revert a reminder to a stale contact after an appointment rebind' do
+      account = create(:account)
+      former_owner = create(:user, account: account)
+      current_owner = create(:user, account: account)
+      former_contact = create(:contact, account: account, owner: former_owner)
+      current_contact = create(:contact, account: account, owner: current_owner)
+      appointment = create(:scheduling_appointment, account: account, contact: former_contact)
+      reminder = create(:reminder, account: account, remindable: appointment,
+                                   body: 'Visit', scheduled_at: 2.days.from_now)
+      stale_appointment = Scheduling::Appointment.find(appointment.id)
+      stale_appointment.contact
+
+      appointment.update!(contact: current_contact)
+      expect(reminder.reload).to have_attributes(owner_id: current_owner.id, target_contact_id: current_contact.id)
+
+      described_class.new(remindable: stale_appointment).perform_for(reminder, raise_errors: true)
+
+      expect(reminder.reload).to have_attributes(owner_id: current_owner.id, target_contact_id: current_contact.id)
+    end
+
+    it 'rejects creating a reminder from a stale appointment after its contact was rebound' do
+      account = create(:account)
+      former_contact = create(:contact, account: account, owner: create(:user, account: account))
+      current_contact = create(:contact, account: account, owner: create(:user, account: account))
+      appointment = create(:scheduling_appointment, account: account, contact: former_contact)
+      stale_appointment = Scheduling::Appointment.find(appointment.id)
+
+      appointment.update!(contact: current_contact)
+
+      expect do
+        Reminders::CreateService.new(account: account, remindable: stale_appointment,
+                                     attributes: { body: 'Visit', scheduled_at: 2.days.from_now }).perform
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('APPOINTMENT_CONTEXT_CHANGED') }
+      expect(appointment.reminders.count).to eq(0)
+    end
+
     it 'recalculates open relative appointment touches while keeping the fixed time of day' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(
@@ -188,6 +242,60 @@ RSpec.describe Reminders::SyncRemindableService do
       described_class.new(remindable: deal).perform
 
       expect(touch.reload.target_contact_id).to eq(primary_contact.id)
+    end
+
+    it 'clears a no-route error and approves the draft after the target route appears' do
+      account = create(:account)
+      source_inbox = create(:inbox, account: account)
+      channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      contact = create(:contact, account: account, phone_number: nil, email: nil)
+      source_contact_inbox = create(:contact_inbox, contact: contact, inbox: source_inbox)
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: source_inbox,
+        contact: contact,
+        contact_inbox: source_contact_inbox
+      )
+      touch = Reminders::CreateService.new(
+        account: account,
+        remindable: conversation,
+        attributes: {
+          body: 'Retry after route assignment',
+          scheduled_at: 1.hour.from_now,
+          target_inbox_id: channel.inbox.id
+        }
+      ).perform
+
+      expect(touch).to be_draft
+      expect(touch).to be_route_reassignment_required
+
+      contact.update!(phone_number: '+77001232233')
+      expect { touch.approve! }.to raise_error(ActiveRecord::RecordInvalid)
+
+      target_contact_inbox = create(
+        :contact_inbox,
+        contact: contact,
+        inbox: channel.inbox,
+        source_id: contact.phone_number.delete('+')
+      )
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: target_contact_inbox
+      )
+      create(:message, account: account, inbox: channel.inbox, conversation: target_conversation, message_type: :incoming)
+      described_class.new(remindable: conversation).perform_for(touch, raise_errors: true)
+
+      expect(touch.reload).to be_pending
+      expect(touch.metadata).not_to have_key(Reminder::ROUTE_ERROR_CODE_KEY)
+      expect(touch.last_error).to be_nil
+      expect(touch.target_contact_inbox).to have_attributes(
+        contact_id: contact.id,
+        inbox_id: channel.inbox.id
+      )
     end
   end
 end

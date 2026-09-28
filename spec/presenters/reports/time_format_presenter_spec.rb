@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe Reports::TimeFormatPresenter do
+RSpec.describe Reports::TimeFormatPresenter, locale: :en do
   describe '#format' do
     context 'when formatting days' do
       it 'formats single day correctly' do

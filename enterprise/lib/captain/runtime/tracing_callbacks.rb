@@ -369,7 +369,10 @@ class Captain::Runtime::TracingCallbacks
     parts << content.text if content.text.present?
 
     if content.attachments.present?
-      urls = content.attachments.map { |attachment| attachment.respond_to?(:source) ? attachment.source.to_s : attachment.to_s }
+      urls = content.attachments.map do |attachment|
+        source = attachment.respond_to?(:source) ? attachment.source : attachment
+        source.is_a?(ActiveStorage::Blob) ? Llm::Monitoring::PayloadSanitizer::IMAGE_ATTACHMENT : source.to_s
+      end
       parts << "Attachments: #{urls.join(', ')}"
     end
 

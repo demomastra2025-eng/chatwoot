@@ -82,5 +82,45 @@ RSpec.describe Llm::MessageFormat do
         ]
       )
     end
+
+    it 'keeps a stored image blob in memory across the extractor and history restorer' do
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'receipt.png', content_type: 'image/png'
+      )
+      chat = Struct.new(:messages) do
+        def add_message(message)
+          messages << message
+        end
+      end.new([RubyLLM::Message.new(role: :user, content: RubyLLM::Content.new('Receipt', [blob]))])
+
+      history = Captain::Runtime::MessageExtractor.extract_messages(chat, nil)
+      restored_chat = Struct.new(:messages) do
+        def add_message(message)
+          messages << message
+        end
+      end.new([])
+      described_class.restore_messages(restored_chat, history)
+
+      expect(history.first[:content]).to include(hash_including(type: 'image_url', image_url: { url: blob }))
+      expect(restored_chat.messages.first.content.attachments.first.source).to eq(blob)
+    end
+  end
+
+  describe '.deep_dup_preserving_blobs' do
+    it 'does not turn stored media into an unsaved ActiveRecord duplicate' do
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'receipt.png', content_type: 'image/png'
+      )
+      original = { conversation_history: [{ role: :user, content: [
+        { type: 'text', text: 'Receipt' }, { type: 'image_url', image_url: { url: blob } }
+      ] }] }
+
+      copy = described_class.deep_dup_preserving_blobs(original)
+      expect(copy.dig(:conversation_history, 0, :content, 1, :image_url, :url)).to equal(blob)
+      copy[:conversation_history][0][:content][0][:text].replace('Changed')
+      expect(original.dig(:conversation_history, 0, :content, 0, :text)).to eq('Receipt')
+    end
   end
 end

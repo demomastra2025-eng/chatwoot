@@ -21,6 +21,8 @@ readonly CURRENT="${ROOT}/current"
 readonly ENV_FILE="${ROOT}/.env.development"
 readonly RELEASE="${ROOT}/releases/onelink-dev-${SHA:0:12}"
 readonly TREE_VERIFIER=${ONELINK_TREE_VERIFIER:-/usr/local/sbin/onelink-verify-release-tree}
+readonly VOICE_SERVICE=onelink-ai-voice-dev.service
+readonly VOICE_READY_URL=http://127.0.0.1:8082/ready
 readonly RBENV_ROOT=/opt/rbenv
 readonly TEST_SEED=4816395
 readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/opt/node-24/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -93,12 +95,27 @@ run_and_record() {
 [[ "$(< "${RELEASE}/.git_sha")" == "${SHA}" ]] || { echo "release SHA mismatch" >&2; exit 65; }
 if [[ "${MODE}" == full ]]; then
   [[ "$(readlink -f "${CURRENT}")" == "${RELEASE}" ]] || { echo "exact SHA is not the deployed release" >&2; exit 65; }
+  [[ "$(systemctl is-active "${VOICE_SERVICE}" || true)" == active ]] || {
+    echo "AI voice DEV runtime is not active" >&2
+    exit 69
+  }
+  voice_code="$(curl -sS -o /dev/null --max-time 10 -w '%{http_code}' "${VOICE_READY_URL}" || true)"
+  [[ "${voice_code}" == 200 ]] || { echo "AI voice DEV health check returned ${voice_code:-000}" >&2; exit 69; }
+  voice_pid="$(systemctl show "${VOICE_SERVICE}" -p MainPID --value)"
+  voice_cwd="$(readlink -f "/proc/${voice_pid}/cwd" 2>/dev/null || true)"
+  [[ "${voice_cwd}" == "${RELEASE}/services/onelink-ai-voice" ]] || {
+    echo "AI voice DEV runtime source mismatch: ${voice_cwd:-missing}" >&2
+    exit 65
+  }
+  printf 'runtime_app_sha=%s\n' "$(< "${CURRENT}/.git_sha")"
+  printf 'runtime_voice_sha=%s\n' "$(< "${RELEASE}/.git_sha")"
+  printf 'runtime_voice_cwd=%s\n' "${voice_cwd}"
 fi
 
 export RBENV_ROOT
 export PATH="${DEV_TOOLCHAIN_PATH}"
 hash -r
-cd "${RELEASE}"
+cd "${RELEASE}" || exit 66
 
 printf 'artifact=OneLink DEV deployed-release verification\n'
 printf 'sha=%s\n' "${SHA}"

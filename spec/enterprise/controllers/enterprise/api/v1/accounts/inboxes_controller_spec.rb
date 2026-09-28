@@ -66,7 +66,7 @@ RSpec.describe 'Enterprise Inboxes API', type: :request do
         end.not_to change(Channel::Voice, :count)
 
         expect(response).to have_http_status(:unprocessable_entity)
-        expect(JSON.parse(response.body)).to include('attributes' => include('provider'))
+        expect(JSON.parse(response.body)).to include('attributes' => include('provider_config'))
       end
     end
   end

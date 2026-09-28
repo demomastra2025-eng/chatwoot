@@ -7,8 +7,83 @@ import {
   isAInboxViewRoute,
 } from '../routeHelpers';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { routes as crmRoutes } from 'dashboard/routes/dashboard/crm/routes';
+
+const crmRoute = resource =>
+  crmRoutes.find(route => route.name === `crm_${resource}_index`);
+
+const crmUser = (mode, permissions, scopes, capabilities) => ({
+  accounts: [
+    {
+      id: 2,
+      status: 'active',
+      access_control_mode: mode,
+      permissions,
+      features: { crm_deals: true, crm_tasks: true },
+      crm_grant_scopes: scopes,
+      crm_capabilities: capabilities,
+    },
+  ],
+});
 
 describe('#routeIsAccessibleFor', () => {
+  it('uses effective CRM view grants, never legacy tokens in enforced mode', () => {
+    const granted = crmUser('enforced', [], {
+      deals: { view: 'all' },
+      tasks: { view: 'team' },
+    });
+    const denied = crmUser('enforced', ['crm_deal_view', 'crm_task_view'], {
+      deals: { view: 'none' },
+      tasks: { view: 'none' },
+    });
+    ['deals', 'tasks'].forEach(resource => {
+      const route = crmRoute(resource);
+      expect(
+        routeIsAccessibleFor(route, [], granted.accounts[0], granted)
+      ).toBe(true);
+      expect(
+        routeIsAccessibleFor(
+          route,
+          denied.accounts[0].permissions,
+          denied.accounts[0],
+          denied
+        )
+      ).toBe(false);
+    });
+  });
+
+  it('keeps legacy/shadow and older-web view fallback but fails closed without enforced grants', () => {
+    ['legacy', 'shadow', undefined].forEach(mode => {
+      const user = crmUser(mode, ['crm_task_view']);
+      expect(
+        routeIsAccessibleFor(
+          crmRoute('tasks'),
+          user.accounts[0].permissions,
+          user.accounts[0],
+          user
+        )
+      ).toBe(true);
+    });
+    const missing = crmUser('enforced', ['crm_task_view']);
+    expect(
+      routeIsAccessibleFor(
+        crmRoute('tasks'),
+        missing.accounts[0].permissions,
+        missing.accounts[0],
+        missing
+      )
+    ).toBe(false);
+    missing.accounts[0].crm_capabilities = { tasks: ['view'] };
+    expect(
+      routeIsAccessibleFor(
+        crmRoute('tasks'),
+        missing.accounts[0].permissions,
+        missing.accounts[0],
+        missing
+      )
+    ).toBe(true);
+  });
+
   it('should return the correct access', () => {
     let route = { meta: { permissions: ['administrator'] } };
     expect(routeIsAccessibleFor(route, ['agent'])).toEqual(false);
@@ -42,6 +117,21 @@ describe('#defaultRedirectPage', () => {
     fullPath: '/app/accounts/2/dashboard',
     name: 'home',
   };
+
+  it('lands on a granted CRM surface even with no legacy permissions, never on a canonical-none surface', () => {
+    const granted = crmUser('enforced', [], {
+      deals: { view: 'none' },
+      tasks: { view: 'all' },
+    });
+    expect(defaultRedirectPage(to, [], granted)).toBe('accounts/2/tasks');
+    const denied = crmUser('enforced', ['crm_deal_view'], {
+      deals: { view: 'none' },
+      tasks: { view: 'none' },
+    });
+    expect(
+      defaultRedirectPage(to, denied.accounts[0].permissions, denied)
+    ).toBe('accounts/2/dashboard');
+  });
 
   it('should return dashboard route for users with conversation permissions', () => {
     const permissions = ['conversation_manage', 'agent'];

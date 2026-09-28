@@ -59,6 +59,7 @@ module Enterprise::MessageTemplates::HookExecutionService
 
   def schedule_response_builder(assistant, attachment_wait_time)
     job_args = [conversation, assistant]
+    conversation.stamp_captain_control_generation!(message)
     if attachment_wait_time.zero?
       return Captain::Conversation::ResponseBuilderJob.perform_later(
         *job_args,
@@ -68,7 +69,10 @@ module Enterprise::MessageTemplates::HookExecutionService
 
     Captain::Conversation::ResponseBuilderJob
       .set(wait: attachment_wait_time)
-      .perform_later(*job_args, expected_last_message_id: message.id)
+      .perform_later(
+        *job_args,
+        expected_last_message_id: message.id
+      )
   end
 
   def schedule_buffered_response(assistant, attachment_wait_time)
@@ -85,6 +89,8 @@ module Enterprise::MessageTemplates::HookExecutionService
   end
 
   def conversation_accepts_captain_response?
+    return false if conversation.respond_to?(:captain_human_control_active?) && conversation.captain_human_control_active?
+
     return true if conversation.pending?
     return false unless conversation.open?
 
@@ -113,14 +119,15 @@ module Enterprise::MessageTemplates::HookExecutionService
     return unless conversation.pending?
 
     Rails.logger.info("Captain limit exceeded, performing handoff mid-conversation for conversation: #{conversation.id}")
-    conversation.messages.create!(
-      message_type: :outgoing,
-      account_id: conversation.account.id,
-      inbox_id: conversation.inbox.id,
-      content: 'Transferring to another agent for further assistance.'
-    )
-    conversation.bot_handoff!(source: 'system')
-    send_out_of_office_message_after_handoff
+    conversation.bot_handoff!(source: 'system', fence: { last_message_id: message.id }) do
+      conversation.messages.create!(
+        message_type: :outgoing,
+        account_id: conversation.account.id,
+        inbox_id: conversation.inbox.id,
+        content: 'Transferring to another agent for further assistance.'
+      )
+      send_out_of_office_message_after_handoff
+    end
   end
 
   def send_out_of_office_message_after_handoff

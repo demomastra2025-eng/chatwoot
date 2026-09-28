@@ -53,7 +53,10 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
         Integrations::Medelement::OutboundChangeJob
       ]
 
-      expect(jobs.map(&:queue_name).uniq).to eq(['medelement_provider_commands'])
+      expect(jobs.map { |job_class| job_class.new.queue_name }.uniq).to eq(['medelement_provider_commands'])
+      expect(Integrations::Medelement::OutboundChangeJob.new(
+        change: { actor_descriptor: { type: 'Captain::Assistant' } }
+      ).queue_name).to eq('medelement_provider_commands_v2')
     end
 
     it 'serves each MedElement queue from a dedicated worker only' do
@@ -67,10 +70,39 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
 
         expect(sync_config[:queues]).to eq(['medelement_sync'])
         expect(sync_config[:concurrency]).to eq(1)
-        expect(commands_config[:queues]).to eq(['medelement_provider_commands'])
+        expect(commands_config[:queues]).to eq(%w[medelement_provider_commands_v2 medelement_provider_commands])
         expect(commands_config[:concurrency]).to eq(2)
-        expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands')
+        expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands', 'medelement_provider_commands_v2')
       end
+    end
+
+    it 'requires paired images and refuses the T2 data phase without an approved B rollback floor' do
+      script = Rails.root.join('script/onelink/promote_production.sh').read
+
+      expect(script).to include('usage: promote_production.sh <40-char-git-sha> <chatwoot-image@sha256:digest> <voice-image@sha256:digest>')
+      expect(script).to include('NEEDS_BUSINESS: T2 cannot run through promoter')
+    end
+
+    it 'replaces legacy consumers before Captain producers' do
+      script = Rails.root.join('script/onelink/promote_production.sh').read
+      promotion = script.split('log "recreating workers before rolling web cutover"', 2).fetch(1)
+      fenced_upgrade = promotion.index('for service in "${FENCED_CONSUMERS[@]}"')
+      web_cutover = promotion.index('recreate "${APP_IMAGE_REF}" "${VOICE_IMAGE_REF}" chatwoot_rails_2')
+
+      expect(script).to include('FENCED_CONSUMERS=(chatwoot_outbound_messages_worker chatwoot_medelement_commands_worker)')
+      expect(promotion).to include('"${COMPOSE[@]}" stop "${service}"')
+      expect(fenced_upgrade).to be < promotion.index('for service in "${APP_SERVICES[@]}"')
+      expect(fenced_upgrade).to be < web_cutover
+    end
+
+    it 'never rolls back to unfenced workers automatically after fenced upgrade' do
+      script = Rails.root.join('script/onelink/promote_production.sh').read
+      rollback = script.split('rollback() {', 2).fetch(1).split('on_exit() {', 2).first
+
+      expect(rollback).to include('if [[ "${FENCED_UPGRADE_STARTED}" == false ]]')
+      expect(rollback).to include('restore_app_service chatwoot_rails_2')
+      expect(rollback).to include('*) continue ;; # Other workers may be mixed; operator must inspect them.')
+      expect(rollback).to include('mixed-version/operator gate: fenced consumers were NOT rolled back')
     end
   end
 

@@ -20,15 +20,6 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     Current.executed_by = previous_actor
   end
 
-  def ensure_finance_enabled!
-    return if Current.account.feature_enabled?('scheduling_finance')
-
-    raise Scheduling::Error.new(
-      code: 'FEATURE_DISABLED',
-      message: 'Scheduling finance is not enabled for this account',
-      status: :forbidden
-    )
-  end
 
   def ensure_scheduling_enabled!
     return if Current.account.feature_enabled?('scheduling')
@@ -191,8 +182,7 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
 
   def not_found_code(error)
     message = error.message.to_s
-    return 'APPOINTMENT_NOT_FOUND' if controller_name.in?(%w[appointments appointment_payments]) || message.include?('Scheduling::Appointment')
-    return 'EXPENSE_NOT_FOUND' if controller_name == 'expenses' || message.include?('Scheduling::Expense')
+    return 'APPOINTMENT_NOT_FOUND' if controller_name == 'appointments' || message.include?('Scheduling::Appointment')
 
     'NOT_FOUND'
   end

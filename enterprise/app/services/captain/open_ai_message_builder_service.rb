@@ -1,4 +1,6 @@
 class Captain::OpenAiMessageBuilderService
+  MAX_IMAGE_BYTES = 5.megabytes
+  IMAGE_CONTENT_TYPES = %w[image/jpeg image/png image/webp image/gif].freeze
   META_AD_REFERRAL_CONTEXT_FIELDS = [
     ['channel', [:provider]],
     ['attribution', %i[attribution_type attributionType]],
@@ -92,12 +94,12 @@ class Captain::OpenAiMessageBuilderService
 
     description = Captain::ImageRecognitionService.cached_description(attachment)
     if description.blank? && generate_image_description?(attachment)
-      image_url = get_attachment_url(attachment)
-      if image_url.present?
+      image = image_source(attachment)
+      if image.present?
         description = Captain::ImageRecognitionService.new(
           account: @message.account,
           attachment: attachment,
-          image_url: image_url
+          image_url: image
         ).perform
       end
     end
@@ -122,7 +124,11 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def image_parts(image_attachments)
-    image_attachments.map { |attachment| image_description_part(attachment) }
+    image_attachments.flat_map do |attachment|
+      description = image_description_part(attachment)
+      image = image_source(attachment) if generate_image_description?(attachment)
+      image.present? ? [{ type: 'image_url', image_url: { url: image } }, description] : [description]
+    end
   end
 
   def generate_image_description?(attachment)
@@ -135,11 +141,16 @@ class Captain::OpenAiMessageBuilderService
     ActiveModel::Type::Boolean.new.cast(@assistant&.feature_image_understanding)
   end
 
-  def get_attachment_url(attachment)
-    return attachment.download_url if attachment.download_url.present?
-    return attachment.external_url if attachment.external_url.present?
+  def image_source(attachment)
+    # RubyLLM accepts a stored blob directly. An external/download URL could make
+    # either this host or the model provider fetch arbitrary customer-supplied URLs.
+    return unless attachment.file.attached?
 
-    attachment.file.attached? ? attachment.file_url : nil
+    blob = attachment.file.blob
+    return unless IMAGE_CONTENT_TYPES.include?(blob.content_type)
+    return unless blob.byte_size.between?(1, MAX_IMAGE_BYTES)
+
+    blob
   end
 
   def extract_audio_transcriptions(attachments)

@@ -54,6 +54,7 @@ module Enterprise::Api::V1::Accounts::ConversationsController
       conversation: @conversation,
       assistant: assistant
     )
+    @conversation.stamp_captain_control_generation!(last_incoming_message)
     Captain::Conversation::ResponseBuilderJob.perform_later(
       @conversation,
       assistant,

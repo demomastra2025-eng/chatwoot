@@ -55,8 +55,8 @@ SIDECAR_ROOTS = (
     "enterprise/media-server/",
     "services/onelink-ai-voice/",
     "services/onelink-ai-voice-pipecat/",
-    "services/weixin-personal-gateway/",
 )
+IMMUTABLE_RELEASE_SIDECAR_ROOTS = ("services/onelink-ai-voice/",)
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"
     r"change_column_null|change_column_default|remove_index|rename_table)\b"
@@ -97,9 +97,12 @@ def classify(paths: Iterable[str]) -> dict[str, bool]:
         for path in files
     )
     frontend = any(
-        Path(path).suffix in FRONTEND_SUFFIXES
-        or path.startswith(FRONTEND_ROOTS)
-        or path in {"package.json", "pnpm-lock.yaml", "vite.config.mts"}
+        not path.startswith(SIDECAR_ROOTS)
+        and (
+            Path(path).suffix in FRONTEND_SUFFIXES
+            or path.startswith(FRONTEND_ROOTS)
+            or path in {"package.json", "pnpm-lock.yaml", "vite.config.mts"}
+        )
         for path in files
     )
     migrations = any(path.startswith("db/migrate/") for path in files)
@@ -330,6 +333,13 @@ def without_safe_concurrent_sql_index_rebuilds(content: str) -> str:
     return content
 
 
+def frontend_files(paths: Iterable[str]) -> list[str]:
+    return existing_files_with_suffixes(
+        (path for path in paths if not path.startswith(SIDECAR_ROOTS)),
+        FRONTEND_SUFFIXES,
+    )
+
+
 def validate_migrations(paths: Iterable[str]) -> list[str]:
     violations: list[str] = []
     for raw_path in paths:
@@ -348,6 +358,15 @@ def validate_migrations(paths: Iterable[str]) -> list[str]:
         ):
             violations.append(raw_path)
     return violations
+
+
+def unsupported_release_sidecars(paths: Iterable[str]) -> list[str]:
+    return sorted(
+        path
+        for path in paths
+        if path.startswith(SIDECAR_ROOTS)
+        and not path.startswith(IMMUTABLE_RELEASE_SIDECAR_ROOTS)
+    )
 
 
 def emit_github_output(path: Path, plan: dict[str, bool], files: list[str]) -> None:
@@ -383,7 +402,7 @@ def main() -> int:
         if args.list == "ruby":
             selected = existing_files_with_suffixes(files, RUBY_SUFFIXES)
         elif args.list == "frontend":
-            selected = existing_files_with_suffixes(files, FRONTEND_SUFFIXES)
+            selected = frontend_files(files)
         elif args.list == "specs":
             selected = related_specs(files)
         elif args.list == "migrations":
@@ -404,11 +423,11 @@ def main() -> int:
                 print(f"  - {violation}", file=sys.stderr)
             return 2
     if args.validate_release_surface:
-        sidecar_files = [path for path in files if path.startswith(SIDECAR_ROOTS)]
+        sidecar_files = unsupported_release_sidecars(files)
         if sidecar_files:
             print(
-                "This release changes embedded sidecars that require their own immutable "
-                "images and rollout workflow:",
+                "This release changes sidecars that are not covered by the immutable "
+                "release workflow:",
                 file=sys.stderr,
             )
             for path in sidecar_files:

@@ -3,6 +3,7 @@
     "CALENDAR": {
       "ALL_RESOURCES_UNAVAILABLE": "Барлық мамандар қолжетімсіз",
       "RESOURCES_UNAVAILABLE": "Қолжетімсіз: {names}",
+      "TIME_CHANGE_READ_ONLY": "Уақыт ауысуы: күнтізбеде жасау және жылжыту қолжетімсіз. Нақты уақытты тексеру үшін жазбаны ашыңыз.",
       "UNAVAILABLE": "Қолжетімсіз",
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },

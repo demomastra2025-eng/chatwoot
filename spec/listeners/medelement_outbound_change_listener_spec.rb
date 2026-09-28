@@ -118,10 +118,8 @@ RSpec.describe MedelementOutboundChangeListener do
     expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
   end
 
-  it 'links Captain appointment changes to a command without assigning an assistant id as a user id' do
+  it 'ignores Captain appointment changes instead of producing a provider receipt' do
     assistant = create(:captain_assistant, account: account)
-    command = instance_double(Integrations::Medelement::ProviderCommand)
-    allow(outbound_service).to receive(:perform).and_return(command)
     event = Events::Base.new(
       'appointment_created',
       Time.current,
@@ -131,23 +129,9 @@ RSpec.describe MedelementOutboundChangeListener do
 
     listener.appointment_created(event)
 
-    expect(Integrations::Medelement::OutboundChangeService).to have_received(:new).with(
-      entity_type: 'appointment',
-      entity_id: appointment.id,
-      event_name: 'appointment_created',
-      change: {
-        account_id: account.id,
-        payload_version: 2,
-        changed_attributes: {},
-        desired_attributes: hash_including(
-          Integrations::Medelement::OutboundChangeService::CONTACT_SNAPSHOT_KEY => anything
-        )
-      },
-      actor_id: nil,
-      actor_descriptor: { type: 'Captain::Assistant', id: assistant.id },
-      event_key: a_string_starting_with('onelink-event:')
-    )
-    expect(appointment.medelement_provider_command_receipt).to eq(command)
+    expect(Integrations::Medelement::OutboundChangeService).not_to have_received(:new)
+    expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
+    expect(appointment.medelement_provider_command_receipt).to be_nil
   end
 
   it 'ignores a Captain assistant from another account' do

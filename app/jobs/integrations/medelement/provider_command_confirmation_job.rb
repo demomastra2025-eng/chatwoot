@@ -1,5 +1,5 @@
 class Integrations::Medelement::ProviderCommandConfirmationJob < ApplicationJob
-  queue_as :medelement_provider_commands
+  queue_as { Integrations::Medelement::ProviderCommandJob.queue_for_confirmation(arguments.first) }
 
   def perform(confirmation_request_id)
     confirmation_request = ConfirmationRequest.find_by(id: confirmation_request_id)

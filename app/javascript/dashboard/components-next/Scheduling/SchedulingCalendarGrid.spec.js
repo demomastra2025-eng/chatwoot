@@ -135,4 +135,70 @@ describe('SchedulingCalendarGrid', () => {
     expect(wrapper.findAll('section')).toHaveLength(1);
     expect(wrapper.text()).not.toContain('No appointments for this day');
   });
+
+  it('groups a near-midnight UTC appointment under its Workspace day', () => {
+    const wrapper = mountGrid({
+      anchorDate: '2026-03-29T21:00:00.000Z',
+      view: 'day',
+      workspaceTimezone: 'Asia/Almaty',
+      appointments: [
+        {
+          clientName: 'Alex Doe',
+          endsAt: '2026-03-29T20:00:00.000Z',
+          id: 41,
+          resourceId: 12,
+          startsAt: '2026-03-29T19:30:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+    });
+
+    expect(wrapper.findAll('section')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Alex Doe');
+    expect(wrapper.text()).toContain('12:30 AM');
+  });
+
+  it('lists the real Workspace 02:30 during the browser spring gap', () => {
+    const wrapper = mountGrid({
+      anchorDate: '2026-03-07T21:30:00.000Z',
+      view: 'day',
+      workspaceTimezone: 'Asia/Almaty',
+      appointments: [
+        {
+          id: 77,
+          clientName: 'Gap consultation',
+          resourceId: 12,
+          startsAt: '2026-03-07T21:30:00.000Z',
+          endsAt: '2026-03-07T22:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(wrapper.findAll('section')).toHaveLength(1);
+    expect(wrapper.find('section').text()).toContain('Gap consultation');
+    expect(wrapper.find('section').text()).toContain('02:30');
+  });
+
+  it('uses actual Workspace midnight and DST boundaries in list grouping', () => {
+    const wrapper = mountGrid({
+      anchorDate: '2026-03-08T09:30:00.000Z',
+      view: 'day',
+      workspaceTimezone: 'America/Los_Angeles',
+      appointments: [
+        {
+          clientName: 'DST visit',
+          endsAt: '2026-03-08T10:30:00.000Z',
+          id: 42,
+          resourceId: 12,
+          startsAt: '2026-03-08T09:30:00.000Z',
+          status: 'confirmed',
+        },
+      ],
+    });
+
+    expect(wrapper.findAll('section')).toHaveLength(1);
+    expect(wrapper.text()).toContain('DST visit');
+    expect(wrapper.text()).toContain('01:30');
+    expect(wrapper.text()).toContain('03:30');
+  });
 });

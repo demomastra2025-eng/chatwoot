@@ -12,15 +12,36 @@ import {
   isCurrentScheduleRequest,
   isMedelementResource,
   isServiceAvailableForResource,
+  isWorkspaceClockChangeDay,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
   shiftAnchorDate,
+  toWorkspaceAnchorDate,
+  toWorkspaceCalendarDate,
 } from './helpers';
 
 describe('scheduling helpers', () => {
+  it('identifies Workspace clock-change days independently of browser DST', () => {
+    expect(
+      isWorkspaceClockChangeDay(new Date(2026, 10, 1), 'America/Los_Angeles')
+    ).toBe(true);
+    expect(
+      isWorkspaceClockChangeDay(new Date(2026, 2, 8), 'America/Los_Angeles')
+    ).toBe(true);
+    expect(
+      isWorkspaceClockChangeDay(new Date(2026, 9, 31), 'America/Los_Angeles')
+    ).toBe(false);
+    expect(
+      isWorkspaceClockChangeDay(new Date(2026, 10, 2), 'America/Los_Angeles')
+    ).toBe(false);
+    expect(
+      isWorkspaceClockChangeDay(new Date(2026, 10, 1), 'Asia/Almaty')
+    ).toBe(false);
+  });
+
   it('uses the supplied Workspace timezone converter for time-off intervals', () => {
     const convertDate = vi.fn(value =>
       value === 'starts-at'
@@ -236,6 +257,55 @@ describe('scheduling helpers', () => {
     expect(formatCalendarTitle('month', anchor, 'en', 'Asia/Almaty')).toBe(
       'September 2026'
     );
+  });
+
+  it.each([
+    ['2026-09-27T19:00:00.000Z', 2026, 9, 28],
+    ['2026-03-07T19:00:00.000Z', 2026, 3, 8],
+    ['2026-03-08T19:00:00.000Z', 2026, 3, 9],
+  ])(
+    'keeps the Workspace day selected across browser timezones and DST: %s',
+    (anchor, year, month, day) => {
+      const pickerDate = toWorkspaceCalendarDate(anchor, 'Asia/Almaty');
+      expect([
+        pickerDate.getFullYear(),
+        pickerDate.getMonth() + 1,
+        pickerDate.getDate(),
+      ]).toEqual([year, month, day]);
+      const selectedDate = new Date(year, month - 1, day);
+      const selectedAnchor = toWorkspaceAnchorDate(
+        selectedDate,
+        'Asia/Almaty'
+      ).toISOString();
+      expect(selectedAnchor).toBe(anchor);
+      expect(
+        buildCalendarRange(
+          'day',
+          selectedAnchor,
+          'Asia/Almaty'
+        ).from.toISOString()
+      ).toBe(anchor);
+      expect(
+        formatCalendarTitle('day', selectedAnchor, 'en', 'Asia/Almaty')
+      ).toContain(`${month === 9 ? 'September' : 'March'} ${day}, ${year}`);
+    }
+  );
+
+  it('shows the 10:00 Monday appointment under the Monday title and API day range', () => {
+    const timezone = 'Asia/Almaty';
+    const anchor = toWorkspaceAnchorDate(new Date(2026, 8, 28), timezone);
+    const range = buildCalendarRange('day', anchor, timezone);
+    const eventDate = toWorkspaceCalendarDate(
+      '2026-09-28T05:00:00.000Z',
+      timezone
+    );
+
+    expect(formatCalendarTitle('day', anchor, 'en', timezone)).toContain(
+      'September 28, 2026'
+    );
+    expect(range.from.toISOString()).toBe('2026-09-27T19:00:00.000Z');
+    expect(range.to.toISOString()).toBe('2026-09-28T18:59:59.999Z');
+    expect([eventDate.getDate(), eventDate.getHours()]).toEqual([28, 10]);
   });
 
   it('preserves legacy split shifts as one work interval plus gap breaks', () => {

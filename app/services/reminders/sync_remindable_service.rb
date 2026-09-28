@@ -1,6 +1,4 @@
 class Reminders::SyncRemindableService
-  ROUTE_REASSIGNMENT_REQUIRED = 'Touch requires channel reassignment after entity update'.freeze
-
   attr_reader :remindable
 
   def initialize(remindable:, allow_processing: false)
@@ -8,21 +6,45 @@ class Reminders::SyncRemindableService
     @allow_processing = allow_processing
   end
 
-  def perform
+  def perform(raise_errors: false)
     remindable.reminders.open_statuses.find_each do |touch|
-      perform_for(touch)
+      perform_for(touch, raise_errors: raise_errors)
     end
   end
 
   def perform_for(touch, lock: true, raise_errors: false)
-    lock ? touch.with_lock { sync_locked_touch!(touch) } : sync_locked_touch!(touch)
+    original_remindable = remindable
+    if lock && remindable.is_a?(Scheduling::Appointment)
+      sync_appointment_touch!(touch)
+    elsif lock
+      touch.with_lock { sync_locked_touch!(touch) }
+    else
+      sync_locked_touch!(touch)
+    end
   rescue StandardError => e
     raise if raise_errors
 
     ChatwootExceptionTracker.new(e, account: remindable.account).capture_exception
+  ensure
+    @remindable = original_remindable
+    @appointment_contact = nil
   end
 
   private
+
+  def sync_appointment_touch!(touch)
+    ApplicationRecord.transaction do
+      # Contact -> Appointment -> Reminder, matching owner transfers and
+      # rebinds. lock: false callers already own Reminder and cannot take Contact.
+      previous_contact_id = remindable.contact_id
+      @appointment_contact = remindable.account.contacts.lock.find_by(id: previous_contact_id) if previous_contact_id.present?
+      current_appointment = remindable.account.scheduling_appointments.lock.find(remindable.id)
+      next if current_appointment.contact_id != previous_contact_id
+
+      @remindable = current_appointment
+      touch.with_lock { sync_locked_touch!(touch) }
+    end
+  end
 
   def refreshable_processing_touch?(touch)
     @allow_processing && touch.processing? && !touch.delivery_materialized?
@@ -33,6 +55,8 @@ class Reminders::SyncRemindableService
     return unless syncable_touch?(touch)
 
     touch.assign_attributes(sync_attributes_for(touch))
+    clear_stale_target_routes(touch)
+    Reminders::TargetRouteResolver.new(reminder: touch).perform
     touch.scheduled_at_will_change! if touch.relative_schedule_stale?
     persist_sync!(touch) if touch.changed?
   end
@@ -44,6 +68,19 @@ class Reminders::SyncRemindableService
   def persist_sync!(touch)
     touch.save!
     touch.approve! if touch.draft? && touch.ready_for_pending?
+  end
+
+  def clear_stale_target_routes(touch)
+    if touch.target_contact_inbox.present? &&
+       (touch.target_contact_inbox.contact_id != touch.target_contact_id || touch.target_contact_inbox.inbox_id != touch.target_inbox_id)
+      touch.target_contact_inbox = nil
+    end
+
+    return if touch.target_conversation.blank?
+    return if touch.target_conversation.contact_id == touch.target_contact_id &&
+              touch.target_conversation.inbox_id == touch.target_inbox_id
+
+    touch.target_conversation = nil
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
@@ -59,59 +96,18 @@ class Reminders::SyncRemindableService
 
     if contact.present? && touch.target_contact_id != contact.id
       attrs[:target_contact] = contact
-      attrs.merge!(route_sync_attributes(touch, contact))
+      attrs[:target_contact_inbox] = nil
+      attrs[:target_conversation] = nil
     elsif contact.blank? && touch.target_contact_id.present?
       attrs[:target_contact] = nil
       attrs[:target_contact_inbox] = nil
       attrs[:target_conversation] = nil
       attrs[:status] = :draft
-      attrs[:last_error] = ROUTE_REASSIGNMENT_REQUIRED
-    elsif route_invalid_for_current_contact?(touch, contact)
-      attrs.merge!(route_sync_attributes(touch, contact))
     end
 
     attrs
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
-
-  def route_sync_attributes(touch, contact)
-    return {} if touch.target_inbox_id.blank?
-    return {} if contact.blank?
-
-    if contactable_inbox_ids(contact).include?(touch.target_inbox_id)
-      {
-        target_contact_inbox: contact.contact_inboxes.find_by(inbox_id: touch.target_inbox_id),
-        target_conversation: keep_target_conversation?(touch, contact) ? touch.target_conversation : nil,
-        last_error: nil
-      }
-    else
-      {
-        target_contact_inbox: nil,
-        target_conversation: nil,
-        status: :draft,
-        last_error: ROUTE_REASSIGNMENT_REQUIRED
-      }
-    end
-  end
-
-  def route_invalid_for_current_contact?(touch, contact)
-    return false if touch.target_inbox_id.blank? || contact.blank?
-
-    contactable_inbox_ids(contact).exclude?(touch.target_inbox_id)
-  end
-
-  def contactable_inbox_ids(contact)
-    @contactable_inbox_ids ||= {}
-    @contactable_inbox_ids[contact.id] ||= Contacts::ContactableInboxesService.new(contact: contact).get.map do |item|
-      item[:inbox].id
-    end
-  end
-
-  def keep_target_conversation?(touch, contact)
-    touch.target_conversation.present? &&
-      touch.target_conversation.contact_id == contact.id &&
-      touch.target_conversation.inbox_id == touch.target_inbox_id
-  end
 
   def desired_owner
     case remindable
@@ -120,7 +116,8 @@ class Reminders::SyncRemindableService
     when Crm::Deal
       remindable.owner
     when Scheduling::Appointment
-      remindable.created_by
+      contact = @appointment_contact || remindable.account.contacts.find_by(id: remindable.contact_id)
+      remindable.reminder_owner(contact: contact)
     end
   end
 

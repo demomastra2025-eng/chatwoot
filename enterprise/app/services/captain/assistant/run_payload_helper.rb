@@ -5,10 +5,17 @@ module Captain::Assistant::RunPayloadHelper
 
   def build_context(message_history)
     {
-      session_id: "#{@assistant.account_id}_#{@conversation&.display_id}",
+      session_id: captain_session_id,
       conversation_history: normalize_history(message_history),
       state: build_state
     }
+  end
+
+  def captain_session_id
+    thread_id = @conversation&.communication_thread&.id
+    return "#{@assistant.account_id}_thread_#{thread_id}" if thread_id.present?
+
+    "#{@assistant.account_id}_#{@conversation&.display_id}"
   end
 
   def extract_last_user_message(message_history)

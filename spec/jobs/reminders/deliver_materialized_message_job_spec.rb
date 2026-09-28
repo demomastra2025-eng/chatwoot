@@ -235,6 +235,8 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     expect(touch.reload).to be_failed
     expect(touch).not_to be_delivery_dispatched_for(message.id)
     expect(touch.last_error).to eq('recipient unavailable')
+    expect(touch.delivery_stage).to eq('failed')
+    expect(touch.metadata[Reminder::DELIVERY_FAILURE_CATEGORY_KEY]).to eq('failed')
     expect(touch.processing_claim_token).to eq(active_claim)
   end
 
@@ -277,6 +279,7 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     expect(message.external_error).to eq(described_class::UNCONFIRMED_PROVIDER_DELIVERY)
     expect(touch.reload).to be_failed
     expect(touch).not_to be_delivery_dispatched_for(message.id)
+    expect(touch.delivery_stage).to eq('failed')
   end
 
   it 'suppresses duplicate reminder dispatch after an unknown 360Dialog outcome' do
@@ -314,5 +317,59 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
 
     expect(SendReplyJob).to have_received(:perform_now).with(message.id).once
     expect(touch.reload).to be_delivery_dispatched_for(message.id)
+  end
+
+  context 'with a materialized Captain TikTok reminder' do
+    let(:channel) { create(:channel_tiktok) }
+    let(:conversation) do
+      create(:conversation, account: channel.account, inbox: channel.inbox, status: :pending,
+                            additional_attributes: { conversation_id: 'tt-reminder-1' })
+    end
+    let(:assistant) { create(:captain_assistant, account: channel.account) }
+    let(:client) { instance_double(Tiktok::Client) }
+
+    def materialized_captain_reminder
+      create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, message_type: :incoming)
+      reminder = create(
+        :reminder,
+        account: channel.account,
+        touch_conversation: conversation,
+        text_mode: :agent,
+        instructions: 'Follow up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      claim = reminder.mark_processing!
+      message = Reminders::MessageMaterializer.new(reminder: reminder)
+                                              .perform(conversation: conversation, sender: assistant, content: 'Reminder')
+      [reminder, message, claim]
+    end
+
+    before { allow(Tiktok::Client).to receive(:new).and_return(client) }
+
+    it 'records provider_unknown after an ambiguous POST through the real delivery wrapper, without a second POST' do
+      allow(client).to receive(:send_text_message).and_raise(Timeout::Error, 'response lost')
+      reminder, message, claim = materialized_captain_reminder
+
+      2.times { described_class.perform_now(reminder.id, message.id, claim) }
+
+      expect(client).to have_received(:send_text_message).once
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('outcome_unknown')
+      expect(reminder.reload).not_to be_failed
+      expect(reminder.delivery_stage).to eq('provider_unknown')
+      expect(reminder).to be_delivery_dispatched_for(message.id)
+    end
+
+    it 'keeps explicit TikTok rejection as a definitive failed reminder' do
+      allow(client).to receive(:send_text_message).and_raise(Tiktok::Client::ProviderRejection, 'recipient rejected')
+      reminder, message, claim = materialized_captain_reminder
+
+      described_class.perform_now(reminder.id, message.id, claim)
+
+      expect(client).to have_received(:send_text_message).once
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('provider_failed')
+      expect(reminder.reload).to be_failed
+      expect(reminder.delivery_stage).to eq('failed')
+      expect(reminder.last_error).to eq('recipient rejected')
+    end
   end
 end

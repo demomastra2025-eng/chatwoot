@@ -17,7 +17,7 @@ import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
   canManage: {
-    type: Boolean,
+    type: [Boolean, Function],
     default: false,
   },
   canReorder: {
@@ -95,7 +95,24 @@ const { locale, t } = useI18n();
 
 const boardColumns = ref({});
 const boardScrollContainer = ref(null);
-const canDragDeals = computed(() => props.canManage && props.canReorder);
+const canChangeDeal = (deal, capability = 'transition') =>
+  typeof props.canManage === 'function'
+    ? props.canManage(deal, capability)
+    : props.canManage;
+const canDragDeals = computed(
+  () =>
+    props.canReorder &&
+    props.deals.some(
+      deal =>
+        canChangeDeal(deal, 'transition') ||
+        canChangeDeal(deal, 'update_fields')
+    )
+);
+const canMoveDeal = event =>
+  canChangeDeal(
+    event.draggedContext.element,
+    event.from === event.to ? 'update_fields' : 'transition'
+  );
 const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 const ownerNameById = computed(() =>
   props.owners.reduce((result, owner) => {
@@ -304,6 +321,13 @@ const nextActionClass = deal => {
 const emitStageChange = (deal, stageId, position) => {
   const nextStageId = Number(stageId);
   const nextPosition = Number(position);
+  if (
+    !canChangeDeal(
+      deal,
+      Number(deal?.stageId) === nextStageId ? 'update_fields' : 'transition'
+    )
+  )
+    return;
 
   if (
     !deal ||
@@ -394,6 +418,7 @@ const handleStageSelect = (event, deal) => {
         <Draggable
           :list="boardColumns[column.stageId]"
           :disabled="!canDragDeals"
+          :move="canMoveDeal"
           :sort="canDragDeals && sortKey === 'position'"
           :animation="prefersReducedMotion ? 0 : 180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
@@ -472,7 +497,7 @@ const handleStageSelect = (event, deal) => {
               </p>
 
               <select
-                v-if="canManage && stages.length > 1"
+                v-if="canChangeDeal(element) && stages.length > 1"
                 data-test="move-deal-stage"
                 class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 :aria-label="

@@ -42,10 +42,12 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
     expect(first_state['last_message_id']).to eq(first_message.id)
     expect(second_state['last_message_id']).to eq(second_message.id)
     expect(second_state['assistant_id']).to eq(assistant.id)
+    expect(second_state['control_generation']).to eq(0)
     expect(second_state['token']).not_to eq(first_state['token'])
     expect(scheduled_payloads.map { |payload| payload[:args] }).to eq([[conversation, assistant], [conversation, assistant]])
     expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :buffer_token) }).to eq([first_state['token'], second_state['token']])
     expect(scheduled_payloads.map { |payload| payload.dig(:kwargs, :expected_last_message_id) }).to eq([first_message.id, second_message.id])
+    expect(second_message.reload.additional_attributes['captain_control_generation']).to eq(0)
   end
 
   it 'uses the longer wait when attachment processing needs more time than the collapse window' do

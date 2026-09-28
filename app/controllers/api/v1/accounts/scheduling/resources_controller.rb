@@ -50,14 +50,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   private
 
   def resource_payload(resource)
-    Scheduling::PayloadBuilder.resource(resource, include_finance: resource_finance_ids.include?(resource.id))
-  end
-
-  def resource_finance_ids
-    @resource_finance_ids ||= Scheduling::ResourceFinanceScope.new(
-      pundit_user,
-      Current.account.scheduling_resources
-    ).resolve.pluck(:id).to_set
+    Scheduling::PayloadBuilder.resource(resource)
   end
 
   def resource_params
@@ -69,18 +62,13 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :description,
         :color,
         :slot_duration_min,
-        :compensation_type,
-        :compensation_value,
-        :compensation_percent,
         :inherit_working_hours_from_account,
         :active,
         :user_id,
         :team_id,
         custom_attributes: {}
       ),
-      :slot_duration_min,
-      :compensation_value,
-      :compensation_percent
+      :slot_duration_min
     )
   end
 
@@ -144,7 +132,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         {
           id: appointment.id,
           status: appointment.status,
-          payment_status: appointment.payment_status,
+
           starts_at: appointment.starts_at&.iso8601,
           ends_at: appointment.ends_at&.iso8601
         }

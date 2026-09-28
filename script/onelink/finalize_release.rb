@@ -28,4 +28,11 @@ else
   results[:resource_timezones] = result.merge(status: 'ok')
 end
 
+telephony_migration = Rails.root.join('db/migrate/20260924120000_seed_telephony_call_report_administrator_grants.rb')
+if telephony_migration.exist?
+  # Both deploy entrypoints invoke this only after replacing and checking all web/workers.
+  inserted = AccessControl::TelephonyCallReportGrantSeeder.perform
+  results[:telephony_call_report_grants] = { status: 'ok', inserted: inserted }
+end
+
 puts JSON.generate(status: 'ok', finalizers: results)

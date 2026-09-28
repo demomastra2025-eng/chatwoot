@@ -41,21 +41,9 @@ class Scheduling::Appointments::AssignmentAuthorizer
   def assignment_allowed?(access_scope)
     return true if access_scope == 'all'
     return false unless %w[own team].include?(access_scope)
-    return false unless target_owner_allowed?(access_scope)
     return true if own_appointment?
 
     access_scope == 'team' && appointment.team_id.present? && actor_team_ids.include?(appointment.team_id)
-  end
-
-  def target_owner_allowed?(access_scope)
-    return true if appointment.owner_id.blank? || appointment.owner_id == actor.id
-    return false if access_scope == 'own'
-
-    TeamMember.joins(:team).exists?(
-      user_id: appointment.owner_id,
-      team_id: actor_team_ids,
-      teams: { account_id: account.id }
-    )
   end
 
   def own_appointment?

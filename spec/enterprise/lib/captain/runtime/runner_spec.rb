@@ -4,10 +4,12 @@ require 'rails_helper'
 
 class RuntimeRunnerSpecChat
   attr_reader :messages, :temperature, :params, :headers, :instructions, :tools, :schema
+  attr_accessor :model
 
-  def initialize(ask_response: nil, complete_response: nil)
+  def initialize(ask_response: nil, complete_response: nil, model: LlmConstants::DEFAULT_MODEL)
     @ask_response = ask_response
     @complete_response = complete_response
+    @model = model
     @messages = []
   end
 
@@ -136,6 +138,7 @@ RSpec.describe Captain::Runtime::Runner do
       allow(runner).to receive(:emit_agent_thinking)
       allow(runner).to receive(:track_usage)
       allow(runner).to receive(:callback_manager).and_return(callback_manager)
+      allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(['gpt-4.1-mini', 'openai/gpt-5.6-luna'])
     end
 
     it 'marks the first ask turn as already counted by the provider event' do
@@ -168,6 +171,8 @@ RSpec.describe Captain::Runtime::Runner do
         context_wrapper: context_wrapper
       }
       allow(Llm::StructuredOutputPolicy).to receive(:execute).with(chat: chat).and_yield
+      allow(chat).to receive(:model).and_return('gpt-4.1-mini')
+      allow(chat).to receive(:params).and_return({})
       allow(chat).to receive(:complete).and_return(response)
 
       runner.send(:execute_turn, session)
@@ -176,11 +181,28 @@ RSpec.describe Captain::Runtime::Runner do
         'assistant_agent', 'gpt-4.1-mini', response, context_wrapper, provider_usage_recorded: false
       )
     end
+
+    it 'refuses a disallowed model before restored-history or finalization completion' do
+      session = { current_turn: 1, input_already_in_history: true, chat: chat, input: nil,
+                  account: nil, current_agent: current_agent, context_wrapper: context_wrapper }
+      allow(chat).to receive(:model).and_return('openai/gpt-5.4')
+      allow(chat).to receive(:params).and_return({})
+      expect(chat).not_to receive(:complete)
+
+      expect { runner.send(:execute_turn, session) }
+        .to raise_error(Llm::CaptainModelPolicy::DisallowedModelError, /gpt-5.4/)
+    end
   end
 
   describe '#run' do
     let(:llm_context) { instance_double(RubyLLM::Context) }
-    let(:account) { instance_double(Account, id: 42) }
+    let(:account) { instance_double(Account, id: 42, feature_enabled?: false) }
+
+    before do
+      allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+        %w[openai/gpt-5.6-luna gpt-5.4 gpt-4.1-mini gpt-4.1-nano]
+      )
+    end
     let(:first_agent) do
       Captain::Runtime::Agent.new(
         name: 'assistant_agent',
@@ -257,6 +279,52 @@ RSpec.describe Captain::Runtime::Runner do
       expect(first_chat.schema).to eq(Captain::ResponseSchema)
       expect(second_chat.instructions).to eq('Scenario instructions')
       expect(second_chat.schema).to be_nil
+    end
+
+    it 'restores a stored image in the next agent chat after handoff' do
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'receipt.png', content_type: 'image/png'
+      )
+      first_chat = RuntimeRunnerSpecChat.new(complete_response: handoff_response)
+      second_chat = RuntimeRunnerSpecChat.new(complete_response: RubyLLM::Message.new(role: :assistant, content: 'Receipt seen'))
+      allow(runner).to receive(:handoff_requested?).and_call_original
+      allow(runner).to receive(:handoff_requested?).with(anything, handoff_response).and_return(true)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(first_chat, second_chat)
+
+      result = runner.run(
+        first_agent,
+        nil,
+        context: {
+          conversation_history: [{ role: :user, content: [
+            { type: 'text', text: 'Receipt' }, { type: 'image_url', image_url: { url: blob } }
+          ] }],
+          pending_handoff: { target_agent: second_agent }
+        },
+        registry: { first_agent.name => first_agent, second_agent.name => second_agent },
+        llm_context: llm_context,
+        account: account,
+        continue_from_history: true
+      )
+
+      expect(result.error).to be_nil
+      expect(result.output).to eq('Receipt seen')
+      expect(second_chat.messages.first.content.attachments.first.source).to eq(blob)
+      expect(result.context[:conversation_history].first[:content]).to include(
+        hash_including(type: 'image_url', image_url: { url: blob })
+      )
+    end
+
+    it 'does not put the stored image key into enabled runtime traces' do
+      blob = ActiveStorage::Blob.create_and_upload!(
+        io: Rails.root.join('spec/assets/avatar.png').open,
+        filename: 'receipt.png', content_type: 'image/png'
+      )
+      callbacks = Captain::Runtime::TracingCallbacks.new(tracer: nil, trace_name: 'captain')
+      text = callbacks.send(:serialize_multimodal_content, RubyLLM::Content.new('Receipt', [blob]))
+
+      expect(text).to include('Receipt', '[IMAGE_ATTACHMENT]')
+      expect(text).not_to include(blob.key, blob.checksum)
     end
 
     it 'blocks self-handoff instead of rebuilding the same agent again' do
@@ -361,7 +429,7 @@ RSpec.describe Captain::Runtime::Runner do
       )
       response = instance_double(
         RubyLLM::Message,
-        content: { complete: true, reason: 'done', message: '' },
+        content: { complete: true, reason: 'done', status_reason: '', message: '' },
         tool_call?: false,
         input_tokens: nil,
         output_tokens: nil
@@ -374,6 +442,7 @@ RSpec.describe Captain::Runtime::Runner do
 
       result = runner.run(agent, 'Continue', registry: { agent.name => agent }, llm_context: llm_context, account: account)
 
+      expect(result.error).to be_nil
       expect(result.output).to eq(response.content)
     end
 
@@ -420,6 +489,18 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_present
     end
 
+    it 'propagates a stale Captain response fence instead of converting it to a provider error' do
+      stale_error = Captain::Conversation::ControlGenerationStaleError.new('Captain response run is stale')
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
+      chat = RuntimeRunnerSpecChat.new
+      allow(chat).to receive(:ask).and_raise(stale_error)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
+
+      expect do
+        runner.run(agent, 'Respond', registry: { agent.name => agent }, llm_context: llm_context, account: account)
+      end.to raise_error(stale_error)
+    end
+
     it 'continues from restored history without exposing tools during finalization-only retries' do
       tool = RuntimeRunnerSpecTool.new('create_deal', 'Create deal')
       agent = Captain::Runtime::Agent.new(
@@ -460,6 +541,33 @@ RSpec.describe Captain::Runtime::Runner do
       expect(chat.tools).to be_nil
       expect(chat.messages.map(&:role)).to include(:tool)
       expect(result.context[:captain_v2_bound_tool_ids]).to eq([])
+    end
+
+    it 'rejects a callback-mutated untagged finalization chat before provider completion' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent', model: 'openai/gpt-5.6-luna')
+      chat = RuntimeRunnerSpecChat.new(model: agent.model, complete_response: RubyLLM::Message.new(role: :assistant, content: 'Done'))
+      allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return([agent.model])
+      allow(Llm::Runtime).to receive(:build_chat).and_return(chat)
+      expect(chat).not_to receive(:complete)
+
+      result = runner.run(agent, nil, finalization_only: true, continue_from_history: true,
+                          callbacks: { chat_created: [->(built_chat) { built_chat.model = 'openai/gpt-5.4' }] })
+
+      expect(result.error).to be_a(Llm::CaptainModelPolicy::DisallowedModelError)
+      expect(result.output).to be_nil
+    end
+
+    it 'keeps the explicit Captain policy on the first ask after a callback drops routing metadata' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent', model: 'openai/gpt-5.6-luna')
+      chat = RuntimeRunnerSpecChat.new(model: agent.model)
+      allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return([agent.model])
+      allow(Llm::Runtime).to receive(:build_chat).and_return(chat)
+      expect(chat).not_to receive(:ask)
+
+      result = runner.run(agent, 'hello', callbacks: { chat_created: [->(built_chat) { built_chat.model = 'openai/gpt-5.4' }] })
+
+      expect(result.error).to be_a(Llm::CaptainModelPolicy::DisallowedModelError)
+      expect(result.output).to be_nil
     end
   end
 end

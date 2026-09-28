@@ -12,7 +12,7 @@ class Integrations::Medelement::SpecialistServiceUpsertService
     return log_skipped('active_price_must_be_non_negative') if active? && price.to_i.negative?
 
     service_price = service.prices.find_or_initialize_by(resource: resource)
-    service_price.assign_attributes(price_attributes(service_price))
+    service_price.assign_attributes(price_attributes)
     service_price.save!
     true
   rescue ArgumentError => e
@@ -33,31 +33,12 @@ class Integrations::Medelement::SpecialistServiceUpsertService
     @price ||= normalized_integer(payload['price'].presence || service&.base_price, :price)
   end
 
-  def price_attributes(service_price)
+  def price_attributes
     {
       account: account,
       price: price.to_i,
-      active: active?,
-      compensation_type: compensation_type(service_price),
-      compensation_value: compensation_value(service_price),
-      compensation_percent: compensation_percent(service_price)
+      active: active?
     }
-  end
-
-  def compensation_type(service_price)
-    payload['compensationType'].presence || service_price.compensation_type || 'percent'
-  end
-
-  def compensation_value(service_price)
-    return service_price.compensation_value || 0 unless payload.key?('compensationValue')
-
-    normalized_integer(payload['compensationValue'], :compensation_value) || 0
-  end
-
-  def compensation_percent(service_price)
-    return service_price.compensation_percent || 0 unless payload.key?('compensationPercent')
-
-    normalized_integer(payload['compensationPercent'], :compensation_percent) || 0
   end
 
   def normalized_integer(value, field_name)

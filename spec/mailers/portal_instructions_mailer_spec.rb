@@ -20,7 +20,8 @@ RSpec.describe PortalInstructionsMailer do
           mail = described_class.send_cname_instructions(portal: portal, recipient_email: recipient_email).deliver_now
 
           expect(mail.to).to eq([recipient_email])
-          expect(mail.subject).to eq("Finish setting up #{portal.custom_domain}")
+          expected_subject = I18n.t('portals.send_instructions.subject', custom_domain: portal.custom_domain)
+          expect(mail.subject).to eq(expected_subject)
           expect(mail.body.encoded).to include('help.example.com CNAME one-link.kz')
         end
       end

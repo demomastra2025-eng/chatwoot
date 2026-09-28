@@ -102,8 +102,6 @@ describe('useAutomation', () => {
         switch (type) {
           case 'status':
             return [{ id: 'scheduled', name: 'Scheduled' }];
-          case 'payment_status':
-            return [{ id: 'paid', name: 'Paid' }];
           case 'appointment_type':
             return [{ id: 'primary', name: 'Primary' }];
           case 'starts_at_weekday':
@@ -348,7 +346,6 @@ describe('useAutomation', () => {
       automationTypes.appointment_created.conditions.map(({ key }) => key)
     ).toEqual([
       'status',
-      'payment_status',
       'appointment_type',
       'source',
       'starts_at_weekday',
@@ -380,9 +377,6 @@ describe('useAutomation', () => {
     expect(getConditionDropdownValues('status_id', 'task_created')).toEqual([
       { id: 21, name: 'Todo' },
     ]);
-    expect(
-      getConditionDropdownValues('payment_status', 'appointment_created')
-    ).toEqual([{ id: 'paid', name: 'Paid' }]);
     expect(
       getConditionDropdownValues('starts_at_weekday', 'appointment_created')
     ).toEqual([

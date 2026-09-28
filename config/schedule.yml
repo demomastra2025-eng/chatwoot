@@ -14,6 +14,20 @@ trigger_scheduled_items_job:
   class: 'TriggerScheduledItemsJob'
   queue: scheduled_jobs
 
+# Redis schedules can be lost after the deferred Cloud state is committed.
+captain_replay_deferred_cloud_deliveries_job:
+  cron: '*/1 * * * *'
+  class: 'Captain::Conversation::ReplayDeferredCloudDeliveriesJob'
+  queue: scheduled_jobs
+  active_job: true
+
+# Recover only committed TikTok receipts and LINE/TikTok provider acknowledgements.
+captain_replay_known_delivery_receipts_job:
+  cron: '*/1 * * * *'
+  class: 'Captain::Conversation::ReplayKnownDeliveryReceiptsJob'
+  queue: scheduled_jobs
+  active_job: true
+
 # retries CRM domain facts that could not be enqueued or published after commit
 crm_events_replay_unpublished_job:
   cron: '*/1 * * * *'

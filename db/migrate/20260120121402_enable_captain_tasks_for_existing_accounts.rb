@@ -4,9 +4,15 @@
 # because captain_tasks already has `enabled: true` in features.yml - ConfigLoader
 # handles the defaults on deploy automatically.
 class EnableCaptainTasksForExistingAccounts < ActiveRecord::Migration[7.0]
+  # captain_tasks is the 61st flag in the original account bitmask.
+  CAPTAIN_TASKS_FLAG = 1 << 60
+
   def up
-    Account.find_in_batches(batch_size: 100) do |accounts|
-      accounts.each { |account| account.enable_features!('captain_tasks') }
-    end
+    # The current Account model requires columns added after this migration.
+    execute <<~SQL.squish
+      UPDATE accounts
+      SET feature_flags = feature_flags | #{CAPTAIN_TASKS_FLAG}, updated_at = NOW()
+      WHERE (feature_flags & #{CAPTAIN_TASKS_FLAG}) = 0
+    SQL
   end
 end

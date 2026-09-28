@@ -951,6 +951,61 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response.parsed_body.dig('payload', 'owner', 'id')).to eq(owner.id)
       end
 
+      it 'invalidates a pending Captain reply on direct owner assignment across linked and unlinked channels' do
+        account.enable_features!('communication_threads')
+        channel = create(:channel_widget, account: account)
+        assistant = create(:captain_assistant, account: account)
+        create(:captain_inbox, captain_assistant: assistant, inbox: channel.inbox)
+        linked = create(:conversation, account: account, contact: contact, inbox: channel.inbox, status: :pending)
+        unlinked = create(:conversation, account: account, contact: contact, inbox: channel.inbox, status: :pending)
+        unlinked.communication_thread_conversation.destroy!
+        unlinked.reload
+        incoming = create(:message, account: account, conversation: linked, inbox: channel.inbox, message_type: :incoming)
+        fence = {
+          control_generation: linked.current_captain_control_generation,
+          assistant_id: assistant.id,
+          trigger_message_id: incoming.id,
+          kind: 'reply'
+        }
+        pending_reply = create(:message,
+                               account: account, conversation: linked, inbox: channel.inbox,
+                               sender: assistant, message_type: :outgoing,
+                               additional_attributes: { captain_delivery_fence: fence })
+        initial_generation = linked.current_captain_control_generation
+        owner = create(:user, account: account, role: :agent)
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token, params: { owner_id: owner.id }, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(linked.reload.current_captain_control_state).to eq('human')
+        expect(unlinked.reload.current_captain_control_state).to eq('human')
+        expect(linked.current_captain_control_generation).to eq(initial_generation + 1)
+        expect { Captain::Conversation::DeliveryFenceService.new(pending_reply).perform { raise 'provider must not run' } }.not_to raise_error
+        expect(pending_reply.reload.additional_attributes['captain_delivery_state']).to eq('cancelled')
+
+        contact.reload.update!(owner: owner)
+        expect(linked.reload.current_captain_control_generation).to eq(initial_generation + 1)
+      end
+
+      it 'treats an explicit API assignment of an already projected owner as a human takeover' do
+        account.enable_features!('communication_threads')
+        channel = create(:channel_widget, account: account)
+        assistant = create(:captain_assistant, account: account)
+        create(:captain_inbox, captain_assistant: assistant, inbox: channel.inbox)
+        conversation = create(:conversation, account: account, contact: contact, inbox: channel.inbox, status: :pending)
+        owner = create(:user, account: account, role: :agent)
+        contact.update!(owner: owner) # Automated projection: not a human command.
+        expect(conversation.reload.current_captain_control_state).to eq('ai')
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token, params: { owner_id: owner.id }, as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.current_captain_control_state).to eq('human')
+        expect(conversation.current_captain_control_generation).to eq(1)
+      end
+
       it 'marks manual name edits as the primary name source' do
         patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
               headers: admin.create_new_auth_token,

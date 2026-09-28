@@ -19,6 +19,8 @@ class Captain::Runtime::Runner
   rescue MaxTurnsExceeded => e
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue StandardError => e
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent), output: nil, error: e)
   end
@@ -75,7 +77,11 @@ class Captain::Runtime::Runner
     response = if provider_usage_recorded
                  ask_chat(session[:chat], session[:input], account: session[:account])
                else
-                 Llm::StructuredOutputPolicy.execute(chat: session[:chat]) { session[:chat].complete }
+                 Llm::StructuredOutputPolicy.execute(chat: session[:chat]) do
+                   Llm::CaptainModelPolicy.guard_chat!(feature: :captain_agent, chat: session[:chat], model: session[:current_agent].model,
+                                                       account: session[:account])
+                   session[:chat].complete
+                 end
                end
 
     track_usage(response, session[:context_wrapper])
@@ -90,7 +96,7 @@ class Captain::Runtime::Runner
   end
 
   def ask_chat(chat, input, account: nil)
-    kwargs = {}
+    kwargs = { feature: :captain_agent }
     kwargs[:account] = account if account.present?
 
     Llm::Runtime.ask(chat, input, **kwargs)
@@ -237,7 +243,7 @@ class Captain::Runtime::Runner
   end
 
   def deep_copy_context(context)
-    context.deep_dup.tap do |copied|
+    Llm::MessageFormat.deep_dup_preserving_blobs(context).tap do |copied|
       copied[:conversation_history] ||= []
       copied[:turn_count] ||= 0
     end

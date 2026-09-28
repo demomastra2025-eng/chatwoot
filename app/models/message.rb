@@ -153,6 +153,8 @@ class Message < ApplicationRecord
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
+  before_create :serialize_captain_contact_activity
+  before_create :activate_captain_human_control_for_human_response
   after_create :capture_automation_create_event
   after_create_commit :execute_after_create_commit_callbacks
   after_commit :clear_automation_capture_state, on: :create
@@ -395,20 +397,23 @@ class Message < ApplicationRecord
       set_conversation_activity
       update_contact_activity(runtime_events: false)
       refresh_communication_thread
-      return
+    else
+      # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
+      reopen_conversation
+      mark_pending_conversation_as_open_for_human_response
+      set_conversation_activity
+      ensure_communication_thread_for_create_event
+      dispatch_create_events
+      sync_related_touches
+      execute_message_template_hooks
+      update_contact_activity(runtime_events: true)
+      refresh_communication_thread
+      send_reply
     end
 
-    # rails issue with order of active record callbacks being executed https://github.com/rails/rails/issues/20911
-    reopen_conversation
-    mark_pending_conversation_as_open_for_human_response
-    set_conversation_activity
-    ensure_communication_thread_for_create_event
-    dispatch_create_events
-    sync_related_touches
-    execute_message_template_hooks
-    update_contact_activity(runtime_events: true)
-    refresh_communication_thread
-    send_reply
+    # The insert commits before these callbacks project activity. A resolver
+    # must see the persisted pending marker until the projection completes.
+    mark_captain_contact_activity_projected if incoming?
   end
 
   def update_contact_activity(runtime_events: true)
@@ -515,7 +520,7 @@ class Message < ApplicationRecord
 
     transition_conversation_status!('open', source: 'contact') if conversation.snoozed?
 
-    reopen_resolved_conversation if conversation.resolved?
+    reopen_resolved_conversation if communication_threads_enabled? || conversation.resolved?
   end
 
   def mark_pending_conversation_as_open_for_human_response
@@ -525,6 +530,30 @@ class Message < ApplicationRecord
     return if scheduled_touch_message?
 
     transition_conversation_status!('open', source: 'system')
+  end
+
+  def activate_captain_human_control_for_human_response; end
+
+  def serialize_captain_contact_activity
+    return unless incoming? || capturable_human_response?
+    return if conversation&.contact_id.blank?
+
+    Conversations::CommunicationThreadResolver.lock_contact_thread!(conversation.account_id, conversation.contact_id)
+    self.additional_attributes = additional_attributes.to_h.merge('captain_contact_activity_pending' => true) if incoming?
+  end
+
+  def capturable_human_response?
+    human_response? && !private? && !scheduled_touch_message?
+  end
+
+  def mark_captain_contact_activity_projected
+    # JSONB key removal is atomic; save/update! could overwrite concurrent metadata.
+    # rubocop:disable Rails/SkipsModelValidations
+    self.class.unscoped.where(id: id).update_all(
+      "additional_attributes = COALESCE(additional_attributes, '{}'::jsonb) - 'captain_contact_activity_pending'"
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    additional_attributes.delete('captain_contact_activity_pending')
   end
 
   def scheduled_touch_message?
@@ -539,18 +568,33 @@ class Message < ApplicationRecord
   end
 
   def reopen_resolved_conversation
-    communication_thread = conversation.communication_thread if communication_threads_enabled?
-    if communication_thread&.resolved?
-      communication_thread.with_lock do
-        if conversation.reload.resolved?
-          communication_thread.update!(session_started_at: created_at)
-          perform_reopen_transition
-        end
-      end
-      return
-    end
+    return perform_reopen_transition if !communication_threads_enabled? && conversation.resolved?
 
-    perform_reopen_transition
+    conversation.restore_attributes if conversation.has_changes_to_save?
+    communication_thread = conversation.communication_thread if communication_threads_enabled?
+    if communication_thread.present?
+      # Both the message path and aggregate status updates lock all channels in
+      # the same order before the resolver locks the Thread.
+      Conversations::StatusTransitionService.with_locked_conversations(communication_thread) do
+        conversation.reload # DB triggers may leave display_id dirty on this instance.
+        next unless conversation.resolved?
+
+        start_new_session = communication_thread.reload.resolved?
+        perform_reopen_transition
+        communication_thread.update!(session_started_at: created_at) if start_new_session && !communication_thread.reload.resolved?
+      end
+    elsif conversation.resolved?
+      reopen_unlinked_conversation
+    end
+  end
+
+  def reopen_unlinked_conversation
+    # Incoming after_commit runs before the resolver links this channel.
+    # Claim existing contact Threads before C, as direct Contact owner sync
+    # can hold a Thread while projecting its owner onto this unlinked C.
+    Conversations::StatusTransitionService.with_locked_contact_threads_for_unlinked(conversation) do
+      conversation.with_lock { perform_reopen_transition if conversation.resolved? }
+    end
   end
 
   def perform_reopen_transition
@@ -604,6 +648,10 @@ class Message < ApplicationRecord
 
   def set_conversation_activity
     activity_time = created_at || Time.current
+    # Live Captain inactivity follows receipt time even when a provider sends
+    # a backdated timestamp. Historical imports retain their original time.
+    live_incoming = incoming? && content_attributes.to_h['imported_history'].to_s.casecmp('true') != 0
+    activity_time = [activity_time, Time.current].max if live_incoming && CaptainInbox.exists?(inbox_id: inbox_id)
     current_activity = conversation[:last_activity_at]
     return if current_activity.present? && current_activity >= activity_time
 

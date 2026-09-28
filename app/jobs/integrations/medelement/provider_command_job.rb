@@ -1,7 +1,20 @@
 class Integrations::Medelement::ProviderCommandJob < MutexApplicationJob
-  # New web processes enqueue v2 snapshots here. Legacy worker images do not poll this queue,
-  # so a worker rollback cannot consume a request shape it does not fully understand.
-  queue_as :medelement_provider_commands
+  LEGACY_QUEUE = 'medelement_provider_commands'.freeze
+  VERSIONED_QUEUE = 'medelement_provider_commands_v2'.freeze
+
+  # A rollback-era worker must never claim a v2 snapshot. New workers consume
+  # both queues so pre-existing legacy receipts remain dispatchable.
+  queue_as { self.class.queue_for(arguments.first) }
+
+  def self.queue_for(command_id)
+    status = Integrations::Medelement::ProviderCommand.where(id: command_id).pick(:status)
+    status&.start_with?('v2_') ? VERSIONED_QUEUE : LEGACY_QUEUE
+  end
+
+  def self.queue_for_confirmation(confirmation_request_id)
+    command_id = Integrations::Medelement::ProviderCommand.where(confirmation_request_id: confirmation_request_id).pick(:id)
+    queue_for(command_id)
+  end
 
   LOCK_TIMEOUT = 2.minutes
 
@@ -12,6 +25,12 @@ class Integrations::Medelement::ProviderCommandJob < MutexApplicationJob
     return if command.blank?
 
     with_command_locks(lock_keys(command)) do
+      return if Captain::Conversation::ActionFenceService.cancel_pending!(command)
+      # Human takeover may have cancelled it before this job was dequeued;
+      # processing or unknown Captain effects belong to read-back, not to a
+      # fresh Executor attempt. Direct Executor callers have the same fence.
+      return if Captain::Conversation::ActionFenceService.captain_command?(command)
+
       Integrations::Medelement::ProviderCommands::Executor.new(command: command).perform
     end
   end

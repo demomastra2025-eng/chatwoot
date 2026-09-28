@@ -7,7 +7,11 @@ class Campaigns::OneoffConversationBuilder
     @contact_inbox = ensure_contact_inbox
 
     ActiveRecord::Base.transaction do
+      contact_id = @contact_inbox.contact_id
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(@contact_inbox.inbox.account_id, contact_id)
+      Contact.lock.find(contact_id)
       @contact_inbox.lock!
+      raise Conversations::IdentityResolver::ContactChanged if @contact_inbox.contact_id != contact_id
 
       @conversation = find_or_create_conversation
       @message = existing_campaign_message || build_campaign_message

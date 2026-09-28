@@ -21,9 +21,7 @@ class Reminders::MessageMaterializer
         'touch_id' => reminder.id,
         'touch_source' => 'touch'
       ).merge(automation_provenance)
-      additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
-      additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
-
+      additional_attributes.merge!(delivery_attributes(conversation, sender, captain_trace, delivery_policy))
       message.update!(additional_attributes: additional_attributes)
       confirmation_request&.update!(delivery_message: message)
       reminder.mark_delivery_materialized!(message.id) if reminder.persisted?
@@ -32,6 +30,18 @@ class Reminders::MessageMaterializer
   end
 
   private
+
+  def delivery_attributes(conversation, sender, captain_trace, delivery_policy)
+    attributes = {}
+    attributes['captain_trace'] = captain_trace if captain_trace.present?
+    attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
+    if sender.is_a?(Captain::Assistant)
+      attributes['captain_delivery_fence'] = Captain::Conversation::DeliveryFenceService.snapshot(
+        conversation: conversation, assistant: sender, kind: 'reminder', reminder_id: reminder.id
+      )
+    end
+    attributes
+  end
 
   def message_params(content:)
     {

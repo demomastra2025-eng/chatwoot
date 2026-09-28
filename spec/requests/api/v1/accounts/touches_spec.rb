@@ -80,6 +80,77 @@ RSpec.describe 'Touches API', type: :request do
     expect(account.reminders.count).to eq(1)
   end
 
+  it 'creates a cross-inbox touch without inheriting source delivery associations' do
+    target_inbox = create(:inbox, account: account)
+    target_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: target_inbox)
+
+    post path,
+         params: {
+           remindable_type: 'Conversation',
+           remindable_id: conversation.id,
+           conversation_id: conversation.id,
+           target_inbox_id: target_inbox.id,
+           scheduled_at: 1.hour.from_now.iso8601,
+           timezone: 'UTC',
+           body: 'Cross-inbox API touch'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    touch = account.reminders.sole
+    expect(touch).to have_attributes(
+      conversation_id: conversation.id,
+      target_inbox_id: target_inbox.id,
+      target_contact_id: conversation.contact_id,
+      target_contact_inbox_id: target_contact_inbox.id,
+      target_conversation_id: nil,
+      status: 'pending'
+    )
+  end
+
+  it 're-resolves implicit delivery associations when the target inbox changes' do
+    touch = create(:reminder, account: account, touch_conversation: conversation, body: 'Move route')
+    target_inbox = create(:inbox, account: account)
+    target_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: target_inbox)
+
+    patch "#{path}/#{touch.id}",
+          params: { target_inbox_id: target_inbox.id },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(touch.reload).to have_attributes(
+      conversation_id: conversation.id,
+      target_inbox_id: target_inbox.id,
+      target_contact_inbox_id: target_contact_inbox.id,
+      target_conversation_id: nil
+    )
+  end
+
+  it 'rolls back route creation when a cross-inbox touch is invalid' do
+    conversation.contact.update!(phone_number: '+77001232233')
+    target_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+
+    post path,
+         params: {
+           remindable_type: 'Conversation',
+           remindable_id: conversation.id,
+           conversation_id: conversation.id,
+           target_inbox_id: target_channel.inbox.id,
+           scheduled_at: 1.hour.from_now.iso8601,
+           timezone: 'UTC',
+           body: 'Invalid cross-inbox final touch',
+           post_delivery_action: 'resolve_conversation'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(conversation.contact.contact_inboxes.where(inbox: target_channel.inbox)).to be_empty
+    expect(account.reminders.exists?).to be(false)
+  end
+
   describe 'appointment confirmation template validation' do
     let(:confirmation_channel) do
       create(

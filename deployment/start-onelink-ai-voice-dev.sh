@@ -37,5 +37,5 @@ export ONELINK_AI_VOICE_PIPECAT_CHANNEL_IDS=4778,4865
 export ONELINK_AI_VOICE_PIPECAT_PERCENTAGE=100
 export PATH=/opt/node-24/bin:${PATH}
 
-cd /srv/onelink-dev/onelink/chatwoot/services/onelink-ai-voice
+cd /srv/onelink-dev/current/services/onelink-ai-voice
 exec /opt/node-24/bin/npm start

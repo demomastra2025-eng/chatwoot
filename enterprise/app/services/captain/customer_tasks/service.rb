@@ -76,25 +76,30 @@ class Captain::CustomerTasks::Service
       conversation: conversation,
       task_type: resolved_type
     )
-    task = Crm::Tasks::UpsertService.new(
-      account: account,
-      actor: nil,
-      params: compact_hash(
-        title: customer_title,
-        customer_visible: true,
-        customer_title: customer_title,
-        task_type_id: resolved_type.id,
-        context_kind: route.deal ? 'sales' : 'personal',
-        deal_id: route.deal&.id,
-        originating_conversation_id: conversation.id,
-        assignee_id: route.assignee.id,
-        team_id: route.team&.id,
-        all_day: all_day,
-        due_at: due_at,
-        due_on: due_on,
-        idempotency_key: idempotency_key
-      )
-    ).perform
+    # The customer execution gate holds an outer Contact transaction. Isolate a
+    # competing writer's PostgreSQL unique-index failure so the recovery SELECT
+    # below can still run after the savepoint rolls back.
+    task = ApplicationRecord.transaction(requires_new: true) do
+      Crm::Tasks::UpsertService.new(
+        account: account,
+        actor: nil,
+        params: compact_hash(
+          title: customer_title,
+          customer_visible: true,
+          customer_title: customer_title,
+          task_type_id: resolved_type.id,
+          context_kind: route.deal ? 'sales' : 'personal',
+          deal_id: route.deal&.id,
+          originating_conversation_id: conversation.id,
+          assignee_id: route.assignee.id,
+          team_id: route.team&.id,
+          all_day: all_day,
+          due_at: due_at,
+          due_on: due_on,
+          idempotency_key: idempotency_key
+        )
+      ).perform
+    end
 
     { action: 'created', task: customer_payload(task) }
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid, Crm::Error => e

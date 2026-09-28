@@ -6,6 +6,8 @@ class Llm::ChatClient
   class << self
     def build(**options)
       account = options[:account]
+      ensure_captain_model!(options[:feature], options[:model], chat: options[:chat])
+      Llm::CaptainModelPolicy.ensure_wire_models!(feature: options[:feature], params: options[:params])
       if options[:thinking].present?
         Llm::CapabilityPolicy.ensure_thinking_supported!(model: resolved_model_name(options[:chat], options[:model]), account: account)
       end
@@ -13,18 +15,19 @@ class Llm::ChatClient
       llm_chat = options[:chat] || build_chat(context: options[:context], model: options[:model], account: account)
       tag_openrouter_routing_metadata(llm_chat, options, account: account)
       apply_chat_options(llm_chat, options, account: account).tap do |chat|
+        Llm::CaptainModelPolicy.guard_chat!(feature: options[:feature], chat: chat, model: options[:model], account: account)
         tag_openrouter_routing_metadata(chat, options, account: account)
       end
     end
 
-    def ask(chat, content, model: nil, observability: nil, account: nil)
+    def ask(chat, content, model: nil, observability: nil, account: nil, feature: nil)
       payload = observability_payload(observability, chat, model)
-      return perform_ask(chat, content, model: model, account: account) if payload.blank?
+      return perform_ask(chat, content, model: model, account: account, feature: feature) if payload.blank?
 
       response = nil
 
       Llm::EventBus.publish('chat.complete', payload) do |event_payload|
-        response = perform_ask(chat, content, model: model, account: account)
+        response = perform_ask(chat, content, model: model, account: account, feature: feature)
         attach_chat_response_best_effort!(event_payload, response)
         response
       rescue StandardError => e
@@ -68,8 +71,11 @@ class Llm::ChatClient
       error.message.to_s
     end
 
-    def perform_ask(chat, content, model:, account: nil)
+    def perform_ask(chat, content, model:, account: nil, feature: nil)
+      tagged_feature = Llm::OpenRouterRequestPolicy.routing_metadata(chat)[:feature]
+      effective_feature = Llm::CaptainModelPolicy.captain_feature?(tagged_feature) ? tagged_feature : feature
       Llm::StructuredOutputPolicy.execute(chat: chat) do
+        Llm::CaptainModelPolicy.guard_chat!(feature: effective_feature, chat: chat, model: model, account: account)
         if content.is_a?(RubyLLM::Content)
           attachments = content.attachments.filter_map { |attachment| attachment_source(attachment) }
           if attachments.any?
@@ -97,6 +103,21 @@ class Llm::ChatClient
       return context.chat(model: model) if context
 
       RubyLLM.chat(model: model)
+    end
+
+    def ensure_captain_model!(feature, model, chat: nil)
+      return unless Llm::CaptainModelPolicy.captain_feature?(feature)
+
+      effective_model = chat ? chat_model_name(chat) : model
+      Llm::CaptainModelPolicy.ensure_allowed!(feature: feature, model: effective_model, fallback_models: (model if chat))
+    end
+
+
+    def chat_model_name(chat)
+      return unless chat.respond_to?(:model)
+
+      chat_model = chat.model
+      chat_model.respond_to?(:id) ? chat_model.id : chat_model
     end
 
     def assume_model_exists?(model, account: nil)

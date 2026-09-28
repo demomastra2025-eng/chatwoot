@@ -7,9 +7,19 @@
 
 class ContactIdentifyAction
   include UrlHelper
+  class ThreadContactChanged < StandardError; end
+
   pattr_initialize [:contact!, :params!, { retain_original_contact_name: false, discard_invalid_attrs: false }]
 
-  def perform
+  # Used by the widget's atomic contact-update + conversation-create path.
+  # Reserve every possible merge target before any Contact row is written.
+  def thread_lock_contact_ids
+    [@contact.id, existing_identified_contact&.id, existing_email_contact&.id, existing_phone_number_contact&.id].compact.uniq.sort
+  end
+
+  def perform(locked_thread_contact_ids: nil)
+    @locked_thread_contact_ids = locked_thread_contact_ids
+    @existing_identified_contact = @existing_email_contact = @existing_phone_number_contact = nil if locked_thread_contact_ids
     @attributes_to_update = [:identifier, :name, :email, :phone_number]
 
     ActiveRecord::Base.transaction do
@@ -19,6 +29,8 @@ class ContactIdentifyAction
       update_contact
     end
     @contact
+  ensure
+    @locked_thread_contact_ids = nil
   end
 
   private
@@ -47,6 +59,8 @@ class ContactIdentifyAction
   end
 
   def process_contact_merge(mergee_contact)
+    raise ThreadContactChanged, 'contact merge target changed while reserving thread locks' if @locked_thread_contact_ids&.exclude?(mergee_contact.id)
+
     @contact = merge_contact(mergee_contact, @contact)
     @attributes_to_update.delete(:name) if retain_original_contact_name
   end

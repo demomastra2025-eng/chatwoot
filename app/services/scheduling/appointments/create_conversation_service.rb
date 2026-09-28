@@ -9,20 +9,53 @@ class Scheduling::Appointments::CreateConversationService
 
   def perform
     contact = account.contacts.find(params[:contact_id])
-
-    appointment.with_lock do
-      ensure_current_context!(contact)
-      if existing_conversation_matches?(contact)
-        appointment.reload
-      else
-        create_and_link_conversation!(contact)
-      end
-    end
+    linked_appointment_if_present(contact) || create_conversation_with_locks(contact)
   end
 
   private
 
   attr_reader :account, :actor, :appointment, :inbox, :params
+
+  def linked_appointment_if_present(contact)
+    return if appointment.conversation_id.blank?
+
+    appointment.with_lock do
+      ensure_current_context!(contact)
+      return appointment.reload if existing_conversation_matches?(contact)
+
+      ensure_conversation_absent!
+    end
+    nil
+  end
+
+  def create_conversation_with_locks(contact)
+    result = nil
+    ActiveRecord::Base.transaction(requires_new: true) do
+      # ConversationBuilder's after_create resolver claims this advisory lock.
+      # Take it before Contact (and the appointment) to match Thread routing.
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(account.id, contact.id)
+      # Merge and conversation owner-sync both acquire Contact before ContactInbox.
+      # Keep this row locked through the appointment event and identity resolution.
+      result, reused = contact.with_lock do
+        contact_inbox = resolve_contact_inbox(contact)
+        contact_inbox.lock!
+        link_or_reuse(contact, contact_inbox)
+      end
+      # A competing request may link while we wait. Discard the unused ContactInbox on a retry.
+      raise ActiveRecord::Rollback if reused
+    end
+    result
+  end
+
+  def link_or_reuse(contact, contact_inbox)
+    appointment.with_lock do
+      ensure_current_context!(contact)
+      return [appointment.reload, true] if existing_conversation_matches?(contact)
+
+      result = create_and_link_conversation!(contact_inbox)
+      [result, false]
+    end
+  end
 
   def ensure_current_context!(contact)
     return if appointment.contact_id == contact.id
@@ -54,15 +87,16 @@ class Scheduling::Appointments::CreateConversationService
     )
   end
 
-  def create_and_link_conversation!(contact)
+  def create_and_link_conversation!(contact_inbox)
     ensure_conversation_absent!
-    contact_inbox = resolve_contact_inbox(contact)
     conversation = ConversationBuilder.new(
       params: { assignee_id: actor&.id },
       contact_inbox: contact_inbox
     ).perform
     raise ActiveRecord::RecordInvalid, conversation unless conversation.persisted?
 
+    # Contact.owner is the relationship owner; the appointment only links the
+    # conversation and keeps its historical owner_id column dormant.
     appointment.update!(conversation: conversation)
     appointment
   end

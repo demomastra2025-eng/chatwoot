@@ -18,11 +18,14 @@ import CrmDealsAPI from 'dashboard/api/crm/deals';
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
-import { usePolicy } from 'dashboard/composables/usePolicy';
 import {
-  CRM_TASK_MANAGE_PERMISSIONS,
-  CRM_TASK_VIEW_PERMISSIONS,
-} from 'dashboard/constants/permissions';
+  hasCrmManagePermission,
+  hasCrmViewPermission,
+  hasPermissions,
+  getUserPermissions,
+} from 'dashboard/helper/permissionsHelper';
+import { CRM_SETTINGS_MANAGE_PERMISSION } from 'dashboard/constants/permissions';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -61,6 +64,7 @@ import {
   formatCalendarTitle,
   shiftAnchorDate,
   toDateTimeInputValue,
+  toWorkspaceCalendarDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
@@ -118,7 +122,6 @@ const referencesStore = useCrmReferencesStore();
 const store = useStore();
 const route = useRoute();
 const router = useRouter();
-const { checkPermissions } = usePolicy();
 const { locale, t } = useI18n();
 
 const TASKS_PREFERENCES_STORAGE_KEY = 'crm-tasks-page-preferences';
@@ -169,9 +172,12 @@ const boardSort = reactive({
 });
 const boardSortDirections = reactive({});
 const hasRestoredPreferences = ref(false);
+let restoredPreferenceKey = null;
+let lastRenderedPreferences = null;
 const persistedPreferencesByAccount = useLocalStorage(
   TASKS_PREFERENCES_STORAGE_KEY,
-  {}
+  {},
+  { flush: 'sync' }
 );
 
 const LIST_PAGE_SIZE = 25;
@@ -228,6 +234,7 @@ const form = reactive({
 });
 
 const ui = reactive({
+  dealOptionsError: false,
   error: null,
   isLoading: true,
   isSaving: false,
@@ -266,13 +273,60 @@ const workspaceTimezone = computed(() => {
   return account?.settings?.workspace_timezone || 'Asia/Almaty';
 });
 
+const canTask = (capabilities, task) =>
+  hasCrmManagePermission(
+    currentUser.value,
+    accountId.value,
+    'tasks',
+    capabilities,
+    task
+  );
 const canManageTasks = computed(() =>
-  checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
+  canTask('update_fields', selectedTask.value)
+);
+const canCreateTasks = computed(() =>
+  canTask(['create', 'assign'], { assigneeId: currentUser.value?.id })
+);
+const canScheduleTasks = computed(() =>
+  tasks.value.some(task => canTask('update_fields', task))
+);
+const calendarTasks = computed(() =>
+  tasks.value.map(task => ({
+    ...task,
+    readOnly: !canTask('update_fields', task),
+  }))
+);
+const canManageTaskSettings = computed(() =>
+  hasPermissions(
+    [CRM_SETTINGS_MANAGE_PERMISSION, 'administrator'],
+    getUserPermissions(currentUser.value, accountId.value)
+  )
+);
+const canEditTaskForm = computed(() =>
+  selectedTask.value ? canManageTasks.value : canCreateTasks.value
 );
 
 const canViewTasks = computed(() =>
-  checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
+  hasCrmViewPermission(currentUser.value, accountId.value, 'tasks')
 );
+const accountCanViewDeals = id => {
+  const account = currentUser.value?.accounts?.find(
+    candidate => Number(candidate.id) === Number(id)
+  );
+  const profileFeature = account?.features?.[FEATURE_FLAGS.CRM_DEALS];
+  const featureEnabled =
+    profileFeature === undefined
+      ? store.getters['accounts/isFeatureEnabledonAccount'](
+          id,
+          FEATURE_FLAGS.CRM_DEALS
+        )
+      : profileFeature;
+  return (
+    Boolean(featureEnabled) &&
+    hasCrmViewPermission(currentUser.value, id, 'deals')
+  );
+};
+const canViewDeals = computed(() => accountCanViewDeals(accountId.value));
 const doneStatus = computed(() =>
   referencesStore.taskStatuses.find(status => status.category === 'done')
 );
@@ -302,11 +356,15 @@ const taskContextOptions = computed(() => [
     label: t('CRM.TASKS.CONTEXT_KIND.personal'),
     value: 'personal',
   },
-  {
-    label: t('CRM.TASKS.CONTEXT_KIND.sales'),
-    value: 'sales',
-  },
+  ...(canViewDeals.value || selectedTask.value?.dealId
+    ? [{ label: t('CRM.TASKS.CONTEXT_KIND.sales'), value: 'sales' }]
+    : []),
 ]);
+const restrictedTaskContextLabel = computed(() =>
+  selectedTask.value?.contextKind === 'sales'
+    ? t('CRM.TASKS.CONTEXT_KIND.sales')
+    : t('CRM.TASKS.CONTEXT_KIND.personal')
+);
 
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
@@ -532,7 +590,7 @@ const hasActiveBoardTaskFilters = computed(() =>
       filters.assigneeId ||
       filters.dateRange.from ||
       filters.dateRange.to ||
-      filters.dealId ||
+      (canViewDeals.value && filters.dealId) ||
       filters.outcome ||
       Object.keys(customFieldFilters.value).length
   )
@@ -611,6 +669,9 @@ const calendarLabel = computed(() =>
     locale.value,
     workspaceTimezone.value
   )
+);
+const toolbarAnchorDate = computed(() =>
+  toWorkspaceCalendarDate(calendarAnchorDate.value, workspaceTimezone.value)
 );
 
 const tableColumns = computed(() => [
@@ -782,7 +843,10 @@ const accountPreferenceKey = computed(() =>
   String(accountId.value || 'default')
 );
 
-const sanitizeTasksPreferences = preferences => {
+const sanitizeTasksPreferences = (
+  preferences,
+  preferenceAccountId = accountId.value
+) => {
   const defaults = defaultTasksPreferences();
   const next = {
     ...defaults,
@@ -825,6 +889,10 @@ const sanitizeTasksPreferences = preferences => {
     next.filters.taskState = defaults.filters.taskState;
   }
 
+  if (!accountCanViewDeals(preferenceAccountId)) {
+    next.filters.dealId = '';
+  }
+
   if (
     !boardSortOptions.value.some(option => option.value === next.boardSort.key)
   ) {
@@ -841,11 +909,51 @@ const sanitizeTasksPreferences = preferences => {
   return next;
 };
 
+const readStoredTasksPreferences = () => {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(TASKS_PREFERENCES_STORAGE_KEY) || '{}'
+    );
+    return stored && typeof stored === 'object' && !Array.isArray(stored)
+      ? stored
+      : {};
+  } catch {
+    return persistedPreferencesByAccount.value || {};
+  }
+};
+
+const mergePreferenceChanges = (before, after, latest) => {
+  const merged = { ...latest };
+  const isObject = value =>
+    value && typeof value === 'object' && !Array.isArray(value);
+
+  new Set([...Object.keys(before), ...Object.keys(after)]).forEach(key => {
+    if (JSON.stringify(before[key]) === JSON.stringify(after[key])) return;
+
+    if (
+      isObject(before[key]) &&
+      isObject(after[key]) &&
+      isObject(latest[key])
+    ) {
+      merged[key] = mergePreferenceChanges(
+        before[key],
+        after[key],
+        latest[key]
+      );
+    } else if (after[key] === undefined) delete merged[key];
+    else merged[key] = after[key];
+  });
+
+  return merged;
+};
+
 const restoreTasksPreferences = () => {
-  const stored =
-    persistedPreferencesByAccount.value?.[accountPreferenceKey.value] || {};
+  const preferenceKey = accountPreferenceKey.value;
+  const stored = readStoredTasksPreferences()[preferenceKey] || {};
   const preferences = sanitizeTasksPreferences(stored);
 
+  restoredPreferenceKey = preferenceKey;
+  lastRenderedPreferences = JSON.parse(JSON.stringify(preferences));
   currentPresentation.value = preferences.currentPresentation;
   currentCalendarView.value = preferences.currentCalendarView;
   listSort.value = { ...preferences.listSort };
@@ -858,12 +966,11 @@ const restoreTasksPreferences = () => {
   listQuickFilters.q = preferences.listQuickFilters.q;
 };
 
-const persistTasksPreferences = () => {
-  if (!hasRestoredPreferences.value) return;
+const persistTasksPreferences = (key = accountPreferenceKey.value) => {
+  if (!hasRestoredPreferences.value || restoredPreferenceKey !== key) return;
 
-  persistedPreferencesByAccount.value = {
-    ...(persistedPreferencesByAccount.value || {}),
-    [accountPreferenceKey.value]: sanitizeTasksPreferences({
+  const current = sanitizeTasksPreferences(
+    {
       boardSort: { ...boardSort },
       boardSortDirections: { ...boardSortDirections },
       currentCalendarView: currentCalendarView.value,
@@ -871,7 +978,22 @@ const persistTasksPreferences = () => {
       filters: { ...filters },
       listQuickFilters: { ...listQuickFilters },
       listSort: { ...listSort.value },
-    }),
+    },
+    key
+  );
+  if (JSON.stringify(current) === JSON.stringify(lastRenderedPreferences))
+    return;
+
+  const storedByAccount = readStoredTasksPreferences();
+  const latest = sanitizeTasksPreferences(storedByAccount[key] || {}, key);
+  const next = sanitizeTasksPreferences(
+    mergePreferenceChanges(lastRenderedPreferences, current, latest),
+    key
+  );
+  lastRenderedPreferences = current;
+  persistedPreferencesByAccount.value = {
+    ...storedByAccount,
+    [key]: next,
   };
 };
 
@@ -1006,9 +1128,15 @@ const loadDealOptions = async () => {
   dealOptionsLoadGeneration += 1;
   const generation = dealOptionsLoadGeneration;
   const requestAccountId = accountId.value;
+  ui.dealOptionsError = false;
+  if (!canViewDeals.value) {
+    dealOptions.value = [];
+    return;
+  }
   const isCurrent = () =>
     generation === dealOptionsLoadGeneration &&
-    requestAccountId === accountId.value;
+    requestAccountId === accountId.value &&
+    canViewDeals.value;
 
   try {
     const { data } = await CrmDealsAPI.get({
@@ -1021,8 +1149,11 @@ const loadDealOptions = async () => {
       label: deal.title,
       value: deal.id,
     }));
-  } catch (error) {
-    if (isCurrent()) throw error;
+  } catch {
+    if (isCurrent()) {
+      dealOptions.value = [];
+      ui.dealOptionsError = true;
+    }
   }
 };
 
@@ -1061,6 +1192,7 @@ const openTaskSettings = () => {
 };
 
 const openCreateDrawer = async prefill => {
+  if (!canCreateTasks.value) return;
   taskEditorGeneration += 1;
   ui.isSaving = false;
   selectedTask.value = null;
@@ -1075,11 +1207,15 @@ const openCreateDrawer = async prefill => {
     Object.assign(form, prefill);
     if (prefill.dealId && !prefill.contextKind) form.contextKind = 'sales';
   }
+  if (!canViewDeals.value) {
+    form.contextKind = 'personal';
+    form.dealId = '';
+  }
   await loadDealOptions();
 };
 
 const openCalendarCreateDrawer = async payload => {
-  if (!canManageTasks.value) {
+  if (!canCreateTasks.value) {
     return;
   }
 
@@ -1098,14 +1234,19 @@ const taskDueInputValue = task => {
 
 const buildPayload = () => {
   const taskType = taskTypeByCode.value[form.activityType];
+  const canLinkDeal = Boolean(selectedTask.value || canViewDeals.value);
+  const dealId = canViewDeals.value ? form.dealId : selectedTask.value?.dealId;
+  const contextKind = canViewDeals.value
+    ? form.contextKind
+    : selectedTask.value?.contextKind || (dealId ? 'sales' : 'personal');
   const payload = compactPayload({
     activity_type: form.activityType || 'task',
     task_type_id: taskType?.id ? Number(taskType.id) : undefined,
     all_day: form.allDay,
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
-    context_kind: form.contextKind,
+    context_kind: canLinkDeal ? contextKind : 'personal',
     custom_attributes: form.customAttributes,
-    deal_id: form.dealId ? Number(form.dealId) : null,
+    deal_id: canLinkDeal && dealId ? Number(dealId) : null,
     description: form.description || undefined,
     due_at: form.allDay ? undefined : form.dueAt || undefined,
     due_on: form.allDay ? form.dueAt || undefined : undefined,
@@ -1127,7 +1268,7 @@ const buildPayload = () => {
   }
 
   if (selectedTask.value) {
-    payload.deal_id = form.dealId ? Number(form.dealId) : null;
+    payload.deal_id = dealId ? Number(dealId) : null;
     payload.description = form.description || null;
     payload.external_ref = form.externalRef || null;
     payload.originating_conversation_id = form.originatingConversationId
@@ -1266,7 +1407,11 @@ const taskMatchesRealtimeFilters = task => {
   ) {
     return false;
   }
-  if (filters.dealId && Number(task.dealId) !== Number(filters.dealId)) {
+  if (
+    canViewDeals.value &&
+    filters.dealId &&
+    Number(task.dealId) !== Number(filters.dealId)
+  ) {
     return false;
   }
   if (filters.outcome && task.outcome !== filters.outcome) return false;
@@ -1386,7 +1531,19 @@ const updateAllDay = enabled => {
 };
 
 const saveTask = async () => {
-  if (!canManageTasks.value || ui.isSaving) return;
+  if (!canEditTaskForm.value || ui.isSaving) return;
+  if (
+    selectedTask.value &&
+    Number(form.assigneeId || 0) !==
+      Number(selectedTask.value.assigneeId || 0) &&
+    !canTask('assign', selectedTask.value)
+  )
+    return;
+  if (
+    !selectedTask.value &&
+    !canTask(['create', 'assign'], { assigneeId: form.assigneeId })
+  )
+    return;
 
   ui.isSaving = true;
   const editorGeneration = taskEditorGeneration;
@@ -1446,7 +1603,12 @@ const saveTask = async () => {
 };
 
 const openTaskCompletionDialog = task => {
-  if (!canManageTasks.value || !doneStatus.value || task?.archivedAt) return;
+  if (
+    !canTask('complete_cancel', task) ||
+    !doneStatus.value ||
+    task?.archivedAt
+  )
+    return;
 
   taskCompletionGeneration += 1;
   taskCompletionTaskId = Number(task.id);
@@ -1506,7 +1668,7 @@ const saveTaskCompletion = async ({ task, note, taskOutcomeId }) => {
 
 const openTaskCancelDialog = task => {
   if (
-    !canManageTasks.value ||
+    !canTask('complete_cancel', task) ||
     task?.archivedAt ||
     task?.completedAt ||
     task?.cancelledAt
@@ -1552,7 +1714,10 @@ const saveTaskCancellation = async ({ task, reason }) => {
 };
 
 const reopenTask = async task => {
-  if (!canManageTasks.value || (!task?.completedAt && !task?.cancelledAt)) {
+  if (
+    !canTask('transition', task) ||
+    (!task?.completedAt && !task?.cancelledAt)
+  ) {
     return;
   }
 
@@ -1585,6 +1750,7 @@ const reopenTask = async task => {
 };
 
 const toggleArchived = async task => {
+  if (!canTask('delete_archive', task)) return;
   try {
     const updatedTask = await runTaskMutation(() =>
       task.archivedAt
@@ -1609,7 +1775,7 @@ const buildTaskQuery = () =>
     archived: effectiveArchivedFilter(),
     assignee_id: filters.assigneeId || undefined,
     custom_attribute_filters: customFieldFilters.value,
-    deal_id: filters.dealId || undefined,
+    deal_id: canViewDeals.value ? filters.dealId || undefined : undefined,
     due_from: filters.dateRange.from || undefined,
     due_to: filters.dateRange.to || undefined,
     outcome: filters.outcome || undefined,
@@ -2027,7 +2193,7 @@ const reconcileFailedOptimisticTask = ({ optimisticTask, previousTask }) => {
 };
 
 const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
-  if (!canManageTasks.value || !task) return;
+  if (!canTask('update_fields', task) || !task) return;
 
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
@@ -2118,7 +2284,7 @@ const consumeTaskPrefillQuery = async isCurrent => {
   if (queryValue('action') !== 'new') return;
   if (!isCurrent()) return;
 
-  if (!canManageTasks.value) {
+  if (!canCreateTasks.value) {
     await clearTaskPrefillQuery(isCurrent);
     return;
   }
@@ -2258,7 +2424,7 @@ const applyFilters = async () => {
     archived: filterDraft.archived,
     assigneeId: filterDraft.assigneeId,
     dateRange: { ...filterDraft.dateRange },
-    dealId: filterDraft.dealId,
+    dealId: canViewDeals.value ? filterDraft.dealId : '',
     outcome: filterDraft.outcome,
     taskState: filterDraft.taskState,
   });
@@ -2374,7 +2540,7 @@ watch(listSort, () => {
 });
 
 const startEditingTaskTitle = task => {
-  if (!canManageTasks.value) {
+  if (!canTask('update_fields', task)) {
     openEditDrawer(task);
     return;
   }
@@ -2385,6 +2551,7 @@ const startEditingTaskTitle = task => {
 };
 
 const saveTaskTitle = async task => {
+  if (!canTask('update_fields', task)) return;
   const latestTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const currentTask = taskTitleEditSnapshot.value || task;
@@ -2449,6 +2616,7 @@ const saveTaskTitle = async task => {
 };
 
 const handleTaskDueAtChange = async ({ task, dueAt }) => {
+  if (!canTask('update_fields', task)) return;
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const nextDueAt = dueAt || '';
@@ -2494,7 +2662,7 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
 };
 
 const updateTaskCalendarRange = async ({ allDay, task, startsAt, endsAt }) => {
-  if (!canManageTasks.value) {
+  if (!canTask('update_fields', task)) {
     return;
   }
 
@@ -2617,8 +2785,10 @@ const initializeTasksPage = async ({ reloadAgents = false } = {}) => {
       referencesStore.loadTaskStatuses(),
       referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('task'),
-      loadDealOptions(),
     ]);
+    if (!isCurrent()) return;
+
+    loadDealOptions();
     if (!isCurrent()) return;
 
     resetForm();
@@ -2663,6 +2833,7 @@ onBeforeUnmount(() => {
 });
 
 watch(accountId, async nextAccountId => {
+  persistTasksPreferences(restoredPreferenceKey);
   taskUiActionGeneration += 1;
   taskPageInitializationGeneration += 1;
   scheduleTaskListReload.cancel();
@@ -2688,6 +2859,36 @@ watch(accountId, async nextAccountId => {
     await initializeTasksPage({ reloadAgents: true });
   }
 });
+
+watch(
+  () => [accountId.value, canViewDeals.value],
+  ([nextAccountId, allowed], [previousAccountId, wasAllowed]) => {
+    if (String(nextAccountId) !== String(previousAccountId)) return;
+    if (allowed && !wasAllowed) {
+      loadDealOptions();
+      return;
+    }
+    if (allowed || !wasAllowed) return;
+    dealOptionsLoadGeneration += 1;
+    dealOptions.value = [];
+    ui.dealOptionsError = false;
+    filters.dealId = '';
+    filterDraft.dealId = '';
+    if (drawerOpen.value) {
+      form.dealId = selectedTask.value?.dealId ?? '';
+      form.contextKind =
+        selectedTask.value?.contextKind || (form.dealId ? 'sales' : 'personal');
+      form.customAttributes = taskCustomAttributesForContext(
+        form.customAttributes,
+        form.contextKind
+      );
+    }
+    if (hasRestoredPreferences.value && canViewTasks.value) {
+      persistTasksPreferences();
+      loadTasks();
+    }
+  }
+);
 
 watch(
   () => [
@@ -2760,7 +2961,7 @@ watch(
           <DateTimePicker
             class="!w-auto"
             type="date"
-            :value="calendarAnchorDate"
+            :value="toolbarAnchorDate"
             :display-label="calendarLabel"
             hide-icon
             input-class="!h-8 !w-auto !bg-n-alpha-black2 !px-3 !py-1.5 !text-sm !font-semibold !text-n-slate-12 !outline-n-weak hover:!outline-n-slate-6 focus-visible:!outline-n-brand data-[state=open]:!outline-n-brand"
@@ -2794,7 +2995,7 @@ watch(
         />
 
         <Button
-          v-if="canManageTasks"
+          v-if="canManageTaskSettings"
           size="sm"
           color="slate"
           variant="ghost"
@@ -2806,7 +3007,7 @@ watch(
         />
 
         <Button
-          v-if="canManageTasks"
+          v-if="canCreateTasks"
           size="sm"
           icon="i-lucide-plus"
           :label="$t('CRM.TASKS.NEW_TASK')"
@@ -2856,7 +3057,7 @@ watch(
               : $t('CRM.TASKS.EMPTY_DESCRIPTION')
           "
           :action-label="
-            canManageTasks && !hasListSearchQuery
+            canCreateTasks && !hasListSearchQuery
               ? $t('CRM.TASKS.NEW_TASK')
               : ''
           "
@@ -2895,7 +3096,7 @@ watch(
                 <span class="flex min-w-0 items-center gap-2 overflow-hidden">
                   <Input
                     v-if="
-                      canManageTasks &&
+                      canTask('update_fields', row) &&
                       Number(editingTaskTitleId) === Number(row.id)
                     "
                     autofocus
@@ -2914,7 +3115,7 @@ watch(
                     class="min-w-0 flex-1 overflow-hidden border-0 bg-transparent p-0 text-left"
                     :title="row.title"
                     @click="
-                      canManageTasks
+                      canTask('update_fields', row)
                         ? startEditingTaskTitle(row)
                         : openEditDrawer(row)
                     "
@@ -2988,7 +3189,7 @@ watch(
             <template #cell-dueAt="{ row }">
               <div class="flex flex-wrap items-center gap-2">
                 <SchedulingDateTimeField
-                  v-if="canManageTasks"
+                  v-if="canTask('update_fields', row)"
                   class="!w-auto"
                   :type="row.allDay ? 'date' : 'datetime'"
                   :display-label="
@@ -3024,7 +3225,7 @@ watch(
                   @click="openEditDrawer(row)"
                 />
                 <Button
-                  v-if="canManageTasks"
+                  v-if="canTask('delete_archive', row)"
                   size="sm"
                   color="slate"
                   variant="ghost"
@@ -3058,10 +3259,11 @@ watch(
             :anchor-date="calendarAnchorDate"
             :archived="filters.archived"
             :assignee-names="assigneeNameById"
-            :can-manage="canManageTasks"
+            :can-create="canCreateTasks"
+            :can-manage="canScheduleTasks"
             :deal-names="dealNameById"
             :field-definitions="taskFieldDefinitions"
-            :tasks="tasks"
+            :tasks="calendarTasks"
             :task-state="filters.taskState"
             :view="currentCalendarView"
             :workspace-timezone="workspaceTimezone"
@@ -3094,7 +3296,7 @@ watch(
           class="min-h-0 flex-1"
           :task-type-resolver="taskTypeResolver"
           :assignees="assigneeOptions"
-          :can-manage="canManageTasks"
+          :can-manage="task => canTask('update_fields', task)"
           :bucket-load-failed="boardBucketLoadFailed"
           :bucket-loading="boardBucketLoading"
           :bucket-meta="boardBucketMeta"
@@ -3121,11 +3323,11 @@ watch(
         selectedTask ? $t('CRM.GENERAL.SAVE') : $t('CRM.GENERAL.CREATE')
       "
       :is-loading="ui.isSaving"
-      :disable-confirm="isTaskFormDisabled"
+      :disable-confirm="isTaskFormDisabled || !canEditTaskForm"
       @close="closeDrawer"
       @confirm="saveTask"
     >
-      <div class="grid gap-4">
+      <div class="grid gap-4" :inert="selectedTask && !canManageTasks">
         <CrmConflictNotice
           v-if="taskConflict.active"
           :is-reloading="taskConflict.isReloading"
@@ -3174,12 +3376,28 @@ watch(
 
             <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
+              :disabled="selectedTask && !canTask('assign', selectedTask)"
               :model-value="form.assigneeId"
               :options="assigneeOptions"
               @update:model-value="form.assigneeId = $event"
             />
 
+            <div
+              v-if="!canViewDeals && selectedTask?.dealId"
+              role="group"
+              :aria-label="$t('CRM.TASKS.FORM.CONTEXT_KIND')"
+              class="grid gap-1"
+            >
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.TASKS.FORM.CONTEXT_KIND') }}
+              </span>
+              <span>{{ restrictedTaskContextLabel }}</span>
+              <p class="mb-0 text-xs text-n-slate-11">
+                {{ $t('CRM.TASKS.FORM.LINKED_DEAL_RESTRICTED') }}
+              </p>
+            </div>
             <SchedulingSelectField
+              v-else
               :label="$t('CRM.TASKS.FORM.CONTEXT_KIND')"
               :model-value="form.contextKind"
               :options="taskContextOptions"
@@ -3187,11 +3405,19 @@ watch(
             />
 
             <SchedulingSelectField
+              v-if="canViewDeals"
               :label="$t('CRM.TASKS.FORM.DEAL')"
               :model-value="form.dealId"
               :options="dealOptions"
               @update:model-value="form.dealId = $event"
             />
+            <p
+              v-if="canViewDeals && ui.dealOptionsError"
+              role="status"
+              class="mb-0 text-xs text-n-ruby-11 md:col-span-2"
+            >
+              {{ $t('CRM.TASKS.FORM.DEALS_UNAVAILABLE') }}
+            </p>
 
             <p
               v-if="form.contextKind === 'sales' && !form.dealId"
@@ -3254,7 +3480,16 @@ watch(
         />
       </div>
 
-      <template v-if="selectedTask && canManageTasks" #footer>
+      <template
+        v-if="
+          selectedTask &&
+          (canManageTasks ||
+            canTask('complete_cancel', selectedTask) ||
+            canTask('transition', selectedTask) ||
+            canTask('delete_archive', selectedTask))
+        "
+        #footer
+      >
         <div class="flex items-center justify-between gap-3">
           <Button
             size="sm"
@@ -3266,6 +3501,7 @@ watch(
           <div class="flex items-center gap-2">
             <Button
               v-if="
+                canTask('complete_cancel', selectedTask) &&
                 doneStatus &&
                 !selectedTask.archivedAt &&
                 !selectedTask.cancelledAt
@@ -3283,6 +3519,7 @@ watch(
             />
             <Button
               v-if="
+                canTask('complete_cancel', selectedTask) &&
                 !selectedTask.archivedAt &&
                 !selectedTask.completedAt &&
                 !selectedTask.cancelledAt
@@ -3295,7 +3532,10 @@ watch(
               @click="openTaskCancelDialog(selectedTask)"
             />
             <Button
-              v-if="selectedTask.completedAt || selectedTask.cancelledAt"
+              v-if="
+                canTask('transition', selectedTask) &&
+                (selectedTask.completedAt || selectedTask.cancelledAt)
+              "
               size="sm"
               color="slate"
               variant="faded"
@@ -3304,6 +3544,7 @@ watch(
               @click="reopenTask(selectedTask)"
             />
             <Button
+              v-if="canTask('delete_archive', selectedTask)"
               size="sm"
               color="slate"
               variant="outline"
@@ -3315,6 +3556,7 @@ watch(
               @click="toggleArchived(selectedTask)"
             />
             <Button
+              v-if="canManageTasks"
               size="sm"
               :is-loading="ui.isSaving"
               :disabled="isTaskFormDisabled"
@@ -3392,12 +3634,20 @@ watch(
           />
 
           <SchedulingSelectField
+            v-if="canViewDeals"
             :label="$t('CRM.TASKS.FORM.DEAL')"
             :model-value="filterDraft.dealId"
             :options="dealOptions"
             :placeholder="$t('CRM.TASKS.FORM.DEAL')"
             @update:model-value="filterDraft.dealId = $event"
           />
+          <p
+            v-if="canViewDeals && ui.dealOptionsError"
+            role="status"
+            class="mb-0 text-xs text-n-ruby-11 md:col-span-2"
+          >
+            {{ $t('CRM.TASKS.FORM.DEALS_UNAVAILABLE') }}
+          </p>
         </div>
 
         <div class="grid gap-4 md:grid-cols-3">

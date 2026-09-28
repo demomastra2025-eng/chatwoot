@@ -1,6 +1,6 @@
 class ActionCableBroadcastJob < ApplicationJob
   queue_as do
-    arguments.second == 'communication_thread.updated' ? :communication_thread_realtime : :critical
+    arguments.second == 'communication_thread.updated' ? :communication_thread_realtime : :action_cable_realtime
   end
   include Events::Types
 

@@ -18,10 +18,7 @@ class Captain::Tools::Account::GetAppointmentService < Captain::Tools::Account::
     return tool_failure('Appointment not found') if appointment.blank?
 
     formatted_payload(
-      appointment: ::Scheduling::PayloadBuilder.appointment(
-        appointment,
-        include_finance: appointment_finance_visible?(appointment)
-      )
+      appointment: ::Scheduling::PayloadBuilder.appointment(appointment)
     )
   end
 

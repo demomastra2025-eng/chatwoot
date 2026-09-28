@@ -85,4 +85,21 @@ RSpec.describe Reminders::ReconcileEnrollmentService do
     expect(claim.reminder.reload).to be_processing
     expect(claim.reminder.metadata[Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY]).to eq(123)
   end
+
+  it 'keeps a rebound appointment reminder on the current contact when reconciliation holds the enrollment lock' do
+    first_owner = create(:user, account: account)
+    next_owner = create(:user, account: account)
+    first_contact = create(:contact, account: account, owner: first_owner)
+    next_contact = create(:contact, account: account, owner: next_owner)
+    appointment.update!(contact: first_contact)
+    claim = materialize_step
+    enrollment.remindable # Cache the original appointment context before a contact rebind.
+
+    appointment.update!(contact: next_contact)
+    expect(claim.reminder.reload.owner_id).to eq(next_owner.id)
+
+    described_class.new(enrollment: enrollment).perform
+
+    expect(claim.reminder.reload).to have_attributes(owner_id: next_owner.id, target_contact_id: next_contact.id)
+  end
 end

@@ -123,9 +123,26 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def update
-    @contact.assign_attributes(contact_update_params)
-    @contact.save!
+    Contact.transaction do
+      lock_phone_identity_before_owner!
+      # A deliberate assignment to the current auto-projected owner must also
+      # invalidate pending Captain replies, in the same transaction as the
+      # Contact update. Read mergeable attributes only after locking the row.
+      @contact.lock! if permitted_params.key?(:owner_id)
+      attributes = contact_update_params
+      @contact.human_owner_assignment_requested = attributes.key?(:owner_id)
+      @contact.assign_attributes(attributes)
+      unchanged_owner_assignment = @contact.human_owner_assignment_requested && @contact.owner_id.present? &&
+                                   !@contact.will_save_change_to_owner_id?
+      @contact.save!
+      if unchanged_owner_assignment
+        Contacts::OwnerSyncService.new(contact: @contact, actor: Current.executed_by || Current.user,
+                                       human_takeover: true).perform
+      end
+    end
     process_avatar_from_url
+  ensure
+    @contact.human_owner_assignment_requested = false if @contact
   end
 
   def destroy
@@ -146,6 +163,14 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   private
+
+  def lock_phone_identity_before_owner!
+    return unless permitted_params.key?(:owner_id) && permitted_params.key?(:phone_number)
+
+    # Both a phone save and ContactMergeAction claim this advisory before any
+    # Contact row; combined owner/phone commands must follow the same order.
+    Contacts::PhoneIdentityLock.acquire!(account_id: @contact.account_id)
+  end
 
   def authorize_contact!
     authorize(@contact || Contact)

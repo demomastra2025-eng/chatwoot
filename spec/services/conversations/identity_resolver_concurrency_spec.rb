@@ -11,6 +11,7 @@ RSpec.describe Conversations::IdentityResolver, :aggregate_failures do
 
   after do
     Conversation.where(account_id: account.id).find_each(&:destroy!)
+    AutomationEvent.where(account_id: account.id).delete_all
     ContactInbox.where(inbox_id: inbox.id).delete_all
     Inbox.where(id: inbox.id).delete_all
     Channel::Api.where(id: channel.id).delete_all

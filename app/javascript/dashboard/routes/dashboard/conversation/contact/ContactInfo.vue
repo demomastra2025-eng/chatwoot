@@ -3,11 +3,7 @@ import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import {
-  CRM_DEAL_MANAGE_PERMISSIONS,
-  CRM_TASK_MANAGE_PERMISSIONS,
-} from 'dashboard/constants/permissions';
-import { hasPermissions } from 'dashboard/helper/permissionsHelper';
+import { hasCrmManagePermission } from 'dashboard/helper/permissionsHelper';
 import {
   DuplicateContactException,
   ExceptionWithMessage,
@@ -86,21 +82,17 @@ export default {
     contactProfileLink() {
       return `/app/accounts/${this.$route.params.accountId}/contacts/${this.contact.id}`;
     },
-    currentAccountPermissions() {
-      const currentAccount = this.currentUser.accounts.find(
-        account => Number(account.id) === Number(this.currentAccountId)
-      );
-      return currentAccount?.permissions || [];
-    },
     canCreateCrmDeal() {
       return (
         this.isFeatureEnabledonAccount(
           this.currentAccountId,
           FEATURE_FLAGS.CRM_DEALS
         ) &&
-        hasPermissions(
-          CRM_DEAL_MANAGE_PERMISSIONS,
-          this.currentAccountPermissions
+        hasCrmManagePermission(
+          this.currentUser,
+          this.currentAccountId,
+          'deals',
+          'create'
         )
       );
     },
@@ -110,9 +102,11 @@ export default {
           this.currentAccountId,
           FEATURE_FLAGS.CRM_TASKS
         ) &&
-        hasPermissions(
-          CRM_TASK_MANAGE_PERMISSIONS,
-          this.currentAccountPermissions
+        hasCrmManagePermission(
+          this.currentUser,
+          this.currentAccountId,
+          'tasks',
+          'create'
         )
       );
     },

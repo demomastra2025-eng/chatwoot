@@ -116,7 +116,7 @@ class Captain::Mcp::ToolCatalog
             title: tool.annotations&.title.presence || tool.name.to_s.humanize,
             description: tool.description.to_s,
             risk_level: risk_level_for(tool),
-            idempotent: tool.annotations&.idempotent_hint || false,
+            idempotent: idempotent_for(tool),
             mcp_tool_name: tool.name,
             input_schema: tool.params_schema
           }
@@ -150,10 +150,18 @@ class Captain::Mcp::ToolCatalog
 
     def risk_level_for(tool)
       annotations = tool.annotations
-      return 'low' if annotations&.read_only_hint
       return 'high' if annotations&.destructive_hint
+      return 'low' if annotations&.read_only_hint
 
       'medium'
+    end
+
+    def idempotent_for(tool)
+      annotations = tool.annotations
+      return false if annotations&.destructive_hint
+      return false if annotations&.idempotent_hint == false
+
+      annotations&.idempotent_hint == true || annotations&.read_only_hint == true
     end
   end
 end

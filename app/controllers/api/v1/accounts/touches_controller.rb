@@ -24,10 +24,9 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
   def create
     authorize Reminder
 
-    touch = Current.account.reminders.new(touch_attributes)
-    touch.creator ||= Current.user
-    touch.save!
-    touch.approve! if touch.draft? && touch.ready_for_pending?
+    attributes = touch_attributes
+    touch = Reminders::CreateService.new(account: Current.account, remindable: attributes.delete(:remindable),
+                                         attributes: attributes, creator: Current.user).perform
 
     render_payload(Outbound::PayloadBuilder.touch_payload(touch), status: :created)
   end

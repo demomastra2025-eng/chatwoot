@@ -57,6 +57,46 @@ describe('CrmTaskCalendar', () => {
     expect(appointments[0].customAttributes).toEqual({ task_type: 'call' });
   });
 
+  it('separates create grants from per-task calendar mutation grants', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        canManage: true,
+        canCreate: false,
+        tasks: [
+          { id: 41, dueAt: '2026-09-04T11:00:00.000Z', readOnly: true },
+          { id: 42, dueAt: '2026-09-04T12:00:00.000Z', readOnly: false },
+        ],
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    expect(calendar.props('allowCreateWithoutResources')).toBe(false);
+    expect(calendar.props('appointments').map(item => item.readOnly)).toEqual([
+      true,
+      false,
+    ]);
+    expect(calendar.props('readOnly')).toBe(false);
+    expect(calendar.props('allowCreate')).toBe(false);
+    expect(calendar.props('allowEdit')).toBe(true);
+  });
+
+  it('allows creation without letting create-only users drag tasks', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        canManage: false,
+        canCreate: true,
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    expect(calendar.props('createOnly')).toBe(true);
+    expect(calendar.props('readOnly')).toBe(false);
+  });
+
   it('places an all-day task in the workspace date strip', () => {
     const wrapper = shallowMount(CrmTaskCalendar, {
       props: {

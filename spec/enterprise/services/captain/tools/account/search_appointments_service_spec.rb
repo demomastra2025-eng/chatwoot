@@ -25,8 +25,7 @@ RSpec.describe Captain::Tools::Account::SearchAppointmentsService do
           appointment.association(:conversation).loaded? &&
             appointment.conversation.association(:inbox).loaded? &&
             appointment.conversation.association(:communication_thread).loaded?
-        end,
-        include_finance: true
+        end
       ).and_call_original
 
       payload = JSON.parse(service.execute(client_name: 'Aruzhan', resource_id: resource.id, limit: 1))
@@ -83,31 +82,13 @@ RSpec.describe Captain::Tools::Account::SearchAppointmentsService do
       expect(payload['total_count']).to eq(1)
     end
 
-    it 'applies the finance scope separately to each visible appointment' do
-      AccessControl::SystemRoleBootstrapper.call(account: account)
-      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
-      AccessControl::ModeTransition.call(account: account, to: :shadow)
-      AccessControl::ModeTransition.call(account: account, to: :enforced)
-      appointment1.contact.update!(owner: user)
+    it 'returns the saved service amount without historical finance fields' do
       appointment1.update!(service_amount: 20_000)
-      appointment2.update!(service_amount: 30_000)
-      account_user = account.account_users.find_by!(user: user)
-      account_user.access_role.grants.create!(
-        account: account,
-        resource: 'appointments',
-        capability: 'view_finance',
-        access_scope: 'own'
-      )
+      payload = JSON.parse(service.execute(client_name: 'Aruzhan', limit: 10))
+      appointment = payload.fetch('appointments').sole
 
-      payload = JSON.parse(service.execute(limit: 10))
-      appointments = payload.fetch('appointments').index_by { |appointment| appointment.fetch('id') }
-
-      expect(appointments.fetch(appointment1.id)).to include('service_amount' => 20_000)
-      expect(appointments.fetch(appointment2.id).keys).not_to include('service_amount', 'payment_status', 'payments', 'expense')
-
-      filtered_payload = JSON.parse(service.execute(payment_status: appointment2.payment_status, limit: 10))
-      expect(filtered_payload.fetch('appointments')).to eq([])
-      expect(filtered_payload.fetch('total_count')).to eq(0)
+      expect(appointment).to include('service_amount' => 20_000)
+      expect(appointment.keys).not_to include('payment_status', 'payments', 'expense')
     end
   end
 end

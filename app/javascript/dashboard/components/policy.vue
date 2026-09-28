@@ -19,12 +19,21 @@ const props = defineProps({
     type: Array,
     default: null,
   },
+  crmResources: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const { shouldShow } = usePolicy();
 
 const show = computed(() =>
-  shouldShow(props.featureFlag, props.permissions, props.installationTypes)
+  shouldShow(
+    props.featureFlag,
+    props.permissions,
+    props.installationTypes,
+    props.crmResources
+  )
 );
 </script>
 

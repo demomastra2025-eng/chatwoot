@@ -5,9 +5,7 @@ describe('#actions', () => {
   describe('#setReferrerHost', () => {
     it('creates actions properly', () => {
       actions.setReferrerHost({ commit }, 'one-link.kz');
-      expect(commit.mock.calls).toEqual([
-        ['SET_REFERRER_HOST', 'one-link.kz'],
-      ]);
+      expect(commit.mock.calls).toEqual([['SET_REFERRER_HOST', 'one-link.kz']]);
     });
   });
 

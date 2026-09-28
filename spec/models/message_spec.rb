@@ -455,6 +455,49 @@ RSpec.describe Message do
       expect(visible_messages).not_to include(previous_message)
     end
 
+    it 'claims the resolved Thread before reopening a linked conversation' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      conversation.resolved!
+      communication_thread = conversation.reload.refresh_communication_thread!
+      message.created_at = Time.current
+      allow(conversation).to receive(:communication_thread).and_return(communication_thread)
+      expect(communication_thread).to receive(:lock!).ordered.and_call_original
+      expect(message).to receive(:perform_reopen_transition).ordered.and_call_original
+
+      message.send(:reopen_resolved_conversation)
+    end
+
+    it 'reopens a resolved conversation when its communication thread is already open' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      conversation.resolved!
+      communication_thread = conversation.reload.refresh_communication_thread!
+      previous_session_started_at = communication_thread.session_started_at
+      communication_thread.update!(status: :open)
+      message.created_at = Time.current
+
+      message.send(:reopen_resolved_conversation)
+
+      expect(conversation.reload).to be_open
+      expect(communication_thread.reload.session_started_at).to eq(previous_session_started_at)
+    end
+
+    it 'rechecks stale conversation state under lock before deciding whether to reopen' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.refresh_communication_thread!
+      # rubocop:disable Rails/SkipsModelValidations
+      Conversation.where(id: conversation.id).update_all(status: Conversation.statuses[:resolved])
+      CommunicationThread.where(id: communication_thread.id).update_all(status: CommunicationThread.statuses[:resolved])
+      # rubocop:enable Rails/SkipsModelValidations
+
+      expect(conversation).to be_open
+      message.save!
+
+      expect(conversation.reload).to be_open
+    end
+
     it 'reopens snoozed conversation when the message is from a contact' do
       conversation.snoozed!
       message.save!
@@ -557,6 +600,22 @@ RSpec.describe Message do
 
   context 'when message is created' do
     let(:message) { build(:message, account: create(:account)) }
+
+    it 'uses receipt time for a backdated live Captain incoming but not for imported history' do
+      account = create(:account)
+      inbox = create(:inbox, account: account)
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+      conversation = create(:conversation, inbox: inbox, account: account, last_activity_at: 2.hours.ago)
+
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       sender: conversation.contact, message_type: :incoming, created_at: 3.hours.ago,
+                       content_attributes: { imported_history: true })
+      expect(conversation.reload.last_activity_at).to be < 1.hour.ago
+
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       sender: conversation.contact, message_type: :incoming, created_at: 3.hours.ago)
+      expect(conversation.reload.last_activity_at).to be > 1.minute.ago
+    end
 
     it 'updates conversation last_activity_at when created' do
       message.save!

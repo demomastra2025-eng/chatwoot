@@ -5,6 +5,7 @@ class Contacts::ReferenceMergeService
     'assignment_client_ownerships' => 'contact_id',
     'assignment_quota_usages' => 'contact_id',
     'calls' => 'contact_id',
+    'campaign_audience_recipients' => 'contact_id',
     'campaign_deliveries' => 'contact_id',
     'communication_threads' => 'contact_id',
     'confirmation_requests' => 'contact_id',
@@ -38,9 +39,12 @@ class Contacts::ReferenceMergeService
     ensure_assignment_ownerships_do_not_collide!
     deduplicate_assignment_quota_usages!
     ensure_campaign_deliveries_do_not_collide!
+    moved_appointment_ids = account.scheduling_appointments.where(contact_id: mergee_contact.id).pluck(:id)
+    bulk_reassign('scheduling_appointments', 'contact_id')
     self.class.merge_reminder_references!(base_contact: base_contact, mergee_contact: mergee_contact)
 
     remaining_references.each { |table, column| bulk_reassign(table, column) }
+    sync_merged_appointment_reminders!(moved_appointment_ids)
   end
 
   def self.merge_reminder_references!(base_contact:, mergee_contact:)
@@ -79,7 +83,16 @@ class Contacts::ReferenceMergeService
   attr_reader :account, :base_contact, :mergee_contact
 
   def remaining_references
-    REFERENCE_COLUMNS.except(*HANDLED_BY_CONTACT_MERGE, 'reminders')
+    REFERENCE_COLUMNS.except(*HANDLED_BY_CONTACT_MERGE, 'reminders', 'scheduling_appointments')
+  end
+
+  def sync_merged_appointment_reminders!(appointment_ids)
+    account.scheduling_appointments.where(id: appointment_ids).find_each do |appointment|
+      service = Reminders::SyncRemindableService.new(remindable: appointment, allow_processing: true)
+      appointment.reminders.where(status: %w[draft pending processing]).find_each do |reminder|
+        service.perform_for(reminder, raise_errors: true)
+      end
+    end
   end
 
   def ensure_provider_commands_do_not_collide!

@@ -20,7 +20,7 @@ RSpec.describe Contacts::OwnerSyncService do
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
       create(:crm_deal_contact, account: account, deal: other_contact_deal, contact: other_contact_thread.contact, primary: true)
       task = create(:crm_task, account: account, deal: deal, assignee: nil)
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: other_agent, owner_id: other_agent.id)
       ownership = create(:assignment_client_ownership,
                          account: account,
                          contact: contact,
@@ -28,7 +28,7 @@ RSpec.describe Contacts::OwnerSyncService do
                          assignment_policy: create(:assignment_policy, account: account))
       reminder = create(:reminder, account: account, touch_conversation: conversation_without_assignee)
       task.update!(assignee: other_agent)
-      appointment.update!(owner: other_agent)
+      appointment_reminder = create(:reminder, account: account, remindable: appointment, scheduled_at: 2.days.from_now, body: 'Visit')
       reminder.update!(owner: other_agent)
       task_reminder = create(
         :reminder,
@@ -52,7 +52,7 @@ RSpec.describe Contacts::OwnerSyncService do
       expect(thread.reload.assignee).to eq(owner)
       expect(deal.reload.owner).to be_nil
       expect(task.reload.assignee).to eq(other_agent)
-      expect(appointment.reload.owner).to eq(owner)
+      expect(appointment_reminder.reload.owner).to eq(owner)
       expect(ownership.reload.user).to eq(owner)
       expect(reminder.reload.owner).to eq(owner)
       expect(task_reminder.reload.owner).to eq(other_agent)
@@ -71,6 +71,25 @@ RSpec.describe Contacts::OwnerSyncService do
       expect(contact.reload.owner).to eq(owner)
     end
 
+    it 'does not treat an automatic Contact owner projection with a request user as a deliberate human takeover' do
+      account.enable_features!('communication_threads')
+      channel = create(:channel_widget, account: account)
+      assistant = create(:captain_assistant, account: account)
+      create(:captain_inbox, captain_assistant: assistant, inbox: channel.inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: channel.inbox, status: :pending)
+      control_owner = conversation.reload.communication_thread
+      previous_user = Current.user
+      Current.user = owner
+
+      contact.update!(owner: owner)
+
+      expect(conversation.reload.assignee_id).to eq(owner.id)
+      expect(control_owner.reload.captain_control_state).to eq('ai')
+      expect(control_owner.captain_control_generation).to eq(0)
+    ensure
+      Current.user = previous_user
+    end
+
     it 'clears synced owners when the contact owner is cleared' do
       contact.update!(owner: owner)
       conversation = create(:conversation, account: account, contact: contact, assignee: owner)
@@ -78,7 +97,9 @@ RSpec.describe Contacts::OwnerSyncService do
       deal = create(:crm_deal, account: account, owner: owner)
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
       task = create(:crm_task, account: account, deal: deal, assignee: owner)
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+      appointment = create(:scheduling_appointment, account: account, contact: contact,
+                                                    created_by: other_agent, owner_id: owner.id)
+      appointment_reminder = create(:reminder, account: account, remindable: appointment, scheduled_at: 2.days.from_now, body: 'Visit')
       ownership = create(:assignment_client_ownership,
                          account: account,
                          contact: contact,
@@ -93,9 +114,42 @@ RSpec.describe Contacts::OwnerSyncService do
       expect(thread.reload.assignee).to be_nil
       expect(deal.reload.owner).to eq(owner)
       expect(task.reload.assignee).to eq(owner)
-      expect(appointment.reload.owner).to be_nil
+      expect(appointment_reminder.reload.owner).to eq(other_agent)
       expect(AssignmentClientOwnership.exists?(id: ownership.id)).to be(false)
       expect(reminder.reload.owner).to be_nil
+    end
+
+    it 'does not rewrite a materialized processing appointment reminder during owner transfer' do
+      contact.update!(owner: owner)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: other_agent)
+      reminder = create(:reminder, account: account, remindable: appointment,
+                                   scheduled_at: 2.days.from_now, body: 'Already sent')
+      reminder.mark_processing!
+      reminder.mark_delivery_materialized!(123)
+
+      contact.update!(owner: other_agent)
+
+      expect(reminder.reload.owner).to eq(owner)
+      expect(reminder).to be_processing
+      expect(reminder.metadata[Reminder::DELIVERY_MATERIALIZED_MESSAGE_ID_KEY]).to eq(123)
+    end
+
+    it 'updates the sender of unmaterialized processing reminders before delivery' do
+      contact.update!(owner: owner)
+      conversation = create(:conversation, account: account, contact: contact)
+      appointment = create(:scheduling_appointment, account: account, contact: contact,
+                                                    conversation: conversation, created_by: other_agent)
+      appointment_reminder = create(:reminder, account: account, remindable: appointment, touch_conversation: conversation,
+                                               scheduled_at: 2.days.from_now, body: 'Visit')
+      direct_reminder = create(:reminder, account: account, touch_conversation: conversation,
+                                          owner: owner, scheduled_at: 2.days.from_now, body: 'Direct')
+      appointment_reminder.mark_processing!
+      direct_reminder.mark_processing!
+
+      contact.update!(owner: other_agent)
+
+      expect(appointment_reminder.reload).to have_attributes(owner_id: other_agent.id, status: 'processing')
+      expect(direct_reminder.reload).to have_attributes(owner_id: other_agent.id, status: 'processing')
     end
 
     it 'does not sync deals where the contact is not primary' do

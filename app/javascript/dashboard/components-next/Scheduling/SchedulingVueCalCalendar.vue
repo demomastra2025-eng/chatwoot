@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { VueCal } from 'vue-cal';
-import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import {
   APPOINTMENT_STATUS_ICONS,
@@ -14,13 +13,15 @@ import {
   buildBreakIntervals,
   buildCalendarColumns,
   buildDayListForView,
-  clipIntervalToDay,
-  buildTimeOffIntervals,
+  calendarWallToWorkspaceInstant,
+  clipWorkspaceIntervalToDay,
   formatDateKey,
   formatTimeLabel,
+  isWorkspaceClockChangeDay,
   minuteOfDayFromDate,
   snapMinute,
   toDate,
+  workspaceWallTime,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import { useSchedulingCalendarIndexes } from 'dashboard/routes/dashboard/scheduling/composables/useSchedulingCalendarIndexes';
 
@@ -56,6 +57,14 @@ const props = defineProps({
   readOnly: {
     type: Boolean,
     default: false,
+  },
+  allowCreate: {
+    type: Boolean,
+    default: true,
+  },
+  allowEdit: {
+    type: Boolean,
+    default: true,
   },
   createOnly: {
     type: Boolean,
@@ -146,24 +155,147 @@ const {
   resources: resourcesRef,
   slots: slotsRef,
   timeOffs: timeOffsRef,
+  workspaceTimezone: toRef(props, 'workspaceTimezone'),
 });
 
 const isTimelineView = computed(() => ['day', 'week'].includes(props.view));
-const toCalendarDate = value =>
-  utcToZonedTime(toDate(value), props.workspaceTimezone);
+const logicalAnchorDate = computed(() => {
+  const wall = workspaceWallTime(props.anchorDate, props.workspaceTimezone);
+  return new Date(wall.year, wall.month - 1, wall.day, 12);
+});
+// VueCal uses native browser-local Dates. On a browser spring-forward day its
+// 02:30 does not exist even if the Workspace has a real 02:30. Render that
+// timeline on the previous (same-weekday) week, then translate headings and
+// writes back to the actual Workspace day. Fall-back's doubled hour needs the
+// same treatment. Month has no hourly grid.
+const calendarProjectionDays = computed(() => {
+  if (!isTimelineView.value) return 0;
+  const anchor = logicalAnchorDate.value;
+  const first = new Date(anchor);
+  first.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  const length = props.view === 'week' ? 7 : 1;
+  if (length === 1) first.setTime(anchor.getTime());
+  for (let index = 0; index < length; index += 1) {
+    const day = new Date(
+      first.getFullYear(),
+      first.getMonth(),
+      first.getDate() + index
+    );
+    const nextDay = new Date(
+      day.getFullYear(),
+      day.getMonth(),
+      day.getDate() + 1
+    );
+    if (day.getTimezoneOffset() !== nextDay.getTimezoneOffset()) {
+      return 7;
+    }
+  }
+  return 0;
+});
+const projectCalendarDay = date =>
+  new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() - calendarProjectionDays.value,
+    date.getHours(),
+    date.getMinutes(),
+    date.getSeconds(),
+    date.getMilliseconds()
+  );
+const actualCalendarDay = date =>
+  new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate() + calendarProjectionDays.value
+  );
+const isClockChangeCalendarDay = date =>
+  isWorkspaceClockChangeDay(actualCalendarDay(date), props.workspaceTimezone);
+const isClockChangeAppointment = appointment =>
+  [appointment?.startsAt, appointment?.endsAt].some(value => {
+    if (!value) return false;
+    const wall = workspaceWallTime(value, props.workspaceTimezone);
+    return isWorkspaceClockChangeDay(
+      new Date(wall.year, wall.month - 1, wall.day),
+      props.workspaceTimezone
+    );
+  });
+const toCalendarDate = value => {
+  const wall = workspaceWallTime(value, props.workspaceTimezone);
+  if (!wall) return new Date(NaN);
+  const day = new Date(
+    wall.year,
+    wall.month - 1,
+    wall.day - calendarProjectionDays.value,
+    wall.hour,
+    wall.minute,
+    wall.second,
+    wall.millisecond
+  );
+  // A month event only needs its correct cell; keep it on that day even when
+  // the browser skips its wall hour. Its visible time comes from the instant.
+  if (!calendarProjectionDays.value && day.getHours() !== wall.hour) {
+    day.setHours(wall.hour - 1, wall.minute, wall.second, wall.millisecond);
+  }
+  return day;
+};
 const toApiIso = value =>
-  zonedTimeToUtc(toDate(value), props.workspaceTimezone).toISOString();
+  calendarWallToWorkspaceInstant(
+    toDate(value),
+    props.workspaceTimezone,
+    calendarProjectionDays.value
+  ).toISOString();
+// Month drag moves a day, not a wall hour. A browser-gap month event may use
+// a fallback Date for layout; persist its original Workspace hour instead.
+const toEventApiIso = (date, originalInstant) =>
+  props.view === 'month' && originalInstant
+    ? calendarWallToWorkspaceInstant(
+        date,
+        props.workspaceTimezone,
+        0,
+        workspaceWallTime(originalInstant, props.workspaceTimezone)
+      ).toISOString()
+    : toApiIso(date);
+const isRealWorkspaceTime = date => {
+  const wall = workspaceWallTime(
+    calendarWallToWorkspaceInstant(
+      date,
+      props.workspaceTimezone,
+      calendarProjectionDays.value
+    ),
+    props.workspaceTimezone
+  );
+  return (
+    wall?.dateKey === formatDateKey(actualCalendarDay(date)) &&
+    wall.minuteOfDay === minuteOfDayFromDate(date)
+  );
+};
 const buildWorkspaceTimeOffIntervals = column =>
-  buildTimeOffIntervals(props.timeOffs, column, toCalendarDate);
-const calendarAnchorDate = computed(() => toCalendarDate(props.anchorDate));
+  props.timeOffs
+    .filter(
+      item => item.resourceId === null || item.resourceId === column.resourceId
+    )
+    .map(item =>
+      clipWorkspaceIntervalToDay(
+        item.startsAt,
+        item.endsAt,
+        column.date,
+        props.workspaceTimezone
+      )
+    )
+    .filter(Boolean);
+const calendarAnchorDate = computed(() =>
+  projectCalendarDay(logicalAnchorDate.value)
+);
 const monthDays = computed(() =>
-  buildDayListForView('month', calendarAnchorDate.value)
+  buildDayListForView('month', logicalAnchorDate.value)
 );
 const columns = computed(() =>
-  buildCalendarColumns(props.view, calendarAnchorDate.value, props.resources)
+  buildCalendarColumns(props.view, logicalAnchorDate.value, props.resources)
 );
 const monthStats = computed(() => buildMonthStats(monthDays.value));
-const todayDateKey = computed(() => formatDateKey(toCalendarDate(new Date())));
+const todayDateKey = computed(
+  () => workspaceWallTime(new Date(), props.workspaceTimezone).dateKey
+);
 
 const resourceById = computed(() => {
   return props.resources.reduce((result, resource) => {
@@ -372,10 +504,11 @@ const buildAppointmentIntervalsForColumn = (
       );
     })
     .map(appointment => {
-      return clipIntervalToDay(
-        toCalendarDate(appointment.startsAt),
-        toCalendarDate(appointment.endsAt),
-        column.date
+      return clipWorkspaceIntervalToDay(
+        appointment.startsAt,
+        appointment.endsAt,
+        column.date,
+        props.workspaceTimezone
       );
     })
     .filter(Boolean);
@@ -474,7 +607,9 @@ const canCreateTimelineRangeForResource = ({
   endsAt,
   excludeAppointmentId = null,
 }) => {
-  const dateKey = formatDateKey(startsAt);
+  if (!isRealWorkspaceTime(startsAt) || !isRealWorkspaceTime(endsAt))
+    return false;
+  const dateKey = formatDateKey(actualCalendarDay(startsAt));
   const column = columns.value.find(item => {
     return (
       Number(item.resourceId) === Number(resourceId) && item.dateKey === dateKey
@@ -522,7 +657,7 @@ const findCreatableResourceForRange = ({
 
 const weekDays = computed(() =>
   isWeekSharedTimeline.value
-    ? buildDayListForView('week', calendarAnchorDate.value)
+    ? buildDayListForView('week', logicalAnchorDate.value)
     : []
 );
 const timelineScrollMinute = computed(() => {
@@ -768,11 +903,11 @@ const unavailableBackgroundEvents = computed(() => {
       const intervals = buildWeekUnavailableSegments(day);
 
       return intervals.map(interval => {
-        const start = new Date(day);
+        const start = projectCalendarDay(day);
         start.setHours(0, 0, 0, 0);
         start.setMinutes(interval.startMinute, 0, 0);
 
-        const end = new Date(day);
+        const end = projectCalendarDay(day);
         end.setHours(0, 0, 0, 0);
         end.setMinutes(interval.endMinute, 0, 0);
 
@@ -803,11 +938,11 @@ const unavailableBackgroundEvents = computed(() => {
     );
 
     return intervals.map(interval => {
-      const start = new Date(column.date);
+      const start = projectCalendarDay(column.date);
       start.setHours(0, 0, 0, 0);
       start.setMinutes(interval.startMinute, 0, 0);
 
-      const end = new Date(column.date);
+      const end = projectCalendarDay(column.date);
       end.setHours(0, 0, 0, 0);
       end.setMinutes(interval.endMinute, 0, 0);
 
@@ -839,11 +974,11 @@ const timelineBackgroundEvents = computed(() => {
 
       if (!holiday && props.resources.length === 1 && column) {
         const intervalEvent = (interval, kind) => {
-          const start = new Date(day);
+          const start = projectCalendarDay(day);
           start.setHours(0, 0, 0, 0);
           start.setMinutes(interval.startMinute, 0, 0);
 
-          const end = new Date(day);
+          const end = projectCalendarDay(day);
           end.setHours(0, 0, 0, 0);
           end.setMinutes(interval.endMinute, 0, 0);
 
@@ -879,7 +1014,7 @@ const timelineBackgroundEvents = computed(() => {
         return [];
       }
 
-      const start = new Date(day);
+      const start = projectCalendarDay(day);
       start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
@@ -905,7 +1040,7 @@ const timelineBackgroundEvents = computed(() => {
     const holiday = blockingHolidayForDay(column.date);
 
     if (fullDayKind) {
-      const start = new Date(column.date);
+      const start = projectCalendarDay(column.date);
       start.setHours(0, 0, 0, 0);
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
@@ -936,11 +1071,11 @@ const timelineBackgroundEvents = computed(() => {
       props.workdayOverrides,
       column
     ).forEach(interval => {
-      const start = new Date(column.date);
+      const start = projectCalendarDay(column.date);
       start.setHours(0, 0, 0, 0);
       start.setMinutes(interval.startMinute, 0, 0);
 
-      const end = new Date(column.date);
+      const end = projectCalendarDay(column.date);
       end.setHours(0, 0, 0, 0);
       end.setMinutes(interval.endMinute, 0, 0);
 
@@ -963,11 +1098,11 @@ const timelineBackgroundEvents = computed(() => {
     });
 
     buildWorkspaceTimeOffIntervals(column).forEach(interval => {
-      const start = new Date(column.date);
+      const start = projectCalendarDay(column.date);
       start.setHours(0, 0, 0, 0);
       start.setMinutes(interval.startMinute, 0, 0);
 
-      const end = new Date(column.date);
+      const end = projectCalendarDay(column.date);
       end.setHours(0, 0, 0, 0);
       end.setMinutes(interval.endMinute, 0, 0);
 
@@ -1008,12 +1143,20 @@ const appointmentEvents = computed(() => {
     const resourceColor =
       appointment.resourceColor || resource?.color || '#2563eb';
     const resourceName = appointment.resourceName || resource?.name || '';
+    const timeChangeReadOnly = isClockChangeAppointment(appointment);
+    const start = toCalendarDate(appointment.startsAt);
+    const end = toCalendarDate(appointment.endsAt);
 
     return {
       allDay: Boolean(appointment.allDay),
       id: String(appointment.id),
-      start: toCalendarDate(appointment.startsAt),
-      end: toCalendarDate(appointment.endsAt),
+      start,
+      // A fold can make a real appointment's wall end precede its start.
+      // Give VueCal a visible placeholder; the label reads the UTC instants.
+      end:
+        timeChangeReadOnly && end <= start
+          ? new Date(start.getTime() + 30 * 60_000)
+          : end,
       title: clientName,
       schedule:
         isWeekSharedTimeline.value || !props.resources.length
@@ -1024,7 +1167,7 @@ const appointmentEvents = computed(() => {
       status: appointment.status,
       statusIcon: appointment.statusIcon || '',
       statusLabel: appointment.statusLabel || '',
-      paymentStatus: appointment.paymentStatus,
+
       clientName,
       serviceNameSnapshot: subtitle,
       resourceColor,
@@ -1032,8 +1175,11 @@ const appointmentEvents = computed(() => {
       muted: Boolean(appointment.muted),
       cancelled: Boolean(appointment.cancelled),
       durationMin: appointment.durationMin,
-      draggable: true,
-      resizable: true,
+      timeChangeReadOnly,
+      draggable:
+        props.allowEdit && !appointment.readOnly && !timeChangeReadOnly,
+      resizable:
+        props.allowEdit && !appointment.readOnly && !timeChangeReadOnly,
       class: `scheduling-vue-cal__appointment scheduling-vue-cal__appointment--${appointment.status || 'scheduled'}`,
     };
   });
@@ -1078,7 +1224,7 @@ const editableEvents = computed(() => {
 
   if (props.createOnly) {
     return {
-      create: true,
+      create: props.allowCreate,
       delete: false,
       drag: false,
       resize: false,
@@ -1086,10 +1232,10 @@ const editableEvents = computed(() => {
   }
 
   return {
-    create: true,
+    create: props.allowCreate,
     delete: false,
-    drag: true,
-    resize: true,
+    drag: props.allowEdit,
+    resize: props.allowEdit,
   };
 });
 
@@ -1137,8 +1283,28 @@ const shouldDisplayBackgroundLabel = backgroundKind => {
   return !['unavailable', 'closed', 'day-off'].includes(backgroundKind);
 };
 
+const eventStartMinute = event =>
+  event.appointment?.startsAt
+    ? workspaceWallTime(event.appointment.startsAt, props.workspaceTimezone)
+        ?.minuteOfDay
+    : minuteOfDayFromDate(event.start);
 const formatEventTimeRange = event => {
-  return `${formatTimeLabel(minuteOfDayFromDate(event.start))}-${formatTimeLabel(minuteOfDayFromDate(event.end))}`;
+  if (event.timeChangeReadOnly && event.appointment) {
+    const formatter = new Intl.DateTimeFormat(localeCode.value, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+      timeZone: props.workspaceTimezone,
+      timeZoneName: 'shortOffset',
+    });
+    return `${formatter.format(toDate(event.appointment.startsAt))}–${formatter.format(toDate(event.appointment.endsAt))}`;
+  }
+  const start = eventStartMinute(event);
+  const end = event.appointment?.endsAt
+    ? workspaceWallTime(event.appointment.endsAt, props.workspaceTimezone)
+        ?.minuteOfDay
+    : minuteOfDayFromDate(event.end);
+  return `${formatTimeLabel(start)}-${formatTimeLabel(end)}`;
 };
 
 const customFieldSummaryTitle = appointment => {
@@ -1159,6 +1325,9 @@ const customFieldSummaryTitle = appointment => {
 const eventTitle = event => {
   return [
     event.allDay ? '' : formatEventTimeRange(event),
+    event.timeChangeReadOnly
+      ? t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')
+      : '',
     event.hideStatus ? '' : resolveEventStatusLabel(event),
     event.resourceName,
     event.clientName,
@@ -1258,6 +1427,9 @@ const defaultCreatePayload = day => {
 const unavailableSlotMessage = () => {
   useAlert(t('SCHEDULING.CALENDAR.UNAVAILABLE_SLOT'));
 };
+const clockChangeMessage = () => {
+  useAlert(t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY'));
+};
 
 const buildUnscheduledCreatePayload = ({ startsAt, endsAt }) => ({
   endsAt: toApiIso(endsAt),
@@ -1300,6 +1472,13 @@ const buildTimelineClickPayload = ({ cell, cursor, e }) => {
     return null;
   }
 
+  if (
+    !isRealWorkspaceTime(timelineRange.startsAt) ||
+    !isRealWorkspaceTime(timelineRange.endsAt)
+  ) {
+    return null;
+  }
+
   if (supportsUnscheduledCreate.value) {
     return buildUnscheduledCreatePayload(timelineRange);
   }
@@ -1315,7 +1494,12 @@ const buildTimelineClickPayload = ({ cell, cursor, e }) => {
 };
 
 const handleCellClick = payload => {
-  if (props.readOnly) {
+  if (props.readOnly || !props.allowCreate) {
+    return;
+  }
+
+  if (isClockChangeCalendarDay(payload.cell.start)) {
+    clockChangeMessage();
     return;
   }
 
@@ -1347,13 +1531,23 @@ const handleCellClick = payload => {
 };
 
 const handleEventCreate = ({ event, resolve }) => {
-  if (props.readOnly) {
+  if (props.readOnly || !props.allowCreate) {
     resolve(false);
     return;
   }
 
   const startsAt = new Date(event.start);
   const endsAt = new Date(event.end);
+  if (isClockChangeCalendarDay(startsAt) || isClockChangeCalendarDay(endsAt)) {
+    clockChangeMessage();
+    resolve(false);
+    return;
+  }
+  if (!isRealWorkspaceTime(startsAt) || !isRealWorkspaceTime(endsAt)) {
+    unavailableSlotMessage();
+    resolve(false);
+    return;
+  }
 
   if (supportsUnscheduledCreate.value) {
     emit(
@@ -1390,7 +1584,12 @@ const handleEventCreate = ({ event, resolve }) => {
 };
 
 const handleEventDrop = ({ event }) => {
-  if (props.readOnly || props.createOnly) {
+  if (
+    props.readOnly ||
+    props.createOnly ||
+    !props.allowEdit ||
+    event.appointment?.readOnly
+  ) {
     return false;
   }
 
@@ -1399,6 +1598,18 @@ const handleEventDrop = ({ event }) => {
   const appointment = event.appointment;
   const startsAt = new Date(event.start);
   const endsAt = new Date(event.end);
+  if (
+    isClockChangeAppointment(appointment) ||
+    isClockChangeCalendarDay(startsAt) ||
+    isClockChangeCalendarDay(endsAt)
+  ) {
+    clockChangeMessage();
+    return false;
+  }
+  if (!isRealWorkspaceTime(startsAt) || !isRealWorkspaceTime(endsAt)) {
+    unavailableSlotMessage();
+    return false;
+  }
 
   if (supportsUnscheduledCreate.value) {
     if (!appointment) {
@@ -1409,8 +1620,8 @@ const handleEventDrop = ({ event }) => {
     emit('moveAppointment', {
       allDay: Boolean(event.allDay),
       appointment,
-      endsAt: toApiIso(endsAt),
-      startsAt: toApiIso(startsAt),
+      endsAt: toEventApiIso(endsAt, appointment.endsAt),
+      startsAt: toEventApiIso(startsAt, appointment.startsAt),
     });
 
     return true;
@@ -1434,16 +1645,21 @@ const handleEventDrop = ({ event }) => {
 
   emit('moveAppointment', {
     appointment,
-    endsAt: toApiIso(endsAt),
+    endsAt: toEventApiIso(endsAt, appointment.endsAt),
     resourceId,
-    startsAt: toApiIso(startsAt),
+    startsAt: toEventApiIso(startsAt, appointment.startsAt),
   });
 
   return true;
 };
 
 const handleEventResizeEnd = ({ event }) => {
-  if (props.readOnly || props.createOnly) {
+  if (
+    props.readOnly ||
+    props.createOnly ||
+    !props.allowEdit ||
+    event.appointment?.readOnly
+  ) {
     return false;
   }
 
@@ -1452,6 +1668,18 @@ const handleEventResizeEnd = ({ event }) => {
   const appointment = event.appointment;
   const startsAt = new Date(event.start);
   const endsAt = new Date(event.end);
+  if (
+    isClockChangeAppointment(appointment) ||
+    isClockChangeCalendarDay(startsAt) ||
+    isClockChangeCalendarDay(endsAt)
+  ) {
+    clockChangeMessage();
+    return false;
+  }
+  if (!isRealWorkspaceTime(startsAt) || !isRealWorkspaceTime(endsAt)) {
+    unavailableSlotMessage();
+    return false;
+  }
 
   if (supportsUnscheduledCreate.value) {
     if (!appointment) {
@@ -1462,8 +1690,8 @@ const handleEventResizeEnd = ({ event }) => {
     emit('resizeAppointment', {
       allDay: Boolean(event.allDay),
       appointment,
-      endsAt: toApiIso(endsAt),
-      startsAt: toApiIso(startsAt),
+      endsAt: toEventApiIso(endsAt, appointment.endsAt),
+      startsAt: toEventApiIso(startsAt, appointment.startsAt),
     });
 
     return true;
@@ -1484,8 +1712,8 @@ const handleEventResizeEnd = ({ event }) => {
 
   emit('resizeAppointment', {
     appointment,
-    endsAt: toApiIso(endsAt),
-    startsAt: toApiIso(startsAt),
+    endsAt: toEventApiIso(endsAt, appointment.endsAt),
+    startsAt: toEventApiIso(startsAt, appointment.startsAt),
   });
 
   return true;
@@ -1607,21 +1835,43 @@ onMounted(() => {
                   label
                 }}</span>
                 <span class="scheduling-vue-cal__weekday-text">
-                  {{ date.getDate() }}
+                  {{ actualCalendarDay(date).getDate() }}
                 </span>
                 <span
-                  v-if="view === 'week' && blockingHolidayForDay(date)"
+                  v-if="isClockChangeCalendarDay(date)"
+                  :title="t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')"
+                  class="text-n-amber-11"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="i-lucide-triangle-alert inline-block size-3"
+                  />
+                  <span class="sr-only">{{
+                    t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')
+                  }}</span>
+                </span>
+                <span
+                  v-if="
+                    view === 'week' &&
+                    blockingHolidayForDay(actualCalendarDay(date))
+                  "
                   class="scheduling-vue-cal__weekday-holiday-dot"
                 />
               </div>
               <div
                 v-if="
                   view === 'week' &&
-                  weekDayEmployeeLabelByDateKey.get(formatDateKey(date))
+                  weekDayEmployeeLabelByDateKey.get(
+                    formatDateKey(actualCalendarDay(date))
+                  )
                 "
                 class="scheduling-vue-cal__weekday-secondary"
               >
-                {{ weekDayEmployeeLabelByDateKey.get(formatDateKey(date)) }}
+                {{
+                  weekDayEmployeeLabelByDateKey.get(
+                    formatDateKey(actualCalendarDay(date))
+                  )
+                }}
               </div>
             </div>
           </template>
@@ -1694,6 +1944,19 @@ onMounted(() => {
                 class="scheduling-vue-cal__month-badge scheduling-vue-cal__month-badge--holiday"
               >
                 {{ blockingHolidayForDay(cell.start).title }}
+              </span>
+              <span
+                v-if="isClockChangeCalendarDay(cell.start)"
+                :title="t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')"
+                class="scheduling-vue-cal__month-badge text-n-amber-11"
+              >
+                <span
+                  aria-hidden="true"
+                  class="i-lucide-triangle-alert inline-block size-3"
+                />
+                <span class="sr-only">{{
+                  t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')
+                }}</span>
               </span>
               <span
                 v-if="formatMonthSlotMeta(cell.start)"
@@ -1778,6 +2041,16 @@ onMounted(() => {
                     <div class="scheduling-vue-cal__event-title">
                       {{ event.clientName }}
                     </div>
+                    <span
+                      v-if="event.timeChangeReadOnly"
+                      class="text-[10px] text-n-amber-11"
+                    >
+                      <span
+                        aria-hidden="true"
+                        class="i-lucide-triangle-alert inline-block size-3"
+                      />
+                      {{ t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY') }}
+                    </span>
                   </div>
                 </div>
 
@@ -1808,9 +2081,22 @@ onMounted(() => {
                 @keydown="handleEventKeydown($event, event)"
               >
                 <template v-if="!event.allDay">
-                  {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
+                  {{ formatTimeLabel(eventStartMinute(event)) }}
                 </template>
                 {{ event.clientName }}
+                <span
+                  v-if="event.timeChangeReadOnly"
+                  :title="t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')"
+                  class="ml-1"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="i-lucide-triangle-alert inline-block size-3"
+                  />
+                  <span class="sr-only">{{
+                    t('SCHEDULING.CALENDAR.TIME_CHANGE_READ_ONLY')
+                  }}</span>
+                </span>
                 <span v-if="event.resourceName" class="ml-1">
                   {{ event.resourceName }}
                 </span>

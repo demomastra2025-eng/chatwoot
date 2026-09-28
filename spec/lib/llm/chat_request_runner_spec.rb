@@ -9,6 +9,10 @@ RSpec.describe Llm::ChatRequestRunner do
   let(:chat_model) { instance_double(RubyLLM::Model::Info, id: 'gpt-4.1-mini') }
 
   before do
+    # Runner/observability cases use non-default fixtures; egress negatives have dedicated policy specs.
+    allow(Llm::CaptainModelPolicy).to receive(:allowed_models).and_return(
+      %w[openai/gpt-5.6-luna openai/gpt-5.4-mini gpt-4.1-mini]
+    )
     allow(chat).to receive(:with_params).and_return(chat)
     allow(chat).to receive(:with_headers).and_return(chat)
     allow(chat).to receive(:with_temperature).and_return(chat)

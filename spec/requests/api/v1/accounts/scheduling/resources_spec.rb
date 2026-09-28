@@ -14,39 +14,14 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     response.parsed_body
   end
 
-  it 'shows scoped specialist compensation only for resources in the finance viewer team' do
-    employee = create(:user, account: account, role: :agent)
-    teammate = create(:user, account: account, role: :agent)
-    outsider = create(:user, account: account, role: :agent)
-    team = create(:team, account: account)
-    other_team = create(:team, account: account)
-    create(:team_member, team: team, user: employee)
-    create(:team_member, team: team, user: teammate)
-    create(:team_member, team: other_team, user: outsider)
-    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
-    access_role = account.access_roles.find_by!(system_key: 'department_lead')
-    account.account_users.find_by!(user: employee).update!(access_role: access_role)
-    expect(access_role.grants.find_by!(resource: 'appointments', capability: 'view_finance').access_scope).to eq('team')
-    account.authorize_access_control_mode_transition { account.update!(access_control_mode: 'enforced') }
-    team_resource = resource.tap { |item| item.update!(user: teammate, team: team) }
-    other_resource = create(
-      :scheduling_resource,
-      account: account,
-      user: outsider,
-      team: other_team,
-      compensation_type: 'fixed',
-      compensation_value: 9_000
-    )
-    employee_headers = employee.create_new_auth_token
-
+  it 'hides historical specialist compensation in both resource and calendar payloads' do
+    resource
     get "/api/v1/accounts/#{account.id}/scheduling/resources",
-        headers: employee_headers,
+        headers: headers,
         as: :json
 
     expect(response).to have_http_status(:ok)
-    resources = response_body.fetch('payload').index_by { |item| item.fetch('id') }
-    expect(resources.fetch(team_resource.id)).to include('compensation_value' => team_resource.compensation_value)
-    expect(resources.fetch(other_resource.id)).not_to include(
+    expect(response_body.fetch('payload').find { |item| item['id'] == resource.id }.keys).not_to include(
       'compensation_type', 'compensation_value', 'compensation_percent'
     )
 
@@ -56,18 +31,16 @@ RSpec.describe 'Scheduling Resources API', type: :request do
           from: Time.zone.parse('2026-03-09 00:00:00').iso8601,
           to: Time.zone.parse('2026-03-16 00:00:00').iso8601
         },
-        headers: employee_headers,
+        headers: headers,
         as: :json
 
     expect(response).to have_http_status(:ok)
-    resources = response_body.dig('payload', 'resources').index_by { |item| item.fetch('id') }
-    expect(resources.fetch(team_resource.id)).to include('compensation_value' => team_resource.compensation_value)
-    expect(resources.fetch(other_resource.id)).not_to include(
+    expect(response_body.dig('payload', 'resources').find { |item| item['id'] == resource.id }.keys).not_to include(
       'compensation_type', 'compensation_value', 'compensation_percent'
     )
   end
 
-  it 'updates a resource to fixed plus percent compensation without auth header crashes' do
+  it 'updates a specialist schedule without auth header crashes' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
           params: {
             name: resource.name,
@@ -75,44 +48,33 @@ RSpec.describe 'Scheduling Resources API', type: :request do
             color: resource.color,
             timezone: resource.timezone,
             slot_duration_min: resource.slot_duration_min,
-            compensation_type: 'fixed_plus_percent',
-            compensation_value: 5_000,
-            compensation_percent: 10,
             active: resource.active
           },
           headers: headers,
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'compensation_type')).to eq('fixed_plus_percent')
-    expect(response_body.dig('payload', 'compensation_percent')).to eq(10)
     expect(response_body.dig('payload', 'schedule_update_supported')).to be(true)
     expect(response_body.dig('payload', 'availability_override_supported')).to be(true)
   end
 
-  it 'normalizes decimal zero resource compensation values' do
+  it 'normalizes a decimal zero slot duration' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
           params: {
             name: resource.name,
             timezone: resource.timezone,
-            slot_duration_min: '45.0',
-            compensation_type: 'fixed_plus_percent',
-            compensation_value: '5000.00',
-            compensation_percent: '10.0'
+            slot_duration_min: '45.0'
           },
           headers: headers,
           as: :json
 
     expect(response).to have_http_status(:ok)
     expect(resource.reload.slot_duration_min).to eq(45)
-    expect(resource.compensation_value).to eq(5_000)
-    expect(resource.compensation_percent).to eq(10)
   end
 
   it 'does not coerce non-integer resource fields through integer normalization' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
           params: {
-            compensation_type: 'fixed_plus_percent',
             active: false,
             user_id: ''
           },
@@ -120,7 +82,7 @@ RSpec.describe 'Scheduling Resources API', type: :request do
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(resource.reload.compensation_type).to eq('fixed_plus_percent')
+    resource.reload
     expect(resource.active).to be(false)
     expect(resource.user_id).to be_nil
   end
@@ -139,18 +101,6 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(account.scheduling_resources.where("custom_attributes ->> 'medelement_specialist_code' = ?", 'spoofed-specialist')).to be_empty
   end
 
-  it 'rejects fractional resource compensation values without truncating them' do
-    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
-          params: {
-            compensation_value: '5000.50'
-          },
-          headers: headers,
-          as: :json
-
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response_body['error']).to eq('compensation_value must be an integer')
-    expect(resource.reload.compensation_value).to eq(5_000)
-  end
 
   it 'updates work rules without auth header crashes' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
@@ -522,8 +472,7 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body.dig('details', 'blocking_appointment_count')).to eq(1)
     expect(response_body.dig('details', 'blocking_appointments', 0)).to include(
       'id' => appointment.id,
-      'status' => 'confirmed',
-      'payment_status' => 'awaiting_payment'
+      'status' => 'confirmed'
     )
     expect(resource.reload.deleted_from_scheduling?).to be(false)
   end

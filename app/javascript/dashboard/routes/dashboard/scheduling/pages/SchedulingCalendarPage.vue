@@ -41,7 +41,6 @@ import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_VALUES,
-  PAYMENT_STATUS_VALUES,
 } from '../constants';
 import {
   formatSchedulingErrorMessage,
@@ -59,6 +58,8 @@ import {
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
+  toWorkspaceAnchorDate,
+  toWorkspaceCalendarDate,
 } from '../helpers';
 import {
   appointmentMatchesCustomFieldFilters,
@@ -114,7 +115,6 @@ const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
   customFieldFilters: {},
-  paymentStatusFilters: [],
   showInactiveAppointments: false,
   statusFilters: [],
 });
@@ -269,8 +269,12 @@ const pageTitle = computed(() =>
   formatCalendarTitle(
     calendarStore.currentView,
     calendarStore.anchorDate,
-    locale.value
+    locale.value,
+    workspaceTimezone.value
   )
+);
+const toolbarAnchorDate = computed(() =>
+  toWorkspaceCalendarDate(calendarStore.anchorDate, workspaceTimezone.value)
 );
 
 const isSelectedAppointmentProviderOwned = computed(
@@ -646,13 +650,6 @@ const appointmentStatusOptions = computed(() =>
     iconClass: APPOINTMENT_STATUS_ICON_CLASSES[value],
     label: appointmentStatusLabels.value[value] || value,
     labelClass: APPOINTMENT_STATUS_ICON_CLASSES[value],
-    value,
-  }))
-);
-
-const appointmentPaymentStatusOptions = computed(() =>
-  PAYMENT_STATUS_VALUES.map(value => ({
-    label: t(`SCHEDULING.PAYMENT_STATUS.${value}`),
     value,
   }))
 );
@@ -1039,9 +1036,6 @@ const cloneAppointmentCustomFieldFilters = filters =>
 
 const syncAppointmentFilterDraft = () => {
   appointmentFilterDraft.statusFilters = [...calendarStore.statusFilters];
-  appointmentFilterDraft.paymentStatusFilters = [
-    ...calendarStore.paymentStatusFilters,
-  ];
   appointmentFilterDraft.showInactiveAppointments =
     calendarStore.showInactiveAppointments;
   appointmentFilterDraft.customFieldFilters =
@@ -1064,9 +1058,7 @@ const applyAppointmentFilters = async () => {
   calendarStore.setShowInactiveAppointments(
     appointmentFilterDraft.showInactiveAppointments
   );
-  calendarStore.setPaymentStatusFilters(
-    appointmentFilterDraft.paymentStatusFilters
-  );
+
   customFieldFilters.value = nextCustomFieldFilters;
   calendarStore.setCustomAttributeFilters(nextCustomFieldFilters);
   filterDialogRef.value?.close();
@@ -1294,7 +1286,9 @@ const openCreateAppointment = (slot, defaults = {}) => {
 const handleAnchorDateSelect = async nextDate => {
   if (!nextDate) return;
 
-  calendarStore.setAnchorDate(nextDate.toISOString());
+  calendarStore.setAnchorDate(
+    toWorkspaceAnchorDate(nextDate, workspaceTimezone.value).toISOString()
+  );
   await fetchCalendar({ resetListPage: true });
 };
 
@@ -2256,7 +2250,7 @@ onMounted(async () => {
   <section class="flex flex-col flex-1 min-h-0 overflow-hidden bg-n-surface-1">
     <SchedulingToolbar
       v-model="currentView"
-      :anchor-date="calendarStore.anchorDate"
+      :anchor-date="toolbarAnchorDate"
       :current-label="pageTitle"
       :views="calendarTypeViews"
       :show-today="false"
@@ -2757,7 +2751,7 @@ onMounted(async () => {
                       </p>
                     </div>
                     <div
-                      class="appointment-money-grid grid gap-4 md:col-span-2 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,0.8fr)]"
+                      class="appointment-money-grid grid gap-4 md:col-span-2 md:grid-cols-2"
                     >
                       <SchedulingSelectField
                         class="appointment-drawer-select-control"
@@ -2770,31 +2764,12 @@ onMounted(async () => {
                         "
                       />
                       <SchedulingMoneyInput
-                        v-model="formStore.form.serviceAmount"
+                        :model-value="formStore.form.serviceAmount"
                         class="appointment-drawer-money-control"
                         min="0"
+                        disabled
                         :label="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT')
-                        "
-                      />
-                      <SchedulingMoneyInput
-                        v-model="formStore.form.prepaidAmount"
-                        class="appointment-drawer-money-control"
-                        min="0"
-                        :label="
-                          $t('SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT')
-                        "
-                        :message="
-                          formStore.validationErrors.prepaidAmount
-                            ? validationErrorMessage(
-                                formStore.validationErrors.prepaidAmount
-                              )
-                            : ''
-                        "
-                        :message-type="
-                          formStore.validationErrors.prepaidAmount
-                            ? 'error'
-                            : 'info'
                         "
                       />
                     </div>
@@ -2969,14 +2944,6 @@ onMounted(async () => {
             :options="appointmentStatusOptions"
             :placeholder="$t('SCHEDULING.TOOLBAR.STATUS')"
             @update:model-value="appointmentFilterDraft.statusFilters = $event"
-          />
-          <SchedulingMultiSelectFilter
-            :model-value="appointmentFilterDraft.paymentStatusFilters"
-            :options="appointmentPaymentStatusOptions"
-            :placeholder="$t('SCHEDULING.TOOLBAR.PAYMENT_STATUS')"
-            @update:model-value="
-              appointmentFilterDraft.paymentStatusFilters = $event
-            "
           />
         </div>
 

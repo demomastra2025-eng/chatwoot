@@ -428,7 +428,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
-      serviceAmount: '7000',
       serviceId: 9,
       startsAt: '2026-06-27T10:30',
       status: 'completed',
@@ -447,7 +446,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_id: 123,
       ends_at: new Date('2026-06-27T11:00').toISOString(),
       resource_id: 7,
-      service_amount: 7000,
       service_id: 9,
       service_ids: [9],
       source: 'conversation',
@@ -460,7 +458,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('omits unchanged capability-sensitive fields from an update', async () => {
+  it('omits derived price and unchanged status from an update', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -471,18 +469,18 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(payload).not.toHaveProperty('status');
   });
 
-  it('omits hidden finance fields from an update', async () => {
-    const financeHiddenAppointment = {
+  it('does not write a displayed historical amount on update', async () => {
+    const historicalAppointment = {
       ...existingAppointment,
-      serviceAmount: undefined,
+      serviceAmount: 7500,
     };
     SchedulingAppointmentsAPI.get.mockResolvedValue({
-      data: { payload: [financeHiddenAppointment] },
+      data: { payload: [historicalAppointment] },
     });
     const wrapper = mountComponent();
     await flushPromises();
 
-    await wrapper.vm.saveAppointment(financeHiddenAppointment);
+    await wrapper.vm.saveAppointment(historicalAppointment);
 
     const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
     expect(payload).not.toHaveProperty('service_amount');
@@ -615,24 +613,19 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const wrapper = mountComponent();
     await flushPromises();
 
-    Object.assign(wrapper.vm.appointmentForms['appointment-501'], {
-      serviceAmount: '7000',
-    });
-
     await wrapper.vm.saveAppointment(existingAppointment);
 
     expect(wrapper.vm.hasServiceOptions).toBe(false);
     expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(
       501,
       expect.objectContaining({
-        service_amount: 7000,
         service_ids: [],
         service_name_snapshot: 'Консультация',
       })
     );
-    expect(
-      SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1]
-    ).not.toHaveProperty('service_id');
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload).not.toHaveProperty('service_amount');
+    expect(payload).not.toHaveProperty('service_id');
   });
 
   it('updates a dialog appointment by conversation display id when the record is not linked to a database conversation id', async () => {
@@ -663,7 +656,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientFirstName: 'Айша updated',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
-      serviceAmount: '7000',
       startsAt: '2026-06-27T10:30',
     });
 
@@ -689,7 +681,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '5000',
       serviceId: 9,
       startsAt: '2026-06-27T10:00',
       status: 'completed',
@@ -720,7 +711,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     );
   });
 
-  it('omits default status and a blank finance field from create', async () => {
+  it('omits default status and retired price overrides from create', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
@@ -733,7 +724,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '',
+      serviceAmount: '3000',
       startsAt: '2026-06-27T10:00',
     });
 
@@ -742,6 +733,121 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     const payload = SchedulingAppointmentsAPI.create.mock.calls.at(-1)[0];
     expect(payload).not.toHaveProperty('service_amount');
     expect(payload).not.toHaveProperty('status');
+  });
+
+  it('shows zero when a catalog service is selected and then removed before create', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    await wrapper
+      .findComponent({ name: 'SidebarActionsHeader' })
+      .vm.$emit('click', 'new_appointment');
+
+    wrapper.vm.handleCreateServiceChange(9);
+    expect(wrapper.vm.createForm.serviceAmount).toBe('5000');
+    wrapper.vm.handleCreateServiceChange('');
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.vm.createForm.serviceAmount).toBe('0');
+    expect(
+      wrapper
+        .findComponent('#scheduling-conversation-appointment-service-amount')
+        .props('modelValue')
+    ).toBe('0');
+    await wrapper.vm.saveCreateAppointment();
+    expect(SchedulingAppointmentsAPI.create.mock.calls.at(-1)[0]).toMatchObject(
+      {
+        service_ids: [],
+      }
+    );
+    expect(
+      SchedulingAppointmentsAPI.create.mock.calls.at(-1)[0]
+    ).not.toHaveProperty('service_amount');
+  });
+
+  it('shows zero when an existing catalog service is removed before edit', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    const form = wrapper.vm.appointmentForms['appointment-501'];
+    wrapper.vm.handleFormServiceChange(form, '', existingAppointment);
+    await wrapper.vm.$nextTick();
+
+    expect(form.serviceAmount).toBe('0');
+    expect(
+      wrapper
+        .findComponent(
+          '#scheduling-conversation-appointment-service-amount-501'
+        )
+        .props('modelValue')
+    ).toBe('0');
+    SchedulingAppointmentsAPI.update.mockResolvedValueOnce({
+      data: {
+        payload: { ...existingAppointment, serviceId: null, serviceAmount: 0 },
+      },
+    });
+    await wrapper.vm.saveAppointment(existingAppointment);
+
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload.service_ids).toEqual([]);
+    expect(payload).not.toHaveProperty('service_id');
+    expect(payload).not.toHaveProperty('service_amount');
+    expect(wrapper.vm.appointmentForms['appointment-501'].serviceAmount).toBe(
+      '0'
+    );
+  });
+
+  it('clears the displayed catalog amount when switching to a resource without that service', async () => {
+    mocks.resources.push({
+      active: true,
+      customAttributes: { medelement_specialist_code: 'doctor-8' },
+      id: 8,
+      name: 'Врач',
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    const form = wrapper.vm.appointmentForms['appointment-501'];
+    wrapper.vm.handleFormResourceChange(form, 8, existingAppointment);
+
+    expect(form.serviceId).toBe('');
+    expect(form.serviceAmount).toBe('0');
+    await wrapper
+      .findComponent({ name: 'SidebarActionsHeader' })
+      .vm.$emit('click', 'new_appointment');
+    wrapper.vm.handleCreateResourceChange(7);
+    wrapper.vm.handleCreateServiceChange(9);
+    wrapper.vm.handleCreateResourceChange(8);
+
+    expect(wrapper.vm.createForm.serviceId).toBe('');
+    expect(wrapper.vm.createForm.serviceAmount).toBe('0');
+  });
+
+  it('keeps historic no-service price on ordinary edit, cancellation and undo of unsaved selection', async () => {
+    const historic = {
+      ...existingAppointment,
+      serviceAmount: 12000,
+      serviceId: null,
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [historic] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    const form = wrapper.vm.appointmentForms['appointment-501'];
+    expect(form.serviceAmount).toBe('12000');
+
+    wrapper.vm.handleFormServiceChange(form, 9, historic);
+    wrapper.vm.handleFormServiceChange(form, '', historic);
+    expect(form.serviceAmount).toBe('12000');
+    await wrapper.vm.saveAppointment(historic);
+    expect(
+      SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1].service_ids
+    ).toEqual([]);
+    expect(
+      SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1]
+    ).not.toHaveProperty('service_amount');
+
+    await wrapper.vm.cancelAppointment(historic);
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
+    expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledTimes(1);
   });
 
   it('requires MedElement patient identity but allows an appointment without a service', async () => {
@@ -917,7 +1023,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
-      serviceAmount: '3000',
       serviceNameSnapshot: 'Осмотр',
       startsAt: '2026-06-27T10:00',
     });
@@ -935,7 +1040,6 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       conversation_display_id: 123,
       ends_at: new Date('2026-06-27T10:30').toISOString(),
       resource_id: 7,
-      service_amount: 3000,
       service_ids: [],
       service_name_snapshot: 'Осмотр',
       source: 'conversation',

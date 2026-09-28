@@ -71,16 +71,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(task_schema.fetch('properties')).to include('deal_id', 'originating_conversation_id')
   end
 
-  it 'removes a model-guessed article category before tracing and returns the unclassified article' do
-    portal = create(:portal, account: assistant.account)
-    article = create(
-      :article,
-      account: assistant.account,
-      portal: portal,
-      title: 'Новая статья',
-      content: 'Содержание',
-      status: 'published'
-    )
+  it 'removes a model-guessed article category but denies account search without a trusted customer context' do
     tool_starts = []
     context = Captain::Runtime::RunContext.new(
       {
@@ -93,10 +84,16 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
     wrapper = described_class.new(build_tool(Captain::Tools::Agent::AccountToolAdapter, 'search_articles'), context)
 
-    result = JSON.parse(wrapper.call(query: 'Новая статья', category_id: 2_147_483_647, status: '', limit: 5))
+    args = { query: 'Новая статья', category_id: 2_147_483_647, status: '', limit: 5 }
+    normalized = wrapper.send(:normalize_args, args)
+    result = wrapper.call(args)
 
-    expect(tool_starts).to contain_exactly(query: 'Новая статья', status: 'published', limit: 5)
-    expect(result.dig('articles', 0, 'id')).to eq(article.id)
+    expect(normalized).to eq(query: 'Новая статья', status: 'published', limit: 5)
+    expect(tool_starts).to be_empty
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect(context.context[:captain_v2_terminal_tool_stop]).to include(
+      result: include(audit: include(failure_reason: 'customer_tool_scope_denied'))
+    )
   end
 
   def run_context

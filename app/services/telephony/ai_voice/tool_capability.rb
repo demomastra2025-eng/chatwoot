@@ -50,7 +50,6 @@ class Telephony::AiVoice::ToolCapability
     validate_runtime_identity!
     generation = establish_runtime_lease!
     names = Array(tools).filter_map { |tool| tool.to_h.with_indifferent_access[:name].to_s.strip.presence }.uniq.sort
-    raise_capability_error!('TOOL_CAPABILITY_EMPTY', 'voice context has no executable tools') if names.empty?
 
     self.class.send(:verifier).generate(
       capability_payload(generation: generation, tool_names: names),

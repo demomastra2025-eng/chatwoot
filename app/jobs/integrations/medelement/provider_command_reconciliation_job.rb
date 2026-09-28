@@ -1,5 +1,5 @@
 class Integrations::Medelement::ProviderCommandReconciliationJob < MutexApplicationJob
-  queue_as :medelement_provider_commands
+  queue_as { Integrations::Medelement::ProviderCommandJob.queue_for(arguments.first) }
 
   LOCK_TIMEOUT = 2.minutes
 

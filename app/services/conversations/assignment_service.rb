@@ -15,11 +15,20 @@ class Conversations::AssignmentService
   def perform
     validate_assignee_type!
 
-    conversation.contact.with_lock do
-      if conversation.communication_thread.present?
-        update_communication_thread!
-      else
-        update_without_communication_thread!
+    Conversation.transaction do
+      # UpdateService and the resolver take this advisory lock before touching
+      # either the Contact row or the Thread owner. Do not invert the order.
+      Conversations::CommunicationThreadResolver.lock_contact_thread!(conversation.account_id, conversation.contact_id)
+      conversation.contact.with_lock do
+        lock_routing_teams!
+        # Direct Contact#owner callbacks already hold Contact and then lock
+        # Team/Conversations/Thread. Never latch a Captain owner before them.
+        latch_unlinked_human_assignment!
+        if conversation.communication_thread.present?
+          update_communication_thread!
+        else
+          update_without_communication_thread!
+        end
       end
     end
 
@@ -29,6 +38,40 @@ class Conversations::AssignmentService
   private
 
   attr_reader :conversation, :assignee_id, :assignee_type, :team_id, :actor, :source
+
+  def lock_routing_teams!
+    team_ids = [team&.id] if team_requested?
+    team_ids ||= []
+    if assignee_requested? && assignee.present?
+      team_ids.concat(TeamMember.joins(:team).where(user_id: assignee.id, teams: { account_id: conversation.account_id }).pluck(:team_id))
+    end
+    Team.lock_routing_targets!(account_id: conversation.account_id, team_ids: team_ids)
+  end
+
+  def latch_unlinked_human_assignment!
+    return if conversation.communication_thread.present?
+    return unless human_assignment_to_captain_contact?
+
+    latch_linked_contact_threads!
+    conversation.activate_captain_human_control!(source: source, actor: actor)
+  end
+
+  def human_assignment_to_captain_contact?
+    return false unless (assignee_requested? && assignee.present?) || (actor.is_a?(User) && team_requested?)
+
+    contact_conversations = Conversation.where(account_id: conversation.account_id, contact_id: conversation.contact_id)
+    CaptainInbox.exists?(inbox_id: contact_conversations.select(:inbox_id))
+  end
+
+  def latch_linked_contact_threads!
+    thread_ids = CommunicationThread.where(account_id: conversation.account_id, contact_id: conversation.contact_id).select(:id)
+    owner_conversation_ids = CommunicationThreadConversation
+                             .where(account_id: conversation.account_id, communication_thread_id: thread_ids)
+                             .group(:communication_thread_id).minimum(:conversation_id)
+    owner_conversation_ids.sort.each do |_thread_id, conversation_id|
+      Conversation.find(conversation_id).activate_captain_human_control!(source: source, actor: actor)
+    end
+  end
 
   def update_communication_thread!
     thread = conversation.communication_thread

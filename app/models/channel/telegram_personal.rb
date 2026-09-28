@@ -219,6 +219,8 @@ class Channel::TelegramPersonal < ApplicationRecord
       runtime['history_sync_checkpoint']['dialog_user_ids'] =
         Array.wrap(runtime.dig('history_sync_checkpoint', 'dialog_user_ids'))
              .filter_map { |item| item.to_s.presence }
+      runtime['history_sync_checkpoint']['next_dialog_index'] =
+        runtime.dig('history_sync_checkpoint', 'next_dialog_index').to_i
       runtime['history_sync_count'] = runtime['history_sync_count'].to_i
       runtime['history_dialog_count'] = runtime['history_dialog_count'].to_i
       runtime['contacts_sync_count'] = runtime['contacts_sync_count'].to_i

@@ -104,15 +104,11 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     expect(appointment.reload.custom_attributes).not_to have_key('medelement_reception_code')
   end
 
-  it 'does not let assign own transfer an owned contact through owner_id' do
+  it 'rejects legacy owner_id input without transferring the contact' do
     agent = create(:user, account: account, role: :agent)
     other_user = create(:user, account: account, role: :agent)
     contact = appointment.contact
     contact.update!(owner: agent)
-    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
-    AccessControl::ModeTransition.call(account: account, to: :shadow)
-    AccessControl::ModeTransition.call(account: account, to: :enforced)
-
     expect do
       described_class.new(
         account: account,
@@ -120,8 +116,81 @@ RSpec.describe Scheduling::Appointments::UpsertService do
         appointment: appointment,
         params: { owner_id: other_user.id }
       ).perform
-    end.to raise_error(Pundit::NotAuthorizedError)
+    end.to raise_error(ArgumentError, 'Appointment owner_id is no longer writable')
     expect(contact.reload.owner).to eq(agent)
+  end
+
+  it 'resynchronizes the reminder from the current contact owner on edit without reviving the legacy column' do
+    manager = create(:user, account: account, role: :agent)
+    creator = create(:user, account: account, role: :agent)
+    appointment.update!(created_by: creator, owner_id: creator.id)
+    appointment.contact.update!(owner: manager)
+    reminder = create(:reminder, account: account, remindable: appointment, body: 'Upcoming visit',
+                                 scheduled_at: 2.days.from_now)
+    reminder.update!(owner: creator)
+
+    perform(client_comment: 'Changed after transfer')
+
+    expect(reminder.reload.owner).to eq(manager)
+    expect(appointment.reload.owner_id).to eq(creator.id)
+    expect(appointment.contact.reload.owner).to eq(manager)
+  end
+
+  it 'rebinds an unmaterialized processing reminder to the new patient via Upsert' do
+    previous_contact = create(:contact, account: account, owner: create(:user, account: account))
+    replacement = create(:contact, account: account, owner: create(:user, account: account))
+    previous_conversation = create(:conversation, account: account, contact: previous_contact)
+    replacement_conversation = create(:conversation, account: account, contact: replacement, inbox: previous_conversation.inbox)
+    appointment.update!(contact: previous_contact, conversation: previous_conversation)
+    reminder = create(:reminder, account: account, remindable: appointment, touch_conversation: previous_conversation,
+                                 body: 'Visit', scheduled_at: 2.days.from_now)
+    claim = reminder.mark_processing!
+    expect(reminder.reload).to have_attributes(
+      status: 'processing', owner_id: previous_contact.owner_id, target_contact_id: previous_contact.id,
+      target_conversation_id: previous_conversation.id
+    )
+
+    perform(contact_id: replacement.id, conversation_id: replacement_conversation.id)
+
+    expect(reminder.reload).to have_attributes(
+      status: 'processing', owner_id: replacement.owner_id, target_contact_id: replacement.id,
+      target_conversation_id: replacement_conversation.id
+    )
+    expect(reminder.processing_claim_token).to eq(claim)
+  end
+
+  it 'does not retarget an already materialized reminder via Upsert' do
+    previous_contact = appointment.contact
+    replacement = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: previous_contact)
+    replacement_conversation = create(:conversation, account: account, contact: replacement, inbox: conversation.inbox)
+    appointment.update!(conversation: conversation)
+    reminder = create(:reminder, account: account, remindable: appointment, touch_conversation: conversation,
+                                 body: 'Already sent', scheduled_at: 2.days.from_now)
+    reminder.mark_processing!
+    reminder.mark_delivery_materialized!(123)
+    original = reminder.reload.attributes.slice('owner_id', 'target_contact_id', 'target_conversation_id', 'metadata')
+
+    perform(contact_id: replacement.id, conversation_id: replacement_conversation.id)
+
+    expect(reminder.reload.attributes.slice(*original.keys)).to eq(original)
+    expect(reminder).to be_processing
+  end
+
+  it 'rejects a stale appointment instance after its contact was rebound elsewhere' do
+    first = create(:contact, account: account, owner: create(:user, account: account))
+    second = create(:contact, account: account, owner: create(:user, account: account))
+    appointment.update!(contact: first)
+    stale = Scheduling::Appointment.find(appointment.id)
+    reminder = create(:reminder, account: account, remindable: appointment, body: 'Visit', scheduled_at: 2.days.from_now)
+    described_class.new(account: account, appointment: Scheduling::Appointment.find(appointment.id),
+                        params: { contact_id: second.id }).perform
+
+    expect do
+      described_class.new(account: account, appointment: stale, params: { client_comment: 'outdated' }).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('APPOINTMENT_CONTEXT_CHANGED') }
+    expect(reminder.reload).to have_attributes(owner_id: second.owner_id, target_contact_id: second.id)
+    expect(appointment.reload.client_comment).not_to eq('outdated')
   end
 
   it 'rejects the provider source mode while preserving unrelated custom attributes' do
@@ -346,6 +415,92 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       appointment.update!(
         custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1')
       )
+    end
+
+    context 'when Captain targets a Medelement resource' do
+      let(:assistant) { create(:captain_assistant, account: account) }
+      let(:human) { create(:user, :administrator, account: account) }
+      let(:new_booking_params) do
+        starts_at = appointment.starts_at + 1.day
+        {
+          resource_id: resource.id, contact_id: appointment.contact_id,
+          created_by_id: human.id,
+          starts_at: starts_at, ends_at: starts_at + 30.minutes,
+          custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+        }
+      end
+
+      before do
+        account.enable_features!('scheduling')
+        settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+        create(:integrations_hook, :medelement, account: account, settings: settings)
+        appointment.contact.update!(
+          name: 'Ivan Ivanov', last_name: 'Ivanov', middle_name: 'Ivanovich', phone_number: valid_phone, owner: human
+        )
+        appointment.update!(
+          service: nil, created_by: human,
+          client_first_name: 'Ivan', client_last_name: 'Ivanov', client_middle_name: 'Ivanovich', client_phone: valid_phone,
+          custom_attributes: appointment.custom_attributes.except('service_ids', 'services')
+        )
+
+        local_result = instance_double(Scheduling::AvailabilityService::Result, available?: true)
+        allow(Scheduling::AvailabilityService).to receive(:new).and_return(
+          instance_double(Scheduling::AvailabilityService, availability_result: local_result)
+        )
+        provider_result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+          status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+        )
+        allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(
+          instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: provider_result)
+        )
+      end
+
+      it 'does not create a pending appointment without a provider receipt' do
+        existing_ids = account.scheduling_appointments.pluck(:id)
+
+        expect do
+          described_class.new(account: account, params: new_booking_params, actor: assistant).perform
+        end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE') }
+
+        expect(account.scheduling_appointments.pluck(:id)).to eq(existing_ids)
+        expect(Integrations::Medelement::ProviderCommand.where(account: account)).not_to exist
+      end
+
+      it 'does not leave an existing appointment pending when a provider move is denied' do
+        appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1'))
+        previous_starts_at = appointment.starts_at
+        previous_sync_status = appointment.custom_attributes['medelement_provider_sync_status']
+
+        expect do
+          described_class.new(
+            account: account, appointment: appointment, actor: assistant,
+            params: { starts_at: previous_starts_at + 1.hour, ends_at: appointment.ends_at + 1.hour }
+          ).perform
+        end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CAPTAIN_PROVIDER_UNAVAILABLE') }
+
+        expect(appointment.reload.starts_at).to eq(previous_starts_at)
+        expect(appointment.custom_attributes['medelement_provider_sync_status']).to eq(previous_sync_status)
+        expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+      end
+
+      it 'does not start a provider write if the hook becomes writable only after local persistence' do
+        hook = account.hooks.find_by!(app_id: 'medelement')
+        hook.update!(settings: hook.settings.merge('write_enabled' => false))
+        local_appointment = account.scheduling_appointments.new
+        allow(local_appointment).to receive(:save!).and_wrap_original do |save, *args|
+          result = save.call(*args)
+          hook.update!(settings: hook.settings.merge('write_enabled' => true))
+          result
+        end
+
+        result = described_class.new(
+          account: account, appointment: local_appointment, params: new_booking_params, actor: assistant
+        ).perform
+
+        expect(result).to be_persisted
+        expect(result.custom_attributes['medelement_provider_sync_status']).to be_nil
+        expect(Integrations::Medelement::ProviderCommand.where(appointment: result)).not_to exist
+      end
     end
 
     it 'uses structured Medelement contact names when appointment name fields are omitted' do

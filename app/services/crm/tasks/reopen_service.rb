@@ -12,6 +12,7 @@ class Crm::Tasks::ReopenService < Crm::Tasks::CommandService
   def apply_command!
     @was_terminal = task.completed? || task.cancelled?
     clear_terminal_state! if @was_terminal
+    task.team = task.deal.team if task.deal.present?
     transition_status!(default_open_status!)
   end
 

@@ -11,6 +11,15 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
   let(:run_context) { Captain::Runtime::RunContext.new({ state: { conversation: { id: conversation.id } } }) }
   let(:tool_context) { Captain::Runtime::ToolContext.new(run_context: run_context) }
 
+  def expect_consent_denied(result)
+    expect(result).to include(
+      success: false,
+      error: described_class::STRICT_HANDOFF_UNAVAILABLE_ERROR,
+      retryable: false,
+      audit: include(failure_stage: 'authorization', failure_reason: 'handoff_not_authorized')
+    )
+  end
+
   describe '#description' do
     it 'returns the correct description' do
       expect(tool.description).to eq('Hand off the current conversation to a human team')
@@ -19,17 +28,29 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      expect(tool.parameters).to have_key(:reason)
+      expect(tool.parameters.keys).to include(:reason, :status_reason, :message)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq(
         'Required concise factual explanation of what happened and why a human is needed.'
       )
       expect(tool.parameters[:reason].required).to be true
+      expect(tool.parameters[:status_reason]).to have_attributes(type: 'string', required: false)
+      expect(tool.parameters[:message]).to have_attributes(type: 'string', required: false)
     end
   end
 
   describe '#perform' do
+    it 'denies a strict-mode tool call without a successful Halt or pending handoff' do
+      assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true, 'handoff_enabled' => true))
+
+      result = tool.perform(tool_context, reason: 'Please transfer me')
+
+      expect(result).not_to be_a(RubyLLM::Tool::Halt)
+      expect(Captain::ToolResult.error?(Captain::ToolResult.normalize(result))).to be(true)
+      expect(run_context.context).not_to have_key(:pending_human_handoff)
+    end
+
     it 'does not request a handoff when the capability is disabled' do
       disabled_assistant = build(:captain_assistant, config: { 'handoff_enabled' => false })
       disabled_tool = described_class.new(disabled_assistant)
@@ -69,17 +90,40 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
     end
 
     context 'when conversation exists' do
+      context 'when a verified consent policy is unavailable' do
+        before { assistant.update!(config: assistant.config.merge('handoff_requires_explicit_consent' => true)) }
+
+        ['Соедините меня с сотрудником.', 'У меня сильные боли в груди.', 'Да, пожалуйста'].each do |content|
+          it "fails closed without creating a pending handoff for #{content}" do
+            create(:message, account: account, inbox: inbox, conversation: conversation,
+                             message_type: :incoming, content: content)
+
+            result = tool.perform(tool_context, reason: 'Model requested a handoff')
+
+            expect_consent_denied(result)
+            expect(run_context.context).not_to have_key(:pending_human_handoff)
+            expect(run_context.context).not_to have_key(described_class::AUTHORIZED_CONTEXT_KEY)
+          end
+        end
+      end
+
       context 'with reason provided' do
         it 'stores pending handoff context and halts the runtime' do
           reason = 'Customer needs specialized support'
+          status_reason = 'Needs agent'
+          message = 'I will connect you with a human agent.'
 
           expect do
-            result = tool.perform(tool_context, reason: reason)
+            result = tool.perform(tool_context, reason: reason, status_reason: status_reason, message: message)
             expect(result).to be_a(RubyLLM::Tool::Halt)
             expect(result.content).to eq("Conversation handed off to human support team (Reason: #{reason})")
           end.not_to change(Message, :count)
 
-          expect(run_context.context[:pending_human_handoff]).to include(reason: reason)
+          expect(run_context.context[:pending_human_handoff]).to include(
+            reason: reason,
+            status_reason: status_reason,
+            message: message
+          )
         end
 
         it 'creates a conversation_bot_handoff reporting event' do

@@ -862,6 +862,8 @@ describe('#actions', () => {
           id: 7,
           agent_last_seen_at: 123,
           unread_count: 0,
+          read_state_changed: true,
+          sidebar_counts_refresh_required: true,
           channels: [{ conversation_id: 11, agent_last_seen_at: 123 }],
           messages: [],
           meta: { sender: { id: 1 } },
@@ -888,6 +890,10 @@ describe('#actions', () => {
         'conversationStats/get',
         { communicationThreadMode: true, status: undefined },
         { root: true }
+      );
+      expect(localDispatch).toHaveBeenCalledWith(
+        'fetchRealtimeSidebarUnreadCounts',
+        { communicationThreadMode: true }
       );
     });
   });

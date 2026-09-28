@@ -89,6 +89,19 @@ RSpec.describe WhatsappWeb::RetryFailedProvisionalMessagesService do
     expect { service.perform }.not_to have_enqueued_job(SendReplyJob).with(retryable_message.id)
   end
 
+  it 'does not reset a Captain unknown delivery on provisional identity recovery' do
+    assistant = create(:captain_assistant, account: channel.account)
+    reply = create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation,
+                             sender: assistant, message_type: :outgoing, status: :failed,
+                             content_attributes: { external_error: provisional_error },
+                             additional_attributes: { captain_delivery_state: 'outcome_unknown' })
+    clear_enqueued_jobs
+
+    expect { service.perform }.not_to have_enqueued_job(SendReplyJob).with(reply.id)
+    expect(reply.reload.status).to eq('failed')
+    expect(reply.content_attributes['whatsapp_web_provisional_lid_retry_attempted_at']).to be_nil
+  end
+
   it 'does not retry messages superseded by a newer outbound reply' do
     superseded_message = create(
       :message,

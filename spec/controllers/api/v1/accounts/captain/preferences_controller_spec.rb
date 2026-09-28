@@ -203,13 +203,15 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
       end
 
       it 'reports visible provider credential statuses only' do
+        create(:integrations_hook, account: account, app_id: 'openai', settings: { api_key: 'account-openai-key' })
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
         expect(json_response[:provider_credentials].keys).to contain_exactly(:openrouter)
-        expect(json_response[:provider_credentials]).not_to have_key(:anthropic)
+        expect(json_response[:provider_credentials]).not_to have_key(:openai)
+        expect(response.body).not_to include('account-openai-key')
       end
     end
   end
@@ -294,6 +296,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
                 privacy_profile: 'sensitive',
                 assistant_thinking_effort: 'high',
                 assistant_moderation: true,
+                openrouter_allow_model_fallbacks: false,
                 moderation_failure_mode: 'fail_closed',
                 assistant_prompt_injection_guardrail: 'flag',
                 assistant_sensitive_info_guardrail: false,
@@ -321,6 +324,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           privacy_profile: 'sensitive',
           assistant_thinking_effort: 'high',
           assistant_moderation: true,
+          openrouter_allow_model_fallbacks: false,
           moderation_failure_mode: 'fail_closed',
           assistant_prompt_injection_guardrail: 'flag',
           assistant_sensitive_info_guardrail: 'disabled',
@@ -344,6 +348,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
           'privacy_profile' => 'sensitive',
           'assistant_thinking_effort' => 'high',
           'assistant_moderation' => true,
+          'openrouter_allow_model_fallbacks' => false,
           'moderation_failure_mode' => 'fail_closed',
           'assistant_prompt_injection_guardrail' => 'flag',
           'assistant_sensitive_info_guardrail' => 'disabled',

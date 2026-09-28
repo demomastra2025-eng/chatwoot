@@ -59,10 +59,13 @@ class Llm::OpenRouterRuntime
     Llm::ChatClient.build(**)
   end
 
-  def ask(chat, content, model: nil, observability: nil)
+  def ask(chat, content, model: nil, observability: nil, feature: nil)
     enriched_observability = observed_ask_observability(chat, observability)
     enforce_observed_ask_budget!(model: model, observability: enriched_observability)
-    Llm::ChatClient.ask(chat, content, model: model, observability: enriched_observability, account: account)
+    options = { model: model, observability: enriched_observability, account: account }
+    effective_feature = feature.presence || observability_feature(enriched_observability)
+    options[:feature] = effective_feature if effective_feature.present?
+    Llm::ChatClient.ask(chat, content, **options)
   end
 
   def transcribe(request)

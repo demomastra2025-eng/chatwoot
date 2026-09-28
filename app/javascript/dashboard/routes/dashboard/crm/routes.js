@@ -4,10 +4,7 @@ import {
   CRM_DEAL_VIEW_PERMISSIONS,
   CRM_TASK_VIEW_PERMISSIONS,
 } from '../../../constants/permissions';
-import {
-  getUserPermissions,
-  hasPermissions,
-} from '../../../helper/permissionsHelper';
+import { hasCrmViewPermission } from '../../../helper/permissionsHelper';
 import store from '../../../store';
 
 const CrmDealsPage = () => import('./pages/CrmDealsPage.vue');
@@ -15,18 +12,17 @@ const CrmTasksPage = () => import('./pages/CrmTasksPage.vue');
 const dealsMeta = {
   featureFlag: FEATURE_FLAGS.CRM_DEALS,
   permissions: CRM_DEAL_VIEW_PERMISSIONS,
+  crmResources: ['deals'],
 };
 
 const tasksMeta = {
   featureFlag: FEATURE_FLAGS.CRM_TASKS,
   permissions: CRM_TASK_VIEW_PERMISSIONS,
+  crmResources: ['tasks'],
 };
 
 const crmLandingRouteName = accountId => {
-  const userPermissions = getUserPermissions(
-    store.getters.getCurrentUser,
-    Number(accountId)
-  );
+  const user = store.getters.getCurrentUser;
   const dealsEnabled = store.getters['accounts/isFeatureEnabledonAccount'](
     accountId,
     FEATURE_FLAGS.CRM_DEALS
@@ -36,17 +32,11 @@ const crmLandingRouteName = accountId => {
     FEATURE_FLAGS.CRM_TASKS
   );
 
-  if (
-    dealsEnabled &&
-    hasPermissions(CRM_DEAL_VIEW_PERMISSIONS, userPermissions)
-  ) {
+  if (dealsEnabled && hasCrmViewPermission(user, accountId, 'deals')) {
     return 'crm_deals_index';
   }
 
-  if (
-    tasksEnabled &&
-    hasPermissions(CRM_TASK_VIEW_PERMISSIONS, userPermissions)
-  ) {
+  if (tasksEnabled && hasCrmViewPermission(user, accountId, 'tasks')) {
     return 'crm_tasks_index';
   }
 
@@ -56,12 +46,17 @@ const crmLandingRouteName = accountId => {
 export const routes = [
   {
     path: frontendURL('accounts/:accountId/crm'),
-    redirect: to => ({
+    name: 'crm_index',
+    // Route redirects run before global guards hydrate the current user.
+    beforeEnter: to => ({
       name: crmLandingRouteName(to.params.accountId),
       params: to.params,
+      query: to.query,
+      hash: to.hash,
     }),
     meta: {
       permissions: [...CRM_DEAL_VIEW_PERMISSIONS, ...CRM_TASK_VIEW_PERMISSIONS],
+      crmResources: ['deals', 'tasks'],
     },
   },
   {

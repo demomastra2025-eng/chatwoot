@@ -8,7 +8,8 @@ class AccessControl::SystemRoleCatalog
   }.freeze
   EMPLOYEE_ALL_VIEW_RESOURCES = %w[contacts conversations appointments].freeze
   BOOTSTRAP_RESOURCES = AccessRoleGrant::RESOURCES.freeze
-  SCOPED_BOOTSTRAP_RESOURCES = (BOOTSTRAP_RESOURCES - %w[automation_rules]).freeze
+  # Non-administrator Telephony reporting is opt-in; existing valid grants survive bootstrap.
+  SCOPED_BOOTSTRAP_RESOURCES = (BOOTSTRAP_RESOURCES - %w[automation_rules telephony_calls]).freeze
 
   class << self
     def grants_for(system_key)
@@ -24,7 +25,7 @@ class AccessControl::SystemRoleCatalog
     def department_lead_grants
       grants_for_resources(
         SCOPED_BOOTSTRAP_RESOURCES,
-        except: %w[configure manage_finance override_schedule],
+        except: %w[configure override_schedule],
         scope: 'team'
       )
     end
@@ -32,7 +33,7 @@ class AccessControl::SystemRoleCatalog
     def employee_grants
       grants_for_resources(
         SCOPED_BOOTSTRAP_RESOURCES,
-        except: %w[view_finance manage_finance view_configuration configure export view_reports override_schedule],
+        except: %w[view_configuration configure export view_reports override_schedule],
         scope: 'own'
       ).map do |grant|
         next grant.merge(access_scope: 'all') if grant[:capability] == 'view' &&

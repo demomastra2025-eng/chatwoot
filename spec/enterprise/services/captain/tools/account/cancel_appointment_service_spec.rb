@@ -14,7 +14,6 @@ RSpec.describe Captain::Tools::Account::CancelAppointmentService do
   end
 
   it 'returns normalized cancelled appointment payload wrapper' do
-    allow(service).to receive(:appointment_finance_visible?).and_return(false)
     resource = create(:scheduling_resource, account: account)
     scheduling_service = create(:scheduling_service, account: account)
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: scheduling_service,
@@ -36,7 +35,7 @@ RSpec.describe Captain::Tools::Account::CancelAppointmentService do
       'id' => appointment.id,
       'status' => 'cancelled'
     )
-    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+    expect(payload['appointment']).not_to include('payment_status', 'prepaid_amount', 'settlement_amount', 'payments', 'expense')
   end
 
   it 'cancels the explicitly selected appointment when the conversation has multiple appointments' do
@@ -48,6 +47,39 @@ RSpec.describe Captain::Tools::Account::CancelAppointmentService do
 
     expect(payload).to include('appointment_id' => selected.id, 'status' => 'cancelled')
     expect(other.reload.status).to eq('scheduled')
+  end
+
+  it 'returns the remove command receipt for a confirmed employee cancellation' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: {
+        'medelement_reception_code' => 'reception-1',
+        'medelement_cabinet_code' => 'cabinet-1'
+      }
+    )
+
+    payload = JSON.parse(execute_confirmed(appointment_id: appointment.id))
+    receipt = payload.fetch('provider_command_receipt')
+    expect(receipt).to include('appointment_id' => appointment.id, 'expected_operation' => 'remove_reception', 'linked' => true)
+    expect(receipt.fetch('command')).to include(
+      'operation' => 'remove_reception', 'requested_by' => { 'type' => 'User', 'id' => user.id }
+    )
+    expect(Integrations::Medelement::ProviderCommand.find(receipt.dig('command', 'id')).appointment_id).to eq(appointment.id)
   end
 
   def execute_confirmed(**arguments)

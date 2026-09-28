@@ -27,7 +27,6 @@ import {
   compactPayload,
   formatSchedulingErrorMessage,
   normalizePayload,
-  toIntegerNumeric,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
@@ -450,7 +449,13 @@ const updateFormEndFromDuration = form => {
   form.endsAt = toDateTimeInputValue(endsAt);
 };
 
-const syncFormServiceFields = form => {
+const syncFormServiceFields = (form, previousServiceId, appointment) => {
+  if (previousServiceId && !form.serviceId) {
+    form.serviceAmount =
+      appointment?.serviceId || appointment?.serviceIds?.length
+        ? '0'
+        : String(appointment?.serviceAmount ?? 0);
+  }
   if (selectedServiceForForm(form)) {
     const price = getServicePriceForResource(
       selectedServiceForForm(form),
@@ -461,7 +466,8 @@ const syncFormServiceFields = form => {
   updateFormEndFromDuration(form);
 };
 
-const handleFormResourceChange = (form, value) => {
+const handleFormResourceChange = (form, value, appointment) => {
+  const previousServiceId = form.serviceId;
   form.resourceId = value;
   const cabinets = medelementCabinetsForResource(selectedResourceForForm(form));
   form.medelementCabinetCode = cabinets.length === 1 ? cabinets[0].code : '';
@@ -473,13 +479,14 @@ const handleFormResourceChange = (form, value) => {
     form.serviceId = '';
     form.serviceNameSnapshot = '';
   }
-  syncFormServiceFields(form);
+  syncFormServiceFields(form, previousServiceId, appointment);
 };
 
-const handleFormServiceChange = (form, value) => {
+const handleFormServiceChange = (form, value, appointment) => {
+  const previousServiceId = form.serviceId;
   form.serviceId = value;
   form.serviceNameSnapshot = '';
-  syncFormServiceFields(form);
+  syncFormServiceFields(form, previousServiceId, appointment);
 };
 
 const selectedServiceIdForPayload = serviceId =>
@@ -551,9 +558,6 @@ const isAppointmentFormInvalid = form =>
   !form?.endsAt ||
   !appointmentFormEndsAfterStart(form);
 
-const hasExplicitValue = value =>
-  value !== '' && value !== null && value !== undefined;
-
 const buildAppointmentPayload = (form, appointment) => {
   const payload = appendServicePayload(
     {
@@ -579,8 +583,6 @@ const buildAppointmentPayload = (form, appointment) => {
         : undefined,
       ends_at: fromDateTimeInputValue(form.endsAt),
       resource_id: toNumeric(form.resourceId),
-      service_amount:
-        toIntegerNumeric(form.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
       starts_at: fromDateTimeInputValue(form.startsAt),
       status: form.status || 'scheduled',
@@ -592,12 +594,6 @@ const buildAppointmentPayload = (form, appointment) => {
   );
 
   if (form.status === appointment.status) delete payload.status;
-
-  const financeVisible = hasExplicitValue(appointment.serviceAmount);
-  const serviceAmountChanged =
-    financeVisible &&
-    Number(form.serviceAmount) !== Number(appointment.serviceAmount);
-  if (!serviceAmountChanged) delete payload.service_amount;
 
   return payload;
 };
@@ -626,8 +622,6 @@ const buildCreatePayload = () => {
         : {}),
       ends_at: fromDateTimeInputValue(createForm.endsAt),
       resource_id: toNumeric(createForm.resourceId),
-      service_amount:
-        toIntegerNumeric(createForm.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
       starts_at: fromDateTimeInputValue(createForm.startsAt),
       status: createForm.status || 'scheduled',
@@ -638,12 +632,6 @@ const buildCreatePayload = () => {
     }
   );
 
-  if (
-    hasExplicitValue(createForm.serviceId) ||
-    !hasExplicitValue(createForm.serviceAmount)
-  ) {
-    delete payload.service_amount;
-  }
   if (createForm.status === 'scheduled') delete payload.status;
 
   return payload;
@@ -759,7 +747,10 @@ const updateCreateEndFromDuration = () => {
   createForm.endsAt = toDateTimeInputValue(endsAt);
 };
 
-const syncCreateServiceFields = () => {
+const syncCreateServiceFields = previousServiceId => {
+  if (previousServiceId && !createForm.serviceId) {
+    createForm.serviceAmount = '0';
+  }
   if (selectedCreateService.value) {
     const price = getServicePriceForResource(
       selectedCreateService.value,
@@ -771,6 +762,7 @@ const syncCreateServiceFields = () => {
 };
 
 const handleCreateResourceChange = value => {
+  const previousServiceId = createForm.serviceId;
   createForm.resourceId = value;
   const cabinets = medelementCabinetsForResource(selectedCreateResource.value);
   createForm.medelementCabinetCode =
@@ -783,13 +775,14 @@ const handleCreateResourceChange = value => {
     createForm.serviceId = '';
     createForm.serviceNameSnapshot = '';
   }
-  syncCreateServiceFields();
+  syncCreateServiceFields(previousServiceId);
 };
 
 const handleCreateServiceChange = value => {
+  const previousServiceId = createForm.serviceId;
   createForm.serviceId = value;
   createForm.serviceNameSnapshot = '';
-  syncCreateServiceFields();
+  syncCreateServiceFields(previousServiceId);
 };
 
 const startCreateAppointment = async ({ scroll = true } = {}) => {
@@ -1364,7 +1357,7 @@ watch(
                       "
                       :model-value="createForm.serviceAmount"
                       size="sm"
-                      @update:model-value="createForm.serviceAmount = $event"
+                      disabled
                     />
                   </div>
                 </div>
@@ -1652,7 +1645,8 @@ watch(
                       @update:model-value="
                         handleFormResourceChange(
                           appointmentForms[appointmentKey(appointment)],
-                          $event
+                          $event,
+                          appointment
                         )
                       "
                     />
@@ -1742,7 +1736,8 @@ watch(
                       @update:model-value="
                         handleFormServiceChange(
                           appointmentForms[appointmentKey(appointment)],
-                          $event
+                          $event,
+                          appointment
                         )
                       "
                     />
@@ -1858,11 +1853,7 @@ watch(
                           .serviceAmount
                       "
                       size="sm"
-                      @update:model-value="
-                        appointmentForms[
-                          appointmentKey(appointment)
-                        ].serviceAmount = $event
-                      "
+                      disabled
                     />
                   </div>
                 </div>

@@ -76,7 +76,7 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(CommunicationThread.where(account: account, contact: contact).count).to eq(1)
     end
 
-    it 'locks the conversation row before taking the contact advisory lock' do
+    it 'takes the contact advisory lock before locking the conversation row' do
       conversation = create(:conversation, account: account)
       lock_queries = []
       callback = lambda do |_name, _started, _finished, _id, payload|
@@ -90,7 +90,7 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       end
 
       expect(lock_queries).to include(:conversation, :contact)
-      expect(lock_queries.index(:conversation)).to be < lock_queries.index(:contact)
+      expect(lock_queries.index(:contact)).to be < lock_queries.index(:conversation)
     end
 
     it 'is idempotent for the same conversation' do
@@ -100,8 +100,39 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       second_thread = described_class.new(conversation: conversation).perform
 
       expect(second_thread).to eq(first_thread)
-      expect(CommunicationThread.count).to eq(1)
-      expect(CommunicationThreadConversation.count).to eq(1)
+      expect(CommunicationThread.where(account: account).count).to eq(1)
+      expect(CommunicationThreadConversation.where(account: account).count).to eq(1)
+    end
+
+    it 'latches a previously unlinked human channel on the shared thread without regressing control' do
+      contact = create(:contact, account: account)
+      existing = create(:conversation, account: account, contact: contact)
+      newcomer = create(:conversation, account: account, contact: contact)
+      thread = existing.reload.communication_thread
+      thread.update!(captain_control_state: 'ai', captain_control_generation: 4)
+      CommunicationThreadConversation.where(conversation_id: newcomer.id).delete_all
+      newcomer.association(:communication_thread).reset
+      # Simulate a pre-link state without running status callbacks.
+      # rubocop:disable Rails/SkipsModelValidations
+      newcomer.update_columns(captain_control_state: 'human', captain_control_generation: 6)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      described_class.new(conversation: newcomer.reload).perform
+      expect(thread.reload).to have_attributes(captain_control_state: 'human', captain_control_generation: 7)
+      described_class.new(conversation: newcomer.reload).perform
+      expect(thread.reload.captain_control_generation).to eq(7)
+    end
+
+    it 'inherits human control when the first channel becomes linked' do
+      conversation = create(:conversation, account: account)
+      CommunicationThreadConversation.where(conversation_id: conversation.id).delete_all
+      CommunicationThread.where(account_id: account.id, contact_id: conversation.contact_id).delete_all
+      # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(captain_control_state: 'human', captain_control_generation: 2)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      thread = described_class.new(conversation: conversation.reload).perform
+      expect(thread).to have_attributes(captain_control_state: 'human', captain_control_generation: 3)
     end
 
     it 'rejects a malformed conversation linked to a contact from another account' do

@@ -2,6 +2,10 @@ require 'faraday'
 require 'faraday/multipart'
 
 class Tiktok::Client
+  ProviderRejection = Class.new(StandardError)
+  # Timeouts, conflicts and throttling can arrive after an accepted send.
+  AMBIGUOUS_HTTP_STATUSES = [408, 409, 425, 429, 499].freeze
+
   # Always use Tiktok::TokenService to get a valid access token
   pattr_initialize [:business_id!, :access_token!]
 
@@ -122,11 +126,14 @@ class Tiktok::Client
   def process_json_response(response, error_prefix)
     unless response.success?
       Rails.logger.error "#{error_prefix}. Status: #{response_status(response)}, Body: #{response.body}"
-      raise "#{response_status(response)}: #{response.body}"
+      status = response_status(response).to_i
+      raise ProviderRejection, "#{status}: #{response.body}" if status.between?(400, 499) && AMBIGUOUS_HTTP_STATUSES.exclude?(status)
+
+      raise "#{status}: #{response.body}"
     end
 
     res = JSON.parse(response.body)
-    raise "#{res['code']}: #{res['message']}" if res['code'] != 0
+    raise ProviderRejection, "#{res['code']}: #{res['message']}" if res['code'].present? && res['code'] != 0
 
     res
   end

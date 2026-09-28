@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe Crm::Leadsquared::Mappers::ConversationMapper do
+RSpec.describe Crm::Leadsquared::Mappers::ConversationMapper, locale: :en do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account, name: 'Test Inbox', channel_type: 'Channel') }
   let(:conversation) { create(:conversation, account: account, inbox: inbox) }
@@ -32,6 +32,7 @@ RSpec.describe Crm::Leadsquared::Mappers::ConversationMapper do
 
   before do
     account.enable_features('crm_integration')
+    allow(GlobalConfig).to receive(:get).and_call_original
     allow(GlobalConfig).to receive(:get).with('BRAND_NAME').and_return({ 'BRAND_NAME' => 'TestBrand' })
   end
 

@@ -9,7 +9,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     account.enable_features!('scheduling')
   end
 
-  it 'returns normalized cancel_appointment payload' do
+  it 'rejects direct customer-AI cancellation without changing the appointment' do
     resource = create(:scheduling_resource, account: account)
     contact = create(:contact, account: account)
     scheduling_service = create(:scheduling_service, account: account)
@@ -18,32 +18,19 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
                                                   conversation_id: conversation.id)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
 
-    payload = JSON.parse(tool.perform(tool_context))
-
-    expect(payload).to include(
-      'action' => 'cancel_appointment',
-      'appointment_id' => appointment.id,
-      'status' => 'cancelled',
-      'resource_id' => resource.id,
-      'contact_id' => contact.id,
-      'service_id' => scheduling_service.id,
-      'starts_at' => payload.dig('appointment', 'starts_at'),
-      'ends_at' => payload.dig('appointment', 'ends_at')
-    )
-    expect(payload['appointment']).to include('id' => appointment.id, 'status' => 'cancelled')
-    expect(payload['appointment'].keys & Scheduling::PayloadBuilder::APPOINTMENT_FINANCE_KEYS.map(&:to_s)).to be_empty
+    expect(tool.perform(tool_context)).to include('ERROR: Pundit::NotAuthorizedError')
+    expect(appointment.reload.status).to eq('scheduled')
   end
 
-  it 're-reads the explicitly selected cancelled appointment without cancelling another active appointment' do
+  it 'does not mutate either explicitly selected or other appointment as customer AI' do
     resource = create(:scheduling_resource, account: account)
     conversation = create(:conversation, account: account)
     selected = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation, status: 'cancelled')
     other = create(:scheduling_appointment, account: account, resource: resource, conversation: conversation, status: 'scheduled')
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, appointment_id: selected.id))
-
-    expect(payload).to include('appointment_id' => selected.id, 'status' => 'cancelled')
+    expect(tool.perform(tool_context, appointment_id: selected.id)).to include('ERROR: Pundit::NotAuthorizedError')
+    expect(selected.reload.status).to eq('cancelled')
     expect(other.reload.status).to eq('scheduled')
   end
 
@@ -67,7 +54,7 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(result).to include('ERROR: ArgumentError: appointment_id is required when the conversation has multiple appointments')
+    expect(result).to include('ERROR: Pundit::NotAuthorizedError')
     expect(appointments.map { |appointment| appointment.reload.status }).to all(eq('scheduled'))
   end
 
@@ -88,11 +75,11 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
 
     result = tool.perform(tool_context)
 
-    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
+    expect(result).to include('ERROR: Pundit::NotAuthorizedError')
     expect(appointment.reload.status).to eq('scheduled')
   end
 
-  it 'returns the exact remove command receipt for a provider-backed appointment' do
+  it 'does not mint a remove command receipt for a customer-AI appointment' do
     settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
     create(:integrations_hook, :medelement, account: account, settings: settings)
     resource = create(:scheduling_resource, account: account, custom_attributes: {
@@ -113,17 +100,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     other = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
 
-    result = tool.perform(tool_context, appointment_id: appointment.id)
-    raise result if result.start_with?('ERROR:')
-
-    payload = JSON.parse(result)
-
-    command_payload = payload.dig('provider_command_receipt', 'command')
-    expect(command_payload).to include(
-      'operation' => 'remove_reception',
-      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
-    )
-    expect(Integrations::Medelement::ProviderCommand.find(command_payload.fetch('id')).appointment_id).to eq(appointment.id)
+    expect do
+      expect(tool.perform(tool_context, appointment_id: appointment.id)).to include('ERROR: Pundit::NotAuthorizedError')
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+    expect(appointment.reload.status).to eq('scheduled')
     expect(other.reload.status).to eq('scheduled')
   end
 end

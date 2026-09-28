@@ -6,6 +6,7 @@ import { useAlert } from 'dashboard/composables';
 import { useBranding } from 'shared/composables/useBranding';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 
 const props = defineProps({
   hasConnectedAChannel: {

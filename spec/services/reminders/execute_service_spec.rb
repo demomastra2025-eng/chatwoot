@@ -219,6 +219,60 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.sender).to eq(assistant)
     end
 
+    it 'dispatches a persisted Captain agent touch once through the materialized delivery job' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        text_mode: :agent,
+        instructions: 'Follow up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      touch.mark_processing!
+      provider = instance_double(Messages::SendEmailNotificationService, perform: nil)
+      allow(Messages::SendEmailNotificationService).to receive(:new).and_return(provider)
+
+      message = Reminders::MessageMaterializer.new(reminder: touch)
+                                              .perform(conversation: conversation, sender: assistant, content: 'AI touch')
+      expect(message.additional_attributes.dig('captain_delivery_fence', 'kind')).to eq('reminder')
+      Reminders::DeliverMaterializedMessageJob.perform_now(touch.id, message.id, touch.processing_claim_token)
+      Reminders::DeliverMaterializedMessageJob.perform_now(touch.id, message.id, touch.processing_claim_token)
+      expect(provider).to have_received(:perform).once
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('submitted')
+    end
+
+    it 'cancels a materialized Captain touch after a newer incoming on a sibling channel' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        text_mode: :agent,
+        instructions: 'Follow up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      touch.mark_processing!
+      message = Reminders::MessageMaterializer.new(reminder: touch)
+                                              .perform(conversation: conversation, sender: assistant, content: 'AI touch')
+      sibling = create(:conversation, account: conversation.account, contact: conversation.contact)
+      create(:message, account: conversation.account, conversation: sibling, message_type: :incoming)
+      expect(Messages::SendEmailNotificationService).not_to receive(:new)
+
+      Reminders::DeliverMaterializedMessageJob.perform_now(touch.id, message.id, touch.processing_claim_token)
+
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('cancelled')
+      expect(message).to be_failed
+    end
+
     it 'does not materialize an agent touch when an incoming reply cancels it during Captain generation' do
       conversation = create(:conversation)
       assistant = create(:captain_assistant, account: conversation.account)
@@ -603,6 +657,62 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.content).to eq('Captain wakeup message')
     end
 
+    it 'dispatches a materialized Captain AI wakeup after deliberate reactivation' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      agent = create(:user, account: conversation.account)
+      create(:message, account: conversation.account, conversation: conversation, sender: agent, message_type: :outgoing)
+      Captain::Conversation::ControlService.new(conversation).activate_human!(source: 'agent_reply')
+      expect(conversation.reload.captain_human_control_active?).to be(true)
+      expect(conversation.prepare_captain_ai_control!).to be(true)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :pending,
+        action_type: :ai_agent_wakeup,
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      touch.mark_processing!
+      provider = instance_double(Messages::SendEmailNotificationService, perform: nil)
+      allow(Messages::SendEmailNotificationService).to receive(:new).and_return(provider)
+
+      Reminders::WakeupConversationPreparer.new(conversation: conversation).perform
+      message = Reminders::MessageMaterializer.new(reminder: touch)
+                                              .perform(conversation: conversation, sender: assistant, content: 'AI wakeup')
+      expect(message.additional_attributes.dig('captain_delivery_fence', 'kind')).to eq('reminder')
+      expect(message.additional_attributes.dig('captain_delivery_fence', 'reminder_id')).to eq(touch.id)
+      Reminders::DeliverMaterializedMessageJob.perform_now(touch.id, message.id, touch.processing_claim_token)
+      expect(provider).to have_received(:perform).once
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('submitted')
+    end
+
+    it 'does not dispatch a Captain AI wakeup while human control remains active' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        status: :pending,
+        action_type: :ai_agent_wakeup,
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      touch.mark_processing!
+      Captain::Conversation::ControlService.new(conversation).activate_human!(source: 'agent_reply')
+      Reminders::WakeupConversationPreparer.new(conversation: conversation).perform
+      message = Reminders::MessageMaterializer.new(reminder: touch)
+                                              .perform(conversation: conversation, sender: assistant, content: 'AI wakeup')
+      expect(Messages::SendEmailNotificationService).not_to receive(:new)
+
+      Reminders::DeliverMaterializedMessageJob.perform_now(touch.id, message.id, touch.processing_claim_token)
+
+      expect(message.reload.additional_attributes['captain_delivery_state']).to eq('cancelled')
+    end
+
     it 'executes a persisted Captain follow-up touch and completes it' do
       conversation = create(:conversation, status: :open)
       assistant = create(:captain_assistant, account: conversation.account)
@@ -759,8 +869,8 @@ RSpec.describe Reminders::ExecuteService do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       inbox = whatsapp_channel.inbox
-      contact = create(:contact, account: account)
-      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      contact = create(:contact, :with_phone_number, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number.delete('+'))
       conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
 
       touch = nil
@@ -854,8 +964,8 @@ RSpec.describe Reminders::ExecuteService do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
       inbox = whatsapp_channel.inbox
-      contact = create(:contact, account: account)
-      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+      contact = create(:contact, :with_phone_number, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox, source_id: contact.phone_number.delete('+'))
       conversation = create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox)
       template_params = {
         name: 'sample_shipping_confirmation',
@@ -894,8 +1004,10 @@ RSpec.describe Reminders::ExecuteService do
           validate_provider_config: false
         )
       end
-      let(:contact) { create(:contact, account: account) }
-      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox) }
+      let(:contact) { create(:contact, :with_phone_number, account: account) }
+      let(:contact_inbox) do
+        create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: contact.phone_number.delete('+'))
+      end
       let(:conversation) do
         create(
           :conversation,

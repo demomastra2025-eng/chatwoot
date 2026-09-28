@@ -260,10 +260,10 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.available_assistant_tool_ids).not_to include('custom_other-tool')
     end
 
-    it 'keeps every built-in agent tool available in the assistant catalog' do
+    it 'shares built-in agent tools except the customer-scoped task tool with the assistant catalog' do
       missing_tool_ids = assistant.available_tool_ids - assistant.available_assistant_tool_ids
 
-      expect(missing_tool_ids).to be_empty
+      expect(missing_tool_ids).to eq(['customer_tasks'])
       expect(assistant.available_assistant_tool_ids).to include('faq_lookup', 'create_deal', 'create_task', 'create_appointment', 'create_touch')
     end
 
@@ -529,11 +529,11 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).to include('send_message_to_conversation', 'list_captain_documents')
     end
 
-    it 'adds CRM custom-field catalog companions for task and appointment write tools' do
+    it 'keeps broad task-field tools with employees and appointment companions in legacy agent prompts' do
       account.enable_features!('crm_tasks', 'scheduling')
 
       assistant.update!(
-        description: 'Use [@Create Task](tool://create_task) and [@Create Appointment](tool://create_appointment) when needed.',
+        description: 'Use [@Create Appointment](tool://create_appointment) when needed.',
         config: {
           'context_access' => {},
           'tool_access' => {
@@ -546,12 +546,12 @@ RSpec.describe Captain::Assistant, type: :model do
       )
 
       expect(assistant.allowed_agent_tool_ids).to include(
-        'create_task',
-        'list_task_custom_fields',
         'create_appointment',
         'list_appointment_custom_fields',
         'get_appointment_provider_status'
       )
+      expect(assistant.allowed_agent_tool_ids).not_to include('create_task', 'list_task_custom_fields')
+      expect(assistant.available_assistant_tool_ids).to include('create_task', 'list_task_custom_fields')
     end
 
     it 'does not expose scenario-only template tool references in the root assistant prompt' do

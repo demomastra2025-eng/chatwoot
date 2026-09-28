@@ -186,7 +186,7 @@ describe CsatSurveyService do
             '1234567890',
             hash_including(
               name: expected_template_name,
-              lang_code: 'en'
+              lang_code: 'ru'
             ),
             anything
           )

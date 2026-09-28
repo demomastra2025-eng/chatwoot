@@ -1,4 +1,14 @@
 if defined?(HairTrigger::MigrationReader)
+  # HairTrigger 1.0.0 asks the adapter for schema_migration, but Rails 7.2
+  # keeps migration state on the connection pool instead.
+  HairTrigger.singleton_class.class_eval do
+    def migrator
+      pool = ActiveRecord::Tasks::DatabaseTasks.migration_connection_pool
+      context = ActiveRecord::MigrationContext.new(migration_path, pool.schema_migration, pool.internal_metadata)
+      ActiveRecord::Migrator.new(:up, context.migrations, context.schema_migration, context.internal_metadata)
+    end
+  end
+
   migration_reader = HairTrigger::MigrationReader.singleton_class
 
   unless migration_reader.method_defined?(:get_triggers_without_onelink_init_schema_skip)

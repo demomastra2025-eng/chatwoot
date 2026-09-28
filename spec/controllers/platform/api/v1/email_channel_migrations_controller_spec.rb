@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe 'Platform Email Channel Migrations API', type: :request do
+RSpec.describe 'Platform Email Channel Migrations API', locale: :en, type: :request do
   let!(:account) { create(:account) }
   let(:platform_app) { create(:platform_app) }
   let(:base_url) { "/platform/api/v1/accounts/#{account.id}/email_channel_migrations" }

@@ -10,6 +10,9 @@ class AutomationRules::AppointmentActionService
 
   def perform
     action_runner.perform do |action, index|
+      # Persisted legacy actions are not necessarily valid under the current contract.
+      next unless AutomationRule::APPOINTMENT_ACTION_ATTRIBUTES.include?(action[:action_name].to_s)
+
       @current_action_id = action[:action_id]
       @current_action_key = @current_action_id.presence || "legacy-index:#{index}"
       send(action[:action_name], action[:action_params])
@@ -39,21 +42,6 @@ class AutomationRules::AppointmentActionService
 
   def change_appointment_status(action_params)
     mutate_appointment!(status: normalize_action_param(action_params, 'change_appointment_status'))
-  end
-
-  def cancel_appointment_payment(_action_params)
-    unless @account.feature_enabled?('scheduling_finance')
-      raise Scheduling::Error.new(
-        code: 'FEATURE_DISABLED',
-        message: 'Scheduling finance is not enabled for this account',
-        status: :forbidden
-      )
-    end
-
-    @appointment = Scheduling::Appointments::FinanceSyncService.new(
-      appointment: @appointment,
-      actor: nil
-    ).cancel_all!
   end
 
   def apply_touch_plan(action_params)

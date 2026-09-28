@@ -26,6 +26,13 @@ class Captain::Tools::Account::McpTool < Captain::Tools::BaseTool
   end
 
   def execute(**params)
+    unless @tool_definition[:risk_level].to_s == 'low'
+      return Captain::ToolResult.failure_output(
+        error: 'Mutating MCP actions require a provider idempotency and reconciliation contract',
+        audit: { failure_stage: 'policy', failure_reason: 'unsafe_provider_mutation' }
+      )
+    end
+
     Captain::Mcp::ExecutionService.new(
       mcp_server: @mcp_server,
       tool_name: @tool_definition[:mcp_tool_name],

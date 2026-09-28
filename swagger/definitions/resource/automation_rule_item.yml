@@ -43,7 +43,7 @@ properties:
     type: array
     description: |
       Array of conditions on which conversation/message filter would work.
-      Appointment automations use `status`, `payment_status`, `appointment_type`, `source`,
+      Appointment automations use `status`, `appointment_type`, `source`,
       and active managed appointment custom field keys.
       Deal automations use standard CRM deal fields and active managed deal custom field keys.
       Task automations use standard CRM task fields and active managed task custom field keys.
@@ -71,8 +71,7 @@ properties:
     type: array
     description: |
       Array of actions which we perform when condition matches.
-      Appointment automations support `send_webhook_event`, `change_appointment_status`, and,
-      when `scheduling_finance` is enabled for the account, `cancel_appointment_payment`.
+      Appointment automations support `send_webhook_event` and `change_appointment_status`.
       Deal automations support `send_webhook_event`, `change_deal_stage`, `assign_deal_owner`,
       `assign_deal_team`, `archive_deal`, and `unarchive_deal`.
       Task automations support `send_webhook_event`, `change_task_status`, `assign_task_assignee`,
@@ -85,7 +84,7 @@ properties:
           description: Action identifier.
         action_params:
           type: array
-          description: Action params. `cancel_appointment_payment` uses an empty array.
+          description: Action params for supported actions.
           items:
             type: string
       example:

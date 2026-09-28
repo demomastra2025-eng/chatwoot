@@ -131,4 +131,49 @@ RSpec.describe Tiktok::Client do
       expect(client).to have_received(:send_message).with('tt-conv-1', 'IMAGE', 'media-123')
     end
   end
+
+  describe '#send_text_message rejection classification' do
+    before { allow(HTTParty).to receive(:post).and_return(response) }
+
+    it 'identifies a confirmed HTTP 400 response as a provider rejection' do
+      allow(response).to receive_messages(success?: false, code: 400, body: '{"message":"recipient rejected"}')
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }
+        .to raise_error(Tiktok::Client::ProviderRejection, /recipient rejected/)
+    end
+
+    it 'identifies an explicit business rejection inside HTTP 200' do
+      allow(response).to receive_messages(success?: true, body: { code: 42, message: 'recipient rejected' }.to_json)
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }
+        .to raise_error(Tiktok::Client::ProviderRejection, /recipient rejected/)
+    end
+
+    it 'does not mistake an HTTP 500 response for a definitive rejection' do
+      allow(response).to receive_messages(success?: false, code: 500, body: 'unavailable')
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }
+        .to raise_error(RuntimeError, /unavailable/)
+    end
+
+    it 'does not mistake an HTTP 408 timeout for a definitive rejection' do
+      allow(response).to receive_messages(success?: false, code: 408, body: 'request timed out')
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }
+        .to raise_error(RuntimeError, /request timed out/)
+    end
+
+    it 'does not mistake HTTP 429 throttling for a definitive rejection' do
+      allow(response).to receive_messages(success?: false, code: 429, body: 'try again')
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }
+        .to raise_error(RuntimeError, /try again/)
+    end
+
+    it 'does not treat a malformed successful response as an explicit rejection' do
+      allow(response).to receive_messages(success?: true, body: {}.to_json)
+
+      expect { client.send_text_message('tt-conv-1', 'Hello') }.to raise_error(NoMethodError)
+    end
+  end
 end

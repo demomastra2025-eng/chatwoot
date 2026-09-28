@@ -27,6 +27,22 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       allow(Resolv).to receive(:getaddresses).with('example.com').and_return(['93.184.216.34'])
     end
 
+    it 'refuses a conversational POST before egress, including a legacy run without a generation token' do
+      custom_tool.update!(http_method: 'POST', endpoint_url: 'https://example.com/orders')
+      runtime_context = Struct.new(:state).new({ conversation: { id: 123 } })
+
+      expect(tool.perform(runtime_context)).to include('provider idempotency and reconciliation contract')
+      expect(WebMock).not_to have_requested(:post, 'https://example.com/orders')
+    end
+
+    it 'does not trust a read-only slug on a mutating method' do
+      custom_tool.update!(slug: 'custom_search_apartments', http_method: 'POST', endpoint_url: 'https://example.com/orders')
+      runtime_context = Struct.new(:state).new({ conversation: { id: 123 } })
+
+      expect(tool.perform(runtime_context)).to include('provider idempotency and reconciliation contract')
+      expect(WebMock).not_to have_requested(:post, 'https://example.com/orders')
+    end
+
     context 'with GET request' do
       before do
         custom_tool.update!(
@@ -606,7 +622,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: false))
       end
 
       it 'returns generic error message on timeout' do
@@ -615,7 +631,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: true))
       end
 
       it 'returns generic error message on HTTP 404' do
@@ -624,7 +640,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: HTTP request failed with status 404')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 404', retryable: false))
       end
 
       it 'returns generic error message on HTTP 500' do
@@ -633,7 +649,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: HTTP request failed with status 500')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'HTTP request failed with status 500', retryable: true))
       end
 
       it 'returns generic error message when a hostname resolves to mixed public and private IPs' do
@@ -643,7 +659,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
         result = tool.perform(tool_context)
 
-        expect(result).to eq('ERROR: An error occurred while executing the request')
+        expect(result).to eq(Captain::ToolResult.failure_output(error: 'An error occurred while executing the request', retryable: false))
         expect(WebMock).not_to have_requested(:get, 'https://example.com/data')
       end
 
@@ -726,6 +742,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
 
       before do
         custom_tool.update!(
+          slug: 'custom_get_data',
           endpoint_url: 'https://example.com/api/data',
           response_template: nil
         )
@@ -760,7 +777,7 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
                 })
       end
 
-      it 'includes metadata headers in POST request' do
+      it 'does not send metadata or body to a mutating endpoint in a conversation run' do
         custom_tool.update!(http_method: 'POST', request_template: '{"data": "test"}')
 
         stub_request(:post, 'https://example.com/api/data')
@@ -776,9 +793,8 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
           )
           .to_return(status: 200, body: '{"success": true}')
 
-        tool.perform(tool_context_with_state)
-
-        expect(WebMock).to have_requested(:post, 'https://example.com/api/data')
+        expect(tool.perform(tool_context_with_state)).to include('provider idempotency and reconciliation contract')
+        expect(WebMock).not_to have_requested(:post, 'https://example.com/api/data')
       end
 
       it 'does not leak filtered-out contact fields through metadata headers' do

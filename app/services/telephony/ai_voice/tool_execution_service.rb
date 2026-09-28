@@ -78,11 +78,20 @@ class Telephony::AiVoice::ToolExecutionService
   def dispatch_with_current_capability!
     dispatch_service.with_captain_assistant_assignment_lock do |assistant_id|
       verify_tool_capability!(assistant_id: assistant_id)
+      verify_customer_tool_scope_before_dispatch!
       @dispatch_started = true
       result = normalize_result(dispatch_service.perform)
       @dispatch_started = false
       result
     end
+  end
+
+  def verify_customer_tool_scope_before_dispatch!
+    dispatch_service.verify_customer_tool_scope!
+  rescue Telephony::Error => e
+    # Only the server-owned preflight can prove that no tool body started.
+    @pre_dispatch_scope_denied = e.code == 'CUSTOMER_AI_TOOL_SCOPE_DENIED' && e.status == :forbidden
+    raise
   end
 
   def tool_capability_token
@@ -161,6 +170,8 @@ class Telephony::AiVoice::ToolExecutionService
     return decrypt_result!(stored_payload) if event.processed?
     return decrypt_result!(stored_payload) if stored_payload['phase'] == 'business_failed'
 
+    replay_pre_dispatch_scope_denial!(event, stored_payload)
+
     if stored_payload['phase'] == 'outcome_unknown'
       raise Telephony::Error.new(
         code: 'TOOL_EXECUTION_OUTCOME_UNKNOWN',
@@ -172,6 +183,16 @@ class Telephony::AiVoice::ToolExecutionService
     code = event.failed? ? 'TOOL_EXECUTION_PREVIOUSLY_FAILED' : 'TOOL_EXECUTION_IN_PROGRESS'
     message = event.failed? ? 'tool execution previously failed and will not be replayed automatically' : 'tool execution is already in progress'
     raise Telephony::Error.new(code: code, message: message, status: :conflict)
+  end
+
+  def replay_pre_dispatch_scope_denial!(event, stored_payload)
+    return unless event.failed? && stored_payload['phase'] == 'scope_denied' && stored_payload['error_code'] == 'CUSTOMER_AI_TOOL_SCOPE_DENIED'
+
+    raise Telephony::Error.new(
+      code: 'CUSTOMER_AI_TOOL_SCOPE_DENIED',
+      message: Captain::CustomerToolExecutionScope::DENIED_MESSAGE,
+      status: :forbidden
+    )
   end
 
   def validate_event_request!(event)
@@ -239,7 +260,14 @@ class Telephony::AiVoice::ToolExecutionService
   end
 
   def failure_event_payload(error, code, outcome_unknown:)
-    payload = base_event_payload.merge('phase' => outcome_unknown ? 'outcome_unknown' : 'failed', 'error_code' => code)
+    phase = if outcome_unknown
+              'outcome_unknown'
+            elsif @pre_dispatch_scope_denied
+              'scope_denied'
+            else
+              'failed'
+            end
+    payload = base_event_payload.merge('phase' => phase, 'error_code' => code)
     return payload unless outcome_unknown
 
     payload.merge('dispatch_error_class' => error.class.name.to_s.first(120))

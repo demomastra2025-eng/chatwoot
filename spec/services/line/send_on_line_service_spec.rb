@@ -87,7 +87,7 @@ describe Line::SendOnLineService do
       end
 
       it 'updates the message status to delivered' do
-        described_class.new(message: message).perform
+        expect(described_class.new(message: message).perform).to eq(:delivered)
         message.reload
         expect(message.status).to eq('delivered')
       end

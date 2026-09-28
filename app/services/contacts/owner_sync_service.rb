@@ -1,23 +1,37 @@
 class Contacts::OwnerSyncService
-  def initialize(contact:)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(contact:, actor: Current.executed_by || Current.user, source: 'contact_owner_sync', source_event_id: nil,
+                 skip_thread_projection: false, defer_thread_fact: false, human_takeover: false)
     @contact = contact
+    @actor = actor
+    @source = source
+    @source_event_id = source_event_id.presence || SecureRandom.uuid
+    @occurred_at = Time.current
+    @skip_thread_projection = skip_thread_projection
+    @defer_thread_fact = defer_thread_fact
+    @human_takeover = human_takeover
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def perform
     return if contact.blank? || contact.destroyed?
 
     ApplicationRecord.transaction do
       sync_assignment_client_ownership!
-      sync_conversations!
+      # Direct Contact updates already own Contact. Lock routing Team, then all
+      # contact Threads, before touching any Conversation row. Thread-first
+      # status, resolver and handoff paths cannot otherwise share this order.
+      Team.lock_routing_targets!(account_id: contact.account_id, team_ids: [owner_team_id]) if owner_id.present?
       sync_communication_threads!
-      sync_scheduling_appointments!
+      sync_conversations!
       sync_open_reminders!
+      sync_appointment_reminders!
     end
   end
 
   private
 
-  attr_reader :contact
+  attr_reader :contact, :actor, :source, :source_event_id, :occurred_at
 
   def owner_id
     contact.owner_id
@@ -37,11 +51,30 @@ class Contacts::OwnerSyncService
   end
 
   def sync_conversations!
-    conversations_requiring_owner_sync.find_each do |conversation|
-      conversation.assignee_id = owner_id
-      conversation.team_id = owner_team_id if owner_id.present?
-      conversation.save! if conversation.changed?
-    end
+    # The Thread command handles linked channels itself, but still needs the
+    # Contact callback to update channels awaiting backfill.
+    conversations_for_owner_sync.find_each { |conversation| sync_conversation!(conversation) }
+  end
+
+  def conversations_for_owner_sync
+    scope = conversations_requiring_owner_sync
+    scope = contact.conversations.where(account_id: contact.account_id) if human_takeover?
+    @skip_thread_projection ? scope.where.missing(:communication_thread_conversation) : scope
+  end
+
+  def sync_conversation!(conversation)
+    activate_human_for_unlinked_conversation!(conversation) if unlinked_human_takeover?(conversation)
+    conversation.communication_thread_event_id = source_event_id
+    conversation.communication_thread_event_actor = actor
+    conversation.communication_thread_event_source = source
+    conversation.communication_thread_event_source_record = contact
+    conversation.communication_thread_event_occurred_at = occurred_at
+    conversation.skip_communication_thread_refresh = true
+    conversation.assignee_id = owner_id
+    conversation.team_id = owner_team_id if owner_id.present?
+    conversation.save! if conversation.changed?
+  ensure
+    conversation.skip_communication_thread_refresh = false if conversation
   end
 
   def conversations_requiring_owner_sync
@@ -50,12 +83,33 @@ class Contacts::OwnerSyncService
   end
 
   def sync_communication_threads!
-    threads_requiring_owner_sync.find_each do |thread|
-      reconcile_thread_participants!(thread)
-      attributes = { assignee_id: owner_id }
-      attributes[:team_id] = owner_team_id if owner_id.present?
-      thread.update!(attributes)
+    return if @skip_thread_projection || @defer_thread_fact
+
+    # Lock even an already-routed Thread: a human takeover still invalidates
+    # the pending AI generation. Keep the same ID order as linked writers.
+    CommunicationThread.where(account_id: contact.account_id, contact_id: contact.id).order(:id).lock.load.each do |thread|
+      activate_human_for_thread!(thread) if human_takeover?
+      sync_thread_routing!(thread) if thread_routing_mismatch?(thread)
     end
+  end
+
+  def sync_thread_routing!(thread)
+    reconcile_thread_participants!(thread)
+    attributes = { assignee_id: owner_id }
+    attributes[:team_id] = owner_team_id if owner_id.present?
+    CommunicationThreads::StateTransitionWriter.new(
+      thread: thread,
+      attributes: attributes,
+      actor: actor,
+      source: source,
+      source_record: contact,
+      source_event_id: source_event_id,
+      occurred_at: occurred_at
+    ).perform
+  end
+
+  def thread_routing_mismatch?(thread)
+    thread.assignee_id != owner_id || (owner_id.present? && thread.team_id != owner_team_id)
   end
 
   def reconcile_thread_participants!(thread)
@@ -73,25 +127,49 @@ class Contacts::OwnerSyncService
     participation_service.remove!(user_id: owner_id, reason: 'promoted_to_owner')
   end
 
-  def threads_requiring_owner_sync
-    scope = CommunicationThread.where(account_id: contact.account_id, contact_id: contact.id)
-    records_with_routing_mismatch(scope, :assignee_id)
+  def human_takeover?
+    @human_takeover && actor.is_a?(User) && owner_id.present? && captain_contact?
   end
 
-  def sync_scheduling_appointments!
-    scheduling_appointments_requiring_owner_sync.find_each do |appointment|
-      appointment.update!(owner_id: owner_id)
-    end
+  def unlinked_human_takeover?(conversation) = human_takeover? && conversation.communication_thread_conversation.blank?
+
+  def captain_contact?
+    return @captain_contact if defined?(@captain_contact)
+
+    inbox_ids = contact.conversations.where(account_id: contact.account_id).select(:inbox_id)
+    @captain_contact = CaptainInbox.exists?(inbox_id: inbox_ids)
   end
 
-  def scheduling_appointments_requiring_owner_sync
-    scope = contact.scheduling_appointments.where(account_id: contact.account_id)
-    records_with_owner_mismatch(scope, :owner_id)
+  def activate_human_for_thread!(thread)
+    conversation_id = thread.communication_thread_conversations.minimum(:conversation_id)
+    return unless conversation_id
+
+    Captain::Conversation::ControlService.new(Conversation.find(conversation_id))
+                                         .activate_human_after_contact_lock!(source: source, actor: actor)
+  end
+
+  def activate_human_for_unlinked_conversation!(conversation)
+    Captain::Conversation::ControlService.new(conversation).activate_human_after_contact_lock!(source: source, actor: actor)
   end
 
   def sync_open_reminders!
     open_reminders_requiring_owner_sync.find_each do |reminder|
-      reminder.update!(owner_id: owner_id)
+      reminder.with_lock do
+        next unless reminder.editable? || (reminder.processing? && !reminder.delivery_materialized?)
+
+        reminder.update!(owner_id: owner_id) if reminder.owner_id != owner_id
+      end
+    end
+  end
+
+  def sync_appointment_reminders!
+    contact.scheduling_appointments.where(account_id: contact.account_id).find_each do |appointment|
+      appointment.with_lock do
+        next unless appointment.contact_id == contact.id
+
+        service = Reminders::SyncRemindableService.new(remindable: appointment, allow_processing: true)
+        appointment.reminders.where(status: %w[draft pending processing]).find_each { |reminder| service.perform_for(reminder, raise_errors: true) }
+      end
     end
   end
 
@@ -100,9 +178,9 @@ class Contacts::OwnerSyncService
   end
 
   def open_reminders_requiring_owner_sync
-    scope = Reminder.open_statuses
+    scope = Reminder.where(status: %w[draft pending processing])
                     .where(account_id: contact.account_id)
-                    .where('remindable_type IS NULL OR remindable_type NOT IN (?)', %w[Crm::Deal Crm::Task])
+                    .where('remindable_type IS NULL OR remindable_type NOT IN (?)', %w[Crm::Deal Crm::Task Scheduling::Appointment])
     contact_reminders = scope.where(target_contact_id: contact.id)
     target_conversation_reminders = scope.where(target_conversation_id: contact_conversation_ids)
     conversation_reminders = scope.where(conversation_id: contact_conversation_ids)

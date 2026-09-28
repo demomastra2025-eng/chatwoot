@@ -208,14 +208,15 @@ describe V2::ReportBuilder do
           conversations.each do |conversation|
             conversation.pending!
             conversation.messages.outgoing.all.update(sender: nil)
-          end
-
-          perform_enqueued_jobs do
-            # Resolve all 5 conversations
-            conversations.each(&:bot_handoff!)
-
-            # Reopen 1 conversation
-            conversations.first.open!
+            create(
+              :reporting_event,
+              name: 'conversation_bot_handoff',
+              account: account,
+              inbox: conversation.inbox,
+              user: conversation.assignee,
+              conversation: conversation,
+              created_at: Time.zone.today
+            )
           end
 
           builder = described_class.new(account, params)

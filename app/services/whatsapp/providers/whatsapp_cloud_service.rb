@@ -251,7 +251,9 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     )
 
     message.update!(status: :sent, content_attributes: content_attributes)
-    SendReplyJob.set(wait: retry_delay).perform_later(message.id)
+    # Captain claims are still dispatching here. Its fenced wrapper enqueues
+    # only after committing the deferred state; otherwise a fast retry is lost.
+    SendReplyJob.set(wait: retry_delay).perform_later(message.id) unless message.sender_type == 'Captain::Assistant'
 
     Rails.logger.warn(
       '[WHATSAPP_CLOUD] transient send error; retry scheduled ' \
@@ -455,7 +457,7 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     retry_at = wait.from_now
     content_attributes = coexistence_retry_content_attributes(message, retry_at)
     message.update!(status: :sent, external_error: nil, content_attributes: content_attributes)
-    SendReplyJob.set(wait: wait).perform_later(message.id)
+    SendReplyJob.set(wait: wait).perform_later(message.id) unless message.sender_type == 'Captain::Assistant'
     true
   end
 
