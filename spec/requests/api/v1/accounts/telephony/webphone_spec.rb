@@ -519,6 +519,32 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     end
   end
 
+  it 'lets a follower tab observe the Janus lease without keeping it from the owner tab' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    request_token = lambda do |instance_params|
+      post path, params: { inbox_id: binotel_profile.inbox_id }.merge(instance_params), headers: headers, as: :json
+      response.parsed_body.fetch('payload')
+    end
+
+    with_modified_env(TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-binotel') do
+      follower_payload = request_token.call(client_instance_id: 'tab-follower', lease_mode: 'observe')
+      lease_after_follower = binotel_profile.reload.metadata.to_h['browser_registration_lease']
+      owner_payload = request_token.call(client_instance_id: 'tab-owner', browser_instance_id: 'browser-1')
+      follower_again_payload = request_token.call(client_instance_id: 'tab-follower', lease_mode: 'observe')
+
+      expect(lease_after_follower).to be_blank
+      expect(follower_payload).to include(
+        'calling_supported' => false,
+        'reason' => 'sip_profile_registration_lease_owned_by_another_tab'
+      )
+      expect(follower_payload.keys).not_to include('sip', 'sip_username', 'sipUsername', 'sip_password', 'sipPassword')
+      expect(owner_payload).to include('calling_supported' => true, 'registration_instance_id' => be_present)
+      expect(follower_again_payload).to include('calling_supported' => false)
+      expect(follower_again_payload['registration_instance_id']).to be_nil
+      expect(binotel_profile.reload.metadata.dig('browser_registration_lease', 'client_instance_id')).to eq('tab-owner')
+    end
+  end
+
   it 'requires a browser client instance before issuing a Janus ticket' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
 

@@ -15,8 +15,9 @@ class Telephony::WebphoneService
     @account = account
   end
 
-  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil)
+  def token_for(user:, inbox: nil, client_instance_id: nil, browser_instance_id: nil, lease_mode: nil)
     @browser_instance_id = browser_instance_id.presence
+    @observe_registration_lease = lease_mode.to_s == 'observe'
     bootstrap_payload = webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return bootstrap_payload if bootstrap_payload.present?
 
@@ -92,7 +93,7 @@ class Telephony::WebphoneService
 
   private
 
-  attr_reader :account, :browser_instance_id
+  attr_reader :account, :browser_instance_id, :observe_registration_lease
 
   def webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return if inbox.present?
@@ -154,11 +155,7 @@ class Telephony::WebphoneService
   def janus_sip_webphone_payload(inbox, operator_identity, user, client_instance_id)
     profile = operator_identity.sip_profile
     profile.ensure_registration_config_version!
-    lease = profile.acquire_browser_registration_lease!(
-      client_instance_id: client_instance_id,
-      browser_instance_id: browser_instance_id,
-      user_id: user.id
-    )
+    lease = janus_sip_registration_lease(profile, user, client_instance_id)
     provider = janus_sip_provider_for(inbox, profile)
     raw_janus_server = janus_sip_server_url(provider)
     credentials = lease[:acquired] ? janus_sip_credentials_for(profile) : nil
@@ -192,6 +189,18 @@ class Telephony::WebphoneService
     ).compact
 
     payload.merge(janus_sip_flat_contract(sip))
+  end
+
+  # A follower tab mirrors the Web Lock owner of its browser: it gets the
+  # standby status but never takes or renews the registration lease.
+  def janus_sip_registration_lease(profile, user, client_instance_id)
+    return { acquired: false, registration_instance_id: nil } if observe_registration_lease
+
+    profile.acquire_browser_registration_lease!(
+      client_instance_id: client_instance_id,
+      browser_instance_id: browser_instance_id,
+      user_id: user.id
+    )
   end
 
   def janus_sip_support_state(provider, operator_identity, credentials, janus_server)

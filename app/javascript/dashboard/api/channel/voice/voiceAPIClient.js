@@ -9,10 +9,17 @@ import {
 const webphoneClientInstanceId =
   window.crypto?.randomUUID?.() ||
   `webphone-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+// Only the Web Lock owner tab registers SIP. Follower tabs mirror its state,
+// so they ask in observe mode and never take or renew the server lease.
 const webphoneInstanceParams = () => {
-  const browserInstanceId = isWebphoneTabOwner()
-    ? webphoneBrowserInstanceId()
-    : null;
+  if (!isWebphoneTabOwner()) {
+    return {
+      client_instance_id: webphoneClientInstanceId,
+      lease_mode: 'observe',
+    };
+  }
+
+  const browserInstanceId = webphoneBrowserInstanceId();
   return {
     client_instance_id: webphoneClientInstanceId,
     ...(browserInstanceId ? { browser_instance_id: browserInstanceId } : {}),
