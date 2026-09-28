@@ -4498,7 +4498,10 @@ RSpec.describe Telephony::EventsIngestionService do
       expect { result = service.perform }.not_to have_enqueued_job(Telephony::ExternalRecordingCacheJob)
 
       expect(result.reload).to be_unanswered_terminal
-      expect(message.reload.content_attributes.dig('data', 'recording_url')).to be_nil
+      data = message.reload.content_attributes.fetch('data')
+      expect(data['recording_url']).to be_nil
+      expect(data.dig('recording', 'recording_url')).to be_nil
+      expect(result.conversation.reload.additional_attributes.dig('recording', 'recording_url')).to be_nil
     end
 
     it 'keeps Sipuni operator leg metadata when a later external summary event arrives' do

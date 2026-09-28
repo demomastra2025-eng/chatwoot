@@ -2713,7 +2713,12 @@ class Telephony::EventsIngestionService
     return metadata if metadata.blank?
 
     playable_url = recording_url(call_session)
-    metadata['recording_url'] = playable_url if playable_url.present?
+    if playable_url.present?
+      metadata['recording_url'] = playable_url
+    elsif call_session.unanswered_terminal?
+      # A call nobody answered has no playable recording; never present the raw provider URL.
+      metadata.delete('recording_url')
+    end
     metadata
   end
 
