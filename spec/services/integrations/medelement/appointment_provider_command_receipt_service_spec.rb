@@ -17,7 +17,9 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
     service = described_class.new(appointment: appointment, actor: assistant, new_record: false)
     appointment.reload
     command = instance_double(Integrations::Medelement::ProviderCommand)
-    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: command)
+    outbound_service = instance_double(
+      Integrations::Medelement::OutboundChangeService, perform: command, projected_command: command
+    )
     expect(Integrations::Medelement::OutboundChangeService).to receive(:new).with(
       hash_including(
         event_name: 'appointment_updated',
@@ -65,7 +67,9 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
       status: 'succeeded',
       idempotency_key: 'unrelated-remove'
     )
-    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    outbound_service = instance_double(
+      Integrations::Medelement::OutboundChangeService, perform: nil, projected_command: nil
+    )
     allow(Integrations::Medelement::OutboundChangeService).to receive(:new).and_return(outbound_service)
 
     result = described_class.new(appointment: appointment, actor: actor, new_record: false).perform
@@ -82,7 +86,9 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
     appointment = create(:scheduling_appointment, account: account, resource: resource)
     appointment.update!(client_comment: 'metadata only')
     service = described_class.new(appointment: appointment, actor: actor, new_record: false)
-    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    outbound_service = instance_double(
+      Integrations::Medelement::OutboundChangeService, perform: nil, projected_command: nil
+    )
     expect(Integrations::Medelement::OutboundChangeService).to receive(:new).with(
       hash_including(
         event_name: 'appointment_updated',
@@ -107,7 +113,9 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
           Integrations::Medelement::AppointmentProviderStatus::PENDING
       }
     )
-    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    outbound_service = instance_double(
+      Integrations::Medelement::OutboundChangeService, perform: nil, projected_command: nil
+    )
     allow(Integrations::Medelement::OutboundChangeService).to receive(:new).and_return(outbound_service)
 
     expect do
