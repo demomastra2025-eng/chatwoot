@@ -107,7 +107,10 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
       contact: contact,
       conversation: conversation,
       external_ref: 'medelement:reception:reception-1',
-      custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+      custom_attributes: {
+        'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1',
+        Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED
+      }
     )
     other = create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
@@ -124,5 +127,32 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     )
     expect(Integrations::Medelement::ProviderCommand.find(command_payload.fetch('id')).appointment_id).to eq(appointment.id)
     expect(other.reload.status).to eq('scheduled')
+  end
+
+  it 'does not cancel an unverified provider booking and returns the typed verification error' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    resource = create(:scheduling_resource, account: account, custom_attributes: {
+                        'medelement_specialist_code' => 'specialist-1',
+                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                      })
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+
+    result = tool.perform(tool_context, appointment_id: appointment.id)
+
+    expect(result).to include('ERROR: Scheduling::Error: Medelement reception must be verified before cancellation')
+    expect(appointment.reload.status).to eq('scheduled')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id, operation: 'remove_reception')).to be_empty
   end
 end

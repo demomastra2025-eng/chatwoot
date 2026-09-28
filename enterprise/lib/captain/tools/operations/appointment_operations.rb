@@ -4,16 +4,12 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   def cancel_current_appointment(appointment_id: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
     appointment = target_appointment(appointment_id)
+    # Imported MedElement receptions stay read-only for Captain.
+    ::Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
 
-    ::Scheduling::Appointments::UpsertService.new(
-      account: account,
-      params: {
-        status: 'cancelled',
-        payment_status: 'cancelled'
-      },
-      appointment: appointment,
-      actor: actor
-    ).perform
+    # The same provider-aware path as staff: a verified MedElement booking is
+    # removed through a remove command, an unverified one fails with a typed error.
+    ::Scheduling::Appointments::CancelService.new(appointment: appointment, actor: actor).perform
   end
 
   def create_appointment(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,

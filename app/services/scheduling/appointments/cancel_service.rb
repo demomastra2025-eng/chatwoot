@@ -39,12 +39,22 @@ class Scheduling::Appointments::CancelService
   def cancel_provider_appointment!
     raise booking_requires_verification_error unless provider_cancellation_policy.confirmed_for_removal?
 
-    command = Integrations::Medelement::OutboundChangeService.new(
+    command = Integrations::Medelement::OutboundChangeService.new(**provider_removal_attributes).perform
+    raise provider_cancellation_unavailable_error if command.blank?
+
+    appointment.reload
+    appointment.medelement_provider_command_receipt = command
+    appointment
+  end
+
+  def provider_removal_attributes
+    {
       entity_type: 'appointment',
       entity_id: appointment.id,
       account_id: appointment.account_id,
       event_name: 'appointment_cancelled',
-      actor_id: actor&.id,
+      actor_id: user_actor&.id,
+      actor_descriptor: non_user_actor_descriptor,
       event_key: provider_cancellation_event_key,
       change: {
         account_id: appointment.account_id,
@@ -52,12 +62,19 @@ class Scheduling::Appointments::CancelService
         changed_attributes: provider_changed_attributes,
         desired_attributes: provider_desired_attributes
       }
-    ).perform
-    raise provider_cancellation_unavailable_error if command.blank?
+    }
+  end
 
-    appointment.reload
-    appointment.medelement_provider_command_receipt = command
-    appointment
+  def user_actor
+    actor if actor.is_a?(User)
+  end
+
+  # Captain cancels on the patient's behalf: the command records the assistant
+  # as its requester instead of resolving its id against account users.
+  def non_user_actor_descriptor
+    return if actor.blank? || actor.is_a?(User)
+
+    { type: actor.class.base_class.name, id: actor.id }
   end
 
   def booking_requires_verification_error
