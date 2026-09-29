@@ -147,6 +147,46 @@ const messageTimestamp = message => {
   return normalizedTimelineTimestamp(message?.created_at);
 };
 
+const PROVIDER_CONFIRMED_STATUSES = [
+  MESSAGE_STATUS.SENT,
+  MESSAGE_STATUS.DELIVERED,
+  MESSAGE_STATUS.READ,
+];
+
+const messageSourceId = message =>
+  message?.source_id ?? message?.sourceId ?? null;
+
+// The HTTP response of a send and the `message.created` broadcast carry the
+// locally stored record without the provider id. When the provider
+// confirmation (`message.updated` with a source id) has already been applied,
+// such a late payload must not move the message back to the sending state.
+const preserveProviderConfirmation = (currentMessage, incomingMessage) => {
+  const currentSourceId = messageSourceId(currentMessage);
+  if (!currentSourceId || messageSourceId(incomingMessage)) {
+    return incomingMessage;
+  }
+  if (!PROVIDER_CONFIRMED_STATUSES.includes(currentMessage?.status)) {
+    return incomingMessage;
+  }
+  if (
+    ![MESSAGE_STATUS.PROGRESS, MESSAGE_STATUS.SENT].includes(
+      incomingMessage?.status
+    )
+  ) {
+    return incomingMessage;
+  }
+
+  return {
+    ...incomingMessage,
+    status: currentMessage.status,
+    source_id: currentSourceId,
+    content_attributes: {
+      ...(incomingMessage.content_attributes || {}),
+      ...(currentMessage.content_attributes || {}),
+    },
+  };
+};
+
 const updateDirectionalMessageTimestamp = (chat, message) => {
   if (!chat || message?.private) return;
 
@@ -470,6 +510,17 @@ export const mutations = {
     if (activeChat) {
       _state.selectedChatId = activeChat.id;
       _state.selectedChatType = conversationStoreType(activeChat);
+
+      // The first-unread cursor belongs to one open of the chat. A new open
+      // either loads the newest page again (which returns a fresh cursor) or
+      // reuses loaded messages, where an old cursor points to a message that
+      // was already read.
+      const chat = _state.allConversations
+        ? getConversationById(_state)(activeChat.id, _state.selectedChatType)
+        : null;
+      if (chat?.meta?.first_unread_message_id) {
+        chat.meta.first_unread_message_id = null;
+      }
     }
   },
 
@@ -574,7 +625,10 @@ export const mutations = {
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
     updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
-      chat.messages[pendingMessageIndex] = message;
+      chat.messages[pendingMessageIndex] = preserveProviderConfirmation(
+        chat.messages[pendingMessageIndex],
+        message
+      );
     } else {
       chat.messages.push(message);
       const { conversation: { unread_count: unreadCount = 0 } = {} } = message;
@@ -602,7 +656,10 @@ export const mutations = {
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
     updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
-      chat.messages[pendingMessageIndex] = message;
+      chat.messages[pendingMessageIndex] = preserveProviderConfirmation(
+        chat.messages[pendingMessageIndex],
+        message
+      );
     } else if (!chat.messages.some(item => item.id === message.id)) {
       chat.messages.push(message);
     }

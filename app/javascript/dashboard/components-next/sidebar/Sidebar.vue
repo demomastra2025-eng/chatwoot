@@ -5,6 +5,7 @@ import { provideSidebarContext } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
+import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
@@ -60,6 +61,7 @@ import {
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDialogDealCount } from './crmDefaultPipelineSidebar';
 import { resolveVisibleConversationPipelines } from './conversationPipelineVisibility';
+import { conversationListContextState } from 'dashboard/helper/conversationListContext';
 import {
   resolveRouteConversationAssigneeType,
   selectExclusiveSidebarChildNames,
@@ -94,6 +96,9 @@ const router = useRouter();
 const { checkPermissions, shouldShow } = usePolicy();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
+// Only the remembered conversation list status is read from ui_settings; the
+// sidebar layout itself is configured per company (see below).
+const { uiSettings } = useUISettings();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const composeConversationRef = ref(null);
@@ -310,7 +315,7 @@ const appointmentStatusTotalCount = computed(() => {
   );
 });
 
-const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
+const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved', 'all'];
 const conversationAssigneeTypes = [
   wootConstants.ASSIGNEE_TYPE.ALL,
   wootConstants.ASSIGNEE_TYPE.ME,
@@ -346,25 +351,13 @@ const normalizeConversationStatus = status => {
     : '';
 };
 
-const routeHasSelectedConversationContext = computed(() =>
-  Boolean(
-    route.params?.conversation_id ||
-      route.params?.conversationId ||
-      route.params?.communication_thread_id
-  )
-);
-
+// Sidebar links keep the status of the current list page (including "all",
+// which the list header shows in its status selector), falling back to the
+// status remembered in the list ui_settings, which is never "all".
 const currentConversationStatus = computed(() => {
-  const selectedStatus = normalizeConversationStatus(
-    selectedConversation.value?.status
-  );
-
-  if (routeHasSelectedConversationContext.value && selectedStatus) {
-    return selectedStatus;
-  }
-
   return (
-    normalizeConversationStatus(route.query.status) || selectedStatus || 'open'
+    normalizeConversationStatus(route.query.status) ||
+    conversationListContextState(uiSettings.value, 'assignee:all').status
   );
 });
 
@@ -1509,7 +1502,9 @@ const menuItems = computed(() => {
             ? 'communication_threads_dashboard'
             : 'home',
           {},
-          conversationNavigationQuery({ status: 'open' })
+          conversationNavigationQuery({
+            status: currentConversationStatus.value,
+          })
         ),
         actionItems: conversationSidebarActionItems.value,
         children: [

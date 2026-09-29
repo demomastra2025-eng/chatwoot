@@ -137,94 +137,16 @@ const activeChatTypeForPayload = (state, payload) => {
 const withConversationType = (payload, conversationType) =>
   conversationType ? { ...payload, conversationType } : payload;
 
-const sortMessagesByTimeline = (leftMessage, rightMessage) => {
-  const createdAtDifference =
-    Number(leftMessage.created_at || 0) - Number(rightMessage.created_at || 0);
-  if (createdAtDifference !== 0) return createdAtDifference;
+// Opening a conversation loads only the newest page. The server cursor of the
+// first unread message is kept on the chat so the unread divider and the
+// "N unread" jump can load the older unread range on demand.
+const withFirstUnreadCursor = (chatMeta, request, responseMeta) => {
+  if (request.after || request.before) return chatMeta || {};
 
-  const leftId = Number(leftMessage.id || 0);
-  const rightId = Number(rightMessage.id || 0);
-  if (Number.isFinite(leftId) && Number.isFinite(rightId)) {
-    return leftId - rightId;
-  }
-
-  return String(leftMessage.id || '').localeCompare(
-    String(rightMessage.id || '')
-  );
-};
-
-const mergeMessagePayloadsById = (
-  existingMessages = [],
-  incomingMessages = []
-) => {
-  const mergedMessages = [];
-  const indexById = new Map();
-
-  [...existingMessages, ...incomingMessages].forEach(message => {
-    const messageId = message?.id;
-    if (messageId === undefined || messageId === null) {
-      mergedMessages.push(message);
-      return;
-    }
-
-    const key = String(messageId);
-    const existingIndex = indexById.get(key);
-    if (existingIndex === undefined) {
-      indexById.set(key, mergedMessages.length);
-      mergedMessages.push(message);
-      return;
-    }
-
-    mergedMessages[existingIndex] = {
-      ...mergedMessages[existingIndex],
-      ...message,
-    };
-  });
-
-  return mergedMessages.sort(sortMessagesByTimeline);
-};
-
-const messageExistsInPayload = (messages, messageId) =>
-  (messages || []).some(message => String(message?.id) === String(messageId));
-
-const shouldFetchFirstUnreadPage = ({
-  request,
-  selectedChat,
-  meta,
-  payload,
-}) => {
-  const firstUnreadMessageId = meta?.first_unread_message_id;
-  return (
-    !request.after &&
-    !request.before &&
-    Number(selectedChat?.unread_count || 0) > 0 &&
-    firstUnreadMessageId &&
-    payload.length > 0 &&
-    !messageExistsInPayload(payload, firstUnreadMessageId)
-  );
-};
-
-const payloadWithFirstUnreadPage = async ({
-  request,
-  selectedChat,
-  meta,
-  payload,
-  fetchPage,
-}) => {
-  if (!shouldFetchFirstUnreadPage({ request, selectedChat, meta, payload })) {
-    return payload;
-  }
-
-  const firstUnreadMessageId = meta.first_unread_message_id;
-  const beforeMessageId = payload[0]?.id;
-  const {
-    data: { payload: firstUnreadPayload = [] },
-  } = await fetchPage({
-    after: firstUnreadMessageId,
-    before: beforeMessageId,
-  });
-
-  return mergeMessagePayloadsById(firstUnreadPayload, payload);
+  return {
+    ...(chatMeta || {}),
+    first_unread_message_id: responseMeta?.first_unread_message_id || null,
+  };
 };
 
 const getCommunicationThreadById = (state, conversationId) => {
@@ -600,20 +522,10 @@ const actions = {
           before: data.before,
           include_history: true,
         });
-        const messagesPayload = await payloadWithFirstUnreadPage({
-          request: data,
-          selectedChat,
-          meta,
-          payload,
-          fetchPage: params =>
-            CommunicationThreadApi.messages(data.conversationId, {
-              ...params,
-              include_history: true,
-            }),
-        });
+        const messagesPayload = payload;
         selectedChat.channels = meta.channels || selectedChat.channels || [];
         selectedChat.meta = {
-          ...(selectedChat.meta || {}),
+          ...withFirstUnreadCursor(selectedChat.meta, data, meta),
           sender: meta.contact || selectedChat.meta?.sender || {},
         };
         commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
@@ -642,17 +554,14 @@ const actions = {
       const {
         data: { meta, payload },
       } = await MessageApi.getPreviousMessages(data);
-      const messagesPayload = await payloadWithFirstUnreadPage({
-        request: data,
-        selectedChat,
-        meta,
-        payload,
-        fetchPage: params =>
-          MessageApi.getPreviousMessages({
-            conversationId: data.conversationId,
-            ...params,
-          }),
-      });
+      const messagesPayload = payload;
+      if (selectedChat) {
+        selectedChat.meta = withFirstUnreadCursor(
+          selectedChat.meta,
+          data,
+          meta
+        );
+      }
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
         id: data.conversationId,
         data: meta,

@@ -94,10 +94,10 @@ const handleUpdate = item => {
       @click="toggleDropdown()"
     />
     <Transition
-      enter-active-class="transition-all duration-150 ease-out origin-bottom"
+      enter-active-class="transition-all duration-150 ease-out origin-top"
       enter-from-class="opacity-0 scale-95"
       enter-to-class="opacity-100 scale-100"
-      leave-active-class="transition-all duration-100 ease-in origin-bottom"
+      leave-active-class="transition-all duration-100 ease-in origin-top"
       leave-from-class="opacity-100 scale-100"
       leave-to-class="opacity-0 scale-95"
     >
@@ -108,7 +108,7 @@ const handleUpdate = item => {
           { ignore: [containerRef] },
         ]"
         :menu-items="updateMenuItems"
-        class="ltr:-right-[4.5rem] rtl:-left-[4.5rem] ltr:2xl:right-0 rtl:2xl:left-0 bottom-8 w-36"
+        class="ltr:-right-[4.5rem] rtl:-left-[4.5rem] ltr:2xl:right-0 rtl:2xl:left-0 top-8 w-36"
         @action="handleUpdate"
       />
     </Transition>

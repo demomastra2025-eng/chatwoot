@@ -10,6 +10,7 @@
     },
     "FAILED_TO_SEND": "Не удалось отправить",
     "TAB_HEADING": "Диалоги",
+    "TOTAL_COUNT": "Диалогов: {count}",
     "MENTION_HEADING": "Упоминания",
     "UNATTENDED_HEADING": "Неотвеченные",
     "SEARCH": {
@@ -32,10 +33,10 @@
         "TEXT": "AI"
       },
       "snoozed": {
-        "TEXT": "Отложенные"
+        "TEXT": "Отложено"
       },
       "all": {
-        "TEXT": "Все"
+        "TEXT": "Все статусы"
       }
     },
     "VIEW_FILTER": "Просмотр",
@@ -45,7 +46,8 @@
       "TOOLTIP_LABEL": "Искать диалоги",
       "PLACEHOLDER": "Поиск по имени, номеру, аккаунту или идентификатору",
       "EMPTY": "По этому запросу диалоги не найдены.",
-      "CLEAR_BUTTON_LABEL": "Очистить локальный поиск"
+      "CLEAR_BUTTON_LABEL": "Очистить локальный поиск",
+      "RESULT_COUNT": "Найдено: {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Статус",

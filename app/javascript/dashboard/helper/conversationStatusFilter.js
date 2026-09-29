@@ -70,3 +70,17 @@ export const mergeRouteStatusFilter = (filters, status, allowedStatuses) => {
     return { ...filter, values: [status] };
   });
 };
+
+/**
+ * "All statuses" in the page status query means no status condition. A single
+ * simple status condition is dropped; complex status expressions are kept
+ * because they cannot be represented by the page status query.
+ */
+export const removeRouteStatusFilter = (filters, allowedStatuses) => {
+  if (!Array.isArray(filters)) return filters;
+  if (extractSingleStatusFilter(filters, allowedStatuses) === null) {
+    return filters;
+  }
+
+  return filters.filter(filter => filterAttribute(filter) !== 'status');
+};

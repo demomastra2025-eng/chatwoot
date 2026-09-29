@@ -17,6 +17,26 @@ export function useBulkActions() {
   );
   const selectedInboxes = ref([]);
 
+  const failedCountOf = value =>
+    Number(value?.failedCount ?? value?.failed_count ?? 0);
+
+  // A failed run reports how many conversations could not be updated.
+  const bulkActionFailureMessage = (error, fallbackMessage) => {
+    const failedCount = failedCountOf(error);
+    return failedCount > 0
+      ? t('BULK_ACTION.PROGRESS.FAILED', { count: failedCount })
+      : fallbackMessage;
+  };
+
+  // A completed run can still skip some conversations; do not report that
+  // as a full success.
+  const bulkActionResultMessage = (bulkActionRun, successMessage) => {
+    const failedCount = failedCountOf(bulkActionRun);
+    return failedCount > 0
+      ? t('BULK_ACTION.COMPLETED_WITH_ERRORS', { count: failedCount })
+      : successMessage;
+  };
+
   const normalizeInboxIds = inboxIds => {
     const ids = Array.isArray(inboxIds) ? inboxIds : [inboxIds];
     return ids.filter(Boolean);
@@ -87,7 +107,7 @@ export function useBulkActions() {
     isCommunicationThreadMode = false
   ) {
     try {
-      await store.dispatch('bulkActions/process', {
+      const bulkActionRun = await store.dispatch('bulkActions/process', {
         type: bulkType(isCommunicationThreadMode),
         ids: conversationId || selectedConversations.value,
         fields: {
@@ -103,10 +123,15 @@ export function useBulkActions() {
           })
         );
       } else {
-        useAlert(t('BULK_ACTION.ASSIGN_SUCCESFUL'));
+        useAlert(
+          bulkActionResultMessage(
+            bulkActionRun,
+            t('BULK_ACTION.ASSIGN_SUCCESFUL')
+          )
+        );
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.ASSIGN_FAILED'));
+    } catch (error) {
+      useAlert(bulkActionFailureMessage(error, t('BULK_ACTION.ASSIGN_FAILED')));
     }
   }
 
@@ -117,7 +142,7 @@ export function useBulkActions() {
     isCommunicationThreadMode = false
   ) {
     try {
-      await store.dispatch('bulkActions/process', {
+      const bulkActionRun = await store.dispatch('bulkActions/process', {
         type: bulkType(isCommunicationThreadMode),
         ids: conversationId || selectedConversations.value,
         labels: {
@@ -133,10 +158,17 @@ export function useBulkActions() {
           })
         );
       } else {
-        useAlert(t('BULK_ACTION.LABELS.ASSIGN_SUCCESFUL'));
+        useAlert(
+          bulkActionResultMessage(
+            bulkActionRun,
+            t('BULK_ACTION.LABELS.ASSIGN_SUCCESFUL')
+          )
+        );
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.LABELS.ASSIGN_FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, t('BULK_ACTION.LABELS.ASSIGN_FAILED'))
+      );
     }
   }
 
@@ -157,14 +189,19 @@ export function useBulkActions() {
           conversationId,
         })
       );
-    } catch (err) {
-      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(
+          error,
+          t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.FAILED')
+        )
+      );
     }
   }
 
   async function onAssignTeamsForBulk(team, isCommunicationThreadMode = false) {
     try {
-      await store.dispatch('bulkActions/process', {
+      const bulkActionRun = await store.dispatch('bulkActions/process', {
         type: bulkType(isCommunicationThreadMode),
         ids: selectedConversations.value,
         fields: {
@@ -172,9 +209,16 @@ export function useBulkActions() {
         },
       });
       store.dispatch('bulkActions/clearSelectedConversationIds');
-      useAlert(t('BULK_ACTION.TEAMS.ASSIGN_SUCCESFUL'));
-    } catch (err) {
-      useAlert(t('BULK_ACTION.TEAMS.ASSIGN_FAILED'));
+      useAlert(
+        bulkActionResultMessage(
+          bulkActionRun,
+          t('BULK_ACTION.TEAMS.ASSIGN_SUCCESFUL')
+        )
+      );
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, t('BULK_ACTION.TEAMS.ASSIGN_FAILED'))
+      );
     }
   }
 
@@ -226,11 +270,12 @@ export function useBulkActions() {
     }
 
     try {
+      let bulkActionRun = null;
       if (conversationIds.length > 0) {
         const fields = { status };
         if (statusReason) fields.status_reason = statusReason;
 
-        await store.dispatch('bulkActions/process', {
+        bulkActionRun = await store.dispatch('bulkActions/process', {
           type: bulkType(isCommunicationThreadMode),
           ids: conversationIds,
           fields,
@@ -252,16 +297,23 @@ export function useBulkActions() {
       if (skippedCount > 0) {
         useAlert(t('BULK_ACTION.RESOLVE.PARTIAL_SUCCESS'));
       } else {
-        useAlert(t('BULK_ACTION.UPDATE.UPDATE_SUCCESFUL'));
+        useAlert(
+          bulkActionResultMessage(
+            bulkActionRun,
+            t('BULK_ACTION.UPDATE.UPDATE_SUCCESFUL')
+          )
+        );
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.UPDATE.UPDATE_FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, t('BULK_ACTION.UPDATE.UPDATE_FAILED'))
+      );
     }
   }
 
   async function onMarkConversationsRead(isCommunicationThreadMode = false) {
     try {
-      await store.dispatch('bulkActions/process', {
+      const bulkActionRun = await store.dispatch('bulkActions/process', {
         type: bulkType(isCommunicationThreadMode),
         ids: selectedConversations.value,
         action_name: 'mark_read',
@@ -275,9 +327,16 @@ export function useBulkActions() {
         });
       });
       resetBulkActions();
-      useAlert(t('BULK_ACTION.MARK_READ.SUCCESS'));
-    } catch (err) {
-      useAlert(t('BULK_ACTION.MARK_READ.FAILED'));
+      useAlert(
+        bulkActionResultMessage(
+          bulkActionRun,
+          t('BULK_ACTION.MARK_READ.SUCCESS')
+        )
+      );
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, t('BULK_ACTION.MARK_READ.FAILED'))
+      );
     }
   }
 

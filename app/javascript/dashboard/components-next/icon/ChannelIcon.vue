@@ -8,11 +8,25 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  fallbackIcon: {
+    type: String,
+    default: 'i-ri-global-fill',
+  },
+  fallbackIconClass: {
+    type: String,
+    default: '',
+  },
 });
 
-const channelIcon = useChannelIcon(toRef(props, 'inbox'));
+const channelIcon = useChannelIcon(
+  toRef(props, 'inbox'),
+  toRef(props, 'fallbackIcon')
+);
 </script>
 
 <template>
-  <Icon :icon="channelIcon" />
+  <Icon
+    :icon="channelIcon"
+    :class="channelIcon === fallbackIcon ? fallbackIconClass : undefined"
+  />
 </template>

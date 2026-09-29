@@ -58,7 +58,6 @@ export default {
         v-for="conversation in previousConversations"
         :key="conversation.id"
         :chat="conversation"
-        :hide-inbox-name="false"
         hide-thumbnail
         enable-context-menu
         compact

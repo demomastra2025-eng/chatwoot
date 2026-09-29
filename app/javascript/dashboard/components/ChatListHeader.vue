@@ -2,12 +2,11 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { formatNumber } from '@chatwoot/utils';
 import wootConstants from 'dashboard/constants/globals';
 
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
 import ConversationLocalSearch from './widgets/conversation/ConversationLocalSearch.vue';
-import ChatListChannelFilter from './widgets/conversation/ChatListChannelFilter.vue';
+import ConversationStatusFilter from './widgets/conversation/ConversationStatusFilter.vue';
 import SwitchLayout from 'dashboard/routes/dashboard/conversation/search/SwitchLayout.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -16,12 +15,10 @@ const props = defineProps({
   hasAppliedFilters: { type: Boolean, required: true },
   hasActiveFolders: { type: Boolean, required: true },
   isOnExpandedLayout: { type: Boolean, required: true },
-  conversationStats: { type: Object, required: true },
-  isListLoading: { type: Boolean, required: true },
-  showChannelFilter: { type: Boolean, default: false },
-  channelFilterItems: { type: Array, default: () => [] },
-  activeChannelFilterKey: { type: String, default: '' },
   activeUnreadOnly: { type: Boolean, default: false },
+  activeStatus: { type: String, default: wootConstants.STATUS_TYPE.OPEN },
+  showStatusFilter: { type: Boolean, default: false },
+  showAiStatus: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
@@ -30,8 +27,8 @@ const emit = defineEmits([
   'resetFilters',
   'basicFilterChange',
   'filtersModal',
-  'channelFilterSelect',
   'unreadFilterToggle',
+  'statusFilterChange',
 ]);
 
 const localSearchQuery = defineModel('localSearchQuery', {
@@ -50,8 +47,6 @@ const hasAppliedFiltersOrActiveFolders = computed(() => {
   return props.hasAppliedFilters || props.hasActiveFolders;
 });
 
-const allCount = computed(() => props.conversationStats?.allCount || 0);
-const formattedAllCount = computed(() => formatNumber(allCount.value));
 const unreadFilterTooltip = computed(() =>
   props.activeUnreadOnly
     ? t('CONVERSATION.UNREAD_FILTER.SHOW_ALL')
@@ -82,29 +77,20 @@ const toggleConversationLayout = () => {
     }"
   >
     <div class="flex min-w-0 flex-1 items-center">
-      <ChatListChannelFilter
-        v-if="showChannelFilter"
-        :items="channelFilterItems"
-        :active-key="activeChannelFilterKey"
-        @select="emit('channelFilterSelect', $event)"
+      <ConversationStatusFilter
+        v-if="showStatusFilter"
+        :model-value="activeStatus"
+        :show-ai="showAiStatus"
+        :title="pageTitle"
+        @update:model-value="emit('statusFilterChange', $event)"
       />
-      <template v-else>
-        <h1
-          class="truncate text-base font-medium text-n-slate-12"
-          :title="pageTitle"
-        >
-          {{ pageTitle }}
-        </h1>
-        <span
-          v-if="
-            allCount > 0 && hasAppliedFiltersOrActiveFolders && !isListLoading
-          "
-          class="mx-1 my-0.5 shrink-0 rounded-md bg-n-slate-3 px-2 py-1 text-xxs capitalize text-n-slate-12"
-          :title="allCount"
-        >
-          {{ formattedAllCount }}
-        </span>
-      </template>
+      <h1
+        v-else
+        class="truncate text-base font-medium text-n-slate-12"
+        :title="pageTitle"
+      >
+        {{ pageTitle }}
+      </h1>
     </div>
     <div class="flex shrink-0 items-center gap-1">
       <NextButton

@@ -66,10 +66,10 @@ const mountComponent = props =>
     global: {
       stubs: {
         Avatar: true,
+        ChannelIcon: true,
+        MessageStatus: true,
         MessagePreview: true,
-        InboxName: true,
         ConversationContextMenu: true,
-        TimeAgo: true,
         CardLabels: true,
         CardPriorityIcon: true,
         SLACardLabel: true,
@@ -80,11 +80,6 @@ const mountComponent = props =>
       },
     },
   });
-
-const findTimeAgoByTestId = (wrapper, testId) =>
-  wrapper
-    .findAllComponents({ name: 'TimeAgo' })
-    .find(component => component.attributes('data-test-id') === testId);
 
 describe('ConversationCard', () => {
   afterEach(() => {
@@ -403,7 +398,27 @@ describe('ConversationCard', () => {
     expect(wrapper.findComponent({ name: 'Avatar' }).props('size')).toBe(28);
   });
 
-  it('renders CRM stage color accents on the left card edge', () => {
+  it('passes an empty name to Avatar when the contact is not loaded', () => {
+    mocks.storeGetters['contacts/getContact'].mockReturnValue(undefined);
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props('name')).toBe('');
+  });
+
+  it('renders a symmetric full-card separator instead of a content border', () => {
+    const wrapper = mountComponent();
+    const separator = wrapper.find(
+      '[data-test-id="conversation-card-separator"]'
+    );
+
+    expect(separator.classes()).toEqual(
+      expect.arrayContaining(['absolute', 'bottom-0', 'left-3', 'right-3'])
+    );
+    expect(wrapper.find('.border-b').exists()).toBe(false);
+  });
+
+  it('does not render CRM stage color accents on the card edge', () => {
     const wrapper = mountComponent({
       chat: {
         ...baseChat,
@@ -414,31 +429,11 @@ describe('ConversationCard', () => {
       },
     });
 
-    const cardAccents = wrapper.find(
-      '[data-test-id="conversation-card-accents"]'
-    );
-    const accents = wrapper.find(
-      '[data-test-id="conversation-crm-stage-accents"]'
-    );
-    const stripes = accents.findAll('span');
-
-    expect(cardAccents.exists()).toBe(true);
-    expect(cardAccents.element.parentElement).toBe(wrapper.element);
-    expect(cardAccents.classes()).toContain('absolute');
-    expect(cardAccents.classes()).toContain('left-0');
-    expect(cardAccents.classes()).toContain('top-0');
-    expect(cardAccents.classes()).toContain('bottom-0');
-    expect(accents.exists()).toBe(true);
-    expect(stripes).toHaveLength(2);
-    expect(stripes[0].classes()).toContain('rounded-full');
-    expect(stripes[0].attributes('style')).toContain(
-      'background-color: rgb(34, 197, 94)'
-    );
-    expect(stripes[1].attributes('title')).toBe('Qualified');
     expect(
-      wrapper
-        .find('h4 [data-test-id="conversation-crm-stage-accents"]')
-        .exists()
+      wrapper.find('[data-test-id="conversation-card-accents"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-test-id="conversation-crm-stage-accents"]').exists()
     ).toBe(false);
   });
 
@@ -460,7 +455,7 @@ describe('ConversationCard', () => {
 
     expect(
       wrapper.find('[data-test-id="conversation-card-accents"]').exists()
-    ).toBe(true);
+    ).toBe(false);
     expect(
       wrapper
         .find('[data-test-id="conversation-appointment-status-accents"]')
@@ -491,91 +486,105 @@ describe('ConversationCard', () => {
     );
   });
 
-  it('does not render left card accents for appointment-only cards', () => {
-    const wrapper = mountComponent({
-      chat: {
-        ...baseChat,
-        scheduling_appointment_statuses: [{ status: 'scheduled', count: 1 }],
-      },
+  describe('last message time under the avatar', () => {
+    const localTimestamp = (...parts) =>
+      Math.floor(new Date(...parts).getTime() / 1000);
+    const mountWithMessageAt = createdAt =>
+      mountComponent({
+        chat: {
+          ...baseChat,
+          messages: [
+            {
+              id: 99,
+              content: 'Hello',
+              message_type: 0,
+              created_at: createdAt,
+            },
+          ],
+        },
+      });
+    const timeLabel = wrapper =>
+      wrapper.find('[data-test-id="conversation-card-last-message-time"]');
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2024, 2, 9, 18, 30, 0));
     });
 
-    expect(
-      wrapper.find('[data-test-id="conversation-card-accents"]').exists()
-    ).toBe(false);
-    expect(
-      wrapper
-        .find('[data-test-id="conversation-appointment-status-sticker"]')
-        .exists()
-    ).toBe(true);
+    it('shows the clock time for a message from today', () => {
+      const createdAt = localTimestamp(2024, 2, 9, 9, 5);
+      const wrapper = mountWithMessageAt(createdAt);
+
+      expect(timeLabel(wrapper).text()).toBe(
+        new Intl.DateTimeFormat('en', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }).format(new Date(createdAt * 1000))
+      );
+      expect(timeLabel(wrapper).element.parentElement).toBe(
+        wrapper.findComponent({ name: 'Avatar' }).element.parentElement
+      );
+    });
+
+    it('shows yesterday for a message from the previous day', () => {
+      const wrapper = mountWithMessageAt(localTimestamp(2024, 2, 8, 23, 50));
+
+      expect(timeLabel(wrapper).text()).toBe(
+        'CONVERSATION.DATE_DIVIDER.YESTERDAY'
+      );
+    });
+
+    it('shows a short date for older messages of the current year', () => {
+      const createdAt = localTimestamp(2024, 0, 15, 12, 0);
+      const wrapper = mountWithMessageAt(createdAt);
+
+      expect(timeLabel(wrapper).text()).toBe(
+        new Intl.DateTimeFormat('en', {
+          day: 'numeric',
+          month: 'short',
+        }).format(new Date(createdAt * 1000))
+      );
+    });
+
+    it('shows a numeric date for messages from previous years', () => {
+      const createdAt = localTimestamp(2023, 11, 31, 12, 0);
+      const wrapper = mountWithMessageAt(createdAt);
+
+      expect(timeLabel(wrapper).text()).toBe(
+        new Intl.DateTimeFormat('en', {
+          day: '2-digit',
+          month: '2-digit',
+          year: '2-digit',
+        }).format(new Date(createdAt * 1000))
+      );
+    });
+
+    it('does not render the directional activity timer anymore', () => {
+      const wrapper = mountWithMessageAt(localTimestamp(2024, 2, 9, 9, 5));
+
+      expect(wrapper.findComponent({ name: 'TimeAgo' }).exists()).toBe(false);
+    });
   });
 
-  it('renders the combined customer/reply activity time under the avatar and compact inbox name inline with the contact', () => {
+  it('renders only the channel icon without the channel name', () => {
     const wrapper = mountComponent();
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
-    );
-    const inboxName = wrapper.findComponent({ name: 'InboxName' });
+    const channelIcon = wrapper.findComponent({ name: 'ChannelIcon' });
 
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(0);
-    expect(inboxName.exists()).toBe(true);
-    expect(inboxName.props('compact')).toBe(true);
-  });
-
-  it('keeps both side activity times in one timer under the avatar', () => {
-    const wrapper = mountComponent({
-      chat: {
-        ...baseChat,
-        last_incoming_message_at: 1710000000,
-        last_outgoing_message_at: 1710003600,
-      },
+    expect(wrapper.findComponent({ name: 'InboxName' }).exists()).toBe(false);
+    expect(channelIcon.exists()).toBe(true);
+    expect(channelIcon.props('inbox')).toEqual({
+      id: 4593,
+      name: 'Inbox 4593',
     });
-
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
+    expect(channelIcon.props('fallbackIcon')).toBe(
+      'i-lucide-circle-question-mark'
     );
-
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
-    expect(
-      findTimeAgoByTestId(wrapper, 'conversation-last-outgoing-time')
-    ).toBe(undefined);
+    expect(channelIcon.props('fallbackIconClass')).toBe('!size-2.5');
+    expect(wrapper.find('.i-lucide-arrow-left').exists()).toBe(false);
+    expect(wrapper.find('.i-lucide-arrow-right').exists()).toBe(false);
   });
 
-  it('shows the manager/SLA attempt timer when only outgoing activity exists', () => {
-    const wrapper = mountComponent({
-      chat: {
-        ...baseChat,
-        last_incoming_message_at: null,
-        last_outgoing_message_at: 1710003600,
-      },
-    });
-
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
-    );
-
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(0);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
-  });
-
-  it('keeps the inbox name visible inside a specific inbox route', () => {
-    mocks.mapGetters.getSelectedInbox = getter(4593);
-
-    const wrapper = mountComponent();
-    const inboxName = wrapper.findComponent({ name: 'InboxName' });
-
-    expect(inboxName.exists()).toBe(true);
-    expect(inboxName.props('inbox')).toEqual({ id: 4593, name: 'Inbox 4593' });
-  });
-
-  it('renders outgoing events from inbox to contact in the contact row', () => {
+  it('keeps the assignee in the contact row', () => {
     const wrapper = mountComponent({
       showAssignee: true,
       chat: {
@@ -584,40 +593,86 @@ describe('ConversationCard', () => {
           sender: { id: 1 },
           assignee: { id: 23, name: 'Manager' },
         },
-        messages: [
-          {
-            id: 99,
-            content: 'Reply',
-            message_type: 1,
-            created_at: 1710000100,
-          },
-        ],
       },
     });
 
-    expect(wrapper.find('.i-lucide-arrow-left').exists()).toBe(true);
     expect(wrapper.find('h4').text()).toContain('Manager');
   });
 
-  it('renders incoming events from contact to inbox in the contact row', () => {
-    const wrapper = mountComponent({
-      chat: {
-        ...baseChat,
-        messages: [
-          {
-            id: 99,
-            content: 'Incoming',
-            message_type: 0,
-            created_at: 1710000100,
-          },
-        ],
-      },
+  describe('delivery status of the last outgoing message', () => {
+    const whatsappInbox = id => ({
+      id,
+      name: `Inbox ${id}`,
+      channel_type: 'Channel::Whatsapp',
+    });
+    const mountWithOutgoing = message =>
+      mountComponent({
+        chat: {
+          ...baseChat,
+          messages: [
+            {
+              id: 99,
+              content: 'Reply',
+              message_type: 1,
+              created_at: 1710000100,
+              ...message,
+            },
+          ],
+        },
+      });
+
+    beforeEach(() => {
+      mocks.storeGetters['inboxes/getInbox'] = vi.fn(whatsappInbox);
     });
 
-    expect(wrapper.find('.i-lucide-arrow-right').exists()).toBe(true);
+    it('keeps the sending indicator until the provider confirms the message', () => {
+      const wrapper = mountWithOutgoing({ status: 'sent' });
+      const messageStatus = wrapper.findComponent({ name: 'MessageStatus' });
+
+      expect(messageStatus.props('status')).toBe('progress');
+      expect(messageStatus.classes()).toContain('!size-2.5');
+      expect(messageStatus.classes()).not.toContain('!size-3');
+    });
+
+    it('renders the confirmed status before the preview without a reply arrow', () => {
+      const wrapper = mountWithOutgoing({
+        status: 'read',
+        source_id: 'wamid.1',
+      });
+      const messageStatus = wrapper.findComponent({ name: 'MessageStatus' });
+
+      expect(messageStatus.props('status')).toBe('read');
+      expect(messageStatus.classes()).toContain('!size-3');
+      expect(
+        wrapper
+          .findComponent({ name: 'MessagePreview' })
+          .props('showDirectionIcon')
+      ).toBe(false);
+    });
+
+    it('uses the channel of the last message inside a communication thread', () => {
+      mocks.storeGetters['inboxes/getInbox'] = vi.fn(id =>
+        id === 77
+          ? { id, name: 'Web', channel_type: 'Channel::WebWidget' }
+          : whatsappInbox(id)
+      );
+      const wrapper = mountWithOutgoing({ status: 'sent', inbox_id: 77 });
+
+      expect(
+        wrapper.findComponent({ name: 'MessageStatus' }).props('status')
+      ).toBe('delivered');
+    });
+
+    it('does not render a delivery status for an incoming message', () => {
+      const wrapper = mountWithOutgoing({ message_type: 0, status: 'read' });
+
+      expect(wrapper.findComponent({ name: 'MessageStatus' }).exists()).toBe(
+        false
+      );
+    });
   });
 
-  it('keeps the activity icon only in the event direction row', () => {
+  it('hides system activity content and its timestamp from the list', () => {
     const wrapper = mountComponent({
       chat: {
         ...baseChat,
@@ -632,11 +687,15 @@ describe('ConversationCard', () => {
       },
     });
 
-    const messagePreview = wrapper.findComponent({ name: 'MessagePreview' });
-
-    expect(wrapper.find('h4 .i-lucide-info').exists()).toBe(true);
-    expect(messagePreview.props('showMessageType')).toBe(false);
-    expect(messagePreview.classes()).toContain('text-n-slate-11');
+    expect(wrapper.findComponent({ name: 'MessagePreview' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.text()).not.toContain('conversation_status_changed');
+    expect(
+      wrapper
+        .find('[data-test-id="conversation-card-last-message-time"]')
+        .exists()
+    ).toBe(false);
   });
 
   it('renders regular message previews with the primary text color', () => {
@@ -659,18 +718,37 @@ describe('ConversationCard', () => {
     expect(messagePreview.props('showMessageType')).toBe(true);
     expect(messagePreview.classes()).toContain('text-n-slate-12');
     expect(messagePreview.classes()).not.toContain('text-n-slate-11');
+    expect(messagePreview.classes()).not.toContain('font-semibold');
   });
 
-  it('caps contact names while giving channel names extra room before assignee', () => {
+  it('renders unread conversations in bold', () => {
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        unread_count: 2,
+        messages: [
+          {
+            id: 99,
+            content: 'Incoming',
+            message_type: 0,
+            created_at: 1710000100,
+          },
+        ],
+      },
+    });
+
+    expect(
+      wrapper.findComponent({ name: 'MessagePreview' }).classes()
+    ).toContain('font-semibold');
+    expect(wrapper.find('h4 span').classes()).toContain('font-semibold');
+  });
+
+  it('caps contact names before the assignee', () => {
     mocks.storeGetters['contacts/getContact'] = vi.fn(() => ({
       id: 1,
       name: 'Very Long Contact Name',
       thumbnail: '',
       availability_status: 'offline',
-    }));
-    mocks.storeGetters['inboxes/getInbox'] = vi.fn(id => ({
-      id,
-      name: 'Very Long Inbox Name',
     }));
 
     const wrapper = mountComponent({
@@ -688,9 +766,6 @@ describe('ConversationCard', () => {
     const assigneeIcon = wrapper.find('fluent-icon-stub[icon="person"]');
 
     expect(contactRow.text()).toContain('Very Long Co…');
-    expect(
-      wrapper.findComponent({ name: 'InboxName' }).props('maxLength')
-    ).toBe(15);
     expect(contactRow.text()).toContain('Very Long Manager Name');
     expect(assigneeIcon.classes()).toContain('flex-shrink-0');
   });
@@ -728,5 +803,41 @@ describe('ConversationCard', () => {
     expect(wrapper.findComponent({ name: 'MessagePreview' }).exists()).toBe(
       false
     );
+    expect(wrapper.findComponent({ name: 'MessageStatus' }).exists()).toBe(
+      false
+    );
+  });
+
+  it('shows the delivery status in the voice row for provider channels', () => {
+    mocks.storeGetters['inboxes/getInbox'] = vi.fn(id => ({
+      id,
+      name: `Inbox ${id}`,
+      channel_type: 'Channel::Whatsapp',
+    }));
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        messages: [
+          {
+            id: 4238,
+            content: 'Voice Call',
+            content_type: 'voice_call',
+            message_type: 1,
+            status: 'delivered',
+            source_id: 'wacid.1',
+            content_attributes: {
+              data: { status: 'completed', call_direction: 'outbound' },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.findComponent({ name: 'VoiceCallStatus' }).exists()).toBe(
+      true
+    );
+    expect(
+      wrapper.findComponent({ name: 'MessageStatus' }).props('status')
+    ).toBe('delivered');
   });
 });

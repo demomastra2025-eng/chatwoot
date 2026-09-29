@@ -37,7 +37,9 @@ export const actions = {
       commit(types.SET_BULK_ACTION_RUN, bulkActionRun);
       return await dispatch('pollRunStatus', bulkActionRun.id);
     } catch (error) {
-      throw new Error(error);
+      // Keep Error instances intact so callers can read `failedCount`.
+      if (error instanceof Error) throw error;
+      throw new Error(error?.message || String(error));
     } finally {
       commit(types.SET_BULK_ACTIONS_FLAG, { isUpdating: false });
     }
@@ -54,7 +56,11 @@ export const actions = {
       }
 
       if (bulkActionRun.status === 'failed') {
-        throw new Error(bulkActionRun.error_message || 'Bulk action failed');
+        const error = new Error(
+          bulkActionRun.error_message || 'Bulk action failed'
+        );
+        error.failedCount = Number(bulkActionRun.failed_count || 0);
+        throw error;
       }
 
       if (attempt >= 239) {

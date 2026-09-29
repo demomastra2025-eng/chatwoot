@@ -102,6 +102,15 @@ export default {
       labelSuggestions: [],
       isCancellingCaptainResponse: false,
       conversationHistoryGeneration: 0,
+      // Snapshot of the unread state taken when a conversation is opened.
+      // Opening marks the conversation read, the snapshot keeps the unread
+      // divider and the "N unread" jump button until another chat is opened.
+      hasOpenedUnreadSnapshot: false,
+      openedUnreadMessageIds: [],
+      openedUnreadMessageCount: 0,
+      openedFirstUnreadMessageId: null,
+      showUnreadJumpButton: false,
+      isLoadingOpenedUnread: false,
     };
   },
 
@@ -182,6 +191,22 @@ export default {
     },
     unreadMessageIds() {
       return this.unReadMessages.map(message => message.id);
+    },
+    // Unread messages that arrived after the open snapshot (the agent is
+    // scrolled up, so they are not read in place yet).
+    unreadMessageIdsAfterOpen() {
+      if (!this.openedUnreadMessageIds.length) return [];
+
+      const openedIds = new Set(this.openedUnreadMessageIds.map(String));
+      return this.unreadMessageIds.filter(id => !openedIds.has(String(id)));
+    },
+    visibleUnreadMessageIds() {
+      if (!this.openedUnreadMessageIds.length) return this.unreadMessageIds;
+
+      return [
+        ...this.openedUnreadMessageIds,
+        ...this.unreadMessageIdsAfterOpen,
+      ];
     },
     communicationThreadLastSeenByConversationId() {
       return new Map(
@@ -283,11 +308,20 @@ export default {
     unreadMessageCount() {
       return this.currentChat.unread_count || 0;
     },
+    visibleUnreadMessageCount() {
+      if (!this.openedUnreadMessageIds.length) return this.unreadMessageCount;
+
+      return (
+        this.openedUnreadMessageCount + this.unreadMessageIdsAfterOpen.length
+      );
+    },
     unreadMessageLabel() {
       const count =
-        this.unreadMessageCount > 99 ? '99+' : this.unreadMessageCount;
+        this.visibleUnreadMessageCount > 99
+          ? '99+'
+          : this.visibleUnreadMessageCount;
       const label =
-        this.unreadMessageCount > 1
+        this.visibleUnreadMessageCount > 1
           ? 'CONVERSATION.UNREAD_MESSAGES'
           : 'CONVERSATION.UNREAD_MESSAGE';
       return `${count} ${this.$t(label)}`;
@@ -330,6 +364,7 @@ export default {
       this.fetchAllAttachmentsFromCurrentChat();
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
+      this.resetOpenedUnreadMessages();
       this.resetReplyEditorHeight();
     },
   },
@@ -410,24 +445,154 @@ export default {
     },
     onScrollToMessage({ messageId = '', force = false } = {}) {
       this.$nextTick(() => {
+        // Realtime events (new messages, delivery and read receipts) can
+        // arrive while setActiveChat is still loading the newest page. Marking
+        // the chat read then would clear the unread state before the snapshot
+        // sees the loaded page and its first-unread cursor; setActiveChat
+        // emits this event again once the page is loaded.
+        const isNewestPageLoaded = this.currentChat?.dataFetched === true;
         const hasExplicitMessageTarget = Boolean(messageId);
         const messageElement = hasExplicitMessageTarget
           ? document.getElementById('message' + messageId)
           : null;
         if (messageElement) {
+          this.preserveOpenedUnreadMessages();
           this.isProgrammaticScroll = true;
           messageElement.scrollIntoView({ behavior: 'smooth' });
           this.fetchPreviousMessages();
-          this.makeMessagesRead();
+          if (isNewestPageLoaded) this.makeMessagesRead();
         } else if (
           force ||
           (!hasExplicitMessageTarget &&
             (!this.hasUserScrolled || this.isNearConversationBottom()))
         ) {
+          this.preserveOpenedUnreadMessages();
           this.scrollToBottom();
-          this.makeMessagesRead();
+          if (isNewestPageLoaded) this.makeMessagesRead();
+          this.$nextTick(() => this.hideUnreadJumpWhenVisible());
         }
       });
+    },
+    resetOpenedUnreadMessages() {
+      this.hasOpenedUnreadSnapshot = false;
+      this.openedUnreadMessageIds = [];
+      this.openedUnreadMessageCount = 0;
+      this.openedFirstUnreadMessageId = null;
+      this.showUnreadJumpButton = false;
+      this.isLoadingOpenedUnread = false;
+    },
+    openedFirstUnreadCandidate() {
+      const localFirstUnreadId = this.unreadMessageIds[0];
+      const cursorId = this.currentChat?.meta?.first_unread_message_id;
+      const allUnreadLoaded =
+        this.unreadMessageIds.length >= this.unreadMessageCount;
+      if (!cursorId || (localFirstUnreadId && allUnreadLoaded)) {
+        return localFirstUnreadId || null;
+      }
+
+      // The server cursor is only needed when the first unread message is
+      // older than the loaded page. A cursor that points to a loaded message
+      // which is no longer unread is stale and must not move the divider.
+      const cursorIsLoaded = this.getMessages.some(
+        message => String(message.id) === String(cursorId)
+      );
+      const cursorIsUnread = this.unreadMessageIds.some(
+        id => String(id) === String(cursorId)
+      );
+      if (cursorIsLoaded && !cursorIsUnread) {
+        return localFirstUnreadId || null;
+      }
+
+      return cursorId;
+    },
+    preserveOpenedUnreadMessages() {
+      // Only the first scroll after the newest page is loaded takes the
+      // snapshot; list data alone has no first-unread cursor. Messages that
+      // arrive later are read in place, or stay unread next to the snapshot
+      // while the agent is scrolled up.
+      if (this.hasOpenedUnreadSnapshot) return;
+      if (this.currentChat?.dataFetched !== true) return;
+      this.hasOpenedUnreadSnapshot = true;
+
+      const firstUnreadMessageId = this.openedFirstUnreadCandidate();
+      const unreadMessageCount = Math.max(
+        this.unreadMessageCount,
+        this.unreadMessageIds.length
+      );
+      if (!firstUnreadMessageId || !unreadMessageCount) return;
+
+      this.openedUnreadMessageIds = [
+        firstUnreadMessageId,
+        ...this.unreadMessageIds.filter(
+          id => String(id) !== String(firstUnreadMessageId)
+        ),
+      ];
+      this.openedFirstUnreadMessageId = firstUnreadMessageId;
+      this.openedUnreadMessageCount = unreadMessageCount;
+      this.showUnreadJumpButton = true;
+    },
+    openedFirstUnreadElement() {
+      if (!this.openedFirstUnreadMessageId || !this.conversationPanel) {
+        return null;
+      }
+      return this.conversationPanel.querySelector(
+        `#message${this.openedFirstUnreadMessageId}`
+      );
+    },
+    hideUnreadJumpWhenVisible() {
+      if (!this.showUnreadJumpButton) return;
+
+      const element = this.openedFirstUnreadElement();
+      if (!element) return;
+
+      const panelRect = this.conversationPanel.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+      if (
+        elementRect.top >= panelRect.top &&
+        elementRect.top <= panelRect.bottom
+      ) {
+        this.showUnreadJumpButton = false;
+      }
+    },
+    async scrollToFirstOpenedUnread() {
+      const firstUnreadId =
+        this.openedFirstUnreadMessageId || this.visibleUnreadMessageIds[0];
+      if (!firstUnreadId || !this.conversationPanel) return;
+      if (this.isLoadingOpenedUnread) return;
+
+      let firstUnreadMessage = this.conversationPanel.querySelector(
+        `#message${firstUnreadId}`
+      );
+      if (!firstUnreadMessage) {
+        this.isLoadingOpenedUnread = true;
+        try {
+          await this.$store.dispatch('fetchPreviousMessages', {
+            conversationId: this.currentChat.id,
+            conversationType: isCommunicationThread(this.currentChat)
+              ? 'communication_thread'
+              : 'conversation',
+            after: firstUnreadId,
+            before: this.currentChat.messages?.[0]?.id,
+          });
+          await new Promise(resolve => {
+            this.$nextTick(resolve);
+          });
+          firstUnreadMessage = this.conversationPanel.querySelector(
+            `#message${firstUnreadId}`
+          );
+        } finally {
+          this.isLoadingOpenedUnread = false;
+        }
+      }
+      if (!firstUnreadMessage) return;
+
+      this.isProgrammaticScroll = true;
+      scrollElementIntoConversationPanel(
+        this.conversationPanel,
+        firstUnreadMessage,
+        { block: 'start' }
+      );
+      this.showUnreadJumpButton = false;
     },
     addScrollListener() {
       this.conversationPanel = this.$el.querySelector('.conversation-panel');
@@ -444,30 +609,8 @@ export default {
 
       this.isProgrammaticScroll = true;
 
-      // Unread messages have the highest priority: scroll to the first
-      // concrete unread DOM node instead of estimating its position from the
-      // total unread height. This keeps imported/backfilled channels, date
-      // dividers, attachments, call cards, and channel dividers from shifting
-      // the viewport to the wrong part of the timeline.
-      if (this.unreadMessageCount > 0) {
-        const firstUnreadMessage =
-          this.conversationPanel.querySelector('.message--unread');
-
-        if (firstUnreadMessage) {
-          return scrollElementIntoConversationPanel(
-            this.conversationPanel,
-            firstUnreadMessage,
-            { block: 'start' }
-          );
-        }
-
-        // A stale aggregate can outlive its unread message. Keep the viewport
-        // at the newest mounted content; the caller still sends mark-read so
-        // the backend can reconcile the aggregate instead of deadlocking here.
-        scrollConversationPanelToBottom(this.conversationPanel);
-        return false;
-      }
-
+      // Conversations always open at the newest message. Unread messages keep
+      // their divider and are reachable through the "N unread" jump button.
       const labelSuggestions =
         this.conversationPanel.querySelector('.label-suggestion');
       if (labelSuggestions) {
@@ -587,6 +730,7 @@ export default {
         this.hasUserScrolled = false;
       } else {
         this.hasUserScrolled = true;
+        this.hideUnreadJumpWhenVisible();
       }
       emitter.emit(BUS_EVENTS.ON_MESSAGE_LIST_SCROLL);
       this.fetchPreviousMessages(e.target.scrollTop);
@@ -656,11 +800,11 @@ export default {
       ref="conversationPanelRef"
       class="conversation-panel flex-shrink flex-grow basis-px flex flex-col overflow-y-auto relative h-full m-0 pb-4"
       :current-user-id="currentUserId"
-      :first-unread-id="unReadMessages[0]?.id"
+      :first-unread-id="visibleUnreadMessageIds[0]"
       :is-an-email-channel="isAnEmailChannel"
       :inbox-supports-reply-to="inboxSupportsReplyTo"
       :messages="getMessages"
-      :unread-message-ids="unreadMessageIds"
+      :unread-message-ids="visibleUnreadMessageIds"
       @retry="handleMessageRetry"
     >
       <template #beforeAll>
@@ -680,7 +824,7 @@ export default {
       </template>
       <template #unreadBadge>
         <li
-          v-show="unreadMessageCount != 0"
+          v-show="visibleUnreadMessageCount != 0"
           class="list-none flex justify-center items-center"
         >
           <span
@@ -700,6 +844,25 @@ export default {
       </template>
     </MessageList>
     <div class="flex relative flex-col bg-n-surface-1">
+      <button
+        v-if="showUnreadJumpButton && !isAnyoneTyping"
+        type="button"
+        data-test-id="messages-view-unread-jump"
+        class="absolute -top-10 left-1/2 z-20 inline-flex -translate-x-1/2 items-center gap-1 rounded-full border border-n-weak bg-n-solid-1 px-3 py-1.5 text-xs font-medium text-n-slate-12 shadow-md hover:bg-n-alpha-2 disabled:cursor-wait"
+        :disabled="isLoadingOpenedUnread"
+        @click="scrollToFirstOpenedUnread"
+      >
+        <Icon
+          :icon="
+            isLoadingOpenedUnread
+              ? 'i-lucide-loader-circle'
+              : 'i-lucide-arrow-up'
+          "
+          class="size-3.5"
+          :class="{ 'animate-spin': isLoadingOpenedUnread }"
+        />
+        {{ unreadMessageLabel }}
+      </button>
       <div
         v-if="isAnyoneTyping"
         class="absolute z-10 flex items-center w-full h-0 -top-8"

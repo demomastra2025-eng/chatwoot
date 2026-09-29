@@ -56,7 +56,37 @@ describe('#actions', () => {
     });
   });
 
+  describe('#process errors', () => {
+    it('keeps the failed count of a failed run for the caller', async () => {
+      const failure = new Error('Bulk action failed');
+      failure.failedCount = 3;
+      dispatch.mockRejectedValue(failure);
+      axios.post.mockResolvedValue({ data: { payload: bulkActionRun } });
+
+      await expect(
+        actions.process({ commit, dispatch }, payload)
+      ).rejects.toMatchObject({ failedCount: 3 });
+    });
+  });
+
   describe('#pollRunStatus', () => {
+    it('rejects with the failed count when the run fails', async () => {
+      axios.get.mockResolvedValue({
+        data: {
+          payload: {
+            ...bulkActionRun,
+            status: 'failed',
+            failed_count: 2,
+            error_message: 'Partially failed',
+          },
+        },
+      });
+
+      await expect(
+        actions.pollRunStatus({ commit }, bulkActionRun.id)
+      ).rejects.toMatchObject({ message: 'Partially failed', failedCount: 2 });
+    });
+
     it('polls and commits completed bulk action run status', async () => {
       axios.get.mockResolvedValue({ data: { payload: bulkActionRun } });
 

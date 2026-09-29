@@ -141,6 +141,7 @@ const buildStore = () => ({
       id: ACCOUNT_ID,
       settings: mocks.accountSettings,
     }),
+    'accounts/isFeatureEnabledonAccount': () => false,
     'contacts/getContact': () => ({}),
     'teams/getTeam': () => ({}),
     getConversationById: () => null,

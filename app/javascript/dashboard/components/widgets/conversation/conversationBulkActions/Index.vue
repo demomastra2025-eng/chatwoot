@@ -193,19 +193,22 @@ onUnmounted(() => {
 
 <template>
   <Transition
-    enter-active-class="transition-all duration-200 ease-out origin-bottom"
-    enter-from-class="opacity-0 scale-95 translate-y-2"
+    enter-active-class="transition-all duration-200 ease-out origin-top"
+    enter-from-class="opacity-0 scale-95 -translate-y-2"
     enter-to-class="opacity-100 scale-100 translate-y-0"
-    leave-active-class="transition-all duration-150 ease-in origin-bottom"
+    leave-active-class="transition-all duration-150 ease-in origin-top"
     leave-from-class="opacity-100 scale-100 translate-y-0"
-    leave-to-class="opacity-0 scale-95 translate-y-2"
+    leave-to-class="opacity-0 scale-95 -translate-y-2"
   >
+    <!-- The panel sits in the list flow above the conversations so it never
+         covers the last cards or the list footer. -->
     <div
       v-if="conversations.length > 0"
       v-bind="attrs"
-      class="px-2 absolute bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2 z-30 w-full origin-bottom pointer-events-none"
+      data-test-id="conversation-bulk-actions-panel"
+      class="relative z-30 w-full shrink-0 origin-top px-2 pb-2"
     >
-      <div class="pointer-events-auto mx-auto max-w-4xl">
+      <div class="mx-auto max-w-4xl">
         <div
           v-if="allConversationsSelected"
           class="bg-n-amber-2 outline -outline-offset-1 outline-1 outline-n-amber-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-amber-text"

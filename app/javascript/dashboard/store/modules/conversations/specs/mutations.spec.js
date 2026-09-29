@@ -10,6 +10,48 @@ describe('#mutations', () => {
     vi.restoreAllMocks();
   });
 
+  describe('#SET_CURRENT_CHAT_WINDOW', () => {
+    it('drops the first-unread cursor of an earlier open of the same chat', () => {
+      const chat = {
+        id: 7,
+        is_communication_thread: true,
+        dataFetched: true,
+        messages: [{ id: 150 }],
+        meta: { sender: { id: 3 }, first_unread_message_id: 77 },
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          { id: 7, meta: { first_unread_message_id: 5 } },
+          chat,
+        ],
+      };
+
+      mutations[types.SET_CURRENT_CHAT_WINDOW](state, chat);
+
+      expect(state.selectedChatId).toBe(7);
+      expect(state.selectedChatType).toBe('communication_thread');
+      expect(chat.meta).toEqual({
+        sender: { id: 3 },
+        first_unread_message_id: null,
+      });
+      // a direct conversation with the same id keeps its own cursor
+      expect(state.allConversations[0].meta.first_unread_message_id).toBe(5);
+    });
+
+    it('selects a chat without meta', () => {
+      const chat = { id: 11, messages: [] };
+      const state = { allConversations: [chat] };
+
+      mutations[types.SET_CURRENT_CHAT_WINDOW](state, chat);
+
+      expect(state.selectedChatId).toBe(11);
+      expect(state.selectedChatType).toBe('conversation');
+      expect(chat.meta).toBeUndefined();
+    });
+  });
+
   describe('#UPDATE_CONVERSATION', () => {
     it('updates selected conversation metadata without forcing the message list to bottom', () => {
       const emitSpy = vi.spyOn(emitter, 'emit');
@@ -167,6 +209,99 @@ describe('#mutations', () => {
   });
 
   describe('#ADD_MESSAGE', () => {
+    const confirmedState = () => ({
+      selectedChatId: 11,
+      selectedChatType: 'conversation',
+      allConversations: [
+        {
+          id: 11,
+          timestamp: 1710000010,
+          messages: [
+            {
+              id: 501,
+              conversation_id: 11,
+              content: 'Provider-confirmed message',
+              content_attributes: { provider_message_id: 'external-501' },
+              source_id: 'external-501',
+              status: 'delivered',
+              created_at: 1710000010,
+            },
+          ],
+        },
+      ],
+    });
+
+    it('does not let a late send response move a provider-confirmed message back to sending', () => {
+      const state = confirmedState();
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 501,
+        conversation_id: 11,
+        content: 'Provider-confirmed message',
+        content_attributes: {},
+        status: 'sent',
+        created_at: 1710000010,
+      });
+
+      expect(state.allConversations[0].messages).toHaveLength(1);
+      expect(state.allConversations[0].messages[0]).toMatchObject({
+        source_id: 'external-501',
+        status: 'delivered',
+        content_attributes: { provider_message_id: 'external-501' },
+      });
+    });
+
+    it('still applies a provider failure that arrives after the confirmation', () => {
+      const state = confirmedState();
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 501,
+        conversation_id: 11,
+        content: 'Provider-confirmed message',
+        status: 'failed',
+        created_at: 1710000010,
+      });
+
+      expect(state.allConversations[0].messages[0].status).toBe('failed');
+    });
+
+    it('keeps the thread copy confirmed when the realtime creation event is late', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11],
+            channels: [{ conversation_id: 11, inbox_id: 3 }],
+            messages: [
+              {
+                id: 601,
+                conversation_id: 11,
+                source_id: 'wamid.601',
+                status: 'read',
+                created_at: 1710000020,
+              },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, {
+        chatId: 7,
+        message: {
+          id: 601,
+          conversation_id: 11,
+          status: 'sent',
+          created_at: 1710000020,
+        },
+      });
+
+      expect(state.allConversations[0].messages[0]).toMatchObject({
+        source_id: 'wamid.601',
+        status: 'read',
+      });
+    });
+
     it('keeps direct conversation messages ordered and deduplicated for mixed id types', () => {
       const state = {
         selectedChatId: null,

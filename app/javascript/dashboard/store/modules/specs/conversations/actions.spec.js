@@ -5,6 +5,7 @@ import actions, {
   hasMessageFailedWithExternalError,
 } from '../../conversations/actions';
 import types from '../../../mutation-types';
+import { mutations } from '../../conversations';
 const dataToSend = {
   payload: [
     {
@@ -1694,6 +1695,76 @@ describe('#addMentions', () => {
       expect(localDispatch).not.toHaveBeenCalled();
     });
 
+    it('does not reuse the first-unread cursor of an earlier open when no page is fetched', async () => {
+      const chat = {
+        id: 7,
+        is_communication_thread: true,
+        dataFetched: true,
+        unread_count: 3,
+        messages: [{ id: 150 }, { id: 151 }],
+        meta: { first_unread_message_id: 77 },
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [chat],
+      };
+      const localDispatch = vi.fn();
+
+      await actions.setActiveChat(
+        {
+          commit: (type, payload) => mutations[type](state, payload),
+          dispatch: localDispatch,
+        },
+        { data: chat }
+      );
+
+      expect(localDispatch).not.toHaveBeenCalled();
+      expect(state.selectedChatId).toBe(7);
+      expect(chat.meta.first_unread_message_id).toBeNull();
+    });
+
+    it('keeps the fresh cursor returned by the newest page of this open', async () => {
+      const chat = {
+        id: 1,
+        unread_count: 3,
+        messages: [{ id: 150, created_at: 150 }],
+        meta: { first_unread_message_id: 77 },
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [chat],
+      };
+      // namespaced metadata commits are not part of this module
+      const localCommit = (type, payload) => mutations[type]?.(state, payload);
+      const localDispatch = vi.fn(async (name, payload) => {
+        expect(name).toBe('fetchPreviousMessages');
+        // the cursor of the earlier open is gone before the page request
+        expect(chat.meta.first_unread_message_id).toBeNull();
+        axios.get.mockResolvedValueOnce({
+          data: {
+            meta: { first_unread_message_id: 145 },
+            payload: [{ id: 150, created_at: 150 }],
+          },
+        });
+        await actions.fetchPreviousMessages(
+          { commit: localCommit, state },
+          payload
+        );
+      });
+
+      await actions.setActiveChat(
+        { commit: localCommit, dispatch: localDispatch },
+        { data: chat }
+      );
+
+      expect(localDispatch).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(chat.dataFetched).toBe(true);
+      expect(chat.meta.first_unread_message_id).toBe(145);
+    });
+
     it('should commit SET_CHAT_DATA_FETCHED by ID, not mutate the data object directly (race condition fix)', async () => {
       const localCommit = vi.fn();
       const localDispatch = vi.fn().mockResolvedValue();
@@ -1734,118 +1805,160 @@ describe('#addMentions', () => {
     });
   });
 
-  describe('#fetchPreviousMessages first unread page', () => {
-    it('loads the first unread direct-conversation page when it is outside the latest payload', async () => {
+  describe('#fetchPreviousMessages first unread cursor', () => {
+    it('opens a direct conversation with the newest page only and keeps the unread cursor', async () => {
       const localCommit = vi.fn();
       axios.get.mockReset();
+      const chat = {
+        id: 1,
+        unread_count: 3,
+        messages: [],
+        meta: { sender: { id: 5 } },
+      };
       const state = {
-        allConversations: [
-          {
-            id: 1,
-            unread_count: 3,
-            messages: [],
-          },
-        ],
+        allConversations: [chat],
         selectedChatId: 1,
         selectedChatType: 'conversation',
       };
-      axios.get
-        .mockResolvedValueOnce({
-          data: {
-            meta: { first_unread_message_id: 10 },
-            payload: [{ id: 30, created_at: 30 }],
-          },
-        })
-        .mockResolvedValueOnce({
-          data: {
-            meta: {},
-            payload: [
-              { id: 10, created_at: 10 },
-              { id: 20, created_at: 20 },
-            ],
-          },
-        });
+      axios.get.mockResolvedValueOnce({
+        data: {
+          meta: { first_unread_message_id: 10 },
+          payload: [{ id: 30, created_at: 30 }],
+        },
+      });
 
       await actions.fetchPreviousMessages(
         { commit: localCommit, state },
         { conversationId: 1, conversationType: 'conversation' }
       );
 
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(chat.meta).toEqual({
+        sender: { id: 5 },
+        first_unread_message_id: 10,
+      });
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {
           id: 1,
           conversationType: 'conversation',
-          data: [
-            { id: 10, created_at: 10 },
-            { id: 20, created_at: 20 },
-            { id: 30, created_at: 30 },
-          ],
+          data: [{ id: 30, created_at: 30 }],
         }
       );
     });
 
-    it('loads the first unread communication-thread page when it is outside the latest payload', async () => {
+    it('opens a communication thread with the newest page only and keeps the unread cursor', async () => {
       const localCommit = vi.fn();
       axios.get.mockReset();
+      const thread = {
+        id: 7,
+        is_communication_thread: true,
+        unread_count: 2,
+        messages: [],
+        channels: [],
+        meta: {},
+      };
       const state = {
-        allConversations: [
-          {
-            id: 7,
-            is_communication_thread: true,
-            unread_count: 2,
-            messages: [],
-            channels: [],
-            meta: {},
-          },
-        ],
+        allConversations: [thread],
         selectedChatId: 7,
         selectedChatType: 'communication_thread',
       };
-      axios.get
-        .mockResolvedValueOnce({
-          data: {
-            meta: {
-              contact: { id: 1 },
-              channels: [],
-              first_unread_message_id: 100,
-            },
-            payload: [{ id: 300, created_at: 300 }],
+      axios.get.mockResolvedValueOnce({
+        data: {
+          meta: {
+            contact: { id: 1 },
+            channels: [],
+            first_unread_message_id: 100,
           },
-        })
-        .mockResolvedValueOnce({
-          data: {
-            meta: {},
-            payload: [{ id: 100, created_at: 100 }],
-          },
-        });
+          payload: [{ id: 300, created_at: 300 }],
+        },
+      });
 
       await actions.fetchPreviousMessages(
         { commit: localCommit, state },
         { conversationId: 7, conversationType: 'communication_thread' }
       );
 
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(1);
       expect(axios.get.mock.calls[0][1].params).toEqual({
         include_history: true,
       });
-      expect(axios.get.mock.calls[1][1].params).toEqual({
-        after: 100,
-        before: 300,
-        include_history: true,
+      expect(thread.meta).toEqual({
+        sender: { id: 1 },
+        first_unread_message_id: 100,
       });
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {
           id: 7,
           conversationType: 'communication_thread',
-          data: [
-            { id: 100, created_at: 100 },
-            { id: 300, created_at: 300 },
-          ],
+          data: [{ id: 300, created_at: 300 }],
         }
       );
+    });
+
+    it('clears a stale cursor when a later newest-page load has nothing unread', async () => {
+      axios.get.mockReset();
+      const chat = {
+        id: 1,
+        unread_count: 0,
+        messages: [],
+        meta: { first_unread_message_id: 10 },
+      };
+      axios.get.mockResolvedValueOnce({
+        data: { meta: {}, payload: [{ id: 30, created_at: 30 }] },
+      });
+
+      await actions.fetchPreviousMessages(
+        {
+          commit: vi.fn(),
+          state: {
+            allConversations: [chat],
+            selectedChatId: 1,
+            selectedChatType: 'conversation',
+          },
+        },
+        { conversationId: 1, conversationType: 'conversation' }
+      );
+
+      expect(chat.meta.first_unread_message_id).toBeNull();
+    });
+
+    it('keeps the cursor while loading an older or unread range', async () => {
+      axios.get.mockReset();
+      const chat = {
+        id: 1,
+        unread_count: 3,
+        messages: [{ id: 30, created_at: 30 }],
+        meta: { first_unread_message_id: 10 },
+      };
+      axios.get.mockResolvedValueOnce({
+        data: { meta: {}, payload: [{ id: 10, created_at: 10 }] },
+      });
+
+      await actions.fetchPreviousMessages(
+        {
+          commit: vi.fn(),
+          state: {
+            allConversations: [chat],
+            selectedChatId: 1,
+            selectedChatType: 'conversation',
+          },
+        },
+        {
+          conversationId: 1,
+          conversationType: 'conversation',
+          after: 10,
+          before: 30,
+        }
+      );
+
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get.mock.calls[0][1].params).toEqual({
+        after: 10,
+        before: 30,
+      });
+      expect(chat.meta.first_unread_message_id).toBe(10);
     });
   });
 });

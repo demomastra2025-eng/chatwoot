@@ -4,7 +4,7 @@ import { isWhatsappWebConnected } from 'dashboard/helper/whatsappWeb';
 
 const withNeutralChannelColor = icon => `${icon} ${CHANNEL_ICON_NEUTRAL_CLASS}`;
 
-export function useChannelIcon(inbox) {
+export function useChannelIcon(inbox, fallbackIcon = 'i-ri-global-fill') {
   const channelTypeIconMap = {
     'Channel::Api': 'i-woot-api',
     'Channel::Email': 'i-woot-mail',
@@ -56,7 +56,8 @@ export function useChannelIcon(inbox) {
       icon = withNeutralChannelColor('i-woot-whatsapp');
     }
 
-    return icon ?? 'i-ri-global-fill';
+    const fallback = fallbackIcon?.value ?? fallbackIcon;
+    return icon ?? fallback;
   });
 
   return channelIcon;

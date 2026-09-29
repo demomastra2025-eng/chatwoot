@@ -64,10 +64,13 @@ describe('MessagesView', () => {
   describe('#onScrollToMessage', () => {
     const buildContext = overrides => ({
       $nextTick: callback => callback(),
+      currentChat: { id: 7, dataFetched: true },
       fetchPreviousMessages: vi.fn(),
       isNearConversationBottom: vi.fn(() => false),
       makeMessagesRead: vi.fn(),
       scrollToBottom: vi.fn(),
+      preserveOpenedUnreadMessages: vi.fn(),
+      hideUnreadJumpWhenVisible: vi.fn(),
       hasUserScrolled: true,
       ...overrides,
     });
@@ -79,6 +82,22 @@ describe('MessagesView', () => {
 
       expect(context.scrollToBottom).not.toHaveBeenCalled();
       expect(context.makeMessagesRead).not.toHaveBeenCalled();
+      expect(context.preserveOpenedUnreadMessages).not.toHaveBeenCalled();
+    });
+
+    it('snapshots the unread state before opening at the newest message and marking it read', () => {
+      const calls = [];
+      const context = buildContext({
+        hasUserScrolled: false,
+        preserveOpenedUnreadMessages: vi.fn(() => calls.push('preserve')),
+        scrollToBottom: vi.fn(() => calls.push('scroll')),
+        makeMessagesRead: vi.fn(() => calls.push('read')),
+      });
+
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(calls).toEqual(['preserve', 'scroll', 'read']);
+      expect(context.hideUnreadJumpWhenVisible).toHaveBeenCalled();
     });
 
     it('force-scrolls after an agent sends a message', () => {
@@ -112,6 +131,82 @@ describe('MessagesView', () => {
       expect(context.scrollToBottom).toHaveBeenCalled();
       expect(context.makeMessagesRead).toHaveBeenCalled();
     });
+
+    it('does not mark read while the newest page of the opened chat is loading', () => {
+      const context = buildContext({
+        hasUserScrolled: false,
+        currentChat: { id: 7, is_communication_thread: true },
+      });
+
+      // e.g. a delivery receipt for the open thread during setActiveChat
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.scrollToBottom).toHaveBeenCalled();
+      expect(context.makeMessagesRead).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unread snapshot while the newest page loads', () => {
+    const openedContext = () => {
+      const context = {
+        $nextTick: callback => callback(),
+        currentChat: {
+          id: 7,
+          is_communication_thread: true,
+          unread_count: 6,
+          meta: {},
+          messages: [{ id: 150 }],
+        },
+        getMessages: [{ id: 150 }],
+        unreadMessageIds: [150],
+        unreadMessageCount: 6,
+        hasUserScrolled: false,
+        hasOpenedUnreadSnapshot: false,
+        openedUnreadMessageIds: [],
+        openedUnreadMessageCount: 0,
+        openedFirstUnreadMessageId: null,
+        showUnreadJumpButton: false,
+        isNearConversationBottom: () => true,
+        scrollToBottom: vi.fn(),
+        makeMessagesRead: vi.fn(),
+        hideUnreadJumpWhenVisible: vi.fn(),
+      };
+      context.openedFirstUnreadCandidate = () =>
+        MessagesView.methods.openedFirstUnreadCandidate.call(context);
+      context.preserveOpenedUnreadMessages = () =>
+        MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+      return context;
+    };
+
+    it('takes the snapshot from the loaded page, not from an early realtime event', () => {
+      const context = openedContext();
+
+      // realtime event while only the list preview message is known
+      MessagesView.methods.onScrollToMessage.call(context);
+      expect(context.hasOpenedUnreadSnapshot).toBe(false);
+      expect(context.showUnreadJumpButton).toBe(false);
+      expect(context.makeMessagesRead).not.toHaveBeenCalled();
+
+      // setActiveChat finished: newest page and server cursor are loaded
+      const page = [145, 146, 147, 148, 149, 150].map(id => ({ id }));
+      context.currentChat = {
+        ...context.currentChat,
+        dataFetched: true,
+        meta: { first_unread_message_id: 145 },
+        messages: page,
+      };
+      context.getMessages = page;
+      context.unreadMessageIds = page.map(({ id }) => id);
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.openedFirstUnreadMessageId).toBe(145);
+      expect(context.openedUnreadMessageIds).toEqual([
+        145, 146, 147, 148, 149, 150,
+      ]);
+      expect(context.openedUnreadMessageCount).toBe(6);
+      expect(context.showUnreadJumpButton).toBe(true);
+      expect(context.makeMessagesRead).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('#scrollToBottom', () => {
@@ -133,7 +228,7 @@ describe('MessagesView', () => {
       return panel;
     };
 
-    it('scrolls to the first unread DOM message when unread messages are mounted', () => {
+    it('opens at the newest message even when unread messages are mounted', () => {
       const unreadMessage = {
         getBoundingClientRect: () => ({ top: 350, bottom: 430, height: 80 }),
       };
@@ -145,12 +240,12 @@ describe('MessagesView', () => {
       };
 
       expect(MessagesView.methods.scrollToBottom.call(context)).toBe(true);
-      expect(panel.querySelector).toHaveBeenCalledWith('.message--unread');
-      expect(panel.scrollTop).toBe(526);
+      expect(panel.querySelector).not.toHaveBeenCalledWith('.message--unread');
+      expect(panel.scrollTop).toBe(1500);
       expect(context.isProgrammaticScroll).toBe(true);
     });
 
-    it('scrolls to newest mounted content but refuses read-marking if unread DOM is missing', () => {
+    it('opens at the newest message when unread DOM is not mounted', () => {
       const panel = buildPanel();
       const context = {
         conversationPanel: panel,
@@ -158,7 +253,7 @@ describe('MessagesView', () => {
         isProgrammaticScroll: false,
       };
 
-      expect(MessagesView.methods.scrollToBottom.call(context)).toBe(false);
+      expect(MessagesView.methods.scrollToBottom.call(context)).toBe(true);
       expect(panel.scrollTop).toBe(1500);
       expect(context.isProgrammaticScroll).toBe(true);
     });
@@ -176,12 +271,324 @@ describe('MessagesView', () => {
     });
   });
 
+  describe('opened unread navigation', () => {
+    const snapshotContext = overrides => {
+      const context = {
+        currentChat: { dataFetched: true, meta: {} },
+        getMessages: [],
+        unreadMessageIds: [],
+        unreadMessageCount: 0,
+        hasOpenedUnreadSnapshot: false,
+        openedUnreadMessageIds: [],
+        openedUnreadMessageCount: 0,
+        openedFirstUnreadMessageId: null,
+        showUnreadJumpButton: false,
+        ...overrides,
+      };
+      context.openedFirstUnreadCandidate = () =>
+        MessagesView.methods.openedFirstUnreadCandidate.call(context);
+      return context;
+    };
+
+    it('preserves the unread marker before the read state is cleared', () => {
+      const context = snapshotContext({
+        getMessages: [{ id: 101 }, { id: 102 }],
+        unreadMessageIds: [101, 102],
+        unreadMessageCount: 2,
+      });
+
+      MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+
+      expect(context.openedUnreadMessageIds).toEqual([101, 102]);
+      expect(context.openedFirstUnreadMessageId).toBe(101);
+      expect(context.openedUnreadMessageCount).toBe(2);
+      expect(context.showUnreadJumpButton).toBe(true);
+    });
+
+    it('uses the server cursor when the first unread is outside the loaded page', () => {
+      const context = snapshotContext({
+        currentChat: {
+          dataFetched: true,
+          meta: { first_unread_message_id: 77 },
+        },
+        getMessages: [{ id: 101 }],
+        unreadMessageIds: [101],
+        unreadMessageCount: 3,
+      });
+
+      MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+
+      expect(context.openedUnreadMessageIds).toEqual([77, 101]);
+      expect(context.openedFirstUnreadMessageId).toBe(77);
+      expect(context.openedUnreadMessageCount).toBe(3);
+      expect(context.showUnreadJumpButton).toBe(true);
+    });
+
+    it('ignores a stale cursor that points to an already read loaded message', () => {
+      const context = snapshotContext({
+        currentChat: {
+          dataFetched: true,
+          meta: { first_unread_message_id: 90 },
+        },
+        getMessages: [{ id: 90 }, { id: 150 }],
+        unreadMessageIds: [150],
+        unreadMessageCount: 1,
+      });
+
+      MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+
+      expect(context.openedFirstUnreadMessageId).toBe(150);
+      expect(context.openedUnreadMessageIds).toEqual([150]);
+    });
+
+    it('does not snapshot messages that arrive after the conversation was opened', () => {
+      const context = snapshotContext({
+        getMessages: [{ id: 150 }],
+        unreadMessageIds: [],
+        unreadMessageCount: 0,
+      });
+
+      MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+      context.unreadMessageIds = [150];
+      context.unreadMessageCount = 1;
+      MessagesView.methods.preserveOpenedUnreadMessages.call(context);
+
+      expect(context.openedUnreadMessageIds).toEqual([]);
+      expect(context.showUnreadJumpButton).toBe(false);
+    });
+
+    it('resets the snapshot when another conversation is opened', () => {
+      const context = snapshotContext({
+        hasOpenedUnreadSnapshot: true,
+        openedUnreadMessageIds: [1],
+        openedUnreadMessageCount: 1,
+        openedFirstUnreadMessageId: 1,
+        showUnreadJumpButton: true,
+        isLoadingOpenedUnread: true,
+      });
+
+      MessagesView.methods.resetOpenedUnreadMessages.call(context);
+
+      expect(context).toMatchObject({
+        hasOpenedUnreadSnapshot: false,
+        openedUnreadMessageIds: [],
+        openedUnreadMessageCount: 0,
+        openedFirstUnreadMessageId: null,
+        showUnreadJumpButton: false,
+        isLoadingOpenedUnread: false,
+      });
+    });
+
+    const visibleUnread = context => {
+      const withComputed = {
+        ...context,
+        unreadMessageIdsAfterOpen:
+          MessagesView.computed.unreadMessageIdsAfterOpen.call(context),
+      };
+      return {
+        ids: MessagesView.computed.visibleUnreadMessageIds.call(withComputed),
+        count:
+          MessagesView.computed.visibleUnreadMessageCount.call(withComputed),
+      };
+    };
+
+    it('keeps the unread divider and count after the thread is marked read', () => {
+      expect(
+        visibleUnread({
+          openedUnreadMessageIds: [101, 102],
+          openedUnreadMessageCount: 2,
+          unreadMessageIds: [],
+          unreadMessageCount: 0,
+        })
+      ).toEqual({ ids: [101, 102], count: 2 });
+    });
+
+    it('adds messages that arrive while the agent is scrolled up to the opened unread', () => {
+      // opened with 3 unread and marked read; 2 new incoming messages are
+      // not read in place because the agent reads older history
+      expect(
+        visibleUnread({
+          openedUnreadMessageIds: [101, 102, 103],
+          openedUnreadMessageCount: 3,
+          unreadMessageIds: [201, 202],
+          unreadMessageCount: 2,
+        })
+      ).toEqual({ ids: [101, 102, 103, 201, 202], count: 5 });
+    });
+
+    it('does not count opened messages twice before the read state is updated', () => {
+      expect(
+        visibleUnread({
+          openedUnreadMessageIds: [77, 101, 102],
+          openedUnreadMessageCount: 4,
+          unreadMessageIds: [101, 102, 201],
+          unreadMessageCount: 5,
+        })
+      ).toEqual({ ids: [77, 101, 102, 201], count: 5 });
+    });
+
+    it('uses the live unread state when nothing was unread on open', () => {
+      expect(
+        visibleUnread({
+          openedUnreadMessageIds: [],
+          openedUnreadMessageCount: 0,
+          unreadMessageIds: [201],
+          unreadMessageCount: 1,
+        })
+      ).toEqual({ ids: [201], count: 1 });
+    });
+
+    it('hides the jump button when the first unread message is already visible', () => {
+      const context = {
+        showUnreadJumpButton: true,
+        openedFirstUnreadMessageId: 101,
+        conversationPanel: {
+          getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+          querySelector: vi.fn(() => ({
+            getBoundingClientRect: () => ({ top: 350, bottom: 430 }),
+          })),
+        },
+      };
+      context.openedFirstUnreadElement = () =>
+        MessagesView.methods.openedFirstUnreadElement.call(context);
+
+      MessagesView.methods.hideUnreadJumpWhenVisible.call(context);
+
+      expect(context.conversationPanel.querySelector).toHaveBeenCalledWith(
+        '#message101'
+      );
+      expect(context.showUnreadJumpButton).toBe(false);
+    });
+
+    it('keeps the jump button while the first unread message is above the viewport', () => {
+      const context = {
+        showUnreadJumpButton: true,
+        openedFirstUnreadMessageId: 101,
+        conversationPanel: {
+          getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+          querySelector: vi.fn(() => ({
+            getBoundingClientRect: () => ({ top: -900, bottom: -820 }),
+          })),
+        },
+      };
+      context.openedFirstUnreadElement = () =>
+        MessagesView.methods.openedFirstUnreadElement.call(context);
+
+      MessagesView.methods.hideUnreadJumpWhenVisible.call(context);
+
+      expect(context.showUnreadJumpButton).toBe(true);
+    });
+
+    it('moves to the preserved unread marker only after an explicit click', async () => {
+      const unreadMessage = {
+        getBoundingClientRect: () => ({ top: 350, bottom: 430, height: 80 }),
+      };
+      const panel = {
+        scrollHeight: 3000,
+        clientHeight: 500,
+        scrollTop: 1500,
+        getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+        querySelector: vi.fn(() => unreadMessage),
+      };
+      const dispatch = vi.fn();
+      const context = {
+        openedFirstUnreadMessageId: 101,
+        visibleUnreadMessageIds: [101],
+        conversationPanel: panel,
+        isProgrammaticScroll: false,
+        isLoadingOpenedUnread: false,
+        showUnreadJumpButton: true,
+        $store: { dispatch },
+      };
+
+      await MessagesView.methods.scrollToFirstOpenedUnread.call(context);
+
+      expect(panel.querySelector).toHaveBeenCalledWith('#message101');
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(panel.scrollTop).toBe(1726);
+      expect(context.isProgrammaticScroll).toBe(true);
+      expect(context.showUnreadJumpButton).toBe(false);
+    });
+
+    it('loads the unread range only after an explicit click', async () => {
+      const unreadMessage = {
+        getBoundingClientRect: () => ({ top: 350, bottom: 430, height: 80 }),
+      };
+      const panel = {
+        scrollHeight: 3000,
+        clientHeight: 500,
+        scrollTop: 1500,
+        getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+        querySelector: vi
+          .fn()
+          .mockReturnValueOnce(null)
+          .mockReturnValueOnce(unreadMessage),
+      };
+      const dispatch = vi.fn().mockResolvedValue();
+      const context = {
+        openedFirstUnreadMessageId: 101,
+        visibleUnreadMessageIds: [],
+        currentChat: {
+          id: 7,
+          is_communication_thread: true,
+          messages: [{ id: 300 }],
+        },
+        conversationPanel: panel,
+        isProgrammaticScroll: false,
+        isLoadingOpenedUnread: false,
+        showUnreadJumpButton: true,
+        $store: { dispatch },
+        $nextTick: callback => callback(),
+      };
+
+      await MessagesView.methods.scrollToFirstOpenedUnread.call(context);
+
+      expect(dispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        conversationId: 7,
+        conversationType: 'communication_thread',
+        after: 101,
+        before: 300,
+      });
+      expect(panel.scrollTop).toBe(1726);
+      expect(context.showUnreadJumpButton).toBe(false);
+      expect(context.isLoadingOpenedUnread).toBe(false);
+    });
+
+    it('keeps the jump button when the unread range cannot be loaded', async () => {
+      const panel = {
+        getBoundingClientRect: () => ({ top: 100, bottom: 600 }),
+        querySelector: vi.fn(() => null),
+      };
+      const context = {
+        openedFirstUnreadMessageId: 101,
+        visibleUnreadMessageIds: [],
+        currentChat: { id: 11, messages: [{ id: 300 }] },
+        conversationPanel: panel,
+        isProgrammaticScroll: false,
+        isLoadingOpenedUnread: false,
+        showUnreadJumpButton: true,
+        $store: { dispatch: vi.fn().mockResolvedValue() },
+        $nextTick: callback => callback(),
+      };
+
+      await MessagesView.methods.scrollToFirstOpenedUnread.call(context);
+
+      expect(context.$store.dispatch).toHaveBeenCalledWith(
+        'fetchPreviousMessages',
+        expect.objectContaining({ conversationType: 'conversation' })
+      );
+      expect(context.showUnreadJumpButton).toBe(true);
+      expect(context.isLoadingOpenedUnread).toBe(false);
+    });
+  });
+
   describe('currentChat watcher', () => {
     it('refreshes chat-scoped state when direct and thread ids collide', () => {
       const context = {
         fetchAllAttachmentsFromCurrentChat: vi.fn(),
         fetchSuggestions: vi.fn(),
         messageSentSinceOpened: true,
+        resetOpenedUnreadMessages: vi.fn(),
         resetReplyEditorHeight: vi.fn(),
         conversationHistoryGeneration: 0,
         hasUserScrolled: true,
@@ -196,6 +603,7 @@ describe('MessagesView', () => {
       expect(context.fetchAllAttachmentsFromCurrentChat).toHaveBeenCalled();
       expect(context.fetchSuggestions).toHaveBeenCalled();
       expect(context.messageSentSinceOpened).toBe(false);
+      expect(context.resetOpenedUnreadMessages).toHaveBeenCalled();
       expect(context.resetReplyEditorHeight).toHaveBeenCalled();
       expect(context.conversationHistoryGeneration).toBe(1);
       expect(context.hasUserScrolled).toBe(false);
@@ -224,11 +632,20 @@ describe('MessagesView', () => {
     it('establishes a fresh scroll position after switching chats', () => {
       const context = {
         $nextTick: callback => callback(),
+        // the chat was loaded by setActiveChat before it emits the scroll
+        currentChat: {
+          id: 988,
+          is_communication_thread: true,
+          dataFetched: true,
+        },
         fetchAllAttachmentsFromCurrentChat: vi.fn(),
         fetchSuggestions: vi.fn(),
+        resetOpenedUnreadMessages: vi.fn(),
         resetReplyEditorHeight: vi.fn(),
         fetchPreviousMessages: vi.fn(),
         isNearConversationBottom: vi.fn(() => false),
+        preserveOpenedUnreadMessages: vi.fn(),
+        hideUnreadJumpWhenVisible: vi.fn(),
         scrollToBottom: vi.fn(),
         makeMessagesRead: vi.fn(),
         conversationHistoryGeneration: 0,
@@ -243,6 +660,8 @@ describe('MessagesView', () => {
       MessagesView.methods.onScrollToMessage.call(context);
 
       expect(context.hasUserScrolled).toBe(false);
+      expect(context.resetOpenedUnreadMessages).toHaveBeenCalledOnce();
+      expect(context.preserveOpenedUnreadMessages).toHaveBeenCalledOnce();
       expect(context.scrollToBottom).toHaveBeenCalledOnce();
       expect(context.makeMessagesRead).toHaveBeenCalledOnce();
     });

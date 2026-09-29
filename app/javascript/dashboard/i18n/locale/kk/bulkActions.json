@@ -15,6 +15,7 @@
     "RESOLVE_SUCCESFUL": "Conversations resolved successfully.",
     "RESOLVE_FAILED": "Диалогтарды жабу сәтсіз аяқталды. Қайта көріңіз.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Conversations visible on this page are only selected.",
+    "COMPLETED_WITH_ERRORS": "Орындалды, қателер саны: {count}",
     "AGENT_LIST_LOADING": "Loading agents",
     "UPDATE": {
       "CHANGE_STATUS": "Change status",

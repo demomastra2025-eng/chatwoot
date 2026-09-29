@@ -22,6 +22,7 @@ import {
 import { Virtualizer } from 'virtua/vue';
 import ConversationListLoadError from './ConversationListLoadError.vue';
 import ChatListHeader from './ChatListHeader.vue';
+import ChatListCount from './ChatListCount.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import ConversationItem from './ConversationItem.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
@@ -47,6 +48,7 @@ import { useConversationRequiredAttributes } from 'dashboard/composables/useConv
 import { emitter } from 'shared/helpers/mitt';
 
 import wootConstants from 'dashboard/constants/globals';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import advancedFilterOptions from './widgets/conversation/advancedFilterItems';
 import filterQueryGenerator, {
   normalizeFilterQueryOperator,
@@ -58,7 +60,14 @@ import { conversationListPageURL } from '../helper/URLHelper';
 import {
   extractSingleStatusFilter,
   mergeRouteStatusFilter,
+  removeRouteStatusFilter,
 } from '../helper/conversationStatusFilter';
+import {
+  CONVERSATION_LIST_CONTEXT_SETTINGS_KEY,
+  conversationListContextKey,
+  conversationListContextState,
+  updatedConversationListContextSettings,
+} from '../helper/conversationListContext';
 import {
   isOnMentionsView,
   isOnParticipatingView,
@@ -68,10 +77,7 @@ import { filterByUnread } from '../store/modules/conversations/helpers';
 import { matchesFilters } from '../store/modules/conversations/helpers/filterHelpers';
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
-import {
-  filterConversationsByCommunicationThreadMode,
-  getCommunicationThreadChannelFilterInboxes,
-} from 'dashboard/helper/communicationThreadHelper';
+import { filterConversationsByCommunicationThreadMode } from 'dashboard/helper/communicationThreadHelper';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
@@ -137,12 +143,15 @@ provide('contextMenuElementTarget', virtualListRef);
 const activeAssigneeTab = ref(wootConstants.ASSIGNEE_TYPE.ALL);
 const activeStatus = ref(wootConstants.STATUS_TYPE.OPEN);
 const activeSortBy = ref(wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC);
-const sidebarStatuses = [
+// Statuses that a single advanced-filter status condition can express.
+const filterableStatuses = [
   wootConstants.STATUS_TYPE.PENDING,
   wootConstants.STATUS_TYPE.OPEN,
   wootConstants.STATUS_TYPE.SNOOZED,
   wootConstants.STATUS_TYPE.RESOLVED,
 ];
+// Statuses accepted in the page status query; "all" drops the condition.
+const sidebarStatuses = [wootConstants.STATUS_TYPE.ALL, ...filterableStatuses];
 const showAdvancedFilters = ref(false);
 const pendingStatusRouteSyncs = new Map();
 let statusRouteSyncGeneration = 0;
@@ -209,9 +218,6 @@ const chatListLoading = useMapGetter('getChatListLoadingStatus');
 const chatListLoadingError = useMapGetter('getChatListLoadingError');
 const activeInbox = useMapGetter('getSelectedInbox');
 const conversationStats = useMapGetter('conversationStats/getStats');
-const conversationSidebarUnreadCounts = useMapGetter(
-  'getConversationSidebarUnreadCounts'
-);
 const appliedFilters = useMapGetter('getAppliedConversationFiltersV2');
 const folders = useMapGetter('customViews/getConversationCustomViews');
 const agentList = useMapGetter('agents/getAgents');
@@ -221,6 +227,9 @@ const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const getAccount = useMapGetter('accounts/getAccount');
+const isFeatureEnabledonAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
+);
 const getContact = useMapGetter('contacts/getContact');
 // We can't useFunctionGetter here since it needs to be called on setup?
 const getTeamFn = useMapGetter('teams/getTeam');
@@ -286,11 +295,37 @@ const hasAppliedFiltersOrActiveFolders = computed(() => {
   return hasAppliedFilters.value || hasActiveFolders.value;
 });
 
+const currentListContextKey = computed(() =>
+  conversationListContextKey(route.query, { folderId: props.foldersId })
+);
+
+const showAiStatus = computed(() =>
+  Boolean(
+    isFeatureEnabledonAccount.value?.(
+      currentAccountId.value,
+      FEATURE_FLAGS.CAPTAIN
+    )
+  )
+);
+
+// Every list that applies the page status shows the status selector, so a
+// status carried over from another list (including "all") is always visible
+// and can be changed there. Saved folders run their own saved query and do
+// not apply the page status.
+const showStatusFilter = computed(() => !hasActiveFolders.value);
+
+// Route status wins; without one the list reopens the last remembered status
+// ("all" is never remembered, see conversationListContext).
+// Pending stays reachable without Captain: agent bots also hand over through
+// it, only the dropdown hides the option (see ConversationStatusFilter).
 const routeConversationStatus = computed(() => {
   const { status } = route.query;
   return sidebarStatuses.includes(status)
     ? status
-    : wootConstants.STATUS_TYPE.OPEN;
+    : conversationListContextState(
+        uiSettings.value,
+        currentListContextKey.value
+      ).status;
 });
 
 const currentAccountSettings = computed(
@@ -312,6 +347,14 @@ const hasExclusivePrimaryScope = computed(() =>
     query: route.query,
   })
 );
+
+function routeStatusFilters(filters, status) {
+  if (status === wootConstants.STATUS_TYPE.ALL) {
+    return removeRouteStatusFilter(filters, filterableStatuses);
+  }
+
+  return mergeRouteStatusFilter(filters, status, filterableStatuses);
+}
 
 const routeConversationAssigneeType = computed(() => {
   const assigneeType = route.query.assignee_type || route.query.assigneeType;
@@ -508,50 +551,6 @@ const conversationCustomAttributes = useFunctionGetter(
   'conversation_attribute'
 );
 
-const sortedChannelInboxes = computed(() => {
-  const sourceInboxes = props.communicationThreadMode
-    ? getCommunicationThreadChannelFilterInboxes(inboxesList.value)
-    : inboxesList.value;
-
-  return sourceInboxes
-    .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-});
-
-const sidebarUnreadCount = (collection, key) => {
-  if (!key) return 0;
-  return Number(
-    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
-  );
-};
-
-const allConversationUnreadCount = computed(() =>
-  Number(conversationSidebarUnreadCounts.value?.all || 0)
-);
-
-const channelFilterItems = computed(() => [
-  {
-    key: 'all',
-    label: t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS'),
-    icon: 'i-lucide-mailbox',
-    badge: allConversationUnreadCount.value,
-  },
-  ...sortedChannelInboxes.value.map(channelInbox => ({
-    key: `inbox:${channelInbox.id}`,
-    label: channelInbox.display_name || channelInbox.name,
-    inbox: channelInbox,
-    badge: sidebarUnreadCount('inboxes', channelInbox.id),
-  })),
-]);
-
-const activeChannelFilterKey = computed(() => {
-  if (props.conversationInbox) {
-    return `inbox:${props.conversationInbox}`;
-  }
-
-  return props.communicationThreadMode ? 'all' : '';
-});
-
 const activeCrmPipelineId = computed(
   () => route.query.crm_pipeline_id || route.query.crmPipelineId || ''
 );
@@ -625,10 +624,6 @@ const defaultCrmPipelineStages = computed(() => {
     id: stage.id,
     name: stage.name,
   }));
-});
-
-const shouldShowChannelFilter = computed(() => {
-  return props.communicationThreadMode || Boolean(props.conversationInbox);
 });
 
 const activeAssigneeTabCount = computed(() => {
@@ -733,9 +728,6 @@ const pageTitle = computed(() => {
   if (hasActiveFolders.value) {
     return activeFolder.value.name;
   }
-  if (props.communicationThreadMode) {
-    return t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS');
-  }
   return t('CHAT_LIST.TAB_HEADING');
 });
 
@@ -819,20 +811,26 @@ const shownConversationCount = computed(
   () => displayedConversationList.value.length
 );
 
+// One counter for the whole list. Advanced filters and folders replace the
+// assignment stats with the filtered result meta, so `allCount` is the total
+// of the filtered list there; plain lists use the active assignee tab total.
 const totalConversationCount = computed(() => {
+  if (hasLocalSearch.value) {
+    return shownConversationCount.value;
+  }
+
   if (hasAppliedFiltersOrActiveFolders.value) {
-    return conversationList.value.length;
+    return Math.max(
+      Number(conversationStats.value?.allCount || 0),
+      conversationList.value.length
+    );
   }
 
   return activeAssigneeTabCount.value;
 });
 
-const shouldShowListCountLabel = computed(() => {
-  return totalConversationCount.value > 0 && shownConversationCount.value > 0;
-});
-
-const listCountLabel = computed(
-  () => `${shownConversationCount.value} / ${totalConversationCount.value}`
+const isInitialListLoading = computed(
+  () => Boolean(chatListLoading.value) && !conversationList.value.length
 );
 
 const allConversationsSelected = computed(() => {
@@ -855,15 +853,24 @@ const uniqueInboxes = computed(() => {
 
 // ---------------------- Methods -----------------------
 function setFiltersFromUISettings() {
-  const { conversations_filter_by: filterBy = {} } = uiSettings.value;
-  const { order_by: orderBy } = filterBy;
+  const { order_by: orderBy } = conversationListContextState(
+    uiSettings.value,
+    currentListContextKey.value
+  );
   activeStatus.value = routeConversationStatus.value;
   activeAssigneeTab.value = routeConversationAssigneeType.value;
-  activeSortBy.value = Object.values(wootConstants.SORT_BY_TYPE).includes(
-    orderBy
-  )
-    ? orderBy
-    : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC;
+  activeSortBy.value = orderBy;
+}
+
+function persistConversationListContext(updates) {
+  updateUISettings({
+    [CONVERSATION_LIST_CONTEXT_SETTINGS_KEY]:
+      updatedConversationListContextSettings(
+        uiSettings.value,
+        currentListContextKey.value,
+        updates
+      ),
+  });
 }
 
 function waitForPipelinesLoad() {
@@ -1043,8 +1050,15 @@ function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
   }
   if (preserveAppliedFilters && hasAppliedFilters.value) {
     const filters = status
-      ? mergeRouteStatusFilter(appliedFilters.value, status, sidebarStatuses)
+      ? routeStatusFilters(appliedFilters.value, status)
       : appliedFilters.value;
+    if (!filters.length) {
+      // "All statuses" removed the only advanced condition: plain list.
+      appliedFilter.value = [];
+      store.dispatch('clearConversationFilters');
+      fetchConversations();
+      return;
+    }
     if (status) {
       store.dispatch('setConversationFilters', filters);
     }
@@ -1105,7 +1119,7 @@ async function onApplyFilter(payload) {
   const applicationGeneration = filterApplicationGeneration;
   payload = useSnakeCase(payload);
 
-  const nextStatus = extractSingleStatusFilter(payload, sidebarStatuses);
+  const nextStatus = extractSingleStatusFilter(payload, filterableStatuses);
   const targetStatus = nextStatus || routeConversationStatus.value;
   latestStatusRouteIntent = targetStatus;
   const hasConflictingPendingStatusSync = [
@@ -1243,7 +1257,9 @@ function setParamsForEditFolderModal() {
 
 function initializeExistingFilterToModal() {
   const statusFilter = initializeStatusAndAssigneeFilterToModal(
-    activeStatus.value,
+    activeStatus.value === wootConstants.STATUS_TYPE.ALL
+      ? ''
+      : activeStatus.value,
     currentUserDetails.value,
     activeAssigneeTab.value
   );
@@ -1337,13 +1353,15 @@ function loadMoreConversations({ retry = false } = {}) {
     const payload = activeFolder.value.query;
     fetchSavedFilteredConversations(payload);
   } else if (hasAppliedFilters.value) {
-    fetchFilteredConversations(
-      mergeRouteStatusFilter(
-        appliedFilters.value,
-        routeConversationStatus.value,
-        sidebarStatuses
-      )
+    const filters = routeStatusFilters(
+      appliedFilters.value,
+      routeConversationStatus.value
     );
+    if (filters.length) {
+      fetchFilteredConversations(filters);
+    } else {
+      fetchConversations();
+    }
   }
 }
 
@@ -1362,34 +1380,8 @@ function onBasicFilterChange(value, type) {
   }
 
   activeSortBy.value = value;
+  persistConversationListContext({ order_by: value });
   resetAndFetchData();
-}
-
-function channelFilterQuery() {
-  return conversationNavigationQuery({ status: activeStatus.value });
-}
-
-function onChannelFilterSelect(item) {
-  resetBulkActions();
-  clearLocalSearch();
-
-  const accountId = currentAccountId.value || route.params.accountId;
-  if (item.key === 'all') {
-    router.push({
-      name: 'communication_threads_dashboard',
-      params: { accountId },
-      query: channelFilterQuery(),
-    });
-    return;
-  }
-
-  if (!item.inbox?.id) return;
-
-  router.push({
-    name: 'inbox_dashboard',
-    params: { accountId, inbox_id: item.inbox.id },
-    query: channelFilterQuery(),
-  });
 }
 
 function openLastSavedItemInFolder() {
@@ -1823,6 +1815,19 @@ provide('assignPriority', assignPriority);
 provide('isConversationSelected', isConversationSelected);
 provide('deleteConversation', handleDelete);
 
+// Registered before the scope watchers below so the context sort order is in
+// place before they refetch the list for the new context.
+watch(currentListContextKey, () => {
+  const { order_by: orderBy } = conversationListContextState(
+    uiSettings.value,
+    currentListContextKey.value
+  );
+  if (orderBy === activeSortBy.value) return;
+
+  activeSortBy.value = orderBy;
+  store.dispatch('setChatSortFilter', orderBy);
+});
+
 watch(activeTeam, () => {
   clearLocalSearch();
   resetAndFetchData();
@@ -1857,13 +1862,7 @@ watch(routeConversationStatus, (newStatus, oldStatus) => {
 
   activeStatus.value = newStatus;
   store.dispatch('setChatStatusFilter', newStatus);
-  updateUISettings({
-    conversations_filter_by: {
-      ...(uiSettings.value?.conversations_filter_by || {}),
-      status: newStatus,
-      order_by: activeSortBy.value,
-    },
-  });
+  persistConversationListContext({ status: newStatus });
 
   const matchingSyncGeneration = [...pendingStatusRouteSyncs.entries()].find(
     ([, sync]) =>
@@ -2003,19 +2002,22 @@ watch(conversationFilters, (newVal, oldVal) => {
       :has-applied-filters="hasAppliedFilters"
       :has-active-folders="hasActiveFolders"
       :is-on-expanded-layout="isOnExpandedLayout"
-      :conversation-stats="conversationStats"
-      :is-list-loading="chatListLoading && !conversationList.length"
-      :show-channel-filter="shouldShowChannelFilter"
-      :channel-filter-items="channelFilterItems"
-      :active-channel-filter-key="activeChannelFilterKey"
       :active-unread-only="activeUnreadOnly"
+      :active-status="activeStatus"
+      :show-status-filter="showStatusFilter"
+      :show-ai-status="showAiStatus"
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
       @reset-filters="resetConversationFilters"
       @basic-filter-change="onBasicFilterChange"
-      @channel-filter-select="onChannelFilterSelect"
       @unread-filter-toggle="onUnreadFilterToggle"
+      @status-filter-change="updateConversationStatusQuery"
+    />
+    <ChatListCount
+      :conversation-count="totalConversationCount"
+      :is-list-loading="isInitialListLoading"
+      :is-search-result="hasLocalSearch"
     />
 
     <div
@@ -2139,16 +2141,6 @@ watch(conversationFilters, (newVal, oldVal) => {
         :options="intersectionObserverOptions"
         @observed="loadMoreConversations"
       />
-      <div
-        v-if="shouldShowListCountLabel"
-        class="sticky bottom-3 z-20 flex justify-center pointer-events-none"
-      >
-        <span
-          class="rounded-full bg-n-alpha-1 px-2 py-1 text-xs font-medium text-n-slate-11 shadow-sm backdrop-blur"
-        >
-          {{ listCountLabel }}
-        </span>
-      </div>
     </div>
     <Dialog
       ref="deleteConversationDialogRef"

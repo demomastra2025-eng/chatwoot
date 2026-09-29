@@ -18,11 +18,6 @@ const mountComponent = props =>
       hasAppliedFilters: false,
       hasActiveFolders: false,
       isOnExpandedLayout: false,
-      conversationStats: { allCount: 12 },
-      isListLoading: false,
-      showChannelFilter: false,
-      channelFilterItems: [],
-      activeChannelFilterKey: '',
       ...props,
     },
     global: {
@@ -34,53 +29,60 @@ const mountComponent = props =>
         ConversationLocalSearch: true,
         SwitchLayout: true,
         NextButton: true,
-        ChatListChannelFilter: {
-          props: ['items', 'activeKey'],
-          emits: ['select'],
+        ConversationStatusFilter: {
+          props: ['modelValue', 'showAi'],
+          emits: ['update:modelValue'],
           template:
-            '<button data-test-id="channel-filter" @click="$emit(\'select\', items[0])">{{ items[0]?.label }}</button>',
+            '<button data-test-id="status-filter" :data-show-ai="showAi" @click="$emit(\'update:modelValue\', \'resolved\')">{{ modelValue }}</button>',
         },
       },
     },
   });
 
 describe('ChatListHeader', () => {
-  it('replaces the old page title with channel selector in channel-filter mode', async () => {
-    const wrapper = mountComponent({
-      showChannelFilter: true,
-      channelFilterItems: [{ key: 'all', label: 'Все каналы' }],
-      activeChannelFilterKey: 'all',
-    });
-
-    expect(wrapper.find('h1').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('Открытые диалоги');
-    expect(wrapper.find('[data-test-id="channel-filter"]').text()).toContain(
-      'Все каналы'
-    );
-
-    await wrapper.find('[data-test-id="channel-filter"]').trigger('click');
-    expect(wrapper.emitted('channelFilterSelect')).toEqual([
-      [{ key: 'all', label: 'Все каналы' }],
-    ]);
-  });
-
-  it('keeps channel selector in place when other list filters are applied', () => {
-    const wrapper = mountComponent({
-      showChannelFilter: true,
-      hasAppliedFilters: true,
-      channelFilterItems: [{ key: 'all', label: 'Все каналы' }],
-      activeChannelFilterKey: 'all',
-    });
-
-    expect(wrapper.find('h1').exists()).toBe(false);
-    expect(wrapper.find('[data-test-id="channel-filter"]').text()).toContain(
-      'Все каналы'
-    );
-  });
-
-  it('keeps the normal title outside channel-filter mode', () => {
+  it('renders the page title without the removed channel selector', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('h1').text()).toBe('Открытые диалоги');
+    expect(wrapper.find('[data-test-id="channel-filter"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.text()).not.toContain(
+      'CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS'
+    );
+  });
+
+  it('does not render a separate count badge when filters are applied', () => {
+    const wrapper = mountComponent({ hasAppliedFilters: true });
+
+    expect(wrapper.find('h1').text()).toBe('Открытые диалоги');
+    expect(wrapper.find('.bg-n-slate-3').exists()).toBe(false);
+  });
+
+  it('renders the status selector instead of the title in status-filter mode', async () => {
+    const wrapper = mountComponent({
+      showStatusFilter: true,
+      activeStatus: 'open',
+      showAiStatus: true,
+    });
+
+    expect(wrapper.find('h1').exists()).toBe(false);
+    const statusFilter = wrapper.find('[data-test-id="status-filter"]');
+    expect(statusFilter.text()).toBe('open');
+    expect(statusFilter.attributes('data-show-ai')).toBe('true');
+
+    await statusFilter.trigger('click');
+    expect(wrapper.emitted('statusFilterChange')).toEqual([['resolved']]);
+  });
+
+  it('keeps the status selector in place when other list filters are applied', () => {
+    const wrapper = mountComponent({
+      showStatusFilter: true,
+      hasAppliedFilters: true,
+      activeStatus: 'all',
+    });
+
+    expect(wrapper.find('h1').exists()).toBe(false);
+    expect(wrapper.find('[data-test-id="status-filter"]').text()).toBe('all');
   });
 });

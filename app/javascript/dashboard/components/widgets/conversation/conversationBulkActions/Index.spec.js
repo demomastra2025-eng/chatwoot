@@ -236,4 +236,28 @@ describe('ConversationBulkActions Index', () => {
     expect(wrapper.emitted('assignTeam')).toEqual([[{ id: 2, name: 'Team' }]]);
     expect(wrapper.emitted('markRead')).toEqual([[]]);
   });
+
+  it('renders the panel in the list flow at the top instead of floating over the bottom', () => {
+    isUpdating = false;
+    const wrapper = mountComponent();
+    const panel = wrapper.find(
+      '[data-test-id="conversation-bulk-actions-panel"]'
+    );
+
+    expect(panel.exists()).toBe(true);
+    expect(panel.classes()).toEqual(
+      expect.arrayContaining(['shrink-0', 'origin-top', 'w-full'])
+    );
+    expect(panel.classes()).not.toContain('absolute');
+    expect(panel.classes()).not.toContain('bottom-20');
+  });
+
+  it('keeps the status reason dialog for bulk status changes', () => {
+    isUpdating = false;
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.findComponent(ConversationStatusReasonDialogStub).exists()
+    ).toBe(true);
+  });
 });

@@ -126,6 +126,7 @@ const buildStore = () => ({
     getConversationSidebarUnreadCounts: {},
     'conversationStats/getStats': {},
     getSelectedChat: null,
+    getUISettings: {},
     'notifications/getUnreadCount': 0,
   },
   dispatch: vi.fn(() => Promise.resolve()),

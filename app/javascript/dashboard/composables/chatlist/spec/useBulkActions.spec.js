@@ -183,4 +183,67 @@ describe('useBulkActions', () => {
       ],
     ]);
   });
+
+  it('reports how many conversations failed when a bulk run fails', async () => {
+    useAlert.mockClear();
+    const failure = new Error('Bulk action failed');
+    failure.failedCount = 3;
+    store.dispatch = vi.fn(async type => {
+      if (type === 'bulkActions/process') throw failure;
+      return {};
+    });
+    const { onUpdateConversations } = useBulkActions();
+
+    await onUpdateConversations('resolved', null, true);
+
+    expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.PROGRESS.FAILED');
+    expect(useI18n().t).toHaveBeenCalledWith('BULK_ACTION.PROGRESS.FAILED', {
+      count: 3,
+    });
+  });
+
+  it('falls back to the generic failure text without a failed count', async () => {
+    useAlert.mockClear();
+    store.dispatch = vi.fn(async type => {
+      if (type === 'bulkActions/process') throw new Error('network');
+      return {};
+    });
+    const { onMarkConversationsRead } = useBulkActions();
+
+    await onMarkConversationsRead(true);
+
+    expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.MARK_READ.FAILED');
+  });
+
+  it('does not report a completed run with skipped conversations as a full success', async () => {
+    useAlert.mockClear();
+    store.dispatch = vi.fn(async type =>
+      type === 'bulkActions/process'
+        ? { status: 'completed', failed_count: 2 }
+        : {}
+    );
+    const { onAssignTeamsForBulk } = useBulkActions();
+
+    await onAssignTeamsForBulk({ id: 5 }, true);
+
+    expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.COMPLETED_WITH_ERRORS');
+    expect(useI18n().t).toHaveBeenCalledWith(
+      'BULK_ACTION.COMPLETED_WITH_ERRORS',
+      { count: 2 }
+    );
+  });
+
+  it('keeps the success text for a completed run without failures', async () => {
+    useAlert.mockClear();
+    store.dispatch = vi.fn(async type =>
+      type === 'bulkActions/process'
+        ? { status: 'completed', failed_count: 0 }
+        : {}
+    );
+    const { onAssignTeamsForBulk } = useBulkActions();
+
+    await onAssignTeamsForBulk({ id: 5 }, true);
+
+    expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.TEAMS.ASSIGN_SUCCESFUL');
+  });
 });
