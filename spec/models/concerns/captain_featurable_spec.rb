@@ -20,7 +20,7 @@ RSpec.describe CaptainFeaturable do
   end
 
   describe 'feature enabled methods' do
-    let(:opt_in_feature_keys) { Llm::Models.feature_keys - described_class::DEFAULT_ENABLED_FEATURE_KEYS }
+    let(:opt_in_feature_keys) { Llm::Models.feature_keys - [described_class::TEXT_IMPROVEMENT_FEATURE_KEY] }
 
     context 'when no features are explicitly enabled' do
       it 'returns false for all opt-in features' do
@@ -30,14 +30,13 @@ RSpec.describe CaptainFeaturable do
       end
 
       it 'keeps text improvement (editor) on' do
-        expect(described_class::DEFAULT_ENABLED_FEATURE_KEYS).to eq(%w[editor])
         expect(account.captain_editor_enabled?).to be true
       end
     end
 
-    context 'when an admin switched text improvement off' do
+    context 'when an admin switched text improvement off in the new switch' do
       before do
-        account.update!(captain_features: { 'editor' => false, 'label_suggestion' => true })
+        account.update!(captain_features: { 'text_improvement' => false, 'label_suggestion' => true })
       end
 
       it 'returns false for the editor only' do
@@ -46,9 +45,28 @@ RSpec.describe CaptainFeaturable do
       end
     end
 
-    context 'when the stored editor value is null' do
+    # The AI settings page had a per-feature editor switch in 2026-01..05; a
+    # false stored back then must not remove the writing tools on deploy.
+    context 'when only a legacy editor value is stored' do
+      it 'keeps text improvement on for a legacy false' do
+        account.update!(captain_features: { 'editor' => false })
+
+        expect(account.captain_editor_enabled?).to be true
+        expect(account.captain_preferences[:features]['editor']).to be true
+      end
+
+      it 'lets the new switch decide once it has been saved' do
+        account.update!(captain_features: { 'editor' => false, 'text_improvement' => true })
+        expect(account.captain_editor_enabled?).to be true
+
+        account.update!(captain_features: { 'editor' => true, 'text_improvement' => false })
+        expect(account.captain_editor_enabled?).to be false
+      end
+    end
+
+    context 'when the stored text improvement value is null' do
       before do
-        account.update!(captain_features: { 'editor' => nil })
+        account.update!(captain_features: { 'text_improvement' => nil })
       end
 
       it 'keeps text improvement on' do

@@ -148,7 +148,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def permitted_captain_features
     params.require(:captain_features).permit(
       :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :help_center_search
+      :audio_transcription, :help_center_search,
+      CaptainFeaturable::TEXT_IMPROVEMENT_SETTING_KEY.to_sym
     ).to_h.stringify_keys
   end
 

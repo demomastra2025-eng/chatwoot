@@ -18,7 +18,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
   end
 
   # The reply-box AI writing tools behind the "Text improvement" switch
-  # (captain_features.editor) in AI settings.
+  # (captain_features.text_improvement) in AI settings.
   {
     'rewrite' => ['Captain::RewriteService', { content: 'Draft reply', operation: 'improve', conversation_display_id: 1 }],
     'summarize' => ['Captain::SummaryService', { conversation_display_id: 1 }],
@@ -37,8 +37,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
         expect(json_response[:message]).to eq('AI result')
       end
 
-      it 'answers 403 without calling the model when an admin switched text improvement off' do
+      it 'keeps running for a legacy stored editor=false from the old per-feature switch' do
         account.update!(captain_features: { 'editor' => false })
+        stub_task_service(service_class)
+
+        post "#{tasks_path}/#{action}", params: task_params, headers: agent.create_new_auth_token, as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'answers 403 without calling the model when an admin switched text improvement off' do
+        account.update!(captain_features: { 'text_improvement' => false })
         allow(service_class).to receive(:new)
 
         post "#{tasks_path}/#{action}", params: task_params, headers: agent.create_new_auth_token, as: :json
@@ -52,7 +61,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Tasks', type: :request do
 
   describe 'POST /api/v1/accounts/{account.id}/captain/tasks/label_suggestion' do
     it 'keeps label suggestions on their own switch when text improvement is off' do
-      account.update!(captain_features: { 'editor' => false, 'label_suggestion' => true })
+      account.update!(captain_features: { 'text_improvement' => false, 'label_suggestion' => true })
       stub_task_service(Captain::LabelSuggestionService)
 
       post "#{tasks_path}/label_suggestion",

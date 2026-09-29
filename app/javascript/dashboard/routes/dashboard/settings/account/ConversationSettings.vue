@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import { useCaptainFeatureSettings } from 'dashboard/composables/captain/useCaptainFeatureSettings';
 
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
@@ -12,9 +13,11 @@ import SettingsLayout from '../SettingsLayout.vue';
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
 const { features, uiFlags } = storeToRefs(configStore);
+const { saveTextImprovement } = useCaptainFeatureSettings();
 
-// The AI editor toggle mirrors the one on the AI settings page; it is only
-// shown when the workspace exposes the editor feature.
+// The "Text improvement" switch is the same setting as on the AI settings page
+// (captain_features.text_improvement, shown as features.editor.enabled); it is
+// only shown when the workspace exposes the editor feature.
 const hasEditorFeature = computed(() => Boolean(features.value?.editor));
 const isEditorEnabled = computed(
   () => features.value?.editor?.enabled === true
@@ -22,11 +25,7 @@ const isEditorEnabled = computed(
 
 const updateTextImprovement = async enabled => {
   try {
-    await configStore.updatePreferences({
-      captain_features: {
-        editor: enabled,
-      },
-    });
+    await saveTextImprovement(enabled);
     useAlert(t('GENERAL_SETTINGS.CONVERSATIONS.UPDATE_SUCCESS'));
   } catch {
     useAlert(t('GENERAL_SETTINGS.CONVERSATIONS.UPDATE_ERROR'));

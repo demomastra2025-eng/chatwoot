@@ -56,7 +56,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
       end
 
       it 'reports text improvement (editor) as off after an admin switched it off' do
-        account.update!(captain_features: { 'editor' => false })
+        account.update!(captain_features: { 'text_improvement' => false })
 
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
@@ -64,6 +64,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response.dig(:features, :editor, :enabled)).to be(false)
+      end
+
+      it 'reports text improvement as on for a legacy stored editor=false' do
+        account.update!(captain_features: { 'editor' => false })
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :editor, :enabled)).to be(true)
       end
 
       it 'includes OpenRouter models only in the normal Captain settings payload' do
@@ -303,6 +314,33 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:runtime)
         expect(json_response).to have_key(:observability)
         expect(account.reload.captain_features['editor']).to be true
+      end
+
+      it 'saves the text improvement switch under its own key' do
+        account.update!(captain_features: { 'editor' => false, 'label_suggestion' => true })
+        # One session: a second create_new_auth_token replaces the first one.
+        auth_headers = admin.create_new_auth_token
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: auth_headers,
+            params: { captain_features: { text_improvement: false } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :editor, :enabled)).to be(false)
+        expect(account.reload.captain_features).to include(
+          'text_improvement' => false, 'editor' => false, 'label_suggestion' => true
+        )
+        expect(account.captain_editor_enabled?).to be false
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: auth_headers,
+            params: { captain_features: { text_improvement: true } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('features', 'editor', 'enabled')).to be(true)
+        expect(account.reload.captain_editor_enabled?).to be true
       end
 
       it 'updates captain_runtime' do

@@ -39,13 +39,16 @@ export function useCaptain() {
 
   // The reply-box AI writing tools (improve, tone, grammar, suggest reply,
   // summarize, follow-up) and AI Assist in Cmd+K. Account admins switch them
-  // off with "Text improvement" in AI settings (captain_features.editor); an
-  // unset value keeps them on. Label suggestions have their own switch.
+  // off with "Text improvement" (captain_features.text_improvement); an unset
+  // value keeps them on. A legacy captain_features.editor value from the old
+  // per-feature switch is ignored. Label suggestions have their own switch.
   const captainTextImprovementEnabled = computed(() => {
     const accountSettings = currentAccount.value?.settings || {};
     const captainFeatures = accountSettings.captain_features || {};
 
-    return captainTasksEnabled.value && captainFeatures.editor !== false;
+    return (
+      captainTasksEnabled.value && captainFeatures.text_improvement !== false
+    );
   });
 
   // === Limits (Enterprise) ===

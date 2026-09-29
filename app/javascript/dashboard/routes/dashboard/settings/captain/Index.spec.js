@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +19,14 @@ vi.mock('dashboard/composables/useAccount', () => ({
   useAccount: () => ({
     isOnChatwootCloud: { value: false },
   }),
+}));
+
+const { storeDispatch } = vi.hoisted(() => ({
+  storeDispatch: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('dashboard/composables/store', () => ({
+  useStore: () => ({ dispatch: storeDispatch }),
 }));
 
 vi.mock('dashboard/composables/useCaptain', () => ({
@@ -522,20 +530,26 @@ describe('Captain settings OpenRouter UX', () => {
       );
     });
 
-    it('saves captain_features.editor when the switch changes', async () => {
+    // A legacy captain_features.editor=false from the old per-feature switch
+    // must not decide; the new switch has its own key.
+    it('saves captain_features.text_improvement and refreshes the account', async () => {
       const store = useCaptainConfigStore();
       const payload = basePayload({ audioModel });
       store.applyPayload(payload);
+      storeDispatch.mockClear();
       const updateSpy = vi
         .spyOn(store, 'updatePreferences')
         .mockResolvedValue({ data: payload });
 
       const wrapper = mountComponent(store);
       await findTextImprovementSwitch(wrapper).vm.$emit('change', false);
+      await flushPromises();
 
       expect(updateSpy).toHaveBeenCalledWith({
-        captain_features: { editor: false },
+        captain_features: { text_improvement: false },
       });
+      // Open reply boxes of this tab follow the switch without a reload.
+      expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
     });
   });
 

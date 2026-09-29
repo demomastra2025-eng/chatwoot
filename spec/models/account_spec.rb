@@ -339,7 +339,7 @@ RSpec.describe Account do
       it 'returns defaults from llm.yml' do
         prefs = account.captain_preferences
 
-        expect(prefs[:features].except(*CaptainFeaturable::DEFAULT_ENABLED_FEATURE_KEYS).values).to all(be false)
+        expect(prefs[:features].except(CaptainFeaturable::TEXT_IMPROVEMENT_FEATURE_KEY).values).to all(be false)
         expect(prefs[:features]['editor']).to be(true)
 
         Llm::Models.feature_keys.each do |feature|

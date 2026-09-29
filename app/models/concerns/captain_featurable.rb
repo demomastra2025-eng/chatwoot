@@ -26,10 +26,13 @@ module CaptainFeaturable
     'web_blocked_domains' => []
   }.freeze
   RUNTIME_FEATURE_KEYS = %w[assistant copilot].freeze
-  # captain_features that stay on unless an admin explicitly stored false.
-  # 'editor' is the "Text improvement" switch for the reply-box AI writing
-  # tools, which every account has had without a stored value.
-  DEFAULT_ENABLED_FEATURE_KEYS = %w[editor].freeze
+  # "Text improvement" (the reply-box AI writing tools, feature 'editor') is
+  # stored under its own captain_features key. The AI settings page had a
+  # per-feature 'editor' switch in 2026-01..05 whose stored false never gated
+  # anything; it is ignored so no account loses the tools on deploy. The tools
+  # stay on until an admin saves the new switch off.
+  TEXT_IMPROVEMENT_FEATURE_KEY = 'editor'.freeze
+  TEXT_IMPROVEMENT_SETTING_KEY = 'text_improvement'.freeze
 
   included do
     validate :validate_captain_models, if: :captain_models_validation_required?
@@ -100,8 +103,8 @@ module CaptainFeaturable
   def captain_features_with_defaults
     stored_features = captain_features || {}
     Llm::Models.feature_keys.index_with do |feature_key|
-      if DEFAULT_ENABLED_FEATURE_KEYS.include?(feature_key)
-        stored_features[feature_key] != false
+      if feature_key == TEXT_IMPROVEMENT_FEATURE_KEY
+        stored_features[TEXT_IMPROVEMENT_SETTING_KEY] != false
       elsif stored_features.key?(feature_key)
         stored_features[feature_key] == true
       elsif feature_key == 'audio_transcription'

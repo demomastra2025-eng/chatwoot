@@ -7,6 +7,10 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
+import {
+  TEXT_IMPROVEMENT_SETTING_KEY,
+  useCaptainFeatureSettings,
+} from 'dashboard/composables/captain/useCaptainFeatureSettings';
 import { formatBytes } from 'shared/helpers/FileHelper';
 
 import SettingsLayout from '../SettingsLayout.vue';
@@ -29,6 +33,7 @@ const { isEnterprise, enterprisePlanName } = useConfig();
 const { isOnChatwootCloud } = useAccount();
 
 const captainConfigStore = useCaptainConfigStore();
+const { saveCaptainFeatures } = useCaptainFeatureSettings();
 const {
   uiFlags,
   providers,
@@ -441,8 +446,9 @@ const isHelpCenterSearchEnabled = computed(
 const isLabelSuggestionEnabled = computed(
   () => features.value.label_suggestion?.enabled === true
 );
-// captain_features.editor: the reply-box AI writing tools stay on unless an
-// admin explicitly switches them off.
+// features.editor.enabled reflects captain_features.text_improvement: the
+// reply-box AI writing tools stay on unless an admin switches them off here
+// (a legacy captain_features.editor value is ignored).
 const isTextImprovementEnabled = computed(
   () => features.value.editor?.enabled !== false
 );
@@ -827,9 +833,7 @@ watch(accountBudgetPolicy, syncBudgetForm, { immediate: true, deep: true });
 
 async function handleFeatureToggle({ feature, enabled }) {
   try {
-    await captainConfigStore.updatePreferences({
-      captain_features: { [feature]: enabled },
-    });
+    await saveCaptainFeatures({ [feature]: enabled });
     useAlert(t('CAPTAIN_SETTINGS.API.SUCCESS'));
   } catch (error) {
     useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
@@ -1633,7 +1637,7 @@ onMounted(() => {
                       @change="
                         enabled =>
                           handleFeatureToggle({
-                            feature: 'editor',
+                            feature: TEXT_IMPROVEMENT_SETTING_KEY,
                             enabled,
                           })
                       "

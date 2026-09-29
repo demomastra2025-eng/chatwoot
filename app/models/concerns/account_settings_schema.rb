@@ -106,7 +106,8 @@ module AccountSettingsSchema
             'copilot': { 'type': %w[boolean null] },
             'label_suggestion': { 'type': %w[boolean null] },
             'audio_transcription': { 'type': %w[boolean null] },
-            'help_center_search': { 'type': %w[boolean null] }
+            'help_center_search': { 'type': %w[boolean null] },
+            'text_improvement': { 'type': %w[boolean null] }
           },
           'additionalProperties': false
         },

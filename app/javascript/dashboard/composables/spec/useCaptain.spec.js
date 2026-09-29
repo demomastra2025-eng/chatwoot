@@ -87,14 +87,14 @@ describe('useCaptain', () => {
     });
 
     it('keeps the AI writing tools on when the switch is on', () => {
-      mockAccount({ captainFeatures: { editor: true } });
+      mockAccount({ captainFeatures: { text_improvement: true } });
 
       expect(useCaptain().captainTextImprovementEnabled.value).toBe(true);
     });
 
     it('turns the AI writing tools off when an admin switched text improvement off', () => {
       mockAccount({
-        captainFeatures: { editor: false, label_suggestion: true },
+        captainFeatures: { text_improvement: false, label_suggestion: true },
       });
 
       const { captainTasksEnabled, captainTextImprovementEnabled } =
@@ -104,8 +104,18 @@ describe('useCaptain', () => {
       expect(captainTasksEnabled.value).toBe(true);
     });
 
+    // The old per-feature AI settings switch (2026-01..05) stored editor.
+    it('ignores a legacy editor=false stored by the old per-feature switch', () => {
+      mockAccount({ captainFeatures: { editor: false } });
+
+      expect(useCaptain().captainTextImprovementEnabled.value).toBe(true);
+    });
+
     it('stays off when the captain_tasks feature flag is off', () => {
-      mockAccount({ tasksFlag: false, captainFeatures: { editor: true } });
+      mockAccount({
+        tasksFlag: false,
+        captainFeatures: { text_improvement: true },
+      });
 
       expect(useCaptain().captainTextImprovementEnabled.value).toBe(false);
     });
