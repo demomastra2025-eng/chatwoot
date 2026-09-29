@@ -11,6 +11,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   DOCUMENT_PARSE_WAIT_INTERVAL = 0.25.seconds
   PROVIDER_ERROR_HANDOFF_RESPONSE = Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE
   DEFAULT_HANDOFF_PRIVATE_NOTE = 'Captain transferred the conversation to a human agent.'.freeze
+  # Staff-facing note of the system handoff after a failed Captain turn. It can
+  # surface in agent-side previews, so it names no provider, error or quota.
+  FAILED_TURN_HANDOFF_NOTE = 'Automatic reply could not be generated. Handoff to human agent was triggered.'.freeze
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -106,7 +109,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return process_non_public_response if non_public_response?
 
     normalize_blank_public_response!
-    return process_provider_error_without_handoff if provider_error_without_handoff?
+    return process_failed_turn if failed_turn?
 
     clear_buffer_state_if_current if process_public_response
   end
@@ -371,14 +374,41 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     v2_handoff_tool_fired? ? 'v2_handoff' : 'handoff'
   end
 
-  def provider_error_without_handoff?
+  # The runtime reports every turn without a valid reply the same way: provider
+  # or runtime errors, a blank reply and semantic output errors, including the
+  # model's own "conversation_handoff" value without the handoff tool.
+  def failed_turn?
     @response['response'] == PROVIDER_ERROR_HANDOFF_RESPONSE
   end
 
-  def process_provider_error_without_handoff
-    create_provider_error_private_note
+  def process_failed_turn
+    handoff_failed_turn
     clear_buffer_state_if_current
     true
+  end
+
+  # System safety net: the customer got no reply and the conversation must not
+  # stay pending unseen. This is not an AI handoff request, so it does not depend
+  # on the handoff tool. It is fenced like every Captain result: a human reply,
+  # a status or control change, or a newer customer message wins.
+  def handoff_failed_turn
+    ensure_response_fence_current!(stage: 'failed_turn_handoff')
+    @conversation.with_captain_activity_context(reason: provider_error_note_content, reason_type: :inference) do
+      @conversation.bot_handoff!(actor: @assistant, source: 'system', fence: current_response_fence) do
+        create_failed_turn_notifications
+      end
+    end
+  rescue Captain::Conversation::ControlGenerationStaleError => e
+    Rails.logger.info("[CAPTAIN][RunFence] Skipped failed-turn handoff conversation_id=#{@conversation.id}: #{e.message}")
+    nil
+  end
+
+  def create_failed_turn_notifications
+    I18n.with_locale(@assistant.account.locale) do
+      create_provider_error_private_note
+      Captain::SystemHandoffMessageService.new(conversation: @conversation, assistant: @assistant).perform
+      send_out_of_office_message_if_applicable
+    end
   end
 
   def normalize_blank_public_response!
@@ -559,9 +589,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def provider_error_note_content
-    # This note can surface in agent-side conversation previews. Keep provider
-    # names, exception classes, quota details, and raw prompts out of content.
-    'Automatic reply could not be generated. No handoff was applied.'
+    FAILED_TURN_HANDOFF_NOTE
   end
 
   def validate_message_content!(content, attachment_ids: [])
@@ -791,7 +819,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     if conversation_allows_captain_response?
       @response = provider_fallback_response(error_class: error.class.name, error_message: error.message)
       publish_provider_fallback_without_status_reason
-      process_provider_error_without_handoff
+      process_failed_turn
     end
     clear_buffer_state_if_current
     true

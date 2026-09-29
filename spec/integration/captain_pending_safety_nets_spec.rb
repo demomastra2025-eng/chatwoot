@@ -163,7 +163,93 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
   end
 
+  describe 'a Captain turn without a valid reply' do
+    def run_captain_turn!(conversation, message, response: nil, error: nil)
+      runner = instance_double(Captain::Assistant::AgentRunnerService)
+      if error
+        allow(runner).to receive(:generate_response).and_raise(error)
+      else
+        allow(runner).to receive(:generate_response).and_return(response)
+      end
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
+      with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
+    end
+
+    def model_output(conversation, output)
+      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: conversation)
+      runner.send(:process_agent_result, Struct.new(:output, :context, :error).new(output, { current_agent: 'assistant' }, nil))
+    end
+
+    let(:failed_turn_note) { Captain::Conversation::ResponseBuilderJob::FAILED_TURN_HANDOFF_NOTE }
+
+    before { working_hours!(open: true) }
+
+    it 'h1: hands the conversation to people when the provider call fails' do
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+
+      run_captain_turn!(conversation, message, error: StandardError.new('provider down'))
+
+      expect_visible_to_people(conversation)
+      expect(conversation.messages.where(private: true).pluck(:content)).to eq([failed_turn_note])
+      expect(public_texts(conversation)).to be_empty
+    end
+
+    it 'h2: hands the conversation to people when the model returns a blank reply' do
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+
+      run_captain_turn!(conversation, message, response: { 'response' => '', 'reasoning' => '' })
+
+      expect_visible_to_people(conversation)
+      expect(conversation.messages.where(private: true).pluck(:content)).to eq([failed_turn_note])
+    end
+
+    it 'h3: hands the conversation to people when the model emits conversation_handoff instead of calling the tool' do
+      assistant.update!(config: assistant.config.merge(
+        'handoff_message_enabled' => true, 'handoff_message_mode' => 'ai', 'handoff_message' => 'Передаю администратору.'
+      ))
+      conversation = pending_conversation!
+      message = incoming!(conversation, 'Позовите администратора')
+      response = model_output(conversation, { 'response' => 'conversation_handoff', 'handoff_message' => 'Model text' })
+
+      run_captain_turn!(conversation, message, response: response)
+
+      expect_visible_to_people(conversation)
+      expect(public_texts(conversation)).to eq(['Передаю администратору.'])
+    end
+  end
+
   describe 'accepted Captain rules that stay in place' do
+    def run_captain_turn!(conversation, message, response)
+      runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: response)
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
+      with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
+    end
+
+    it 'f2: the AI never hands off without the enabled handoff tool' do
+      assistant.update!(config: assistant.config.merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }))
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+
+      run_captain_turn!(conversation, message, { 'response' => 'conversation_handoff', 'handoff_tool_called' => true, 'handoff_authorized' => true })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'f4: a reply that only talks about a transfer stays a normal Captain reply' do
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+
+      run_captain_turn!(conversation, message, { 'response' => 'Сейчас передам вас администратору.' })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(public_texts(conversation)).to eq(['Сейчас передам вас администратору.'])
+      expect(conversation.messages.where(private: true)).to be_empty
+    end
+
     it 'd1: never replies in an open conversation, even with the old open-reply setting' do
       captain_inbox.update!(reply_to_open_conversations: true)
       conversation = pending_conversation!

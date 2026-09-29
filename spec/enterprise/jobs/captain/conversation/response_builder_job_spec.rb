@@ -574,12 +574,73 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       private_note = conversation.reload.messages.outgoing.where(private: true).last
       expect(private_note.content).to eq(
-        'Automatic reply could not be generated. No handoff was applied.'
+        'Automatic reply could not be generated. Handoff to human agent was triggered.'
       )
       expect(private_note.content).not_to include('RubyLLM')
       expect(private_note.content).not_to include('OpenRouter')
       expect(private_note.content).not_to include('max_tokens')
-      expect(conversation.status).to eq('pending')
+      expect(conversation.status).to eq('open')
+    end
+
+    context 'when a failed turn loses its response fence before the system handoff' do
+      let(:job) { described_class.new }
+
+      before do
+        allow(agent_runner_service).to receive(:generate_response).and_raise(StandardError, 'provider down')
+      end
+
+      def expect_no_failed_turn_handoff
+        expect(conversation.reload.captain_handoff_applied_at).to be_nil
+        expect(conversation.messages.where(private: true, content: described_class::FAILED_TURN_HANDOFF_NOTE)).to be_empty
+        expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+      end
+
+      it 'leaves a newer customer message to its own Captain run' do
+        allow(job).to receive(:handoff_failed_turn).and_wrap_original do |method|
+          create(:message, conversation: conversation, content: 'One more question', message_type: :incoming)
+          method.call
+        end
+
+        job.perform(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect_no_failed_turn_handoff
+      end
+
+      it 'does not hand off after pending became open and pending again' do
+        allow(job).to receive(:handoff_failed_turn).and_wrap_original do |method|
+          Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
+          Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'pending' }, source: 'system').perform
+          method.call
+        end
+
+        job.perform(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect_no_failed_turn_handoff
+      end
+
+      it 'does not override a human who took the conversation over' do
+        agent = create(:user, account: account, role: :agent)
+        allow(job).to receive(:handoff_failed_turn).and_wrap_original do |method|
+          create(:message, conversation: conversation, message_type: :outgoing, sender: agent, account: account, inbox: inbox,
+                           content: 'Agent is here')
+          method.call
+        end
+
+        job.perform(conversation, assistant)
+
+        expect(conversation.reload.status).to eq('open')
+        expect_no_failed_turn_handoff
+      end
+    end
+
+    it 'does not act on a failed turn once the conversation is open' do
+      conversation.update!(status: :open)
+      allow(agent_runner_service).to receive(:generate_response).and_raise(StandardError, 'provider down')
+
+      expect { described_class.perform_now(conversation, assistant) }.not_to(change { conversation.messages.count })
+      expect(conversation.reload.captain_handoff_applied_at).to be_nil
     end
 
     it 'stores captain trace on the outgoing message when provided by the assistant runtime' do
@@ -992,7 +1053,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: true)).to be_empty
     end
 
-    it 'records an untrusted provider-error sentinel without handing off' do
+    it 'hands a semantic output error to people as a failed turn' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
           'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
@@ -1002,12 +1063,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect { described_class.perform_now(conversation, assistant) }
         .to change { conversation.messages.outgoing.where(private: true).count }.by(1)
-      expect(conversation.reload.status).to eq('pending')
-      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.captain_handoff_applied_at).to be_present
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
-    it 'does not treat a provider-error marker as an AI tool call' do
+    it 'hands a provider error to people as a system handoff, not as an AI tool call' do
       allow(agent_runner_service).to receive(:generate_response).and_return(
         {
           'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
@@ -1018,8 +1079,30 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       described_class.perform_now(conversation, assistant)
 
-      expect(conversation.reload.status).to eq('pending')
-      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.status_transitions.last).to have_attributes(
+        from_status: 'pending', to_status: 'open', source: 'system', reason: nil, actor: assistant
+      )
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    end
+
+    it 'hands the model conversation_handoff value without the handoff tool to people as a failed turn' do
+      # AgentRunnerService.new is stubbed in this group; build a real runner to process the model output.
+      runner = Captain::Assistant::AgentRunnerService.allocate
+      runner.send(:initialize, assistant: assistant, conversation: conversation)
+      allow(Llm::EventBus).to receive(:publish)
+      model_result = Struct.new(:output, :context, :error).new(
+        { 'response' => 'conversation_handoff', 'reasoning' => 'Customer wants a person', 'handoff_reason' => 'asked for admin' },
+        { current_agent: 'assistant' },
+        nil
+      )
+      allow(agent_runner_service).to receive(:generate_response).and_return(runner.send(:process_agent_result, model_result))
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::FAILED_TURN_HANDOFF_NOTE])
+      expect(conversation.messages.where(content: 'asked for admin')).to be_empty
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
@@ -1371,13 +1454,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'keeps the conversation pending without a public transfer message' do
+      it 'hands the conversation to people without a public transfer message' do
         expect do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
 
-        expect(conversation.reload.status).to eq('pending')
-        expect(conversation.captain_handoff_applied_at).to be_nil
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.captain_handoff_applied_at).to be_present
+        expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off)
+          .with(conversation: conversation, assistant: assistant).at_least(:once)
       end
 
       it 'creates a private note for agents without leaking provider error details' do
@@ -1385,14 +1470,14 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         private_note = conversation.reload.messages.where(private: true).last
         expect(private_note.content).to eq(
-          'Automatic reply could not be generated. No handoff was applied.'
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
         )
         expect(private_note.content).not_to include('RubyLLM')
         expect(private_note.content).not_to include('Quota exceeded')
         expect(private_note.sender).to eq(assistant)
       end
 
-      it 'does not tell the customer a transfer happened when handoff is disabled' do
+      it 'hands off even with the handoff tool disabled, without public transfer text' do
         assistant.update!(config: assistant.config.deep_merge(
           'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }
         ))
@@ -1401,8 +1486,19 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
 
-        expect(conversation.reload.status).to eq('pending')
-        expect(conversation.messages.where(private: true).last.content).to include('No handoff was applied')
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.where(private: true).last.content).to eq(described_class::FAILED_TURN_HANDOFF_NOTE)
+      end
+
+      it 'sends only the assistant own handoff message, once, when it is configured' do
+        assistant.update!(config: assistant.config.merge(
+          'handoff_message_enabled' => true, 'handoff_message_mode' => 'static', 'handoff_message' => 'Передаю администратору.'
+        ))
+
+        2.times { described_class.perform_now(conversation, assistant, expected_last_message_id: conversation.messages.incoming.last.id) }
+
+        expect(conversation.reload.messages.outgoing.where(private: false).pluck(:content)).to eq(['Передаю администратору.'])
+        expect(conversation.messages.where(private: true, content: described_class::FAILED_TURN_HANDOFF_NOTE).count).to eq(1)
       end
 
       it 'normalizes malformed UTF-8 in the trace before creating the private note' do
@@ -1435,15 +1531,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
       end
 
-      it 'keeps the conversation pending with a private fallback note and no public handoff message' do
+      it 'hands the conversation to people with a private fallback note and no public handoff message' do
         expect do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
         private_note = conversation.messages.where(private: true).last
         expect(private_note.content).to eq(
-          'Automatic reply could not be generated. No handoff was applied.'
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
         )
         expect(private_note.content).not_to include('BlankResponseError')
       end
@@ -1705,13 +1801,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     context 'when ActiveStorage::FileNotFoundError occurs' do
-      it 'handles file errors without forcing handoff' do
+      it 'hands the conversation to people after a file error' do
         allow(mock_message_builder).to receive(:generate_content)
           .and_raise(ActiveStorage::FileNotFoundError, 'Image file not found')
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'succeeds when no error occurs' do
@@ -1726,13 +1822,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     context 'when Faraday::BadRequestError occurs' do
-      it 'handles API errors without forcing handoff' do
+      it 'hands the conversation to people after an API error' do
         allow(agent_runner_service).to receive(:generate_response)
           .and_raise(Faraday::BadRequestError, 'Bad request to image service')
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
       end
 
       it 'succeeds when no error occurs' do
@@ -1751,7 +1847,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           .and_raise(ActiveStorage::FileNotFoundError, 'Image permanently unavailable')
       end
 
-      it 'keeps the conversation pending after max retries' do
+      it 'hands the conversation to people after max retries' do
         allow(mock_message_builder).to receive(:generate_content)
           .and_raise(StandardError, 'Max retries exceeded')
 
@@ -1759,7 +1855,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
       end
     end
 
@@ -1770,14 +1866,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_raise(standard_error)
       end
 
-      it 'handles error without forcing handoff' do
+      it 'handles the error with a system handoff' do
         expect(ChatwootExceptionTracker).to receive(:new)
           .with(standard_error, account: account)
           .and_call_original
 
         described_class.perform_now(conversation, assistant)
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
       end
 
       it 'creates a private note without a public handoff message' do
@@ -1786,13 +1883,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
         private_note = conversation.reload.messages.where(private: true).last
         expect(private_note.content).to eq(
-          'Automatic reply could not be generated. No handoff was applied.'
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
         )
         expect(private_note.content).not_to include('StandardError')
         expect(private_note.content).not_to include('Generic error')
       end
 
-      it 'leaves a private failure note without a transfer when the handoff tool is disabled' do
+      it 'hands off with a private failure note and no transfer text when the handoff tool is disabled' do
         assistant.update!(config: assistant.config.deep_merge(
           'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } }
         ))
@@ -1801,8 +1898,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           described_class.perform_now(conversation, assistant)
         end.not_to(change { conversation.messages.outgoing.where(private: false).count })
 
-        expect(conversation.reload.status).to eq('pending')
-        expect(conversation.messages.where(private: true).last.content).to include('No handoff was applied')
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.where(private: true).last.content).to eq(described_class::FAILED_TURN_HANDOFF_NOTE)
       end
 
       it 'does not inherit handoff fields from a polluted failed response' do
@@ -1822,12 +1919,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         expect { job.send(:handle_error, standard_error) }.not_to raise_error
 
-        expect(conversation.reload.status).to eq('pending')
-        expect(conversation.status_transitions).to be_empty
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.status_transitions.last).to have_attributes(reason: nil, source: 'system')
         expect(conversation.messages.where(content: 'Polluted handoff reason')).to be_empty
         expect(conversation.messages.where(content: 'Polluted public handoff')).to be_empty
         expect(conversation.messages.where(private: true).last.content).to eq(
-          'Automatic reply could not be generated. No handoff was applied.'
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
         )
         expect(Llm::EventBus).to have_received(:publish)
           .with('captain.provider_fallback_without_status_reason', hash_including(conversation_id: conversation.id))
@@ -1925,12 +2022,13 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_raise(StandardError, 'API error')
       end
 
-      it 'does not send an out of office message when provider error does not trigger handoff' do
+      it 'sends out of office message after the error-triggered system handoff' do
         expect do
           described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.template.count })
+        end.to change { conversation.messages.template.count }.by(1)
 
-        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.template.last.content).to eq('We are currently closed.')
       end
     end
 
