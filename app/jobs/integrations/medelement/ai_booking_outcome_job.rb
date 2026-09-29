@@ -48,9 +48,13 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   # The reschedule reply waits for the provider, so after a failed or unknown
   # move the customer has no answer. Like a failed create, it is a system
-  # handoff under the response fence the update tool captured. A command the
-  # handoff cannot judge (no captured fence, e.g. created before this release, or
-  # a changed assistant or conversation) keeps the staff note it got before.
+  # handoff under the response fence the update tool captured. Every failed or
+  # unknown move still gets the one staff note it got before this release: when
+  # the handoff cannot judge the command (no captured fence, e.g. created before
+  # this release, or a changed assistant or conversation) or must not take over
+  # (a newer Captain run after a release or a customer reopen, an appointment
+  # bound to a newer command) and left no note, the note is added without
+  # changing the conversation's status or owner.
   def review_failed_move!(command, appointment, conversation, assistant)
     return if staff_notified?(command)
 
@@ -60,10 +64,10 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
       return notify_staff!(command, conversation, assistant)
     end
 
-    result = Captain::Tools::ProviderBookingHandoffService.new(
+    Captain::Tools::ProviderBookingHandoffService.new(
       assistant: assistant, conversation: conversation, appointment: appointment, command: command
     ).perform
-    notify_staff!(command, conversation, assistant) if result.in?(%i[invalid_context missing_fence])
+    notify_staff!(command, conversation, assistant) unless staff_notified?(command)
   end
 
   def review_failed_create!(command, appointment, conversation, assistant)

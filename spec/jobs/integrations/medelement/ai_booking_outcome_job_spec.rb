@@ -304,18 +304,68 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
-    it 'does not steal a later Captain run for a failed reschedule' do
+    # Rule 3.2: a system-authorized outcome may leave one private note but never
+    # takes over a newer Captain run. Every failed or unknown reschedule got that
+    # note before the handoff existed, so a stale run fence still leaves it.
+    def expect_no_takeover(generation:, transitions:)
+      expect(conversation.reload).to have_attributes(status: 'pending', current_captain_control_generation: generation,
+                                                     captain_handoff_applied_at: nil)
+      expect(conversation.status_transitions.count).to eq(transitions)
+    end
+
+    def expect_one_staff_note
+      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+      expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
+    end
+
+    it 'does not steal a later Captain run for a failed reschedule, but notes it for staff once' do
       bind_provider_status!('failed')
       capture_booking_fence!
       conversation.update!(status: :open)
       conversation.prepare_captain_ai_control!
       conversation.update!(status: :pending)
       command.update!(status: 'failed')
+      generation = conversation.reload.current_captain_control_generation
+      transitions = conversation.status_transitions.count
 
       described_class.perform_now(command.id)
+      described_class.perform_now(command.id)
 
-      expect(conversation.reload.status).to eq('pending')
-      expect(conversation.messages.outgoing).to be_empty
+      expect_no_takeover(generation: generation, transitions: transitions)
+      expect_one_staff_note
+    end
+
+    it 'notes an unknown reschedule for staff without taking over the run the customer reopened after a resolve' do
+      bind_provider_status!('provider_status_unknown')
+      capture_booking_fence!
+      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'resolved' }, source: 'system').perform
+      Conversations::StatusTransitionService.new(conversation: conversation.reload, params: { status: 'pending' }, source: 'contact').perform
+      command.update!(status: 'provider_status_unknown')
+      generation = conversation.reload.current_captain_control_generation
+      transitions = conversation.status_transitions.count
+
+      described_class.perform_now(command.id)
+      described_class.perform_now(command.id)
+
+      expect_no_takeover(generation: generation, transitions: transitions)
+      expect_one_staff_note
+    end
+
+    it 'notes a failed reschedule for staff without handing off when the appointment is bound to a newer command' do
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge(
+        Integrations::Medelement::AppointmentProviderStatus::COMMAND_ID_KEY => command.id + 1
+      ))
+      command.update!(status: 'failed')
+      generation = conversation.reload.current_captain_control_generation
+      transitions = conversation.status_transitions.count
+
+      described_class.perform_now(command.id)
+      described_class.perform_now(command.id)
+
+      expect_no_takeover(generation: generation, transitions: transitions)
+      expect_one_staff_note
     end
 
     it 'waits for the run fence, then keeps only the staff note for a reschedule that never got one' do
