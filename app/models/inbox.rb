@@ -257,6 +257,8 @@ class Inbox < ApplicationRecord
   end
 
   def callback_webhook_url
+    return if channel.blank?
+
     case channel_type
     when 'Channel::TwilioSms'
       "#{ENV.fetch('FRONTEND_URL', nil)}/twilio/callback"

@@ -17,6 +17,7 @@ json.out_of_office_message resource.out_of_office_message
 json.working_hours resource.weekly_schedule
 json.timezone resource.timezone
 json.callback_webhook_url resource.callback_webhook_url
+json.channel_missing resource.channel.blank?
 json.allow_messages_after_resolved resource.allow_messages_after_resolved
 json.lock_to_single_conversation resource.lock_to_single_conversation
 json.sender_name_type resource.sender_name_type
@@ -184,7 +185,7 @@ if resource.vk_community?
 end
 
 ### WhatsApp Channel
-if resource.whatsapp?
+if resource.whatsapp? && resource.channel.present?
   message_templates = if resource.channel.is_a?(Channel::Whatsapp)
                         Whatsapp::TemplateMediaSourcePresenter.new(whatsapp_channel: resource.channel).perform
                       else
@@ -206,7 +207,7 @@ if resource.whatsapp?
 end
 
 ## Voice Channel Attributes
-if resource.channel_type == 'Channel::Voice'
+if resource.channel_type == 'Channel::Voice' && resource.channel.present?
   if resource.channel.provider == 'twilio'
     json.voice_call_webhook_url resource.channel.try(:voice_call_webhook_url)
     json.voice_status_webhook_url resource.channel.try(:voice_status_webhook_url)
