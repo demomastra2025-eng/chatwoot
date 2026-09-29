@@ -2345,6 +2345,14 @@ export default {
           class="mx-6 mb-4"
           :class="bannerMaxWidth"
         />
+        <p
+          v-if="inbox.channel_missing"
+          class="mx-6 mb-4 rounded-xl border border-n-ruby-6 bg-n-ruby-3/20 p-4 text-sm text-n-ruby-11"
+          :class="bannerMaxWidth"
+          data-test-id="inbox-channel-missing"
+        >
+          {{ $t('INBOX_MGMT.LIST.CHANNEL_MISSING_DESCRIPTION') }}
+        </p>
 
         <div
           v-if="selectedTabKey === 'inbox-settings'"

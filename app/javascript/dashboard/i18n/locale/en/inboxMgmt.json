@@ -35,8 +35,10 @@
         "INACTIVE": "Inactive",
         "CHECK": "Check",
         "NEEDS_AUTH": "Needs auth",
-        "DELETING": "Deleting"
+        "DELETING": "Deleting",
+        "CHANNEL_MISSING": "Channel broken"
       },
+      "CHANNEL_MISSING_DESCRIPTION": "The channel record of this inbox no longer exists, so it cannot send or receive anything. Delete this inbox in its settings and connect the channel again.",
       "DETAILS": {
         "PHONE": "Phone",
         "SITE": "Site",

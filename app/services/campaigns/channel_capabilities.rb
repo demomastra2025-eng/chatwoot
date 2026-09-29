@@ -25,6 +25,9 @@ class Campaigns::ChannelCapabilities
   end
 
   def as_json
+    # An inbox whose channel record is gone cannot deliver anything.
+    return base_payload if inbox.channel.nil?
+
     base_payload.merge(channel_payload)
   end
 

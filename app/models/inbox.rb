@@ -149,7 +149,7 @@ class Inbox < ApplicationRecord
   end
 
   def instagram?
-    (facebook? || instagram_direct?) && channel.instagram_id.present?
+    (facebook? || instagram_direct?) && channel&.instagram_id.present?
   end
 
   def instagram_direct?
@@ -205,7 +205,14 @@ class Inbox < ApplicationRecord
   end
 
   def twilio_whatsapp?
-    channel_type == 'Channel::TwilioSms' && channel.medium == 'whatsapp'
+    channel_type == 'Channel::TwilioSms' && channel&.medium == 'whatsapp'
+  end
+
+  # Legacy data can keep an inbox row after its channel row was deleted. Such an
+  # inbox is still listed (so an administrator can delete it) instead of failing
+  # every serializer that reads channel attributes.
+  def channel_missing?
+    channel.nil?
   end
 
   def lock_to_single_conversation=(value)
@@ -230,6 +237,14 @@ class Inbox < ApplicationRecord
     return self if deleting?
 
     transaction do
+      if channel_missing?
+        # The required channel association cannot validate once its row is gone;
+        # deleting such an inbox must still be possible.
+        self.deleting_at = timestamp
+        save!(validate: false)
+        next
+      end
+
       update!(deleting_at: timestamp)
       if (whatsapp_web? || telegram_personal? || weixin?) && channel.respond_to?(:mark_pending_deletion!)
         channel.mark_pending_deletion!(timestamp: timestamp)
@@ -257,7 +272,7 @@ class Inbox < ApplicationRecord
   end
 
   def callback_webhook_url
-    return if channel.blank?
+    return if channel_missing?
 
     case channel_type
     when 'Channel::TwilioSms'

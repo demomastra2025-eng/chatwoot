@@ -6,7 +6,7 @@ class Telephony::AiVoice::JanusSipProfileConfigService
   INACTIVE_STATUSES = %w[disabled deleting failed].freeze
 
   def perform
-    profiles = active_voice_agent_profiles.filter_map { |profile| profile_payload(profile) }
+    profiles = active_voice_agent_profiles.filter_map { |profile| isolated_profile_payload(profile) }
     {
       version: config_version(profiles),
       profiles: profiles
@@ -14,6 +14,16 @@ class Telephony::AiVoice::JanusSipProfileConfigService
   end
 
   private
+
+  # One broken legacy row must not take every other voice-agent registration offline.
+  def isolated_profile_payload(profile)
+    profile_payload(profile)
+  rescue StandardError => e
+    Rails.logger.warn(
+      "TELEPHONY_AI_VOICE_JANUS_PROFILE_SKIPPED profile_id=#{profile.id} inbox_id=#{profile.inbox_id} error=#{e.class.name}"
+    )
+    nil
+  end
 
   def active_voice_agent_profiles
     Telephony::SipProfile

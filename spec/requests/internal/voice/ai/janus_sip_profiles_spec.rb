@@ -83,6 +83,31 @@ RSpec.describe 'Internal Voice AI Janus SIP profiles', type: :request do
     )
   end
 
+  it 'keeps serving healthy profiles when one legacy profile or inbox cannot be serialized' do
+    healthy = create(
+      :telephony_sip_profile, :voice_agent,
+      account: account, inbox: inbox, provider_connection: connection, internal_extension: '9098',
+      sip_username: 'ai-agent-9098', sip_password: 'secret', sip_host: 'sip.example.test', status: 'active'
+    )
+    legacy_account = create(:account)
+    legacy_inbox = create(:inbox, account: legacy_account)
+    legacy = create(
+      :telephony_sip_profile, :voice_agent,
+      account: legacy_account, inbox: legacy_inbox, internal_extension: '9099',
+      sip_username: 'ai-agent-9099', sip_password: 'secret', sip_host: 'sip.example.test', status: 'active'
+    )
+    # Legacy row that no longer passes validation and has no stored registration version yet.
+    legacy.update_columns(user_id: create(:user).id, metadata: {}) # rubocop:disable Rails/SkipsModelValidations
+    Channel::WebWidget.where(id: legacy_inbox.channel_id).delete_all
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get path, headers: { 'Authorization' => 'Bearer voice-secret' }
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['profiles'].pluck('id')).to eq([healthy.id])
+  end
+
   it 'requires internal voice authentication' do
     get path
 

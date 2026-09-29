@@ -404,6 +404,13 @@ const getStatus = inbox => {
     };
   }
 
+  if (inbox.channel_missing) {
+    return {
+      label: t('INBOX_MGMT.LIST.STATUS.CHANNEL_MISSING'),
+      class: 'bg-n-ruby-3 text-n-ruby-11 border-n-ruby-5',
+    };
+  }
+
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {
       label: t('INBOX_MGMT.LIST.STATUS.NEEDS_AUTH'),
@@ -601,6 +608,13 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               </span>
             </div>
 
+            <p
+              v-if="inbox.channel_missing"
+              class="rounded-lg bg-n-ruby-3 px-3 py-2 text-xs text-n-ruby-11"
+              data-test-id="inbox-channel-missing"
+            >
+              {{ $t('INBOX_MGMT.LIST.CHANNEL_MISSING_DESCRIPTION') }}
+            </p>
             <p
               v-if="inbox.last_error"
               class="line-clamp-2 rounded-lg bg-n-ruby-3 px-3 py-2 text-xs text-n-ruby-11"
