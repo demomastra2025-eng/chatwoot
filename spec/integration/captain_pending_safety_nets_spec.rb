@@ -324,6 +324,113 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
   end
 
+  # Owner rule (30.09): on every system handoff the only text the customer gets
+  # is the assistant's own handoff message, and only while its toggle is on. No
+  # built-in wording, and no model or generated text in static mode.
+  describe 'the customer-facing text of a system handoff' do
+    let(:handoff_text) { 'Передаю администратору.' }
+
+    before do
+      working_hours!(open: true)
+      account.enable_features!('captain_tasks')
+      account.update!(auto_resolve_after: 60)
+      account.update_columns(settings: account.reload.settings.to_h.merge('captain_auto_resolve_mode' => 'evaluated')) # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    def handoff_message!(enabled:, text: handoff_text)
+      assistant.update!(config: assistant.config.merge(
+        'handoff_message_enabled' => enabled, 'handoff_message_mode' => 'static', 'handoff_message' => text
+      ))
+    end
+
+    def customer_texts(conversation)
+      conversation.messages.where(private: false, message_type: %w[outgoing template]).pluck(:content)
+    end
+
+    def captain_turn!(conversation, error: nil)
+      message = incoming!(conversation)
+      response = yield if block_given?
+      runner = instance_double(Captain::Assistant::AgentRunnerService)
+      if error
+        allow(runner).to receive(:generate_response).and_raise(error)
+      else
+        allow(runner).to receive(:generate_response).and_return(response)
+      end
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
+      with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
+    end
+
+    def runtime_runner(conversation)
+      Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: conversation)
+    end
+
+    def quota_used_up!(conversation)
+      exhaust_quota!
+      incoming!(conversation)
+    end
+
+    def provider_error!(conversation)
+      captain_turn!(conversation, error: StandardError.new('provider down'))
+    end
+
+    def handoff_value_without_the_tool!(conversation)
+      output = { 'response' => 'conversation_handoff', 'handoff_message' => 'Model text' }
+      result = Struct.new(:output, :context, :error).new(output, { current_agent: 'assistant' }, nil)
+      captain_turn!(conversation) { runtime_runner(conversation).send(:process_agent_result, result) }
+    end
+
+    def moderation_block!(conversation)
+      reason = 'Agent input blocked by moderation policy'
+      captain_turn!(conversation) { runtime_runner(conversation).send(:blocked_by_moderation_response, reason) }
+    end
+
+    def unfinished_conversation!(conversation)
+      incoming!(conversation)
+      conversation.update_columns(last_activity_at: 2.hours.ago) # rubocop:disable Rails/SkipsModelValidations
+      completion = instance_double(Captain::ConversationCompletionService,
+                                   perform: { complete: false, reason: 'Open question', message: 'Model text' })
+      allow(Captain::ConversationCompletionService).to receive(:new).and_return(completion)
+      with_events { Captain::InboxPendingConversationsResolutionJob.perform_now(inbox.reload) }
+    end
+
+    def system_handoff!(path)
+      conversation = pending_conversation!
+      send(:"#{path}!", conversation)
+      conversation.reload
+    end
+
+    %w[quota_used_up provider_error handoff_value_without_the_tool moderation_block unfinished_conversation].each do |path|
+      context "with a system handoff after #{path.tr('_', ' ')}" do
+        it 'sends only the configured handoff message, once, while its toggle is on' do
+          handoff_message!(enabled: true)
+
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to eq([handoff_text])
+        end
+
+        it 'sends no text while the handoff message toggle is off, even with a configured message' do
+          handoff_message!(enabled: false)
+
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to be_empty
+        end
+
+        it 'never falls back to built-in wording when no handoff message is configured' do
+          handoff_message!(enabled: true, text: '')
+
+          conversation = system_handoff!(path)
+
+          expect_visible_to_people(conversation)
+          expect(customer_texts(conversation)).to be_empty
+        end
+      end
+    end
+  end
+
   describe 'accepted Captain rules that stay in place' do
     def run_captain_turn!(conversation, message, response)
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: response)
