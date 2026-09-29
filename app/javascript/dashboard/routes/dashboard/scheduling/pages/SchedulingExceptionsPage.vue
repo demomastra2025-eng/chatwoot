@@ -21,8 +21,13 @@ import {
   formatSchedulingErrorMessage,
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
-import { toDateTimeInputValue } from '../helpers';
+import { DEFAULT_WORKSPACE_TIMEZONE } from '../constants';
+import { fromDateTimeInputValue, toDateTimeInputValue } from '../helpers';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+
+// Time-offs block clinic hours, so they are listed, edited and saved on the
+// clinic clock, like the calendar grid that draws them.
+const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
 
 const { t, locale } = useI18n();
 const referencesStore = useSchedulingReferencesStore();
@@ -188,12 +193,15 @@ const pageErrorDescription = computed(() =>
   formatErrorMessage(referencesStore.ui.error)
 );
 
+// Holiday and override dates are "yyyy-MM-dd" (parsed as UTC midnight); on
+// the clinic clock (UTC+5) that is still the same calendar day.
 const formatDate = value => {
   if (!value) return '—';
 
   return new Intl.DateTimeFormat(localeCode.value, {
     day: 'numeric',
     month: 'long',
+    timeZone: SCHEDULING_TIMEZONE,
     year: 'numeric',
   }).format(new Date(value));
 };
@@ -206,6 +214,7 @@ const formatDateTime = value => {
     hour: '2-digit',
     minute: '2-digit',
     month: 'short',
+    timeZone: SCHEDULING_TIMEZONE,
     year: 'numeric',
   }).format(new Date(value));
 };
@@ -315,12 +324,12 @@ const editTimeOff = item => {
   drawerType.value = 'time_off';
   drawerOpen.value = true;
   Object.assign(timeOffForm, {
-    endsAt: toDateTimeInputValue(item.endsAt),
+    endsAt: toDateTimeInputValue(item.endsAt, SCHEDULING_TIMEZONE),
     id: item.id,
     kind: item.kind || 'vacation',
     notes: item.notes || '',
     resourceId: item.resourceId || '',
-    startsAt: toDateTimeInputValue(item.startsAt),
+    startsAt: toDateTimeInputValue(item.startsAt, SCHEDULING_TIMEZONE),
     title: item.title || '',
   });
 };
@@ -354,14 +363,14 @@ const saveCurrentForm = async () => {
     } else {
       await referencesStore.saveTimeOff({
         ends_at: timeOffForm.endsAt
-          ? new Date(timeOffForm.endsAt).toISOString()
+          ? fromDateTimeInputValue(timeOffForm.endsAt, SCHEDULING_TIMEZONE)
           : '',
         id: timeOffForm.id,
         kind: timeOffForm.kind,
         notes: timeOffForm.notes,
         resource_id: toNumeric(timeOffForm.resourceId),
         starts_at: timeOffForm.startsAt
-          ? new Date(timeOffForm.startsAt).toISOString()
+          ? fromDateTimeInputValue(timeOffForm.startsAt, SCHEDULING_TIMEZONE)
           : '',
         title: timeOffForm.title,
       });
