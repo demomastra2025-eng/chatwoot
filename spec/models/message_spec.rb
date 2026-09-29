@@ -461,11 +461,23 @@ RSpec.describe Message do
       conversation.resolved!
       communication_thread = conversation.reload.refresh_communication_thread!
       message.created_at = Time.current
+      lock_order = []
       allow(conversation).to receive(:communication_thread).and_return(communication_thread)
-      expect(conversation).to receive(:with_lock).ordered.and_call_original
-      expect(communication_thread).to receive(:with_lock).ordered.and_call_original
+      allow(conversation).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
+        lock_order << :conversation
+        method.call(*args, **kwargs, &block)
+      end
+      allow(communication_thread).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
+        lock_order << :communication_thread
+        method.call(*args, **kwargs, &block)
+      end
 
       message.send(:reopen_resolved_conversation)
+
+      # Conversations::StatusTransitionService re-enters the conversation row lock
+      # this transaction already holds; no lock is taken before the conversation.
+      expect(lock_order).to eq([:conversation, :communication_thread, :conversation])
+      expect(conversation.reload).to be_open
     end
 
     it 'reopens a resolved conversation when its communication thread is already open' do
