@@ -1086,6 +1086,34 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
+    it 'hands a turn blocked by moderation to people with a moderation note' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'conversation_handoff',
+          'reasoning' => 'Agent input blocked by moderation policy',
+          Captain::Assistant::AgentRunnerService::MODERATION_BLOCKED_KEY => true
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
+      expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::MODERATION_HANDOFF_NOTE])
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    end
+
+    it 'keeps an unmarked conversation_handoff value without the handoff tool cancelled' do
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        { 'response' => 'conversation_handoff', 'reasoning' => 'Customer wants a person', 'moderation_blocked' => 'true' }
+      )
+
+      expect { described_class.perform_now(conversation, assistant) }.not_to(change { conversation.messages.count })
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.captain_handoff_applied_at).to be_nil
+    end
+
     it 'hands the model conversation_handoff value without the handoff tool to people as a failed turn' do
       # AgentRunnerService.new is stubbed in this group; build a real runner to process the model output.
       runner = Captain::Assistant::AgentRunnerService.allocate

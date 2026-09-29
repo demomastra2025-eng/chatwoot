@@ -10,6 +10,9 @@ class Captain::Assistant::AgentRunnerService
 
   PROVIDER_ERROR_RESPONSE = 'conversation_handoff_due_to_provider_error'.freeze
   PROVIDER_ERROR_AUTHORIZED_KEY = 'provider_error_handoff_authorized'.freeze
+  # Marks a turn the safety policy blocked (input or output) or could not check.
+  # Only the runtime sets it; a model output never carries it.
+  MODERATION_BLOCKED_KEY = 'moderation_blocked'.freeze
   CONTACT_INBOX_STATE_ATTRIBUTES = %i[id hmac_verified].freeze
   CAMPAIGN_STATE_ATTRIBUTES = %i[id title message campaign_type description].freeze
   MAX_RUNTIME_TURNS = 24
@@ -245,6 +248,7 @@ class Captain::Assistant::AgentRunnerService
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response.delete('handoff_authorized')
     response.delete(PROVIDER_ERROR_AUTHORIZED_KEY)
+    response.delete(MODERATION_BLOCKED_KEY)
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
     sanitize_response_artifact_ids!(response, result.context)
@@ -1208,7 +1212,8 @@ class Captain::Assistant::AgentRunnerService
   def blocked_by_moderation_response(reason)
     {
       'response' => 'conversation_handoff',
-      'reasoning' => reason
+      'reasoning' => reason,
+      MODERATION_BLOCKED_KEY => true
     }
   end
 

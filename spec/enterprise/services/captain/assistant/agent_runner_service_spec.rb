@@ -1367,7 +1367,8 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq(
         {
           'response' => 'conversation_handoff',
-          'reasoning' => 'Agent input blocked by moderation policy'
+          'reasoning' => 'Agent input blocked by moderation policy',
+          described_class::MODERATION_BLOCKED_KEY => true
         }
       )
     end
@@ -1382,9 +1383,28 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq(
         {
           'response' => 'conversation_handoff',
-          'reasoning' => 'Agent input blocked because moderation policy is unavailable'
+          'reasoning' => 'Agent input blocked because moderation policy is unavailable',
+          described_class::MODERATION_BLOCKED_KEY => true
         }
       )
+    end
+
+    it 'marks an output blocked by moderation and never takes that marker from the model' do
+      allow(Llm::SafetyPolicy).to receive(:check!).and_raise(
+        Llm::SafetyPolicy::UnsafeContentError.new(feature: :assistant, stage: :output, reason: :moderation_flagged)
+      )
+      model_result = Struct.new(:output, :context, :error).new(
+        { 'response' => 'Unsafe text', described_class::MODERATION_BLOCKED_KEY => false }, { current_agent: 'assistant' }, nil
+      )
+      expect(service.send(:process_agent_result, model_result)).to include(
+        'response' => 'conversation_handoff', described_class::MODERATION_BLOCKED_KEY => true
+      )
+
+      allow(Llm::SafetyPolicy).to receive(:check!).and_return(nil)
+      spoofed = Struct.new(:output, :context, :error).new(
+        { 'response' => 'Normal reply', described_class::MODERATION_BLOCKED_KEY => true }, { current_agent: 'assistant' }, nil
+      )
+      expect(service.send(:process_agent_result, spoofed)).not_to have_key(described_class::MODERATION_BLOCKED_KEY)
     end
 
     it 'builds a scoped RubyLLM context for the runner when an account OpenAI hook is configured' do

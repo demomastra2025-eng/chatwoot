@@ -220,6 +220,30 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
   end
 
+  describe 'a Captain turn stopped by moderation' do
+    it 'm: hands the conversation to people when the safety policy blocks or cannot check the turn' do
+      working_hours!(open: true)
+      runner = Captain::Assistant::AgentRunnerService.new(assistant: assistant, conversation: pending_conversation!)
+      [
+        'Agent input blocked by moderation policy',
+        'Agent output blocked because moderation policy is unavailable'
+      ].each do |reason|
+        conversation = pending_conversation!
+        message = incoming!(conversation)
+        blocked = runner.send(:blocked_by_moderation_response, reason)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new)
+          .and_return(instance_double(Captain::Assistant::AgentRunnerService, generate_response: blocked))
+
+        with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
+
+        expect_visible_to_people(conversation)
+        expect(conversation.messages.where(private: true).pluck(:content))
+          .to eq([Captain::Conversation::ResponseBuilderJob::MODERATION_HANDOFF_NOTE])
+        expect(public_texts(conversation)).to be_empty
+      end
+    end
+  end
+
   describe 'accepted Captain rules that stay in place' do
     def run_captain_turn!(conversation, message, response)
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: response)

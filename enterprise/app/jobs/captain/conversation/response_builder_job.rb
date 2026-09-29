@@ -14,6 +14,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   # Staff-facing note of the system handoff after a failed Captain turn. It can
   # surface in agent-side previews, so it names no provider, error or quota.
   FAILED_TURN_HANDOFF_NOTE = 'Automatic reply could not be generated. Handoff to human agent was triggered.'.freeze
+  MODERATION_HANDOFF_NOTE = 'Automatic reply was stopped by the content safety check. Handoff to human agent was triggered.'.freeze
+  MODERATION_BLOCKED_KEY = Captain::Assistant::AgentRunnerService::MODERATION_BLOCKED_KEY
   ARTIFACT_UNAVAILABLE_RESPONSE = 'The requested file is no longer available. Please ask me to fetch it again.'.freeze
   DOCUMENT_DELIVERY_REQUEST_PATTERN = Regexp.new(
     '((отправ|пришл|вышл|скин|прикреп).{0,80}(документ|файл|pdf|пдф))|' \
@@ -106,6 +108,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def process_response
     ensure_response_fence_current!(stage: 'response_processing')
     return unless current_buffer_state_valid?
+
+    normalize_moderation_blocked_response!
     return process_non_public_response if non_public_response?
 
     normalize_blank_public_response!
@@ -411,6 +415,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     end
   end
 
+  # A turn the safety policy blocked, or could not check, has no reply to send.
+  # The runtime reports it with the handoff value but without the handoff tool,
+  # so it is a failed turn for the system safety net, not an AI handoff request.
+  def normalize_moderation_blocked_response!
+    return unless @response&.[]('response') == 'conversation_handoff' && @response[MODERATION_BLOCKED_KEY] == true
+
+    @response = provider_fallback_response(error_class: 'Llm::SafetyPolicy', error_message: @response['reasoning'].to_s)
+                .merge(MODERATION_BLOCKED_KEY => true)
+  end
+
   def normalize_blank_public_response!
     return unless blank_public_response?
 
@@ -589,7 +603,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def provider_error_note_content
-    FAILED_TURN_HANDOFF_NOTE
+    @response&.dig(MODERATION_BLOCKED_KEY) == true ? MODERATION_HANDOFF_NOTE : FAILED_TURN_HANDOFF_NOTE
   end
 
   def validate_message_content!(content, attachment_ids: [])
