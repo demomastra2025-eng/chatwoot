@@ -1,5 +1,6 @@
 class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON = 'no outstanding questions'.freeze
+  CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON = 'pending clarification from customer'.freeze
 
   queue_as :low
 
@@ -31,14 +32,22 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     end
   end
 
+  # A conversation the evaluation does not find complete (including a failed
+  # evaluation) leaves pending through a system handoff, so people see it and it
+  # is not evaluated again every run.
   def perform_with_evaluation(inbox)
     Current.executed_by = inbox.captain_assistant
 
     resolvable_pending_conversations(inbox).each do |conversation|
+      fence = handoff_fence(conversation)
       evaluation = evaluate_conversation(conversation, inbox)
       next unless still_resolvable_after_evaluation?(conversation)
 
-      resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message]) if evaluation[:complete]
+      if evaluation[:complete]
+        resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
+      else
+        handoff_conversation(conversation, inbox, evaluation[:reason], fence, generated_message: evaluation[:message])
+      end
     end
   end
 
@@ -49,12 +58,15 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     ).perform
   end
 
+  # Oldest activity first, so a batch never keeps skipping the conversations
+  # that have waited longest.
   def resolvable_pending_conversations(inbox)
     cutoff_time = auto_resolve_cutoff_time(inbox.account)
     return Conversation.none unless cutoff_time
 
     inbox.conversations.pending
          .where('last_activity_at < ?', cutoff_time)
+         .reorder(last_activity_at: :asc, id: :asc)
          .limit(Limits::BULK_ACTIONS_LIMIT)
   end
 
@@ -83,6 +95,44 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
       reason_type: :inference
     ) { transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system') }
     conversation.dispatch_captain_inference_resolved_event
+  end
+
+  # Taken before the evaluation: a human takeover, a staff release or any other
+  # status change while the evaluation runs makes the handoff stale. The last
+  # message is left out on purpose: a staff reply in another channel of the
+  # thread keeps this conversation pending and must not block its handoff.
+  def handoff_fence(conversation)
+    {
+      control_generation: conversation.current_captain_control_generation.to_i,
+      status_transition_id: conversation.status_transitions.maximum(:id).to_i
+    }
+  end
+
+  # System safety net, independent of the handoff tool: the note, the
+  # assistant's own handoff message (when enabled and configured) and the open
+  # transition happen once, under the same fence.
+  def handoff_conversation(conversation, inbox, reason, fence, generated_message: nil)
+    assistant = inbox.captain_assistant
+    result = conversation.with_captain_activity_context(reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON, reason_type: :inference) do
+      conversation.bot_handoff!(actor: assistant, source: 'system', fence: fence) do
+        create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
+        next if assistant.blank?
+
+        Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: assistant, generated_message: generated_message).perform
+      end
+    end
+    return unless result == :applied
+
+    conversation.dispatch_captain_inference_handoff_event
+    send_out_of_office_message_if_applicable(conversation.reload)
+  end
+
+  def send_out_of_office_message_if_applicable(conversation)
+    # Campaign conversations should never receive OOO templates — the campaign itself
+    # serves as the initial outreach, and OOO would be confusing in that context.
+    return if conversation.campaign.present?
+
+    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation)
   end
 
   def transition_conversation_status!(conversation, status, actor:, source:)

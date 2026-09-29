@@ -244,6 +244,69 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
   end
 
+  describe 'the pending-resolution job' do
+    let(:evaluations) { [] }
+
+    before do
+      working_hours!(open: true)
+      account.enable_features!('captain_tasks')
+      account.update!(auto_resolve_after: 60)
+      account.update_columns(settings: account.reload.settings.to_h.merge('captain_auto_resolve_mode' => 'evaluated')) # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    def stale_pending_conversation!
+      conversation = pending_conversation!
+      incoming!(conversation)
+      conversation.update_columns(last_activity_at: 2.hours.ago) # rubocop:disable Rails/SkipsModelValidations
+      conversation
+    end
+
+    def run_resolution_job!(times: 1)
+      times.times { with_events { Captain::InboxPendingConversationsResolutionJob.perform_now(inbox.reload) } }
+    end
+
+    def stub_evaluator(api_result)
+      allow(Captain::ConversationCompletionEvaluator).to receive(:new).and_wrap_original do |method, **kwargs|
+        method.call(**kwargs).tap do |evaluator|
+          allow(evaluator).to receive(:make_api_call) do
+            evaluations << kwargs[:conversation_display_id]
+            api_result
+          end
+        end
+      end
+    end
+
+    it 'e1: hands an unfinished conversation to people once instead of re-evaluating it every run' do
+      conversation = stale_pending_conversation!
+      stub_evaluator({ message: { 'complete' => false, 'reason' => 'Customer question is still open' } })
+
+      run_resolution_job!(times: 3)
+
+      expect_visible_to_people(conversation)
+      expect(evaluations).to eq([conversation.display_id])
+      expect(conversation.messages.where(private: true).pluck(:content)).to eq(['Auto-handoff: Customer question is still open'])
+    end
+
+    it 'e2: hands the conversation to people when the completion check itself fails' do
+      conversation = stale_pending_conversation!
+      stub_evaluator({ error: 'Completion model unavailable' })
+
+      run_resolution_job!(times: 2)
+
+      expect_visible_to_people(conversation)
+      expect(evaluations).to eq([conversation.display_id])
+    end
+
+    it 'still resolves a finished conversation' do
+      conversation = stale_pending_conversation!
+      stub_evaluator({ message: { 'complete' => true, 'reason' => 'Answered' } })
+
+      run_resolution_job!
+
+      expect(conversation.reload.status).to eq('resolved')
+    end
+  end
+
   describe 'accepted Captain rules that stay in place' do
     def run_captain_turn!(conversation, message, response)
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: response)
