@@ -31,8 +31,8 @@ module CaptainFeaturable
   # per-feature 'editor' switch in 2026-01..05 whose stored false never gated
   # anything; it is ignored so no account loses the tools on deploy. The tools
   # stay on until an admin saves the new switch off.
-  TEXT_IMPROVEMENT_FEATURE_KEY = 'editor'.freeze
-  TEXT_IMPROVEMENT_SETTING_KEY = 'text_improvement'.freeze
+  TEXT_IMPROVEMENT_FEATURE_KEY = 'editor'
+  TEXT_IMPROVEMENT_SETTING_KEY = 'text_improvement'
 
   included do
     validate :validate_captain_models, if: :captain_models_validation_required?
