@@ -33,8 +33,8 @@ export const mutations = {
   [types.SET_NOTIFICATIONS]: ($state, data) => {
     data.forEach(notification => {
       // Find an existing notification of the same primary actor (type + id)
-      const existingNotification = Object.values($state.records).find(
-        record => sameNotificationActor(record, notification)
+      const existingNotification = Object.values($state.records).find(record =>
+        sameNotificationActor(record, notification)
       );
       // This is to handle the case where the same notification is received multiple times
       // On reconnect, if there is existing notification of the same primary actor,

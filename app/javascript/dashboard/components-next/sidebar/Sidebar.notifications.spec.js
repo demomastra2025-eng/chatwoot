@@ -197,7 +197,11 @@ describe('Sidebar notifications and phone placement', () => {
   });
 
   it.each([
-    ['desktop rail footer', 1280, '[data-testid="sidebar-rail-footer-actions"]'],
+    [
+      'desktop rail footer',
+      1280,
+      '[data-testid="sidebar-rail-footer-actions"]',
+    ],
     ['mobile menu', 600, 'nav'],
   ])(
     'labels the bell with the notifications panel title in the %s',

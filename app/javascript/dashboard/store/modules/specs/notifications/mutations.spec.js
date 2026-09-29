@@ -81,7 +81,11 @@ describe('#mutations', () => {
     it('still replaces an older notification of the same actor', () => {
       const state = {
         records: {
-          1: { id: 1, primary_actor_type: 'Conversation', primary_actor_id: 42 },
+          1: {
+            id: 1,
+            primary_actor_type: 'Conversation',
+            primary_actor_id: 42,
+          },
         },
       };
       mutations[types.SET_NOTIFICATIONS](state, [

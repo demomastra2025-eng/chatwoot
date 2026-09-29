@@ -367,7 +367,9 @@ describe('#URL Helpers', () => {
           status: 'all',
           communicationThread: true,
         })
-      ).toBe('accounts/1/communication_threads/42?status=all&assignee_type=all');
+      ).toBe(
+        'accounts/1/communication_threads/42?status=all&assignee_type=all'
+      );
     });
 
     it('keeps status=all in the list page urls (back link)', () => {
@@ -380,7 +382,9 @@ describe('#URL Helpers', () => {
           status: 'all',
           communicationThread: true,
         })
-      ).toBe('/app/accounts/1/communication_threads?status=all&assignee_type=all');
+      ).toBe(
+        '/app/accounts/1/communication_threads?status=all&assignee_type=all'
+      );
     });
 
     it('keeps the current status=all route when no explicit status is given', () => {
@@ -392,7 +396,9 @@ describe('#URL Helpers', () => {
 
       expect(
         conversationUrl({ accountId: 1, id: 42, communicationThread: true })
-      ).toBe('accounts/1/communication_threads/42?status=all&assignee_type=all');
+      ).toBe(
+        'accounts/1/communication_threads/42?status=all&assignee_type=all'
+      );
     });
 
     it('still drops statuses that the list does not know', () => {

@@ -1055,23 +1055,20 @@ describe('PhoneWidget', () => {
       it.each([
         ['the AI voice agent handles', aiAgentCall],
         ['nobody here claimed', unclaimedInProgressCall],
-      ])(
-        'does not pop a hidden phone for a call %s',
-        async (_, infoCall) => {
-          settingsState.settings.value = hiddenIn(1);
-          const wrapper = mountComponent();
-          await flushPromises();
+      ])('does not pop a hidden phone for a call %s', async (_, infoCall) => {
+        settingsState.settings.value = hiddenIn(1);
+        const wrapper = mountComponent();
+        await flushPromises();
 
-          setIncomingCalls([infoCall()]);
-          await flushPromises();
-          expect(widgetShown(wrapper)).toBe(false);
+        setIncomingCalls([infoCall()]);
+        await flushPromises();
+        expect(widgetShown(wrapper)).toBe(false);
 
-          // The employee's own ringing call still pops the phone.
-          setIncomingCalls([infoCall(), incomingCall()]);
-          await flushPromises();
-          expect(widgetShown(wrapper)).toBe(true);
-        }
-      );
+        // The employee's own ringing call still pops the phone.
+        setIncomingCalls([infoCall(), incomingCall()]);
+        await flushPromises();
+        expect(widgetShown(wrapper)).toBe(true);
+      });
 
       it.each([
         ['the AI voice agent handles', aiAgentCall],
