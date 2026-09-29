@@ -472,7 +472,9 @@ onUnmounted(() => {
           color="slate"
           size="sm"
           class="shrink-0"
-          :icon="isExpanded ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
+          :class="{ '!bg-n-alpha-2': isExpanded }"
+          icon="i-fluent-dialpad-20-regular"
+          :aria-expanded="isExpanded"
           :aria-label="
             isExpanded ? t('PHONE_WIDGET.MINIMIZE') : t('PHONE_WIDGET.EXPAND')
           "

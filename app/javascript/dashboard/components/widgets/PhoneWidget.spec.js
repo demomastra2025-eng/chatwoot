@@ -331,27 +331,33 @@ describe('PhoneWidget', () => {
     });
   });
 
-  it('switches diagonal expand and collapse icons with the keypad', async () => {
+  it('opens and closes the keypad with a dial-pad icon button', async () => {
     const wrapper = mountComponent();
     await flushPromises();
 
     const toggle = wrapper.get('[data-testid="phone-widget-expand"]');
-    expect(toggle.find('.i-lucide-maximize-2').exists()).toBe(true);
+    expect(toggle.find('.i-fluent-dialpad-20-regular').exists()).toBe(true);
+    expect(toggle.find('.i-lucide-maximize-2').exists()).toBe(false);
     expect(toggle.attributes('aria-label')).toBe('PHONE_WIDGET.EXPAND');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
     expect(wrapper.find('[data-testid="phone-widget-expanded"]').exists()).toBe(
       false
     );
 
     await toggle.trigger('click');
-    expect(toggle.find('.i-lucide-minimize-2').exists()).toBe(true);
+    expect(toggle.find('.i-fluent-dialpad-20-regular').exists()).toBe(true);
+    expect(toggle.find('.i-lucide-minimize-2').exists()).toBe(false);
     expect(toggle.attributes('aria-label')).toBe('PHONE_WIDGET.MINIMIZE');
+    expect(toggle.attributes('aria-expanded')).toBe('true');
+    expect(toggle.classes()).toContain('!bg-n-alpha-2');
     expect(wrapper.find('[data-testid="phone-widget-expanded"]').exists()).toBe(
       true
     );
 
     await toggle.trigger('click');
-    expect(toggle.find('.i-lucide-maximize-2').exists()).toBe(true);
     expect(toggle.attributes('aria-label')).toBe('PHONE_WIDGET.EXPAND');
+    expect(toggle.attributes('aria-expanded')).toBe('false');
+    expect(toggle.classes()).not.toContain('!bg-n-alpha-2');
     expect(wrapper.find('[data-testid="phone-widget-expanded"]').exists()).toBe(
       false
     );
