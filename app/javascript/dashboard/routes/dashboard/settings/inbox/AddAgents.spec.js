@@ -255,6 +255,46 @@ describe('AddAgents', () => {
     );
   });
 
+  it('shows a localized employee error instead of the raw API message', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          configuration_version: 'sipuni-configuration-v1',
+          channel: { provider_kind: 'sipuni' },
+          employees: [],
+        },
+      },
+    });
+    updateVirtualPbxChannelMock.mockResolvedValue({
+      payload: {
+        valid: false,
+        errors: [
+          {
+            code: 'profile_user_not_in_inbox',
+            message:
+              'profiles[0].user_id must be an inbox collaborator before SIP assignment',
+          },
+        ],
+      },
+    });
+    const wrapper = buildWrapper({
+      agents: [{ id: 7, name: 'Agent One' }],
+    });
+    await flushPromises();
+
+    wrapper.vm.selectedAgentIds = [7];
+    await wrapper.vm.$nextTick();
+    wrapper.vm.virtualPbxProfiles[7].internalExtension = '207';
+
+    await wrapper.vm.addAgents();
+    await flushPromises();
+
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.PROFILE_ROW'
+    );
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+  });
+
   it('uses the create-flow provider while status is unavailable and rejects an empty profile', async () => {
     const wrapper = buildWrapper({
       agents: [{ id: 7, name: 'Agent One' }],

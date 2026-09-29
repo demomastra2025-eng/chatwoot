@@ -12,6 +12,11 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import TextArea from 'next/textarea/TextArea.vue';
 import WhatsappReauthorize from '../channels/whatsapp/Reauthorize.vue';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
+import {
+  virtualPbxErrorText,
+  virtualPbxErrorsText,
+  virtualPbxRequestErrorText,
+} from 'dashboard/api/channel/voice/virtualPbxErrors';
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
@@ -577,8 +582,14 @@ export default {
           );
       }
     },
+    virtualPbxI18n() {
+      return { t: this.$t.bind(this), te: this.$te?.bind(this) };
+    },
     formatVirtualPbxMessages(messages) {
-      return (messages || []).map(item => item.message || item.code).join(', ');
+      return virtualPbxErrorsText(messages, this.virtualPbxI18n());
+    },
+    virtualPbxErrorLabel(error) {
+      return virtualPbxErrorText(error, this.virtualPbxI18n());
     },
     isValidVirtualPbxPort(value) {
       const port = String(value || '').trim();
@@ -593,10 +604,11 @@ export default {
     },
     handleVirtualPbxError(error) {
       useAlert(
-        error?.response?.data?.message ||
-          error?.response?.data?.error ||
-          error?.message ||
+        virtualPbxRequestErrorText(
+          error,
+          this.virtualPbxI18n(),
           this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_ERROR')
+        )
       );
     },
     async loadVirtualPbxStatus() {
@@ -617,11 +629,11 @@ export default {
         await this.loadVirtualPbxProvisioningRuns();
       } catch (error) {
         this.virtualPbxStatusPayload = null;
-        this.virtualPbxLoadError =
-          error?.response?.data?.message ||
-          error?.response?.data?.error ||
-          error?.message ||
-          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.LOAD_ERROR');
+        this.virtualPbxLoadError = virtualPbxRequestErrorText(
+          error,
+          this.virtualPbxI18n(),
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.LOAD_ERROR')
+        );
       } finally {
         this.isLoadingVirtualPbxStatus = false;
       }
@@ -707,8 +719,7 @@ export default {
 
         if (payload.errors?.length) {
           useAlert(
-            payload.errors?.[0]?.message ||
-              payload.errors?.[0]?.code ||
+            this.formatVirtualPbxMessages(payload.errors) ||
               this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BLOCKED')
           );
           return;
@@ -1506,7 +1517,7 @@ export default {
           >
             <ul class="list-disc pl-5">
               <li v-for="error in virtualPbxErrors" :key="error.code">
-                {{ error.message || error.code }}
+                {{ virtualPbxErrorLabel(error) }}
               </li>
             </ul>
           </div>

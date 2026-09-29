@@ -5,6 +5,10 @@ import { useAlert } from 'dashboard/composables';
 
 import InboxMembersAPI from '../../../../api/inboxMembers';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
+import {
+  virtualPbxErrorsText,
+  virtualPbxRequestErrorText,
+} from 'dashboard/api/channel/voice/virtualPbxErrors';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import router from '../../../index';
@@ -305,8 +309,11 @@ export default {
           return payload;
         });
     },
+    virtualPbxI18n() {
+      return { t: this.$t.bind(this), te: this.$te?.bind(this) };
+    },
     formatVirtualPbxErrors(errors) {
-      return errors.map(error => error.message || error.code).join(', ');
+      return virtualPbxErrorsText(errors, this.virtualPbxI18n());
     },
     async updateVirtualPbxProfiles(inboxId) {
       const response = await VoiceAPI.updateVirtualPbxChannel(
@@ -359,7 +366,15 @@ export default {
 
         await (this.$router || router).replace(this.finishRoute());
       } catch (error) {
-        useAlert(error.message);
+        useAlert(
+          error.response
+            ? virtualPbxRequestErrorText(
+                error,
+                this.virtualPbxI18n(),
+                this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_ERROR')
+              )
+            : error.message
+        );
       } finally {
         this.isCreating = false;
       }

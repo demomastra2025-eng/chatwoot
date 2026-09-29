@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { useAlert } from 'dashboard/composables';
 
 import Voice from './Voice.vue';
 
@@ -12,11 +13,19 @@ const routerReplaceMock = vi.hoisted(() => vi.fn());
 const routerPushMock = vi.hoisted(() => vi.fn());
 const createVirtualPbxChannelMock = vi.hoisted(() => vi.fn());
 
-vi.mock('vue-i18n', () => ({
-  useI18n: () => ({
-    t: key => key,
-  }),
-}));
+vi.mock('vue-i18n', async () => {
+  const { default: en } = await import(
+    'dashboard/i18n/locale/en/inboxMgmt.json'
+  );
+  const lookup = key => key.split('.').reduce((node, part) => node?.[part], en);
+
+  return {
+    useI18n: () => ({
+      t: (key, params) => (params ? `${key} ${JSON.stringify(params)}` : key),
+      te: key => typeof lookup(key) === 'string',
+    }),
+  };
+});
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeMock,
@@ -72,6 +81,7 @@ describe('Voice channel setup', () => {
     routerReplaceMock.mockReset();
     routerPushMock.mockReset();
     createVirtualPbxChannelMock.mockReset();
+    useAlert.mockReset();
     dispatchMock.mockResolvedValue({ id: 101 });
     routeMock.query = { provider: 'wazo' };
   });
@@ -456,6 +466,88 @@ describe('Voice channel setup', () => {
     expect(payload).not.toHaveProperty('profiles');
     expect(payload.connection).not.toHaveProperty('username');
     expect(payload.connection).not.toHaveProperty('password');
+  });
+
+  it('names the channel that already holds the number instead of a generic failure', async () => {
+    routeMock.query = { provider: 'sipuni' };
+    const conflict = { inbox_id: 5248, inbox_name: 'Sip', same_account: true };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: {
+        valid: false,
+        errors: [
+          {
+            code: 'number_ref_taken',
+            message: 'Generated number_ref is already used by another channel',
+            conflict,
+          },
+          {
+            code: 'display_phone_number_taken',
+            message:
+              'display_phone_number is already used by another voice channel',
+            conflict,
+          },
+        ],
+      },
+    });
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Sip');
+    await inputs[1].setValue('+7 700 000 1001');
+    await inputs[2].setValue('ats01.kz.sipuni.com');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(useAlert).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.NUMBER_TAKEN_BY_INBOX {"name":"Sip","id":5248}'
+    );
+    expect(useAlert).not.toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE'
+    );
+    expect(routerReplaceMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the API validation error when the create request is rejected', async () => {
+    routeMock.query = { provider: 'sipuni' };
+    createVirtualPbxChannelMock.mockRejectedValue({
+      message: 'Request failed with status code 422',
+      response: {
+        status: 422,
+        data: {
+          code: 'VALIDATION_ERROR',
+          error: 'Phone number has already been taken',
+        },
+      },
+    });
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Sip');
+    await inputs[1].setValue('+7 700 000 1001');
+    await inputs[2].setValue('ats01.kz.sipuni.com');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(useAlert).toHaveBeenCalledWith(
+      'Phone number has already been taken'
+    );
+  });
+
+  it('keeps the generic failure when the API gives no reason', async () => {
+    routeMock.query = { provider: 'sipuni' };
+    createVirtualPbxChannelMock.mockRejectedValue(new Error('Network Error'));
+    const wrapper = buildWrapper();
+    const inputs = wrapper.findAll('input');
+
+    await inputs[0].setValue('Sip');
+    await inputs[1].setValue('+7 700 000 1001');
+    await inputs[2].setValue('ats01.kz.sipuni.com');
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(useAlert).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE'
+    );
   });
 
   it('points employee SIP assignment to settings instead of create', () => {

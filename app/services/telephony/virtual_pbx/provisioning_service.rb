@@ -775,11 +775,63 @@ class Telephony::VirtualPbx::ProvisioningService
       errors << error('connection_host_required', 'connection.host is required') if payload.dig(:connection, :host).blank?
       errors << connection_port_invalid_error if payload.dig(:connection, :port).blank?
       errors.concat(beeline_connection_errors(payload)) if payload[:provider_kind] == 'beeline'
-      if check_duplicate_number_ref && number_ref_taken?(payload, exclude_inbox_id: exclude_inbox_id)
-        errors << error('number_ref_taken', 'Generated number_ref is already used by another channel')
-      end
+      errors.concat(number_conflict_errors(payload, check_duplicate_number_ref: check_duplicate_number_ref, exclude_inbox_id: exclude_inbox_id))
       errors.concat(profile_errors(payload[:profiles], inbox_id: profile_inbox_id)) if require_profiles
     end
+  end
+
+  # Both checks name the channel that already holds the number so the UI can say which one it is.
+  def number_conflict_errors(payload, check_duplicate_number_ref:, exclude_inbox_id:)
+    [].tap do |errors|
+      ref_conflict = number_ref_conflict(payload, exclude_inbox_id: exclude_inbox_id) if check_duplicate_number_ref
+      errors << error('number_ref_taken', 'Generated number_ref is already used by another channel', conflict: ref_conflict) if ref_conflict
+      display_conflict = display_phone_number_conflict(payload[:display_phone_number], exclude_inbox_id: exclude_inbox_id)
+      if display_conflict
+        errors << error('display_phone_number_taken', 'display_phone_number is already used by another voice channel',
+                        conflict: display_conflict)
+      end
+    end
+  end
+
+  def number_ref_conflict(payload, exclude_inbox_id: nil)
+    number_ref = generated_refs(payload)[:number_ref]
+    return if number_ref.blank?
+
+    scope = account.telephony_number_bindings.where(number_ref: number_ref)
+    scope = scope.where.not(inbox_id: exclude_inbox_id) if exclude_inbox_id.present?
+    binding = scope.order(:id).first
+    return if binding.blank?
+
+    number_conflict_payload(account_id: binding.account_id, inbox: Inbox.find_by(id: binding.inbox_id))
+  end
+
+  # Channel::Voice phone numbers are unique across all accounts.
+  def display_phone_number_conflict(display_phone_number, exclude_inbox_id: nil)
+    return if display_phone_number.blank?
+
+    scope = Channel::Voice.where(phone_number: display_phone_number)
+    own_channel_id = own_voice_channel_id(exclude_inbox_id)
+    scope = scope.where.not(id: own_channel_id) if own_channel_id.present?
+    channel = scope.order(:id).first
+    return if channel.blank?
+
+    number_conflict_payload(account_id: channel.account_id, inbox: Inbox.find_by(channel_type: 'Channel::Voice', channel_id: channel.id))
+  end
+
+  def own_voice_channel_id(inbox_id)
+    return if inbox_id.blank?
+
+    account.inboxes.where(id: inbox_id, channel_type: 'Channel::Voice').pick(:channel_id)
+  end
+
+  # Another account's channel is identified by its inbox id only; its name stays private.
+  def number_conflict_payload(account_id:, inbox:)
+    same_account = account_id == account.id
+    {
+      inbox_id: inbox&.id,
+      inbox_name: same_account ? inbox&.name : nil,
+      same_account: same_account
+    }.compact
   end
 
   def connection_port_invalid_error
@@ -1399,15 +1451,6 @@ class Telephony::VirtualPbx::ProvisioningService
     profile[:profile_kind].to_s == Telephony::SipProfile::PROFILE_KIND_VOICE_AGENT
   end
 
-  def number_ref_taken?(payload, exclude_inbox_id: nil)
-    number_ref = generated_refs(payload)[:number_ref]
-    return false if number_ref.blank?
-
-    scope = account.telephony_number_bindings.where(number_ref: number_ref)
-    scope = scope.where.not(inbox_id: exclude_inbox_id) if exclude_inbox_id.present?
-    scope.exists?
-  end
-
   def active_calls_present?(inbox_id)
     Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
   end
@@ -1637,8 +1680,8 @@ class Telephony::VirtualPbx::ProvisioningService
     { code: code, description: description }.merge(metadata).compact
   end
 
-  def error(code, message)
-    { code: code, message: message }
+  def error(code, message, **details)
+    { code: code, message: message }.merge(details.compact)
   end
 
   def warning(code, message)

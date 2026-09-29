@@ -1,6 +1,11 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import enInboxMgmt from 'dashboard/i18n/locale/en/inboxMgmt.json';
 
 import ConfigurationPage from './ConfigurationPage.vue';
+
+const enTe = key =>
+  typeof key.split('.').reduce((node, part) => node?.[part], enInboxMgmt) ===
+  'string';
 
 const alertMock = vi.hoisted(() => vi.fn());
 const getVirtualPbxStatusMock = vi.hoisted(() => vi.fn());
@@ -104,7 +109,7 @@ const statusPayload = {
   },
 };
 
-const buildWrapper = ({ inbox = baseInbox } = {}) =>
+const buildWrapper = ({ inbox = baseInbox, te } = {}) =>
   shallowMount(ConfigurationPage, {
     props: {
       inbox,
@@ -112,6 +117,7 @@ const buildWrapper = ({ inbox = baseInbox } = {}) =>
     global: {
       mocks: {
         $t: key => key,
+        ...(te ? { $te: te } : {}),
         $store: {
           dispatch: storeDispatchMock,
         },
@@ -1065,5 +1071,91 @@ describe('ConfigurationPage WhatsApp coexistence synchronization', () => {
     expect(
       wrapper.find('[data-testid="whatsapp-coexistence-sync-recover"]').exists()
     ).toBe(false);
+  });
+});
+
+describe('ConfigurationPage Virtual PBX save errors', () => {
+  beforeEach(() => {
+    alertMock.mockReset();
+    getVirtualPbxStatusMock.mockReset();
+    getVirtualPbxProvisioningRunsMock.mockReset();
+    updateVirtualPbxChannelMock.mockReset();
+    storeDispatchMock.mockReset();
+    getVirtualPbxStatusMock.mockResolvedValue(statusPayload);
+    getVirtualPbxProvisioningRunsMock.mockResolvedValue({
+      payload: { provisioning_runs: [] },
+    });
+    storeDispatchMock.mockResolvedValue({ data: { payload: [] } });
+  });
+
+  it('names the channel that already uses the number', async () => {
+    updateVirtualPbxChannelMock.mockResolvedValue({
+      payload: {
+        valid: false,
+        errors: [
+          {
+            code: 'display_phone_number_taken',
+            message:
+              'display_phone_number is already used by another voice channel',
+            conflict: { inbox_id: 5248, inbox_name: 'Sip', same_account: true },
+          },
+        ],
+      },
+    });
+    const wrapper = buildWrapper({ te: enTe });
+    await flushPromises();
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.NUMBER_TAKEN_BY_INBOX'
+    );
+    expect(alertMock).not.toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_SUCCESS'
+    );
+  });
+
+  it('explains a stale configuration conflict', async () => {
+    updateVirtualPbxChannelMock.mockRejectedValue({
+      message: 'Request failed with status code 409',
+      response: {
+        status: 409,
+        data: {
+          code: 'VIRTUAL_PBX_CONFIGURATION_STALE',
+          error: 'Virtual PBX configuration changed; reload it before saving',
+        },
+      },
+    });
+    const wrapper = buildWrapper({ te: enTe });
+    await flushPromises();
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.VIRTUAL_PBX_CONFIGURATION_STALE'
+    );
+  });
+
+  it('localizes provisioning errors listed in the status panel', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...statusPayload.payload,
+        errors: [
+          {
+            code: 'beeline_outbound_proxy_required',
+            message: 'raw-proxy-message',
+          },
+        ],
+      },
+    });
+    const wrapper = buildWrapper({ te: enTe });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.BEELINE_OUTBOUND_PROXY_REQUIRED'
+    );
+    expect(wrapper.text()).not.toContain('raw-proxy-message');
   });
 });

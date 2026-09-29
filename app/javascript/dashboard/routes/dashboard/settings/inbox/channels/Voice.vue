@@ -9,6 +9,10 @@ import { isPhoneE164 } from 'shared/helpers/Validators';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
+import {
+  virtualPbxErrorsText,
+  virtualPbxRequestErrorText,
+} from 'dashboard/api/channel/voice/virtualPbxErrors';
 
 import PageHeader from '../../SettingsSubPageHeader.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -16,7 +20,7 @@ import NextButton from 'dashboard/components-next/button/Button.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import ChannelSelector from 'dashboard/components/ChannelSelector.vue';
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const store = useStore();
 const route = useRoute();
 const router = useRouter();
@@ -392,16 +396,16 @@ function getVirtualPbxPayload() {
 
 function provisioningErrorMessage(response) {
   const errors = response?.payload?.errors || response?.errors || [];
-  if (errors.length) {
-    return errors.map(error => error.message || error.code).join(', ');
-  }
-
-  return '';
+  return virtualPbxErrorsText(errors, { t, te });
 }
 
 function handleCreateError(error) {
   useAlert(
-    error.response?.data?.message || t('INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE')
+    virtualPbxRequestErrorText(
+      error,
+      { t, te },
+      t('INBOX_MGMT.ADD.VOICE.API.ERROR_MESSAGE')
+    )
   );
 }
 

@@ -1947,6 +1947,79 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(first_binding.reload.number_ref).not_to eq(second_binding.number_ref)
   end
 
+  it 'names the channel of the same account that already holds the number' do
+    post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    first_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+
+    expect do
+      post base_path,
+           params: valid_create_payload.merge(channel_name: 'Sipuni again', dry_run: false, remote_commit: false),
+           headers: headers,
+           as: :json
+    end.not_to(change { local_record_counts })
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('operation' => 'create', 'valid' => false)
+    conflict = { 'inbox_id' => first_inbox_id, 'inbox_name' => 'Sipuni external line', 'same_account' => true }
+    expect(payload.fetch('errors')).to include(
+      a_hash_including('code' => 'number_ref_taken', 'conflict' => conflict),
+      a_hash_including('code' => 'display_phone_number_taken', 'conflict' => conflict)
+    )
+  end
+
+  it 'reports a number connected in another account as a validation error with only that channel id' do
+    other_channel = create(:channel_voice, :sipuni, account: create(:account), phone_number: valid_create_payload[:display_phone_number])
+    other_channel.inbox.update!(name: 'Other clinic private line')
+
+    expect do
+      post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    end.not_to(change { local_record_counts })
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('operation' => 'create', 'valid' => false)
+    taken = payload.fetch('errors').find { |error| error['code'] == 'display_phone_number_taken' }
+    expect(taken.fetch('conflict')).to eq('inbox_id' => other_channel.inbox.id, 'same_account' => false)
+    expect(payload.to_json).not_to include('Other clinic private line')
+  end
+
+  it 'rejects moving a channel onto a display number used by another channel' do
+    post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    first_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    other_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+15558671009')
+
+    put_with_configuration_version "#{base_path}/#{first_inbox_id}",
+                                   params: { dry_run: false, remote_commit: false, display_phone_number: '+15558671009' },
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('operation' => 'update', 'valid' => false)
+    expect(payload.fetch('errors')).to include(
+      a_hash_including(
+        'code' => 'display_phone_number_taken',
+        'conflict' => { 'inbox_id' => other_channel.inbox.id, 'inbox_name' => other_channel.inbox.name, 'same_account' => true }
+      )
+    )
+    expect(Inbox.find(first_inbox_id).channel.phone_number).to eq(valid_create_payload[:display_phone_number])
+  end
+
+  it 'lets a channel keep its own display number on update' do
+    post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    first_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+
+    put_with_configuration_version "#{base_path}/#{first_inbox_id}",
+                                   params: { dry_run: false, remote_commit: false, channel_name: 'Renamed line' },
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to include('operation' => 'update', 'valid' => true)
+    expect(Inbox.find(first_inbox_id).name).to eq('Renamed line')
+  end
+
   it 'blocks remote Wazo deletion when the API target is not configured' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'wazo',
