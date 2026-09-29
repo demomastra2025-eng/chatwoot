@@ -228,9 +228,11 @@ export default {
     showWhatsappTemplates() {
       if (this.isCommunicationCallReplyAction) return false;
       // We support templates for API channels if someone updates templates manually via API
-      // That's why we don't explicitly check for channel type here
+      // That's why we don't explicitly check for channel type here.
+      // Same list as the picker: templates an admin hid from conversations
+      // do not count.
       const templates = this.$store.getters[
-        'inboxes/getFilteredWhatsAppTemplates'
+        'inboxes/getConversationWhatsAppTemplates'
       ](this.inboxId);
       return !!(templates && templates.length) && !this.isPrivate;
     },
