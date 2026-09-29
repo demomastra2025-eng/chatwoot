@@ -76,21 +76,23 @@ const toggleConversationLayout = () => {
       'border-b border-n-strong': hasAppliedFiltersOrActiveFolders,
     }"
   >
-    <div class="flex min-w-0 flex-1 items-center">
-      <ConversationStatusFilter
-        v-if="showStatusFilter"
-        :model-value="activeStatus"
-        :show-ai="showAiStatus"
-        :title="pageTitle"
-        @update:model-value="emit('statusFilterChange', $event)"
-      />
+    <!-- The page title (inbox, tag, team, folder...) always stays visible as
+         the list heading; the status selector sits next to it. -->
+    <div class="flex min-w-0 flex-1 items-center gap-1">
       <h1
-        v-else
-        class="truncate text-base font-medium text-n-slate-12"
+        class="min-w-0 truncate text-base font-medium text-n-slate-12"
         :title="pageTitle"
+        data-test-id="chat-list-page-title"
       >
         {{ pageTitle }}
       </h1>
+      <div v-if="showStatusFilter" class="shrink-0">
+        <ConversationStatusFilter
+          :model-value="activeStatus"
+          :show-ai="showAiStatus"
+          @update:model-value="emit('statusFilterChange', $event)"
+        />
+      </div>
     </div>
     <div class="flex shrink-0 items-center gap-1">
       <NextButton
