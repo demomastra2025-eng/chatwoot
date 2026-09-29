@@ -142,6 +142,17 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
 
     after { Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)) }
 
+    def staff_reply_in_sibling!(count)
+      count.times do |index|
+        create(:message, conversation: sibling, account: account, inbox: sibling.inbox, message_type: :outgoing,
+                         sender: agent, private: false, content: "agent reply #{index}")
+      end
+    end
+
+    def return_sibling_to!(status)
+      Conversations::StatusTransitionService.new(conversation: sibling, params: { status: status }, actor: agent, source: 'api').perform
+    end
+
     it 'records a staff note after a staff public reply in the sibling took the thread over' do
       captured_fence = fence
       create(:message, conversation: sibling, account: account, inbox: sibling.inbox, message_type: :outgoing,
@@ -163,6 +174,119 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
       expect(conversation.reload).to be_pending
       expect(conversation.messages.outgoing).to be_empty
     end
+
+    # Each staff public reply moves the thread generation again while this
+    # Captain conversation stays pending.
+    it 'records one staff note after several staff public replies in the sibling' do
+      captured_fence = fence
+      staff_reply_in_sibling!(3)
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 3)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.reload).to be_pending
+      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+    end
+
+    # Transition ids are global: a sibling transition before the fence can have
+    # an id above this conversation's status epoch.
+    it 'ignores a sibling return to Captain from before the fence' do
+      %w[pending open].each { |status| return_sibling_to!(status) }
+      captured_fence = fence
+      expect(sibling.status_transitions.maximum(:id)).to be > captured_fence[:status_transition_id]
+      staff_reply_in_sibling!(2)
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 2)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.reload).to be_pending
+      expect(conversation.messages.outgoing.pluck(:private)).to eq([true])
+    end
+
+    it 'does not leave a late note when the sibling returned to Captain after staff replies' do
+      captured_fence = fence
+      staff_reply_in_sibling!(2)
+      return_sibling_to!('pending')
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 3)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.reload).to be_pending
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'does not leave a late note when staff resolved the sibling after replying' do
+      captured_fence = fence
+      staff_reply_in_sibling!(1)
+      return_sibling_to!('resolved')
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 2)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    # Without a status epoch a release cannot be ruled out.
+    it 'accepts only a single takeover step for a fence without a status epoch' do
+      captured_fence = fence.except(:status_transition_id)
+      staff_reply_in_sibling!(2)
+
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.messages.outgoing).to be_empty
+    end
+  end
+
+  context 'when another Captain channel of the same communication thread is pending' do
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:thread) { create(:communication_thread, account: account, contact: conversation.contact) }
+    let(:other_inbox) { create(:inbox, account: account) }
+    let(:captain_sibling) { create(:conversation, account: account, contact: conversation.contact, inbox: other_inbox, status: :pending) }
+
+    before do
+      create(:captain_inbox, inbox: other_inbox, captain_assistant: create(:captain_assistant, account: account, usage_mode: 'external_agent'))
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      [conversation, captain_sibling].each do |candidate|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+        candidate.association(:communication_thread_conversation).reset
+        candidate.association(:communication_thread).reset
+      end
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+    end
+
+    after do
+      [conversation, captain_sibling].each do |candidate|
+        Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: candidate.id))
+      end
+    end
+
+    it 'records one staff note after two staff public replies in this conversation' do
+      captured_fence = fence
+      2.times do |index|
+        create(:message, conversation: conversation, account: account, inbox: conversation.inbox, message_type: :outgoing,
+                         sender: agent, private: false, content: "agent reply #{index}")
+      end
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 2)
+      expect(captain_sibling.reload).to be_pending
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+    end
+  end
+
+  it 'does not leave a late note after staff replies around a return to Captain' do
+    agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, user: agent, inbox: conversation.inbox)
+    captured_fence = fence
+    reply = lambda do
+      create(:message, conversation: conversation, account: account, inbox: conversation.inbox, message_type: :outgoing,
+                       sender: agent, private: false, content: 'agent reply')
+    end
+    reply.call
+    Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'pending' }, actor: agent, source: 'api').perform
+    reply.call
+    conversation.reload
+
+    expect(conversation.status).to eq('open')
+    expect(conversation.current_captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 3)
+    expect(described_class.new(assistant: assistant, conversation: conversation, fence: captured_fence).perform).to eq(:stale)
+    expect(conversation.messages.outgoing.where(private: true)).to be_empty
   end
 
   it 'does not leave a late note after the conversation returned to Captain and was opened again' do

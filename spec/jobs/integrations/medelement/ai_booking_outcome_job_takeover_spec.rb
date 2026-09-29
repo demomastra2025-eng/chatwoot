@@ -139,5 +139,24 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
       expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
     end
+
+    it 'leaves one staff note after several staff replies while the Captain conversation stays pending' do
+      bind_failed_provider_status!
+      capture_booking_fence!
+      fence_generation = command.reload.execution_state.dig('ai_booking_response_fence', 'control_generation').to_i
+      2.times do |index|
+        create(:message, conversation: sibling, account: account, inbox: sibling.inbox, message_type: :outgoing,
+                         sender: agent, private: false, content: "agent reply #{index}")
+      end
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(thread.reload.captain_control_generation.to_i).to eq(fence_generation + 2)
+      expect(conversation.reload).to be_pending
+      expect(staff_notes.count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+      expect(command.reload.execution_state['ai_booking_staff_note_id']).to eq(staff_notes.first.id)
+    end
   end
 end
