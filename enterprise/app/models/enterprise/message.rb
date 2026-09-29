@@ -3,12 +3,24 @@ module Enterprise::Message
 
   def activate_captain_human_control_for_human_response
     return unless captain_public_human_reply?
+    return unless captain_inbox_involved?
 
     conversation.activate_captain_human_control!(source: 'agent_reply', actor: sender) do |generation|
       services = captain_takeover_cancellation_services
       @captain_takeover_cancellations = capture_captain_takeover_cancellations(services, generation)
       services.any?
     end
+  end
+
+  # Most public replies never involve Captain; they must not lock the
+  # conversation. Plain SQL keeps the conversation's thread association
+  # unloaded for the create callbacks that run after this one.
+  def captain_inbox_involved?
+    thread_ids = ::CommunicationThreadConversation.where(conversation_id: conversation.id).select(:communication_thread_id)
+    thread_conversation_ids = ::CommunicationThreadConversation.where(communication_thread_id: thread_ids).select(:conversation_id)
+    thread_inbox_ids = ::Conversation.where(account_id: conversation.account_id, id: thread_conversation_ids).select(:inbox_id)
+
+    ::CaptainInbox.where(inbox_id: conversation.inbox_id).or(::CaptainInbox.where(inbox_id: thread_inbox_ids)).exists?
   end
 
   def mark_pending_conversation_as_open_for_human_response
@@ -32,7 +44,8 @@ module Enterprise::Message
     thread = conversation.communication_thread
     conversations = thread ? thread.conversations.where(account_id: conversation.account_id).pending : [conversation].select(&:pending?)
     conversations.filter_map do |candidate|
-      assistant = candidate.inbox.captain_assistant
+      # Look the assistant up by inbox: the caller's cached inbox may predate its Captain link.
+      assistant = ::CaptainInbox.find_by(inbox_id: candidate.inbox_id)&.captain_assistant
       next unless assistant&.account_id == conversation.account_id
 
       Captain::Conversation::ResponseCancellationService.new(conversation: candidate, assistant: assistant, actor: sender)

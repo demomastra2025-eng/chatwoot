@@ -63,10 +63,19 @@ CAPTAIN_CONTROL_SPECS = (
     "spec/models/conversation_spec.rb",
     "spec/enterprise/models/message_spec.rb",
 )
+# The Captain takeover callback runs before every public reply in every inbox,
+# so its changes also run the reply paths that rely on the caller's cached
+# conversation inbox, channel and communication thread.
+MESSAGE_CALLBACK_SPECS = CAPTAIN_CONTROL_SPECS + (
+    "spec/listeners/action_cable_listener_spec.rb",
+    "spec/listeners/whatsapp_typing_listener_spec.rb",
+    "spec/services/messages/update_content_service_spec.rb",
+    "spec/services/whatsapp_web/send_on_whatsapp_web_service_spec.rb",
+)
 COMPANION_SPECS = {
     "enterprise/app/services/captain/conversation/": CAPTAIN_CONTROL_SPECS,
     "enterprise/app/models/enterprise/conversation.rb": CAPTAIN_CONTROL_SPECS,
-    "enterprise/app/models/enterprise/message.rb": CAPTAIN_CONTROL_SPECS,
+    "enterprise/app/models/enterprise/message.rb": MESSAGE_CALLBACK_SPECS,
 }
 DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"

@@ -131,17 +131,33 @@ class Captain::Conversation::ControlService
   def with_locked_conversation_preserving_changes
     pending_attributes = conversation.attributes.slice(*conversation.changed_attribute_names_to_save.excluding('status'))
     conversation.restore_attributes
-    conversation.with_lock do
+    conversation.transaction do
+      lock_preserving_associations!(conversation)
       @control_owner = nil
       conversation.assign_attributes(pending_attributes)
       yield
     end
   end
 
-  def with_control_owner_lock(&)
+  def with_control_owner_lock
     return yield if control_owner.equal?(conversation)
 
-    control_owner.with_lock(&)
+    control_owner.transaction do
+      lock_preserving_associations!(control_owner)
+      yield
+    end
+  end
+
+  # Row lock with fresh column values, like #lock!, without #reload: a reload
+  # swaps the record's association cache, and callers such as a Message
+  # before_create callback keep using the cached inbox, channel and thread.
+  def lock_preserving_associations!(record)
+    raise ActiveRecord::ActiveRecordError, 'Locking a record with unpersisted changes is not supported' if record.has_changes_to_save?
+
+    locked = record.class.unscoped.lock.find(record.id)
+    stale = locked.attributes.reject { |name, value| record[name] == value }
+    stale.each { |name, value| record[name] = value }
+    record.clear_attribute_changes(stale.keys)
   end
 
   def apply_handoff_under_lock(status_reason:, actor:, source:, fence:)

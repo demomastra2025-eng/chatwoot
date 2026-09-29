@@ -52,19 +52,25 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(thread.reload.captain_control_generation).to eq(0)
   end
 
-  it 'locks the conversation before the thread owner during handoff' do
-    lock_order = []
-    allow(second_conversation).to receive(:captain_control_owner).and_return(thread)
-    allow(second_conversation).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
-      lock_order << :conversation
-      method.call(*args, **kwargs, &block)
-    end
-    allow(thread).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
-      lock_order << :owner
-      method.call(*args, **kwargs, &block)
-    end
+  # Row locks taken with SELECT ... FOR UPDATE, in order: the control service
+  # locks rows without #with_lock so callers keep their cached associations.
+  def row_lock_order(&)
+    order = []
+    collect = lambda do |*, payload|
+      sql = payload[:sql].to_s
+      next unless sql.include?('FOR UPDATE')
 
-    second_conversation.bot_handoff!(fence: { control_generation: thread.captain_control_generation })
+      order << :conversation if sql.include?('FROM "conversations"')
+      order << :owner if sql.include?('FROM "communication_threads"')
+    end
+    ActiveSupport::Notifications.subscribed(collect, 'sql.active_record', &)
+    order
+  end
+
+  it 'locks the conversation before the thread owner during handoff' do
+    allow(second_conversation).to receive(:captain_control_owner).and_return(thread)
+
+    lock_order = row_lock_order { second_conversation.bot_handoff!(fence: { control_generation: thread.captain_control_generation }) }
 
     expect(lock_order).to eq([:conversation, :owner, :conversation])
   end
@@ -86,18 +92,10 @@ RSpec.describe Captain::Conversation::ControlService do
   end
 
   it 'locks the conversation before the thread owner while capturing an employee takeover' do
-    lock_order = []
     allow(second_conversation).to receive(:captain_control_owner).and_return(thread)
-    allow(second_conversation).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
-      lock_order << :conversation
-      method.call(*args, **kwargs, &block)
-    end
-    allow(thread).to receive(:with_lock).and_wrap_original do |method, *args, **kwargs, &block|
-      lock_order << :owner
-      method.call(*args, **kwargs, &block)
-    end
 
-    second_conversation.activate_captain_human_control!(source: 'agent_reply')
+    lock_order = row_lock_order { second_conversation.activate_captain_human_control!(source: 'agent_reply') }
+
     expect(lock_order).to eq([:conversation, :owner])
   end
 

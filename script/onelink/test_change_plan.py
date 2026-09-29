@@ -186,6 +186,32 @@ class ChangePlanTest(unittest.TestCase):
             specs, ["spec/enterprise/models/message_spec.rb", "spec/models/conversation_spec.rb"]
         )
 
+    def test_message_callback_changes_select_reply_path_specs(self):
+        expected = [
+            "spec/enterprise/models/message_spec.rb",
+            "spec/listeners/action_cable_listener_spec.rb",
+            "spec/listeners/whatsapp_typing_listener_spec.rb",
+            "spec/models/conversation_spec.rb",
+            "spec/services/messages/update_content_service_spec.rb",
+            "spec/services/whatsapp_web/send_on_whatsapp_web_service_spec.rb",
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for spec in expected:
+                (root / spec).parent.mkdir(parents=True, exist_ok=True)
+                (root / spec).touch()
+            with chdir(root):
+                specs = related_specs(["enterprise/app/models/enterprise/message.rb"])
+                control_specs = related_specs(
+                    ["enterprise/app/services/captain/conversation/control_service.rb"]
+                )
+
+        self.assertEqual(specs, expected)
+        self.assertEqual(
+            control_specs,
+            ["spec/enterprise/models/message_spec.rb", "spec/models/conversation_spec.rb"],
+        )
+
     def test_deleted_specs_are_excluded_from_related_specs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

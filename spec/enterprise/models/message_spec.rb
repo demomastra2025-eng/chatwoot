@@ -200,4 +200,78 @@ RSpec.describe Message do
       expect(conversation.reload.pending?).to be true
     end
   end
+
+  describe '#activate_captain_human_control_for_human_response' do
+    let(:captain_assistant) { create(:captain_assistant, account: conversation.account) }
+
+    before { allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off) }
+
+    def conversation_lock_queries(&)
+      queries = []
+      collect = lambda do |*, payload|
+        sql = payload[:sql].to_s
+        queries << sql if sql.include?('FOR UPDATE') && sql.include?('"conversations"')
+      end
+      ActiveSupport::Notifications.subscribed(collect, 'sql.active_record', &)
+      queries
+    end
+
+    def link_thread(*conversations)
+      thread = create(:communication_thread, account: conversation.account, contact: conversation.contact)
+      conversations.each do |candidate|
+        create(:communication_thread_conversation, communication_thread: thread, conversation: candidate)
+        candidate.association(:communication_thread_conversation).reset
+        candidate.association(:communication_thread).reset
+      end
+      thread
+    end
+
+    it 'neither locks nor reloads a thread-less conversation outside Captain inboxes' do
+      inbox = conversation.inbox
+      channel = inbox.channel
+      allow(conversation).to receive(:reload).and_call_original
+
+      queries = conversation_lock_queries { create(:message, message_type: :outgoing, conversation: conversation) }
+
+      expect(queries).to be_empty
+      expect(conversation).not_to have_received(:reload)
+      expect(conversation.inbox).to be(inbox)
+      expect(conversation.inbox.channel).to be(channel)
+      expect(Conversation.find(conversation.id).captain_control_generation).to eq(0)
+    end
+
+    it 'locks a Captain conversation without swapping its cached inbox and channel' do
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: captain_assistant)
+      inbox = conversation.inbox
+      channel = inbox.channel
+      allow(conversation).to receive(:reload).and_call_original
+
+      queries = conversation_lock_queries { create(:message, message_type: :outgoing, conversation: conversation) }
+
+      expect(queries).not_to be_empty
+      expect(conversation).not_to have_received(:reload)
+      expect(conversation.inbox).to be(inbox)
+      expect(conversation.inbox.channel).to be(channel)
+    end
+
+    it 'takes over a pending Captain sibling from a non-Captain channel without swapping cached associations' do
+      sibling = create(:conversation, account: conversation.account, contact: conversation.contact, status: :pending)
+      create(:captain_inbox, inbox: sibling.inbox, captain_assistant: captain_assistant)
+      thread = link_thread(conversation, sibling)
+      cached_thread = conversation.communication_thread
+      inbox = conversation.inbox
+      allow(conversation).to receive(:reload).and_call_original
+
+      create(:message, message_type: :outgoing, conversation: conversation)
+
+      expect(conversation).not_to have_received(:reload)
+      expect(conversation.inbox).to be(inbox)
+      expect(conversation.communication_thread).to be(cached_thread)
+      expect(cached_thread.captain_control_generation).to eq(1)
+      expect(thread.reload.captain_control_generation).to eq(1)
+      expect(sibling.reload).to be_pending
+    ensure
+      Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: sibling.id)) if sibling
+    end
+  end
 end
