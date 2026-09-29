@@ -105,10 +105,17 @@ describe('useSchedulingCalendarStore', () => {
 
     await store.fetchCalendar();
 
+    // The browser-local day of the anchor, in any process timezone.
+    const anchor = new Date('2026-03-08T20:30:00.000Z');
+    const localDay = [
+      anchor.getFullYear(),
+      anchor.getMonth(),
+      anchor.getDate(),
+    ];
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: '2026-03-08T00:00:00.000Z',
-        to: '2026-03-08T23:59:59.999Z',
+        from: new Date(...localDay).toISOString(),
+        to: new Date(...localDay, 23, 59, 59, 999).toISOString(),
       })
     );
   });

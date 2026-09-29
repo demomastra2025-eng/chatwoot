@@ -263,8 +263,15 @@ describe('SchedulingVueCalCalendar', () => {
     expect(zoned.find('.scheduling-vue-cal__event-time').text()).toBe(
       '10:00-10:30'
     );
+    // Browser-local times, whatever the process timezone is.
+    const localTime = value => {
+      const date = new Date(value);
+      return `${String(date.getHours()).padStart(2, '0')}:${String(
+        date.getMinutes()
+      ).padStart(2, '0')}`;
+    };
     expect(browserLocal.find('.scheduling-vue-cal__event-time').text()).toBe(
-      '05:00-05:30'
+      `${localTime(appointment.startsAt)}-${localTime(appointment.endsAt)}`
     );
   });
 

@@ -89,7 +89,15 @@ describe('SchedulingCalendarGrid', () => {
     expect(zoned.find('header').text()).toBe('Sunday, March 29');
     expect(zoned.text()).toContain('01:00 AM - 01:30 AM');
     expect(browserLocal.find('header').text()).toBe('Saturday, March 28');
-    expect(browserLocal.text()).toContain('08:00 PM - 08:30 PM');
+    // Browser-local times, whatever the process timezone is.
+    const localTime = value =>
+      new Intl.DateTimeFormat('en', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(value));
+    expect(browserLocal.text()).toContain(
+      `${localTime(appointment.startsAt)} - ${localTime(appointment.endsAt)}`
+    );
   });
 
   it('renders appointment custom field summaries in list view', () => {
