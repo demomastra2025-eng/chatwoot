@@ -689,6 +689,12 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   onNotificationCreated = data => {
+    // Types turned off in the inbox settings stay out of the notification
+    // panel, like in the list the server returns; only the counts change.
+    if (data.inbox_notification_enabled === false) {
+      this.app.$store.dispatch('notifications/setNotificationCounts', data);
+      return;
+    }
     this.app.$store.dispatch('notifications/addNotification', data);
     if (data.inbox_notification_enabled === true) {
       startFaviconBlinking();

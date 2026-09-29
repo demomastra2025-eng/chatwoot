@@ -22,6 +22,9 @@ import SidebarProfileMenu from './SidebarProfileMenu.vue';
 import SidebarChangelogCard from './SidebarChangelogCard.vue';
 import SidebarChangelogButton from './SidebarChangelogButton.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
+import SidebarNotificationBell from './SidebarNotificationBell.vue';
+import SidebarPhoneToggle from './SidebarPhoneToggle.vue';
+import NotificationPanel from 'dashboard/components-next/notifications/NotificationPanel.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import {
@@ -62,6 +65,7 @@ import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDialogDealCount } from './crmDefaultPipelineSidebar';
 import { resolveVisibleConversationPipelines } from './conversationPipelineVisibility';
 import { conversationListContextState } from 'dashboard/helper/conversationListContext';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import {
   resolveRouteConversationAssigneeType,
   selectExclusiveSidebarChildNames,
@@ -102,6 +106,12 @@ const { uiSettings } = useUISettings();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const composeConversationRef = ref(null);
+const notificationPanelRef = ref(null);
+const phoneWidgetStore = usePhoneWidgetStore();
+
+const openNotificationPanel = () => notificationPanelRef.value?.toggle();
+// Same rule as the phone widget: only employees with a browser SIP line.
+const showPhoneToggle = computed(() => phoneWidgetStore.available);
 
 // The left sidebar is configured once per company by an administrator.
 const effectiveSidebarVisibilitySettings = computed(() =>
@@ -119,6 +129,7 @@ const isMobile = computed(() => windowWidth.value < 768);
 const DESKTOP_RAIL_WIDTH = 44;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
 const NON_ACTIVE_QUERY_KEYS = new Set(['page', 'search']);
+const NOTIFICATION_PANEL_GAP = 8;
 const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
   'companies_dashboard_show',
@@ -266,6 +277,13 @@ const setExpandedItem = name => {
 
 const sidebarWidth = computed(() =>
   isMobile.value ? 200 : DESKTOP_RAIL_WIDTH
+);
+// The panel opens next to the desktop icon rail; on phones it covers the
+// sidebar drawer instead of squeezing beside it.
+const notificationPanelOffset = computed(() =>
+  isMobile.value
+    ? NOTIFICATION_PANEL_GAP
+    : sidebarWidth.value + NOTIFICATION_PANEL_GAP
 );
 const isEffectivelyCollapsed = computed(() => !isMobile.value);
 
@@ -2066,6 +2084,19 @@ const menuItems = computed(() => {
   );
 });
 
+// Notifications open the side panel instead of a page. The desktop icon rail
+// shows the bell at the bottom, next to the profile menu; the phone widget
+// button sits just above the bell in both layouts.
+const notificationMenuItem = computed(() =>
+  menuItems.value.find(item => item.name === 'Inbox')
+);
+
+const primaryMenuItems = computed(() =>
+  isEffectivelyCollapsed.value
+    ? menuItems.value.filter(item => item.name !== 'Inbox')
+    : menuItems.value
+);
+
 const resolvePath = to => {
   if (to) return router.resolve(to)?.path || '/';
   return '/';
@@ -2305,12 +2336,32 @@ const desktopSidebarWidth = computed(() => {
           class="flex flex-col gap-1 m-0 list-none min-w-0"
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
-          <SidebarGroup
-            v-for="item in menuItems"
-            :key="item.name"
-            v-bind="item"
-            :show-collapsed-popover="false"
+          <SidebarPhoneToggle
+            v-if="
+              showPhoneToggle &&
+              !isEffectivelyCollapsed &&
+              !notificationMenuItem
+            "
+            :is-collapsed="false"
           />
+          <template v-for="item in primaryMenuItems" :key="item.name">
+            <template v-if="item.name === 'Inbox'">
+              <SidebarPhoneToggle
+                v-if="showPhoneToggle"
+                :is-collapsed="false"
+              />
+              <SidebarNotificationBell
+                :is-collapsed="false"
+                :label="item.label"
+                @open-notification-panel="openNotificationPanel"
+              />
+            </template>
+            <SidebarGroup
+              v-else
+              v-bind="item"
+              :show-collapsed-popover="false"
+            />
+          </template>
         </ul>
       </nav>
       <section
@@ -2335,12 +2386,31 @@ const desktopSidebarWidth = computed(() => {
         />
         <div
           class="px-1 py-1.5 flex-shrink-0 flex w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
-          :class="isEffectivelyCollapsed ? 'justify-center' : 'justify-between'"
+          :class="
+            isEffectivelyCollapsed
+              ? 'flex-col justify-center'
+              : 'justify-between'
+          "
         >
           <SidebarProfileMenu
             :is-collapsed="isEffectivelyCollapsed"
             @open-key-shortcut-modal="emit('openKeyShortcutModal')"
           />
+          <ul
+            v-if="
+              isEffectivelyCollapsed &&
+              (showPhoneToggle || notificationMenuItem)
+            "
+            class="flex flex-col items-center gap-1 m-0 list-none"
+            data-testid="sidebar-rail-footer-actions"
+          >
+            <SidebarPhoneToggle v-if="showPhoneToggle" />
+            <SidebarNotificationBell
+              v-if="notificationMenuItem"
+              :label="notificationMenuItem.label"
+              @open-notification-panel="openNotificationPanel"
+            />
+          </ul>
         </div>
       </section>
     </div>
@@ -2348,6 +2418,10 @@ const desktopSidebarWidth = computed(() => {
       v-if="showDesktopSecondaryColumn"
       v-bind="selectedDesktopSidebarItem"
       :active-child-names="selectedDesktopSidebarActiveChildNames"
+    />
+    <NotificationPanel
+      ref="notificationPanelRef"
+      :sidebar-offset="notificationPanelOffset"
     />
     <Teleport to="body">
       <ComposeConversation

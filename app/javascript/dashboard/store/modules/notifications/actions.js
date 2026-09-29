@@ -18,7 +18,11 @@ export const actions = {
       commit(types.SET_NOTIFICATIONS_UI_FLAG, { isFetching: false });
     }
   },
-  index: async ({ commit }, { page = 1, status, type, sortOrder } = {}) => {
+  // Resolves with the page ({ payload, meta }) or null when it failed.
+  index: async (
+    { commit },
+    { page = 1, status, type, sortOrder, cursor } = {}
+  ) => {
     commit(types.SET_NOTIFICATIONS_UI_FLAG, { isFetching: true });
     try {
       const {
@@ -30,6 +34,7 @@ export const actions = {
         status,
         type,
         sortOrder,
+        cursor,
       });
       commit(types.SET_NOTIFICATIONS, payload);
       commit(types.SET_NOTIFICATIONS_META, meta);
@@ -37,8 +42,10 @@ export const actions = {
       if (payload.length < 15) {
         commit(types.SET_ALL_NOTIFICATIONS_LOADED);
       }
+      return { payload, meta };
     } catch (error) {
       commit(types.SET_NOTIFICATIONS_UI_FLAG, { isFetching: false });
+      return null;
     }
   },
   unReadCount: async ({ commit } = {}) => {
@@ -73,6 +80,22 @@ export const actions = {
       commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
     } catch (error) {
       commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
+    }
+  },
+  archive: async ({ commit }, { id, unreadCount }) => {
+    commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true });
+    try {
+      await NotificationsAPI.archive(id);
+      commit(
+        types.SET_NOTIFICATIONS_UNREAD_COUNT,
+        Math.max(unreadCount - 1, 0)
+      );
+      commit(types.READ_NOTIFICATION, { id, read_at: new Date() });
+      commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
+      return true;
+    } catch (error) {
+      commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
+      return false;
     }
   },
   readAll: async ({ commit }) => {
@@ -152,6 +175,18 @@ export const actions = {
 
   addNotification({ commit }, data) {
     commit(types.ADD_NOTIFICATION, data);
+  },
+  // Realtime counts without a record, for notification types the employee
+  // turned off for the inbox.
+  setNotificationCounts(
+    { commit, state },
+    { unread_count: unreadCount, count }
+  ) {
+    commit(types.SET_NOTIFICATIONS_META, {
+      count,
+      current_page: state.meta.currentPage,
+      unread_count: unreadCount,
+    });
   },
   deleteNotification({ commit }, data) {
     commit(types.DELETE_NOTIFICATION, data);

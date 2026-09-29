@@ -6,16 +6,22 @@ class NotificationsAPI extends ApiClient {
     super('notifications', { accountScoped: true });
   }
 
-  get({ page, status, type, sortOrder }) {
+  // `cursor` ({ id, lastActivityAt }) is the last notification of the
+  // previous page: the next page starts right after it, so notifications
+  // archived or added between pages shift nothing.
+  get({ page, status, type, sortOrder, cursor }) {
     const includesFilter = [status, type].filter(value => !!value);
+    const params = {
+      page,
+      sort_order: sortOrder,
+      includes: includesFilter,
+    };
+    if (cursor?.id) {
+      params.cursor_id = cursor.id;
+      params.cursor_last_activity_at = cursor.lastActivityAt;
+    }
 
-    return axios.get(this.url, {
-      params: {
-        page,
-        sort_order: sortOrder,
-        includes: includesFilter,
-      },
-    });
+    return axios.get(this.url, { params });
   }
 
   getNotifications(contactId) {
@@ -39,6 +45,12 @@ class NotificationsAPI extends ApiClient {
 
   readAll() {
     return axios.post(`${this.url}/read_all`);
+  }
+
+  // Marks only this notification as read, unlike `read`, which marks every
+  // notification of the primary actor.
+  archive(id) {
+    return axios.patch(`${this.url}/${id}`);
   }
 
   delete(id) {

@@ -10,6 +10,17 @@ const operatorClaimUserId = claim =>
   claim?.claimed_by_user_id ||
   claim?.claimedByUserId;
 
+// An info card of a call another operator took (kept on screen when the inbox
+// shows calls handled by other operators): not the employee's own call.
+export const isCallHandledByAnotherOperator = (call, currentUserId) => {
+  if (call?.browserJoinUnsupportedReason !== 'CALL_ALREADY_CLAIMED') {
+    return false;
+  }
+  const claimedByUserId = operatorClaimUserId(call.operatorClaim);
+  if (!isPresent(claimedByUserId) || !isPresent(currentUserId)) return true;
+  return String(claimedByUserId) !== String(currentUserId);
+};
+
 const sameValue = (left, right) =>
   isPresent(left) && isPresent(right) && String(left) === String(right);
 

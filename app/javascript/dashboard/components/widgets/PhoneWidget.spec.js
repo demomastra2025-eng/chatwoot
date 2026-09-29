@@ -1,5 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
+import { createPinia, setActivePinia } from 'pinia';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import PhoneWidget from './PhoneWidget.vue';
 
 const {
@@ -10,7 +12,8 @@ const {
   microphoneState,
   alertMock,
   dialMock,
-} = vi.hoisted(() => {
+} = await vi.hoisted(async () => {
+  const { reactive } = await import('vue');
   const listeners = {};
   return {
     alertMock: vi.fn(),
@@ -20,17 +23,24 @@ const {
       getCurrentAccountId: 1,
       getCurrentUser: { name: 'Иван Иванов' },
     },
-    callsState: {
+    callsState: reactive({
       activeCall: null,
       hasActiveCall: false,
       hasIncomingCall: false,
-    },
+      incomingCalls: [],
+    }),
     settingsState: { settings: null, update: vi.fn() },
     microphoneState: { available: null, muted: null, toggle: vi.fn() },
     webphoneClient: {
       sessions: {},
       bootstrapIncomingSupport: vi.fn(() => Promise.resolve()),
       initializeDevice: vi.fn(() => Promise.resolve()),
+      // Teardown entry points that hiding the phone must never reach.
+      destroyDevice: vi.fn(),
+      destroyNativeSession: vi.fn(),
+      releaseNativeOwnership: vi.fn(),
+      suspendNativeSessions: vi.fn(),
+      endClientCall: vi.fn(),
       addEventListener: vi.fn((event, callback) => {
         listeners[event] = callback;
       }),
@@ -48,7 +58,8 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
 vi.mock('dashboard/composables', () => ({
   useAlert: alertMock,
 }));
-vi.mock('dashboard/stores/calls', () => ({
+vi.mock('dashboard/stores/calls', async importOriginal => ({
+  ...(await importOriginal()),
   useCallsStore: () => callsState,
 }));
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -116,8 +127,28 @@ const mountComponent = () =>
     },
   });
 
+const TEARDOWN_METHODS = [
+  'destroyDevice',
+  'destroyNativeSession',
+  'releaseNativeOwnership',
+  'suspendNativeSessions',
+  'endClientCall',
+];
+const incomingCall = (overrides = {}) => ({
+  callSid: 'sipuni:incoming-1',
+  callDirection: 'inbound',
+  provider: 'sipuni',
+  isActive: false,
+  ...overrides,
+});
+const setIncomingCalls = calls => {
+  callsState.incomingCalls = calls;
+  callsState.hasIncomingCall = calls.length > 0;
+};
+
 describe('PhoneWidget', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
     settingsState.settings = ref({});
     settingsState.update.mockReset().mockImplementation(next => {
       settingsState.settings.value = {
@@ -133,12 +164,14 @@ describe('PhoneWidget', () => {
     values.getCurrentUser = { name: 'Иван Иванов' };
     callsState.hasActiveCall = false;
     callsState.hasIncomingCall = false;
+    callsState.incomingCalls = [];
     callsState.activeCall = null;
     webphoneClient.sessions = { 'sip_profile:83': sipSession() };
     webphoneClient.bootstrapIncomingSupport.mockReset().mockResolvedValue();
     webphoneClient.initializeDevice.mockReset().mockResolvedValue();
     webphoneClient.addEventListener.mockClear();
     webphoneClient.removeEventListener.mockClear();
+    TEARDOWN_METHODS.forEach(method => webphoneClient[method].mockClear());
     alertMock.mockReset();
     dialMock.mockReset();
   });
@@ -184,22 +217,22 @@ describe('PhoneWidget', () => {
       wrapper.get('[data-testid="phone-widget-panel"]').text()
     ).not.toContain('PHONE_WIDGET.TITLE');
     expect(webphoneClient.bootstrapIncomingSupport).toHaveBeenCalledOnce();
+    const phoneWidgetStore = usePhoneWidgetStore();
     await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
-    expect(wrapper.find('[data-testid="phone-widget-panel"]').exists()).toBe(
-      false
-    );
-    expect(
-      wrapper.get('[data-testid="phone-widget-launcher"]').attributes('title')
-    ).toContain('READY');
+    expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+    expect(phoneWidgetStore.status).toBe('ready');
 
     webphoneClient.sessions['sip_profile:83'].registered = false;
     webphoneClient.emit('call:sessions-changed');
     await flushPromises();
-    expect(
-      wrapper.get('[data-testid="phone-widget-launcher"]').attributes('title')
-    ).toContain('DISCONNECTED');
+    // The sidebar button keeps following the line while the phone is hidden.
+    expect(phoneWidgetStore.status).toBe('disconnected');
     expect(webphoneClient.bootstrapIncomingSupport).toHaveBeenCalledOnce();
-    await wrapper.get('[data-testid="phone-widget-launcher"]').trigger('click');
+    settingsState.settings.value = {
+      ...settingsState.settings.value,
+      phone_widget_hidden_accounts: {},
+    };
+    await flushPromises();
     expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
       'DISCONNECTED'
     );
@@ -251,16 +284,6 @@ describe('PhoneWidget', () => {
     );
     microphone.element.click();
     expect(microphoneState.toggle).not.toHaveBeenCalled();
-
-    await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
-    expect(
-      wrapper
-        .get('[data-testid="phone-widget-microphone"]')
-        .attributes('disabled')
-    ).toBeDefined();
-    expect(wrapper.get('[data-testid="phone-widget-launcher"]').exists()).toBe(
-      true
-    );
   });
 
   it('switches the connected microphone and keeps the ringtone separate', async () => {
@@ -605,9 +628,8 @@ describe('PhoneWidget', () => {
       expect(action.text()).toBe('');
 
       await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
-      expect(
-        wrapper.get('[data-testid="phone-widget-launcher"]').attributes('title')
-      ).toBe('SIDEBAR.SIP_TELEPHONY.STATUS.READY_IN_OWNER_TAB');
+      expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+      expect(usePhoneWidgetStore().status).toBe('ownerTab');
     });
 
     it('claims the phone for this tab from the status action', async () => {
@@ -823,6 +845,208 @@ describe('PhoneWidget', () => {
       );
       await input.trigger('keyup.enter');
       expect(dialMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('showing and hiding the phone', () => {
+    const hiddenIn = (...accountIds) => ({
+      phone_widget_hidden_accounts: Object.fromEntries(
+        accountIds.map(id => [id, true])
+      ),
+    });
+    const widgetShown = wrapper =>
+      wrapper.find('[data-testid="phone-widget-panel"]').exists();
+
+    it('hidden does not unregister SIP: sessions stay registered and keep updating', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      const phoneWidgetStore = usePhoneWidgetStore();
+      expect(phoneWidgetStore.available).toBe(true);
+      expect(phoneWidgetStore.status).toBe('ready');
+
+      await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
+
+      expect(settingsState.update).toHaveBeenCalledWith({
+        phone_widget_hidden_accounts: { 1: true },
+      });
+      expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+      TEARDOWN_METHODS.forEach(method => {
+        expect(webphoneClient[method]).not.toHaveBeenCalled();
+      });
+      expect(webphoneClient.removeEventListener).not.toHaveBeenCalled();
+      expect(webphoneClient.initializeDevice).not.toHaveBeenCalled();
+      expect(webphoneClient.bootstrapIncomingSupport).toHaveBeenCalledOnce();
+      expect(phoneWidgetStore.available).toBe(true);
+
+      webphoneClient.sessions['sip_profile:83'] = sipSession({
+        registered: false,
+        callingSupported: false,
+        reason: 'sip_credentials_failed',
+      });
+      webphoneClient.emit('call:sessions-changed');
+      await flushPromises();
+      expect(phoneWidgetStore.status).toBe('error');
+    });
+
+    it('remembers the hidden phone per account', async () => {
+      settingsState.settings.value = hiddenIn(2);
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      settingsState.settings.value = hiddenIn(1);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+      expect(usePhoneWidgetStore().available).toBe(true);
+      wrapper.unmount();
+
+      values.getCurrentAccountId = 2;
+      const otherAccount = mountComponent();
+      await flushPromises();
+      expect(widgetShown(otherAccount)).toBe(true);
+    });
+
+    it('incoming call while hidden pops the widget and hides it again after the call', async () => {
+      settingsState.settings.value = hiddenIn(1);
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+
+      setIncomingCalls([incomingCall()]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      setIncomingCalls([]);
+      callsState.hasActiveCall = true;
+      callsState.activeCall = incomingCall({ isActive: true });
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
+        'PHONE_WIDGET.IN_CALL'
+      );
+
+      callsState.hasActiveCall = false;
+      callsState.activeCall = null;
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+      // The saved choice is untouched by the automatic pop-up.
+      expect(settingsState.update).not.toHaveBeenCalled();
+    });
+
+    it('pops the widget while an outbound call is started and until it ends', async () => {
+      settingsState.settings.value = hiddenIn(1);
+      const wrapper = mountComponent();
+      await flushPromises();
+      const phoneWidgetStore = usePhoneWidgetStore();
+
+      phoneWidgetStore.beginOutboundCall();
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      // VoiceCallButton adds the created call before it finishes preparing.
+      setIncomingCalls([
+        incomingCall({ callSid: 'sipuni:out-1', callDirection: 'outbound' }),
+      ]);
+      phoneWidgetStore.finishOutboundCall();
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      setIncomingCalls([]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+    });
+
+    it('keeps a call hidden once the employee hides it, until another call rings', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      setIncomingCalls([incomingCall()]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
+      expect(settingsState.update).toHaveBeenCalledWith({
+        phone_widget_hidden_accounts: { 1: true },
+      });
+      expect(widgetShown(wrapper)).toBe(false);
+
+      setIncomingCalls([incomingCall()]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+
+      setIncomingCalls([
+        incomingCall(),
+        incomingCall({ callSid: 'sipuni:incoming-2' }),
+      ]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(true);
+
+      setIncomingCalls([]);
+      await flushPromises();
+      expect(widgetShown(wrapper)).toBe(false);
+      expect(usePhoneWidgetStore().callDismissed).toBe(false);
+    });
+
+    describe('when a colleague takes a call', () => {
+      // The info card of an inbox that shows calls handled by other operators.
+      const colleagueCall = (callSid = 'sipuni:other-1') =>
+        incomingCall({
+          callSid,
+          status: 'in_progress',
+          operatorClaim: { user_id: 99 },
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        });
+
+      beforeEach(() => {
+        values.getCurrentUser = { id: 1, name: 'Иван Иванов' };
+      });
+
+      it('does not pop a hidden phone', async () => {
+        settingsState.settings.value = hiddenIn(1);
+        const wrapper = mountComponent();
+        await flushPromises();
+
+        setIncomingCalls([colleagueCall()]);
+        await flushPromises();
+        expect(widgetShown(wrapper)).toBe(false);
+
+        setIncomingCalls([colleagueCall(), incomingCall()]);
+        await flushPromises();
+        expect(widgetShown(wrapper)).toBe(true);
+      });
+
+      it('keeps the phone hidden for the dismissed call', async () => {
+        const wrapper = mountComponent();
+        await flushPromises();
+        setIncomingCalls([incomingCall()]);
+        await flushPromises();
+        await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
+        expect(widgetShown(wrapper)).toBe(false);
+
+        setIncomingCalls([incomingCall(), colleagueCall('sipuni:other-2')]);
+        await flushPromises();
+
+        expect(widgetShown(wrapper)).toBe(false);
+        expect(usePhoneWidgetStore().callDismissed).toBe(true);
+      });
+    });
+
+    it('does not offer the sidebar button without a browser SIP line', async () => {
+      webphoneClient.sessions = {};
+      mountComponent();
+      await flushPromises();
+
+      expect(usePhoneWidgetStore().available).toBe(false);
+    });
+
+    it('withdraws the sidebar button when the widget is unmounted', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(usePhoneWidgetStore().available).toBe(true);
+
+      wrapper.unmount();
+
+      expect(usePhoneWidgetStore().available).toBe(false);
     });
   });
 });

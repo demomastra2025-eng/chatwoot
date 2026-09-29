@@ -68,6 +68,37 @@ describe('#actions', () => {
         [types.SET_NOTIFICATIONS_UI_FLAG, { isFetching: false }],
       ]);
     });
+    it('asks for the page after a cursor and resolves with it', async () => {
+      const page = {
+        payload: [{ id: 1 }],
+        meta: { count: 3, current_page: 1, unread_count: 2 },
+      };
+      axios.get.mockResolvedValue({ data: { data: page } });
+
+      await expect(
+        actions.index(
+          { commit },
+          {
+            sortOrder: 'desc',
+            status: 'archived',
+            cursor: { id: 16, lastActivityAt: 1_777_000_000 },
+          }
+        )
+      ).resolves.toEqual(page);
+      expect(axios.get).toHaveBeenLastCalledWith('/api/v1/notifications', {
+        params: {
+          page: 1,
+          sort_order: 'desc',
+          includes: ['archived'],
+          cursor_id: 16,
+          cursor_last_activity_at: 1_777_000_000,
+        },
+      });
+    });
+    it('resolves with null when the page fails', async () => {
+      axios.get.mockRejectedValue({ message: 'Incorrect header' });
+      await expect(actions.index({ commit })).resolves.toBeNull();
+    });
   });
 
   describe('#unReadCount', () => {
@@ -139,6 +170,48 @@ describe('#actions', () => {
     });
   });
 
+  describe('#archive', () => {
+    it('archives only the selected notification', async () => {
+      axios.patch.mockResolvedValue({});
+      const result = await actions.archive(
+        { commit },
+        { id: 1, unreadCount: 2 }
+      );
+
+      expect(result).toBe(true);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true }],
+        [types.SET_NOTIFICATIONS_UNREAD_COUNT, 1],
+        [types.READ_NOTIFICATION, { id: 1, read_at: expect.any(Date) }],
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false }],
+      ]);
+    });
+
+    it('never drops the unread count below zero', async () => {
+      axios.patch.mockResolvedValue({});
+      await actions.archive({ commit }, { id: 1, unreadCount: 0 });
+
+      expect(commit.mock.calls).toContainEqual([
+        types.SET_NOTIFICATIONS_UNREAD_COUNT,
+        0,
+      ]);
+    });
+
+    it('keeps the notification unread when the request fails', async () => {
+      axios.patch.mockRejectedValue({ message: 'Incorrect header' });
+      const result = await actions.archive(
+        { commit },
+        { id: 1, unreadCount: 2 }
+      );
+
+      expect(result).toBe(false);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true }],
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false }],
+      ]);
+    });
+  });
+
   describe('#delete', () => {
     it('sends correct actions if API is success', async () => {
       axios.delete.mockResolvedValue({});
@@ -199,6 +272,22 @@ describe('#actions', () => {
       await actions.addNotification({ commit }, { data: 1 });
       expect(commit.mock.calls).toEqual([
         [types.ADD_NOTIFICATION, { data: 1 }],
+      ]);
+    });
+  });
+
+  describe('#setNotificationCounts', () => {
+    it('updates only the counts and keeps the current page', async () => {
+      commit.mockClear();
+      await actions.setNotificationCounts(
+        { commit, state: { meta: { currentPage: 2 } } },
+        { notification: { id: 9 }, unread_count: 4, count: 5 }
+      );
+      expect(commit.mock.calls).toEqual([
+        [
+          types.SET_NOTIFICATIONS_META,
+          { count: 5, current_page: 2, unread_count: 4 },
+        ],
       ]);
     });
   });

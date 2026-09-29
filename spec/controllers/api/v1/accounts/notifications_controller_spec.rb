@@ -111,6 +111,35 @@ RSpec.describe 'Notifications API', type: :request do
         end
       end
 
+      it 'lists only read notifications in the archive and keeps the real unread count' do
+        notification1.update!(read_at: Time.current)
+
+        get "/api/v1/accounts/#{account.id}/notifications",
+            params: { includes: ['archived'] },
+            headers: admin.create_new_auth_token
+
+        response_json = response.parsed_body
+        expect(response).to have_http_status(:success)
+        expect(response_json['data']['payload'].pluck('id')).to eq([notification1.id])
+        expect(response_json['data']['meta']['count']).to eq 1
+        expect(response_json['data']['meta']['unread_count']).to eq 1
+      end
+
+      it 'continues after the cursor notification although notifications above it were archived' do
+        notification3 = create(:notification, account: account, user: admin)
+        notification2.update!(read_at: Time.current)
+
+        get "/api/v1/accounts/#{account.id}/notifications",
+            params: { cursor_id: notification3.id, cursor_last_activity_at: notification3.last_activity_at.to_i },
+            headers: admin.create_new_auth_token
+
+        response_json = response.parsed_body
+        expect(response).to have_http_status(:success)
+        expect(response_json['data']['payload'].pluck('id')).to eq([notification1.id])
+        expect(response_json['data']['meta']['count']).to eq 2
+        expect(response_json['data']['meta']['unread_count']).to eq 2
+      end
+
       it 'returns orphaned notifications using the stored snapshot' do
         conversation = create(:conversation, :with_assignee, account: account)
         notification = create(
@@ -203,6 +232,23 @@ RSpec.describe 'Notifications API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(notification.reload.read_at).not_to eq('')
+      end
+
+      it 'archives only the selected notification of a conversation' do
+        sibling = create(
+          :notification,
+          account: account,
+          user: admin,
+          primary_actor: notification.primary_actor
+        )
+
+        patch "/api/v1/accounts/#{account.id}/notifications/#{notification.id}",
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(notification.reload.read_at).to be_present
+        expect(sibling.reload.read_at).to be_nil
       end
 
       it 'returns not found for another account notification' do

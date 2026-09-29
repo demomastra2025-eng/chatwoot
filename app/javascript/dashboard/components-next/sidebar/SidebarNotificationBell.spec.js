@@ -3,25 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SidebarNotificationBell from './SidebarNotificationBell.vue';
 
-const { notificationMeta, routeState } = vi.hoisted(() => ({
+const { notificationMeta } = vi.hoisted(() => ({
   notificationMeta: { value: { unreadCount: 0 } },
-  routeState: { name: 'dashboard' },
-}));
-
-vi.mock('vue-router', () => ({
-  useRoute: () => routeState,
 }));
 
 vi.mock('dashboard/composables/store', () => ({
   useMapGetter: () => notificationMeta,
 }));
 
-const mountComponent = () => mount(SidebarNotificationBell);
+const mountComponent = (props = {}) =>
+  mount(SidebarNotificationBell, { props });
 
 describe('SidebarNotificationBell', () => {
   beforeEach(() => {
     notificationMeta.value = { unreadCount: 0 };
-    routeState.name = 'dashboard';
   });
 
   it('uses the shared sidebar unread badge visual for notification counts', () => {
@@ -46,20 +41,36 @@ describe('SidebarNotificationBell', () => {
     );
   });
 
-  it('opens the notification panel outside the notifications page', async () => {
+  it('hides the badge without unread notifications', () => {
     const wrapper = mountComponent();
 
-    await wrapper.trigger('click');
-
-    expect(wrapper.emitted('openNotificationPanel')).toHaveLength(1);
+    expect(wrapper.find('[data-test-id="sidebar-unread-badge"]').exists()).toBe(
+      false
+    );
   });
 
-  it('does not reopen the notification panel from the notifications page', async () => {
-    routeState.name = 'notifications_index';
-    const wrapper = mountComponent();
+  it('always opens the notification panel instead of navigating', async () => {
+    const wrapper = mountComponent({ label: 'Notifications' });
+    const button = wrapper.get('button');
 
-    await wrapper.trigger('click');
+    await button.trigger('click');
 
-    expect(wrapper.emitted('openNotificationPanel')).toBeUndefined();
+    expect(wrapper.emitted('openNotificationPanel')).toHaveLength(1);
+    // The panel ignores outside clicks on its trigger so a click toggles it.
+    expect(button.attributes()).toHaveProperty(
+      'data-notification-panel-trigger'
+    );
+    expect(button.attributes('aria-label')).toBe('Notifications');
+    expect(button.classes()).toContain('size-9');
+  });
+
+  it('shows the label in expanded sidebar mode', () => {
+    const wrapper = mountComponent({
+      isCollapsed: false,
+      label: 'Notifications',
+    });
+
+    expect(wrapper.text()).toContain('Notifications');
+    expect(wrapper.get('button').classes()).toContain('w-full');
   });
 });

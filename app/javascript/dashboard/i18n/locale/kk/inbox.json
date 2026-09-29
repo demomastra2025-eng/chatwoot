@@ -1,5 +1,20 @@
 {
   "INBOX": {
+    "NOTIFICATION_MODAL": {
+      "TITLE": "Хабарландырулар",
+      "NOTIFICATION": "Хабарландыру",
+      "TABS": {
+        "NEW": "Жаңа",
+        "ARCHIVE": "Мұрағат",
+        "ALL": "Барлығы"
+      },
+      "ARCHIVE": "Мұрағатқа",
+      "ARCHIVE_ALL": "Барлығын мұрағаттау",
+      "ARCHIVED": "Хабарландыру мұрағатқа жіберілді",
+      "ARCHIVED_ALL": "Барлық жаңа хабарландырулар мұрағатталды",
+      "EMPTY": "Бұл бөлімде әзірге хабарландырулар жоқ",
+      "LOAD_MORE": "Тағы көрсету"
+    },
     "LIST": {
       "TITLE": "My Inbox",
       "DISPLAY_DROPDOWN": "Display",

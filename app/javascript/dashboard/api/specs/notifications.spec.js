@@ -44,6 +44,23 @@ describe('#NotificationAPI', () => {
         });
       });
 
+      it('asks for the page after a cursor notification', () => {
+        notificationsAPI.get({
+          status: 'archived',
+          sortOrder: 'desc',
+          cursor: { id: 16, lastActivityAt: 1_777_000_000 },
+        });
+        expect(axiosMock.get).toHaveBeenCalledWith('/api/v1/notifications', {
+          params: {
+            page: undefined,
+            sort_order: 'desc',
+            includes: ['archived'],
+            cursor_id: 16,
+            cursor_last_activity_at: 1_777_000_000,
+          },
+        });
+      });
+
       it('generates the API call if one of the params are available', () => {
         notificationsAPI.get({
           page: 1,
@@ -90,6 +107,11 @@ describe('#NotificationAPI', () => {
       expect(axiosMock.post).toHaveBeenCalledWith(
         '/api/v1/notifications/read_all'
       );
+    });
+
+    it('#archive', () => {
+      notificationsAPI.archive(7);
+      expect(axiosMock.patch).toHaveBeenCalledWith('/api/v1/notifications/7');
     });
 
     it('#snooze', () => {

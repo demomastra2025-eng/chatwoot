@@ -6,6 +6,7 @@ import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import ContactAPI from 'dashboard/api/contacts';
@@ -31,6 +32,7 @@ defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
 const store = useStore();
 const callsStore = useCallsStore();
+const phoneWidgetStore = usePhoneWidgetStore();
 const whatsappCallsStore = useWhatsappCallsStore();
 
 const OUTBOUND_BROWSER_STAGE_RANK = {
@@ -270,6 +272,8 @@ const startCall = async inbox => {
   if (isCallButtonBusy.value) return;
 
   isPreparingCall.value = true;
+  // Shows the phone widget while the call is prepared, even if it is hidden.
+  phoneWidgetStore.beginOutboundCall();
   let callInitiated = false;
   try {
     const contactId = props.contactId || (await resolveDialContactId());
@@ -357,6 +361,7 @@ const startCall = async inbox => {
     useAlert(apiError || t('CONTACT_PANEL.CALL_FAILED'));
   } finally {
     isPreparingCall.value = false;
+    phoneWidgetStore.finishOutboundCall();
   }
 };
 

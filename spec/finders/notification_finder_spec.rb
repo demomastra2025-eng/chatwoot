@@ -39,6 +39,15 @@ RSpec.describe NotificationFinder do
       end
     end
 
+    context 'with params including archived status' do
+      let(:params) { { includes: ['archived'] } }
+
+      it 'returns only read, unsnoozed notifications' do
+        expect(subject.size).to eq(2)
+        expect(subject.map(&:read_at)).to all(be_present)
+      end
+    end
+
     context 'with params including only snoozed status' do
       let(:params) { { includes: ['snoozed'] } }
 
@@ -92,6 +101,80 @@ RSpec.describe NotificationFinder do
         expect(subject.unread_count).to eq(4) # 3 unread + 1 snoozed (which is unread)
         expect(subject.count).to eq(6) # all notifications including read and snoozed
       end
+    end
+
+    context 'with archived notifications only' do
+      let(:params) { { includes: ['archived'] } }
+
+      it 'counts the archive page but keeps the real unread count for the badge' do
+        expect(subject.count).to eq(2)
+        expect(subject.unread_count).to eq(3)
+      end
+    end
+  end
+
+  describe 'cursor pages' do
+    let(:reader) { create(:user, account: account) }
+    # Newest activity first: ordered[0] is the top of the list.
+    let!(:ordered) do
+      base = Time.zone.parse('2026-09-01 10:00:00')
+      Array.new(4) do |index|
+        create(:notification, account: account, user: reader).tap do |notification|
+          notification.update_columns(last_activity_at: base - index.minutes) # rubocop:disable Rails/SkipsModelValidations
+        end
+      end
+    end
+
+    def page_ids(params)
+      described_class.new(reader, account, params).notifications.map(&:id)
+    end
+
+    it 'continues right after the cursor when a notification above it was archived' do
+      ordered[0].update!(read_at: Time.current)
+
+      expect(page_ids(cursor_id: ordered[1].id.to_s)).to eq(ordered.drop(2).map(&:id))
+    end
+
+    it 'continues after a cursor that was archived itself' do
+      ordered[1].update!(read_at: Time.current)
+
+      expect(page_ids(cursor_id: ordered[1].id.to_s)).to eq(ordered.drop(2).map(&:id))
+    end
+
+    it 'orders notifications of the same activity time by id' do
+      ordered[2].update_columns(last_activity_at: ordered[1].last_activity_at) # rubocop:disable Rails/SkipsModelValidations
+
+      expect(page_ids({})).to eq([ordered[0], ordered[2], ordered[1], ordered[3]].map(&:id))
+      expect(page_ids(cursor_id: ordered[2].id.to_s)).to eq([ordered[1], ordered[3]].map(&:id))
+    end
+
+    it 'lists the second of a deleted cursor again instead of skipping' do
+      cursor = ordered[1]
+      params = { cursor_id: cursor.id.to_s, cursor_last_activity_at: cursor.last_activity_at.to_i.to_s }
+      cursor.destroy!
+
+      expect(page_ids(params)).to eq(ordered.drop(2).map(&:id))
+    end
+
+    it 'continues after the cursor in ascending order' do
+      expect(page_ids(cursor_id: ordered[2].id.to_s, sort_order: 'asc')).to eq([ordered[1], ordered[0]].map(&:id))
+    end
+
+    it 'ignores a malformed cursor' do
+      expect(page_ids(cursor_id: 'abc', cursor_last_activity_at: 'x')).to eq(ordered.map(&:id))
+    end
+
+    it 'ignores the notifications of other users as a cursor' do
+      foreign = create(:notification, account: account, user: user)
+
+      expect(page_ids(cursor_id: foreign.id.to_s)).to eq(ordered.map(&:id))
+    end
+
+    it 'keeps the list size independent of the cursor' do
+      finder = described_class.new(reader, account, cursor_id: ordered[1].id.to_s)
+
+      expect(finder.count).to eq(4)
+      expect(finder.notifications.size).to eq(2)
     end
   end
 end

@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import campaignsRoutes from 'dashboard/routes/dashboard/campaigns/campaigns.routes';
@@ -173,6 +174,10 @@ const mountSidebar = async ({ permissions, routeName }) => {
         },
         SidebarSubGroup: true,
         SidebarAssigneeTabs: true,
+        // Covered by Sidebar.notifications.spec.js.
+        SidebarNotificationBell: true,
+        SidebarPhoneToggle: true,
+        NotificationPanel: true,
       },
     },
   });
@@ -211,6 +216,8 @@ const renderedLeaves = wrapper =>
 
 describe('Sidebar', () => {
   beforeEach(() => {
+    // The rail footer reads the phone widget store (notifications track).
+    setActivePinia(createPinia());
     mocks.accountSettings = {};
     mocks.crmStore.pipelines = [];
   });

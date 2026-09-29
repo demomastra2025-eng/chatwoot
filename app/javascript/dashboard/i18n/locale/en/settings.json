@@ -2,8 +2,9 @@
   "PHONE_WIDGET": {
     "TITLE": "Phone",
     "EMPLOYEE": "Employee",
-    "OPEN": "Open phone",
     "HIDE": "Hide phone widget",
+    "SIDEBAR_SHOW": "Show phone",
+    "SIDEBAR_HIDE": "Hide phone",
     "MINIMIZE": "Minimize keypad",
     "EXPAND": "Open keypad",
     "LINE": "Line",

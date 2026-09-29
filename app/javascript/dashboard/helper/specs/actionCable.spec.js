@@ -397,6 +397,32 @@ describe('ActionCableConnector - Copilot Tests', () => {
       }
     );
 
+    it('keeps notification types turned off for the inbox out of the list', () => {
+      const payload = notificationPayload(false);
+
+      actionCable.onNotificationCreated(payload);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'notifications/setNotificationCounts',
+        payload
+      );
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        'notifications/addNotification',
+        expect.anything()
+      );
+    });
+
+    it('lists legacy notification payloads without the inbox flag', () => {
+      const payload = notificationPayload(undefined);
+
+      actionCable.onNotificationCreated(payload);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'notifications/addNotification',
+        payload
+      );
+    });
+
     it('stops favicon blinking when the websocket disconnects', () => {
       actionCable.onDisconnected();
 

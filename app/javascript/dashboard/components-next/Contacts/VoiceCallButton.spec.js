@@ -3,6 +3,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { useCallsStore } from 'dashboard/stores/calls';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from './VoiceCallButton.vue';
 
@@ -789,5 +790,40 @@ describe('VoiceCallButton', () => {
     expect(alertMock).toHaveBeenCalledWith(
       'PHONE_WIDGET.CONTACT_LOOKUP_INCOMPLETE'
     );
+  });
+
+  it('shows the phone widget from the click until the call is in the calls store', async () => {
+    const phoneWidgetStore = usePhoneWidgetStore();
+    let finishInitiate;
+    const dispatch = vi.fn().mockImplementation(
+      () =>
+        new Promise(resolve => {
+          finishInitiate = resolve;
+        })
+    );
+    const { wrapper } = mountComponent({ dispatch });
+
+    wrapper.get('button').trigger('click');
+    await flushPromises();
+    expect(phoneWidgetStore.preparingOutboundCalls).toBe(1);
+
+    finishInitiate({ call_sid: 'call-ref-1', conversation_id: 627 });
+    await flushPromises();
+
+    expect(phoneWidgetStore.preparingOutboundCalls).toBe(0);
+    expect(
+      useCallsStore().calls.some(call => call.callSid === 'call-ref-1')
+    ).toBe(true);
+  });
+
+  it('stops forcing the phone widget open when the call cannot start', async () => {
+    const phoneWidgetStore = usePhoneWidgetStore();
+    const dispatch = vi.fn().mockRejectedValue(new Error('call failed'));
+    const { wrapper } = mountComponent({ dispatch });
+
+    await wrapper.get('button').trigger('click');
+    await flushPromises();
+
+    expect(phoneWidgetStore.preparingOutboundCalls).toBe(0);
   });
 });

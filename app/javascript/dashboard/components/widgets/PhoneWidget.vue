@@ -5,10 +5,15 @@ import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
+import { usePhoneWidgetVisibility } from 'dashboard/composables/usePhoneWidgetVisibility';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
+import {
+  phoneWidgetStatusColor,
+  usePhoneWidgetStore,
+} from 'dashboard/stores/phoneWidget';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -35,9 +40,13 @@ const inboxes = useMapGetter('inboxes/getInboxes');
 const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
 const callsStore = useCallsStore();
+const phoneWidgetStore = usePhoneWidgetStore();
+// Hiding only takes the widget off screen: this component stays mounted, so
+// the SIP sessions below keep running and calls still bring the phone back.
+const { hasCallActivity, isVisible, ownIncomingCalls, hide } =
+  usePhoneWidgetVisibility();
 const phone = ref('');
 const selectedInboxId = ref(null);
-const isHidden = ref(false);
 const isExpanded = ref(false);
 const isBootstrapping = ref(false);
 const hasBootstrapped = ref(false);
@@ -211,12 +220,15 @@ const connectionActionLabel = computed(() => {
   if (canUseConnectionAction.value) return t('PHONE_WIDGET.REFRESH_CONNECTION');
   return connectionLabel.value;
 });
-const statusColor = computed(() => {
-  if (['ready', 'ownerTab'].includes(status.value)) return 'bg-n-teal-9';
-  if (status.value === 'connecting') return 'bg-n-amber-9';
-  if (['standby', 'disconnected'].includes(status.value)) return 'bg-n-slate-9';
-  return 'bg-n-ruby-9';
-});
+const statusColor = computed(() => phoneWidgetStatusColor(status.value));
+// Incoming calls the employee has not seen yet: each new one shows the phone
+// again even if it was hidden during an earlier call. Calls a colleague took
+// do not count.
+const incomingCallKeys = computed(() =>
+  ownIncomingCalls.value
+    .filter(call => call?.callDirection !== 'outbound' && call?.callSid)
+    .map(call => String(call.callSid))
+);
 
 const bootstrap = async () => {
   if (!voiceInboxes.value.length || hasBootstrapped.value) return;
@@ -306,6 +318,22 @@ watch(accountId, () => {
   hasBootstrapped.value = false;
   bootstrap();
 });
+// The sidebar phone button shows the same line state as this header.
+watch(
+  [() => availableVoiceInboxes.value.length > 0, status],
+  ([available, value]) => {
+    phoneWidgetStore.publishSipState({ available, status: value });
+  },
+  { immediate: true }
+);
+watch(hasCallActivity, active => {
+  if (!active) phoneWidgetStore.setCallDismissed(false);
+});
+watch(incomingCallKeys, (keys, previousKeys = []) => {
+  if (keys.some(key => !previousKeys.includes(key))) {
+    phoneWidgetStore.setCallDismissed(false);
+  }
+});
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
@@ -313,51 +341,17 @@ onMounted(() => {
 onUnmounted(() => {
   WebphoneClient.removeEventListener('call:sessions-changed', syncSessions);
   clearHandoverTimer();
+  phoneWidgetStore.publishSipState({ available: false });
 });
 </script>
 
 <template>
   <div
-    v-if="availableVoiceInboxes.length"
+    v-if="availableVoiceInboxes.length && isVisible"
     class="fixed ltr:right-4 rtl:left-4 top-16 z-40 w-[336px] max-w-[calc(100vw-2rem)]"
     data-testid="phone-widget"
   >
-    <div v-if="isHidden" class="flex items-center justify-end gap-1.5">
-      <Button
-        type="button"
-        variant="ghost"
-        color="slate"
-        size="sm"
-        class="!rounded-full bg-n-solid-2 shadow-xl"
-        :icon="microphoneMuted ? 'i-lucide-mic-off' : 'i-lucide-mic'"
-        :disabled="!microphoneAvailable"
-        :aria-label="microphoneLabel"
-        :title="microphoneLabel"
-        :aria-pressed="microphoneMuted"
-        data-testid="phone-widget-microphone"
-        @click="toggleMicrophone"
-      />
-      <Button
-        type="button"
-        variant="solid"
-        color="slate"
-        size="md"
-        icon="i-lucide-phone"
-        class="!flex w-fit !rounded-full shadow-xl"
-        :aria-label="t('PHONE_WIDGET.OPEN')"
-        :title="statusLabel"
-        data-testid="phone-widget-launcher"
-        @click="isHidden = false"
-      >
-        <span
-          class="size-2 rounded-full"
-          :class="statusColor"
-          aria-hidden="true"
-        />
-      </Button>
-    </div>
     <section
-      v-else
       class="overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
       :aria-label="t('PHONE_WIDGET.TITLE')"
       data-testid="phone-widget-panel"
@@ -447,7 +441,7 @@ onUnmounted(() => {
           :aria-label="t('PHONE_WIDGET.HIDE')"
           :title="t('PHONE_WIDGET.HIDE')"
           data-testid="phone-widget-hide"
-          @click="isHidden = true"
+          @click="hide"
         />
       </header>
 
