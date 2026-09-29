@@ -4423,8 +4423,12 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.reload.recording_ref).to eq(external_url)
       expect(result.metadata.dig('recording', 'recording_url')).to eq(external_url)
       expect(recording_url).to start_with("/api/v1/accounts/#{account.id}/telephony/calls/call-retry-1/recording?")
-      expect(recording_url).to include('recording_token=')
+        .and include('recording_token=')
       expect(result.latest_voice_message.content_attributes.dig('data', 'recording', 'recording_url')).to eq(recording_url)
+      data = result.latest_voice_message.content_attributes.fetch('data')
+      presented_ref = "external:#{Digest::SHA256.hexdigest(external_url).first(24)}"
+      expect([data['recording_ref'], data.dig('recording', 'recording_ref')]).to eq([presented_ref] * 2)
+      expect([data, result.conversation.reload.additional_attributes].to_json).not_to include('recording-signature')
     end
 
     it 'stores a late Sipuni terminal recording after the webphone already closed the call' do
@@ -4499,9 +4503,14 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(result.reload).to be_unanswered_terminal
       data = message.reload.content_attributes.fetch('data')
+      conversation_attributes = result.conversation.reload.additional_attributes
       expect(data['recording_url']).to be_nil
       expect(data.dig('recording', 'recording_url')).to be_nil
-      expect(result.conversation.reload.additional_attributes.dig('recording', 'recording_url')).to be_nil
+      expect(conversation_attributes.dig('recording', 'recording_url')).to be_nil
+      presented_refs = [data['recording_ref'], data.dig('recording', 'recording_ref'),
+                        conversation_attributes['recording_ref'], conversation_attributes.dig('recording', 'recording_ref')]
+      expect(presented_refs).to eq(["external:#{Digest::SHA256.hexdigest(external_url).first(24)}"] * 4)
+      expect([data, conversation_attributes].to_json).not_to include('recording-signature')
     end
 
     it 'keeps Sipuni operator leg metadata when a later external summary event arrives' do

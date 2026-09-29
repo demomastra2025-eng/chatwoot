@@ -2719,7 +2719,20 @@ class Telephony::EventsIngestionService
       # A call nobody answered has no playable recording; never present the raw provider URL.
       metadata.delete('recording_url')
     end
-    metadata
+    without_external_recording_urls(metadata)
+  end
+
+  # Provider recording URLs can carry credentials (Sipuni signs them with
+  # hash=), so payloads keep only the playable recording_url. An external
+  # recording_ref becomes a stable digest that still identifies the recording.
+  def without_external_recording_urls(metadata)
+    metadata.each_with_object({}) do |(key, value), presented|
+      if key == 'recording_url' || !http_url?(value)
+        presented[key] = value
+      elsif key == 'recording_ref'
+        presented[key] = "external:#{Digest::SHA256.hexdigest(value.to_s).first(24)}"
+      end
+    end
   end
 
   def recording_url(call_session)
