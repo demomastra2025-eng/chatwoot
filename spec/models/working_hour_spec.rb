@@ -3,6 +3,12 @@
 require 'rails_helper'
 
 RSpec.describe WorkingHour, locale: :en do
+  # Examples below assign Time.zone (one of them to Australia/Sydney). Restore
+  # it afterwards so the zone cannot leak into spec files that run later.
+  around do |example|
+    Time.use_zone(Time.zone) { example.run }
+  end
+
   context 'when on monday 10am' do
     let(:inbox) { create(:inbox, timezone: 'UTC') }
 
