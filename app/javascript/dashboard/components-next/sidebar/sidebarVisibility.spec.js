@@ -239,21 +239,105 @@ describe('sidebarVisibility', () => {
     });
   });
 
-  it('keeps all primary lists together when their group is enabled', () => {
+  it('honours lists hidden one by one while the group is enabled', () => {
     const items = [
       { name: 'Assignee:all', visibilityKey: 'Conversation:Assignee:all' },
       { name: 'Assignee:me', visibilityKey: 'Conversation:Assignee:me' },
+      {
+        name: 'Assignee:unassigned',
+        visibilityKey: 'Conversation:Assignee:unassigned',
+      },
     ];
     const settings = currentSettings([
       'Conversation:Assignee:all',
       'Conversation:Assignee:me',
     ]);
 
-    expect(filterSidebarMenuItems(items, settings)).toEqual(items);
+    expect(filterSidebarMenuItems(items, settings)).toEqual([items[2]]);
+    expect(isConversationAssigneeSelectionLocked(settings)).toBe(false);
     expect(buildSidebarVisibilityState(settings)).toMatchObject({
       'Conversation:Assignee': true,
-      'Conversation:Assignee:all': true,
-      'Conversation:Assignee:me': true,
+      'Conversation:Assignee:all': false,
+      'Conversation:Assignee:me': false,
+      'Conversation:Assignee:unassigned': true,
+    });
+  });
+
+  // Company settings saved by the old Visibility page (version 16) hid All,
+  // Mine and Unassigned one by one; they must look the same after deploy.
+  describe('legacy company assignee settings (version 16)', () => {
+    const assigneeItems = [
+      { name: 'Assignee:all', visibilityKey: 'Conversation:Assignee:all' },
+      { name: 'Assignee:me', visibilityKey: 'Conversation:Assignee:me' },
+      {
+        name: 'Assignee:unassigned',
+        visibilityKey: 'Conversation:Assignee:unassigned',
+      },
+    ];
+    const legacySettings = hiddenItems => ({
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: hiddenItems,
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 16,
+    });
+    const visibleLists = settings =>
+      filterSidebarMenuItems(assigneeItems, settings).map(item => item.name);
+
+    it.each([
+      [['Conversation:Assignee:unassigned'], ['Assignee:all', 'Assignee:me']],
+      [['Conversation:Assignee:me'], ['Assignee:all', 'Assignee:unassigned']],
+      [['Conversation:Assignee:all'], ['Assignee:me', 'Assignee:unassigned']],
+      [
+        ['Conversation:Assignee:all', 'Conversation:Assignee:unassigned'],
+        ['Assignee:me'],
+      ],
+      [
+        [
+          'Conversation:Assignee:all',
+          'Conversation:Assignee:me',
+          'Conversation:Assignee:unassigned',
+        ],
+        [],
+      ],
+    ])('hidden %j still shows exactly %j', (hidden, visible) => {
+      const settings = legacySettings(hidden);
+
+      expect(visibleLists(settings)).toEqual(visible);
+      expect(isConversationAssigneeSelectionLocked(settings)).toBe(false);
+    });
+
+    it('shows only All for Mine and Unassigned hidden, now as the locked group', () => {
+      const settings = legacySettings([
+        'Conversation:Assignee:me',
+        'Conversation:Assignee:unassigned',
+      ]);
+
+      expect(visibleLists(settings)).toEqual(['Assignee:all']);
+      expect(isConversationAssigneeSelectionLocked(settings)).toBe(true);
+    });
+
+    it('opens the new settings with the saved lists and saves them back unchanged', () => {
+      const settings = legacySettings([
+        'Conversation:Assignee:unassigned',
+        'Conversation:Teams',
+      ]);
+      const state = buildSidebarVisibilityState(settings);
+
+      expect(state).toMatchObject({
+        'Conversation:Assignee': true,
+        'Conversation:Assignee:all': true,
+        'Conversation:Assignee:me': true,
+        'Conversation:Assignee:unassigned': false,
+      });
+      expect(getConversationSidebarHiddenItemsFromState(state)).toEqual(
+        getConversationSidebarHiddenItems(settings)
+      );
+      expect(getConversationSidebarHiddenItems(settings)).toEqual([
+        'Conversation:Assignee:unassigned',
+        'Conversation:Teams',
+      ]);
+      // The company Navigation page saves the whole list: nothing is lost.
+      expect(getSidebarHiddenItemsFromState(state)).toEqual(
+        getSidebarHiddenItems(settings)
+      );
     });
   });
 

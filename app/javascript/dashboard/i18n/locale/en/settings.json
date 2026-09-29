@@ -1232,6 +1232,7 @@
         "PIPELINE_EMPTY": "Select a main pipeline",
         "PIPELINE": "{pipeline} · {visible} of {total} stages",
         "STATUSES": "Showing {visible} of {total} statuses",
+        "LISTS": "Showing {visible} of {total} lists",
         "CONFIGURE": "Configure",
         "COLLAPSE": "Collapse"
       },

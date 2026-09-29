@@ -1595,6 +1595,7 @@
         "PIPELINE_EMPTY": "Выберите главную воронку",
         "PIPELINE": "{pipeline} · этапы: {visible} из {total}",
         "STATUSES": "Показываются статусы: {visible} из {total}",
+        "LISTS": "Показываются списки: {visible} из {total}",
         "CONFIGURE": "Настроить",
         "COLLAPSE": "Свернуть"
       },

@@ -210,8 +210,14 @@ const normalizeLegacyConversationPipelinesVisibility = (
   return hiddenItemsSet;
 };
 
-// Before version 20 Mine and Unassigned could be hidden one by one. They are
-// now controlled together; hiding both keeps the list locked to All.
+// All, Mine and Unassigned can be hidden one by one (the old company
+// Visibility page saved them like that, and the per-list switches keep doing
+// so); those hides are honoured exactly. The group switch
+// (Conversation:Assignee) additionally locks the list to All.
+//
+// Before version 20, an account that hid exactly Mine and Unassigned showed
+// only All; it becomes the locked group, which shows the same navigation.
+// Any other legacy combination stays as the per-list hides it was saved as.
 const normalizeLegacyConversationAssigneeVisibility = (
   hiddenItems,
   version
@@ -221,7 +227,8 @@ const normalizeLegacyConversationAssigneeVisibility = (
 
   if (
     hiddenItemsSet.has(CONVERSATION_ASSIGNEE_ME_VISIBILITY_KEY) &&
-    hiddenItemsSet.has(CONVERSATION_ASSIGNEE_UNASSIGNED_VISIBILITY_KEY)
+    hiddenItemsSet.has(CONVERSATION_ASSIGNEE_UNASSIGNED_VISIBILITY_KEY) &&
+    !hiddenItemsSet.has(CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY)
   ) {
     hiddenItemsSet.add(CONVERSATION_ASSIGNEE_VISIBILITY_KEY);
   }
@@ -262,6 +269,8 @@ export const buildEffectiveSidebarVisibilitySettings = ({
     SIDEBAR_VISIBILITY_CURRENT_VERSION,
 });
 
+// The locked group always shows All and hides Mine and Unassigned; without
+// the lock, each list keeps its own saved visibility.
 const normalizeConversationAssigneeHiddenItems = hiddenItems => {
   const normalizedHiddenItems = new Set(hiddenItems);
 
@@ -269,10 +278,6 @@ const normalizeConversationAssigneeHiddenItems = hiddenItems => {
     normalizedHiddenItems.delete(CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY);
     normalizedHiddenItems.add(CONVERSATION_ASSIGNEE_ME_VISIBILITY_KEY);
     normalizedHiddenItems.add(CONVERSATION_ASSIGNEE_UNASSIGNED_VISIBILITY_KEY);
-  } else {
-    CONVERSATION_ASSIGNEE_ITEM_KEYS.forEach(key => {
-      normalizedHiddenItems.delete(key);
-    });
   }
 
   return normalizedHiddenItems;
@@ -333,10 +338,8 @@ export const filterSidebarMenuItems = (menuItems, settings) => {
   );
 
   const isHidden = itemKey => {
-    if (CONVERSATION_ASSIGNEE_ITEM_KEYS.has(itemKey)) {
-      return (
-        isAssigneeLocked && itemKey !== CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY
-      );
+    if (CONVERSATION_ASSIGNEE_ITEM_KEYS.has(itemKey) && isAssigneeLocked) {
+      return itemKey !== CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY;
     }
 
     return hiddenItems.has(itemKey);

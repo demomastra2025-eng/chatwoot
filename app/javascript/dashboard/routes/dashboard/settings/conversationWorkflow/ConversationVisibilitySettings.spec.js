@@ -127,13 +127,25 @@ describe('ConversationVisibilitySettings', () => {
       'appointments',
     ]);
     expect(wrapper.vm.PRIMARY_NAVIGATION_ITEMS.map(item => item.key)).toEqual([
-      'assignee',
       'folders',
       'teams',
       'labels',
     ]);
+    // The assignee lists come first, as a group with one switch per list.
+    expect(wrapper.vm.navigationRows.map(row => row.key)).toEqual([
+      'assignee',
+      'folders',
+      'teams',
+      'labels',
+      'statuses',
+      'pipeline',
+      'appointments',
+    ]);
     expect(wrapper.text()).toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ASSIGNEE'
+    );
+    expect(wrapper.text()).toContain(
+      'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.ASSIGNEE'
     );
     expect(wrapper.text()).toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
@@ -153,7 +165,7 @@ describe('ConversationVisibilitySettings', () => {
     expect(primaryNavigation.classes()).toContain('divide-y');
     expect(primaryNavigation.classes()).not.toContain('rounded-xl');
     expect(primaryNavigation.classes()).not.toContain('border');
-    expect(primaryNavigation.findAll('label')).toHaveLength(4);
+    expect(primaryNavigation.findAll('label')).toHaveLength(3);
     expect(wrapper.vm.visibilityDraft['Conversation:Folders']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Teams']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Labels']).toBe(true);
@@ -302,32 +314,23 @@ describe('ConversationVisibilitySettings', () => {
     ).toBe(false);
   });
 
-  it('keeps primary lists atomic inside main navigation', async () => {
-    const wrapper = mountComponent();
+  const assigneeGroupOf = wrapper =>
+    wrapper.vm.navigationRows.find(row => row.key === 'assignee');
 
-    const assigneeItem = wrapper.vm.PRIMARY_NAVIGATION_ITEMS.find(
-      item => item.key === 'assignee'
-    );
-    wrapper.vm.togglePrimaryNavigationItem(assigneeItem);
+  it('locks the lists to All with the assignee group switch', async () => {
+    const wrapper = mountComponent();
+    const assigneeGroup = assigneeGroupOf(wrapper);
+
+    wrapper.vm.toggleGroup(assigneeGroup);
     await wrapper.vm.$nextTick();
 
-    const allSwitch = wrapper.find(
-      '#conversation-visibility-conversation-assignee-all'
-    );
-    const mineSwitch = wrapper.find(
-      '#conversation-visibility-conversation-assignee-me'
-    );
-    const unassignedSwitch = wrapper.find(
-      '#conversation-visibility-conversation-assignee-unassigned'
-    );
-
-    expect(allSwitch.exists()).toBe(false);
-    expect(mineSwitch.exists()).toBe(false);
-    expect(unassignedSwitch.exists()).toBe(false);
-    expect(wrapper.vm.visibilityDraft['Conversation:Assignee:all']).toBe(true);
-    expect(wrapper.vm.visibilityDraft['Conversation:Assignee:me']).toBe(false);
-    expect(wrapper.vm.visibilityDraft['Conversation:Assignee:unassigned']).toBe(
-      false
+    expect(
+      wrapper
+        .find('#conversation-visibility-conversation-assignee-all')
+        .exists()
+    ).toBe(false);
+    expect(wrapper.vm.groupSummary(assigneeGroup)).toBe(
+      'CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.HIDDEN'
     );
 
     await wrapper.vm.saveVisibility();
@@ -342,18 +345,80 @@ describe('ConversationVisibilitySettings', () => {
       })
     );
 
-    wrapper.vm.togglePrimaryNavigationItem(assigneeItem);
+    // Switching the group back on shows all three lists again.
+    wrapper.vm.toggleGroup(assigneeGroup);
     await wrapper.vm.$nextTick();
     expect(wrapper.vm.visibilityDraft['Conversation:Assignee:all']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Assignee:me']).toBe(true);
     expect(wrapper.vm.visibilityDraft['Conversation:Assignee:unassigned']).toBe(
       true
     );
+  });
+
+  it('hides a single assignee list with its own switch', async () => {
+    const wrapper = mountComponent();
+    const assigneeGroup = assigneeGroupOf(wrapper);
+
+    wrapper.vm.toggleGroupExpansion(assigneeGroup);
+    await wrapper.vm.$nextTick();
+    await wrapper
+      .get('#conversation-visibility-conversation-assignee-unassigned')
+      .setValue(false);
+
+    expect(wrapper.vm.groupSummary(assigneeGroup)).toBe(
+      'CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.LISTS:{"visible":2,"total":3}'
+    );
+    await wrapper.vm.saveVisibility();
+    expect(updateAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Conversation:Assignee:unassigned',
+          'Conversation:Statuses',
+        ],
+      })
+    );
+  });
+
+  // Company settings saved by the old Visibility page (version 16).
+  it('opens legacy per-list hides as they were saved and keeps them on save', async () => {
+    currentAccount.value = {
+      settings: {
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Conversation:Assignee:unassigned',
+        ],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 16,
+      },
+    };
+    const wrapper = mountComponent();
+    const assigneeGroup = assigneeGroupOf(wrapper);
+
+    expect(wrapper.vm.hasChanges).toBe(false);
+    expect(wrapper.vm.isGroupEnabled(assigneeGroup)).toBe(true);
+    expect(wrapper.vm.visibilityDraft).toMatchObject({
+      'Conversation:Assignee:all': true,
+      'Conversation:Assignee:me': true,
+      'Conversation:Assignee:unassigned': false,
+    });
+    wrapper.vm.toggleGroupExpansion(assigneeGroup);
+    await wrapper.vm.$nextTick();
     expect(
-      wrapper
-        .find('#conversation-visibility-conversation-assignee-all')
-        .exists()
+      wrapper.get('#conversation-visibility-conversation-assignee-unassigned')
+        .element.checked
     ).toBe(false);
+
+    // Saving another change keeps the legacy per-list hide.
+    wrapper.vm.visibilityDraft['Conversation:Folders'] = false;
+    await wrapper.vm.saveVisibility();
+    expect(updateAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Conversation:Assignee:unassigned',
+          'Conversation:Folders',
+        ],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })
+    );
   });
 
   it('selects a pipeline before exposing its stages', async () => {

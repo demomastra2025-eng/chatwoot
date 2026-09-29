@@ -34,13 +34,26 @@ import {
   serializeConversationPipelineVisibility,
 } from 'dashboard/components-next/sidebar/conversationPipelineVisibility';
 
+const CONVERSATION_ASSIGNEE_ITEM_VISIBILITY_KEYS = Object.freeze([
+  'Conversation:Assignee:all',
+  'Conversation:Assignee:me',
+  'Conversation:Assignee:unassigned',
+]);
+
+// All / Mine / Unassigned: the group switch locks the list to All when it is
+// off; while it is on, each list can still be hidden on its own (as the old
+// company Visibility page saved them).
+const ASSIGNEE_GROUP = Object.freeze({
+  key: 'assignee',
+  parentKey: CONVERSATION_ASSIGNEE_VISIBILITY_KEY,
+  labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ASSIGNEE',
+  descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.ASSIGNEE',
+  // Explains that switching the group off keeps the list on All.
+  showDescription: true,
+  itemKeys: [...CONVERSATION_ASSIGNEE_ITEM_VISIBILITY_KEYS],
+});
+
 const PRIMARY_NAVIGATION_ITEMS = Object.freeze([
-  {
-    key: 'assignee',
-    visibilityKey: CONVERSATION_ASSIGNEE_VISIBILITY_KEY,
-    labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ASSIGNEE',
-    descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.ASSIGNEE',
-  },
   {
     key: 'folders',
     visibilityKey: 'Conversation:Folders',
@@ -160,18 +173,28 @@ const hasChanges = computed(
 const visibilityDraftInitialized = ref(false);
 const pipelineVisibilityDraftInitialized = ref(false);
 
+const withGroupItems = group => ({
+  ...group,
+  items: group.itemKeys
+    .map(key => conversationVisibilityItemsByKey.get(key))
+    .filter(Boolean),
+});
+
 const groupedVisibilityItems = computed(() =>
   VISIBILITY_GROUPS.filter(
     group =>
       !group.featureFlag ||
       isFeatureEnabledonAccount.value(accountId.value, group.featureFlag)
-  ).map(group => ({
-    ...group,
-    items: group.itemKeys
-      .map(key => conversationVisibilityItemsByKey.get(key))
-      .filter(Boolean),
-  }))
+  ).map(withGroupItems)
 );
+
+// Rows in page order: the assignee lists first, then the single switches
+// (folders, teams, tags), then the configurable groups.
+const navigationRows = computed(() => [
+  { ...withGroupItems(ASSIGNEE_GROUP), isGroup: true },
+  ...PRIMARY_NAVIGATION_ITEMS.map(item => ({ ...item, isGroup: false })),
+  ...groupedVisibilityItems.value.map(group => ({ ...group, isGroup: true })),
+]);
 
 const switchId = itemKey =>
   `conversation-visibility-${itemKey
@@ -196,14 +219,8 @@ const isPrimaryNavigationItemEnabled = item =>
   visibilityDraft.value[item.visibilityKey] !== false;
 
 const togglePrimaryNavigationItem = item => {
-  const isEnabled = !isPrimaryNavigationItemEnabled(item);
-  visibilityDraft.value[item.visibilityKey] = isEnabled;
-
-  if (item.key === 'assignee') {
-    visibilityDraft.value['Conversation:Assignee:all'] = true;
-    visibilityDraft.value['Conversation:Assignee:me'] = isEnabled;
-    visibilityDraft.value['Conversation:Assignee:unassigned'] = isEnabled;
-  }
+  visibilityDraft.value[item.visibilityKey] =
+    !isPrimaryNavigationItemEnabled(item);
 };
 
 const isGroupEnabled = group =>
@@ -214,6 +231,12 @@ const isItemDisabled = group => !isGroupEnabled(group);
 const toggleGroup = group => {
   const isEnabled = !isGroupEnabled(group);
   visibilityDraft.value[group.parentKey] = isEnabled;
+  // Switching the assignee lists back on shows All, Mine and Unassigned.
+  if (group.key === ASSIGNEE_GROUP.key) {
+    CONVERSATION_ASSIGNEE_ITEM_VISIBILITY_KEYS.forEach(key => {
+      visibilityDraft.value[key] = true;
+    });
+  }
   if (!isEnabled && expandedGroupKey.value === group.key) {
     expandedGroupKey.value = null;
   }
@@ -285,10 +308,13 @@ const groupSummary = group => {
   const visible = group.items.filter(
     item => visibilityDraft.value[item.key] !== false
   ).length;
-  return t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.STATUSES', {
+  const summary = {
     visible,
     total: group.items.length,
-  });
+  };
+  return group.key === ASSIGNEE_GROUP.key
+    ? t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.LISTS', summary)
+    : t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.STATUSES', summary);
 };
 
 // At least one stage of the main pipeline stays visible.
@@ -460,210 +486,220 @@ onMounted(() => {
           data-testid="conversation-primary-navigation"
           class="flex flex-col divide-y divide-n-weak/50 py-4"
         >
-          <label
-            v-for="item in PRIMARY_NAVIGATION_ITEMS"
-            :key="item.key"
-            :data-testid="`conversation-navigation-item-${item.key}`"
-            class="flex items-center justify-between gap-3 py-3"
-          >
-            <span class="min-w-0">
-              <span class="block text-sm font-medium text-n-slate-12">
-                {{ groupLabel(item) }}
-              </span>
-              <span
-                v-if="item.descriptionKey"
-                class="mt-0.5 block text-xs text-n-slate-11"
-              >
-                {{ groupDescription(item) }}
-              </span>
-            </span>
-            <Switch
-              :id="switchId(item.visibilityKey)"
-              :model-value="isPrimaryNavigationItemEnabled(item)"
-              @update:model-value="togglePrimaryNavigationItem(item)"
-            />
-          </label>
-          <div
-            v-for="group in groupedVisibilityItems"
-            :key="group.key"
-            :data-testid="`conversation-navigation-group-${group.key}`"
-            class="py-3"
-          >
-            <div class="flex items-center justify-between gap-3">
-              <button
-                type="button"
-                class="min-w-0 flex-1 text-left"
-                :disabled="!isGroupEnabled(group)"
-                :aria-expanded="isGroupExpanded(group)"
-                @click="toggleGroupExpansion(group)"
-              >
+          <template v-for="row in navigationRows" :key="row.key">
+            <label
+              v-if="!row.isGroup"
+              :data-testid="`conversation-navigation-item-${row.key}`"
+              class="flex items-center justify-between gap-3 py-3"
+            >
+              <span class="min-w-0">
                 <span class="block text-sm font-medium text-n-slate-12">
-                  {{ groupLabel(group) }}
+                  {{ groupLabel(row) }}
                 </span>
                 <span
-                  class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-n-slate-11"
+                  v-if="row.descriptionKey"
+                  class="mt-0.5 block text-xs text-n-slate-11"
                 >
-                  <span>{{ groupSummary(group) }}</span>
-                  <span
-                    v-if="isGroupEnabled(group)"
-                    class="font-medium text-n-brand"
-                  >
-                    {{ groupActionLabel(group) }}
-                  </span>
+                  {{ groupDescription(row) }}
                 </span>
-              </button>
+              </span>
               <Switch
-                :id="switchId(group.parentKey)"
-                class="shrink-0"
-                :model-value="isGroupEnabled(group)"
-                @update:model-value="toggleGroup(group)"
+                :id="switchId(row.visibilityKey)"
+                :model-value="isPrimaryNavigationItemEnabled(row)"
+                @update:model-value="togglePrimaryNavigationItem(row)"
               />
-            </div>
-
+            </label>
             <div
-              v-if="isGroupEnabled(group) && isGroupExpanded(group)"
-              class="pb-2 pl-4 pt-4 md:pl-6"
+              v-else
+              :data-testid="`conversation-navigation-group-${row.key}`"
+              class="py-3"
             >
-              <div v-if="group.key === 'pipeline'" class="grid max-w-2xl gap-5">
-                <p
-                  v-if="crmReferencesStore.ui?.isLoadingPipelines"
-                  class="text-body-main text-n-slate-11"
+              <div class="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  class="min-w-0 flex-1 text-left"
+                  :disabled="!isGroupEnabled(row)"
+                  :aria-expanded="isGroupExpanded(row)"
+                  @click="toggleGroupExpansion(row)"
                 >
-                  {{
-                    t(
-                      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_LOADING'
-                    )
-                  }}
-                </p>
-                <div
-                  v-else-if="pipelinesLoadFailed"
-                  data-testid="conversation-navigation-pipelines-error"
-                  class="flex items-center justify-between gap-3 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-slate-12"
-                >
-                  <span>
-                    {{
-                      t(
-                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_ERROR'
-                      )
-                    }}
+                  <span class="block text-sm font-medium text-n-slate-12">
+                    {{ groupLabel(row) }}
                   </span>
-                  <button
-                    type="button"
-                    class="shrink-0 font-medium text-n-brand hover:underline"
-                    @click="loadPipelines"
+                  <span
+                    v-if="row.showDescription"
+                    class="mt-0.5 block text-xs text-n-slate-11"
                   >
-                    {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.RETRY') }}
-                  </button>
-                </div>
-                <p
-                  v-else-if="!pipelineOptions.length"
-                  class="text-body-main text-n-slate-11"
-                >
-                  {{
-                    t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_EMPTY')
-                  }}
-                </p>
-                <template v-else>
-                  <label
-                    class="grid max-w-md gap-2 text-sm font-medium text-n-slate-12"
-                    :for="switchId('primary-pipeline')"
+                    {{ groupDescription(row) }}
+                  </span>
+                  <span
+                    class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-n-slate-11"
+                  >
+                    <span>{{ groupSummary(row) }}</span>
+                    <span
+                      v-if="isGroupEnabled(row)"
+                      class="font-medium text-n-brand"
+                    >
+                      {{ groupActionLabel(row) }}
+                    </span>
+                  </span>
+                </button>
+                <Switch
+                  :id="switchId(row.parentKey)"
+                  class="shrink-0"
+                  :model-value="isGroupEnabled(row)"
+                  @update:model-value="toggleGroup(row)"
+                />
+              </div>
+
+              <div
+                v-if="isGroupEnabled(row) && isGroupExpanded(row)"
+                class="pb-2 pl-4 pt-4 md:pl-6"
+              >
+                <div v-if="row.key === 'pipeline'" class="grid max-w-2xl gap-5">
+                  <p
+                    v-if="crmReferencesStore.ui?.isLoadingPipelines"
+                    class="text-body-main text-n-slate-11"
                   >
                     {{
                       t(
-                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE'
+                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_LOADING'
                       )
                     }}
-                    <NextSelect
-                      :id="switchId('primary-pipeline')"
-                      v-model="selectedPipelineId"
-                      class="w-full"
-                      :options="pipelineOptions"
-                      :placeholder="
+                  </p>
+                  <div
+                    v-else-if="pipelinesLoadFailed"
+                    data-testid="conversation-navigation-pipelines-error"
+                    class="flex items-center justify-between gap-3 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-slate-12"
+                  >
+                    <span>
+                      {{
                         t(
-                          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE_PLACEHOLDER'
+                          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_ERROR'
                         )
-                      "
-                    />
-                  </label>
-
-                  <div v-if="selectedPipeline" class="grid gap-2">
-                    <span class="text-sm font-medium text-n-slate-12">
-                      {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STAGES') }}
+                      }}
                     </span>
-                    <div class="flex flex-col divide-y divide-n-weak/50">
-                      <div
-                        v-for="stage in selectedPipeline.stages"
-                        :key="stage.id"
-                        class="flex cursor-pointer items-center justify-between gap-3 py-3"
-                        :class="{
-                          'cursor-default opacity-60': isStageDisabled(
-                            group,
-                            selectedPipeline,
-                            stage
-                          ),
-                        }"
-                        @click="
-                          setStageVisibility(
-                            group,
-                            selectedPipeline,
-                            stage,
-                            !pipelineState(selectedPipeline).stages[
-                              stageId(stage)
-                            ]
+                    <button
+                      type="button"
+                      class="shrink-0 font-medium text-n-brand hover:underline"
+                      @click="loadPipelines"
+                    >
+                      {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.RETRY') }}
+                    </button>
+                  </div>
+                  <p
+                    v-else-if="!pipelineOptions.length"
+                    class="text-body-main text-n-slate-11"
+                  >
+                    {{
+                      t(
+                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_EMPTY'
+                      )
+                    }}
+                  </p>
+                  <template v-else>
+                    <label
+                      class="grid max-w-md gap-2 text-sm font-medium text-n-slate-12"
+                      :for="switchId('primary-pipeline')"
+                    >
+                      {{
+                        t(
+                          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE'
+                        )
+                      }}
+                      <NextSelect
+                        :id="switchId('primary-pipeline')"
+                        v-model="selectedPipelineId"
+                        class="w-full"
+                        :options="pipelineOptions"
+                        :placeholder="
+                          t(
+                            'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE_PLACEHOLDER'
                           )
                         "
-                      >
-                        <span class="min-w-0 truncate text-sm text-n-slate-12">
-                          {{ stage.name }}
-                        </span>
-                        <Switch
-                          :id="
-                            switchId(
-                              `pipeline-${selectedPipeline.id}-stage-${stage.id}`
+                      />
+                    </label>
+
+                    <div v-if="selectedPipeline" class="grid gap-2">
+                      <span class="text-sm font-medium text-n-slate-12">
+                        {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STAGES') }}
+                      </span>
+                      <div class="flex flex-col divide-y divide-n-weak/50">
+                        <div
+                          v-for="stage in selectedPipeline.stages"
+                          :key="stage.id"
+                          class="flex cursor-pointer items-center justify-between gap-3 py-3"
+                          :class="{
+                            'cursor-default opacity-60': isStageDisabled(
+                              row,
+                              selectedPipeline,
+                              stage
+                            ),
+                          }"
+                          @click="
+                            setStageVisibility(
+                              row,
+                              selectedPipeline,
+                              stage,
+                              !pipelineState(selectedPipeline).stages[
+                                stageId(stage)
+                              ]
                             )
                           "
-                          :model-value="
-                            pipelineState(selectedPipeline).stages[
-                              stageId(stage)
-                            ]
-                          "
-                          :disabled="
-                            isStageDisabled(group, selectedPipeline, stage)
-                          "
-                          @update:model-value="
-                            value =>
-                              setStageVisibility(
-                                group,
-                                selectedPipeline,
-                                stage,
-                                value
+                        >
+                          <span
+                            class="min-w-0 truncate text-sm text-n-slate-12"
+                          >
+                            {{ stage.name }}
+                          </span>
+                          <Switch
+                            :id="
+                              switchId(
+                                `pipeline-${selectedPipeline.id}-stage-${stage.id}`
                               )
-                          "
-                          @click.stop
-                        />
+                            "
+                            :model-value="
+                              pipelineState(selectedPipeline).stages[
+                                stageId(stage)
+                              ]
+                            "
+                            :disabled="
+                              isStageDisabled(row, selectedPipeline, stage)
+                            "
+                            @update:model-value="
+                              value =>
+                                setStageVisibility(
+                                  row,
+                                  selectedPipeline,
+                                  stage,
+                                  value
+                                )
+                            "
+                            @click.stop
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </template>
-              </div>
+                  </template>
+                </div>
 
-              <div v-else class="flex flex-col divide-y divide-n-weak/50">
-                <label
-                  v-for="item in group.items"
-                  :key="item.key"
-                  class="flex items-center justify-between gap-3 py-3"
-                >
-                  <span class="min-w-0 text-sm text-n-slate-12">
-                    {{ visibilityLabel(item) }}
-                  </span>
-                  <Switch
-                    :id="switchId(item.key)"
-                    v-model="visibilityDraft[item.key]"
-                  />
-                </label>
+                <div v-else class="flex flex-col divide-y divide-n-weak/50">
+                  <label
+                    v-for="item in row.items"
+                    :key="item.key"
+                    class="flex items-center justify-between gap-3 py-3"
+                  >
+                    <span class="min-w-0 text-sm text-n-slate-12">
+                      {{ visibilityLabel(item) }}
+                    </span>
+                    <Switch
+                      :id="switchId(item.key)"
+                      v-model="visibilityDraft[item.key]"
+                    />
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
         </div>
 
         <div class="flex justify-end border-t border-n-weak py-6">

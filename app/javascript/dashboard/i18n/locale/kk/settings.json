@@ -1187,6 +1187,7 @@
         "PIPELINE_EMPTY": "Негізгі воронканы таңдаңыз",
         "PIPELINE": "{pipeline} · кезеңдер: {visible}/{total}",
         "STATUSES": "Көрсетілетін статустар: {visible}/{total}",
+        "LISTS": "Көрсетілетін тізімдер: {visible}/{total}",
         "CONFIGURE": "Баптау",
         "COLLAPSE": "Жию"
       },
