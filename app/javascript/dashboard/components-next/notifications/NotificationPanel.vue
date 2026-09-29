@@ -8,6 +8,7 @@ import { useEventListener } from '@vueuse/core';
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { conversationUrl, frontendURL } from 'dashboard/helper/URLHelper';
+import { getNotificationCommunicationThreadId } from 'dashboard/helper/communicationThreadHelper';
 import { shortTimestamp } from 'shared/helpers/timeHelper';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -165,6 +166,19 @@ const close = () => {
 };
 
 const conversationRoute = notification => {
+  // Conversations inside a communication thread open in the thread view.
+  const communicationThreadId =
+    getNotificationCommunicationThreadId(notification);
+  if (communicationThreadId) {
+    return frontendURL(
+      conversationUrl({
+        accountId: accountId.value,
+        id: communicationThreadId,
+        communicationThread: true,
+      })
+    );
+  }
+
   // The conversation payload carries the display id used in URLs.
   const conversationId = notification.primaryActor?.id;
   if (!conversationId) return null;

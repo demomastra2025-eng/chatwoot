@@ -278,6 +278,25 @@ describe('NotificationPanel', () => {
     expect(wrapper.find('.notification-side-panel').exists()).toBe(false);
   });
 
+  // The notifications API attaches the thread display id when the
+  // conversation belongs to a communication thread (G track).
+  it('opens a thread notification in the unified thread view', async () => {
+    getters.records.value = () => [
+      unreadNotification({ communicationThreadId: 88 }),
+    ];
+    const wrapper = mountPanel();
+    await wrapper.vm.open();
+
+    await wrapper.get('[data-test="notification-item"]').trigger('click');
+    await flushPromises();
+
+    expect(push).toHaveBeenCalledTimes(1);
+    const [target] = push.mock.calls[0];
+    expect(target.split('?')[0]).toBe(
+      '/app/accounts/1/communication_threads/88'
+    );
+  });
+
   it.each([
     ['Crm::Task', 'task_assignment', 'crm_tasks_index', 'taskId'],
     ['Crm::Deal', 'deal_assignment', 'crm_deals_index', 'dealId'],
