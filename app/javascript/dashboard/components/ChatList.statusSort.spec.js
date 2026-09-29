@@ -1,5 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { reactive, ref } from 'vue';
 
 import ChatList from './ChatList.vue';
@@ -9,6 +9,7 @@ import {
   CONVERSATION_LIST_CONTEXT_SETTINGS_KEY,
   CONVERSATION_LIST_GLOBAL_STATUS_KEY,
 } from 'dashboard/helper/conversationListContext';
+import { conversationUrl } from 'dashboard/helper/URLHelper';
 
 // Focused spec for the status and sort orchestration of the conversation
 // list: page status vs. remembered status, "All statuses" with advanced
@@ -378,6 +379,100 @@ describe('ChatList status and sort orchestration', () => {
         showStatusFilter: false,
         pageTitle: 'VIP',
       });
+    });
+  });
+
+  describe('"All statuses" when a conversation is opened', () => {
+    // The route of the opened card is built by the same URL helper the card
+    // uses, so this covers the card link and the list together.
+    const openCardRoute = ({ name, params, url }) => {
+      mocks.route.name = name;
+      mocks.route.params = { accountId: 1, ...params };
+      mocks.route.query = Object.fromEntries(
+        new URLSearchParams(url.split('?')[1] || '')
+      );
+    };
+
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('keeps status=all without a refetch in the thread list', async () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=all&assignee_type=all'
+      );
+      setRoute({
+        name: 'communication_threads_dashboard',
+        query: { status: 'all', assignee_type: 'all' },
+      });
+      const store = buildStore();
+      const wrapper = mountChatList({
+        store,
+        props: { communicationThreadMode: true },
+      });
+      await flushPromises();
+      expect(lastListFilters(store)).toMatchObject({ status: 'all' });
+      store.dispatch.mockClear();
+      mocks.updateUISettings.mockClear();
+
+      openCardRoute({
+        name: 'communication_thread_conversation',
+        params: { communication_thread_id: '42' },
+        url: conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'all',
+          assigneeType: 'all',
+          communicationThread: true,
+        }),
+      });
+      await flushPromises();
+
+      expect(mocks.route.query.status).toBe('all');
+      const actions = dispatchedActions(store);
+      expect(actions).not.toContain('fetchCommunicationThreads');
+      expect(actions).not.toContain('setChatStatusFilter');
+      expect(wrapper.findComponent(ChatListHeader).props('activeStatus')).toBe(
+        'all'
+      );
+      expect(mocks.updateUISettings).not.toHaveBeenCalled();
+    });
+
+    it('keeps status=all without a refetch in a classic tag list', async () => {
+      setRoute({
+        name: 'label_conversations',
+        params: { label: 'vip' },
+        query: { status: 'all' },
+      });
+      const store = buildStore();
+      const wrapper = mountChatList({ store, props: { label: 'vip' } });
+      await flushPromises();
+      expect(lastListFilters(store)).toMatchObject({
+        status: 'all',
+        labels: ['vip'],
+      });
+      store.dispatch.mockClear();
+
+      openCardRoute({
+        name: 'conversations_through_label',
+        params: { label: 'vip', conversation_id: '7' },
+        url: conversationUrl({
+          accountId: 1,
+          id: 7,
+          label: 'vip',
+          status: 'all',
+        }),
+      });
+      await flushPromises();
+
+      const actions = dispatchedActions(store);
+      expect(actions).not.toContain('fetchAllConversations');
+      expect(actions).not.toContain('setChatStatusFilter');
+      expect(wrapper.findComponent(ChatListHeader).props('activeStatus')).toBe(
+        'all'
+      );
     });
   });
 

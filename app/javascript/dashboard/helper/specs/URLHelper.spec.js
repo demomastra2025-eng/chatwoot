@@ -343,6 +343,65 @@ describe('#URL Helpers', () => {
     });
   });
 
+  // "All statuses" is a page status of the list header; opening a
+  // conversation and going back must keep it (classic and thread lists).
+  describe('"all" status', () => {
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('keeps status=all in classic conversation urls', () => {
+      expect(
+        conversationUrl({ accountId: 1, id: 7, label: 'vip', status: 'all' })
+      ).toBe('accounts/1/label/vip/conversations/7?status=all');
+      expect(conversationUrl({ accountId: 1, id: 7, status: 'all' })).toBe(
+        'accounts/1/conversations/7?status=all'
+      );
+    });
+
+    it('keeps status=all in thread urls', () => {
+      expect(
+        conversationUrl({
+          accountId: 1,
+          id: 42,
+          status: 'all',
+          communicationThread: true,
+        })
+      ).toBe('accounts/1/communication_threads/42?status=all&assignee_type=all');
+    });
+
+    it('keeps status=all in the list page urls (back link)', () => {
+      expect(
+        conversationListPageURL({ accountId: 1, teamId: 3, status: 'all' })
+      ).toBe('/app/accounts/1/team/3?status=all');
+      expect(
+        conversationListPageURL({
+          accountId: 1,
+          status: 'all',
+          communicationThread: true,
+        })
+      ).toBe('/app/accounts/1/communication_threads?status=all&assignee_type=all');
+    });
+
+    it('keeps the current status=all route when no explicit status is given', () => {
+      window.history.replaceState(
+        {},
+        '',
+        '/app/accounts/1/communication_threads?status=all&assignee_type=all'
+      );
+
+      expect(
+        conversationUrl({ accountId: 1, id: 42, communicationThread: true })
+      ).toBe('accounts/1/communication_threads/42?status=all&assignee_type=all');
+    });
+
+    it('still drops statuses that the list does not know', () => {
+      expect(conversationUrl({ accountId: 1, id: 7, status: 'bogus' })).toBe(
+        'accounts/1/conversations/7'
+      );
+    });
+  });
+
   describe('frontendURL', () => {
     it('should return url without params if params passed is nil', () => {
       expect(frontendURL('main', null)).toBe('/app/main');

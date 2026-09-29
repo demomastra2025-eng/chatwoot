@@ -8,7 +8,9 @@ export const frontendURL = (path, params) => {
   return `/app/${path}${stringifiedParams}`;
 };
 
-const CONVERSATION_STATUSES = ['open', 'pending', 'snoozed', 'resolved'];
+// "all" is the "All statuses" page status of the list header; it is carried
+// through conversation links and the back link like any concrete status.
+const CONVERSATION_STATUSES = ['open', 'pending', 'snoozed', 'resolved', 'all'];
 const CONVERSATION_ASSIGNEE_TYPES = ['me', 'unassigned', 'all'];
 
 const normalizeConversationStatus = status => {
