@@ -57,6 +57,17 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(profile.models).to eq(['openai/gpt-5.6-luna'])
     end
 
+    it 'reads the stored fallback preference without resolving every Captain feature default model' do
+      account = create(:account, captain_runtime: { 'openrouter_allow_model_fallbacks' => false })
+
+      expect(account).not_to receive(:captain_preferences)
+
+      profile = described_class.for(feature: :captain_agent, model: 'openai/gpt-6-luna', account: account)
+
+      expect(profile.models).to eq(['openai/gpt-6-luna'])
+      expect(profile.model_fallbacks_allowed?).to be(false)
+    end
+
     it 'tries faster eligible Luna 6 providers before falling back to Luna 5.6' do
       profile = described_class.for(feature: :captain_agent, model: 'openai/gpt-6-luna')
 

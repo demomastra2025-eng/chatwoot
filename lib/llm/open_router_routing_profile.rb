@@ -159,11 +159,19 @@ class Llm::OpenRouterRoutingProfile
 
   def model_fallback_runtime_preference
     return runtime_preferences[MODEL_FALLBACK_RUNTIME_KEY] if runtime_preferences.key?(MODEL_FALLBACK_RUNTIME_KEY)
-    return unless account.respond_to?(:captain_preferences)
 
-    account.captain_preferences[:runtime].to_h.with_indifferent_access[MODEL_FALLBACK_RUNTIME_KEY]
+    account_runtime_preferences[MODEL_FALLBACK_RUNTIME_KEY]
   rescue StandardError
     nil
+  end
+
+  # Read only the runtime section: Account#captain_preferences also resolves the default model of every
+  # Captain feature, which scans the whole OpenRouter catalog once per feature.
+  def account_runtime_preferences
+    return account.captain_runtime_preferences.to_h.with_indifferent_access if account.respond_to?(:captain_runtime_preferences)
+    return account.captain_preferences[:runtime].to_h.with_indifferent_access if account.respond_to?(:captain_preferences)
+
+    {}
   end
 
   def build_models

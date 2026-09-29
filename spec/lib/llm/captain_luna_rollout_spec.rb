@@ -41,6 +41,26 @@ RSpec.describe Llm::CaptainLunaRollout do
     expect(InstallationConfig.find_by!(name: 'CAPTAIN_AI_AGENT_DEFAULT_MODEL').value).to eq('openai/gpt-5.6-luna')
   end
 
+  it 'guards apply and rollback without scanning the model catalog for every Captain feature' do
+    old_account = create(:account, captain_models: { 'assistant' => 'openai/gpt-5.6-luna' })
+    unset_account = create(:account, captain_models: { 'copilot' => 'gpt-5.4' })
+    scope = Account.where(id: [old_account.id, unset_account.id])
+    plan = described_class.plan(scope: scope)
+    selects = 0
+    count_select = lambda do |*, payload|
+      selects += 1 if payload[:name] != 'SCHEMA' && !payload[:cached] && payload[:sql].to_s.lstrip.start_with?('SELECT')
+    end
+
+    ActiveSupport::Notifications.subscribed(count_select, 'sql.active_record') do
+      expect(described_class.apply!(plan, scope: scope)).to eq(2)
+      expect(described_class.rollback!(plan)).to eq(2)
+    end
+
+    # Account saves still validate models against the catalog (~215 SELECTs for this plan). Resolving every
+    # feature default model per locked account in verify_accounts! used to cost ~24k SELECTs here.
+    expect(selects).to be < 500
+  end
+
   it 'rejects a stale plan without changing other accounts' do
     first = create(:account, captain_models: { 'assistant' => 'openai/gpt-5.6-luna' })
     second = create(:account, captain_models: { 'assistant' => 'openai/gpt-5.6-luna' })
