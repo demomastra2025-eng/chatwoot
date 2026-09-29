@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, watch, nextTick, ref } from 'vue';
-import { useSidebarContext, usePopoverState } from './provider';
+import { usePopoverState, useSidebarContext } from './provider';
+import { resolveRouteConversationAssigneeType } from './sidebarActiveSelection';
 import { useRoute, useRouter } from 'vue-router';
 import Policy from 'dashboard/components/policy.vue';
 import Icon from 'next/icon/Icon.vue';
@@ -60,6 +61,7 @@ const navigableChildren = computed(() => {
 
 const route = useRoute();
 const router = useRouter();
+const NON_ACTIVE_QUERY_KEYS = new Set(['page', 'search']);
 const isExpanded = computed(() => expandedItem.value === props.name);
 const isExpandable = computed(() => props.children);
 const hasChildren = computed(
@@ -184,8 +186,7 @@ const queryMatches = child => {
   const assigneeItemType = child?.name?.startsWith('Assignee:')
     ? child.name.split(':')[1]
     : null;
-  const routeAssigneeType =
-    route.query.assignee_type ?? route.query.assigneeType ?? 'all';
+  const routeAssigneeType = resolveRouteConversationAssigneeType(route.query);
 
   if (
     assigneeItemType &&
@@ -196,6 +197,10 @@ const queryMatches = child => {
   }
 
   return Object.entries(childQuery).every(([key, value]) => {
+    if (NON_ACTIVE_QUERY_KEYS.has(key) || typeof value === 'undefined') {
+      return true;
+    }
+
     let routeValue = route.query[key] ?? '';
 
     if (key === 'status') {
@@ -305,9 +310,29 @@ const headerActionItems = computed(() => {
 // We could use the RouterLink isActive too, but our routes are not always
 // nested correctly, so we need to check the active state ourselves
 // TODO: Audit the routes and fix the nesting and remove this
-const activeChildren = computed(() =>
-  navigableChildren.value.filter(matchesChildRoute)
-);
+const routeMatchSpecificity = child => {
+  const activeRouteScore = child.activeOn?.includes(route.name) ? 1000 : 0;
+  const exactPathScore = route.path === resolvePath(child.to) ? 100 : 0;
+  const queryScore = Object.keys(child?.to?.query || {}).length * 10;
+  const paramsScore = Object.keys(child?.to?.params || {}).length * 10;
+
+  return activeRouteScore + exactPathScore + queryScore + paramsScore;
+};
+
+const activeChildren = computed(() => {
+  const matches = navigableChildren.value.filter(matchesChildRoute);
+  const groupMatches = matches.filter(child => Array.isArray(child.children));
+  const leafMatches = matches.filter(child => !Array.isArray(child.children));
+  const activeLeaf = leafMatches.reduce((bestMatch, child) => {
+    if (!bestMatch) return child;
+
+    return routeMatchSpecificity(child) > routeMatchSpecificity(bestMatch)
+      ? child
+      : bestMatch;
+  }, null);
+
+  return activeLeaf ? [...groupMatches, activeLeaf] : groupMatches;
+});
 
 const activeChildNames = computed(() =>
   activeChildren.value.map(child => child.name)
@@ -424,10 +449,9 @@ watch(
           :type="collapsedNavigationTarget ? undefined : 'button'"
           class="flex items-center justify-center size-9 rounded-lg"
           :class="{
-            'text-n-slate-12 bg-n-alpha-2':
-              isActive || hasActiveChild || isExpanded,
-            'text-n-slate-11 hover:bg-n-alpha-2':
-              !isActive && !hasActiveChild && !isExpanded,
+            'bg-n-brand-solid text-n-brand-contrast hover:!bg-n-brand-solid':
+              isActive || hasActiveChild,
+            'text-n-slate-11 hover:bg-n-alpha-2': !isActive && !hasActiveChild,
           }"
           :title="label"
           @click="handleCollapsedClick"
@@ -470,8 +494,15 @@ watch(
         class="grid m-0 list-none sidebar-group-children min-w-0"
       >
         <template v-for="child in children" :key="child.name">
+          <li
+            v-if="child.type === 'section'"
+            data-test="sidebar-section-label"
+            class="mt-2 border-t border-n-weak px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-n-slate-9 first:mt-0 first:border-t-0 first:pt-1"
+          >
+            {{ child.label }}
+          </li>
           <SidebarAssigneeTabs
-            v-if="child.type === 'tabs'"
+            v-else-if="child.type === 'tabs'"
             v-show="
               isExpanded ||
               child.items?.some(item => activeChildNames.includes(item.name))

@@ -87,13 +87,6 @@
           "UPDATE_SUCCESS": "Ваши языковые настройки успешно обновлены",
           "UPDATE_ERROR": "Произошла ошибка при обновлении языковых настроек, пожалуйста, попробуйте снова",
           "USE_ACCOUNT_DEFAULT": "Использовать учетную запись по умолчанию"
-        },
-        "SIDEBAR_VISIBILITY": {
-          "TITLE": "Разделы левого сайдбара",
-          "NOTE": "Выберите, какие разделы будут отображаться в левом сайдбаре. По умолчанию видны все разделы.",
-          "SAVE": "Сохранить видимость сайдбара",
-          "UPDATE_SUCCESS": "Настройки видимости сайдбара успешно обновлены",
-          "UPDATE_ERROR": "Произошла ошибка при обновлении видимости сайдбара, пожалуйста, попробуйте снова"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -417,8 +410,8 @@
     "SETTINGS": "Настройки",
     "ADDITIONAL": "Настройки",
     "CONTACTS": "Контакты",
-    "CRM": "Воронки",
-    "PIPELINES": "Воронки",
+    "CRM": "Сделки",
+    "PIPELINES": "Сделки",
     "DEFAULT_PIPELINE": "Основная",
     "CRM_DEALS": "Сделки",
     "CRM_TASKS": "Задачи",
@@ -450,23 +443,23 @@
     "HOME": "Главная",
     "AGENTS": "Сотрудники",
     "AGENT_BOTS": "Вебхуки",
-    "AUDIT_LOGS": "Журнал",
+    "AUDIT_LOGS": "Журнал действий",
     "INBOXES": "Каналы",
     "NOTIFICATIONS": "Уведомления",
-    "CANNED_RESPONSES": "Шаблоны",
+    "CANNED_RESPONSES": "Быстрые ответы",
     "INTEGRATIONS": "Интеграции",
     "PROFILE_SETTINGS": "Настройки профиля",
-    "ACCOUNT_SETTINGS": "Профиль",
+    "ACCOUNT_SETTINGS": "Профиль компании",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Приложения",
     "LABELS": "Теги",
     "TAG_SETTINGS": "Настройки тегов",
     "CUSTOM_ATTRIBUTES": "Дополнительные поля",
     "AUTOMATION": "Автоматизация",
-    "MACROS": "Макрос",
+    "MACROS": "Макросы",
     "LEAD_FORMS": "Заявки",
     "TEAMS": "Команды",
-    "BILLING": "Платёж",
+    "BILLING": "Тариф и оплата",
     "CUSTOM_VIEWS_FOLDER": "Папки",
     "CUSTOM_VIEWS_SEGMENTS": "Сегменты",
     "ALL_CONTACTS": "Все контакты",
@@ -538,7 +531,20 @@
     "DOCS": "Открыть документацию",
     "SECURITY": "Безопасность",
     "CAPTAIN_AI": "AI-сотрудники",
-    "CONVERSATION_WORKFLOW": "Настройки диалога"
+    "CONVERSATION_WORKFLOW": "Настройки диалога",
+    "CONVERSATION_SETTINGS": "Диалоги",
+    "AUTOMATION_RULES": "Правила автоматизации",
+    "WHATSAPP_TEMPLATES": "Шаблоны WhatsApp",
+    "SETTINGS_SECTIONS": {
+      "COMPANY": "Компания",
+      "CONVERSATIONS": "Диалоги",
+      "CHANNELS": "Каналы и подключения",
+      "AUTOMATION": "Автоматизация",
+      "TEAM": "Команда и доступ",
+      "DATA": "Данные",
+      "AI": "AI"
+    },
+    "VISIBILITY": "Навигация"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",
@@ -1558,42 +1564,56 @@
     },
     "TABS": {
       "CLOSURE": "Завершение диалога",
-      "VISIBILITY": "Видимость",
+      "VISIBILITY": "Навигация диалогов",
       "SLA": "SLA"
     },
     "VISIBILITY": {
       "HEADER": {
-        "TITLE": "Видимость диалогов",
-        "DESCRIPTION": "Выберите, какие группы навигации диалогов показывать в сайдбаре."
+        "TITLE": "Навигация диалогов",
+        "DESCRIPTION": "Выберите, какие списки и бизнес-разделы показывать внутри «Диалогов»."
       },
       "SECTIONS": {
-        "ASSIGNEE": "Принадлежность",
+        "ASSIGNEE": "Все, Мои, Неназначенные",
         "STATUSES": "Статусы",
-        "PIPELINE": "Воронки диалогов",
+        "PIPELINE": "Сделки",
         "APPOINTMENTS": "Записи",
-        "ORGANIZATION": "Организация"
+        "ORGANIZATION": "Основная навигация"
       },
       "DESCRIPTIONS": {
-        "ASSIGNEE": "Показывать или скрывать группы Все, Мои и Неназначенные.",
+        "ASSIGNEE": "При отключении останется неизменный фильтр «Все».",
         "STATUSES": "Показывать или скрывать навигацию по статусам. По умолчанию статусы скрыты.",
-        "PIPELINE": "Показывать или скрывать фильтры диалогов по общей воронке, AI-воронке и их этапам.",
-        "APPOINTMENTS": "Показывать или скрывать фильтры записей по статусам в сайдбаре диалогов.",
-        "ORGANIZATION": "Показывать или скрывать пользовательские виды, команды и теги."
+        "PIPELINE": "Выберите главную воронку и настройте её этапы.",
+        "APPOINTMENTS": "Настройте отображение записей по статусам."
+      },
+      "SUMMARY": {
+        "HIDDEN": "Скрыто",
+        "PIPELINE_EMPTY": "Выберите главную воронку",
+        "PIPELINE": "{pipeline} · этапы: {visible} из {total}",
+        "STATUSES": "Показываются статусы: {visible} из {total}",
+        "CONFIGURE": "Настроить",
+        "COLLAPSE": "Свернуть"
       },
       "ITEMS": {
         "STATUSES": "Группа статусов",
-        "APPOINTMENTS": "Группа статусов записей",
+        "APPOINTMENTS": "Показывать записи",
+        "PIPELINES_LOADING": "Загружаем воронки…",
+        "PIPELINES_EMPTY": "Нет активных воронок с этапами",
+        "PRIMARY_PIPELINE": "Главная воронка",
+        "PRIMARY_PIPELINE_PLACEHOLDER": "Выберите воронку",
+        "STAGES": "Этапы",
         "APPOINTMENT_STATUSES": {
-          "SCHEDULED": "Назначен",
-          "CONFIRMED": "Подтвержден",
-          "COMPLETED": "Прошло",
+          "SCHEDULED": "Запланировано",
+          "CONFIRMED": "Подтверждено",
+          "COMPLETED": "Выполнено",
           "CANCELLED": "Отменено",
           "NO_SHOW": "Не пришёл"
-        }
+        },
+        "PIPELINES_ERROR": "Не удалось загрузить воронки.",
+        "RETRY": "Повторить"
       },
       "SAVE": {
-        "BUTTON": "Сохранить видимость",
-        "SUCCESS": "Видимость диалогов обновлена"
+        "BUTTON": "Сохранить навигацию",
+        "SUCCESS": "Навигация диалогов обновлена"
       }
     },
     "REQUIRED_ATTRIBUTES": {

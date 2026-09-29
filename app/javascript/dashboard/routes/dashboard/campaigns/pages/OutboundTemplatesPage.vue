@@ -1,18 +1,19 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 
 import { useMapGetter, useStoreGetters } from 'dashboard/composables/store';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
-import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 import { INBOX_TYPES, TWILIO_CHANNEL_MEDIUM } from 'dashboard/helper/inbox.js';
 import { groupWhatsAppTemplates } from 'dashboard/helper/whatsappTemplateLibrary';
 import CannedHome from '../../settings/canned/Index.vue';
 import WhatsAppTemplatesPage from '../../settings/inbox/settingsPage/WhatsAppTemplatesPage.vue';
 
 const { t } = useI18n();
+const route = useRoute();
 const getters = useStoreGetters();
 const getOutboundCampaignInboxes = useMapGetter(
   'inboxes/getOutboundCampaignInboxes'
@@ -21,7 +22,11 @@ const getFilteredWhatsAppTemplates = useMapGetter(
   'inboxes/getFilteredWhatsAppTemplates'
 );
 const cannedHomeRef = ref(null);
-const activeTabId = ref('free_text');
+// Quick replies and WhatsApp templates are separate entries of the settings
+// hub, so the route decides which one this page shows.
+const activeTabId = computed(() =>
+  route.name === 'outbound_whatsapp_templates_index' ? 'whatsapp' : 'free_text'
+);
 const selectedWhatsAppInboxId = ref(null);
 
 const recordsCount = computed(() => {
@@ -57,33 +62,25 @@ const whatsAppTemplateCount = computed(() => {
     getFilteredWhatsAppTemplates.value(selectedWhatsAppInboxId.value) || []
   ).length;
 });
-const tabs = computed(() => [
-  {
-    id: 'free_text',
-    label: t('OUTBOUND_WORKSPACE.TEMPLATES.TABS.FREE_TEXT'),
-    count: recordsCount.value,
-  },
-  {
-    id: 'whatsapp',
-    label: t('OUTBOUND_WORKSPACE.TEMPLATES.TABS.WHATSAPP'),
-    count: whatsAppTemplateCount.value,
-  },
-]);
-const activeTabIndex = computed(() =>
-  tabs.value.findIndex(tab => tab.id === activeTabId.value)
-);
+
 const activeRecordsCount = computed(() =>
   activeTabId.value === 'free_text'
     ? recordsCount.value
     : whatsAppTemplateCount.value
 );
+const pageTitle = computed(() =>
+  activeTabId.value === 'whatsapp'
+    ? t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.TITLE')
+    : t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.TITLE')
+);
+const pageDescription = computed(() =>
+  activeTabId.value === 'whatsapp'
+    ? t('OUTBOUND_WORKSPACE.TEMPLATES.WHATSAPP.DESCRIPTION')
+    : t('OUTBOUND_WORKSPACE.TEMPLATES.FREE_TEXT.DESCRIPTION')
+);
 
 const openCreateDialog = () => {
   cannedHomeRef.value?.openAddPopup();
-};
-
-const handleTabChanged = tab => {
-  activeTabId.value = tab.id;
 };
 
 watch(
@@ -102,10 +99,7 @@ watch(
 </script>
 
 <template>
-  <OutboundWorkspaceLayout
-    :title="$t('OUTBOUND_WORKSPACE.TEMPLATES.TITLE')"
-    :description="$t('OUTBOUND_WORKSPACE.TEMPLATES.DESCRIPTION')"
-  >
+  <OutboundWorkspaceLayout :title="pageTitle" :description="pageDescription">
     <template #meta>
       <span>
         {{
@@ -122,14 +116,6 @@ watch(
         :label="$t('CANNED_MGMT.HEADER_BTN_TXT')"
         size="sm"
         @click="openCreateDialog"
-      />
-    </template>
-
-    <template #tabs>
-      <TabBar
-        :tabs="tabs"
-        :initial-active-tab="activeTabIndex"
-        @tab-changed="handleTabChanged"
       />
     </template>
 

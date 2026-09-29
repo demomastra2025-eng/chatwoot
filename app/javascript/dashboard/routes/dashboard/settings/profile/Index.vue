@@ -13,7 +13,6 @@ import UserBasicDetails from './UserBasicDetails.vue';
 import MessageSignature from './MessageSignature.vue';
 import FontSize from './FontSize.vue';
 import UserLanguageSelect from './UserLanguageSelect.vue';
-import SidebarVisibilitySettings from './SidebarVisibilitySettings.vue';
 import HotKeyCard from './HotKeyCard.vue';
 import ChangePassword from './ChangePassword.vue';
 import NotificationPreferences from './NotificationPreferences.vue';
@@ -31,7 +30,6 @@ export default {
     SectionLayout,
     FontSize,
     UserLanguageSelect,
-    SidebarVisibilitySettings,
     UserProfilePicture,
     Policy,
     UserBasicDetails,
@@ -251,7 +249,6 @@ export default {
               $t('PROFILE_SETTINGS.FORM.INTERFACE_SECTION.LANGUAGE.NOTE')
             "
           />
-          <SidebarVisibilitySettings />
         </div>
       </SectionLayout>
       <SectionLayout

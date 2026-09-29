@@ -5,7 +5,6 @@ const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
 const TaskSettings = () => import('./TaskSettings.vue');
-const AttributesHome = () => import('../attributes/Index.vue');
 
 const hasCrmDealsEnabled = accountId =>
   store.getters['accounts/isFeatureEnabledonAccount'](
@@ -29,11 +28,6 @@ const dealSettingsTabs = [
     routeName: 'crm_settings_index',
     activeOn: ['crm_settings_index'],
   },
-  {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
-    routeName: 'crm_deal_fields_settings_index',
-    activeOn: ['crm_deal_fields_settings_index'],
-  },
 ];
 
 const taskSettingsTabs = [
@@ -42,12 +36,14 @@ const taskSettingsTabs = [
     routeName: 'crm_task_settings_index',
     activeOn: ['crm_task_settings_index'],
   },
-  {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
-    routeName: 'crm_task_fields_settings_index',
-    activeOn: ['crm_task_fields_settings_index'],
-  },
 ];
+
+// Deal and task fields live in Settings > Data > Additional fields now.
+const redirectToAdditionalFields = tab => to => ({
+  name: 'workspace_additional_fields_settings_index',
+  params: to.params,
+  query: { tab },
+});
 
 const redirectToCrmLanding = (to, _from, next) => {
   if (
@@ -62,26 +58,6 @@ const redirectToCrmLanding = (to, _from, next) => {
     return;
   }
 
-  if (hasCrmDealsEnabled(to.params.accountId)) {
-    next();
-    return;
-  }
-
-  if (hasCrmTasksEnabled(to.params.accountId)) {
-    next({
-      name: 'crm_task_settings_index',
-      params: to.params,
-      query: to.query,
-    });
-    return;
-  }
-
-  next({
-    path: frontendURL(`accounts/${to.params.accountId}`),
-  });
-};
-
-const requireCrmDeals = (to, _from, next) => {
   if (hasCrmDealsEnabled(to.params.accountId)) {
     next();
     return;
@@ -140,14 +116,7 @@ export default {
         {
           path: 'fields',
           name: 'crm_task_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'task',
-            showEntityTabs: false,
-            tabs: ['task'],
-          },
-          meta: crmSettingsMeta,
-          beforeEnter: requireCrmTasks,
+          redirect: redirectToAdditionalFields('task'),
         },
       ],
     },
@@ -168,14 +137,7 @@ export default {
         {
           path: 'fields',
           name: 'crm_deal_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'deal',
-            showEntityTabs: false,
-            tabs: ['deal'],
-          },
-          meta: crmSettingsMeta,
-          beforeEnter: requireCrmDeals,
+          redirect: redirectToAdditionalFields('deal'),
         },
       ],
     },

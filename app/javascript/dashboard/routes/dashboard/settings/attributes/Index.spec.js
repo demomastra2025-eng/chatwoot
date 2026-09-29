@@ -133,6 +133,39 @@ describe('Attributes settings index', () => {
     expect(wrapper.vm.disableLegacyAttributeModelSelection).toBe(true);
   });
 
+  it('shows all six workspace entities and follows a route-driven tab change', async () => {
+    const tabs = [
+      'conversation_attribute',
+      'contact_attribute',
+      'company_attribute',
+      'deal',
+      'task',
+      'appointment',
+    ];
+    const wrapper = mountComponent({ initialTab: 'deal', tabs });
+
+    expect(wrapper.vm.availableTabs.map(tab => tab.key)).toEqual(tabs);
+    expect(wrapper.vm.selectedTabKey).toBe('deal');
+
+    await wrapper.setProps({ initialTab: 'task' });
+    expect(wrapper.vm.selectedTabKey).toBe('task');
+
+    await wrapper.setProps({ initialTab: 'unknown' });
+    expect(wrapper.vm.selectedTabKey).toBe('task');
+  });
+
+  it('hides the company tab when companies are disabled for the account', () => {
+    enabledFeatures.delete('companies');
+    try {
+      const wrapper = mountComponent({ initialTab: 'company_attribute' });
+
+      expect(wrapper.text()).not.toContain('ATTRIBUTES_MGMT.TABS.COMPANY');
+      expect(wrapper.vm.selectedTabKey).toBe('conversation_attribute');
+    } finally {
+      enabledFeatures.add('companies');
+    }
+  });
+
   it('can be scoped to task CRM fields without offering entity switching', () => {
     const wrapper = mountComponent({
       initialTab: 'task',

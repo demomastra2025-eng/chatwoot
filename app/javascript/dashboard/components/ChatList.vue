@@ -76,6 +76,15 @@ import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
 import {
+  isValidConversationPipelineSelection,
+  resolveVisibleConversationPipelines,
+} from 'dashboard/components-next/sidebar/conversationPipelineVisibility';
+import { isConversationAssigneeSelectionLocked } from 'dashboard/components-next/sidebar/sidebarVisibility';
+import {
+  hasExclusiveConversationScope,
+  resolveConversationAssigneeType,
+} from 'dashboard/components-next/sidebar/sidebarActiveSelection';
+import {
   APPOINTMENT_STATUS_ANY,
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
@@ -148,6 +157,7 @@ const showDeleteFoldersModal = ref(false);
 const isContextMenuOpen = ref(false);
 const appliedFilter = ref([]);
 const localSearchQuery = ref('');
+const crmReferenceLoadFailed = ref(false);
 
 const filterAttributeName = attributeI18nKey => {
   switch (attributeI18nKey) {
@@ -210,6 +220,7 @@ const inboxesList = useMapGetter('inboxes/getInboxes');
 const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const getAccount = useMapGetter('accounts/getAccount');
 const getContact = useMapGetter('contacts/getContact');
 // We can't useFunctionGetter here since it needs to be called on setup?
 const getTeamFn = useMapGetter('teams/getTeam');
@@ -282,11 +293,35 @@ const routeConversationStatus = computed(() => {
     : wootConstants.STATUS_TYPE.OPEN;
 });
 
+const currentAccountSettings = computed(
+  () => getAccount.value?.(currentAccountId.value)?.settings || {}
+);
+
+// The company navigation can hide Mine/Unassigned; the list then stays on All.
+const isAssigneeSelectionLocked = computed(() =>
+  isConversationAssigneeSelectionLocked(currentAccountSettings.value)
+);
+
+// Folders, teams, tags, pipeline stages and appointment statuses are
+// exclusive scopes that always list conversations of every assignee.
+const hasExclusivePrimaryScope = computed(() =>
+  hasExclusiveConversationScope({
+    label: props.label,
+    teamId: props.teamId,
+    foldersId: props.foldersId,
+    query: route.query,
+  })
+);
+
 const routeConversationAssigneeType = computed(() => {
   const assigneeType = route.query.assignee_type || route.query.assigneeType;
-  return Object.values(wootConstants.ASSIGNEE_TYPE).includes(assigneeType)
-    ? assigneeType
-    : wootConstants.ASSIGNEE_TYPE.ALL;
+  return resolveConversationAssigneeType({
+    requestedType: assigneeType,
+    allowedTypes: Object.values(wootConstants.ASSIGNEE_TYPE),
+    allType: wootConstants.ASSIGNEE_TYPE.ALL,
+    isLocked: isAssigneeSelectionLocked.value,
+    hasExclusiveScope: hasExclusivePrimaryScope.value,
+  });
 });
 
 const truthyQueryValue = value =>
@@ -831,19 +866,79 @@ function setFiltersFromUISettings() {
     : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC;
 }
 
-function ensureCrmReferencesLoaded({ force = false } = {}) {
+function waitForPipelinesLoad() {
+  return new Promise(resolve => {
+    const stop = watch(
+      () => crmReferencesStore.ui?.isLoadingPipelines,
+      isLoading => {
+        if (isLoading) return;
+        stop();
+        resolve();
+      }
+    );
+  });
+}
+
+// Resolves to false when the pipelines needed by the current filter could not
+// be loaded; the list then keeps the filter and shows a retry banner.
+async function ensureCrmReferencesLoaded({ force = false } = {}) {
   if (!force && !activeCrmPipelineId.value && !activeCrmStageId.value) {
-    return Promise.resolve();
+    crmReferenceLoadFailed.value = false;
+    return true;
   }
 
-  if (
-    crmReferencesStore.pipelines.length ||
-    crmReferencesStore.ui?.isLoadingPipelines
-  ) {
-    return Promise.resolve();
+  if (crmReferencesStore.pipelines.length) {
+    crmReferenceLoadFailed.value = false;
+    return true;
   }
 
-  return crmReferencesStore.loadPipelines().catch(() => {});
+  // Another component (usually the sidebar) is already loading pipelines.
+  if (crmReferencesStore.ui?.isLoadingPipelines) {
+    await waitForPipelinesLoad();
+    crmReferenceLoadFailed.value = !crmReferencesStore.pipelines.length;
+    return !crmReferenceLoadFailed.value;
+  }
+
+  try {
+    await crmReferencesStore.loadPipelines();
+    crmReferenceLoadFailed.value = false;
+    return true;
+  } catch {
+    crmReferenceLoadFailed.value = true;
+    return false;
+  }
+}
+
+// A pipeline or stage that is hidden in Conversation navigation (or no longer
+// exists) cannot scope the list; fall back to the account-wide list.
+async function normalizeConversationPipelineRouteContext() {
+  if (!activeCrmPipelineId.value && !activeCrmStageId.value) {
+    crmReferenceLoadFailed.value = false;
+    return;
+  }
+
+  const referencesLoaded = await ensureCrmReferencesLoaded();
+  if (!referencesLoaded) return;
+
+  const selectionIsValid = isValidConversationPipelineSelection(
+    resolveVisibleConversationPipelines(
+      crmReferencesStore.pipelines,
+      currentAccountSettings.value
+    ),
+    activeCrmPipelineId.value,
+    activeCrmStageId.value
+  );
+  if (selectionIsValid) return;
+
+  await router.replace({
+    name: route.name,
+    params: route.params,
+    query: conversationNavigationQuery({
+      crm_pipeline_id: undefined,
+      crm_stage_id: undefined,
+      assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
+    }),
+  });
 }
 
 function updateConversationStatusQuery(status) {
@@ -1622,7 +1717,7 @@ useEmitter('fetch_conversation_stats', () => {
 onMounted(() => {
   store.dispatch('setChatListFilters', conversationFilters.value);
   setFiltersFromUISettings();
-  ensureCrmReferencesLoaded();
+  normalizeConversationPipelineRouteContext();
   store.dispatch('setChatStatusFilter', activeStatus.value);
   store.dispatch('setChatSortFilter', activeSortBy.value);
   resetAndFetchData();
@@ -1838,10 +1933,26 @@ watch(
 );
 
 watch([activeCrmPipelineId, activeCrmStageId], () => {
-  ensureCrmReferencesLoaded();
+  normalizeConversationPipelineRouteContext();
   clearLocalSearch();
   resetAndFetchData();
 });
+
+// Re-check the pipeline filter once pipelines arrive or an administrator
+// changes the visible pipeline and stages.
+watch(
+  [
+    () => crmReferencesStore.pipelines,
+    () =>
+      currentAccountSettings.value
+        ?.dashboard_conversation_sidebar_pipeline_visibility,
+  ],
+  () => {
+    if (crmReferencesStore.pipelines.length) {
+      normalizeConversationPipelineRouteContext();
+    }
+  }
+);
 
 watch(activeAppointmentStatusFilter, () => {
   clearLocalSearch();
@@ -1906,6 +2017,21 @@ watch(conversationFilters, (newVal, oldVal) => {
       @channel-filter-select="onChannelFilterSelect"
       @unread-filter-toggle="onUnreadFilterToggle"
     />
+
+    <div
+      v-if="crmReferenceLoadFailed"
+      data-test="crm-pipelines-load-error"
+      class="flex items-center justify-between gap-3 border-b border-n-weak bg-n-amber-2 px-4 py-2 text-xs text-n-slate-12"
+    >
+      <span>{{ $t('CRM.DEALS.PIPELINES_LOAD_ERROR') }}</span>
+      <button
+        type="button"
+        class="shrink-0 font-medium text-n-brand hover:underline"
+        @click="normalizeConversationPipelineRouteContext"
+      >
+        {{ $t('CRM.DEALS.RETRY_LOAD') }}
+      </button>
+    </div>
 
     <TeleportWithDirection
       v-if="showAddFoldersModal"

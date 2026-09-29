@@ -87,13 +87,6 @@
           "UPDATE_SUCCESS": "Your Language settings have been updated successfully",
           "UPDATE_ERROR": "There is an error while updating the language settings, please try again",
           "USE_ACCOUNT_DEFAULT": "Use account default"
-        },
-        "SIDEBAR_VISIBILITY": {
-          "TITLE": "Left sidebar sections",
-          "NOTE": "Choose which sections stay visible in the left sidebar. By default, every section is shown.",
-          "SAVE": "Save sidebar visibility",
-          "UPDATE_SUCCESS": "Sidebar visibility has been updated successfully",
-          "UPDATE_ERROR": "There is an error while updating the sidebar visibility, please try again"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -418,7 +411,7 @@
     "ADDITIONAL": "Settings",
     "CONTACTS": "Contacts",
     "CRM": "CRM",
-    "PIPELINES": "Pipelines",
+    "PIPELINES": "Deals",
     "DEFAULT_PIPELINE": "Main",
     "CRM_DEALS": "Deals",
     "CRM_TASKS": "Tasks",
@@ -450,13 +443,13 @@
     "HOME": "Home",
     "AGENTS": "Agents",
     "AGENT_BOTS": "Webhooks",
-    "AUDIT_LOGS": "Audit Logs",
+    "AUDIT_LOGS": "Activity log",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",
-    "CANNED_RESPONSES": "Templates",
+    "CANNED_RESPONSES": "Quick replies",
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
-    "ACCOUNT_SETTINGS": "Profile",
+    "ACCOUNT_SETTINGS": "Company profile",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -466,7 +459,7 @@
     "MACROS": "Macros",
     "LEAD_FORMS": "Leads",
     "TEAMS": "Teams",
-    "BILLING": "Billing",
+    "BILLING": "Plan and billing",
     "CUSTOM_VIEWS_FOLDER": "Folders",
     "CUSTOM_VIEWS_SEGMENTS": "Segments",
     "ALL_CONTACTS": "All Contacts",
@@ -538,7 +531,20 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "AI Staff",
-    "CONVERSATION_WORKFLOW": "Conversation settings"
+    "CONVERSATION_WORKFLOW": "Conversation settings",
+    "CONVERSATION_SETTINGS": "Conversations",
+    "AUTOMATION_RULES": "Automation rules",
+    "WHATSAPP_TEMPLATES": "WhatsApp templates",
+    "SETTINGS_SECTIONS": {
+      "COMPANY": "Company",
+      "CONVERSATIONS": "Conversations",
+      "CHANNELS": "Channels and connections",
+      "AUTOMATION": "Automation",
+      "TEAM": "Team and access",
+      "DATA": "Data",
+      "AI": "AI"
+    },
+    "VISIBILITY": "Navigation"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1195,42 +1201,56 @@
     },
     "TABS": {
       "CLOSURE": "Conversation closure",
-      "VISIBILITY": "Visibility",
+      "VISIBILITY": "Conversation navigation",
       "SLA": "SLA"
     },
     "VISIBILITY": {
       "HEADER": {
-        "TITLE": "Conversation visibility",
-        "DESCRIPTION": "Choose which conversation navigation groups are shown in the sidebar."
+        "TITLE": "Conversation navigation",
+        "DESCRIPTION": "Choose which lists and business sections are shown inside Conversations."
       },
       "SECTIONS": {
-        "ASSIGNEE": "Ownership",
+        "ASSIGNEE": "All, Mine, Unassigned",
         "STATUSES": "Statuses",
-        "PIPELINE": "Conversation pipelines",
+        "PIPELINE": "Deals",
         "APPOINTMENTS": "Appointments",
-        "ORGANIZATION": "Organization"
+        "ORGANIZATION": "Main navigation"
       },
       "DESCRIPTIONS": {
-        "ASSIGNEE": "Show or hide All, Mine, and Unassigned conversation scopes.",
+        "ASSIGNEE": "When disabled, the All filter remains fixed.",
         "STATUSES": "Show or hide status navigation. Statuses are hidden by default.",
-        "PIPELINE": "Show or hide conversation filters by the general pipeline, AI pipeline, and their stages.",
-        "APPOINTMENTS": "Show or hide appointment status filters in the conversation sidebar.",
-        "ORGANIZATION": "Show or hide custom views, teams, and tags."
+        "PIPELINE": "Choose the main pipeline and configure its stages.",
+        "APPOINTMENTS": "Configure which appointment statuses are shown."
+      },
+      "SUMMARY": {
+        "HIDDEN": "Hidden",
+        "PIPELINE_EMPTY": "Select a main pipeline",
+        "PIPELINE": "{pipeline} · {visible} of {total} stages",
+        "STATUSES": "Showing {visible} of {total} statuses",
+        "CONFIGURE": "Configure",
+        "COLLAPSE": "Collapse"
       },
       "ITEMS": {
         "STATUSES": "Status group",
-        "APPOINTMENTS": "Appointment status group",
+        "APPOINTMENTS": "Show records",
+        "PIPELINES_LOADING": "Loading pipelines…",
+        "PIPELINES_EMPTY": "No active pipelines with stages",
+        "PRIMARY_PIPELINE": "Main pipeline",
+        "PRIMARY_PIPELINE_PLACEHOLDER": "Select a pipeline",
+        "STAGES": "Stages",
         "APPOINTMENT_STATUSES": {
-          "SCHEDULED": "Assigned",
+          "SCHEDULED": "Scheduled",
           "CONFIRMED": "Confirmed",
-          "COMPLETED": "Done",
+          "COMPLETED": "Completed",
           "CANCELLED": "Cancelled",
           "NO_SHOW": "No show"
-        }
+        },
+        "PIPELINES_ERROR": "Could not load pipelines.",
+        "RETRY": "Retry"
       },
       "SAVE": {
-        "BUTTON": "Save visibility",
-        "SUCCESS": "Conversation visibility updated"
+        "BUTTON": "Save navigation",
+        "SUCCESS": "Conversation navigation updated"
       }
     },
     "REQUIRED_ATTRIBUTES": {

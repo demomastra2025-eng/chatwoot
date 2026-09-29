@@ -1,4 +1,18 @@
 class Api::V1::AccountsController < Api::BaseController
+  # Company-wide left sidebar: hidden sections, their order and the pipeline
+  # shown inside Conversations. Administrators set them for every employee.
+  DASHBOARD_NAVIGATION_SETTINGS_PARAMS = [
+    :dashboard_sidebar_hidden_items_version,
+    { dashboard_sidebar_hidden_items: [] },
+    { dashboard_sidebar_item_order: [] },
+    {
+      dashboard_conversation_sidebar_pipeline_visibility: [
+        :configured,
+        { pipelines: [:id, :enabled, { hidden_stage_ids: [] }] }
+      ]
+    }
+  ].freeze
+
   include AuthHelper
   include CacheKeysHelper
 
@@ -115,8 +129,7 @@ class Api::V1::AccountsController < Api::BaseController
       :default_appointment_touch_plan_id,
       :default_deal_touch_plan_id,
       :default_task_touch_plan_id,
-      :dashboard_sidebar_hidden_items_version,
-      { dashboard_sidebar_hidden_items: [] }
+      *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end
 

@@ -184,7 +184,28 @@
     "PAYMENT_PENDING": "Your payment is pending. Please update your payment information to continue using OneLink",
     "UPGRADE": "Upgrade to continue using OneLink",
     "LIMITS_UPGRADE": "Your account has exceeded the usage limits, please upgrade your plan to continue using OneLink",
-    "OPEN_BILLING": "Open billing"
+    "OPEN_BILLING": "Open billing",
+    "CONVERSATIONS": {
+      "TITLE": "Диалогтар",
+      "DESCRIPTION": "Қызметкерлерге диалогтармен жұмыс кезінде қолжетімді функцияларды баптаңыз.",
+      "TEXT_IMPROVEMENT": "Мәтінді жақсарту",
+      "TEXT_IMPROVEMENT_DESCRIPTION": "Қызметкерлерге хабарламаны жібермес бұрын AI арқылы жақсартуға және қайта тұжырымдауға рұқсат беру.",
+      "UPDATE_SUCCESS": "Диалог баптаулары жаңартылды",
+      "UPDATE_ERROR": "Диалог баптауларын жаңарту мүмкін болмады. Қайталап көріңіз.",
+      "EMPTY": "Бұл workspace үшін әзірге диалог баптаулары жоқ."
+    },
+    "SIDEBAR_VISIBILITY": {
+      "TITLE": "Сайдбар баптаулары",
+      "DESCRIPTION": "Қызметкерлердің сол жақ мәзірінде көрсетілетін негізгі бөлімдерді таңдап, олардың ретін баптаңыз.",
+      "ORDER_HINT": "Бөлімдердің ретін өзгерту үшін оларды сүйреңіз немесе көрсеткі түймелерін пайдаланыңыз.",
+      "DRAG": "Ретін өзгерту үшін сүйреу",
+      "MOVE_UP": "Жоғары жылжыту",
+      "MOVE_DOWN": "Төмен жылжыту",
+      "SAVE": "Баптауларды сақтау",
+      "UPDATE_SUCCESS": "Сайдбар баптаулары жаңартылды",
+      "UPDATE_ERROR": "Сайдбар баптауларын жаңарту мүмкін болмады. Қайталап көріңіз.",
+      "PINNED_FIRST": "Әрқашан бірінші"
+    }
   },
   "FORMS": {
     "MULTISELECT": {

@@ -1,12 +1,44 @@
 import { frontendURL } from '../../../../helper/URLHelper';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
+import { SLA_SETTINGS_ROUTE_META } from '../sla/slaSettingsPolicy';
 const Index = () => import('./Index.vue');
+const SidebarVisibilitySettings = () =>
+  import('./SidebarVisibilitySettings.vue');
+const ConversationSettings = () => import('./ConversationSettings.vue');
 const Scheduling = () => import('./Scheduling.vue');
 const LeadForms = () => import('../leadForms/Index.vue');
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const AttributesHome = () => import('../attributes/Index.vue');
+const ConversationWorkflow = () => import('../conversationWorkflow/index.vue');
+const ConversationVisibilitySettings = () =>
+  import('../conversationWorkflow/ConversationVisibilitySettings.vue');
+const SLASettings = () => import('../sla/Index.vue');
+
+// Tabs of Settings > Data > Additional fields. The page itself hides tabs the
+// current user or account cannot use.
+export const WORKSPACE_ADDITIONAL_FIELD_TABS = [
+  'conversation_attribute',
+  'contact_attribute',
+  'company_attribute',
+  'deal',
+  'task',
+  'appointment',
+];
+
+export const additionalFieldsProps = route => {
+  const requestedTab = Array.isArray(route.query?.tab)
+    ? route.query.tab[0]
+    : route.query?.tab;
+
+  return {
+    initialTab: WORKSPACE_ADDITIONAL_FIELD_TABS.includes(requestedTab)
+      ? requestedTab
+      : WORKSPACE_ADDITIONAL_FIELD_TABS[0],
+    tabs: WORKSPACE_ADDITIONAL_FIELD_TABS,
+  };
+};
 
 const schedulingSettingsTabs = [
   {
@@ -14,40 +46,77 @@ const schedulingSettingsTabs = [
     routeName: 'scheduling_settings_index',
     activeOn: ['scheduling_settings_index'],
   },
-  {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
-    routeName: 'scheduling_fields_settings_index',
-    activeOn: ['scheduling_fields_settings_index'],
-  },
 ];
+
+const administratorMeta = {
+  permissions: ['administrator'],
+};
 
 export default {
   routes: [
     {
       path: frontendURL('accounts/:accountId/settings/general'),
-      meta: {
-        permissions: ['administrator'],
-      },
+      meta: administratorMeta,
       component: SettingsTabsWrapper,
       props: {
         tabs: workspaceSettingsTabs,
+        showTabs: false,
       },
       children: [
         {
           path: '',
           name: 'general_settings_index',
           component: Index,
+          meta: administratorMeta,
+        },
+        {
+          path: 'navigation',
+          name: 'workspace_sidebar_visibility_settings_index',
+          component: SidebarVisibilitySettings,
+          meta: administratorMeta,
+        },
+        {
+          path: 'conversations',
+          name: 'workspace_conversation_settings_index',
+          component: ConversationSettings,
+          meta: administratorMeta,
+        },
+        {
+          path: 'conversation-navigation',
+          name: 'workspace_conversation_visibility_settings_index',
+          component: ConversationVisibilitySettings,
+          meta: administratorMeta,
+        },
+        {
+          path: 'conversation-closure',
+          name: 'workspace_conversation_workflow_settings_index',
+          component: ConversationWorkflow,
+          meta: administratorMeta,
+        },
+        {
+          path: 'sla',
+          name: 'workspace_sla_settings_index',
+          component: SLASettings,
+          meta: SLA_SETTINGS_ROUTE_META,
+        },
+        {
+          path: 'additional-fields',
+          name: 'workspace_additional_fields_settings_index',
+          component: AttributesHome,
+          props: additionalFieldsProps,
           meta: {
-            permissions: ['administrator'],
+            permissions: [
+              'administrator',
+              'crm_settings_view',
+              'crm_settings_manage',
+            ],
           },
         },
         {
           path: 'lead-forms',
           name: 'lead_forms_index',
           component: LeadForms,
-          meta: {
-            permissions: ['administrator'],
-          },
+          meta: administratorMeta,
         },
       ],
     },
@@ -64,6 +133,7 @@ export default {
       component: SettingsTabsWrapper,
       props: {
         tabs: schedulingSettingsTabs,
+        showTabs: false,
       },
       children: [
         {
@@ -78,16 +148,11 @@ export default {
         {
           path: 'fields',
           name: 'scheduling_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'appointment',
-            showEntityTabs: false,
-            tabs: ['appointment'],
-          },
-          meta: {
-            permissions: ['administrator'],
-            featureFlag: FEATURE_FLAGS.SCHEDULING,
-          },
+          redirect: to => ({
+            name: 'workspace_additional_fields_settings_index',
+            params: to.params,
+            query: { tab: 'appointment' },
+          }),
         },
       ],
     },

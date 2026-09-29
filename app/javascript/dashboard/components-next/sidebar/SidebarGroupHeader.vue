@@ -85,8 +85,8 @@ const handleActionClick = async action => {
     :to="componentType === 'router-link' ? props.to : undefined"
     :title="label"
     :class="{
-      'text-n-slate-12 bg-n-alpha-2 font-medium': isActive && !hasActiveChild,
-      'text-n-slate-12 font-medium': hasActiveChild,
+      'bg-n-brand-solid text-n-brand-contrast hover:!bg-n-brand-solid font-medium':
+        isActive || hasActiveChild,
       'text-n-slate-11 hover:bg-n-alpha-2': !isActive && !hasActiveChild,
     }"
     @click.stop="handleRootClick"

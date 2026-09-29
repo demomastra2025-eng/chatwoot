@@ -1,16 +1,24 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { useMapGetter } from 'dashboard/composables/store';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { FEATURE_FLAGS } from 'dashboard/featureFlags';
+import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import NextSelect from 'dashboard/components-next/select/Select.vue';
 import Button from 'next/button/Button.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import {
+  CONVERSATION_ASSIGNEE_VISIBILITY_KEY,
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS,
+  CONVERSATION_PIPELINES_VISIBILITY_KEY,
   CONVERSATION_SIDEBAR_VISIBILITY_ITEMS,
+  CONVERSATION_STATUSES_VISIBILITY_KEY,
+  CONVERSATION_STATUS_VISIBILITY_KEYS,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
@@ -19,96 +27,148 @@ import {
   getConversationSidebarHiddenItemsFromState,
   getSidebarHiddenItems,
 } from 'dashboard/components-next/sidebar/sidebarVisibility';
+import {
+  CONVERSATION_PIPELINE_VISIBILITY_SETTINGS_KEY,
+  buildConversationPipelineVisibilityDraft,
+  resolveActiveConversationPipelines,
+  serializeConversationPipelineVisibility,
+} from 'dashboard/components-next/sidebar/conversationPipelineVisibility';
 
-const CONVERSATION_VISIBILITY_GROUPS = Object.freeze([
+const PRIMARY_NAVIGATION_ITEMS = Object.freeze([
   {
     key: 'assignee',
+    visibilityKey: CONVERSATION_ASSIGNEE_VISIBILITY_KEY,
     labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ASSIGNEE',
     descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.ASSIGNEE',
-    itemKeys: [
-      'Conversation:Assignee:all',
-      'Conversation:Assignee:me',
-      'Conversation:Assignee:unassigned',
-    ],
   },
   {
+    key: 'folders',
+    visibilityKey: 'Conversation:Folders',
+    labelKey: 'SIDEBAR.CUSTOM_VIEWS_FOLDER',
+  },
+  {
+    key: 'teams',
+    visibilityKey: 'Conversation:Teams',
+    labelKey: 'SIDEBAR.TEAMS',
+  },
+  {
+    key: 'labels',
+    visibilityKey: 'Conversation:Labels',
+    labelKey: 'SIDEBAR.LABELS',
+  },
+]);
+
+const VISIBILITY_GROUPS = Object.freeze([
+  {
     key: 'statuses',
+    parentKey: CONVERSATION_STATUSES_VISIBILITY_KEY,
     labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.STATUSES',
     descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.STATUSES',
-    itemKeys: [
-      'Conversation:Statuses',
-      'Conversation:Pending',
-      'Conversation:Open',
-      'Conversation:Snoozed',
-      'Conversation:Resolved',
-    ],
+    itemKeys: [...CONVERSATION_STATUS_VISIBILITY_KEYS],
   },
   {
     key: 'pipeline',
+    parentKey: CONVERSATION_PIPELINES_VISIBILITY_KEY,
     labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE',
     descriptionKey: 'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.PIPELINE',
-    itemKeys: ['Conversation:Pipelines'],
+    featureFlag: FEATURE_FLAGS.CRM_DEALS,
+    itemKeys: [],
   },
   {
     key: 'appointments',
+    parentKey: CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
     labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.APPOINTMENTS',
     descriptionKey:
       'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.APPOINTMENTS',
+    featureFlag: FEATURE_FLAGS.SCHEDULING,
     itemKeys: [
-      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
-    ],
-  },
-  {
-    key: 'organization',
-    labelKey: 'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ORGANIZATION',
-    descriptionKey:
-      'CONVERSATION_WORKFLOW.VISIBILITY.DESCRIPTIONS.ORGANIZATION',
-    itemKeys: [
-      'Conversation:Folders',
-      'Conversation:Teams',
-      'Conversation:Labels',
+      ...Object.values(CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS),
     ],
   },
 ]);
 
 const { t } = useI18n();
-const { currentAccount, updateAccount } = useAccount();
-
-const visibilityDraft = ref({});
-
-const conversationVisibilityKeys = computed(
-  () => new Set(CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(item => item.key))
+const { accountId, currentAccount, updateAccount } = useAccount();
+const crmReferencesStore = useCrmReferencesStore();
+const isFeatureEnabledonAccount = useMapGetter(
+  'accounts/isFeatureEnabledonAccount'
 );
 
-const conversationVisibilityItemsByKey = computed(
-  () =>
-    new Map(CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(item => [item.key, item]))
+const visibilityDraft = ref({});
+const pipelineVisibilityDraft = ref({});
+const expandedGroupKey = ref(null);
+const pipelinesLoadFailed = ref(false);
+const isSaving = ref(false);
+
+const conversationVisibilityItemKeys = new Set(
+  CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(item => item.key)
+);
+const conversationVisibilityItemsByKey = new Map(
+  CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(item => [item.key, item])
 );
 
 const savedConversationHiddenItems = computed(() =>
   getConversationSidebarHiddenItems(currentAccount.value?.settings || {})
 );
-
 const draftConversationHiddenItems = computed(() =>
   getConversationSidebarHiddenItemsFromState(visibilityDraft.value)
 );
-
-const hasChanges = computed(
+const hasCrmDeals = computed(() =>
+  isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_DEALS)
+);
+const activePipelines = computed(() =>
+  resolveActiveConversationPipelines(crmReferencesStore.pipelines)
+);
+const pipelineOptions = computed(() =>
+  activePipelines.value
+    .filter(pipeline => pipeline.stages.length > 0)
+    .map(pipeline => ({
+      label: pipeline.name,
+      value: pipeline.id,
+    }))
+);
+const savedPipelineVisibility = computed(() =>
+  serializeConversationPipelineVisibility(
+    buildConversationPipelineVisibilityDraft(
+      currentAccount.value?.settings || {},
+      activePipelines.value
+    ),
+    activePipelines.value
+  )
+);
+const draftPipelineVisibility = computed(() =>
+  serializeConversationPipelineVisibility(
+    pipelineVisibilityDraft.value,
+    activePipelines.value
+  )
+);
+const hasConversationVisibilityChanges = computed(
   () =>
     JSON.stringify(savedConversationHiddenItems.value) !==
     JSON.stringify(draftConversationHiddenItems.value)
 );
+const hasPipelineVisibilityChanges = computed(
+  () =>
+    hasCrmDeals.value &&
+    JSON.stringify(savedPipelineVisibility.value) !==
+      JSON.stringify(draftPipelineVisibility.value)
+);
+const hasChanges = computed(
+  () =>
+    hasConversationVisibilityChanges.value || hasPipelineVisibilityChanges.value
+);
+const visibilityDraftInitialized = ref(false);
+const pipelineVisibilityDraftInitialized = ref(false);
 
 const groupedVisibilityItems = computed(() =>
-  CONVERSATION_VISIBILITY_GROUPS.map(group => ({
+  VISIBILITY_GROUPS.filter(
+    group =>
+      !group.featureFlag ||
+      isFeatureEnabledonAccount.value(accountId.value, group.featureFlag)
+  ).map(group => ({
     ...group,
     items: group.itemKeys
-      .map(key => conversationVisibilityItemsByKey.value.get(key))
+      .map(key => conversationVisibilityItemsByKey.get(key))
       .filter(Boolean),
   }))
 );
@@ -120,76 +180,268 @@ const switchId = itemKey =>
 
 const visibilityLabel = item =>
   item.labelKey
-    ? // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- visibility items use a fixed internal whitelist of label keys
+    ? // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- fixed visibility whitelist
       t(item.labelKey)
     : item.key;
 
 const groupLabel = group =>
-  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- visibility groups use a fixed internal whitelist of label keys
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- fixed visibility groups
   t(group.labelKey);
 
 const groupDescription = group =>
-  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- visibility groups use a fixed internal whitelist of description keys
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys -- fixed visibility groups
   t(group.descriptionKey);
 
-const isStatusChild = item =>
-  [
-    'Conversation:Pending',
-    'Conversation:Open',
-    'Conversation:Snoozed',
-    'Conversation:Resolved',
-  ].includes(item.key);
+const isPrimaryNavigationItemEnabled = item =>
+  visibilityDraft.value[item.visibilityKey] !== false;
 
-const isStatusChildDisabled = item =>
-  isStatusChild(item) &&
-  visibilityDraft.value['Conversation:Statuses'] === false;
+const togglePrimaryNavigationItem = item => {
+  const isEnabled = !isPrimaryNavigationItemEnabled(item);
+  visibilityDraft.value[item.visibilityKey] = isEnabled;
 
-const isAppointmentStatusChild = item =>
-  Object.values(CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS).includes(
-    item.key
+  if (item.key === 'assignee') {
+    visibilityDraft.value['Conversation:Assignee:all'] = true;
+    visibilityDraft.value['Conversation:Assignee:me'] = isEnabled;
+    visibilityDraft.value['Conversation:Assignee:unassigned'] = isEnabled;
+  }
+};
+
+const isGroupEnabled = group =>
+  visibilityDraft.value[group.parentKey] !== false;
+
+const isItemDisabled = group => !isGroupEnabled(group);
+
+const toggleGroup = group => {
+  const isEnabled = !isGroupEnabled(group);
+  visibilityDraft.value[group.parentKey] = isEnabled;
+  if (!isEnabled && expandedGroupKey.value === group.key) {
+    expandedGroupKey.value = null;
+  }
+};
+
+const isGroupExpanded = group => expandedGroupKey.value === group.key;
+const toggleGroupExpansion = group => {
+  if (!isGroupEnabled(group)) return;
+  expandedGroupKey.value = isGroupExpanded(group) ? null : group.key;
+};
+const groupActionLabel = group =>
+  isGroupExpanded(group)
+    ? t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.COLLAPSE')
+    : t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.CONFIGURE');
+
+const pipelineId = pipeline => String(pipeline.id);
+const stageId = stage => String(stage.id);
+const pipelineState = pipeline =>
+  pipelineVisibilityDraft.value[pipelineId(pipeline)];
+const isPipelineEnabled = pipeline => pipelineState(pipeline)?.enabled === true;
+
+const selectedPipeline = computed(() =>
+  activePipelines.value.find(pipeline => isPipelineEnabled(pipeline))
+);
+
+const setSelectedPipeline = selectedId => {
+  const selected = activePipelines.value.find(
+    pipeline => String(pipeline.id) === String(selectedId)
   );
+  if (!selected?.stages.length) return;
 
-const isAppointmentStatusChildDisabled = item =>
-  isAppointmentStatusChild(item) &&
-  visibilityDraft.value[CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY] ===
-    false;
+  activePipelines.value.forEach(pipeline => {
+    const state = pipelineState(pipeline);
+    if (state) state.enabled = pipeline.id === selected.id;
+  });
 
-const isChildDisabled = item =>
-  isStatusChildDisabled(item) || isAppointmentStatusChildDisabled(item);
+  const state = pipelineState(selected);
+  if (state && !Object.values(state.stages).some(Boolean)) {
+    Object.keys(state.stages).forEach(key => {
+      state.stages[key] = true;
+    });
+  }
+};
+const selectedPipelineId = computed({
+  get: () => selectedPipeline.value?.id || '',
+  set: value => setSelectedPipeline(value),
+});
 
-const toggleVisibility = item => {
-  if (isChildDisabled(item)) return;
-  visibilityDraft.value[item.key] = !visibilityDraft.value[item.key];
+const enabledStageCount = pipeline =>
+  Object.values(pipelineState(pipeline)?.stages || {}).filter(Boolean).length;
+
+const groupSummary = group => {
+  if (!isGroupEnabled(group)) {
+    return t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.HIDDEN');
+  }
+
+  if (group.key === 'pipeline') {
+    if (!selectedPipeline.value) {
+      return t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.PIPELINE_EMPTY');
+    }
+
+    return t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.PIPELINE', {
+      pipeline: selectedPipeline.value.name,
+      visible: enabledStageCount(selectedPipeline.value),
+      total: selectedPipeline.value.stages.length,
+    });
+  }
+
+  const visible = group.items.filter(
+    item => visibilityDraft.value[item.key] !== false
+  ).length;
+  return t('CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.STATUSES', {
+    visible,
+    total: group.items.length,
+  });
+};
+
+// At least one stage of the main pipeline stays visible.
+const isStageDisabled = (group, pipeline, stage) =>
+  isItemDisabled(group) ||
+  !isPipelineEnabled(pipeline) ||
+  (pipelineState(pipeline)?.stages?.[stageId(stage)] === true &&
+    enabledStageCount(pipeline) === 1);
+
+const setStageVisibility = (group, pipeline, stage, enabled) => {
+  if (isStageDisabled(group, pipeline, stage)) return;
+  pipelineState(pipeline).stages[stageId(stage)] = enabled;
+};
+
+const loadPipelines = async () => {
+  if (!hasCrmDeals.value) return;
+
+  try {
+    await crmReferencesStore.loadPipelines();
+    pipelinesLoadFailed.value = false;
+  } catch {
+    pipelinesLoadFailed.value = true;
+  }
 };
 
 const saveVisibility = async () => {
   const nonConversationHiddenItems = getSidebarHiddenItems(
     currentAccount.value?.settings || {}
-  ).filter(key => !conversationVisibilityKeys.value.has(key));
+  ).filter(key => !conversationVisibilityItemKeys.has(key));
 
+  isSaving.value = true;
   try {
-    await updateAccount({
+    const payload = {
       [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
         ...nonConversationHiddenItems,
         ...draftConversationHiddenItems.value,
       ],
       [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
         SIDEBAR_VISIBILITY_CURRENT_VERSION,
-    });
+    };
+    // Never overwrite the saved pipeline choice while pipelines are unknown.
+    if (hasCrmDeals.value && activePipelines.value.length) {
+      payload[CONVERSATION_PIPELINE_VISIBILITY_SETTINGS_KEY] =
+        draftPipelineVisibility.value;
+    }
 
+    await updateAccount(payload);
     useAlert(t('CONVERSATION_WORKFLOW.VISIBILITY.SAVE.SUCCESS'));
   } catch {
     useAlert(t('GENERAL_SETTINGS.UPDATE.ERROR'));
+  } finally {
+    isSaving.value = false;
   }
 };
 
+const reconcilePipelineVisibilityDraft = (currentDraft, hydratedDraft) => {
+  const selectedDraftPipelineId = Object.keys(hydratedDraft).find(
+    id => currentDraft[id]?.enabled === true
+  );
+
+  return Object.fromEntries(
+    Object.entries(hydratedDraft).map(([id, hydratedPipeline]) => {
+      const currentPipeline = currentDraft[id];
+      const stages = Object.fromEntries(
+        Object.entries(hydratedPipeline.stages).map(
+          ([stageVisibilityId, enabled]) => [
+            stageVisibilityId,
+            currentPipeline?.stages?.[stageVisibilityId] ?? enabled,
+          ]
+        )
+      );
+
+      return [
+        id,
+        {
+          enabled: selectedDraftPipelineId
+            ? id === selectedDraftPipelineId
+            : hydratedPipeline.enabled,
+          stages,
+        },
+      ];
+    })
+  );
+};
+
 watch(
-  () => currentAccount.value?.settings,
-  value => {
-    visibilityDraft.value = buildSidebarVisibilityState(value || {});
+  [
+    () => currentAccount.value?.settings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
+    () =>
+      currentAccount.value?.settings?.[
+        SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY
+      ],
+  ],
+  () => {
+    if (
+      visibilityDraftInitialized.value &&
+      hasConversationVisibilityChanges.value
+    ) {
+      return;
+    }
+    visibilityDraft.value = buildSidebarVisibilityState(
+      currentAccount.value?.settings || {}
+    );
+    visibilityDraftInitialized.value = true;
   },
-  { immediate: true }
+  { deep: true, immediate: true }
 );
+
+watch(
+  () =>
+    currentAccount.value?.settings?.[
+      CONVERSATION_PIPELINE_VISIBILITY_SETTINGS_KEY
+    ],
+  () => {
+    if (
+      pipelineVisibilityDraftInitialized.value &&
+      hasPipelineVisibilityChanges.value
+    ) {
+      return;
+    }
+    pipelineVisibilityDraft.value = buildConversationPipelineVisibilityDraft(
+      currentAccount.value?.settings || {},
+      crmReferencesStore.pipelines
+    );
+    pipelineVisibilityDraftInitialized.value = true;
+  },
+  { deep: true, immediate: true }
+);
+
+watch(
+  () => crmReferencesStore.pipelines,
+  pipelines => {
+    const hydratedDraft = buildConversationPipelineVisibilityDraft(
+      currentAccount.value?.settings || {},
+      pipelines
+    );
+    pipelineVisibilityDraft.value = reconcilePipelineVisibilityDraft(
+      pipelineVisibilityDraft.value,
+      hydratedDraft
+    );
+  },
+  { deep: true }
+);
+
+onMounted(() => {
+  if (
+    hasCrmDeals.value &&
+    !crmReferencesStore.pipelines.length &&
+    !crmReferencesStore.ui?.isLoadingPipelines
+  ) {
+    loadPipelines();
+  }
+});
 </script>
 
 <template>
@@ -203,51 +455,225 @@ watch(
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-5 mt-4">
-        <section
-          v-for="group in groupedVisibilityItems"
-          :key="group.key"
-          class="flex flex-col gap-3 border-b border-n-weak pb-5 last:border-b-0 last:pb-0"
+      <div class="flex flex-col">
+        <div
+          data-testid="conversation-primary-navigation"
+          class="flex flex-col divide-y divide-n-weak/50 py-4"
         >
-          <div>
-            <h3 class="text-sm font-medium text-n-slate-12">
-              {{ groupLabel(group) }}
-            </h3>
-            <p class="text-sm text-n-slate-11">
-              {{ groupDescription(group) }}
-            </p>
-          </div>
-
-          <div class="grid grid-cols-1 gap-2">
-            <div
-              v-for="item in group.items"
-              :key="item.key"
-              class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-n-weak px-3 py-2 transition-colors"
-              :class="
-                isChildDisabled(item) ? 'opacity-60' : 'hover:bg-n-alpha-1'
-              "
-              @click="toggleVisibility(item)"
-            >
-              <span class="min-w-0 text-sm text-n-slate-12">
-                {{ visibilityLabel(item) }}
+          <label
+            v-for="item in PRIMARY_NAVIGATION_ITEMS"
+            :key="item.key"
+            :data-testid="`conversation-navigation-item-${item.key}`"
+            class="flex items-center justify-between gap-3 py-3"
+          >
+            <span class="min-w-0">
+              <span class="block text-sm font-medium text-n-slate-12">
+                {{ groupLabel(item) }}
               </span>
+              <span
+                v-if="item.descriptionKey"
+                class="mt-0.5 block text-xs text-n-slate-11"
+              >
+                {{ groupDescription(item) }}
+              </span>
+            </span>
+            <Switch
+              :id="switchId(item.visibilityKey)"
+              :model-value="isPrimaryNavigationItemEnabled(item)"
+              @update:model-value="togglePrimaryNavigationItem(item)"
+            />
+          </label>
+          <div
+            v-for="group in groupedVisibilityItems"
+            :key="group.key"
+            :data-testid="`conversation-navigation-group-${group.key}`"
+            class="py-3"
+          >
+            <div class="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                class="min-w-0 flex-1 text-left"
+                :disabled="!isGroupEnabled(group)"
+                :aria-expanded="isGroupExpanded(group)"
+                @click="toggleGroupExpansion(group)"
+              >
+                <span class="block text-sm font-medium text-n-slate-12">
+                  {{ groupLabel(group) }}
+                </span>
+                <span
+                  class="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-n-slate-11"
+                >
+                  <span>{{ groupSummary(group) }}</span>
+                  <span
+                    v-if="isGroupEnabled(group)"
+                    class="font-medium text-n-brand"
+                  >
+                    {{ groupActionLabel(group) }}
+                  </span>
+                </span>
+              </button>
               <Switch
-                :id="switchId(item.key)"
-                v-model="visibilityDraft[item.key]"
-                :disabled="isChildDisabled(item)"
-                @click.stop
+                :id="switchId(group.parentKey)"
+                class="shrink-0"
+                :model-value="isGroupEnabled(group)"
+                @update:model-value="toggleGroup(group)"
               />
             </div>
-          </div>
-        </section>
 
-        <div class="flex justify-end">
+            <div
+              v-if="isGroupEnabled(group) && isGroupExpanded(group)"
+              class="pb-2 pl-4 pt-4 md:pl-6"
+            >
+              <div v-if="group.key === 'pipeline'" class="grid max-w-2xl gap-5">
+                <p
+                  v-if="crmReferencesStore.ui?.isLoadingPipelines"
+                  class="text-body-main text-n-slate-11"
+                >
+                  {{
+                    t(
+                      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_LOADING'
+                    )
+                  }}
+                </p>
+                <div
+                  v-else-if="pipelinesLoadFailed"
+                  data-testid="conversation-navigation-pipelines-error"
+                  class="flex items-center justify-between gap-3 rounded-lg bg-n-amber-2 px-3 py-2 text-sm text-n-slate-12"
+                >
+                  <span>
+                    {{
+                      t(
+                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_ERROR'
+                      )
+                    }}
+                  </span>
+                  <button
+                    type="button"
+                    class="shrink-0 font-medium text-n-brand hover:underline"
+                    @click="loadPipelines"
+                  >
+                    {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.RETRY') }}
+                  </button>
+                </div>
+                <p
+                  v-else-if="!pipelineOptions.length"
+                  class="text-body-main text-n-slate-11"
+                >
+                  {{
+                    t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PIPELINES_EMPTY')
+                  }}
+                </p>
+                <template v-else>
+                  <label
+                    class="grid max-w-md gap-2 text-sm font-medium text-n-slate-12"
+                    :for="switchId('primary-pipeline')"
+                  >
+                    {{
+                      t(
+                        'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE'
+                      )
+                    }}
+                    <NextSelect
+                      :id="switchId('primary-pipeline')"
+                      v-model="selectedPipelineId"
+                      class="w-full"
+                      :options="pipelineOptions"
+                      :placeholder="
+                        t(
+                          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.PRIMARY_PIPELINE_PLACEHOLDER'
+                        )
+                      "
+                    />
+                  </label>
+
+                  <div v-if="selectedPipeline" class="grid gap-2">
+                    <span class="text-sm font-medium text-n-slate-12">
+                      {{ t('CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STAGES') }}
+                    </span>
+                    <div class="flex flex-col divide-y divide-n-weak/50">
+                      <div
+                        v-for="stage in selectedPipeline.stages"
+                        :key="stage.id"
+                        class="flex cursor-pointer items-center justify-between gap-3 py-3"
+                        :class="{
+                          'cursor-default opacity-60': isStageDisabled(
+                            group,
+                            selectedPipeline,
+                            stage
+                          ),
+                        }"
+                        @click="
+                          setStageVisibility(
+                            group,
+                            selectedPipeline,
+                            stage,
+                            !pipelineState(selectedPipeline).stages[
+                              stageId(stage)
+                            ]
+                          )
+                        "
+                      >
+                        <span class="min-w-0 truncate text-sm text-n-slate-12">
+                          {{ stage.name }}
+                        </span>
+                        <Switch
+                          :id="
+                            switchId(
+                              `pipeline-${selectedPipeline.id}-stage-${stage.id}`
+                            )
+                          "
+                          :model-value="
+                            pipelineState(selectedPipeline).stages[
+                              stageId(stage)
+                            ]
+                          "
+                          :disabled="
+                            isStageDisabled(group, selectedPipeline, stage)
+                          "
+                          @update:model-value="
+                            value =>
+                              setStageVisibility(
+                                group,
+                                selectedPipeline,
+                                stage,
+                                value
+                              )
+                          "
+                          @click.stop
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+              <div v-else class="flex flex-col divide-y divide-n-weak/50">
+                <label
+                  v-for="item in group.items"
+                  :key="item.key"
+                  class="flex items-center justify-between gap-3 py-3"
+                >
+                  <span class="min-w-0 text-sm text-n-slate-12">
+                    {{ visibilityLabel(item) }}
+                  </span>
+                  <Switch
+                    :id="switchId(item.key)"
+                    v-model="visibilityDraft[item.key]"
+                  />
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end border-t border-n-weak py-6">
           <Button
             :label="t('CONVERSATION_WORKFLOW.VISIBILITY.SAVE.BUTTON')"
             color="slate"
             variant="outline"
             size="sm"
-            :disabled="!hasChanges"
+            :disabled="!hasChanges || isSaving"
+            :is-loading="isSaving"
             @click="saveVisibility"
           />
         </div>

@@ -256,7 +256,9 @@
         "SEARCH_PLACEHOLDER": "Search reasons",
         "STAGE_FALLBACK": "stage",
         "TITLE": "Transition reason: {stage}"
-      }
+      },
+      "PIPELINES_LOAD_ERROR": "Could not load the selected CRM pipeline. Your filter was preserved.",
+      "RETRY_LOAD": "Retry loading"
     },
     "TASKS": {
       "CREATE_TITLE": "Create task",

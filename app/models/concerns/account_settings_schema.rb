@@ -18,6 +18,30 @@ module AccountSettingsSchema
         'default_appointment_touch_plan_id': { 'type': %w[integer string null] },
         'default_deal_touch_plan_id': { 'type': %w[integer string null] },
         'default_task_touch_plan_id': { 'type': %w[integer string null] },
+        'dashboard_sidebar_item_order': {
+          'type': %w[array null],
+          'items': { 'type': 'string' }
+        },
+        'dashboard_conversation_sidebar_pipeline_visibility': {
+          'type': %w[object null],
+          'properties': {
+            'configured': { 'type': %w[boolean null] },
+            'pipelines': {
+              'type': %w[array null],
+              'items': {
+                'type': 'object',
+                'properties': {
+                  'id': { 'type': %w[integer string] },
+                  'enabled': { 'type': %w[boolean null] },
+                  'hidden_stage_ids': { 'type': %w[array null], 'items': { 'type': %w[integer string] } }
+                },
+                'required': %w[id],
+                'additionalProperties': false
+              }
+            }
+          },
+          'additionalProperties': false
+        },
         'conversation_required_attributes': {
           'type': %w[array null],
           'items': { 'type': 'string' }

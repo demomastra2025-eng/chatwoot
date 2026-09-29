@@ -8,6 +8,7 @@ import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
+import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import PreChatFormSettings from 'dashboard/routes/dashboard/settings/inbox/PreChatForm/Settings.vue';
 import { getInboxFlowRouteName } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import leadFormsAPI from 'dashboard/api/leadForms';
@@ -428,9 +429,7 @@ onMounted(loadPage);
   <main class="flex h-full min-h-0 flex-col overflow-y-auto bg-n-surface-1 p-6">
     <section class="w-full max-w-6xl mx-auto space-y-6">
       <header class="flex flex-col gap-4">
-        <h1 class="text-2xl font-semibold text-n-slate-12">
-          {{ $t('LEAD_FORMS.TITLE') }}
-        </h1>
+        <BaseSettingsHeader :title="$t('LEAD_FORMS.TITLE')" />
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"

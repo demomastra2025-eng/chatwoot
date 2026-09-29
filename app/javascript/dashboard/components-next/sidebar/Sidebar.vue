@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { provideSidebarContext } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
-import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useKbd } from 'dashboard/composables/utils/useKbd';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useStore } from 'vuex';
@@ -47,8 +46,8 @@ import {
   INBOX_FLOW_ROUTE_NAMES,
 } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import { employeeSettingsTabs } from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
-import { CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/conversationSettingsTabs';
 import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
+import { canAccessSLASettings } from 'dashboard/routes/dashboard/settings/sla/slaSettingsPolicy';
 import {
   isInboxPendingDeletion,
   isWhatsappWebInbox,
@@ -59,10 +58,12 @@ import {
   isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDialogDealCount } from './crmDefaultPipelineSidebar';
+import { resolveVisibleConversationPipelines } from './conversationPipelineVisibility';
 import {
-  resolveDefaultPipelineWithStages,
-  resolveDialogDealCount,
-} from './crmDefaultPipelineSidebar';
+  resolveRouteConversationAssigneeType,
+  selectExclusiveSidebarChildNames,
+} from './sidebarActiveSelection';
 import {
   APPOINTMENT_STATUS_ANY,
   APPOINTMENT_STATUS_ICON_CLASSES,
@@ -90,19 +91,17 @@ const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
 const route = useRoute();
 const router = useRouter();
-const { checkPermissions } = usePolicy();
+const { checkPermissions, shouldShow } = usePolicy();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
-const { uiSettings } = useUISettings();
 const composeConversationRef = ref(null);
 
+// The left sidebar is configured once per company by an administrator.
 const effectiveSidebarVisibilitySettings = computed(() =>
   buildEffectiveSidebarVisibilitySettings({
-    accountId: currentAccount.value?.id,
     accountSettings: currentAccount.value?.settings || {},
-    uiSettings: uiSettings.value,
   })
 );
 
@@ -114,11 +113,18 @@ const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
 const DESKTOP_RAIL_WIDTH = 44;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
+const NON_ACTIVE_QUERY_KEYS = new Set(['page', 'search']);
 const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
   'companies_dashboard_show',
-  'company_fields_settings_index',
 ];
+// Status filters combine with any scope, so they stay highlighted next to it.
+const CONVERSATION_STATUS_CHILD_NAMES = new Set([
+  'Pending',
+  'Open',
+  'Snoozed',
+  'Resolved',
+]);
 
 const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -154,6 +160,22 @@ const hasCrmDeals = computed(() => {
   );
 });
 
+const hasCrmTasks = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.CRM_TASKS
+  );
+});
+
+const hasCaptain = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.CAPTAIN
+  );
+});
+
+const hasSLA = computed(() => canAccessSLASettings(shouldShow));
+
 const hasAutomationRules = computed(() => {
   return (
     checkPermissions(['administrator']) &&
@@ -185,6 +207,15 @@ const hasContactSettingsAccess = computed(() => {
 const hasSettingsAccess = computed(() => {
   return checkPermissions(['administrator']);
 });
+
+const hasCrmSettingsAccess = computed(() => {
+  return checkPermissions(['crm_settings_view', 'crm_settings_manage']);
+});
+
+// Employees without the settings hub keep the tag settings shortcut.
+const hasTagSettingsShortcut = computed(
+  () => hasContactSettingsAccess.value && !hasSettingsAccess.value
+);
 
 const hasCompanies = computed(() => {
   return isFeatureEnabledonAccount.value(
@@ -614,22 +645,35 @@ const withCurrentConversationScopeStatus = status =>
     conversationNavigationQuery({ status })
   );
 
-const withCurrentConversationScopeAssigneeType = assigneeType =>
+// Conversation scopes are exclusive: an assignee list, a pipeline or stage, an
+// appointment status, a folder, a team or a tag. Choosing one clears the
+// others and shows the account-wide list, so only one scope is highlighted.
+const exclusiveConversationScopeQuery = (overrides = {}) => ({
+  assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
+  crm_pipeline_id: undefined,
+  crm_stage_id: undefined,
+  appointment_status: undefined,
+  labels_scope: undefined,
+  team_scope: undefined,
+  ...overrides,
+});
+
+const accountWideConversationRouteName = computed(() =>
+  hasCommunicationThreads.value ? 'communication_threads_dashboard' : 'home'
+);
+
+const withAccountWideConversationScope = queryOverrides =>
   accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({ assignee_type: assigneeType })
+    accountWideConversationRouteName.value,
+    {},
+    conversationNavigationQuery(exclusiveConversationScopeQuery(queryOverrides))
   );
 
-const withConversationWithoutCrm = (name = 'home', params = {}) =>
-  accountScopedRoute(
-    resolveConversationRouteName(name),
-    params,
-    conversationNavigationQuery({
-      crm_pipeline_id: undefined,
-      crm_stage_id: undefined,
-    })
-  );
+const withCurrentConversationScopeAssigneeType = assigneeType =>
+  withAccountWideConversationScope({
+    assignee_type: assigneeType,
+    status: currentConversationStatus.value,
+  });
 
 const hasRouteLabelsScopeAny = () => {
   const labelsScope = route.query.labels_scope ?? route.query.labelsScope;
@@ -649,27 +693,13 @@ const hasRouteTeamScopeAny = () => {
 
 const withLabelsScopeToggle = () =>
   hasRouteLabelsScopeAny()
-    ? withConversationStatus('home', {}, { labels_scope: undefined })
-    : withConversationStatus(
-        'home',
-        {},
-        {
-          labels_scope: 'any',
-          team_scope: undefined,
-        }
-      );
+    ? withAccountWideConversationScope()
+    : withAccountWideConversationScope({ labels_scope: 'any' });
 
 const withTeamScopeToggle = () =>
   hasRouteTeamScopeAny()
-    ? withConversationStatus('home', {}, { team_scope: undefined })
-    : withConversationStatus(
-        'home',
-        {},
-        {
-          labels_scope: undefined,
-          team_scope: 'any',
-        }
-      );
+    ? withAccountWideConversationScope()
+    : withAccountWideConversationScope({ team_scope: 'any' });
 
 const isCurrentCrmPipelineOnly = pipelineId => {
   const routePipelineId =
@@ -679,57 +709,37 @@ const isCurrentCrmPipelineOnly = pipelineId => {
   return String(routePipelineId || '') === String(pipelineId) && !routeStageId;
 };
 
-const withCurrentConversationScopeCrmPipeline = pipelineId => {
-  const query = conversationNavigationQuery({
-    crm_pipeline_id: pipelineId,
-    crm_stage_id: undefined,
-  });
-
-  return accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    {
-      ...query,
-      crm_stage_id: undefined,
-    }
-  );
-};
-
 const withCurrentConversationScopeCrmPipelineToggle = pipelineId =>
   isCurrentCrmPipelineOnly(pipelineId)
-    ? withConversationWithoutCrm('home')
-    : withCurrentConversationScopeCrmPipeline(pipelineId);
+    ? withAccountWideConversationScope({
+        status: currentConversationStatus.value,
+      })
+    : withAccountWideConversationScope({
+        crm_pipeline_id: pipelineId,
+        status: currentConversationStatus.value,
+      });
 
 const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      crm_pipeline_id: pipelineId,
-      crm_stage_id: stageId,
-    })
-  );
+  withAccountWideConversationScope({
+    crm_pipeline_id: pipelineId,
+    crm_stage_id: stageId,
+    status: currentConversationStatus.value,
+  });
 
 const withCurrentConversationScopeAppointmentStatus = status =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      appointment_status:
-        currentAppointmentStatus.value === status ? undefined : status,
-    })
-  );
+  withAccountWideConversationScope({
+    appointment_status:
+      currentAppointmentStatus.value === status ? undefined : status,
+    status: currentConversationStatus.value,
+  });
 
 const withCurrentConversationScopeAnyAppointments = () =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      appointment_status: hasAnyAppointmentStatusFilter.value
-        ? undefined
-        : APPOINTMENT_STATUS_ANY,
-    })
-  );
+  withAccountWideConversationScope({
+    appointment_status: hasAnyAppointmentStatusFilter.value
+      ? undefined
+      : APPOINTMENT_STATUS_ANY,
+    status: currentConversationStatus.value,
+  });
 
 const appointmentStatusLabels = computed(() => ({
   cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
@@ -781,48 +791,35 @@ const appointmentStatusSidebarItems = computed(() => {
   ];
 });
 
-const defaultCrmPipeline = computed(() =>
-  resolveDefaultPipelineWithStages(crmReferencesStore.pipelines)
-);
-
+// The main pipeline and its visible stages are chosen in
+// Settings > Conversations > Conversation navigation.
 const crmPipelineSidebarItems = computed(() => {
-  if (!hasCrmDeals.value || !defaultCrmPipeline.value.pipeline) {
+  if (!hasCrmDeals.value) {
     return [];
   }
 
-  const { pipeline, stages } = defaultCrmPipeline.value;
-
-  const stageChildren = stages.map(stage => ({
-    name: `PipelineStage:${pipeline.id}:${stage.id}`,
-    label: stage.name,
-    connectorColor: stage.color,
-    count: resolveDialogDealCount(stage),
-    activeOn: conversationStatusActiveOn,
-    to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
-  }));
-
-  const pipelineItem = {
+  return resolveVisibleConversationPipelines(
+    crmReferencesStore.pipelines,
+    currentAccount.value?.settings || {}
+  ).map(pipeline => ({
     name: `Pipeline:${pipeline.id}`,
     visibilityKey: 'Conversation:Pipelines',
-    label: pipeline.name,
+    label: pipeline.name || t('SIDEBAR.PIPELINES'),
     icon: 'i-lucide-filter',
     active: isCurrentCrmPipelineOnly(pipeline.id),
     activeOn: conversationStatusActiveOn,
     count: resolveDialogDealCount(pipeline),
     to: withCurrentConversationScopeCrmPipelineToggle(pipeline.id),
-  };
-
-  if (!stageChildren.length) {
-    return [pipelineItem];
-  }
-
-  return [
-    {
-      ...pipelineItem,
-      suppressHeaderActiveWhenChildActive: true,
-      children: stageChildren,
-    },
-  ];
+    suppressHeaderActiveWhenChildActive: true,
+    children: pipeline.stages.map(stage => ({
+      name: `PipelineStage:${pipeline.id}:${stage.id}`,
+      label: stage.name,
+      connectorColor: stage.color,
+      count: resolveDialogDealCount(stage),
+      activeOn: conversationStatusActiveOn,
+      to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
+    })),
+  }));
 });
 
 const userPermissions = computed(() =>
@@ -858,6 +855,14 @@ const conversationAssigneeStatusItems = computed(() =>
       [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]:
         conversationStats.value?.unAssignedCount,
     };
+    const unreadCountByTab = {
+      [wootConstants.ASSIGNEE_TYPE.ME]:
+        conversationStats.value?.mineUnreadCount,
+      [wootConstants.ASSIGNEE_TYPE.ALL]:
+        conversationStats.value?.allUnreadCount,
+      [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]:
+        conversationStats.value?.unAssignedUnreadCount,
+    };
 
     return {
       name: `Assignee:${key}`,
@@ -865,6 +870,7 @@ const conversationAssigneeStatusItems = computed(() =>
       label: conversationAssigneeStatusLabels.value[key],
       icon: conversationAssigneeStatusIcons[key],
       count: Number(countByTab[key] || 0),
+      hasUnread: Number(unreadCountByTab[key] || 0) > 0,
       activeOn: conversationStatusActiveOn,
       to: withCurrentConversationScopeAssigneeType(key),
     };
@@ -1199,7 +1205,7 @@ const contactTagSettingsRouteNames = [
 ];
 
 const labelSidebarActionItems = computed(() => [
-  ...(hasContactSettingsAccess.value
+  ...(hasTagSettingsShortcut.value
     ? [
         {
           title: t('SIDEBAR.SETTINGS'),
@@ -1216,18 +1222,9 @@ const labelSidebarActionItems = computed(() => [
   },
 ]);
 
+// Conversation settings live in the settings hub, so the header only keeps
+// the compose action.
 const conversationSidebarActionItems = computed(() => [
-  ...(checkPermissions(['administrator'])
-    ? [
-        {
-          key: 'conversation-settings',
-          label: t('SIDEBAR.CONVERSATION_WORKFLOW'),
-          icon: 'i-lucide-settings-2',
-          activeOn: CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES,
-          to: accountScopedRoute('conversation_workflow_index'),
-        },
-      ]
-    : []),
   {
     key: 'compose-conversation',
     label: t('CONTACT_PANEL.NEW_MESSAGE'),
@@ -1241,99 +1238,252 @@ const activeOnForEmployeeTab = routeName =>
     routeName,
   ];
 
-const buildMyCompanySettingsMenuItems = () => [
-  {
-    name: 'Workspace',
-    visibilityKey: 'MyCompany:Workspace',
-    label: t('SIDEBAR.ACCOUNT_SETTINGS'),
-    icon: 'i-lucide-building-2',
-    activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
-    to: accountScopedRoute('general_settings_index'),
-  },
-  {
-    name: 'Lead Forms',
-    visibilityKey: 'MyCompany:LeadForms',
-    label: t('SIDEBAR.LEAD_FORMS'),
-    icon: 'i-lucide-inbox',
-    activeOn: ['lead_forms_index'],
-    to: accountScopedRoute('lead_forms_index'),
-  },
-  ...(hasInboxManagement.value
-    ? [
-        {
-          name: 'Channels',
-          visibilityKey: 'MyCompany:Channels',
-          label: t('SIDEBAR.CHANNELS'),
-          icon: 'i-lucide-mailbox',
-          activeOn: settingsInboxRouteNames,
-          to: accountScopedRoute('settings_inbox_list'),
-        },
-      ]
-    : []),
-  {
-    name: 'Tags',
-    visibilityKey: 'MyCompany:Tags',
-    label: t('SIDEBAR.LABELS'),
-    icon: 'i-lucide-tag',
-    activeOn: contactTagSettingsRouteNames,
-    to: accountScopedRoute('labels_list'),
-  },
-  {
-    name: 'Employees',
-    visibilityKey: 'MyCompany:Employees',
-    label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-    icon: 'i-lucide-user-round',
-    activeOn: activeOnForEmployeeTab('agent_list'),
-    to: accountScopedRoute('agent_list'),
-  },
-  {
-    name: 'Teams',
-    visibilityKey: 'MyCompany:Teams',
-    label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
-    icon: 'i-lucide-users-round',
-    activeOn: activeOnForEmployeeTab('settings_teams_list'),
-    to: accountScopedRoute('settings_teams_list'),
-  },
-  {
-    name: 'Roles',
-    visibilityKey: 'MyCompany:Roles',
-    label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
-    icon: 'i-lucide-shield-user',
-    activeOn: activeOnForEmployeeTab('custom_roles_list'),
-    to: accountScopedRoute('custom_roles_list'),
-  },
-  ...(hasAssignmentPolicies.value
-    ? [
-        {
-          name: 'Policies',
-          visibilityKey: 'MyCompany:Policies',
-          label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-          icon: 'i-lucide-shield-check',
-          activeOn: activeOnForEmployeeTab('assignment_policy_index'),
-          to: accountScopedRoute('assignment_policy_index'),
-        },
-      ]
-    : []),
-  ...(hasAuditLogs.value
-    ? [
-        {
-          name: 'Audit Logs',
-          visibilityKey: 'MyCompany:AuditLogs',
-          label: t('SIDEBAR.AUDIT_LOGS'),
-          icon: 'i-lucide-scroll-text',
-          activeOn: ['auditlogs_list'],
-          to: accountScopedRoute('auditlogs_list'),
-        },
-      ]
-    : []),
-];
+const settingsSection = (name, label) => ({
+  type: 'section',
+  name: `Settings Section ${name}`,
+  label,
+});
 
-const myCompanySettingsMenuItems = computed(() => {
-  if (!checkPermissions(['administrator'])) return [];
-  return filterSidebarMenuItems(
-    buildMyCompanySettingsMenuItems(),
-    effectiveSidebarVisibilitySettings.value
-  );
+// Section labels are dropped when none of their items is available.
+const keepPopulatedSettingsSections = items => {
+  const populatedItems = [];
+  let pendingSection = null;
+
+  items.forEach(item => {
+    if (item.type === 'section') {
+      pendingSection = item;
+      return;
+    }
+
+    if (pendingSection) {
+      populatedItems.push(pendingSection);
+      pendingSection = null;
+    }
+    populatedItems.push(item);
+  });
+
+  return populatedItems;
+};
+
+const onlyIf = (condition, item) => (condition ? item : null);
+
+// One sectioned settings hub. Administrators see every section; employees
+// with CRM settings permissions only see the additional fields.
+const buildSettingsMenuItems = () =>
+  [
+    settingsSection('Company', t('SIDEBAR.SETTINGS_SECTIONS.COMPANY')),
+    {
+      name: 'Workspace',
+      visibilityKey: 'MyCompany:Workspace',
+      label: t('SIDEBAR.ACCOUNT_SETTINGS'),
+      icon: 'i-lucide-building-2',
+      activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
+      to: accountScopedRoute('general_settings_index'),
+    },
+    {
+      name: 'Navigation',
+      label: t('SIDEBAR.VISIBILITY'),
+      icon: 'i-lucide-panel-left',
+      activeOn: ['workspace_sidebar_visibility_settings_index'],
+      to: accountScopedRoute('workspace_sidebar_visibility_settings_index'),
+    },
+    {
+      name: 'Settings Billing',
+      visibilityKey: 'Settings:Billing',
+      label: t('SIDEBAR.BILLING'),
+      icon: 'i-lucide-credit-card',
+      to: accountScopedRoute('billing_settings_index'),
+    },
+    settingsSection(
+      'Conversations',
+      t('SIDEBAR.SETTINGS_SECTIONS.CONVERSATIONS')
+    ),
+    {
+      name: 'Conversation Settings',
+      label: t('SIDEBAR.CONVERSATION_SETTINGS'),
+      icon: 'i-lucide-messages-square',
+      activeOn: ['workspace_conversation_settings_index'],
+      to: accountScopedRoute('workspace_conversation_settings_index'),
+    },
+    {
+      name: 'Conversation Navigation',
+      label: t('CONVERSATION_WORKFLOW.TABS.VISIBILITY'),
+      icon: 'i-lucide-list-tree',
+      activeOn: ['workspace_conversation_visibility_settings_index'],
+      to: accountScopedRoute(
+        'workspace_conversation_visibility_settings_index'
+      ),
+    },
+    {
+      name: 'Conversation Closure',
+      visibilityKey: 'MyCompany:ConversationClosure',
+      label: t('CONVERSATION_WORKFLOW.TABS.CLOSURE'),
+      icon: 'i-lucide-circle-check-big',
+      activeOn: ['workspace_conversation_workflow_settings_index'],
+      to: accountScopedRoute('workspace_conversation_workflow_settings_index'),
+    },
+    onlyIf(hasSLA.value, {
+      name: 'SLA',
+      visibilityKey: 'MyCompany:SLA',
+      label: t('CONVERSATION_WORKFLOW.TABS.SLA'),
+      icon: 'i-lucide-timer',
+      activeOn: ['workspace_sla_settings_index'],
+      to: accountScopedRoute('workspace_sla_settings_index'),
+    }),
+    {
+      name: 'Settings Quick Replies',
+      visibilityKey: 'Settings:QuickReplies',
+      label: t('SIDEBAR.CANNED_RESPONSES'),
+      icon: 'i-lucide-message-square-text',
+      activeOn: ['outbound_templates_index'],
+      to: accountScopedRoute('outbound_templates_index'),
+    },
+    {
+      name: 'Settings Macros',
+      visibilityKey: 'Settings:Macros',
+      label: t('SIDEBAR.MACROS'),
+      icon: 'i-lucide-toy-brick',
+      to: accountScopedRoute('macros_wrapper'),
+    },
+    settingsSection('Channels', t('SIDEBAR.SETTINGS_SECTIONS.CHANNELS')),
+    onlyIf(hasInboxManagement.value, {
+      name: 'Channels',
+      visibilityKey: 'MyCompany:Channels',
+      label: t('SIDEBAR.CHANNELS'),
+      icon: 'i-lucide-mailbox',
+      activeOn: settingsInboxRouteNames,
+      to: accountScopedRoute('settings_inbox_list'),
+    }),
+    {
+      name: 'Settings WhatsApp Templates',
+      visibilityKey: 'Settings:WhatsAppTemplates',
+      label: t('SIDEBAR.WHATSAPP_TEMPLATES'),
+      icon: 'i-lucide-message-circle-code',
+      activeOn: ['outbound_whatsapp_templates_index'],
+      to: accountScopedRoute('outbound_whatsapp_templates_index'),
+    },
+    {
+      name: 'Lead Forms',
+      visibilityKey: 'MyCompany:LeadForms',
+      label: t('SIDEBAR.LEAD_FORMS'),
+      icon: 'i-lucide-inbox',
+      activeOn: ['lead_forms_index'],
+      to: accountScopedRoute('lead_forms_index'),
+    },
+    {
+      name: 'Settings Integrations',
+      visibilityKey: 'Settings:Integrations',
+      label: t('SIDEBAR.INTEGRATIONS'),
+      icon: 'i-lucide-blocks',
+      to: accountScopedRoute('settings_applications'),
+    },
+    {
+      name: 'Settings Agent Bots',
+      visibilityKey: 'Settings:AgentBots',
+      label: t('SIDEBAR.AGENT_BOTS'),
+      icon: 'i-lucide-webhook',
+      to: accountScopedRoute('agent_bots'),
+    },
+    settingsSection('Automation', t('SIDEBAR.SETTINGS_SECTIONS.AUTOMATION')),
+    onlyIf(hasAutomationRules.value, {
+      name: 'Settings Automation',
+      visibilityKey: 'Settings:Automation',
+      label: t('SIDEBAR.AUTOMATION_RULES'),
+      icon: 'i-lucide-repeat',
+      activeOn: ['automation_list'],
+      to: accountScopedRoute('automation_list'),
+    }),
+    settingsSection('Team', t('SIDEBAR.SETTINGS_SECTIONS.TEAM')),
+    {
+      name: 'Employees',
+      visibilityKey: 'MyCompany:Employees',
+      label: t('EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
+      icon: 'i-lucide-user-round',
+      activeOn: activeOnForEmployeeTab('agent_list'),
+      to: accountScopedRoute('agent_list'),
+    },
+    {
+      name: 'Teams',
+      visibilityKey: 'MyCompany:Teams',
+      label: t('EMPLOYEE_SETTINGS.TABS.TEAM'),
+      icon: 'i-lucide-users-round',
+      activeOn: activeOnForEmployeeTab('settings_teams_list'),
+      to: accountScopedRoute('settings_teams_list'),
+    },
+    {
+      name: 'Roles',
+      visibilityKey: 'MyCompany:Roles',
+      label: t('EMPLOYEE_SETTINGS.TABS.ROLES'),
+      icon: 'i-lucide-shield-user',
+      activeOn: activeOnForEmployeeTab('custom_roles_list'),
+      to: accountScopedRoute('custom_roles_list'),
+    },
+    onlyIf(hasAssignmentPolicies.value, {
+      name: 'Policies',
+      visibilityKey: 'MyCompany:Policies',
+      label: t('EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
+      icon: 'i-lucide-shield-check',
+      activeOn: activeOnForEmployeeTab('assignment_policy_index'),
+      to: accountScopedRoute('assignment_policy_index'),
+    }),
+    onlyIf(hasAuditLogs.value, {
+      name: 'Audit Logs',
+      visibilityKey: 'MyCompany:AuditLogs',
+      label: t('SIDEBAR.AUDIT_LOGS'),
+      icon: 'i-lucide-scroll-text',
+      activeOn: ['auditlogs_list'],
+      to: accountScopedRoute('auditlogs_list'),
+    }),
+    settingsSection('Data', t('SIDEBAR.SETTINGS_SECTIONS.DATA')),
+    onlyIf(
+      hasLegacyCustomAttributes.value ||
+        hasCrmDeals.value ||
+        hasCrmTasks.value ||
+        hasSchedulingSettings.value,
+      {
+        name: 'Additional Fields',
+        visibilityKey: 'MyCompany:AdditionalFields',
+        label: t('ATTRIBUTES_MGMT.HEADER'),
+        icon: 'i-lucide-list-plus',
+        permissions: [
+          'administrator',
+          'crm_settings_view',
+          'crm_settings_manage',
+        ],
+        activeOn: ['workspace_additional_fields_settings_index'],
+        to: accountScopedRoute('workspace_additional_fields_settings_index'),
+      }
+    ),
+    {
+      name: 'Tags',
+      visibilityKey: 'MyCompany:Tags',
+      label: t('SIDEBAR.LABELS'),
+      icon: 'i-lucide-tag',
+      activeOn: contactTagSettingsRouteNames,
+      to: accountScopedRoute('labels_list'),
+    },
+    settingsSection('AI', t('SIDEBAR.SETTINGS_SECTIONS.AI')),
+    onlyIf(hasCaptain.value, {
+      name: 'Settings Captain',
+      visibilityKey: 'Settings:Captain',
+      label: t('SIDEBAR.CAPTAIN_SETTINGS'),
+      icon: 'i-woot-captain',
+      activeOn: ['captain_settings_index'],
+      to: accountScopedRoute('captain_settings_index'),
+    }),
+  ].filter(Boolean);
+
+const settingsMenuItems = computed(() => {
+  const items = buildSettingsMenuItems();
+  const accessibleItems = hasSettingsAccess.value
+    ? items
+    : items.filter(
+        item =>
+          item.type === 'section' ||
+          (item.permissions?.length && checkPermissions(item.permissions))
+      );
+
+  return keepPopulatedSettingsSections(accessibleItems);
 });
 
 const menuItems = computed(() => {
@@ -1419,9 +1569,11 @@ const menuItems = computed(() => {
             children: conversationCustomViews.value.map(view => ({
               name: `${view.name}-${view.id}`,
               label: view.name,
-              to: withConversationStatus('folder_conversations', {
-                id: view.id,
-              }),
+              to: withConversationStatus(
+                'folder_conversations',
+                { id: view.id },
+                exclusiveConversationScopeQuery()
+              ),
             })),
           },
           {
@@ -1443,10 +1595,7 @@ const menuItems = computed(() => {
                 {
                   teamId: team.id,
                 },
-                {
-                  labels_scope: undefined,
-                  team_scope: undefined,
-                }
+                exclusiveConversationScopeQuery()
               ),
             })),
           },
@@ -1490,10 +1639,7 @@ const menuItems = computed(() => {
                         {
                           label: label.title,
                         },
-                        {
-                          labels_scope: undefined,
-                          team_scope: undefined,
-                        }
+                        exclusiveConversationScopeQuery()
                       ),
                     })),
                   ],
@@ -1519,14 +1665,28 @@ const menuItems = computed(() => {
             ],
             to: accountScopedRoute('outbound_touches_index'),
           },
-          {
-            name: 'Templates',
-            visibilityKey: 'Campaigns:Templates',
-            label: t('SIDEBAR.TEMPLATES'),
-            icon: 'i-lucide-file-text',
-            activeOn: ['outbound_templates_index'],
-            to: accountScopedRoute('outbound_templates_index'),
-          },
+          // Administrators manage quick replies and WhatsApp templates in the
+          // settings hub; other employees keep both under Outbound.
+          ...(!hasSettingsAccess.value
+            ? [
+                {
+                  name: 'Templates',
+                  visibilityKey: 'Campaigns:Templates',
+                  label: t('SIDEBAR.CANNED_RESPONSES'),
+                  icon: 'i-lucide-file-text',
+                  activeOn: ['outbound_templates_index'],
+                  to: accountScopedRoute('outbound_templates_index'),
+                },
+                {
+                  name: 'WhatsApp Templates',
+                  visibilityKey: 'Campaigns:WhatsAppTemplates',
+                  label: t('SIDEBAR.WHATSAPP_TEMPLATES'),
+                  icon: 'i-lucide-message-circle-code',
+                  activeOn: ['outbound_whatsapp_templates_index'],
+                  to: accountScopedRoute('outbound_whatsapp_templates_index'),
+                },
+              ]
+            : []),
           ...(checkPermissions(['administrator'])
             ? [
                 {
@@ -1547,14 +1707,6 @@ const menuItems = computed(() => {
         label: 'AI',
         defaultChildName: 'Profile',
         activeOn: ['captain_assistants_create_index'],
-        ...(checkPermissions(['administrator'])
-          ? {
-              actionTitle: t('SIDEBAR.CAPTAIN_SETTINGS'),
-              actionIcon: 'i-lucide-settings-2',
-              actionActiveOn: ['captain_settings_index'],
-              actionTo: accountScopedRoute('captain_settings_index'),
-            }
-          : {}),
         children: [
           {
             name: 'Profile',
@@ -1644,17 +1796,10 @@ const menuItems = computed(() => {
         icon: 'i-lucide-square-user-round',
         defaultChildName: 'All Contacts',
         actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon: hasContactSettingsAccess.value ? 'i-lucide-settings-2' : '',
-        actionActiveOn: [
-          'contact_fields_settings_index',
-          ...contactTagSettingsRouteNames,
-        ],
-        actionTo: hasContactSettingsAccess.value
-          ? accountScopedRoute(
-              hasLegacyCustomAttributes.value
-                ? 'contact_fields_settings_index'
-                : 'labels_list'
-            )
+        actionIcon: hasTagSettingsShortcut.value ? 'i-lucide-settings-2' : '',
+        actionActiveOn: contactTagSettingsRouteNames,
+        actionTo: hasTagSettingsShortcut.value
+          ? accountScopedRoute('labels_list')
           : '',
         children: [
           {
@@ -1743,41 +1888,20 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.PIPELINES'),
         icon: 'i-lucide-filter',
         to: accountScopedRoute('crm_deals_index'),
-        activeOn: [
-          'crm_deals_index',
-          'crm_settings_index',
-          'crm_deal_fields_settings_index',
-        ],
+        activeOn: ['crm_deals_index', 'crm_settings_index'],
       },
       {
         name: 'CRM Tasks',
         label: t('SIDEBAR.CRM_TASKS'),
         icon: 'i-lucide-list-todo',
         to: accountScopedRoute('crm_tasks_index'),
-        activeOn: [
-          'crm_tasks_index',
-          'crm_task_settings_index',
-          'crm_task_fields_settings_index',
-        ],
+        activeOn: ['crm_tasks_index', 'crm_task_settings_index'],
       },
       {
         name: 'Scheduling',
         label: t('SIDEBAR.SCHEDULING'),
         icon: 'i-lucide-calendar-clock',
         defaultChildName: 'Scheduling Calendar',
-        actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon:
-          hasSchedulingSettings.value && checkPermissions(['administrator'])
-            ? 'i-lucide-settings-2'
-            : '',
-        actionActiveOn: [
-          'scheduling_settings_index',
-          'scheduling_fields_settings_index',
-        ],
-        actionTo:
-          hasSchedulingSettings.value && checkPermissions(['administrator'])
-            ? accountScopedRoute('scheduling_settings_index')
-            : '',
         children: [
           {
             name: 'Scheduling Calendar',
@@ -1805,6 +1929,17 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
                   to: accountScopedRoute('scheduling_exceptions'),
                 },
+                ...(hasSchedulingSettings.value
+                  ? [
+                      {
+                        name: 'Scheduling Settings',
+                        visibilityKey: 'Scheduling:Settings',
+                        label: t('SIDEBAR.SETTINGS'),
+                        activeOn: ['scheduling_settings_index'],
+                        to: accountScopedRoute('scheduling_settings_index'),
+                      },
+                    ]
+                  : []),
               ]
             : []),
         ],
@@ -1918,56 +2053,16 @@ const menuItems = computed(() => {
           },
         ],
       },
-      ...(hasSettingsAccess.value
+      ...(hasSettingsAccess.value || hasCrmSettingsAccess.value
         ? [
             {
               name: 'Settings',
               label: t('SIDEBAR.ADDITIONAL'),
               icon: 'i-lucide-settings-2',
-              defaultChildName: 'Workspace',
-              children: [
-                ...myCompanySettingsMenuItems.value,
-                ...(hasAutomationRules.value
-                  ? [
-                      {
-                        name: 'Settings Automation',
-                        visibilityKey: 'Settings:Automation',
-                        label: t('SIDEBAR.AUTOMATION'),
-                        icon: 'i-lucide-repeat',
-                        activeOn: ['automation_list'],
-                        to: accountScopedRoute('automation_list'),
-                      },
-                    ]
-                  : []),
-                {
-                  name: 'Settings Agent Bots',
-                  visibilityKey: 'Settings:AgentBots',
-                  label: t('SIDEBAR.AGENT_BOTS'),
-                  icon: 'i-lucide-webhook',
-                  to: accountScopedRoute('agent_bots'),
-                },
-                {
-                  name: 'Settings Macros',
-                  visibilityKey: 'Settings:Macros',
-                  label: t('SIDEBAR.MACROS'),
-                  icon: 'i-lucide-toy-brick',
-                  to: accountScopedRoute('macros_wrapper'),
-                },
-                {
-                  name: 'Settings Integrations',
-                  visibilityKey: 'Settings:Integrations',
-                  label: t('SIDEBAR.INTEGRATIONS'),
-                  icon: 'i-lucide-blocks',
-                  to: accountScopedRoute('settings_applications'),
-                },
-                {
-                  name: 'Settings Billing',
-                  visibilityKey: 'Settings:Billing',
-                  label: t('SIDEBAR.BILLING'),
-                  icon: 'i-lucide-credit-card',
-                  to: accountScopedRoute('billing_settings_index'),
-                },
-              ],
+              defaultChildName: hasSettingsAccess.value
+                ? 'Workspace'
+                : 'Additional Fields',
+              children: settingsMenuItems.value,
             },
           ]
         : []),
@@ -1996,8 +2091,7 @@ const queryMatches = child => {
   const assigneeItemType = child?.name?.startsWith('Assignee:')
     ? child.name.split(':')[1]
     : null;
-  const routeAssigneeType =
-    route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+  const routeAssigneeType = resolveRouteConversationAssigneeType(route.query);
 
   if (
     assigneeItemType &&
@@ -2008,6 +2102,10 @@ const queryMatches = child => {
   }
 
   return Object.entries(childQuery).every(([key, value]) => {
+    if (NON_ACTIVE_QUERY_KEYS.has(key) || typeof value === 'undefined') {
+      return true;
+    }
+
     let routeValue = route.query[key] ?? '';
 
     if (key === 'status') {
@@ -2015,8 +2113,7 @@ const queryMatches = child => {
     }
 
     if (key === 'assignee_type') {
-      routeValue =
-        route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+      routeValue = routeAssigneeType;
     }
 
     return String(routeValue) === String(value);
@@ -2069,10 +2166,19 @@ const matchesChildRoute = child => {
   return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
 };
 
-const activeChildNamesFor = item =>
-  navigableChildrenFor(item)
+const activeChildNamesFor = item => {
+  const matchingNames = navigableChildrenFor(item)
     .filter(matchesChildRoute)
     .map(child => child.name);
+  const statusNames = matchingNames.filter(name =>
+    CONVERSATION_STATUS_CHILD_NAMES.has(name)
+  );
+  const scopeNames = matchingNames.filter(
+    name => !CONVERSATION_STATUS_CHILD_NAMES.has(name)
+  );
+
+  return [...selectExclusiveSidebarChildNames(scopeNames), ...statusNames];
+};
 
 const hasSecondaryColumn = item => !!item?.children?.length;
 

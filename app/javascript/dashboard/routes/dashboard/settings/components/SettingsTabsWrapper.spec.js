@@ -46,6 +46,7 @@ const TabBarStub = {
 
 const mountComponent = ({
   routeName = 'a',
+  showTabs = true,
   featureEnabled = () => true,
   tabs = [
     { labelKey: 'TAB.A', routeName: 'a', activeOn: ['a'] },
@@ -69,7 +70,7 @@ const mountComponent = ({
   });
 
   const wrapper = shallowMount(SettingsTabsWrapper, {
-    props: { tabs, keepAlive: false },
+    props: { tabs, keepAlive: false, showTabs },
     global: {
       stubs: {
         RouterView: RouterViewStub,
@@ -114,5 +115,13 @@ describe('SettingsTabsWrapper', () => {
     expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="tab-b"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="tab-a"]').exists()).toBe(false);
+  });
+
+  it('hides the top tabs when the page is reached from the settings sidebar', () => {
+    const { wrapper: withTabs } = mountComponent();
+    expect(withTabs.find('[data-test="tab-bar"]').exists()).toBe(true);
+
+    const { wrapper } = mountComponent({ showTabs: false });
+    expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(false);
   });
 });

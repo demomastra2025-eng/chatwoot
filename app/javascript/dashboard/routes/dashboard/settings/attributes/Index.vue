@@ -137,6 +137,9 @@ const tasksEnabled = computed(
     canViewCrm.value &&
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.CRM_TASKS)
 );
+const companiesEnabled = computed(() =>
+  isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
+);
 const appointmentsEnabled = computed(
   () =>
     canViewCrm.value &&
@@ -169,7 +172,7 @@ const availableTabs = computed(() => {
         name: t('ATTRIBUTES_MGMT.TABS.CONTACT'),
       });
     }
-    if (isTabAllowed('company_attribute')) {
+    if (companiesEnabled.value && isTabAllowed('company_attribute')) {
       tabs.push({
         key: 'company_attribute',
         name: t('ATTRIBUTES_MGMT.TABS.COMPANY'),
@@ -214,6 +217,17 @@ watch(
 watch(selectedTabKey, () => {
   searchQuery.value = '';
 });
+
+// The unified page stays mounted while the ?tab= query changes (for example
+// when a legacy fields URL redirects here), so follow the requested tab.
+watch(
+  () => props.initialTab,
+  tab => {
+    if (tab && availableTabs.value.some(item => item.key === tab)) {
+      selectedTabKey.value = tab;
+    }
+  }
+);
 
 watch(
   () => crmFieldForm.entityKind,

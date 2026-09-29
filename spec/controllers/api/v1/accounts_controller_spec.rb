@@ -294,6 +294,108 @@ RSpec.describe 'Accounts API', type: :request do
         expect(json_response['message']).to eq('Name is too long (maximum is 255 characters)')
       end
     end
+
+    context 'when an administrator saves the company navigation' do
+      let(:navigation_params) do
+        {
+          dashboard_sidebar_item_order: %w[Contacts Conversation Settings],
+          dashboard_sidebar_hidden_items: %w[Reports Conversation:Teams],
+          dashboard_sidebar_hidden_items_version: 20,
+          dashboard_conversation_sidebar_pipeline_visibility: {
+            configured: true,
+            pipelines: [
+              { id: 7, enabled: true, hidden_stage_ids: [72, 73] },
+              { id: 8, enabled: false, hidden_stage_ids: [] }
+            ]
+          }
+        }
+      end
+
+      it 'stores the sidebar order, hidden sections and conversation pipeline for the whole account' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: navigation_params,
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        settings = account.reload.settings
+        expect(settings['dashboard_sidebar_item_order']).to eq(%w[Contacts Conversation Settings])
+        expect(settings['dashboard_sidebar_hidden_items']).to eq(%w[Reports Conversation:Teams])
+        expect(settings['dashboard_sidebar_hidden_items_version']).to eq(20)
+        expect(settings['dashboard_conversation_sidebar_pipeline_visibility']).to eq(
+          'configured' => true,
+          'pipelines' => [
+            { 'id' => 7, 'enabled' => true, 'hidden_stage_ids' => [72, 73] },
+            { 'id' => 8, 'enabled' => false, 'hidden_stage_ids' => [] }
+          ]
+        )
+      end
+
+      it 'keeps other account settings when only the navigation changes' do
+        account.update!(settings: account.settings.merge('auto_resolve_after' => 60))
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: { dashboard_sidebar_item_order: %w[Reports] },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.settings).to include(
+          'auto_resolve_after' => 60,
+          'dashboard_sidebar_item_order' => %w[Reports]
+        )
+      end
+
+      it 'drops unknown keys inside the conversation pipeline setting' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: {
+                dashboard_conversation_sidebar_pipeline_visibility: {
+                  configured: true,
+                  owner: 'someone',
+                  pipelines: [{ id: 7, enabled: true, hidden_stage_ids: [72], extra: 'x' }]
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.settings['dashboard_conversation_sidebar_pipeline_visibility']).to eq(
+          'configured' => true,
+          'pipelines' => [{ 'id' => 7, 'enabled' => true, 'hidden_stage_ids' => [72] }]
+        )
+      end
+
+      it 'ignores a sidebar order that is not a list' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { dashboard_sidebar_item_order: 'Reports' },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.settings).not_to have_key('dashboard_sidebar_item_order')
+      end
+
+      it 'rejects a sidebar order with non-string entries' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: { dashboard_sidebar_item_order: [1, 2] },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(account.reload.settings).not_to have_key('dashboard_sidebar_item_order')
+      end
+
+      it 'does not let an agent change the company navigation' do
+        patch "/api/v1/accounts/#{account.id}",
+              params: navigation_params,
+              headers: agent.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+        expect(account.reload.settings).not_to have_key('dashboard_sidebar_item_order')
+        expect(account.reload.settings).not_to have_key('dashboard_conversation_sidebar_pipeline_visibility')
+      end
+    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/update_active_at' do

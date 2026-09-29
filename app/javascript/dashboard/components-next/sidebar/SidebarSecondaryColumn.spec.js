@@ -44,7 +44,10 @@ const mountComponent = props =>
     global: {
       stubs: {
         SidebarGroupLeaf: true,
-        SidebarSubGroup: true,
+        SidebarSubGroup: {
+          props: ['label', 'icon', 'children'],
+          template: '<div data-test="sidebar-subgroup-stub" />',
+        },
         SidebarAssigneeTabs: true,
       },
     },
@@ -80,5 +83,54 @@ describe('SidebarSecondaryColumn', () => {
 
     expect(openCompose).toHaveBeenCalledTimes(1);
     expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it('renders flat section labels only when they contain navigation items', () => {
+    const wrapper = mountComponent({
+      children: [
+        {
+          type: 'section',
+          name: 'Settings Section Company',
+          label: 'Company',
+        },
+        {
+          name: 'Workspace',
+          label: 'Company profile',
+          to: { name: 'general_settings_index' },
+        },
+        {
+          type: 'section',
+          name: 'Settings Section Empty',
+          label: 'Empty',
+        },
+      ],
+    });
+
+    const sectionLabels = wrapper.findAll(
+      '[data-test="sidebar-section-label"]'
+    );
+    expect(sectionLabels).toHaveLength(1);
+    expect(sectionLabels[0].text()).toBe('Company');
+    expect(wrapper.text()).not.toContain('Empty');
+  });
+
+  it('omits a subgroup separator when the child requests a compact transition', () => {
+    const child = name => ({
+      name,
+      label: name,
+      icon: 'i-lucide-folder',
+      children: [{ name: `${name} child`, to: { name } }],
+    });
+    const wrapper = mountComponent({
+      children: [
+        child('Pipelines'),
+        { ...child('Labels'), hideTopSeparator: true },
+        child('Folders'),
+      ],
+    });
+
+    expect(
+      wrapper.findAll('[data-test="sidebar-group-separator"]')
+    ).toHaveLength(1);
   });
 });

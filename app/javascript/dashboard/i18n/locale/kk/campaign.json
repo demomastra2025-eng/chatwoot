@@ -1030,7 +1030,13 @@
         "EMPTY_TITLE": "Шаблондарға арналған WhatsApp inbox жоқ",
         "EMPTY_DESCRIPTION": "Хабарлама шаблондарын көру және басқару үшін WhatsApp inbox қосыңыз немесе таңдаңыз.",
         "INBOX_LABEL": "WhatsApp inbox",
-        "INBOX_PLACEHOLDER": "Inbox таңдаңыз"
+        "INBOX_PLACEHOLDER": "Inbox таңдаңыз",
+        "TITLE": "WhatsApp шаблондары",
+        "DESCRIPTION": "Мақұлданған WhatsApp хабарлама шаблондарын қарап, басқарыңыз."
+      },
+      "FREE_TEXT": {
+        "TITLE": "Жылдам жауаптар",
+        "DESCRIPTION": "Қызметкерлер диалогтарға қоса алатын дайын жауаптарды жасаңыз."
       }
     }
   }

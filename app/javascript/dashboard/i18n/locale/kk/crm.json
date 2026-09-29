@@ -237,7 +237,9 @@
         "SEARCH_PLACEHOLDER": "Себеп іздеу",
         "STAGE_FALLBACK": "кезең",
         "TITLE": "Ауыстыру себебі: {stage}"
-      }
+      },
+      "PIPELINES_LOAD_ERROR": "Таңдалған CRM воронкасын жүктеу мүмкін болмады. Сүзгі сақталды.",
+      "RETRY_LOAD": "Жүктеуді қайталау"
     },
     "TASKS": {
       "CREATE_TITLE": "Міндет құру",

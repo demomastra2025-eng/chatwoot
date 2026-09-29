@@ -184,7 +184,28 @@
     "PAYMENT_PENDING": "Your payment is pending. Please update your payment information to continue using OneLink",
     "UPGRADE": "Upgrade to continue using OneLink",
     "LIMITS_UPGRADE": "Your account has exceeded the usage limits, please upgrade your plan to continue using OneLink",
-    "OPEN_BILLING": "Open billing"
+    "OPEN_BILLING": "Open billing",
+    "CONVERSATIONS": {
+      "TITLE": "Conversations",
+      "DESCRIPTION": "Configure features available to employees while working with conversations.",
+      "TEXT_IMPROVEMENT": "Text improvement",
+      "TEXT_IMPROVEMENT_DESCRIPTION": "Allow employees to improve and rephrase a message with AI before sending it.",
+      "UPDATE_SUCCESS": "Conversation settings updated",
+      "UPDATE_ERROR": "Could not update conversation settings. Please try again.",
+      "EMPTY": "There are no conversation settings for this workspace yet."
+    },
+    "SIDEBAR_VISIBILITY": {
+      "TITLE": "Sidebar settings",
+      "DESCRIPTION": "Choose and arrange the primary sections shown in the employee sidebar.",
+      "ORDER_HINT": "Drag sections or use the arrow buttons to change their order.",
+      "DRAG": "Drag to reorder",
+      "MOVE_UP": "Move up",
+      "MOVE_DOWN": "Move down",
+      "SAVE": "Save settings",
+      "UPDATE_SUCCESS": "Sidebar settings updated",
+      "UPDATE_ERROR": "Could not update sidebar settings. Please try again.",
+      "PINNED_FIRST": "Always first"
+    }
   },
   "FORMS": {
     "MULTISELECT": {

@@ -198,6 +198,39 @@ describe('SidebarGroup', () => {
     expect(subGroup.attributes('data-active-child-names')).toBe('Channels');
   });
 
+  it('highlights Contacts when its navigation target clears an optional query', () => {
+    sidebarCollapsed.value = true;
+    Object.assign(routeState, {
+      name: 'contacts_dashboard_index',
+      path: '/contacts',
+      query: {},
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      name: 'Contacts',
+      label: 'Contacts',
+      to: null,
+      defaultChildName: 'All Contacts',
+      children: [
+        {
+          name: 'All Contacts',
+          label: 'All Contacts',
+          to: {
+            name: 'contacts_dashboard_index',
+            path: '/contacts',
+            query: { page: 1, search: undefined },
+          },
+          activeOn: ['contacts_dashboard_index', 'contacts_edit'],
+        },
+      ],
+    });
+    const link = wrapper.find('[title="Contacts"]');
+
+    expect(link.classes()).toContain('bg-n-brand-solid');
+    expect(link.classes()).toContain('text-n-brand-contrast');
+  });
+
   it('does not highlight the Tags subgroup on the unfiltered all-tags route', async () => {
     const wrapper = mountComponent();
 
@@ -711,11 +744,84 @@ describe('SidebarGroup', () => {
     expect(link.attributes('data-route-name')).toBe('home');
   });
 
+  it('highlights the active main icon with the bright brand color', () => {
+    sidebarCollapsed.value = true;
+    const wrapper = mountComponent();
+    const link = wrapper.find('[title="Conversations"]');
+
+    expect(link.classes()).toContain('bg-n-brand-solid');
+    expect(link.classes()).toContain('text-n-brand-contrast');
+    expect(link.classes()).not.toContain('bg-n-alpha-2');
+  });
+
   it('keeps a non-navigating collapsed group as a button', () => {
     sidebarCollapsed.value = true;
     const wrapper = mountComponent({ navigateOnCollapsedClick: false });
 
     expect(wrapper.find('button[title="Conversations"]').exists()).toBe(true);
+  });
+
+  it('does not style a stale expanded collapsed group as active', () => {
+    sidebarCollapsed.value = true;
+    expandedItem.value = 'Conversation';
+    Object.assign(routeState, {
+      name: 'settings_index',
+      path: '/settings',
+      query: {},
+      params: {},
+    });
+
+    const wrapper = mountComponent();
+    const link = wrapper.find('[title="Conversations"]');
+
+    expect(link.classes()).not.toContain('bg-n-alpha-2');
+  });
+
+  it('keeps only the most specific matching leaf active', async () => {
+    Object.assign(routeState, {
+      name: 'shared_route',
+      path: '/shared',
+      query: { view: 'specific' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Shared',
+          label: 'Shared',
+          to: { name: 'shared_route', path: '/shared' },
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'Generic',
+              label: 'Generic',
+              to: { name: 'shared_route', path: '/shared' },
+              activeOn: ['shared_route'],
+            },
+            {
+              name: 'Specific',
+              label: 'Specific',
+              to: {
+                name: 'shared_route',
+                path: '/shared',
+                query: { view: 'specific' },
+              },
+              activeOn: ['shared_route'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+
+    const activeNames = wrapper
+      .find('[data-test-id="sidebar-subgroup"]')
+      .attributes('data-active-child-names');
+
+    expect(activeNames).toContain('Specific');
+    expect(activeNames).not.toContain('Generic');
   });
 
   it('does not select an action-only collapsed group for a secondary column', async () => {

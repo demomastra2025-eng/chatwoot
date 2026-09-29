@@ -256,7 +256,9 @@
         "SEARCH_PLACEHOLDER": "Поиск причины",
         "STAGE_FALLBACK": "этап",
         "TITLE": "Причина перехода: {stage}"
-      }
+      },
+      "PIPELINES_LOAD_ERROR": "Не удалось загрузить выбранную CRM-воронку. Фильтр сохранён.",
+      "RETRY_LOAD": "Повторить загрузку"
     },
     "TASKS": {
       "CREATE_TITLE": "Создать задачу",
