@@ -50,6 +50,8 @@ class Call < ApplicationRecord
   has_one_attached :recording
   has_one_attached :recording_manifest
   has_many_attached :recording_tracks
+  has_one_attached :decoded_recording_manifest
+  has_many_attached :decoded_recording_chunks
 
   validates :provider_call_id, presence: true
   validates :provider, presence: true
