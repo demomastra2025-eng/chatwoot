@@ -160,15 +160,26 @@ class Captain::Tools::ProviderBookingHandoffService
     conversation.captain_human_control_active? && status_transitions_after_fence.exists?(from_status: 'pending')
   end
 
-  # A release back to Captain is a status transition to pending, or to resolved
-  # from any other status: the only transitions whose explicit release moves
-  # the generation (ControlService#prepare_ai!), in any channel of the thread.
+  # A release back to Captain is a transition of this conversation to pending
+  # from any source, which starts a newer Captain run, or an explicit staff
+  # release in any channel of the thread: the same actor and source rule as
+  # Conversations::StatusTransitionService#explicit_captain_control_release?,
+  # to pending or resolved from a human-owned status, which moves the
+  # generation (ControlService#prepare_ai!). Auto-resolve, macro, automation,
+  # contact and reminder resolves leave the thread human-owned.
   def releases_after_fence
     return ConversationStatusTransition.none unless status_epoch?
 
-    transitions = ConversationStatusTransition.where(conversation_id: conversation.id, id: (response_fence['status_transition_id'].to_i + 1)..)
-    transitions = transitions.or(sibling_status_transitions_after_fence) if conversation.communication_thread
-    transitions.where(to_status: 'pending').or(transitions.where(to_status: 'resolved').where.not(from_status: 'pending'))
+    own = ConversationStatusTransition.where(conversation_id: conversation.id, id: (response_fence['status_transition_id'].to_i + 1)..)
+    transitions = conversation.communication_thread ? own.or(sibling_status_transitions_after_fence) : own
+    own.where(to_status: 'pending').or(explicit_captain_control_releases(transitions))
+  end
+
+  def explicit_captain_control_releases(transitions)
+    transitions.where(
+      source: Conversations::StatusTransitionService::CAPTAIN_CONTROL_RELEASE_SOURCES,
+      to_status: Conversations::StatusTransitionService::CAPTAIN_CONTROL_RELEASE_STATUSES
+    ).where.not(actor_id: nil).where.not(from_status: 'pending')
   end
 
   # Transition ids are global, so this conversation's status epoch cannot fence

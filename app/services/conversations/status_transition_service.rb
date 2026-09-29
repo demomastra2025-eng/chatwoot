@@ -1,6 +1,12 @@
 class Conversations::StatusTransitionService
   include DateRangeHelper
 
+  # Staff status changes by an actor from these sources hand a conversation
+  # back to Captain (ControlService#prepare_ai!). Auto-resolve, macros,
+  # automations, contacts and reminders leave Captain control unchanged.
+  CAPTAIN_CONTROL_RELEASE_SOURCES = %w[api manual bulk_action communication_thread copilot].freeze
+  CAPTAIN_CONTROL_RELEASE_STATUSES = %w[pending resolved].freeze
+
   def initialize(conversation:, params: {}, actor: nil, source: 'manual')
     @conversation = conversation
     @account = conversation.account
@@ -62,7 +68,7 @@ class Conversations::StatusTransitionService
   end
 
   def explicit_captain_control_release?
-    params[:status].to_s.in?(%w[pending resolved]) && actor.present? && source.in?(%w[api manual bulk_action communication_thread copilot]) &&
+    params[:status].to_s.in?(CAPTAIN_CONTROL_RELEASE_STATUSES) && actor.present? && source.in?(CAPTAIN_CONTROL_RELEASE_SOURCES) &&
       conversation.respond_to?(:prepare_captain_ai_control!)
   end
 

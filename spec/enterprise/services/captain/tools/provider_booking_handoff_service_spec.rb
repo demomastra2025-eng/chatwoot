@@ -126,6 +126,75 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
     end
   end
 
+  # Only a return of this conversation to pending or an explicit staff release
+  # hands control back to Captain; other resolves keep the staff takeover.
+  context 'when the conversation is resolved after a staff public reply took it over' do
+    let(:agent) { create(:user, account: account, role: :agent) }
+
+    before do
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      allow(Captain::Conversation::TypingIndicatorService).to receive(:turn_off)
+    end
+
+    after { Redis::Alfred.delete(format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: conversation.id)) }
+
+    def take_over!
+      captured_fence = fence
+      create(:message, conversation: conversation, account: account, inbox: conversation.inbox, message_type: :outgoing,
+                       sender: agent, private: false, content: 'agent reply')
+      expect(conversation.reload).to be_open
+      captured_fence
+    end
+
+    def resolve!(source:, actor:)
+      Conversations::StatusTransitionService.new(
+        conversation: conversation.reload, params: { status: 'resolved' }, actor: actor, source: source
+      ).perform
+      expect(conversation.reload).to be_resolved
+    end
+
+    def actor_for(kind)
+      { agent: agent, contact: conversation.contact }.fetch(kind) { create(:automation_rule, account: account) }
+    end
+
+    def perform_late_failure(captured_fence, steps:)
+      expect(conversation.current_captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + steps)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      conversation.messages.outgoing.where(private: true).count
+    end
+
+    it 'records a staff note after the auto-resolve job resolved the conversation' do
+      captured_fence = take_over!
+      conversation.toggle_status
+      expect(conversation.reload).to be_resolved
+
+      expect(perform_late_failure(captured_fence, steps: 1)).to eq(1)
+    end
+
+    {
+      'a staff macro' => %w[macro agent],
+      'an automation rule' => %w[automation automation_rule],
+      'the contact' => %w[contact contact],
+      'a reminder after delivery' => %w[system agent]
+    }.each do |label, (source, actor)|
+      it "records a staff note after #{label} resolved the conversation" do
+        captured_fence = take_over!
+        resolve!(source: source, actor: actor_for(actor.to_sym))
+
+        expect(perform_late_failure(captured_fence, steps: 1)).to eq(1)
+      end
+    end
+
+    %w[api manual bulk_action communication_thread copilot].each do |source|
+      it "does not leave a late note after staff explicitly resolved the conversation through #{source}" do
+        captured_fence = take_over!
+        resolve!(source: source, actor: agent)
+
+        expect(perform_late_failure(captured_fence, steps: 2)).to eq(0)
+      end
+    end
+  end
+
   context 'when the conversation shares a communication thread with a non-Captain channel' do
     let(:sibling) { create(:conversation, account: account, contact: conversation.contact, status: :open) }
     let(:thread) { create(:communication_thread, account: account, contact: conversation.contact) }
@@ -220,6 +289,57 @@ RSpec.describe Captain::Tools::ProviderBookingHandoffService do
       expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + 2)
       expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
       expect(conversation.messages.outgoing).to be_empty
+    end
+
+    def resolve_sibling!(source:, actor:)
+      Conversations::StatusTransitionService.new(
+        conversation: sibling.reload, params: { status: 'resolved' }, actor: actor, source: source
+      ).perform
+      expect(sibling.reload).to be_resolved
+    end
+
+    def late_staff_notes(captured_fence, steps:)
+      expect(thread.reload.captain_control_generation.to_i).to eq(captured_fence[:control_generation].to_i + steps)
+      expect(described_class.new(assistant: assistant, conversation: conversation.reload, fence: captured_fence).perform).to eq(:stale)
+      conversation.messages.outgoing.where(private: true).count
+    end
+
+    it 'records a staff note after the auto-resolve job resolved the idle sibling after a takeover here' do
+      captured_fence = fence
+      create(:message, conversation: conversation, account: account, inbox: conversation.inbox, message_type: :outgoing,
+                       sender: agent, private: false, content: 'agent reply')
+      expect(conversation.reload).to be_open
+      sibling.reload.toggle_status
+      expect(sibling.reload).to be_resolved
+
+      expect(late_staff_notes(captured_fence, steps: 1)).to eq(1)
+    end
+
+    it 'records a staff note after the auto-resolve job resolved the sibling that took the thread over' do
+      captured_fence = fence
+      staff_reply_in_sibling!(1)
+      sibling.reload.toggle_status
+      expect(sibling.reload).to be_resolved
+
+      expect(late_staff_notes(captured_fence, steps: 1)).to eq(1)
+      expect(conversation.reload).to be_pending
+    end
+
+    it 'records a staff note after a staff macro resolved the sibling that took the thread over' do
+      captured_fence = fence
+      staff_reply_in_sibling!(1)
+      resolve_sibling!(source: 'macro', actor: agent)
+
+      expect(late_staff_notes(captured_fence, steps: 1)).to eq(1)
+      expect(conversation.reload).to be_pending
+    end
+
+    it 'does not leave a late note when staff resolved the sibling from the communication thread after replying' do
+      captured_fence = fence
+      staff_reply_in_sibling!(1)
+      resolve_sibling!(source: 'communication_thread', actor: agent)
+
+      expect(late_staff_notes(captured_fence, steps: 2)).to eq(0)
     end
 
     # Without a status epoch a release cannot be ruled out.
