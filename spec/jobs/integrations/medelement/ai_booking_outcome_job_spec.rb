@@ -273,6 +273,67 @@ RSpec.describe Integrations::Medelement::AiBookingOutcomeJob do
       expect(conversation.messages.outgoing.where(private: false)).to be_empty
     end
 
+    %w[failed provider_status_unknown].each do |outcome|
+      it "hands a #{outcome} reschedule to people once with a staff note, but never tells the customer it moved" do
+        bind_provider_status!(outcome)
+        capture_booking_fence!
+        command.update!(status: outcome)
+
+        described_class.perform_now(command.id)
+        described_class.perform_now(command.id)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.captain_handoff_applied_at).to be_present
+        expect(conversation.status_transitions.last).to have_attributes(source: 'system', actor: assistant)
+        expect(conversation.messages.outgoing.where(private: false)).to be_empty
+        expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+        expect(command.reload.execution_state[described_class::STAFF_NOTE_ID_KEY]).to eq(conversation.messages.outgoing.last.id)
+      end
+    end
+
+    it 'does not reopen a failed reschedule after a human took over, but notes it for staff' do
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      conversation.update!(status: :open)
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    end
+
+    it 'does not steal a later Captain run for a failed reschedule' do
+      bind_provider_status!('failed')
+      capture_booking_fence!
+      conversation.update!(status: :open)
+      conversation.prepare_captain_ai_control!
+      conversation.update!(status: :pending)
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.outgoing).to be_empty
+    end
+
+    it 'waits for the run fence, then keeps only the staff note for a reschedule that never got one' do
+      bind_provider_status!('failed')
+      command.update!(status: 'failed')
+
+      described_class.perform_now(command.id)
+      expect(conversation.messages.outgoing).to be_empty
+
+      job = described_class.new(command.id)
+      job.executions = described_class::BINDING_ATTEMPTS - 1
+      job.perform_now
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.outgoing.where(private: true).count).to eq(1)
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
+    end
+
     context 'when a staff member replied in a non-Captain channel of the same communication thread' do
       let(:sibling) { create(:conversation, account: account, contact: contact, status: :open) }
       let(:thread) { create(:communication_thread, account: account, contact: contact) }

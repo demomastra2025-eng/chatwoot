@@ -65,9 +65,15 @@ class Captain::Tools::ProviderBookingHandoffService
   end
 
   def command_matches_context?
-    appointment && command.create_reception? && command.account_id == assistant.account_id &&
+    appointment && handoff_operation? && command.account_id == assistant.account_id &&
       command.appointment_id == appointment.id && command.contact_id == (orphaned_write ? conversation.contact_id : appointment.contact_id) &&
       command_actor_matches_context?
+  end
+
+  # A failed or unknown AI reschedule (move_reception) gets the same handoff as a
+  # failed create; orphaned writes only exist for creates.
+  def handoff_operation?
+    command.create_reception? || (command.move_reception? && !orphaned_write)
   end
 
   def orphaned_write_context?

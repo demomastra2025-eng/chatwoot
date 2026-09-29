@@ -223,6 +223,57 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     expect(other.reload.starts_at).to eq(other_starts_at)
   end
 
+  context 'when a provider-backed reschedule is saved' do
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let(:contact) do
+      create(:contact, account: account, name: 'Aruzhan', last_name: 'Testova', phone_number: '+77011234567',
+                       custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+    end
+    let(:appointment) do
+      resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', custom_attributes: {
+                          'medelement_specialist_code' => 'specialist-1', 'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                        })
+      service = create(:scheduling_service, account: account, duration_min: 30, custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
+      create(:scheduling_service_price, account: account, service: service, resource: resource, active: true)
+      create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+      create(:scheduling_appointment, account: account, resource: resource, contact: contact, conversation: conversation, service: service,
+                                      external_ref: 'medelement:reception:reception-1',
+                                      starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500'), ends_at: Time.zone.parse('2026-04-20 09:30:00 +0500'),
+                                      custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' })
+    end
+    let(:fence) { { control_generation: 0, status_transition_id: 0, last_message_id: 42 } }
+    let(:tool_context) do
+      Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id }, captain_response_fence: fence })
+    end
+
+    before do
+      stub_provider_availability
+      settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+      create(:integrations_hook, :medelement, account: account, settings: settings)
+    end
+
+    def move!
+      tool.perform(tool_context, appointment_id: appointment.id, starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601)
+    end
+
+    it "records this run's response fence on the move command for its late outcome" do
+      result = move!
+      raise result if result.start_with?('ERROR:')
+
+      command = Integrations::Medelement::ProviderCommand.find(JSON.parse(result).dig('provider_command_receipt', 'command', 'id'))
+      expect(command.execution_state[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY]).to eq(fence.stringify_keys)
+    end
+
+    it 'keeps a saved reschedule successful when the fence cannot be recorded' do
+      allow(Captain::Tools::ProviderBookingHandoffService).to receive(:capture_fence!).and_raise(ActiveRecord::StatementInvalid, 'lock timeout')
+
+      result = move!
+
+      expect(result).not_to start_with('ERROR:')
+      expect(JSON.parse(result).dig('provider_command_receipt', 'command', 'operation')).to eq('move_reception')
+    end
+  end
+
   def create_other_appointment(account:, resource:, contact:, conversation:, service:)
     create(
       :scheduling_appointment,

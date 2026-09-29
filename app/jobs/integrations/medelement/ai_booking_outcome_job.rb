@@ -4,10 +4,11 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   CUSTOMER_MESSAGE_ID_KEY = 'ai_booking_customer_message_id'.freeze
   STAFF_NOTE_ID_KEY = 'ai_booking_staff_note_id'.freeze
+  BINDING_ATTEMPTS = 5
 
   class BindingNotReadyError < StandardError; end
 
-  retry_on BindingNotReadyError, wait: 20.seconds, attempts: 5
+  retry_on BindingNotReadyError, wait: 20.seconds, attempts: BINDING_ATTEMPTS
 
   def perform(command_id)
     command = Integrations::Medelement::ProviderCommand.find_by(id: command_id)
@@ -39,14 +40,30 @@ class Integrations::Medelement::AiBookingOutcomeJob < ApplicationJob
 
   def process_outcome!(command, appointment, conversation, assistant)
     return review_failed_create!(command, appointment, conversation, assistant) if command.create_reception?
-
-    if failed_or_unknown?(command)
-      notify_staff!(command, conversation, assistant) unless staff_notified?(command)
-      return
-    end
+    return review_failed_move!(command, appointment, conversation, assistant) if failed_or_unknown?(command)
 
     return if outcome_recorded?(command)
     return deliver_confirmation!(command, appointment, conversation, assistant) if provider_acknowledged?(command)
+  end
+
+  # The reschedule reply waits for the provider, so after a failed or unknown
+  # move the customer has no answer. Like a failed create, it is a system
+  # handoff under the response fence the update tool captured. A command the
+  # handoff cannot judge (no captured fence, e.g. created before this release, or
+  # a changed assistant or conversation) keeps the staff note it got before.
+  def review_failed_move!(command, appointment, conversation, assistant)
+    return if staff_notified?(command)
+
+    if command.execution_state.to_h[Captain::Tools::ProviderBookingHandoffService::FENCE_KEY].blank?
+      raise BindingNotReadyError, 'Captain reschedule response fence is not available yet' if executions < BINDING_ATTEMPTS
+
+      return notify_staff!(command, conversation, assistant)
+    end
+
+    result = Captain::Tools::ProviderBookingHandoffService.new(
+      assistant: assistant, conversation: conversation, appointment: appointment, command: command
+    ).perform
+    notify_staff!(command, conversation, assistant) if result.in?(%i[invalid_context missing_fence])
   end
 
   def review_failed_create!(command, appointment, conversation, assistant)
