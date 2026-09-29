@@ -3,6 +3,12 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
+import enInbox from 'dashboard/i18n/locale/en/inbox.json';
+import ruInbox from 'dashboard/i18n/locale/ru/inbox.json';
+import kkInbox from 'dashboard/i18n/locale/kk/inbox.json';
+import enSettings from 'dashboard/i18n/locale/en/settings.json';
+import ruSettings from 'dashboard/i18n/locale/ru/settings.json';
+import kkSettings from 'dashboard/i18n/locale/kk/settings.json';
 
 const { mocks } = await vi.hoisted(async () => {
   const { reactive, ref } = await import('vue');
@@ -108,7 +114,7 @@ const mountSidebar = () =>
           name: 'SidebarNotificationBell',
           props: ['isCollapsed', 'label'],
           template:
-            '<li data-testid="notification-bell" :data-collapsed="String(isCollapsed)" />',
+            '<li data-testid="notification-bell" :data-collapsed="String(isCollapsed)" :data-label="label" />',
         },
         SidebarGroup: {
           name: 'SidebarGroup',
@@ -189,6 +195,37 @@ describe('Sidebar notifications and phone placement', () => {
     ).toMatchObject({ 'data-collapsed': 'false' });
     setWindowWidth(1280);
   });
+
+  it.each([
+    ['desktop rail footer', 1280, '[data-testid="sidebar-rail-footer-actions"]'],
+    ['mobile menu', 600, 'nav'],
+  ])(
+    'labels the bell with the notifications panel title in the %s',
+    async (_, width, container) => {
+      setWindowWidth(width);
+      const wrapper = mountSidebar();
+      await flushPromises();
+
+      expect(
+        wrapper
+          .get(`${container} [data-testid="notification-bell"]`)
+          .attributes('data-label')
+      ).toBe('INBOX.NOTIFICATION_MODAL.TITLE');
+      setWindowWidth(1280);
+    }
+  );
+
+  it.each([
+    ['en', enInbox, enSettings, 'Notifications'],
+    ['ru', ruInbox, ruSettings, 'Уведомления'],
+    ['kk', kkInbox, kkSettings, 'Хабарландырулар'],
+  ])(
+    'names the bell "Notifications" in %s, also in the navigation settings',
+    (_, inbox, settings, expected) => {
+      expect(inbox.INBOX.NOTIFICATION_MODAL.TITLE).toBe(expected);
+      expect(settings.SIDEBAR.INBOX).toBe(expected);
+    }
+  );
 
   it('shows the phone button only to employees with a browser SIP line', async () => {
     setWindowWidth(1280);

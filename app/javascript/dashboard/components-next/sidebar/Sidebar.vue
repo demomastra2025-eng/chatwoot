@@ -1502,7 +1502,9 @@ const menuItems = computed(() => {
     [
       {
         name: 'Inbox',
-        label: t('SIDEBAR.INBOX'),
+        // The bell opens the notifications panel: its label, tooltip and
+        // accessible name are the panel title.
+        label: t('INBOX.NOTIFICATION_MODAL.TITLE'),
         icon: 'i-lucide-bell',
         to: accountScopedRoute('inbox_view'),
         activeOn: ['inbox_view', 'inbox_view_conversation'],
