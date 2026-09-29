@@ -77,9 +77,16 @@ RSpec.describe Webhooks::WhatsappEventsJob do
   it 'keeps retrying WABA lock contention after the previous retry limit' do
     job_instance = described_class.new(params, verified_context(channel, channel_id: channel.id))
     job_instance.executions = 7
+    waba_id = channel.provider_config['business_account_id']
     allow(Whatsapp::WabaLock).to receive(:with_locks).and_raise(Whatsapp::WabaLock::LockAcquisitionError)
 
     expect { job_instance.perform_now }.to have_enqueued_job(described_class).on_queue('whatsapp_inbound')
+    # The retrying live job keeps its waiter on purpose, so history imports keep yielding to it.
+    expect(Whatsapp::WabaLivePriority.waiting?(waba_id)).to be(true)
+  ensure
+    # Otherwise the waiter outlives this example for WAITER_TTL, and later specs on the
+    # factory WABA see live traffic pending (e.g. Whatsapp::CoexistenceHistoryService).
+    Whatsapp::WabaLivePriority.new(waba_id, waiter_id: job_instance.job_id).release! if waba_id && job_instance
   end
 
   it 'backs off repeated WABA lock contention without exceeding 30 seconds' do
