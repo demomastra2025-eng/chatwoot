@@ -886,7 +886,7 @@
           "CANCEL": "Cancel",
           "STOP": "End",
           "MUTE": "Mute microphone",
-          "UNMUTE": "Unmute microphone",
+          "MICROPHONE_MUTED": "Microphone is off — click to turn it on",
           "STATUS": {
             "IDLE": "Ready",
             "CONNECTING": "Connecting",

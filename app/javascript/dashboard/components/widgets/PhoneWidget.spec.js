@@ -291,6 +291,8 @@ describe('PhoneWidget', () => {
     expect(microphone.attributes('aria-label')).toBe(
       'PHONE_WIDGET.MICROPHONE_UNAVAILABLE'
     );
+    expect(microphone.attributes('aria-pressed')).toBe('false');
+    expect(microphone.classes()).not.toContain('bg-n-ruby-9');
     microphone.element.click();
     expect(microphoneState.toggle).not.toHaveBeenCalled();
   });
@@ -312,18 +314,19 @@ describe('PhoneWidget', () => {
     await wrapper.vm.$nextTick();
     expect(microphone.find('.i-lucide-mic-off').exists()).toBe(true);
     expect(microphone.attributes('aria-label')).toBe(
-      'PHONE_WIDGET.UNMUTE_MICROPHONE'
+      'PHONE_WIDGET.MICROPHONE_MUTED'
     );
 
+    // The ringtone button silences incoming calls: pressed while silent.
     const ringtone = wrapper.get('[data-testid="phone-widget-ringtone"]');
-    expect(ringtone.attributes('aria-pressed')).toBe('true');
+    expect(ringtone.attributes('aria-pressed')).toBe('false');
     expect(ringtone.find('.i-lucide-bell').exists()).toBe(true);
     await ringtone.trigger('click');
     expect(settingsState.update).toHaveBeenCalledWith({
       voice_call_ringtone_enabled: false,
     });
     expect(ringtone.find('.i-lucide-bell-off').exists()).toBe(true);
-    expect(ringtone.attributes('aria-pressed')).toBe('false');
+    expect(ringtone.attributes('aria-pressed')).toBe('true');
     expect(microphoneState.muted.value).toBe(true);
     await ringtone.trigger('click');
     expect(settingsState.update).toHaveBeenLastCalledWith({
@@ -349,7 +352,8 @@ describe('PhoneWidget', () => {
     expect(toggle.find('.i-lucide-minimize-2').exists()).toBe(false);
     expect(toggle.attributes('aria-label')).toBe('PHONE_WIDGET.MINIMIZE');
     expect(toggle.attributes('aria-expanded')).toBe('true');
-    expect(toggle.classes()).toContain('!bg-n-alpha-2');
+    // An open keypad is a filled button, not a faint hover shade.
+    expect(toggle.classes()).toContain('bg-n-brand-solid');
     expect(wrapper.find('[data-testid="phone-widget-expanded"]').exists()).toBe(
       true
     );
@@ -357,10 +361,86 @@ describe('PhoneWidget', () => {
     await toggle.trigger('click');
     expect(toggle.attributes('aria-label')).toBe('PHONE_WIDGET.EXPAND');
     expect(toggle.attributes('aria-expanded')).toBe('false');
-    expect(toggle.classes()).not.toContain('!bg-n-alpha-2');
+    expect(toggle.classes()).not.toContain('bg-n-brand-solid');
     expect(wrapper.find('[data-testid="phone-widget-expanded"]').exists()).toBe(
       false
     );
+  });
+
+  describe('pressed state of the on/off buttons', () => {
+    it('fills the microphone button red and says the microphone is off while muted', async () => {
+      microphoneState.available.value = true;
+      callsState.activeCall = { isActive: true, callSid: 'sipuni:call-1' };
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const microphone = wrapper.get('[data-testid="phone-widget-microphone"]');
+      expect(microphone.attributes('aria-pressed')).toBe('false');
+      expect(microphone.classes()).not.toContain('bg-n-ruby-9');
+      expect(microphone.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.MUTE_MICROPHONE'
+      );
+      expect(microphone.attributes('title')).toBe(
+        'PHONE_WIDGET.MUTE_MICROPHONE'
+      );
+
+      microphoneState.muted.value = true;
+      await wrapper.vm.$nextTick();
+
+      expect(microphone.attributes('aria-pressed')).toBe('true');
+      expect(microphone.classes()).toEqual(
+        expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+      );
+      expect(microphone.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.MICROPHONE_MUTED'
+      );
+      expect(microphone.attributes('title')).toBe(
+        'PHONE_WIDGET.MICROPHONE_MUTED'
+      );
+      expect(microphone.find('.i-lucide-mic-off').exists()).toBe(true);
+
+      microphoneState.muted.value = false;
+      await wrapper.vm.$nextTick();
+
+      expect(microphone.attributes('aria-pressed')).toBe('false');
+      expect(microphone.classes()).not.toContain('bg-n-ruby-9');
+      expect(microphone.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.MUTE_MICROPHONE'
+      );
+      expect(microphone.find('.i-lucide-mic').exists()).toBe(true);
+    });
+
+    it('fills the ringtone button red while incoming calls ring without sound', async () => {
+      settingsState.settings.value = { voice_call_ringtone_enabled: false };
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const ringtone = wrapper.get('[data-testid="phone-widget-ringtone"]');
+      expect(ringtone.attributes('aria-pressed')).toBe('true');
+      expect(ringtone.classes()).toEqual(
+        expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+      );
+      expect(ringtone.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.RINGTONE_MUTED'
+      );
+      expect(ringtone.attributes('title')).toBe('PHONE_WIDGET.RINGTONE_MUTED');
+      expect(ringtone.find('.i-lucide-bell-off').exists()).toBe(true);
+
+      await ringtone.trigger('click');
+
+      expect(settingsState.update).toHaveBeenCalledWith({
+        voice_call_ringtone_enabled: true,
+      });
+      expect(ringtone.attributes('aria-pressed')).toBe('false');
+      expect(ringtone.classes()).not.toContain('bg-n-ruby-9');
+      expect(ringtone.attributes('aria-label')).toBe(
+        'PHONE_WIDGET.DISABLE_RINGTONE'
+      );
+      expect(ringtone.attributes('title')).toBe(
+        'PHONE_WIDGET.DISABLE_RINGTONE'
+      );
+      expect(ringtone.find('.i-lucide-bell').exists()).toBe(true);
+    });
   });
 
   it('uses the current employee display name when a full name is missing', async () => {

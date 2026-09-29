@@ -61,6 +61,13 @@ const shouldPlayIncomingCallRingtone = computed(
 
 useIncomingCallRingtone('whatsapp', shouldPlayIncomingCallRingtone);
 
+// Same words as the phone widget microphone (translated in ru/en/kk).
+const microphoneLabel = computed(() =>
+  isMuted.value
+    ? t('PHONE_WIDGET.MICROPHONE_MUTED')
+    : t('PHONE_WIDGET.MUTE_MICROPHONE')
+);
+
 // In server-relay mode, the timer starts when the Peer B WebRTC handshake
 // completes (not when the agent clicks accept). Listen for this event.
 const onAgentWebRTCConnected = () => {
@@ -297,21 +304,34 @@ onUnmounted(() => {
             {{ formattedCallDuration }}
           </template>
         </p>
+        <p
+          v-if="isMuted"
+          class="mt-1 mb-0 inline-flex items-center gap-1 rounded-md bg-n-ruby-9 px-1.5 py-0.5 text-xs font-medium text-white"
+          data-testid="call-microphone-off"
+        >
+          <i class="i-ph-microphone-slash-bold text-sm" aria-hidden="true" />
+          {{ t('PHONE_WIDGET.MICROPHONE_OFF') }}
+        </p>
       </div>
       <div class="flex shrink-0 gap-2">
-        <!-- Mute toggle -->
+        <!-- Mute toggle: muted is a filled red pressed button with its own
+             label, like the microphone of the phone widget. -->
         <button
+          type="button"
           class="flex justify-center items-center w-9 h-9 rounded-full transition-colors"
           :class="
             isMuted
-              ? 'bg-n-amber-9 hover:bg-n-amber-10'
-              : 'bg-n-slate-4 hover:bg-n-slate-5'
+              ? 'bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm'
+              : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
           "
-          :title="isMuted ? t('WHATSAPP_CALL.UNMUTE') : t('WHATSAPP_CALL.MUTE')"
+          :title="microphoneLabel"
+          :aria-label="microphoneLabel"
+          :aria-pressed="isMuted"
+          data-testid="whatsapp-call-microphone"
           @click="toggleMute"
         >
           <i
-            class="text-base text-white"
+            class="text-base"
             :class="
               isMuted ? 'i-ph-microphone-slash-bold' : 'i-ph-microphone-bold'
             "

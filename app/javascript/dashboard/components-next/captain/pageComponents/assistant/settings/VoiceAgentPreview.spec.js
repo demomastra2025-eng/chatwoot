@@ -105,6 +105,38 @@ describe('VoiceAgentPreview', () => {
     expect(wrapper.text()).toContain('01:05');
   });
 
+  it('shows a muted microphone as a filled red pressed button with its own label', async () => {
+    state.status.value = 'listening';
+    const wrapper = mount(VoiceAgentPreview, {
+      props: { assistantId: 57, configuredProvider: 'gemini-live' },
+    });
+
+    const microphone = () => wrapper.get('button[aria-pressed]');
+    expect(microphone().attributes('aria-pressed')).toBe('false');
+    expect(microphone().classes()).not.toContain('bg-n-ruby-9');
+    expect(microphone().attributes('aria-label')).toBe(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.MUTE'
+    );
+
+    state.isMuted.value = true;
+    await nextTick();
+
+    expect(microphone().attributes('aria-pressed')).toBe('true');
+    expect(microphone().classes()).toEqual(
+      expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+    );
+    expect(microphone().attributes('aria-label')).toBe(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.MICROPHONE_MUTED'
+    );
+    expect(microphone().attributes('title')).toBe(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.MICROPHONE_MUTED'
+    );
+    expect(microphone().find('.i-lucide-mic-off').exists()).toBe(true);
+
+    await microphone().trigger('click');
+    expect(state.toggleMute).toHaveBeenCalledOnce();
+  });
+
   it('shows the GPT Live provider label', () => {
     const wrapper = mount(VoiceAgentPreview, {
       props: { assistantId: 57, configuredProvider: 'openai-live' },

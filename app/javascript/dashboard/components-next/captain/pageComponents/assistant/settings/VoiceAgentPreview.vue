@@ -82,7 +82,7 @@ const level = computed(() =>
 );
 const muteLabel = computed(() =>
   isMuted.value
-    ? t('CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.UNMUTE')
+    ? t('CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.MICROPHONE_MUTED')
     : t('CAPTAIN.ASSISTANTS.FORM.VOICE_PREVIEW.MUTE')
 );
 const stopLabel = computed(() =>
@@ -214,15 +214,21 @@ const barHeight = index => {
           :is-loading="status === 'connecting'"
           @click="start"
         />
+        <!-- Muted: a filled red pressed button with its own label. -->
         <button
           v-if="isActive"
           type="button"
-          class="flex size-11 items-center justify-center rounded-full border border-n-weak bg-n-solid-1 text-n-slate-12 transition hover:bg-n-alpha-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-violet-9"
+          class="flex size-11 items-center justify-center rounded-full border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-violet-9"
           :aria-label="muteLabel"
           :aria-pressed="isMuted"
           :title="muteLabel"
           :disabled="!isConnected"
-          :class="{ 'cursor-not-allowed opacity-50': !isConnected }"
+          :class="[
+            isMuted
+              ? 'border-n-ruby-9 bg-n-ruby-9 text-white hover:bg-n-ruby-10'
+              : 'border-n-weak bg-n-solid-1 text-n-slate-12 hover:bg-n-alpha-2',
+            { 'cursor-not-allowed opacity-50': !isConnected },
+          ]"
           @click="toggleMute"
         >
           <i

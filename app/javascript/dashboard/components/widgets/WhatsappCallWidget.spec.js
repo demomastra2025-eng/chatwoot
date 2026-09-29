@@ -148,3 +148,64 @@ describe('WhatsappCallWidget ringtone', () => {
     wrapper.unmount();
   });
 });
+
+describe('WhatsappCallWidget microphone', () => {
+  const mountActiveCall = isMuted => {
+    mockSession.hasActiveCall = true;
+    mockSession.activeCall = {
+      callId: 'wa-active-mic',
+      caller: { name: 'Customer' },
+    };
+    mockSession.incomingCalls = [];
+    mockSession.isMuted = isMuted;
+    return mountComponent();
+  };
+  const microphoneButton = wrapper =>
+    wrapper.get('[data-testid="whatsapp-call-microphone"]');
+
+  beforeEach(() => {
+    mockSession.toggleMute.mockReset();
+    voiceCallsState.hasActiveCall = false;
+  });
+
+  it('offers to mute a live microphone as an unpressed button', async () => {
+    const wrapper = mountActiveCall(false);
+    const microphone = microphoneButton(wrapper);
+
+    expect(microphone.attributes('aria-pressed')).toBe('false');
+    expect(microphone.attributes('aria-label')).toBe(
+      'PHONE_WIDGET.MUTE_MICROPHONE'
+    );
+    expect(microphone.attributes('title')).toBe('PHONE_WIDGET.MUTE_MICROPHONE');
+    expect(microphone.classes()).not.toContain('bg-n-ruby-9');
+    expect(microphone.find('.i-ph-microphone-bold').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="call-microphone-off"]').exists()).toBe(
+      false
+    );
+
+    await microphone.trigger('click');
+    expect(mockSession.toggleMute).toHaveBeenCalledOnce();
+    wrapper.unmount();
+  });
+
+  it('shows a muted microphone as a filled red pressed button and says so', () => {
+    const wrapper = mountActiveCall(true);
+    const microphone = microphoneButton(wrapper);
+
+    expect(microphone.attributes('aria-pressed')).toBe('true');
+    expect(microphone.classes()).toEqual(
+      expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+    );
+    expect(microphone.attributes('aria-label')).toBe(
+      'PHONE_WIDGET.MICROPHONE_MUTED'
+    );
+    expect(microphone.attributes('title')).toBe(
+      'PHONE_WIDGET.MICROPHONE_MUTED'
+    );
+    expect(microphone.find('.i-ph-microphone-slash-bold').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="call-microphone-off"]').text()).toBe(
+      'PHONE_WIDGET.MICROPHONE_OFF'
+    );
+    wrapper.unmount();
+  });
+});

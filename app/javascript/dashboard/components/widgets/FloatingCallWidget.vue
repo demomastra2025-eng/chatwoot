@@ -49,7 +49,7 @@ const microphoneLabel = computed(() => {
     return t('PHONE_WIDGET.MICROPHONE_UNAVAILABLE');
   }
   return microphoneMuted.value
-    ? t('PHONE_WIDGET.UNMUTE_MICROPHONE')
+    ? t('PHONE_WIDGET.MICROPHONE_MUTED')
     : t('PHONE_WIDGET.MUTE_MICROPHONE');
 });
 
@@ -327,6 +327,11 @@ const callHasActiveRemoteState = call =>
 
 const callIsLiveActive = call =>
   callIsActive(call) || callHasActiveRemoteState(call);
+
+// The browser microphone belongs to the connected call; while it is muted
+// (from the phone header or the card button) the call says so in words.
+const callMicrophoneOff = call =>
+  microphoneMuted.value && callIsActive(call) && !isWhatsappCall(call);
 
 const browserJoinSupportedForCall = call => {
   return canHandleCallInBrowser({
@@ -904,14 +909,28 @@ onUnmounted(stopElapsedTimer);
             <p class="mt-0.5 text-xs text-n-slate-11 truncate mb-0">
               {{ getCallSecondaryText(call) }}
             </p>
+            <p
+              v-if="callMicrophoneOff(call)"
+              class="mt-1 mb-0 inline-flex items-center gap-1 rounded-md bg-n-ruby-9 px-1.5 py-0.5 text-xs font-medium text-white"
+              data-testid="call-microphone-off"
+            >
+              <i class="i-lucide-mic-off text-sm" aria-hidden="true" />
+              {{ t('PHONE_WIDGET.MICROPHONE_OFF') }}
+            </p>
 
             <div class="flex items-center gap-2 mt-2">
+              <!-- Muted: a filled red pressed button with its own label. -->
               <button
                 v-if="
                   !props.embedded && callIsActive(call) && !isWhatsappCall(call)
                 "
                 type="button"
-                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1 disabled:opacity-50"
+                class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors disabled:opacity-50"
+                :class="
+                  microphoneMuted
+                    ? 'bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm'
+                    : 'bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1'
+                "
                 :disabled="!microphoneAvailable"
                 :title="microphoneLabel"
                 :aria-label="microphoneLabel"

@@ -317,12 +317,44 @@ describe('FloatingCallWidget', () => {
     microphoneState.available.value = true;
     await wrapper.vm.$nextTick();
     expect(microphone.attributes('disabled')).toBeUndefined();
+    expect(microphone.attributes('aria-pressed')).toBe('false');
+    expect(microphone.classes()).toContain('bg-n-alpha-2');
+    expect(microphone.classes()).not.toContain('bg-n-ruby-9');
+    expect(microphone.attributes('aria-label')).toBe(
+      'PHONE_WIDGET.MUTE_MICROPHONE'
+    );
+    expect(wrapper.find('[data-testid="call-microphone-off"]').exists()).toBe(
+      false
+    );
     await microphone.trigger('click');
     expect(microphoneState.toggle).toHaveBeenCalledOnce();
     microphoneState.muted.value = true;
     await wrapper.vm.$nextTick();
     expect(microphone.find('.i-lucide-mic-off').exists()).toBe(true);
     expect(microphone.attributes('aria-pressed')).toBe('true');
+    // Muted is a filled red button with its own label, not just another icon,
+    // and the card says so in words.
+    expect(microphone.classes()).toEqual(
+      expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+    );
+    expect(microphone.classes()).not.toContain('bg-n-alpha-2');
+    expect(microphone.attributes('aria-label')).toBe(
+      'PHONE_WIDGET.MICROPHONE_MUTED'
+    );
+    expect(microphone.attributes('title')).toBe(
+      'PHONE_WIDGET.MICROPHONE_MUTED'
+    );
+    expect(wrapper.get('[data-testid="call-microphone-off"]').text()).toBe(
+      'PHONE_WIDGET.MICROPHONE_OFF'
+    );
+
+    microphoneState.muted.value = false;
+    await wrapper.vm.$nextTick();
+    expect(microphone.attributes('aria-pressed')).toBe('false');
+    expect(microphone.classes()).not.toContain('bg-n-ruby-9');
+    expect(wrapper.find('[data-testid="call-microphone-off"]').exists()).toBe(
+      false
+    );
     wrapper.unmount();
   });
 
@@ -1157,6 +1189,47 @@ describe('FloatingCallWidget', () => {
         provider: 'sipuni',
         callSid: 'active-call-1',
       });
+      wrapper.unmount();
+    });
+
+    it('says on the own call that the microphone is off while the phone mutes it', async () => {
+      microphoneState.available.value = true;
+      mockSession.hasActiveCall = true;
+      mockSession.activeCall = activeCall;
+      mockSession.incomingCalls = [colleagueCall];
+
+      const wrapper = mountComponent({ embedded: true });
+      const ownCard = () =>
+        wrapper.get(
+          '[data-testid="phone-widget-call-card"][data-own-call="true"]'
+        );
+      const colleagueCard = () =>
+        wrapper.get(
+          '[data-testid="phone-widget-call-card"][data-own-call="false"]'
+        );
+      expect(
+        ownCard().find('[data-testid="call-microphone-off"]').exists()
+      ).toBe(false);
+
+      microphoneState.muted.value = true;
+      await wrapper.vm.$nextTick();
+
+      const badge = ownCard().get('[data-testid="call-microphone-off"]');
+      expect(badge.text()).toBe('PHONE_WIDGET.MICROPHONE_OFF');
+      expect(badge.classes()).toEqual(
+        expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
+      );
+      expect(badge.find('.i-lucide-mic-off').exists()).toBe(true);
+      // Only the employee's own connected call is muted.
+      expect(
+        colleagueCard().find('[data-testid="call-microphone-off"]').exists()
+      ).toBe(false);
+
+      microphoneState.muted.value = false;
+      await wrapper.vm.$nextTick();
+      expect(
+        ownCard().find('[data-testid="call-microphone-off"]').exists()
+      ).toBe(false);
       wrapper.unmount();
     });
 

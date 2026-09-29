@@ -37,14 +37,19 @@ const statusColor = computed(() =>
       data-testid="sidebar-phone-toggle"
       :data-status="phoneWidgetStore.status"
       :data-visible="isVisible"
-      class="relative flex items-center rounded-lg hover:bg-n-alpha-2 hover:text-n-slate-12"
+      class="relative flex items-center rounded-lg"
       :class="[
         props.isCollapsed
           ? 'size-9 justify-center'
           : 'h-8 w-full gap-2 px-2 text-sm',
-        isVisible ? 'bg-n-alpha-1 text-n-slate-12' : 'text-n-slate-11',
+        // Shows/hides the phone (a disclosure, hence aria-expanded): filled
+        // teal while the phone is on screen.
+        isVisible
+          ? 'bg-n-teal-9/10 text-n-teal-11 hover:bg-n-teal-9/20'
+          : 'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12',
       ]"
       :aria-label="label"
+      :aria-expanded="isVisible"
       :title="label"
       @click="toggle"
     >

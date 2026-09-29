@@ -146,6 +146,22 @@ describe('SidebarPhoneToggle', () => {
     expect(toggleButton(wrapper).attributes('data-visible')).toBe('false');
   });
 
+  it('fills the button while the phone is on screen and exposes it as expanded', async () => {
+    const wrapper = mountToggle();
+    const button = toggleButton(wrapper);
+
+    expect(button.attributes('aria-expanded')).toBe('true');
+    expect(button.classes()).toEqual(
+      expect.arrayContaining(['bg-n-teal-9/10', 'text-n-teal-11'])
+    );
+
+    await button.trigger('click');
+
+    expect(button.attributes('aria-expanded')).toBe('false');
+    expect(button.classes()).not.toContain('bg-n-teal-9/10');
+    expect(button.classes()).toContain('text-n-slate-11');
+  });
+
   it('shows the action label in the expanded mobile sidebar', () => {
     const wrapper = mountToggle({ isCollapsed: false });
 

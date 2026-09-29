@@ -123,17 +123,19 @@ const microphoneLabel = computed(() => {
     return t('PHONE_WIDGET.MICROPHONE_UNAVAILABLE');
   }
   return microphoneMuted.value
-    ? t('PHONE_WIDGET.UNMUTE_MICROPHONE')
+    ? t('PHONE_WIDGET.MICROPHONE_MUTED')
     : t('PHONE_WIDGET.MUTE_MICROPHONE');
 });
 const { uiSettings, updateUISettings } = useUISettings();
 const ringtoneEnabled = computed(
   () => uiSettings.value?.voice_call_ringtone_enabled !== false
 );
+// Like the microphone, the ringtone button is an "off" switch: it is pressed
+// (filled red, aria-pressed) while incoming calls ring without sound.
 const ringtoneLabel = computed(() =>
   ringtoneEnabled.value
     ? t('PHONE_WIDGET.DISABLE_RINGTONE')
-    : t('PHONE_WIDGET.ENABLE_RINGTONE')
+    : t('PHONE_WIDGET.RINGTONE_MUTED')
 );
 const toggleRingtone = () => {
   updateUISettings({ voice_call_ringtone_enabled: !ringtoneEnabled.value });
@@ -425,10 +427,13 @@ onUnmounted(() => {
             {{ employeeName }}
           </span>
         </div>
+        <!-- On/off buttons: the "off" state (muted microphone, silent
+             ringtone) is a filled red pressed button with its own label,
+             never only another icon. -->
         <Button
           type="button"
-          variant="ghost"
-          color="slate"
+          :variant="microphoneMuted ? 'solid' : 'ghost'"
+          :color="microphoneMuted ? 'ruby' : 'slate'"
           size="sm"
           class="shrink-0"
           :icon="microphoneMuted ? 'i-lucide-mic-off' : 'i-lucide-mic'"
@@ -441,14 +446,14 @@ onUnmounted(() => {
         />
         <Button
           type="button"
-          variant="ghost"
-          color="slate"
+          :variant="ringtoneEnabled ? 'ghost' : 'solid'"
+          :color="ringtoneEnabled ? 'slate' : 'ruby'"
           size="sm"
           class="shrink-0"
           :icon="ringtoneEnabled ? 'i-lucide-bell' : 'i-lucide-bell-off'"
           :aria-label="ringtoneLabel"
           :title="ringtoneLabel"
-          :aria-pressed="ringtoneEnabled"
+          :aria-pressed="!ringtoneEnabled"
           data-testid="phone-widget-ringtone"
           @click="toggleRingtone"
         />
@@ -465,14 +470,15 @@ onUnmounted(() => {
           data-testid="phone-widget-reconnect"
           @click="reconnect(selectedSession)"
         />
+        <!-- Shows/hides the keypad (a disclosure, hence aria-expanded); an
+             open keypad is a filled button. -->
         <Button
           v-if="!hasOwnCall"
           type="button"
-          variant="ghost"
-          color="slate"
+          :variant="isExpanded ? 'solid' : 'ghost'"
+          :color="isExpanded ? 'blue' : 'slate'"
           size="sm"
           class="shrink-0"
-          :class="{ '!bg-n-alpha-2': isExpanded }"
           icon="i-fluent-dialpad-20-regular"
           :aria-expanded="isExpanded"
           :aria-label="
