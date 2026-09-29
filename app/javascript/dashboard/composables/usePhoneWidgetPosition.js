@@ -2,12 +2,14 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useEventListener } from '@vueuse/core';
 
 // The last place the employee dragged the phone to, per browser.
-export const PHONE_WIDGET_POSITION_STORAGE_KEY = 'onelink:phone-widget-position';
+export const PHONE_WIDGET_POSITION_STORAGE_KEY =
+  'onelink:phone-widget-position';
 // Gap kept between the phone and every edge of the window.
 export const PHONE_WIDGET_VIEWPORT_MARGIN = 8;
 
 // Controls inside the drag handle keep working as buttons.
-const INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, [role="button"]';
+const INTERACTIVE_SELECTOR =
+  'button, a, input, select, textarea, [role="button"]';
 
 const isFiniteNumber = value =>
   typeof value === 'number' && Number.isFinite(value);
@@ -155,8 +157,8 @@ export function usePhoneWidgetPosition(widgetRef) {
       // The restored place may be outside a smaller window: re-clamp it once
       // the phone is on screen and whenever its size changes.
       scheduleClamp();
-      if (typeof ResizeObserver !== 'undefined') {
-        resizeObserver = new ResizeObserver(() => clampToViewport());
+      if (typeof window.ResizeObserver === 'function') {
+        resizeObserver = new window.ResizeObserver(() => clampToViewport());
         resizeObserver.observe(element);
       }
     },

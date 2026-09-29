@@ -909,9 +909,10 @@ describe('PhoneWidget', () => {
       expect(dialerShown(wrapper)).toBe(false);
       expect(keypadToggleShown(wrapper)).toBe(false);
       expect(
-        wrapper.get('[data-testid="phone-widget-panel"]').find(
-          '[data-testid="phone-widget-calls-list"]'
-        ).exists()
+        wrapper
+          .get('[data-testid="phone-widget-panel"]')
+          .find('[data-testid="phone-widget-calls-list"]')
+          .exists()
       ).toBe(true);
     });
 
@@ -996,7 +997,7 @@ describe('PhoneWidget', () => {
     let resizeCallbacks = [];
     const originalInnerWidth = window.innerWidth;
     const originalInnerHeight = window.innerHeight;
-    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalResizeObserver = window.ResizeObserver;
 
     const setWindowSize = (width, height) => {
       window.innerWidth = width;
@@ -1045,14 +1046,9 @@ describe('PhoneWidget', () => {
           }),
       ];
       resizeCallbacks = [];
-      globalThis.ResizeObserver = class {
-        constructor(callback) {
-          resizeCallbacks.push(callback);
-        }
-
-        observe() {}
-
-        disconnect() {}
+      window.ResizeObserver = function ResizeObserverStub(callback) {
+        resizeCallbacks.push(callback);
+        return { observe: () => {}, disconnect: () => {} };
       };
     });
 
@@ -1060,7 +1056,7 @@ describe('PhoneWidget', () => {
       spies.forEach(spy => spy.mockRestore());
       window.localStorage.clear();
       setWindowSize(originalInnerWidth, originalInnerHeight);
-      globalThis.ResizeObserver = originalResizeObserver;
+      window.ResizeObserver = originalResizeObserver;
     });
 
     it('opens at its default place until it is moved', async () => {

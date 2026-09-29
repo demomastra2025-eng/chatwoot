@@ -1119,9 +1119,9 @@ describe('FloatingCallWidget', () => {
 
       const wrapper = mountComponent();
 
-      expect(wrapper.find('[data-testid="floating-calls"]').classes()).toContain(
-        'fixed'
-      );
+      expect(
+        wrapper.find('[data-testid="floating-calls"]').classes()
+      ).toContain('fixed');
       expect(wrapper.find('[data-testid="phone-widget-calls"]').exists()).toBe(
         false
       );
@@ -1143,9 +1143,9 @@ describe('FloatingCallWidget', () => {
       expect(card.text()).toContain('+77070001002→+77070001001');
       expect(card.text()).toContain('01:05');
       // The phone header owns the microphone and the hide button.
-      expect(card.find('[data-testid="floating-call-microphone"]').exists()).toBe(
-        false
-      );
+      expect(
+        card.find('[data-testid="floating-call-microphone"]').exists()
+      ).toBe(false);
       expect(card.find('[aria-label="Close"]').exists()).toBe(false);
       expect(card.find('[aria-label="Chat"]').exists()).toBe(true);
 

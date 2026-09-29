@@ -11,8 +11,9 @@ const size = { width: 336, height: 300 };
 
 describe('clampPhoneWidgetPosition', () => {
   it('keeps a position that is already inside the window', () => {
-    expect(clampPhoneWidgetPosition({ left: 100, top: 120 }, size, viewport))
-      .toEqual({ left: 100, top: 120 });
+    expect(
+      clampPhoneWidgetPosition({ left: 100, top: 120 }, size, viewport)
+    ).toEqual({ left: 100, top: 120 });
   });
 
   it.each([

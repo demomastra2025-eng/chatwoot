@@ -242,7 +242,9 @@ describe('PhoneWidget with its calls', () => {
   });
 
   it('pops a hidden phone for a ringing call with answer, decline and chat inside it', async () => {
-    settingsState.settings.value = { phone_widget_hidden_accounts: { 1: true } };
+    settingsState.settings.value = {
+      phone_widget_hidden_accounts: { 1: true },
+    };
     const wrapper = mountPhone();
     await flushPromises();
     expect(panel(wrapper).exists()).toBe(false);
