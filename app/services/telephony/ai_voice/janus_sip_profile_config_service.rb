@@ -15,13 +15,21 @@ class Telephony::AiVoice::JanusSipProfileConfigService
 
   private
 
-  # One broken legacy row must not take every other voice-agent registration offline.
+  # A legacy voice-agent row that no longer passes model validation cannot get its
+  # registration version written, and that used to fail the feed for every other
+  # agent. Only that case skips the profile. Any other error must still fail the
+  # request: the sidecar keeps its current registrations after a failed fetch, but
+  # it unregisters every agent that is missing from a successful one.
   def isolated_profile_payload(profile)
     profile_payload(profile)
-  rescue StandardError => e
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless e.record == profile
+
     Rails.logger.warn(
-      "TELEPHONY_AI_VOICE_JANUS_PROFILE_SKIPPED profile_id=#{profile.id} inbox_id=#{profile.inbox_id} error=#{e.class.name}"
+      "TELEPHONY_AI_VOICE_JANUS_PROFILE_SKIPPED profile_id=#{profile.id} inbox_id=#{profile.inbox_id} " \
+      "error=#{e.class.name} message=#{e.message}"
     )
+    ChatwootExceptionTracker.new(e, account: profile.account).capture_exception
     nil
   end
 
