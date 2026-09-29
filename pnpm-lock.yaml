@@ -386,8 +386,8 @@ importers:
         specifier: 5.4.21
         version: 5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0)
       vite-plugin-ruby:
-        specifier: ^5.0.0
-        version: 5.0.0(vite@5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0))
+        specifier: ^5.2.4
+        version: 5.2.4(vite@5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0))
       vitest:
         specifier: 3.0.5
         version: 3.0.5(@types/node@22.7.0)(jsdom@27.2.0)(sass@1.79.3)(terser@5.33.0)
@@ -2577,6 +2577,15 @@ packages:
   fastq@1.15.0:
     resolution: {integrity: sha512-wBrocU2LCXXa+lWBt8RoIRD89Fi8OdABODa/kEnyeyjS5aZO5/GNvI5sEINADqP/h8M29UHTHUb53sUu5Ihqdw==}
 
+  fdir@6.5.0:
+    resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
+    engines: {node: '>=12.0.0'}
+    peerDependencies:
+      picomatch: ^3 || ^4
+    peerDependenciesMeta:
+      picomatch:
+        optional: true
+
   file-entry-cache@6.0.1:
     resolution: {integrity: sha512-7Gps/XWymbLk2QLYK4NzpMOrYjMhdIxXuIvy2QBsLE6ljuodKvdkWs/cpyJJ3CVIVpH0Oi1Hvg1ovbMzLdFBBg==}
     engines: {node: ^10.12.0 || >=12.0.0}
@@ -3518,6 +3527,10 @@ packages:
     resolution: {integrity: sha512-yBYjY9QX2hnRmZHAjG/f13MzmBzxzYgQhFrke06TTyKY5zSTEqkOeukBzIdVA3j3ulu8Qa3MbVFShV7T2RmGtQ==}
     engines: {node: '>= 0.4'}
 
+  obug@2.2.1:
+    resolution: {integrity: sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==}
+    engines: {node: '>=12.20.0'}
+
   ohash@2.0.11:
     resolution: {integrity: sha512-RdR9FQrFwNBNXAr4GixM8YaRZRJ5PUWbKYbE5eOsrwAjJW0q2REGcf79oYPsLyskQCZG1PLN+S/K1V00joZAoQ==}
 
@@ -3658,6 +3671,10 @@ packages:
   picomatch@2.3.1:
     resolution: {integrity: sha512-JU3teHTNjmE2VCGFzuY8EXzCDVwEqB2a8fsIvwaStHhAWJEeVd1o1QD80CU6+ZdEXXSLbSsuLwJjkCBWqRQUVA==}
     engines: {node: '>=8.6'}
+
+  picomatch@4.0.7:
+    resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
+    engines: {node: '>=12'}
 
   pidtree@0.6.0:
     resolution: {integrity: sha512-eG2dWTVw5bzqGRztnHExczNxt5VGsE6OwTeCG3fdUf9KBsZzO3R5OIIIzWR+iZA0NtZ+RDVdaoE2dK1cn6jH4g==}
@@ -4448,6 +4465,10 @@ packages:
     resolution: {integrity: sha512-W/KYk+NFhkmsYpuHq5JykngiOCnxeVL8v8dFnqxSD8qEEdRfXk1SDM6JzNqcERbcGYj9tMrDQBYV9cjgnunFIg==}
     engines: {node: '>=18'}
 
+  tinyglobby@0.2.17:
+    resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
+    engines: {node: '>=12.0.0'}
+
   tinykeys@3.0.0:
     resolution: {integrity: sha512-nazawuGv5zx6MuDfDY0rmfXjuOGhD5XU2z0GLURQ1nzl0RUe9OuCJq+0u8xxJZINHe+mr7nw8PWYYZ9WhMFujw==}
 
@@ -4671,8 +4692,8 @@ packages:
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
 
-  vite-plugin-ruby@5.0.0:
-    resolution: {integrity: sha512-c8PjTp21Ah/ttgnNUyu0qvCXZI08Jr9I24oUKg3TRIRhF5GcOZ++6wtlTCrNFd9COEQbpXHxlRIXd/MEg0iZJw==}
+  vite-plugin-ruby@5.2.4:
+    resolution: {integrity: sha512-DdFjS7TB8mgPx0Zhsf4kqgZYKxlZHgbyiijAj8l4OTbkEF1Lvk7U/HAGOKWjlpPR9RgatwNGZ1wZwAhyMJBcHg==}
     peerDependencies:
       vite: 5.4.21
 
@@ -7508,6 +7529,10 @@ snapshots:
     dependencies:
       reusify: 1.0.4
 
+  fdir@6.5.0(picomatch@4.0.7):
+    optionalDependencies:
+      picomatch: 4.0.7
+
   file-entry-cache@6.0.1:
     dependencies:
       flat-cache: 3.1.0
@@ -8550,6 +8575,8 @@ snapshots:
       define-properties: 1.2.1
       es-object-atoms: 1.0.0
 
+  obug@2.2.1: {}
+
   ohash@2.0.11: {}
 
   on-finished@2.3.0:
@@ -8682,6 +8709,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@2.3.1: {}
+
+  picomatch@4.0.7: {}
 
   pidtree@0.6.0: {}
 
@@ -9643,6 +9672,11 @@ snapshots:
 
   tinyexec@1.0.2: {}
 
+  tinyglobby@0.2.17:
+    dependencies:
+      fdir: 6.5.0(picomatch@4.0.7)
+      picomatch: 4.0.7
+
   tinykeys@3.0.0: {}
 
   tinypool@1.0.2: {}
@@ -9889,13 +9923,11 @@ snapshots:
       - supports-color
       - terser
 
-  vite-plugin-ruby@5.0.0(vite@5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0)):
+  vite-plugin-ruby@5.2.4(vite@5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0)):
     dependencies:
-      debug: 4.3.5
-      fast-glob: 3.3.2
+      obug: 2.2.1
+      tinyglobby: 0.2.17
       vite: 5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0)
-    transitivePeerDependencies:
-      - supports-color
 
   vite@5.4.21(@types/node@22.7.0)(sass@1.79.3)(terser@5.33.0):
     dependencies:
