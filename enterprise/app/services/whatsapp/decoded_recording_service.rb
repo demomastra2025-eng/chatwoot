@@ -85,13 +85,27 @@ class Whatsapp::DecodedRecordingService
     @call.with_lock do
       @call.reload
       next unless @source.current?
-      next if @publisher&.completed? && !current_manifest?(invalid_manifest_blob_id)
+      next if keep_current_marker?(reason, invalid_manifest_blob_id)
 
       meta = (@call.meta || {}).deep_dup
       meta['decoded_recording'] = { 'state' => 'unknown', 'reason' => reason, 'source_sha256' => @source.digest,
                                     'decoder_contract' => Whatsapp::RecordingDecodeBudget::CONTRACT }
       @call.update!(meta: meta)
     end
+  end
+
+  def keep_current_marker?(reason, invalid_manifest_blob_id)
+    return !current_manifest?(invalid_manifest_blob_id) if @publisher&.completed?
+
+    # stale_source only says that another writer changed the decode state meanwhile; it never
+    # replaces the reason that writer already recorded for this source and contract.
+    reason == 'stale_source' && unknown_marker_of_current_source?
+  end
+
+  def unknown_marker_of_current_source?
+    marker = (@call.meta || {})['decoded_recording'] || {}
+    marker['state'] == 'unknown' && marker['source_sha256'] == @source.digest &&
+      marker['decoder_contract'] == Whatsapp::RecordingDecodeBudget::CONTRACT
   end
 
   def current_manifest?(blob_id)

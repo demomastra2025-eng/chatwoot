@@ -328,6 +328,43 @@ RSpec.describe Whatsapp::DecodedRecordingService do
       expect(perform_decode).to eq(bumped)
     end
 
+    it 'reports a newer completed marker that lands while an older one is served as stale_source without downgrading it' do
+      publish_source
+      perform_decode
+      rederived = false
+      allow(Whatsapp::DecodedRecordingSource).to receive(:new).and_wrap_original do |method, **arguments|
+        source = method.call(**arguments)
+        unless rederived
+          rederived = true
+          other = Call.find(call.id)
+          other.update!(meta: other.meta.deep_merge('decoded_recording' => { 'state' => 'unknown', 'reason' => 'local_decode_io_failed' }))
+          described_class.new(call: Call.find(call.id), decoder_factory: other_native_build).perform
+        end
+        source
+      end
+      expect(perform_decode).to eq('state' => 'unknown', 'reason' => 'stale_source')
+      newer = call.reload.meta['decoded_recording']
+      expect(newer['state']).to eq('completed')
+      expect(Digest::SHA256.hexdigest(call.decoded_recording_manifest.download)).to eq(newer['mapping_sha256'])
+      expect(perform_decode['mapping']['epochs'].first['decoder_version']).to eq('libopus 9.9.9-synthetic')
+    end
+
+    it 'keeps a more informative unknown reason when a concurrent downgrade fences the served result' do
+      publish_source
+      perform_decode
+      derived_blob = call.reload.decoded_recording_manifest.blob
+      allow(derived_blob.service).to receive(:download).and_wrap_original do |method, key, &block|
+        data = method.call(key, &block)
+        if key == derived_blob.key
+          other = Call.find(call.id)
+          other.update!(meta: other.meta.deep_merge('decoded_recording' => { 'state' => 'unknown', 'reason' => 'derived_chunk_corrupt' }))
+        end
+        data
+      end
+      expect(perform_decode).to eq('state' => 'unknown', 'reason' => 'stale_source')
+      expect(call.reload.meta['decoded_recording']).to include('state' => 'unknown', 'reason' => 'derived_chunk_corrupt')
+    end
+
     def expect_superseded(old_chunks, result)
       expect(old_chunks.size).to eq(1)
       current = call.reload.decoded_recording_chunks.blobs.pluck(:id)

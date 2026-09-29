@@ -18,15 +18,12 @@ class Whatsapp::DecodedRecordingPublisher
   def existing_result
     meta = @call.meta.fetch('decoded_recording')
     blob = @call.decoded_recording_manifest.blob
+    locked_existing_scope!(blob, meta)
     @budget.mapping!(blob.byte_size)
     data = blob.download
     fail_publication!('derived_manifest_corrupt') unless Digest::SHA256.hexdigest(data) == meta['mapping_sha256']
     mapping = JSON.parse(data)
-    @call.with_lock do
-      @call.reload
-      verify_existing_scope!(blob, meta)
-      result(mapping, native_chunks(mapping, meta['mapping_sha256']))
-    end
+    locked_existing_scope!(blob, meta) { result(mapping, native_chunks(mapping, meta['mapping_sha256'])) }
   rescue JSON::ParserError, KeyError
     fail_publication!('derived_manifest_corrupt')
   end
@@ -44,6 +41,17 @@ class Whatsapp::DecodedRecordingPublisher
   end
 
   private
+
+  # The in-memory marker and manifest attachment can come from different reads. Checking them
+  # against the locked row before the digest comparison makes a newer marker surface as
+  # stale_source instead of derived_manifest_corrupt (which would downgrade that newer result).
+  def locked_existing_scope!(blob, meta)
+    @call.with_lock do
+      @call.reload
+      verify_existing_scope!(blob, meta)
+      yield if block_given?
+    end
+  end
 
   def verify_existing_scope!(blob, meta)
     same_mapping = @call.decoded_recording_manifest.attached? && @call.decoded_recording_manifest.blob.id == blob.id &&
