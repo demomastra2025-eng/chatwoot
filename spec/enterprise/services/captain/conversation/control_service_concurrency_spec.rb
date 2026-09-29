@@ -4,6 +4,10 @@ require 'timeout'
 RSpec.describe Captain::Conversation::ControlService do
   self.use_transactional_tests = false
 
+  # Rows committed here are not rolled back, and Account#destroy! leaves inboxes, contacts, users
+  # and Captain rows to destroy_async jobs that never run in specs. Clear them so later specs start clean.
+  after { CommittedRowsCleanup.truncate! }
+
   it 'serializes a human reply commit before evaluating a competing stale handoff fence' do
     records = create_race_records
     human_locked = Queue.new
@@ -30,7 +34,6 @@ RSpec.describe Captain::Conversation::ControlService do
     release_human << true if defined?(release_human) && release_human.empty?
     human_worker&.join
     handoff_worker&.join
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'does not expose a status change before its status epoch is recorded' do
@@ -70,7 +73,6 @@ RSpec.describe Captain::Conversation::ControlService do
   ensure
     release_transition << true if defined?(release_transition) && release_transition.empty?
     transition_worker&.join
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'publishes takeover cancellation only after the employee reply commits' do
@@ -98,7 +100,6 @@ RSpec.describe Captain::Conversation::ControlService do
     release_human << true if defined?(release_human) && release_human.empty?
     worker&.join
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'does not publish takeover cancellation or change status after a rolled-back employee reply' do
@@ -115,7 +116,6 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
   ensure
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'captures a pending sibling after a committed reply across channels from an open conversation' do
@@ -142,7 +142,6 @@ RSpec.describe Captain::Conversation::ControlService do
     release_human << true if defined?(release_human) && release_human.empty?
     worker&.join
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'preserves a pending sibling after a rolled-back reply across channels from an open conversation' do
@@ -161,7 +160,6 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
   ensure
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'invalidates a pending sibling in the database when an open source cannot capture cancellation in Redis' do
@@ -182,7 +180,6 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(records.fetch(:pending_sibling).bot_handoff!(fence: { control_generation: 0 })).to eq(:stale)
   ensure
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'cancels a pending Captain sibling only after a public non-Captain source reply commits' do
@@ -209,7 +206,6 @@ RSpec.describe Captain::Conversation::ControlService do
     release_human << true if defined?(release_human) && release_human.empty?
     worker&.join
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'rolls back a non-Captain source takeover without publishing its pending sibling cancellation' do
@@ -229,7 +225,6 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(records.fetch(:conversation).messages.outgoing.count).to eq(0)
   ensure
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   it 'keeps a database fence when a non-Captain source cannot capture its pending sibling in Redis' do
@@ -250,7 +245,6 @@ RSpec.describe Captain::Conversation::ControlService do
     expect(records.fetch(:pending_sibling).bot_handoff!(fence: { control_generation: 0 })).to eq(:stale)
   ensure
     Redis::Alfred.delete(key) if defined?(key)
-    cleanup_race_records(records) if defined?(records) && records
   end
 
   def cancellation_key(records, conversation: records.fetch(:conversation))
@@ -336,16 +330,5 @@ RSpec.describe Captain::Conversation::ControlService do
     rescue StandardError => e
       result << e
     end
-  end
-
-  def cleanup_race_records(records)
-    account = records.fetch(:account)
-    conversation_ids = [records.fetch(:conversation).id, records[:pending_sibling]&.id].compact
-    CommunicationThreadConversation.where(conversation_id: conversation_ids).delete_all
-    ConversationStatusTransition.where(conversation_id: conversation_ids).delete_all
-    Message.where(conversation_id: conversation_ids).delete_all
-    Conversation.where(id: conversation_ids).delete_all
-    records[:thread]&.destroy!
-    account.destroy!
   end
 end
