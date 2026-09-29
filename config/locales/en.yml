@@ -396,6 +396,7 @@ en:
     copilot_message_required: Message is required
     copilot_error: 'Please connect an AI agent to this inbox to use Assistant'
     copilot_limit: 'You are out of Assistant credits. You can buy more credits from the billing section.'
+    text_improvement_disabled: 'AI text improvement is turned off for this account.'
     upgrade: 'Upgrade your plan to enable AI Agents'
     disabled: 'AI Agents are disabled for this account.'
     api_key_missing: 'AI Agent API key is not configured.'

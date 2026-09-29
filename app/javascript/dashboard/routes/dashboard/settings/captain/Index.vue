@@ -441,6 +441,11 @@ const isHelpCenterSearchEnabled = computed(
 const isLabelSuggestionEnabled = computed(
   () => features.value.label_suggestion?.enabled === true
 );
+// captain_features.editor: the reply-box AI writing tools stay on unless an
+// admin explicitly switches them off.
+const isTextImprovementEnabled = computed(
+  () => features.value.editor?.enabled !== false
+);
 const usageWindows = computed(() => usage.value?.windows || {});
 const usageToday = computed(() => usageWindows.value.today || {});
 const usageMonth = computed(() => usageWindows.value.month || {});
@@ -1596,6 +1601,45 @@ onMounted(() => {
                   v-if="feature.key === 'editor'"
                   class="grid gap-4 border-t border-n-weak pt-4"
                 >
+                  <div
+                    class="flex min-w-0 items-center justify-between gap-4"
+                    data-test="captain-text-improvement"
+                  >
+                    <div class="flex min-w-0 items-start gap-3">
+                      <Icon
+                        icon="i-lucide-sparkles"
+                        class="mt-0.5 size-4 shrink-0 text-n-slate-11"
+                      />
+                      <div class="min-w-0">
+                        <div class="text-xs font-medium text-n-slate-12">
+                          {{
+                            t(
+                              'CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.TITLE'
+                            )
+                          }}
+                        </div>
+                        <div class="mt-0.5 text-xs text-n-slate-11">
+                          {{
+                            t(
+                              'CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.DESCRIPTION'
+                            )
+                          }}
+                        </div>
+                      </div>
+                    </div>
+                    <Switch
+                      :model-value="isTextImprovementEnabled"
+                      :disabled="!isFeatureAccessible(feature)"
+                      @change="
+                        enabled =>
+                          handleFeatureToggle({
+                            feature: 'editor',
+                            enabled,
+                          })
+                      "
+                    />
+                  </div>
+
                   <div class="flex min-w-0 items-center justify-between gap-4">
                     <div class="flex min-w-0 items-start gap-3">
                       <Icon

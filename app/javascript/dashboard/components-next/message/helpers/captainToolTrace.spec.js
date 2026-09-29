@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildCaptainToolTraceMessages,
-  buildCopilotThinkingTraceMessages,
-} from './captainToolTrace';
+import { buildCaptainToolTraceMessages } from './captainToolTrace';
 
 describe('buildCaptainToolTraceMessages', () => {
   it('combines start and complete steps into one copilot-style tool message', () => {
@@ -494,73 +491,5 @@ describe('buildCaptainToolTraceMessages', () => {
   it('returns an empty array when trace data is missing', () => {
     expect(buildCaptainToolTraceMessages({})).toEqual([]);
     expect(buildCaptainToolTraceMessages(null)).toEqual([]);
-  });
-});
-
-describe('buildCopilotThinkingTraceMessages', () => {
-  it('combines live copilot thinking tool start and finish messages', () => {
-    expect(
-      buildCopilotThinkingTraceMessages([
-        {
-          id: 1,
-          message: {
-            content: 'Using search_deals',
-            function_name: 'search_deals',
-            tool_call_id: 'call-1',
-            status: 'start',
-            input: { query: 'VIP' },
-          },
-        },
-        {
-          id: 2,
-          message: {
-            content: 'Completed search_deals',
-            function_name: 'search_deals',
-            tool_call_id: 'call-1',
-            status: 'finish',
-            output: { returned_count: 1 },
-          },
-        },
-      ])
-    ).toEqual([
-      {
-        id: 1,
-        message: {
-          content: 'Completed search_deals',
-          toolName: 'search_deals',
-          status: 'finish',
-          input: 'Query: VIP',
-          output: 'Найдено: 1',
-        },
-      },
-    ]);
-  });
-
-  it('keeps non-tool thinking messages in order around grouped tool calls', () => {
-    expect(
-      buildCopilotThinkingTraceMessages([
-        {
-          id: 1,
-          message: {
-            content: 'Planning answer',
-            reasoning: 'Reading context',
-          },
-        },
-        {
-          id: 2,
-          message: {
-            content: 'Using search_deals',
-            function_name: 'search_deals',
-          },
-        },
-        {
-          id: 3,
-          message: {
-            content: 'Completed search_deals',
-            function_name: 'search_deals',
-          },
-        },
-      ]).map(({ message }) => message.content)
-    ).toEqual(['Planning answer', 'Completed search_deals']);
   });
 });

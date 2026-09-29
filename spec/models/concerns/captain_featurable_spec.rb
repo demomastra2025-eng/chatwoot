@@ -20,11 +20,39 @@ RSpec.describe CaptainFeaturable do
   end
 
   describe 'feature enabled methods' do
+    let(:opt_in_feature_keys) { Llm::Models.feature_keys - described_class::DEFAULT_ENABLED_FEATURE_KEYS }
+
     context 'when no features are explicitly enabled' do
-      it 'returns false for all features' do
-        Llm::Models.feature_keys.each do |feature_key|
+      it 'returns false for all opt-in features' do
+        opt_in_feature_keys.each do |feature_key|
           expect(account.send("captain_#{feature_key}_enabled?")).to be false
         end
+      end
+
+      it 'keeps text improvement (editor) on' do
+        expect(described_class::DEFAULT_ENABLED_FEATURE_KEYS).to eq(%w[editor])
+        expect(account.captain_editor_enabled?).to be true
+      end
+    end
+
+    context 'when an admin switched text improvement off' do
+      before do
+        account.update!(captain_features: { 'editor' => false, 'label_suggestion' => true })
+      end
+
+      it 'returns false for the editor only' do
+        expect(account.captain_editor_enabled?).to be false
+        expect(account.captain_label_suggestion_enabled?).to be true
+      end
+    end
+
+    context 'when the stored editor value is null' do
+      before do
+        account.update!(captain_features: { 'editor' => nil })
+      end
+
+      it 'keeps text improvement on' do
+        expect(account.captain_editor_enabled?).to be true
       end
     end
 
@@ -49,10 +77,11 @@ RSpec.describe CaptainFeaturable do
         account.update!(captain_features: nil)
       end
 
-      it 'returns false for all features' do
-        Llm::Models.feature_keys.each do |feature_key|
+      it 'returns false for all opt-in features and keeps text improvement on' do
+        opt_in_feature_keys.each do |feature_key|
           expect(account.send("captain_#{feature_key}_enabled?")).to be false
         end
+        expect(account.captain_editor_enabled?).to be true
       end
     end
   end

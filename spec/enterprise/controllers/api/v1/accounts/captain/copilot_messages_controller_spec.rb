@@ -6,6 +6,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotMessagesController', type: :r
   let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user) }
   let!(:copilot_message) { create(:captain_copilot_message, copilot_thread: copilot_thread, account: account) }
 
+  # The employee Copilot chat is retired (Captain::Copilot::ChatAvailability).
+  # The examples below re-enable it so the dormant endpoints stay covered for a
+  # later revival; the retired behaviour is asserted at the end of this file.
+  before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_return(true) }
+
   describe 'GET /api/v1/accounts/{account.id}/captain/copilot_threads/{thread.id}/copilot_messages' do
     context 'when it is an authenticated user' do
       it 'returns all messages' do
@@ -73,6 +78,31 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotMessagesController', type: :r
 
         expect(response).to have_http_status(:not_found)
       end
+    end
+  end
+
+  describe 'while the Copilot chat is disabled' do
+    let(:messages_path) { "/api/v1/accounts/#{account.id}/captain/copilot_threads/#{copilot_thread.id}/copilot_messages" }
+
+    before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_call_original }
+
+    it 'answers 410 Gone for the message list' do
+      get messages_path, headers: user.create_new_auth_token, as: :json
+
+      expect(response).to have_http_status(:gone)
+      expect(response.parsed_body).to eq('error' => 'copilot_chat_disabled')
+    end
+
+    it 'answers 410 Gone without storing the message or enqueuing a response' do
+      expect do
+        post messages_path,
+             params: { message: 'Draft a reply', conversation_id: 1 },
+             headers: user.create_new_auth_token,
+             as: :json
+      end.not_to change(CopilotMessage, :count)
+
+      expect(response).to have_http_status(:gone)
+      expect(Captain::Copilot::ResponseJob).not_to have_been_enqueued
     end
   end
 end

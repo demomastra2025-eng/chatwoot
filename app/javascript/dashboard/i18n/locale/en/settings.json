@@ -891,7 +891,7 @@
       },
       "COPILOT": {
         "TITLE": "AI Assistant",
-        "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
+        "DESCRIPTION": "Model for the employee AI assistant chat. The chat is turned off, so this model is not used for now. The safety settings below still apply to Captain tool calls."
       },
       "MODERATION": {
         "TITLE": "Moderation model",
@@ -938,6 +938,10 @@
       "HELP_CENTER_SEARCH": {
         "TITLE": "Help Center Search Indexing",
         "DESCRIPTION": "Use AI for context aware search inside your help center articles."
+      },
+      "TEXT_IMPROVEMENT": {
+        "TITLE": "Text improvement",
+        "DESCRIPTION": "Let agents improve, rephrase and shorten replies, fix grammar, and get reply suggestions and summaries with AI in the reply box and in Cmd+K."
       },
       "LABEL_SUGGESTION": {
         "TITLE": "Tag Suggestion",
@@ -990,7 +994,7 @@
       },
       "COPILOT": {
         "TITLE": "AI Assistant Runtime",
-        "DESCRIPTION": "Applies to internal AI Assistant chats and tools."
+        "DESCRIPTION": "Applies to Captain tool calls. The employee chat is turned off."
       }
     },
     "RUNTIME_STATUS": {

@@ -49,7 +49,9 @@ describe('useConversationHotKeys', () => {
       addLabelToConversation: vi.fn(),
       removeLabelFromConversation: vi.fn(),
     });
-    useCaptain.mockReturnValue({ captainTasksEnabled: { value: true } });
+    useCaptain.mockReturnValue({
+      captainTextImprovementEnabled: { value: true },
+    });
     useAgentsList.mockReturnValue({
       agentsList: { value: [] },
       assignableAgents: { value: mockAssignableAgents },
@@ -67,7 +69,7 @@ describe('useConversationHotKeys', () => {
     expect(conversationHotKeys.value.length).toBeGreaterThan(0);
   });
 
-  it('should include AI assist actions when captain tasks is enabled', () => {
+  it('should include AI assist actions when the AI writing tools are on', () => {
     const { conversationHotKeys } = useConversationHotKeys();
     const aiAssistAction = conversationHotKeys.value.find(
       action => action.id === 'ai_assist'
@@ -75,8 +77,12 @@ describe('useConversationHotKeys', () => {
     expect(aiAssistAction).toBeDefined();
   });
 
-  it('should not include AI assist actions when captain tasks is disabled', () => {
-    useCaptain.mockReturnValue({ captainTasksEnabled: { value: false } });
+  // captainTextImprovementEnabled is false when the captain_tasks flag is off
+  // or an admin switched "Text improvement" off (see useCaptain.spec.js).
+  it('should not include AI assist actions when the AI writing tools are off', () => {
+    useCaptain.mockReturnValue({
+      captainTextImprovementEnabled: { value: false },
+    });
     const { conversationHotKeys } = useConversationHotKeys();
     const aiAssistAction = conversationHotKeys.value.find(
       action => action.id === 'ai_assist'

@@ -1,5 +1,6 @@
 class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseController
   before_action :check_authorization
+  before_action :ensure_text_improvement_enabled, except: :label_suggestion
 
   def rewrite
     result = Captain::RewriteService.new(
@@ -67,6 +68,15 @@ class Api::V1::Accounts::Captain::TasksController < Api::V1::Accounts::BaseContr
 
   def check_authorization
     authorize(:'captain/tasks')
+  end
+
+  # "Text improvement" in AI settings (captain_features.editor) switches the
+  # reply-box AI writing tools off for the whole account. Label suggestions
+  # have their own switch.
+  def ensure_text_improvement_enabled
+    return if Current.account.captain_editor_enabled?
+
+    render json: { error: I18n.t('captain.text_improvement_disabled') }, status: :forbidden
   end
 end
 

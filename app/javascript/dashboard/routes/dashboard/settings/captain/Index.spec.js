@@ -480,6 +480,65 @@ describe('Captain settings OpenRouter UX', () => {
     });
   });
 
+  describe('text improvement switch', () => {
+    const audioModel = {
+      id: 'openai/gpt-audio-mini',
+      display_name: 'GPT Audio Mini',
+      provider: 'openrouter',
+      provider_configured: true,
+      type: 'chat',
+      capabilities: ['audio_input', 'text_output', 'transcription'],
+    };
+
+    const findTextImprovementSwitch = wrapper =>
+      wrapper
+        .find('[data-test="captain-text-improvement"]')
+        .findComponent({ name: 'Switch' });
+
+    it('shows the switch on in the editor block when the account never changed it', () => {
+      const store = useCaptainConfigStore();
+      store.applyPayload(basePayload({ audioModel }));
+
+      const wrapper = mountComponent(store);
+      const row = wrapper.find('[data-test="captain-text-improvement"]');
+
+      expect(row.exists()).toBe(true);
+      expect(wrapper.find('[data-feature-key="editor"]').text()).toContain(
+        'CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.TITLE'
+      );
+      expect(findTextImprovementSwitch(wrapper).props('modelValue')).toBe(true);
+    });
+
+    it('shows the switch off when an admin switched it off', () => {
+      const store = useCaptainConfigStore();
+      const payload = basePayload({ audioModel });
+      payload.features.editor = { models: [], enabled: false };
+      store.applyPayload(payload);
+
+      const wrapper = mountComponent(store);
+
+      expect(findTextImprovementSwitch(wrapper).props('modelValue')).toBe(
+        false
+      );
+    });
+
+    it('saves captain_features.editor when the switch changes', async () => {
+      const store = useCaptainConfigStore();
+      const payload = basePayload({ audioModel });
+      store.applyPayload(payload);
+      const updateSpy = vi
+        .spyOn(store, 'updatePreferences')
+        .mockResolvedValue({ data: payload });
+
+      const wrapper = mountComponent(store);
+      await findTextImprovementSwitch(wrapper).vm.$emit('change', false);
+
+      expect(updateSpy).toHaveBeenCalledWith({
+        captain_features: { editor: false },
+      });
+    });
+  });
+
   it('saves runtime guardrail modes for the AI Agent', async () => {
     const store = useCaptainConfigStore();
     const payload = basePayload({

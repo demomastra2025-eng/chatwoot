@@ -1,4 +1,5 @@
 class Api::V1::Accounts::Captain::CopilotThreadsController < Api::V1::Accounts::BaseController
+  before_action :ensure_copilot_chat_enabled
   before_action :ensure_message, only: :create
 
   def index
@@ -28,6 +29,12 @@ class Api::V1::Accounts::Captain::CopilotThreadsController < Api::V1::Accounts::
   end
 
   private
+
+  def ensure_copilot_chat_enabled
+    return if Captain::Copilot::ChatAvailability.enabled?
+
+    render json: { error: Captain::Copilot::ChatAvailability::DISABLED_ERROR }, status: :gone
+  end
 
   def build_copilot_response(copilot_message)
     if Current.account.captain_quota_available?

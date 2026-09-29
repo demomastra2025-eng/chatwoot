@@ -2103,28 +2103,6 @@ async function openConversationFromEvent(event) {
   });
 }
 
-async function openCopilotFromEvent(event) {
-  closeEventDetails();
-  const targetName = event.conversation_id ? 'inbox_conversation' : 'home';
-
-  await router.push({
-    name: targetName,
-    params: {
-      accountId: route.params.accountId,
-      ...(event.conversation_id
-        ? { conversation_id: String(event.conversation_id) }
-        : {}),
-    },
-    query: {
-      open_copilot: 'true',
-      copilot_thread_id: String(event.copilot_thread_id),
-      ...(event.assistant_id
-        ? { assistant_id: String(event.assistant_id) }
-        : {}),
-    },
-  });
-}
-
 watch(
   () => route.query,
   async query => {
@@ -4447,6 +4425,5 @@ onMounted(async () => {
     @focus-trace="focusTraceFromEvent"
     @open-assistant="openAssistantFromEvent"
     @open-conversation="openConversationFromEvent"
-    @open-copilot="openCopilotFromEvent"
   />
 </template>

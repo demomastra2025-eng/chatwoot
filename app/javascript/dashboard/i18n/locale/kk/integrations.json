@@ -187,7 +187,7 @@
         "GRAMMAR": "Fix grammar & spelling",
         "SUGGESTION": "Suggest a reply",
         "SUMMARIZE": "Summarize the conversation",
-        "ASK_COPILOT": "Ask Copilot"
+        "EMPTY_HINT": "AI құралдарын пайдалану үшін хабарлама жаза бастаңыз"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -927,6 +927,11 @@
       },
       "SETTINGS": {
         "HEADER": "Settings",
+        "INTERNAL_ASSISTANT_NOTICE": {
+          "TITLE": "Тек MCP құралдарына қолжетімділік үшін қолданылады",
+          "DESCRIPTION": "Қызметкерлерге арналған AI ассистент чаты өшірулі. Бұл ассистент енді тек MCP клиенттеріне қандай Captain құралдары қолжетімді екенін анықтайды, сондықтан оның нұсқаулары мен сценарийлері қолданылмайды. Құралдарға қолжетімділік Profile бетінде бапталады.",
+          "ACTION": "Profile ашу"
+        },
         "TABS": {
           "GENERAL": {
             "LABEL": "General",
@@ -939,7 +944,7 @@
           "PROMPTS": {
             "LABEL": "Prompts",
             "DESCRIPTION": "Agent messages, additive instructions, prompt visibility, and behavior controls.",
-            "SECTION": "Edit the live assistant and Copilot instruction layers without changing the base system prompt."
+            "SECTION": "Edit the live assistant instruction layers without changing the base system prompt."
           },
           "PROMPT_TABS": {
             "RULES": "Rules",
@@ -947,7 +952,7 @@
           },
           "ACCESS": {
             "LABEL": "Access",
-            "DESCRIPTION": "Control which context fields and tools the assistant and Copilot can use."
+            "DESCRIPTION": "Control which context fields and tools the assistant can use."
           },
           "CHANNELS": {
             "LABEL": "Channels",
@@ -991,7 +996,7 @@
         },
         "PROMPT_INSPECTOR": {
           "TITLE": "Prompt инспекторы",
-          "DESCRIPTION": "AI-агент, Copilot және handoff сценарийлері үшін жиналған compiled prompt'тарды көрсетеді.",
+          "DESCRIPTION": "AI-агент және handoff сценарийлері үшін жиналған compiled prompt'тарды көрсетеді.",
           "REFRESH": "Жаңарту",
           "LOADING": "Ағымдағы prompt preview жүктеліп жатыр...",
           "ERROR": "Ағымдағы prompt preview жүктелмеді. Қайталап көріңіз.",

@@ -88,7 +88,6 @@ const closeSidebar = () => {
   ) {
     updateUISettings({
       is_contact_sidebar_open: false,
-      is_copilot_panel_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
       is_touch_sidebar_open: false,
@@ -99,7 +98,6 @@ const closeSidebar = () => {
 const closeDealsSidebar = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
-    is_copilot_panel_open: false,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
@@ -109,7 +107,6 @@ const closeDealsSidebar = () => {
 const closeAppointmentsSidebar = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
-    is_copilot_panel_open: false,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,

@@ -847,7 +847,7 @@
       },
       "COPILOT": {
         "TITLE": "AI Assistant",
-        "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
+        "DESCRIPTION": "Қызметкерлерге арналған AI ассистент чатының моделі. Чат өшірулі, сондықтан модель қазір қолданылмайды. Төмендегі қауіпсіздік баптаулары Captain құралдарын шақыруға әлі де қолданылады."
       },
       "MODERATION": {
         "TITLE": "Moderation model",
@@ -894,6 +894,10 @@
       "HELP_CENTER_SEARCH": {
         "TITLE": "Wiki Search Indexing",
         "DESCRIPTION": "Use AI for context aware search inside your help center articles."
+      },
+      "TEXT_IMPROVEMENT": {
+        "TITLE": "Мәтінді жақсарту",
+        "DESCRIPTION": "Қызметкерлерге жауап өрісінде және Cmd+K ішінде AI көмегімен жауаптарды жақсартуға, қайта тұжырымдауға және қысқартуға, грамматиканы түзетуге, жауап ұсыныстары мен қорытынды алуға рұқсат беру."
       },
       "LABEL_SUGGESTION": {
         "TITLE": "Tag Suggestion",
@@ -946,7 +950,7 @@
       },
       "COPILOT": {
         "TITLE": "AI Assistant Runtime",
-        "DESCRIPTION": "Applies to internal AI Assistant chats and operator-side tool use."
+        "DESCRIPTION": "Captain құралдарын шақыруға қолданылады. Қызметкерлер чаты өшірулі."
       }
     },
     "RUNTIME_STATUS": {

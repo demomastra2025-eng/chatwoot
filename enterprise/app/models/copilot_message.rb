@@ -38,6 +38,8 @@ class CopilotMessage < ApplicationRecord
   end
 
   def enqueue_response_job(conversation_id, user_id)
+    return unless Captain::Copilot::ChatAvailability.enabled?
+
     Captain::Copilot::ResponseJob.perform_later(
       assistant: copilot_thread.assistant,
       conversation_id: conversation_id,

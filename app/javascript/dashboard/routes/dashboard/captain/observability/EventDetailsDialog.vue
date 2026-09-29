@@ -8,12 +8,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import CaptainObservabilityAPI from 'dashboard/api/captain/observability';
 
-const emit = defineEmits([
-  'focusTrace',
-  'openAssistant',
-  'openConversation',
-  'openCopilot',
-]);
+const emit = defineEmits(['focusTrace', 'openAssistant', 'openConversation']);
 const { t, locale } = useI18n();
 
 const STATUS_CLASSES = Object.freeze({
@@ -353,12 +348,6 @@ const availableActions = computed(() => {
           label: t('CAPTAIN.OBSERVABILITY.DETAILS.ACTIONS.OPEN_CONVERSATION'),
         }
       : null,
-    event.copilot_thread_id
-      ? {
-          key: 'openCopilot',
-          label: t('CAPTAIN.OBSERVABILITY.DETAILS.ACTIONS.OPEN_COPILOT'),
-        }
-      : null,
   ].filter(Boolean);
 });
 
@@ -401,9 +390,6 @@ function triggerAction(actionKey) {
       break;
     case 'openConversation':
       emit('openConversation', selectedEvent.value);
-      break;
-    case 'openCopilot':
-      emit('openCopilot', selectedEvent.value);
       break;
     default:
       break;

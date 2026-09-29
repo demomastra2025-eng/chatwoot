@@ -341,6 +341,7 @@ kk:
     copilot_message_required: Message is required
     copilot_error: Please connect an assistant to this inbox to use Copilot
     copilot_limit: You are out of Copilot credits. You can buy more credits from the billing section.
+    text_improvement_disabled: Бұл аккаунт үшін AI мәтінді жақсарту өшірулі.
     upgrade: Upgrade your plan to enable Captain AI
     disabled: Captain AI is disabled for this account.
     api_key_missing: Captain AI API key is not configured.

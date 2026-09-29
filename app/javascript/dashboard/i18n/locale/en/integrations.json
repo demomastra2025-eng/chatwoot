@@ -187,7 +187,7 @@
         "GRAMMAR": "Fix grammar & spelling",
         "SUGGESTION": "Suggest a reply",
         "SUMMARIZE": "Summarize the conversation",
-        "ASK_COPILOT": "Ask Assistant"
+        "EMPTY_HINT": "Start typing a message to use AI writing tools"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -927,7 +927,7 @@
             "INTERNAL_ASSISTANT": {
               "BADGE": "Team-only",
               "TITLE": "AI assistant",
-              "DESCRIPTION": "Keep this assistant for teammates, internal copilots, and workspace-only guidance."
+              "DESCRIPTION": "Team-only. Sets which Captain tools MCP clients may use. It does not reply to customers."
             }
           }
         },
@@ -1570,6 +1570,11 @@
       },
       "SETTINGS": {
         "HEADER": "Settings",
+        "INTERNAL_ASSISTANT_NOTICE": {
+          "TITLE": "Used only for MCP tool access",
+          "DESCRIPTION": "The employee AI assistant chat is turned off. This assistant now only sets which Captain tools MCP clients may use, so its instructions and scenarios are not applied. Tool access is set on the Profile page.",
+          "ACTION": "Open profile"
+        },
         "TABS": {
           "GENERAL": {
             "LABEL": "General",
@@ -1582,7 +1587,7 @@
           "PROMPTS": {
             "LABEL": "Prompts",
             "DESCRIPTION": "Instruction, response rules, and compiled prompt preview.",
-            "SECTION": "Edit the live AI agent and Copilot instruction layers without changing the system prompt contract."
+            "SECTION": "Edit the live AI agent instruction layers without changing the system prompt contract."
           },
           "PROMPT_TABS": {
             "RULES": "Rules",
@@ -1650,7 +1655,7 @@
         },
         "PROMPT_INSPECTOR": {
           "TITLE": "Prompt inspector",
-          "DESCRIPTION": "Review the compiled prompts that currently drive the AI agent, Copilot, and scenario handoffs.",
+          "DESCRIPTION": "Review the compiled prompts that currently drive the AI agent and scenario handoffs.",
           "REFRESH": "Refresh",
           "LOADING": "Loading the current prompt preview...",
           "ERROR": "The current prompt preview could not be loaded. Retry to fetch the latest compiled prompts.",

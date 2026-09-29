@@ -144,14 +144,12 @@ const generalMenuItems = computed(() => {
     });
   }
 
-  items.push({
-    label: t('INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.ASK_COPILOT'),
-    key: 'ask_copilot',
-    icon: 'i-fluent-circle-sparkle-24-regular',
-  });
-
   return items;
 });
+
+const hasMenuItems = computed(
+  () => menuItems.value.length > 0 || generalMenuItems.value.length > 0
+);
 
 const menuRef = useTemplateRef('menuRef');
 const { height: menuHeight } = useElementSize(menuRef);
@@ -248,9 +246,19 @@ const handleSubMenuItemClick = (parentItem, subItem) => {
       </div>
     </div>
 
-    <div v-if="menuItems.length > 0" class="h-px w-full bg-n-strong" />
+    <div
+      v-if="menuItems.length > 0 && generalMenuItems.length > 0"
+      class="h-px w-full bg-n-strong"
+    />
 
-    <div class="flex flex-col items-start gap-3">
+    <p v-if="!hasMenuItems" class="m-0 text-xs text-n-slate-11">
+      {{ t('INTEGRATION_SETTINGS.OPEN_AI.REPLY_OPTIONS.EMPTY_HINT') }}
+    </p>
+
+    <div
+      v-if="generalMenuItems.length > 0"
+      class="flex flex-col items-start gap-3"
+    >
       <Button
         v-for="(item, index) in generalMenuItems"
         :key="index"

@@ -64,6 +64,53 @@ describe('useCaptain', () => {
     expect(draftMessage.value).toBe('Draft message');
   });
 
+  describe('captainTextImprovementEnabled', () => {
+    const mockAccount = ({ tasksFlag = true, captainFeatures } = {}) => {
+      useAccount.mockReturnValue({
+        isCloudFeatureEnabled: vi.fn().mockReturnValue(tasksFlag),
+        currentAccount: {
+          value: {
+            limits: { captain: {} },
+            settings:
+              captainFeatures === undefined
+                ? {}
+                : { captain_features: captainFeatures },
+          },
+        },
+      });
+    };
+
+    it('keeps the AI writing tools on when the account never set the switch', () => {
+      mockAccount();
+
+      expect(useCaptain().captainTextImprovementEnabled.value).toBe(true);
+    });
+
+    it('keeps the AI writing tools on when the switch is on', () => {
+      mockAccount({ captainFeatures: { editor: true } });
+
+      expect(useCaptain().captainTextImprovementEnabled.value).toBe(true);
+    });
+
+    it('turns the AI writing tools off when an admin switched text improvement off', () => {
+      mockAccount({
+        captainFeatures: { editor: false, label_suggestion: true },
+      });
+
+      const { captainTasksEnabled, captainTextImprovementEnabled } =
+        useCaptain();
+
+      expect(captainTextImprovementEnabled.value).toBe(false);
+      expect(captainTasksEnabled.value).toBe(true);
+    });
+
+    it('stays off when the captain_tasks feature flag is off', () => {
+      mockAccount({ tasksFlag: false, captainFeatures: { editor: true } });
+
+      expect(useCaptain().captainTextImprovementEnabled.value).toBe(false);
+    });
+  });
+
   it('returns token limits and dispatches limits fetch in cloud enterprise mode', async () => {
     useAccount.mockReturnValue({
       isCloudFeatureEnabled: vi.fn().mockReturnValue(true),

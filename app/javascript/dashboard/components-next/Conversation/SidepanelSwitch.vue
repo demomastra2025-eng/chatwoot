@@ -19,9 +19,6 @@ const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
 
-const showCopilotTab = computed(() =>
-  isFeatureEnabledonAccount.value(currentAccountId.value, FEATURE_FLAGS.CAPTAIN)
-);
 const showTouchAction = computed(() =>
   isFeatureEnabledonAccount.value(
     currentAccountId.value,
@@ -31,9 +28,6 @@ const showTouchAction = computed(() =>
 
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open
-);
-const isCopilotPanelOpen = computed(
-  () => uiSettings.value.is_copilot_panel_open
 );
 const isDealsSidebarOpen = computed(
   () => uiSettings.value.is_crm_deal_panel_open
@@ -49,7 +43,6 @@ const toggleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: !isContactSidebarOpen.value,
     is_crm_deal_panel_open: false,
-    is_copilot_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
@@ -59,7 +52,6 @@ const handleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
-    is_copilot_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
@@ -69,7 +61,6 @@ const openDealsSidebar = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: true,
-    is_copilot_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
@@ -79,18 +70,7 @@ const openAppointmentsSidebar = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
-    is_copilot_panel_open: false,
     is_scheduling_appointments_panel_open: true,
-    is_touch_sidebar_open: false,
-  });
-};
-
-const handleCopilotSidebarToggle = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_copilot_panel_open: true,
-    is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: false,
   });
 };
@@ -99,7 +79,6 @@ const openTouchEditor = () => {
   updateUISettings({
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
-    is_copilot_panel_open: false,
     is_scheduling_appointments_panel_open: false,
     is_touch_sidebar_open: true,
   });
@@ -167,20 +146,6 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-lucide-calendar-clock"
       @click="openAppointmentsSidebar"
-    />
-    <Button
-      v-if="showCopilotTab"
-      v-tooltip.bottom="$t('CONVERSATION.SIDEBAR.COPILOT')"
-      ghost
-      slate
-      sm
-      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
-      :class="{
-        'bg-n-alpha-2 !text-n-iris-9 active:!brightness-105 active:shadow-sm':
-          isCopilotPanelOpen,
-      }"
-      icon="i-woot-captain"
-      @click="handleCopilotSidebarToggle"
     />
   </ButtonGroup>
 </template>

@@ -17,6 +17,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action -> { check_authorization(Captain::Assistant) }
 
   before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
+  before_action :ensure_internal_playground_available, only: :playground
 
   def index
     @assistants = account_assistants.ordered
@@ -110,6 +111,15 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def set_assistant
     @assistant = account_assistants.find(params[:id])
+  end
+
+  # An internal assistant's playground runs the retired employee Copilot chat
+  # (Captain::Copilot::ChatService). The customer-facing agent playground stays.
+  def ensure_internal_playground_available
+    return unless @assistant.internal_assistant?
+    return if Captain::Copilot::ChatAvailability.enabled?
+
+    render json: { error: Captain::Copilot::ChatAvailability::DISABLED_ERROR }, status: :gone
   end
 
   def account_assistants

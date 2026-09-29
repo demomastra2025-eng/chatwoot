@@ -45,6 +45,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:observability)
       end
 
+      it 'reports text improvement (editor) as on while the account never switched it' do
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :editor, :enabled)).to be(true)
+        expect(json_response.dig(:features, :label_suggestion, :enabled)).to be(false)
+      end
+
+      it 'reports text improvement (editor) as off after an admin switched it off' do
+        account.update!(captain_features: { 'editor' => false })
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:features, :editor, :enabled)).to be(false)
+      end
+
       it 'includes OpenRouter models only in the normal Captain settings payload' do
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,

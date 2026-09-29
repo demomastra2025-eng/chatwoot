@@ -78,7 +78,7 @@ export default {
       setReplyMode(newMode);
     };
 
-    const { captainTasksEnabled } = useCaptain();
+    const { captainTasksEnabled, captainTextImprovementEnabled } = useCaptain();
     const showCopilotMenu = ref(false);
 
     const handleCopilotAction = (actionKey, data) => {
@@ -119,6 +119,7 @@ export default {
       handleNoteClick,
       REPLY_EDITOR_MODES,
       captainTasksEnabled,
+      captainTextImprovementEnabled,
       handleCopilotAction,
       showCopilotMenu,
       toggleCopilotMenu,
@@ -166,7 +167,10 @@ export default {
       </div>
     </div>
     <div v-if="captainTasksEnabled" class="flex items-center gap-2">
-      <div v-if="showCopilotActions" class="relative">
+      <div
+        v-if="showCopilotActions && captainTextImprovementEnabled"
+        class="relative"
+      >
         <NextButton
           ghost
           :disabled="disabled || isEditorDisabled"

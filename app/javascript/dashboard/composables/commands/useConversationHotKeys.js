@@ -147,7 +147,7 @@ export function useConversationHotKeys() {
     removeLabelFromConversation,
   } = useConversationLabels();
 
-  const { captainTasksEnabled } = useCaptain();
+  const { captainTextImprovementEnabled } = useCaptain();
   const { agentsList } = useAgentsList();
 
   const currentChat = useMapGetter('getSelectedChat');
@@ -382,7 +382,7 @@ export function useConversationHotKeys() {
       ...labelActions.value,
       ...assignPriorityActions.value,
     ];
-    if (captainTasksEnabled.value) {
+    if (captainTextImprovementEnabled.value) {
       return [...defaultConversationHotKeys, ...AIAssistActions.value];
     }
     return defaultConversationHotKeys;

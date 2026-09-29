@@ -364,6 +364,7 @@ ru:
     copilot_message_required: Необходимо ввести сообщение
     copilot_error: Пожалуйста, подключите AI-агента к этому каналу, чтобы использовать Ассистента
     copilot_limit: У вас закончились кредиты Ассистента. Вы можете купить дополнительные кредиты в разделе биллинга.
+    text_improvement_disabled: AI-улучшение текста выключено для этого аккаунта.
     copilot:
       using_tool: Использование инструмента %{function_name}
       completed_tool_call: Вызов инструмента %{function_name}

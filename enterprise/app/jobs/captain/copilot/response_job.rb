@@ -2,6 +2,11 @@ class Captain::Copilot::ResponseJob < ApplicationJob
   queue_as :default
 
   def perform(assistant:, conversation_id:, user_id:, copilot_thread_id:, message:)
+    unless Captain::Copilot::ChatAvailability.enabled?
+      Rails.logger.info("#{self.class.name} skipped: Copilot chat is disabled (copilot_thread_id=#{copilot_thread_id})")
+      return
+    end
+
     Rails.logger.info("#{self.class.name} Copilot response job for assistant_id=#{assistant.id} user_id=#{user_id}")
     generate_chat_response(
       assistant: assistant,

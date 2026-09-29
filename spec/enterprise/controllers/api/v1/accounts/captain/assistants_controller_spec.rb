@@ -1454,6 +1454,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
       let(:chat_service) { instance_double(Captain::Copilot::ChatService) }
 
+      # The employee Copilot chat is retired (Captain::Copilot::ChatAvailability).
+      # This example re-enables it so the dormant internal playground stays
+      # covered for a later revival; the retired behaviour is asserted below.
+      before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_return(true) }
+
       it 'uses the employee copilot runtime with actor and non-duplicated history' do
         params_with_latest_message = {
           message_content: 'Hello assistant',
@@ -1482,6 +1487,67 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response).to include(response: 'Copilot response', content: 'Copilot response')
+      end
+    end
+
+    context 'when the Copilot chat is disabled' do
+      let(:internal_assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
+
+      before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_call_original }
+
+      it 'keeps the guard off by default' do
+        expect(Captain::Copilot::ChatAvailability.enabled?).to be(false)
+      end
+
+      it 'answers 410 Gone to an agent without running the Copilot chat for an internal assistant' do
+        allow(Captain::Copilot::ChatService).to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{internal_assistant.id}/playground",
+             params: valid_params,
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:gone)
+        expect(json_response).to eq(error: 'copilot_chat_disabled')
+        expect(Captain::Copilot::ChatService).not_to have_received(:new)
+      end
+
+      it 'answers 410 Gone to an administrator as well' do
+        allow(Captain::Copilot::ChatService).to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{internal_assistant.id}/playground",
+             params: valid_params,
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:gone)
+        expect(Captain::Copilot::ChatService).not_to have_received(:new)
+      end
+
+      it 'still requires authentication' do
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{internal_assistant.id}/playground",
+             params: valid_params,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+      end
+
+      it 'keeps the customer-facing agent playground on the agent runner' do
+        allow(Captain::Copilot::ChatService).to receive(:new)
+        allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+          assistant: assistant,
+          source: 'playground'
+        ).and_return(agent_runner_service)
+        allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params,
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:response]).to eq('Assistant response')
+        expect(Captain::Copilot::ChatService).not_to have_received(:new)
       end
     end
   end

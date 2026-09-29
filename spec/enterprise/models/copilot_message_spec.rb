@@ -80,4 +80,30 @@ RSpec.describe CopilotMessage, type: :model do
       expect(message).to be_valid
     end
   end
+
+  describe '#enqueue_response_job' do
+    let(:copilot_message) do
+      create(:captain_copilot_message, copilot_thread: copilot_thread, message: { 'content' => 'Summarize this' })
+    end
+
+    it 'does not enqueue a Copilot response while the Copilot chat is disabled' do
+      expect(Captain::Copilot::ChatAvailability.enabled?).to be(false)
+
+      expect { copilot_message.enqueue_response_job(123, user.id) }
+        .not_to have_enqueued_job(Captain::Copilot::ResponseJob)
+    end
+
+    it 'enqueues the Copilot response when the chat is re-enabled' do
+      allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_return(true)
+
+      expect { copilot_message.enqueue_response_job(123, user.id) }
+        .to have_enqueued_job(Captain::Copilot::ResponseJob).with(
+          assistant: assistant,
+          conversation_id: 123,
+          user_id: user.id,
+          copilot_thread_id: copilot_thread.id,
+          message: 'Summarize this'
+        )
+    end
+  end
 end

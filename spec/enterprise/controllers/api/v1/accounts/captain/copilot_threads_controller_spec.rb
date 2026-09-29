@@ -10,6 +10,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotThreads', type: :request do
     JSON.parse(response.body, symbolize_names: true)
   end
 
+  # The employee Copilot chat is retired (Captain::Copilot::ChatAvailability).
+  # The examples below re-enable it so the dormant endpoints stay covered for a
+  # later revival; the retired behaviour is asserted at the end of this file.
+  before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_return(true) }
+
   describe 'GET /api/v1/accounts/{account.id}/captain/copilot_threads' do
     context 'when it is an un-authenticated user' do
       it 'does not fetch copilot threads' do
@@ -135,6 +140,41 @@ RSpec.describe 'Api::V1::Accounts::Captain::CopilotThreads', type: :request do
           )
         end
       end
+    end
+  end
+
+  describe 'while the Copilot chat is disabled' do
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    before { allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_call_original }
+
+    it 'still requires authentication' do
+      get "/api/v1/accounts/#{account.id}/captain/copilot_threads", as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'answers 410 Gone for the thread list' do
+      create(:captain_copilot_thread, account: account, user: agent)
+
+      get "/api/v1/accounts/#{account.id}/captain/copilot_threads",
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:gone)
+      expect(json_response).to eq(error: 'copilot_chat_disabled')
+    end
+
+    it 'answers 410 Gone without creating threads, messages or response jobs' do
+      post "/api/v1/accounts/#{account.id}/captain/copilot_threads",
+           params: { message: 'Hello', assistant_id: assistant.id, conversation_id: conversation.display_id },
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:gone)
+      expect(CopilotThread.count).to eq(0)
+      expect(CopilotMessage.count).to eq(0)
+      expect(Captain::Copilot::ResponseJob).not_to have_been_enqueued
     end
   end
 end

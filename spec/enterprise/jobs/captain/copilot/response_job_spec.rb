@@ -12,6 +12,7 @@ RSpec.describe Captain::Copilot::ResponseJob, type: :job do
     let(:chat_service) { instance_double(Captain::Copilot::ChatService) }
 
     before do
+      allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_return(true)
       allow(Captain::Copilot::ChatService).to receive(:new).with(
         assistant,
         user_id: user.id,
@@ -40,6 +41,21 @@ RSpec.describe Captain::Copilot::ResponseJob, type: :job do
         copilot_thread_id: copilot_thread.id,
         message: message
       )
+    end
+
+    it 'skips stale queued jobs while the Copilot chat is disabled' do
+      allow(Captain::Copilot::ChatAvailability).to receive(:enabled?).and_call_original
+
+      described_class.perform_now(
+        assistant: assistant,
+        conversation_id: conversation_id,
+        user_id: user.id,
+        copilot_thread_id: copilot_thread.id,
+        message: message
+      )
+
+      expect(Captain::Copilot::ChatService).not_to have_received(:new)
+      expect(chat_service).not_to have_received(:generate_response)
     end
   end
 end

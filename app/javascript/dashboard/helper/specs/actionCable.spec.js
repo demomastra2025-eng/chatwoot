@@ -71,7 +71,7 @@ global.chatwootConfig = {
   websocketURL: 'wss://test.one-link.kz',
 };
 
-describe('ActionCableConnector - Copilot Tests', () => {
+describe('ActionCableConnector', () => {
   let store;
   let actionCable;
   let mockDispatch;
@@ -496,33 +496,23 @@ describe('ActionCableConnector - Copilot Tests', () => {
     });
   });
 
-  describe('copilot event handlers', () => {
-    it('should register the copilot.message.created event handler', () => {
-      expect(Object.keys(actionCable.events)).toContain(
+  describe('realtime event handlers', () => {
+    it('ignores copilot.message.created now that the Copilot chat is removed', () => {
+      expect(Object.keys(actionCable.events)).not.toContain(
         'copilot.message.created'
       );
-      expect(actionCable.events['copilot.message.created']).toBe(
-        actionCable.onCopilotMessageCreated
+
+      actionCable.onReceived({
+        event: 'copilot.message.created',
+        data: { id: 2, content: 'stale copilot message', account_id: 1 },
+      });
+
+      expect(mockDispatch).not.toHaveBeenCalledWith(
+        'copilotMessages/upsert',
+        expect.anything()
       );
     });
 
-    it('should handle the copilot.message.created event through the ActionCable system', () => {
-      const copilotData = {
-        id: 2,
-        content: 'This is a copilot message from ActionCable',
-        conversation_id: 456,
-        created_at: '2025-05-27T15:58:04-06:00',
-        account_id: 1,
-      };
-      actionCable.onReceived({
-        event: 'copilot.message.created',
-        data: copilotData,
-      });
-      expect(mockDispatch).toHaveBeenCalledWith(
-        'copilotMessages/upsert',
-        copilotData
-      );
-    });
     it('should register WhatsApp agent disconnect handler', () => {
       expect(Object.keys(actionCable.events)).toContain(
         'whatsapp_call.agent_disconnected'
@@ -770,12 +760,12 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
     it('should reject account-scoped events without account_id', () => {
       actionCable.onReceived({
-        event: 'copilot.message.created',
+        event: 'notification.updated',
         data: { id: 3, content: 'missing account' },
       });
 
       expect(mockDispatch).not.toHaveBeenCalledWith(
-        'copilotMessages/upsert',
+        'notifications/updateNotification',
         expect.any(Object)
       );
     });

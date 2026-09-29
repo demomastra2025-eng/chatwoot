@@ -131,7 +131,7 @@ const emit = defineEmits([
 ]);
 
 const { t } = useI18n();
-const { captainTasksEnabled } = useCaptain();
+const { captainTextImprovementEnabled } = useCaptain();
 
 const TYPING_INDICATOR_IDLE_TIME = 4000;
 const MAXIMUM_FILE_UPLOAD_SIZE = 4; // in MB
@@ -143,7 +143,7 @@ const effectiveChannelType = computed(() =>
 );
 
 const shouldShowCopilotMenu = computed(
-  () => captainTasksEnabled.value && props.enableCopilotMenu
+  () => captainTextImprovementEnabled.value && props.enableCopilotMenu
 );
 
 const editorSchema = computed(() => {
