@@ -90,4 +90,29 @@ describe('useIncomingCallRingtone', () => {
     voice.unmount();
     whatsapp.unmount();
   });
+
+  it('keeps ringing when a newer call list takes over the source before the old one unmounts', () => {
+    // The standalone call cards give way to the phone widget's call list: the
+    // new list reports the ringing call first, then the old cards unmount.
+    const standaloneCards = mountComposable(ref(true));
+    const phoneCallList = mountComposable(ref(true));
+    testState.setSourceState.mockClear();
+
+    standaloneCards.unmount();
+
+    expect(testState.removeSource).not.toHaveBeenCalled();
+    expect(testState.setSourceState).not.toHaveBeenCalled();
+
+    phoneCallList.unmount();
+    expect(testState.removeSource).toHaveBeenCalledOnce();
+    expect(testState.removeSource).toHaveBeenCalledWith('voice');
+  });
+
+  it('removes the source when its only reporter unmounts', () => {
+    const wrapper = mountComposable(ref(true));
+
+    wrapper.unmount();
+
+    expect(testState.removeSource).toHaveBeenCalledWith('voice');
+  });
 });
