@@ -20,7 +20,9 @@ module Whatsapp::TemplatePickerVisibility
       next false if matching_templates.empty?
 
       matching_templates.each { |template| template['visible_in_conversation_picker'] = visible }
-      persist_message_templates_cache!(templates)
+      # Not a provider sync: keep message_templates_last_updated, which the
+      # templates page shows as the last sync and the sync scheduler reads.
+      persist_message_templates_cache!(templates, synced: false)
     end
     inbox&.update_account_cache if updated
     updated
@@ -42,14 +44,11 @@ module Whatsapp::TemplatePickerVisibility
     end
   end
 
-  def persist_message_templates_cache!(templates)
+  def persist_message_templates_cache!(templates, synced: true)
     # Provider template sync already validated the upstream payload. Avoid running
     # provider validations again while updating the local cache.
-    # rubocop:disable Rails/SkipsModelValidations
-    update_columns(
-      message_templates: templates,
-      message_templates_last_updated: Time.current.utc
-    )
-    # rubocop:enable Rails/SkipsModelValidations
+    attributes = { message_templates: templates }
+    attributes[:message_templates_last_updated] = Time.current.utc if synced
+    update_columns(attributes) # rubocop:disable Rails/SkipsModelValidations
   end
 end

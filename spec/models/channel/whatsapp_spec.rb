@@ -396,6 +396,20 @@ RSpec.describe Channel::Whatsapp do
       expect(inbox).to have_received(:update_account_cache)
     end
 
+    # message_templates_last_updated is the provider sync time: the templates
+    # page shows it as the last sync and the sync scheduler picks channels by it.
+    it 'keeps the last provider sync time' do
+      last_sync = 5.hours.ago.utc.change(usec: 0)
+      channel.update!(message_templates: [{ 'name' => 'order_update', 'language' => 'en' }])
+      channel.update_columns(message_templates_last_updated: last_sync) # rubocop:disable Rails/SkipsModelValidations
+
+      expect(channel.update_template_picker_visibility!('order_update', visible: false)).to be(true)
+
+      channel.reload
+      expect(channel.message_templates.first['visible_in_conversation_picker']).to be(false)
+      expect(channel.message_templates_last_updated).to eq(last_sync)
+    end
+
     it 'returns false when the template does not exist' do
       channel.update!(message_templates: [{ 'name' => 'order_update', 'language' => 'en' }])
 
