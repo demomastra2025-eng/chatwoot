@@ -123,6 +123,13 @@ const mountComponent = () =>
             },
           },
         },
+        // The call list itself is covered by FloatingCallWidget.spec.js and
+        // PhoneWidget.calls.spec.js.
+        FloatingCallWidget: {
+          props: { embedded: Boolean },
+          template:
+            '<div data-testid="phone-widget-calls-list" :data-embedded="String(embedded)" />',
+        },
       },
     },
   });
@@ -257,15 +264,17 @@ describe('PhoneWidget', () => {
     expect(
       wrapper.find('select[data-testid="phone-widget-inbox"]').exists()
     ).toBe(false);
+    // Same round call button as the call cards.
     const disabledCall = wrapper.get('button[aria-label="PHONE_WIDGET.CALL"]');
     expect(disabledCall.attributes('disabled')).toBeDefined();
     expect(disabledCall.text()).toBe('');
-    expect(disabledCall.find('.i-lucide-phone-call').exists()).toBe(true);
+    expect(disabledCall.find('.i-ph-phone-bold').exists()).toBe(true);
     expect(disabledCall.classes()).toContain('bg-n-button-color');
+    expect(disabledCall.classes()).toContain('!rounded-full');
 
     await wrapper.get('input#phone-widget-number').setValue('77712345678');
     const enabledCall = wrapper.get('[data-testid="phone-widget-call"]');
-    expect(enabledCall.find('.i-lucide-phone-call').exists()).toBe(true);
+    expect(enabledCall.find('.i-ph-phone-bold').exists()).toBe(true);
     expect(enabledCall.attributes('aria-label')).toBe('PHONE_WIDGET.CALL');
     expect(enabledCall.attributes('title')).toBe('PHONE_WIDGET.CALL');
     expect(enabledCall.text()).not.toContain('PHONE_WIDGET.CALL');
@@ -845,6 +854,133 @@ describe('PhoneWidget', () => {
       );
       await input.trigger('keyup.enter');
       expect(dialMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('one phone for dialing and calls', () => {
+    const widget = wrapper => wrapper.get('[data-testid="phone-widget"]');
+    const dialerShown = wrapper =>
+      wrapper.get('[data-testid="phone-widget-dialer"]').element.style
+        .display !== 'none';
+    const keypadToggleShown = wrapper =>
+      wrapper.find('[data-testid="phone-widget-expand"]').exists();
+    const activeCall = () =>
+      incomingCall({ callSid: 'sipuni:active-1', isActive: true });
+
+    beforeEach(() => {
+      values.getCurrentUser = { id: 1, name: 'Иван Иванов' };
+    });
+
+    it('shows the call list inside the phone panel, not in a second window', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      const panel = wrapper.get('[data-testid="phone-widget-panel"]');
+      const calls = panel.get('[data-testid="phone-widget-calls-list"]');
+      expect(calls.attributes('data-embedded')).toBe('true');
+      expect(
+        wrapper.findAll('[data-testid="phone-widget-calls-list"]')
+      ).toHaveLength(1);
+    });
+
+    it('idle: shows the dialer and the keypad toggle', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect(widget(wrapper).attributes('data-state')).toBe('idle');
+      expect(dialerShown(wrapper)).toBe(true);
+      expect(keypadToggleShown(wrapper)).toBe(true);
+    });
+
+    it('incoming: the ringing call replaces the dialer in the same phone', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      setIncomingCalls([incomingCall()]);
+      await flushPromises();
+
+      expect(widget(wrapper).attributes('data-state')).toBe('incoming');
+      expect(dialerShown(wrapper)).toBe(false);
+      expect(keypadToggleShown(wrapper)).toBe(false);
+      expect(
+        wrapper.get('[data-testid="phone-widget-panel"]').find(
+          '[data-testid="phone-widget-calls-list"]'
+        ).exists()
+      ).toBe(true);
+    });
+
+    it('dialing: keeps the dialer while the call is prepared, then shows the call', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      const phoneWidgetStore = usePhoneWidgetStore();
+
+      phoneWidgetStore.beginOutboundCall();
+      await flushPromises();
+      expect(widget(wrapper).attributes('data-state')).toBe('dialing');
+      // The call button stays mounted until the call exists.
+      expect(dialerShown(wrapper)).toBe(true);
+
+      setIncomingCalls([
+        incomingCall({ callSid: 'sipuni:out-1', callDirection: 'outbound' }),
+      ]);
+      phoneWidgetStore.finishOutboundCall();
+      await flushPromises();
+      expect(widget(wrapper).attributes('data-state')).toBe('dialing');
+      expect(dialerShown(wrapper)).toBe(false);
+    });
+
+    it('active: shows the connected call with the in-call status, then returns to the dialer when it ends', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      await wrapper.get('input#phone-widget-number').setValue('77712345678');
+
+      setIncomingCalls([]);
+      callsState.hasActiveCall = true;
+      callsState.activeCall = activeCall();
+      await flushPromises();
+      expect(widget(wrapper).attributes('data-state')).toBe('active');
+      expect(dialerShown(wrapper)).toBe(false);
+      expect(wrapper.get('[role="status"]').attributes('aria-label')).toContain(
+        'PHONE_WIDGET.IN_CALL'
+      );
+
+      // Ended: the call leaves the calls store.
+      callsState.hasActiveCall = false;
+      callsState.activeCall = null;
+      await flushPromises();
+      expect(widget(wrapper).attributes('data-state')).toBe('idle');
+      expect(dialerShown(wrapper)).toBe(true);
+      expect(keypadToggleShown(wrapper)).toBe(true);
+      // The number stays for a quick redial.
+      expect(wrapper.get('input#phone-widget-number').element.value).toBe(
+        '77712345678'
+      );
+    });
+
+    it("keeps the dialer for info-only cards of a colleague's or the AI agent's calls", async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      setIncomingCalls([
+        incomingCall({
+          callSid: 'sipuni:other-1',
+          status: 'in_progress',
+          operatorClaim: { user_id: 99 },
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        }),
+        incomingCall({
+          callSid: 'sipuni:ai-1',
+          status: 'in_progress',
+          serverManagedVoiceCall: true,
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+        }),
+      ]);
+      await flushPromises();
+
+      expect(widget(wrapper).attributes('data-state')).toBe('idle');
+      expect(dialerShown(wrapper)).toBe(true);
     });
   });
 

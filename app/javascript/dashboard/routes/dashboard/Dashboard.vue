@@ -30,6 +30,7 @@ const WhatsappCallWidget = defineAsyncComponent(
 
 import MobileSidebarLauncher from 'dashboard/components-next/sidebar/MobileSidebarLauncher.vue';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 
 export default {
@@ -50,6 +51,7 @@ export default {
     const { accountId } = useAccount();
     const { width: windowWidth } = useWindowSize();
     const callsStore = useCallsStore();
+    const phoneWidgetStore = usePhoneWidgetStore();
     const whatsappCallsStore = useWhatsappCallsStore();
 
     return {
@@ -60,6 +62,9 @@ export default {
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
       hasIncomingCall: computed(() => callsStore.hasIncomingCall),
+      // Employees with a browser SIP line see their calls inside the phone
+      // widget; standalone call cards are only for everyone else.
+      showStandaloneCallCards: computed(() => !phoneWidgetStore.available),
       hasWhatsappCall: computed(
         () =>
           whatsappCallsStore.hasActiveCall || whatsappCallsStore.hasIncomingCall
@@ -173,7 +178,7 @@ export default {
           :is-mobile-sidebar-open="isMobileSidebarOpen"
           @toggle="toggleMobileSidebar"
         />
-        <FloatingCallWidget />
+        <FloatingCallWidget v-if="showStandaloneCallCards" />
         <PhoneWidget />
         <WhatsappCallWidget v-if="hasWhatsappCall" />
       </template>

@@ -8,6 +8,7 @@ import { useCallSession } from 'dashboard/composables/useCallSession';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
+import { isEmployeeOwnCall } from 'dashboard/stores/calls';
 import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
   getOutboundCallStageLabelKey,
@@ -15,6 +16,13 @@ import {
   outboundCallStageShowsDuration,
 } from 'dashboard/helper/voiceCallStage';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+
+const props = defineProps({
+  // Rendered as the call list inside the phone widget, so the phone is the
+  // only call window. Standalone cards are kept for employees without a
+  // browser SIP line (no phone widget).
+  embedded: { type: Boolean, default: false },
+});
 
 const router = useRouter();
 const store = useStore();
@@ -707,6 +715,26 @@ const handleCloseCall = call => {
   hideCall(call);
 };
 
+const currentUserId = computed(() => store.getters.getCurrentUser?.id);
+const isOwnCall = call =>
+  callIsActive(call) || isEmployeeOwnCall(call, currentUserId.value);
+// Inside the phone the employee's own calls stay until they end (the phone's
+// hide button hides them); info-only cards of other calls can be closed.
+const canCloseCall = call => !props.embedded || !isOwnCall(call);
+
+const LETTER_PATTERN = /\p{L}/u;
+// The contact's name above the numbers; a name that is only a number (a
+// contact created from a dialled number) adds nothing.
+const callContactName = call => {
+  const { conversation } = getCallInfo(call);
+  const name = firstPresent([
+    conversation?.meta?.sender?.name,
+    call?.caller?.name,
+  ]);
+  const text = typeof name === 'string' ? name.trim() : '';
+  return LETTER_PATTERN.test(text) ? text : '';
+};
+
 const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   const { conversation } = getCallInfo(call);
   if (!call || isJoining.value) return;
@@ -781,14 +809,28 @@ onUnmounted(stopElapsedTimer);
   <div class="contents">
     <template v-if="visibleCalls.length">
       <div
-        class="fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]"
+        :class="
+          props.embedded
+            ? 'flex flex-col divide-y divide-n-weak border-b border-n-weak'
+            : 'fixed ltr:right-4 rtl:left-4 bottom-4 z-50 flex flex-col gap-2 w-[320px] sm:w-[340px] max-w-[calc(100vw-2rem)]'
+        "
+        :data-testid="props.embedded ? 'phone-widget-calls' : 'floating-calls'"
       >
         <div
           v-for="call in visibleCalls"
           :key="call.callSid"
-          class="relative flex gap-2 p-2.5 ltr:pr-10 rtl:pl-10 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong"
+          class="relative flex gap-2"
+          :class="[
+            props.embedded
+              ? 'px-4 py-3'
+              : 'p-2.5 bg-n-solid-2 rounded-lg shadow-xl outline outline-1 outline-n-strong',
+            { 'ltr:pr-10 rtl:pl-10': canCloseCall(call) },
+          ]"
+          :data-testid="props.embedded ? 'phone-widget-call-card' : undefined"
+          :data-own-call="props.embedded ? String(isOwnCall(call)) : undefined"
         >
           <button
+            v-if="canCloseCall(call)"
             type="button"
             class="absolute top-2 ltr:right-2 rtl:left-2 inline-flex size-7 p-0 justify-center items-center text-n-slate-10 hover:text-n-slate-12 hover:bg-n-alpha-2 rounded-md transition-colors"
             :title="$t('CONVERSATION.VOICE_WIDGET.CLOSE')"
@@ -826,6 +868,13 @@ onUnmounted(stopElapsedTimer);
             </span>
           </div>
           <div class="flex-1 min-w-0">
+            <p
+              v-if="props.embedded && callContactName(call)"
+              class="mb-0.5 truncate text-sm font-semibold text-n-slate-12"
+              data-testid="phone-widget-call-name"
+            >
+              {{ callContactName(call) }}
+            </p>
             <div class="relative flex items-start gap-1.5 min-w-0">
               <i
                 class="mt-0.5 text-[14px] shrink-0"
@@ -858,7 +907,9 @@ onUnmounted(stopElapsedTimer);
 
             <div class="flex items-center gap-2 mt-2">
               <button
-                v-if="callIsActive(call) && !isWhatsappCall(call)"
+                v-if="
+                  !props.embedded && callIsActive(call) && !isWhatsappCall(call)
+                "
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-alpha-2 text-n-slate-12 hover:bg-n-alpha-1 disabled:opacity-50"
                 :disabled="!microphoneAvailable"

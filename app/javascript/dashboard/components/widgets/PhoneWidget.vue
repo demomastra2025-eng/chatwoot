@@ -15,6 +15,7 @@ import {
   usePhoneWidgetStore,
 } from 'dashboard/stores/phoneWidget';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
+import FloatingCallWidget from 'dashboard/components/widgets/FloatingCallWidget.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
@@ -91,6 +92,24 @@ const canDial = computed(() => Boolean(dialNumber.value));
 const hasCall = computed(
   () => callsStore.hasActiveCall || callsStore.hasIncomingCall
 );
+// The employee's own call (ringing, being dialled or connected) is shown in
+// the phone itself instead of the dialer; there is no second call window.
+const hasOwnCall = computed(() =>
+  Boolean(callsStore.hasActiveCall || ownIncomingCalls.value.length)
+);
+const callState = computed(() => {
+  if (callsStore.hasActiveCall) return 'active';
+  if (ownIncomingCalls.value.some(call => call?.callDirection !== 'outbound')) {
+    return 'incoming';
+  }
+  if (
+    ownIncomingCalls.value.length ||
+    phoneWidgetStore.preparingOutboundCalls > 0
+  ) {
+    return 'dialing';
+  }
+  return 'idle';
+});
 const activeCall = computed(() => callsStore.activeCall);
 const { microphoneAvailable, microphoneMuted, toggleMicrophone } =
   useSipMicrophone(activeCall);
@@ -349,15 +368,16 @@ onUnmounted(() => {
   <div
     v-if="availableVoiceInboxes.length && isVisible"
     class="fixed ltr:right-4 rtl:left-4 top-16 z-40 w-[336px] max-w-[calc(100vw-2rem)]"
+    :data-state="callState"
     data-testid="phone-widget"
   >
     <section
-      class="overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
+      class="flex max-h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
       :aria-label="t('PHONE_WIDGET.TITLE')"
       data-testid="phone-widget-panel"
     >
       <header
-        class="flex items-center gap-1.5 border-b border-n-weak px-4 py-3"
+        class="flex shrink-0 items-center gap-1.5 border-b border-n-weak px-4 py-3"
       >
         <div
           class="flex min-w-0 flex-1 items-center gap-1.5"
@@ -416,6 +436,7 @@ onUnmounted(() => {
           @click="reconnect(selectedSession)"
         />
         <Button
+          v-if="!hasOwnCall"
           type="button"
           variant="ghost"
           color="slate"
@@ -445,117 +466,126 @@ onUnmounted(() => {
         />
       </header>
 
-      <div class="px-4 py-3">
-        <div v-if="availableVoiceInboxes.length > 1" class="mb-2">
-          <Select
-            id="phone-widget-inbox"
-            v-model="selectedInboxId"
-            class="w-full"
-            :aria-label="t('PHONE_WIDGET.LINE')"
-            data-testid="phone-widget-inbox"
-          >
-            <option
-              v-for="inbox in availableVoiceInboxes"
-              :key="inbox.id"
-              :value="inbox.id"
-            >
-              {{ inbox.name }}
-            </option>
-          </Select>
-        </div>
-        <div class="flex items-center gap-2">
-          <Input
-            id="phone-widget-number"
-            v-model="phone"
-            type="tel"
-            inputmode="tel"
-            autocomplete="off"
-            class="min-w-0 flex-1"
-            :placeholder="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
-            :aria-label="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
-            @paste="pasteNumber"
-            @enter="dialOnEnter"
-          />
-          <VoiceCallButton
-            v-if="canDial && selectedInbox"
-            ref="callButton"
-            :phone="dialNumber"
-            :inbox-id="selectedInbox.id"
-            :disabled="hasCall"
-            :tooltip-label="t('PHONE_WIDGET.CALL')"
-            :aria-label="t('PHONE_WIDGET.CALL')"
-            icon="i-lucide-phone-call"
-            size="md"
-            teal
-            class="shrink-0"
-            @call-initiated="isExpanded = false"
-          />
-          <Button
-            v-else
-            type="button"
-            disabled
-            variant="solid"
-            color="slate"
-            size="md"
-            icon="i-lucide-phone-call"
-            class="shrink-0"
-            :aria-label="t('PHONE_WIDGET.CALL')"
-            :title="t('PHONE_WIDGET.CALL')"
-          />
-        </div>
+      <div class="min-h-0 overflow-y-auto">
+        <!-- Incoming, outgoing and connected calls: answer, decline, hang up
+             and open the conversation right here. -->
+        <FloatingCallWidget embedded />
         <div
-          v-if="isExpanded"
-          class="mt-4 border-t border-n-weak pt-4"
-          data-testid="phone-widget-expanded"
+          v-show="!hasOwnCall"
+          class="px-4 py-3"
+          data-testid="phone-widget-dialer"
         >
-          <div class="grid grid-cols-3 gap-2">
-            <Button
-              v-for="key in dialKeys"
-              :key="key"
-              type="button"
-              variant="outline"
-              color="slate"
-              size="lg"
+          <div v-if="availableVoiceInboxes.length > 1" class="mb-2">
+            <Select
+              id="phone-widget-inbox"
+              v-model="selectedInboxId"
               class="w-full"
-              :aria-label="key"
-              :data-testid="`phone-key-${key}`"
-              @click="appendKey(key)"
+              :aria-label="t('PHONE_WIDGET.LINE')"
+              data-testid="phone-widget-inbox"
             >
-              <span class="text-lg font-medium">{{ key }}</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              color="slate"
-              size="lg"
-              class="w-full !text-lg"
-              label="+"
-              :aria-label="t('PHONE_WIDGET.ADD_PLUS')"
-              data-testid="phone-widget-plus"
-              @click="appendPlus"
+              <option
+                v-for="inbox in availableVoiceInboxes"
+                :key="inbox.id"
+                :value="inbox.id"
+              >
+                {{ inbox.name }}
+              </option>
+            </Select>
+          </div>
+          <div class="flex items-center gap-2">
+            <Input
+              id="phone-widget-number"
+              v-model="phone"
+              type="tel"
+              inputmode="tel"
+              autocomplete="off"
+              class="min-w-0 flex-1"
+              :placeholder="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
+              :aria-label="t('PHONE_WIDGET.NUMBER_PLACEHOLDER')"
+              @paste="pasteNumber"
+              @enter="dialOnEnter"
+            />
+            <VoiceCallButton
+              v-if="canDial && selectedInbox"
+              ref="callButton"
+              :phone="dialNumber"
+              :inbox-id="selectedInbox.id"
+              :disabled="hasCall"
+              :tooltip-label="t('PHONE_WIDGET.CALL')"
+              :aria-label="t('PHONE_WIDGET.CALL')"
+              icon="i-ph-phone-bold"
+              size="md"
+              teal
+              class="shrink-0 !rounded-full shadow-sm"
+              @call-initiated="isExpanded = false"
             />
             <Button
+              v-else
               type="button"
-              variant="outline"
+              disabled
+              variant="solid"
               color="slate"
-              size="lg"
-              class="w-full !text-lg"
-              :label="String(0)"
-              data-testid="phone-key-0"
-              @click="appendKey('0')"
+              size="md"
+              icon="i-ph-phone-bold"
+              class="shrink-0 !rounded-full"
+              :aria-label="t('PHONE_WIDGET.CALL')"
+              :title="t('PHONE_WIDGET.CALL')"
             />
-            <Button
-              type="button"
-              variant="outline"
-              color="slate"
-              size="lg"
-              class="w-full"
-              icon="i-lucide-delete"
-              :aria-label="t('PHONE_WIDGET.DELETE_DIGIT')"
-              :title="t('PHONE_WIDGET.DELETE_DIGIT')"
-              data-testid="phone-widget-delete"
-              @click="removeLastKey"
-            />
+          </div>
+          <div
+            v-if="isExpanded"
+            class="mt-4 border-t border-n-weak pt-4"
+            data-testid="phone-widget-expanded"
+          >
+            <div class="grid grid-cols-3 gap-2">
+              <Button
+                v-for="key in dialKeys"
+                :key="key"
+                type="button"
+                variant="outline"
+                color="slate"
+                size="lg"
+                class="w-full"
+                :aria-label="key"
+                :data-testid="`phone-key-${key}`"
+                @click="appendKey(key)"
+              >
+                <span class="text-lg font-medium">{{ key }}</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                color="slate"
+                size="lg"
+                class="w-full !text-lg"
+                label="+"
+                :aria-label="t('PHONE_WIDGET.ADD_PLUS')"
+                data-testid="phone-widget-plus"
+                @click="appendPlus"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                color="slate"
+                size="lg"
+                class="w-full !text-lg"
+                :label="String(0)"
+                data-testid="phone-key-0"
+                @click="appendKey('0')"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                color="slate"
+                size="lg"
+                class="w-full"
+                icon="i-lucide-delete"
+                :aria-label="t('PHONE_WIDGET.DELETE_DIGIT')"
+                :title="t('PHONE_WIDGET.DELETE_DIGIT')"
+                data-testid="phone-widget-delete"
+                @click="removeLastKey"
+              />
+            </div>
           </div>
         </div>
       </div>

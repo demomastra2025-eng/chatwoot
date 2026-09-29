@@ -29,6 +29,7 @@ const storeGetters = vi.hoisted(() => ({
   getInbox: vi.fn(),
   getAgentById: vi.fn(),
   getSelectedChat: null,
+  getCurrentUser: null,
 }));
 
 const routerMock = vi.hoisted(() => ({
@@ -106,6 +107,7 @@ vi.mock('vuex', () => ({
       'inboxes/getInbox': storeGetters.getInbox,
       'agents/getAgentById': storeGetters.getAgentById,
       getSelectedChat: storeGetters.getSelectedChat,
+      getCurrentUser: storeGetters.getCurrentUser,
     },
   }),
 }));
@@ -169,8 +171,9 @@ vi.mock('dashboard/composables/useSipMicrophone', () => ({
 
 import FloatingCallWidget from './FloatingCallWidget.vue';
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(FloatingCallWidget, {
+    props,
     global: {
       mocks: { $t: t },
       stubs: {
@@ -210,6 +213,7 @@ describe('FloatingCallWidget', () => {
     storeGetters.getInbox.mockReset();
     storeGetters.getAgentById.mockReset();
     storeGetters.getSelectedChat = null;
+    storeGetters.getCurrentUser = null;
     ringtoneState.sourceId = null;
     ringtoneState.isActive = null;
   });
@@ -1044,5 +1048,168 @@ describe('FloatingCallWidget', () => {
     await wrapper.get('[aria-label="Chat"]').trigger('click');
 
     expect(routerMock.push).not.toHaveBeenCalled();
+  });
+
+  describe('inside the phone widget (embedded)', () => {
+    const sipuniInbox = { id: 4769, name: 'Sipuni', provider: 'sipuni' };
+    const activeCall = {
+      callSid: 'active-call-1',
+      conversationId: 724,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      fromNumber: '+77070001002',
+      toNumber: '+77070001001',
+      isActive: true,
+      status: 'in_progress',
+    };
+    const ringingCall = {
+      callSid: 'sipuni:ringing-1',
+      conversationId: 725,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+      fromNumber: '+77070001003',
+      toNumber: '+77070001001',
+    };
+    const colleagueCall = {
+      callSid: 'sipuni:colleague-1',
+      conversationId: 726,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'in_progress',
+      browserJoinSupported: false,
+      browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      operatorClaim: { user_id: 99, user_name: 'Ayan' },
+    };
+
+    beforeEach(() => {
+      mockSession.formattedCallDuration = '00:00';
+      storeGetters.getCurrentUser = { id: 1 };
+      storeGetters.getInbox.mockReturnValue(sipuniInbox);
+      storeGetters.getConversationById.mockImplementation(id => ({
+        id,
+        inbox_id: 4769,
+        meta: { sender: { name: id === 724 ? 'Айгерим' : '+77070001003' } },
+      }));
+    });
+
+    it('renders the calls in the phone instead of a floating window', () => {
+      mockSession.incomingCalls = [ringingCall];
+
+      const wrapper = mountComponent({ embedded: true });
+
+      expect(wrapper.find('[data-testid="phone-widget-calls"]').exists()).toBe(
+        true
+      );
+      expect(wrapper.find('[data-testid="floating-calls"]').exists()).toBe(
+        false
+      );
+      expect(wrapper.find('.fixed').exists()).toBe(false);
+      // The phone rings for the call it shows.
+      expect(ringtoneState.sourceId).toBe('voice');
+      expect(ringtoneState.isActive.value).toBe(true);
+      wrapper.unmount();
+    });
+
+    it('keeps the standalone floating window for employees without a phone', () => {
+      mockSession.incomingCalls = [ringingCall];
+
+      const wrapper = mountComponent();
+
+      expect(wrapper.find('[data-testid="floating-calls"]').classes()).toContain(
+        'fixed'
+      );
+      expect(wrapper.find('[data-testid="phone-widget-calls"]').exists()).toBe(
+        false
+      );
+      wrapper.unmount();
+    });
+
+    it('hangs up the active call from the phone and shows the contact name', async () => {
+      mockSession.hasActiveCall = true;
+      mockSession.activeCall = activeCall;
+      mockSession.formattedCallDuration = '01:05';
+
+      const wrapper = mountComponent({ embedded: true });
+      const card = wrapper.get('[data-testid="phone-widget-call-card"]');
+
+      expect(card.attributes('data-own-call')).toBe('true');
+      expect(card.get('[data-testid="phone-widget-call-name"]').text()).toBe(
+        'Айгерим'
+      );
+      expect(card.text()).toContain('+77070001002→+77070001001');
+      expect(card.text()).toContain('01:05');
+      // The phone header owns the microphone and the hide button.
+      expect(card.find('[data-testid="floating-call-microphone"]').exists()).toBe(
+        false
+      );
+      expect(card.find('[aria-label="Close"]').exists()).toBe(false);
+      expect(card.find('[aria-label="Chat"]').exists()).toBe(true);
+
+      await card.get('[aria-label="End call"]').trigger('click');
+
+      expect(mockSession.endCall).toHaveBeenCalledWith({
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callSid: 'active-call-1',
+      });
+      wrapper.unmount();
+    });
+
+    it('answers and declines a ringing call from the phone', async () => {
+      mockSession.incomingCalls = [ringingCall];
+      mockSession.joinCall.mockResolvedValue({ joinSupported: true });
+
+      const wrapper = mountComponent({ embedded: true });
+      const card = wrapper.get('[data-testid="phone-widget-call-card"]');
+
+      // A number-only contact name is not repeated above the numbers.
+      expect(card.find('[data-testid="phone-widget-call-name"]').exists()).toBe(
+        false
+      );
+      expect(card.find('[aria-label="Close"]').exists()).toBe(false);
+
+      await card.get('[aria-label="Call"]').trigger('click');
+      await flushPromises();
+      expect(mockSession.joinCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          callSid: 'sipuni:ringing-1',
+          conversationId: 725,
+          inboxId: 4769,
+        })
+      );
+
+      await card.get('[aria-label="Reject"]').trigger('click');
+      expect(mockSession.rejectIncomingCall).toHaveBeenCalledWith(ringingCall);
+      wrapper.unmount();
+    });
+
+    it("keeps a colleague's call as a closable info card without call controls", async () => {
+      mockSession.incomingCalls = [colleagueCall, ringingCall];
+
+      const wrapper = mountComponent({ embedded: true });
+      const cards = wrapper.findAll('[data-testid="phone-widget-call-card"]');
+
+      expect(cards).toHaveLength(2);
+      const [infoCard, ownCard] = cards;
+      expect(infoCard.attributes('data-own-call')).toBe('false');
+      expect(infoCard.text()).toContain('Handled by: Ayan');
+      expect(infoCard.find('[aria-label="Call"]').exists()).toBe(false);
+      expect(infoCard.find('[aria-label="End call"]').exists()).toBe(false);
+      expect(ownCard.attributes('data-own-call')).toBe('true');
+      expect(ownCard.find('[aria-label="Close"]').exists()).toBe(false);
+
+      await infoCard.get('[aria-label="Close"]').trigger('click');
+
+      expect(
+        wrapper.findAll('[data-testid="phone-widget-call-card"]')
+      ).toHaveLength(1);
+      expect(wrapper.text()).not.toContain('Handled by: Ayan');
+      wrapper.unmount();
+    });
   });
 });
