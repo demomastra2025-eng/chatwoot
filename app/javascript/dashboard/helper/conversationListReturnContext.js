@@ -9,15 +9,42 @@ const validReturnPath = (path, accountId) =>
   path.startsWith(`/app/accounts/${accountId}/`) &&
   !path.includes('://');
 
+// The return path is a convenience: storage that is blocked, full or throws
+// (private mode, quota) must never break opening a thread, so every access is
+// guarded and the history state still carries the path.
+const defaultStorage = () => {
+  try {
+    return typeof window === 'undefined' ? undefined : window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+};
+
+const writeStoredPath = (storage, key, path) => {
+  try {
+    storage?.setItem(key, path);
+  } catch {
+    // Keep navigating with the history state only.
+  }
+};
+
+const readStoredPath = (storage, key) => {
+  try {
+    return storage?.getItem(key);
+  } catch {
+    return undefined;
+  }
+};
+
 export const rememberConversationListReturnPath = ({
   accountId,
   threadId,
   path,
-  storage = typeof window === 'undefined' ? undefined : window.sessionStorage,
+  storage = defaultStorage(),
 }) => {
   if (!validReturnPath(path, accountId)) return {};
 
-  storage?.setItem(returnPathStorageKey(accountId, threadId), path);
+  writeStoredPath(storage, returnPathStorageKey(accountId, threadId), path);
   return {
     [RETURN_PATH_STATE_KEY]: {
       accountId: String(accountId),
@@ -33,7 +60,7 @@ export const conversationListReturnPath = ({
   historyState = typeof window === 'undefined'
     ? undefined
     : window.history.state,
-  storage = typeof window === 'undefined' ? undefined : window.sessionStorage,
+  storage = defaultStorage(),
 }) => {
   const stateContext = historyState?.[RETURN_PATH_STATE_KEY];
   const matchingStateContext =
@@ -43,7 +70,8 @@ export const conversationListReturnPath = ({
     return stateContext.path;
   }
 
-  const storedPath = storage?.getItem(
+  const storedPath = readStoredPath(
+    storage,
     returnPathStorageKey(accountId, threadId)
   );
   return validReturnPath(storedPath, accountId) ? storedPath : undefined;

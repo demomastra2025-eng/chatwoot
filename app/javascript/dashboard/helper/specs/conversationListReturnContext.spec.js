@@ -75,4 +75,88 @@ describe('conversationListReturnContext', () => {
       })
     ).toBe('/app/accounts/1/conversations');
   });
+
+  // A full or blocked sessionStorage must never stop the thread from opening.
+  describe('when sessionStorage throws', () => {
+    const throwingStorage = () => ({
+      getItem: vi.fn(() => {
+        throw new Error('SecurityError');
+      }),
+      setItem: vi.fn(() => {
+        throw new Error('QuotaExceededError');
+      }),
+    });
+
+    it('still returns the history state for the navigation', () => {
+      const storage = throwingStorage();
+      let state;
+
+      expect(() => {
+        state = rememberConversationListReturnPath({
+          accountId: 1,
+          threadId: 7,
+          path: '/app/accounts/1/custom_view/9/conversations',
+          storage,
+        });
+      }).not.toThrow();
+      expect(storage.setItem).toHaveBeenCalled();
+      expect(
+        conversationListReturnPath({
+          accountId: 1,
+          threadId: 7,
+          historyState: state,
+          storage,
+        })
+      ).toBe('/app/accounts/1/custom_view/9/conversations');
+    });
+
+    it('falls back to no return path when reading fails', () => {
+      expect(
+        conversationListReturnPath({
+          accountId: 1,
+          threadId: 7,
+          historyState: {},
+          storage: throwingStorage(),
+        })
+      ).toBeUndefined();
+    });
+
+    it('survives a window.sessionStorage getter that throws', () => {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        window,
+        'sessionStorage'
+      );
+      Object.defineProperty(window, 'sessionStorage', {
+        configurable: true,
+        get: () => {
+          throw new Error('SecurityError');
+        },
+      });
+
+      try {
+        expect(
+          rememberConversationListReturnPath({
+            accountId: 1,
+            threadId: 7,
+            path: '/app/accounts/1/conversations',
+          })
+        ).toMatchObject({
+          conversationListReturnPath: { path: '/app/accounts/1/conversations' },
+        });
+        expect(
+          conversationListReturnPath({
+            accountId: 1,
+            threadId: 7,
+            historyState: {},
+          })
+        ).toBeUndefined();
+      } finally {
+        if (descriptor) {
+          Object.defineProperty(window, 'sessionStorage', descriptor);
+        } else {
+          delete window.sessionStorage;
+        }
+      }
+    });
+  });
 });
