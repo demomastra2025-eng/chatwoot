@@ -132,6 +132,7 @@ class Telephony::SipProfile < ApplicationRecord
       registration_state: metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state'),
       last_presence_source: metadata_value('last_presence_source'),
       last_presence_event_at: metadata_value('last_presence_event_at'),
+      last_registration_failure: metadata_value(LAST_REGISTRATION_FAILURE_KEY),
       managed_by: managed_by,
       ownership_status: ownership_status,
       last_synced_at: last_synced_at,
@@ -143,6 +144,7 @@ class Telephony::SipProfile < ApplicationRecord
   DEFAULT_REGISTRATION_TTL = 2.minutes
   DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
   BROWSER_REGISTRATION_LEASE_KEY = 'browser_registration_lease'
+  LAST_REGISTRATION_FAILURE_KEY = 'last_registration_failure'
   REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
   REGISTRATION_CONTEXT_SIGNATURE_KEY = 'registration_context_signature'
   REGISTRATION_CONTEXT_KEYS = %w[
@@ -308,7 +310,7 @@ class Telephony::SipProfile < ApplicationRecord
       )
   end
 
-  def update_browser_registration!(registered:, occurred_at: Time.current, registration_context: nil)
+  def update_browser_registration!(registered:, occurred_at: Time.current, registration_context: nil, registration_failure: nil)
     outcome = nil
 
     with_lock do
@@ -319,7 +321,8 @@ class Telephony::SipProfile < ApplicationRecord
       persist_browser_registration!(
         registered: registered,
         occurred_at: occurred_at,
-        registration_context: registration_context
+        registration_context: registration_context,
+        registration_failure: registration_failure
       )
       outcome = :updated
     end
@@ -327,8 +330,8 @@ class Telephony::SipProfile < ApplicationRecord
     outcome
   end
 
-  def persist_browser_registration!(registered:, occurred_at:, registration_context:)
-    registration_metadata = (metadata || {}).deep_dup
+  def persist_browser_registration!(registered:, occurred_at:, registration_context:, registration_failure: nil)
+    registration_metadata = metadata_with_registration_failure(registered, registration_failure, occurred_at)
     registration_metadata['registration_state'] = registered ? 'registered' : 'offline'
     registration_metadata['presence'] = registered ? 'online' : 'offline'
     registration_metadata['registered'] = registered
@@ -350,6 +353,18 @@ class Telephony::SipProfile < ApplicationRecord
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
   private :persist_browser_registration!
+
+  # A successful registration clears the last failure; a plain offline report keeps it.
+  def metadata_with_registration_failure(registered, registration_failure, occurred_at)
+    (metadata || {}).deep_dup.tap do |registration_metadata|
+      if registered
+        registration_metadata.delete(LAST_REGISTRATION_FAILURE_KEY)
+      elsif registration_failure.present?
+        registration_metadata[LAST_REGISTRATION_FAILURE_KEY] = registration_failure.to_h.stringify_keys.merge('at' => occurred_at.iso8601)
+      end
+    end
+  end
+  private :metadata_with_registration_failure
 
   def registered_for_routing?
     return false unless enabled?
@@ -402,6 +417,7 @@ class Telephony::SipProfile < ApplicationRecord
     registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY)
     registration_metadata.delete('last_registration_instance_id')
     registration_metadata.delete('last_presence_sequence')
+    registration_metadata.delete(LAST_REGISTRATION_FAILURE_KEY)
     self.metadata = registration_metadata
   end
 

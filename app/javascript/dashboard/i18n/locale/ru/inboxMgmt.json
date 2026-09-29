@@ -481,7 +481,8 @@
             "LABEL": "Формат исходящего",
             "KZ_TRUNK": "8XXXXXXXXXX",
             "STRIP_PLUS": "7XXXXXXXXXX",
-            "E164": "E.164: +7XXXXXXXXXX"
+            "E164": "E.164: +7XXXXXXXXXX",
+            "E164_PLUS": "+7XXXXXXXXXX (рекомендуется для Билайн)"
           },
           "CONNECTION_USERNAME": {
             "LABEL": "Общий SIP username",

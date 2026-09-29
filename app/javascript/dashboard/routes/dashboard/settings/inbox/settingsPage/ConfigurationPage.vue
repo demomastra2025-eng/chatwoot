@@ -20,6 +20,9 @@ import {
 import { sanitizeAllowedDomains } from 'dashboard/helper/URLHelper';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
 
+// Beeline Cloud PBX connects outbound calls dialed as +7XXXXXXXXXX.
+const BEELINE_OUTBOUND_DIAL_FORMAT = 'e164_plus';
+
 export default {
   components: {
     SettingsFieldSection,
@@ -318,19 +321,35 @@ export default {
       return ['udp', 'tcp', 'tls'];
     },
     virtualPbxOutboundDialFormatOptions() {
+      const kzTrunk = {
+        value: 'kz_trunk',
+        label: this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.KZ_TRUNK'
+        ),
+      };
+      const stripPlus = {
+        value: 'strip_plus',
+        label: this.$t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.STRIP_PLUS'
+        ),
+      };
+
+      if (this.isVirtualPbxBeeline) {
+        return [
+          {
+            value: BEELINE_OUTBOUND_DIAL_FORMAT,
+            label: this.$t(
+              'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164_PLUS'
+            ),
+          },
+          kzTrunk,
+          stripPlus,
+        ];
+      }
+
       return [
-        {
-          value: 'kz_trunk',
-          label: this.$t(
-            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.KZ_TRUNK'
-          ),
-        },
-        {
-          value: 'strip_plus',
-          label: this.$t(
-            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.STRIP_PLUS'
-          ),
-        },
+        kzTrunk,
+        stripPlus,
         {
           value: 'e164',
           label: this.$t(
@@ -338,6 +357,9 @@ export default {
           ),
         },
       ];
+    },
+    isVirtualPbxDialFormatEditable() {
+      return this.isVirtualPbxAsteriskAnalog || this.isVirtualPbxBeeline;
     },
     virtualPbxProviderOptions() {
       return [
@@ -840,15 +862,16 @@ export default {
       };
       const providerConnectionMetadata = providerConnection.metadata || {};
       const routing = config.routing || {};
+      const providerKind =
+        channel.provider_kind ||
+        connection.provider_kind ||
+        config.provider_kind ||
+        'sipuni';
 
       this.virtualPbxForm = {
         ...this.virtualPbxForm,
         channelName: channel.name || config.name || this.inbox.name || '',
-        providerKind:
-          channel.provider_kind ||
-          connection.provider_kind ||
-          config.provider_kind ||
-          'sipuni',
+        providerKind,
         displayPhoneNumber:
           channel.display_phone_number ||
           phoneNumbers.display_phone_number ||
@@ -875,7 +898,9 @@ export default {
         outboundDialFormat:
           providerConnection.outbound_dial_format ||
           providerConnectionMetadata.outbound_dial_format ||
-          'kz_trunk',
+          (providerKind === 'beeline'
+            ? BEELINE_OUTBOUND_DIAL_FORMAT
+            : 'kz_trunk'),
         connectionUsername: providerConnection.username || '',
         connectionPassword: '',
         routingMode: routing.mode || 'operator',
@@ -1049,7 +1074,7 @@ export default {
         },
       };
 
-      if (this.isVirtualPbxAsteriskAnalog) {
+      if (this.isVirtualPbxDialFormatEditable) {
         payload.metadata.outbound_dial_format = form.outboundDialFormat;
       }
 
@@ -1730,7 +1755,7 @@ export default {
                 </select>
               </label>
               <label
-                v-if="isVirtualPbxAsteriskAnalog"
+                v-if="isVirtualPbxDialFormatEditable"
                 class="flex flex-col gap-1 text-sm text-n-slate-12"
               >
                 {{

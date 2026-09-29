@@ -476,6 +476,13 @@
           "TRANSPORT": {
             "LABEL": "SIP transport"
           },
+          "OUTBOUND_DIAL_FORMAT": {
+            "LABEL": "Шығыс қоңырау форматы",
+            "KZ_TRUNK": "8XXXXXXXXXX",
+            "STRIP_PLUS": "7XXXXXXXXXX",
+            "E164": "E.164: +7XXXXXXXXXX",
+            "E164_PLUS": "+7XXXXXXXXXX (Beeline үшін ұсынылады)"
+          },
           "CONNECTION_USERNAME": {
             "LABEL": "Ортақ SIP username",
             "PLACEHOLDER": "Қосымша ортақ SIP username"

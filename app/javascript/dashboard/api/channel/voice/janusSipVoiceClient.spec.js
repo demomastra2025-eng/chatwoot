@@ -179,6 +179,26 @@ const asteriskAnalogSession = {
   },
 };
 
+const beelineSession = {
+  ...sipuniSession,
+  provider: 'beeline',
+  recordingStrategy: 'browser_fallback',
+  sip: {
+    username: '1001',
+    password: 'test-beeline-password',
+    host: 'vpbx-company-test.cloudpbx.beeline.kz',
+    proxy: 'sip:cloudpbx.beeline.kz',
+    outbound_proxy: 'sip:46.227.186.231:6050;lr',
+    outbound_dial_format: 'e164_plus',
+    internalExtension: '1001',
+  },
+};
+
+const sentRegisterMessages = () =>
+  pluginSendMock.mock.calls
+    .map(([request]) => request?.message)
+    .filter(message => message?.request === 'register');
+
 const asteriskServerRecordingSession = {
   ...asteriskAnalogSession,
   accountId: 530,
@@ -1089,6 +1109,122 @@ describe('janusSipVoiceClient', () => {
           sipCode: 200,
         }),
       })
+    );
+  });
+
+  it('registers Beeline at its registrar through the outbound proxy', async () => {
+    const client = createJanusSipVoiceClient();
+
+    await client.initializeDevice(beelineSession, { inboxId: 7001 });
+
+    expect(sentRegisterMessages()).toEqual([
+      expect.objectContaining({
+        username: 'sip:1001@vpbx-company-test.cloudpbx.beeline.kz',
+        proxy: 'sip:cloudpbx.beeline.kz',
+        outbound_proxy: 'sip:46.227.186.231:6050;lr',
+      }),
+    ]);
+  });
+
+  it('reads the outbound proxy from the flat webphone token fields', () => {
+    const normalized = JanusSipVoiceClientClass.normalizeSessionConfig({
+      provider: 'beeline',
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sipUsername: '1001',
+      sipPassword: 'test-beeline-password',
+      sipHost: 'vpbx-company-test.cloudpbx.beeline.kz',
+      sipProxy: 'sip:cloudpbx.beeline.kz',
+      sipOutboundProxy: 'sip:46.227.186.231:6050;lr',
+    });
+
+    expect(normalized.sip).toMatchObject({
+      proxy: 'sip:cloudpbx.beeline.kz',
+      outboundProxy: 'sip:46.227.186.231:6050;lr',
+    });
+  });
+
+  it('does not send an outbound proxy for providers that have none', async () => {
+    const client = createJanusSipVoiceClient();
+
+    await client.initializeDevice(sipuniSession, { inboxId: 4769 });
+
+    expect(sentRegisterMessages()).toHaveLength(1);
+    expect(sentRegisterMessages()[0]).not.toHaveProperty('outbound_proxy');
+  });
+
+  it('reports the SIP registration failure code and reason with the offline presence', () => {
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(beelineSession);
+    client.inboxId = 7001;
+    client.sipProfileId = 91;
+    client.registrationInstanceId = 'registration-91';
+    updatePresenceMock.mockClear();
+
+    client.handleSipMessage({
+      result: { event: 'registration_failed', code: 403, reason: 'Forbidden' },
+    });
+
+    expect(updatePresenceMock).toHaveBeenCalledWith(false, {
+      inboxId: 7001,
+      context: expect.objectContaining({
+        sip_profile_id: 91,
+        registration_instance_id: 'registration-91',
+        registration_failure_code: 403,
+        registration_failure_reason: 'Forbidden',
+      }),
+    });
+  });
+
+  it('reports a SIP registration timeout as a failure reason', async () => {
+    vi.useFakeTimers();
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(beelineSession);
+    client.sipHandle = { send: vi.fn(), detach: vi.fn() };
+    client.janus = { destroy: vi.fn() };
+    client.inboxId = 7001;
+    client.registrationInstanceId = 'registration-92';
+    updatePresenceMock.mockClear();
+
+    try {
+      const registration = client.register().catch(error => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await registration;
+
+      expect(updatePresenceMock).toHaveBeenCalledWith(false, {
+        inboxId: 7001,
+        context: expect.objectContaining({
+          registration_instance_id: 'registration-92',
+          registration_failure_reason: 'sip_registration_timeout',
+        }),
+      });
+      expect(updatePresenceMock.mock.calls[0][1].context).not.toHaveProperty(
+        'registration_failure_code'
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not report an ordinary SIP unregister as a registration failure', () => {
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(beelineSession);
+    client.registered = true;
+    client.inboxId = 7001;
+    updatePresenceMock.mockClear();
+
+    client.handleSipMessage({
+      result: { event: 'unregistered', code: 200, reason: 'OK' },
+    });
+
+    expect(updatePresenceMock).toHaveBeenCalledTimes(1);
+    expect(updatePresenceMock.mock.calls[0][1].context).not.toHaveProperty(
+      'registration_failure_code'
+    );
+    expect(updatePresenceMock.mock.calls[0][1].context).not.toHaveProperty(
+      'registration_failure_reason'
     );
   });
 

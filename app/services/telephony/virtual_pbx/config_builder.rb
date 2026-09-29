@@ -55,6 +55,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       default_transport: 'udp',
       default_port: 5060,
       default_outbound_proxy: '46.227.186.231:6050',
+      default_outbound_dial_format: 'e164_plus',
       default_codec: 'pcma',
       allows_display_ingress_split: true,
       default_route_mode: 'operator',
@@ -293,6 +294,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     last_presence_event_at
     last_presence_sequence
     last_presence_source
+    last_registration_failure
     last_registration_instance_id
     last_unregistered_event_at
     presence

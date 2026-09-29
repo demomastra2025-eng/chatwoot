@@ -481,7 +481,8 @@
             "LABEL": "Outbound dial format",
             "KZ_TRUNK": "Kazakhstan trunk: 8XXXXXXXXXX",
             "STRIP_PLUS": "Digits without plus: 7XXXXXXXXXX",
-            "E164": "E.164: +7XXXXXXXXXX"
+            "E164": "E.164: +7XXXXXXXXXX",
+            "E164_PLUS": "+7XXXXXXXXXX (recommended for Beeline)"
           },
           "CONNECTION_USERNAME": {
             "LABEL": "SIP username",

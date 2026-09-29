@@ -378,6 +378,11 @@ export class JanusSipVoiceClient extends EventTarget {
           'udp',
         uri: sip.uri || sessionConfig.sipUri || sessionConfig.sip_uri,
         proxy: sip.proxy || sessionConfig.sipProxy || sessionConfig.sip_proxy,
+        outboundProxy:
+          sip.outboundProxy ||
+          sip.outbound_proxy ||
+          sessionConfig.sipOutboundProxy ||
+          sessionConfig.sip_outbound_proxy,
         codec: sip.codec || sessionConfig.sipCodec || sessionConfig.sip_codec,
         displayName:
           sip.displayName ||
@@ -414,6 +419,21 @@ export class JanusSipVoiceClient extends EventTarget {
   static sipUri(username, host) {
     if (!username || !host) return null;
     return `sip:${username}@${host}`;
+  }
+
+  // Sent with the offline presence so the server can keep the SIP code and
+  // reason of a failed REGISTER (or a REGISTER timeout) for diagnostics.
+  static registrationFailureContext(reason, extra = {}) {
+    if (!extra.registrationFailed) return {};
+
+    const context = {};
+    const sipCode = Number(extra.sipCode);
+    if (Number.isInteger(sipCode) && sipCode > 0) {
+      context.registration_failure_code = sipCode;
+    }
+    const failureReason = extra.sipReason || reason;
+    if (failureReason) context.registration_failure_reason = failureReason;
+    return context;
   }
 
   static dialTarget(
@@ -564,6 +584,7 @@ export class JanusSipVoiceClient extends EventTarget {
       port: normalized.sip.port,
       transport: normalized.sip.transport,
       proxy: normalized.sip.proxy,
+      outboundProxy: normalized.sip.outboundProxy,
       codec: normalized.sip.codec,
       outboundDialFormat: normalized.sip.outboundDialFormat,
       inboxId: resolvedInboxId,
@@ -854,6 +875,9 @@ export class JanusSipVoiceClient extends EventTarget {
       secret: sip.password,
       proxy: sip.proxy,
     };
+    // Beeline registers at its SIP server but only accepts traffic through
+    // its outbound proxy; Janus keeps using it for later INVITEs as well.
+    if (sip.outboundProxy) register.outbound_proxy = sip.outboundProxy;
     if (refresh) register.refresh = true;
 
     this.registrationTimedOut = false;
@@ -864,7 +888,9 @@ export class JanusSipVoiceClient extends EventTarget {
       this.registrationTimer = window.setTimeout(() => {
         this.registrationTimedOut = true;
         const error = new Error('sip_registration_timeout');
-        this.transitionToUnregistered('sip_registration_timeout');
+        this.transitionToUnregistered('sip_registration_timeout', {
+          registrationFailed: true,
+        });
         this.retireRegistrationTransport();
         reject(error);
       }, WEBPHONE_REGISTRATION_TIMEOUT_MS);
@@ -1052,6 +1078,7 @@ export class JanusSipVoiceClient extends EventTarget {
       this.transitionToUnregistered(reason || 'sip_registration_failed', {
         sipCode: result.code,
         sipReason: result.reason,
+        registrationFailed: true,
       });
       this.registrationReject?.(registrationError);
       return;
@@ -1570,7 +1597,10 @@ export class JanusSipVoiceClient extends EventTarget {
   }
 
   transitionToUnregistered(reason = 'sip_unregistered', extra = {}) {
-    const offlinePresenceContext = this.presenceContext();
+    const offlinePresenceContext = {
+      ...this.presenceContext(),
+      ...JanusSipVoiceClient.registrationFailureContext(reason, extra),
+    };
     const detail = { ...this.sessionEventDetail(), reason, ...extra };
     this.registered = false;
     this.presenceHeartbeatFailureCount = 0;

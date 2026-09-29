@@ -268,6 +268,46 @@ describe('Voice channel setup', () => {
     });
   });
 
+  it('dials Beeline numbers as +7XXXXXXXXXX by default and lets the owner change it', async () => {
+    routeMock.query = { provider: 'beeline' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 7002 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
+    );
+    expect(wrapper.vm.kazakhstanState.outboundDialFormat).toBe('e164_plus');
+    expect(
+      wrapper.vm.outboundDialFormatOptions.map(option => option.value)
+    ).toEqual(['e164_plus', 'kz_trunk', 'strip_plus']);
+
+    Object.assign(wrapper.vm.kazakhstanState, {
+      channelName: 'Beeline Cloud PBX',
+      phoneNumber: '+7 700 000 1002',
+      connectionHost: 'cloudpbx.beeline.kz',
+      connectionSipDomain: 'vpbx-company-1399.cloudpbx.beeline.kz',
+      connectionOutboundProxy: '46.227.186.231:6050',
+    });
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(createVirtualPbxChannelMock.mock.calls[0][0].metadata).toEqual({
+      source: 'virtual_pbx_ui',
+      pbx_platform: undefined,
+      outbound_dial_format: 'e164_plus',
+    });
+
+    wrapper.vm.kazakhstanState.outboundDialFormat = 'kz_trunk';
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(
+      createVirtualPbxChannelMock.mock.calls[1][0].metadata.outbound_dial_format
+    ).toBe('kz_trunk');
+  });
+
   it('creates a standalone Wazo Virtual PBX channel', async () => {
     routeMock.query = { provider: 'wazo' };
     createVirtualPbxChannelMock.mockResolvedValue({

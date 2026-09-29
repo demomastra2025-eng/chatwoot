@@ -445,6 +445,34 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
+  it 'dials Beeline numbers as +7XXXXXXXXXX unless another format is chosen' do
+    beeline_payload = lambda do |display_phone_number, extension, metadata|
+      valid_create_payload.deep_dup.merge(
+        provider_kind: 'beeline', channel_name: "Beeline #{extension}", display_phone_number: display_phone_number,
+        provider_account_number: extension, ingress_number: extension,
+        connection: {
+          host: 'cloudpbx.beeline.kz', port: 5060, transport: 'udp', codec: 'pcma',
+          sip_domain: 'vpbx-company-1399.cloudpbx.beeline.kz', outbound_proxy: '46.227.186.231:6050'
+        },
+        metadata: metadata
+      )
+    end
+
+    get "#{base_path}/templates", headers: headers
+    expect(response.parsed_body.dig('payload', 'provider_templates', 'beeline')).to include('default_outbound_dial_format' => 'e164_plus')
+
+    post base_path, params: beeline_payload.call('+77000001011', '1011', { source: 'virtual_pbx_ui' }).merge(dry_run: false),
+                    headers: headers, as: :json
+    default_inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
+    expect(response.parsed_body.dig('payload', 'ui_config', 'connection', 'outbound_dial_format')).to eq('e164_plus')
+    expect(default_inbox.telephony_number_binding.provider_connection.metadata).to include('outbound_dial_format' => 'e164_plus')
+
+    chosen_payload = beeline_payload.call('+77000001012', '1012', { source: 'virtual_pbx_ui', outbound_dial_format: 'kz_trunk' })
+    post base_path, params: chosen_payload.merge(dry_run: false), headers: headers, as: :json
+    chosen_inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
+    expect(chosen_inbox.telephony_number_binding.provider_connection.metadata).to include('outbound_dial_format' => 'kz_trunk')
+  end
+
   it 'creates a standalone Wazo channel for the existing OneLink Janus' do
     payload = valid_create_payload.deep_dup.merge(
       provider_kind: 'wazo',

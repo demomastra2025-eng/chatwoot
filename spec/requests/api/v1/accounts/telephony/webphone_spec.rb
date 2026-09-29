@@ -315,11 +315,121 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       'port' => 5060,
       'transport' => 'udp',
       'uri' => 'sip:1001@vpbx-company-test.cloudpbx.beeline.kz',
-      'proxy' => 'sip:46.227.186.231:6050',
+      'proxy' => 'sip:cloudpbx.beeline.kz',
+      'outbound_proxy' => 'sip:46.227.186.231:6050;lr',
+      'outboundProxy' => 'sip:46.227.186.231:6050;lr',
+      'outbound_dial_format' => 'e164_plus',
       'codec' => 'pcma',
       'internal_extension' => '1001'
     )
+    expect(payload).to include(
+      'sipProxy' => 'sip:cloudpbx.beeline.kz',
+      'sipOutboundProxy' => 'sip:46.227.186.231:6050;lr',
+      'sip_outbound_proxy' => 'sip:46.227.186.231:6050;lr'
+    )
     expect(payload['recording_strategy']).to eq('browser_fallback')
+  end
+
+  it 'uses an explicit Beeline registrar and keeps a stored outbound dial format' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account, provider_kind: 'beeline', host: 'cloudpbx.beeline.kz', port: 5060, transport: 'udp',
+      metadata: {
+        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        registrar: 'registrar.cloudpbx.beeline.kz',
+        outbound_proxy: 'sip:46.227.186.231:6050;lr',
+        outbound_dial_format: 'kz_trunk',
+        codec: 'pcma'
+      }
+    )
+    beeline_channel = create(
+      :channel_voice,
+      account: account, provider: 'beeline', phone_number: '+77000001002',
+      provider_config: { provider_kind: 'beeline', provider_connection_id: provider_connection.id, number_ref: 'beeline-registrar-ref' }
+    )
+    create(:inbox_member, inbox: beeline_channel.inbox, user: administrator)
+    create(
+      :telephony_sip_profile,
+      account: account, inbox: beeline_channel.inbox, user: administrator, internal_extension: '1002',
+      provider_connection: provider_connection, sip_username: '1002', sip_password: 'test-beeline-password',
+      sip_host: 'vpbx-company-test.cloudpbx.beeline.kz', agent_ref: 'local-profile-beeline-1002',
+      availability_mode: 'browser_webphone', status: 'active', agent_aor: 'sip:1002@vpbx-company-test.cloudpbx.beeline.kz'
+    )
+
+    with_modified_env(TELEPHONY_BEELINE_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni') do
+      post path, params: { client_instance_id: 'test-tab', inbox_id: beeline_channel.inbox.id }, headers: headers, as: :json
+    end
+
+    expect(response.parsed_body.dig('payload', 'sip')).to include(
+      'proxy' => 'sip:registrar.cloudpbx.beeline.kz',
+      'outbound_proxy' => 'sip:46.227.186.231:6050;lr',
+      'outbound_dial_format' => 'kz_trunk'
+    )
+  end
+
+  it 'keeps the registrar-only Janus contract for other native SIP providers' do
+    %w[sipuni binotel asterisk_analog wazo].each_with_index do |provider_kind, index|
+      provider_connection = create(
+        :telephony_provider_connection,
+        account: account, provider_kind: provider_kind, host: "pbx-#{index}.example.test", port: 5060, transport: 'udp',
+        metadata: { outbound_proxy: "10.0.0.#{index + 1}:5070" }
+      )
+      channel = create(
+        :channel_voice,
+        account: account, provider: provider_kind, phone_number: "+7700000200#{index}",
+        provider_config: { provider_kind: provider_kind, provider_connection_id: provider_connection.id, number_ref: "#{provider_kind}-ref" }
+      )
+      create(:inbox_member, inbox: channel.inbox, user: administrator)
+      create(
+        :telephony_sip_profile,
+        account: account, inbox: channel.inbox, user: administrator, internal_extension: "20#{index}",
+        provider_connection: provider_connection, sip_username: "user-20#{index}", sip_password: 'test-password',
+        sip_host: "pbx-#{index}.example.test", agent_ref: "local-profile-#{provider_kind}", availability_mode: 'browser_webphone',
+        status: 'active', agent_aor: "sip:user-20#{index}@pbx-#{index}.example.test"
+      )
+
+      with_modified_env(TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni') do
+        post path, params: { client_instance_id: "test-tab-#{index}", inbox_id: channel.inbox.id }, headers: headers, as: :json
+      end
+
+      sip = response.parsed_body.dig('payload', 'sip')
+      expect(sip).to include('proxy' => "sip:10.0.0.#{index + 1}:5070")
+      expect(sip.keys).not_to include('outbound_proxy', 'outboundProxy')
+      expect(response.parsed_body['payload'].keys).not_to include('sipOutboundProxy', 'sip_outbound_proxy')
+      expect(sip['outbound_dial_format']).not_to eq('e164_plus')
+    end
+  end
+
+  it 'keeps the SIP registration failure from an offline presence until the next registration' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account, inbox: voice_inbox, user: administrator, internal_extension: '504',
+      agent_ref: 'local-profile-504', agent_aor: 'sip:504@operator.cloud.vconsult.kz', availability_mode: 'browser_webphone'
+    )
+    presence_path = "/api/v1/accounts/#{account.id}/telephony/webphone/presence"
+
+    post presence_path,
+         params: {
+           registered: false, inbox_id: voice_inbox.id,
+           registration_failure_code: 403, registration_failure_reason: "Forbidden\n"
+         }.merge(sip_presence_params(sip_profile)),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'last_registration_failure')).to include('code' => 403, 'reason' => 'Forbidden')
+    failure = sip_profile.reload.metadata.fetch('last_registration_failure')
+    expect(failure).to include('code' => 403, 'reason' => 'Forbidden')
+    expect(failure['at']).to be_present
+
+    post presence_path,
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(sip_presence_params(sip_profile)),
+         headers: headers,
+         as: :json
+
+    expect(response.parsed_body.dig('payload', 'presence_update_accepted')).to be(true)
+    expect(sip_profile.reload.metadata).not_to have_key('last_registration_failure')
+    expect(sip_profile.metadata.fetch('registration_context').keys).not_to include('registration_failure_code', 'registration_failure_reason')
   end
 
   it 'falls back to browser recording for native Sipuni browser profiles without webhook/API recording' do

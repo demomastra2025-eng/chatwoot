@@ -47,6 +47,13 @@ const initialConnectionHost = () => {
   return '';
 };
 
+// Beeline Cloud PBX connects outbound calls dialed as +7XXXXXXXXXX.
+const BEELINE_OUTBOUND_DIAL_FORMAT = 'e164_plus';
+const initialOutboundDialFormat = () =>
+  route.query.provider === PROVIDER_TYPES.BEELINE
+    ? BEELINE_OUTBOUND_DIAL_FORMAT
+    : 'kz_trunk';
+
 const PROVIDER_BADGES = {
   [PROVIDER_TYPES.SIPUNI]: channelBadgePath('sipuni.png'),
   [PROVIDER_TYPES.BINOTEL]: channelBadgePath('binotel.png'),
@@ -71,7 +78,7 @@ const kazakhstanState = reactive({
     route.query.provider === PROVIDER_TYPES.BEELINE
       ? '46.227.186.231:6050'
       : '',
-  outboundDialFormat: 'kz_trunk',
+  outboundDialFormat: initialOutboundDialFormat(),
 });
 
 const twilioState = reactive({
@@ -244,22 +251,40 @@ const virtualPbxProviderOptions = computed(() => [
 
 const transportOptions = ['udp', 'tcp', 'tls'];
 
-const outboundDialFormatOptions = computed(() => [
-  {
+const outboundDialFormatOptions = computed(() => {
+  const kzTrunk = {
     value: 'kz_trunk',
     label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.KZ_TRUNK'),
-  },
-  {
+  };
+  const stripPlus = {
     value: 'strip_plus',
     label: t(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.STRIP_PLUS'
     ),
-  },
-  {
-    value: 'e164',
-    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164'),
-  },
-]);
+  };
+
+  if (isBeelineProvider.value) {
+    return [
+      {
+        value: BEELINE_OUTBOUND_DIAL_FORMAT,
+        label: t(
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164_PLUS'
+        ),
+      },
+      kzTrunk,
+      stripPlus,
+    ];
+  }
+
+  return [
+    kzTrunk,
+    stripPlus,
+    {
+      value: 'e164',
+      label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.E164'),
+    },
+  ];
+});
 
 const kazakhstanFormErrors = computed(() => ({
   channelName: kazakhstanV$.value.channelName?.$error
@@ -328,6 +353,7 @@ function selectProvider(provider) {
     kazakhstanState.connectionPort = '5060';
     kazakhstanState.connectionTransport = 'udp';
     kazakhstanState.connectionOutboundProxy = '46.227.186.231:6050';
+    kazakhstanState.outboundDialFormat = BEELINE_OUTBOUND_DIAL_FORMAT;
   }
 
   router.push({
@@ -387,7 +413,11 @@ function getVirtualPbxPayload() {
     },
   };
 
-  if (isAsteriskAnalogProvider.value || isWazoProvider.value) {
+  if (
+    isAsteriskAnalogProvider.value ||
+    isWazoProvider.value ||
+    isBeelineProvider.value
+  ) {
     payload.metadata.outbound_dial_format = kazakhstanState.outboundDialFormat;
   }
 
@@ -633,6 +663,25 @@ async function createTwilioChannel() {
             "
             @blur="kazakhstanV$.connectionOutboundProxy?.$touch"
           />
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
+                t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL')
+              }}
+            </label>
+            <Select
+              v-model="kazakhstanState.outboundDialFormat"
+              class="w-full px-3 py-2"
+            >
+              <option
+                v-for="option in outboundDialFormatOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </Select>
+          </div>
           <p
             class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
           >

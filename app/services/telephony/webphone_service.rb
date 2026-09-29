@@ -10,6 +10,12 @@ class Telephony::WebphoneService
   JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW = 2.minutes
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
+  BEELINE_PROVIDER = 'beeline'.freeze
+  BEELINE_DEFAULT_OUTBOUND_DIAL_FORMAT = 'e164_plus'.freeze
+  REGISTRATION_FAILURE_CONTEXT_KEYS = %w[
+    registration_failure_code registrationFailureCode registration_failure_reason registrationFailureReason
+  ].freeze
+  REGISTRATION_FAILURE_REASON_LIMIT = 120
 
   def initialize(account:)
     @account = account
@@ -28,6 +34,7 @@ class Telephony::WebphoneService
   end
 
   def update_presence!(user:, registered:, inbox: nil, registration_context: {})
+    registration_context, registration_failure = split_registration_failure(registered, registration_context)
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
     return unsupported_webphone_payload(reason: 'ambiguous_sip_profile_presence') if ambiguous_no_inbox_sip_presence?(user, inbox, operator_identity)
@@ -48,10 +55,7 @@ class Telephony::WebphoneService
       ).merge(presence_update_accepted: false)
     end
 
-    outcome = operator_identity.record.update_browser_registration!(
-      registered: registered,
-      registration_context: registration_context
-    )
+    outcome = update_browser_registration(operator_identity.record, registered, registration_context, registration_failure)
     presence_update_payload(inbox, operator_identity, outcome)
   end
 
@@ -420,6 +424,41 @@ class Telephony::WebphoneService
     end
   end
 
+  # The browser reports Janus `registration_failed` (SIP code + reason) or a REGISTER timeout
+  # together with the offline presence, so failed registrations are explainable afterwards.
+  def split_registration_failure(registered, registration_context)
+    registration_failure = registered ? nil : registration_failure_from(registration_context)
+    [registration_context.to_h.with_indifferent_access.except(*REGISTRATION_FAILURE_CONTEXT_KEYS), registration_failure]
+  end
+
+  def update_browser_registration(record, registered, registration_context, registration_failure)
+    attributes = { registered: registered, registration_context: registration_context }
+    return record.update_browser_registration!(**attributes) if registration_failure.blank?
+
+    outcome = record.update_browser_registration!(**attributes, registration_failure: registration_failure)
+    log_browser_registration_failure(record, registration_failure) if outcome == :updated
+    outcome
+  end
+
+  def registration_failure_from(context)
+    source = context.to_h.with_indifferent_access
+    code = params_value(source, 'registration_failure_code', 'registrationFailureCode').to_s.strip
+    reason = params_value(source, 'registration_failure_reason', 'registrationFailureReason').to_s
+    code = code.match?(/\A[1-6]\d{2}\z/) ? code.to_i : nil
+    reason = reason.gsub(/[[:cntrl:]]/, ' ').squish.first(REGISTRATION_FAILURE_REASON_LIMIT).presence
+    return if code.nil? && reason.nil?
+
+    { 'code' => code, 'reason' => reason }.compact
+  end
+
+  def log_browser_registration_failure(record, registration_failure)
+    Rails.logger.info(
+      'TELEPHONY_WEBPHONE_REGISTRATION_FAILED ' \
+      "account_id=#{account.id} sip_profile_id=#{record.id} inbox_id=#{record.try(:inbox_id)} " \
+      "sip_code=#{registration_failure['code']} sip_reason=#{registration_failure['reason'].to_s.inspect}"
+    )
+  end
+
   def presence_update_payload(inbox, operator_identity, outcome)
     payload = presence_payload(inbox, operator_identity)
     return payload.merge(presence_update_accepted: true) if outcome == :updated
@@ -544,7 +583,7 @@ class Telephony::WebphoneService
     port = provider_connection&.port.presence || 5060
     transport = provider_connection&.transport.presence || 'udp'
 
-    {
+    settings = {
       host: host,
       server_host: server_host,
       port: port,
@@ -552,6 +591,33 @@ class Telephony::WebphoneService
       proxy: janus_sip_proxy_uri(connection_metadata, host: host, server_host: server_host, port: port, transport: transport),
       codec: connection_metadata[:codec]
     }
+    return settings unless beeline_janus_sip_profile?(profile)
+
+    settings.merge(beeline_registrar_settings(connection_metadata, server_host))
+  end
+
+  def beeline_janus_sip_profile?(profile)
+    janus_sip_provider_for(profile&.inbox, profile).to_s == BEELINE_PROVIDER
+  end
+
+  # Beeline Cloud PBX expects REGISTER with the Request-URI of its SIP server (sip:cloudpbx.beeline.kz)
+  # and all SIP traffic through its outbound proxy. Janus treats `proxy` as the registrar and routes
+  # REGISTER and INVITE through `outbound_proxy`; without it INVITEs would resolve the SIP domain,
+  # which has no DNS record.
+  def beeline_registrar_settings(connection_metadata, server_host)
+    outbound_proxy = connection_metadata[:outbound_proxy].presence
+    registrar = connection_metadata[:registrar].presence || server_host
+    return {} if outbound_proxy.blank? || registrar.blank?
+
+    {
+      proxy: sip_proxy_uri(registrar, nil, nil),
+      outbound_proxy: loose_routing_sip_uri(outbound_proxy)
+    }
+  end
+
+  def loose_routing_sip_uri(value)
+    uri = sip_proxy_uri(value, nil, nil)
+    uri.match?(/;lr(?:[;=]|\z)/i) ? uri : "#{uri};lr"
   end
 
   def janus_sip_proxy_uri(connection_metadata, host:, server_host:, port:, transport:)
@@ -581,13 +647,20 @@ class Telephony::WebphoneService
       display_name: profile.user&.name,
       displayName: profile.user&.name
     }
-    sip_contract.merge(janus_sip_auth_contract(username)).merge(dialing).compact
+    sip_contract.merge(janus_sip_auth_contract(username)).merge(janus_sip_outbound_proxy_contract(credentials)).merge(dialing).compact
   end
 
   def janus_sip_auth_contract(username)
     {
       auth_username: username,
       authUsername: username
+    }
+  end
+
+  def janus_sip_outbound_proxy_contract(credentials)
+    {
+      outbound_proxy: credentials[:outbound_proxy],
+      outboundProxy: credentials[:outbound_proxy]
     }
   end
 
@@ -611,7 +684,7 @@ class Telephony::WebphoneService
       sip_proxy: sip[:proxy],
       outboundDialFormat: sip[:outboundDialFormat],
       outbound_dial_format: sip[:outbound_dial_format]
-    }.compact
+    }.merge(sipOutboundProxy: sip[:outbound_proxy], sip_outbound_proxy: sip[:outbound_proxy]).compact
   end
 
   def janus_sip_dialing_contract(profile)
@@ -621,6 +694,8 @@ class Telephony::WebphoneService
       :dial_format,
       :dialFormat
     ).find(&:present?)
+    # Beeline answered only +7XXXXXXXXXX in the September 2026 trunk tests.
+    outbound_dial_format ||= BEELINE_DEFAULT_OUTBOUND_DIAL_FORMAT if beeline_janus_sip_profile?(profile)
     return {} if outbound_dial_format.blank?
 
     {

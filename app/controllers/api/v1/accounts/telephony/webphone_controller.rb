@@ -164,7 +164,11 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :janus_master_id,
       :janusMasterId,
       :presence_sequence,
-      :presenceSequence
+      :presenceSequence,
+      :registration_failure_code,
+      :registrationFailureCode,
+      :registration_failure_reason,
+      :registrationFailureReason
     )
   end
 end

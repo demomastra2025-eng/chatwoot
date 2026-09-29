@@ -1074,7 +1074,7 @@ describe('ConfigurationPage WhatsApp coexistence synchronization', () => {
   });
 });
 
-describe('ConfigurationPage Virtual PBX save errors', () => {
+describe('ConfigurationPage Virtual PBX save feedback and Beeline dialing', () => {
   beforeEach(() => {
     alertMock.mockReset();
     getVirtualPbxStatusMock.mockReset();
@@ -1136,6 +1136,50 @@ describe('ConfigurationPage Virtual PBX save errors', () => {
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.ERRORS.VIRTUAL_PBX_CONFIGURATION_STALE'
     );
+  });
+
+  it('offers Beeline outbound dial formats and saves +7XXXXXXXXXX by default', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ...statusPayload.payload,
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'beeline',
+          },
+          connection: {
+            provider_kind: 'beeline',
+            host: 'cloudpbx.beeline.kz',
+            port: 5060,
+            transport: 'udp',
+            sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+            outbound_proxy: '46.227.186.231:6050',
+            codec: 'pcma',
+          },
+        },
+      },
+    });
+    updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
+    const wrapper = buildWrapper({
+      inbox: { ...baseInbox, provider: 'beeline' },
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_DIAL_FORMAT.LABEL'
+    );
+    expect(
+      wrapper.vm.virtualPbxOutboundDialFormatOptions.map(option => option.value)
+    ).toEqual(['e164_plus', 'kz_trunk', 'strip_plus']);
+    expect(wrapper.vm.virtualPbxForm.outboundDialFormat).toBe('e164_plus');
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(
+      updateVirtualPbxChannelMock.mock.calls[0][1].metadata.outbound_dial_format
+    ).toBe('e164_plus');
   });
 
   it('localizes provisioning errors listed in the status panel', async () => {

@@ -14,6 +14,7 @@ class Telephony::VirtualPbx::ProvisioningService
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
   DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
   DEFAULT_WAZO_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
+  DEFAULT_BEELINE_OUTBOUND_DIAL_FORMAT = 'e164_plus'
   PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   LEGACY_PROVIDER_CONFIG_KEYS = %i[
@@ -1138,6 +1139,8 @@ class Telephony::VirtualPbx::ProvisioningService
   def default_outbound_dial_format(provider_kind)
     return DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT if provider_kind.to_s == 'asterisk_analog'
     return DEFAULT_WAZO_OUTBOUND_DIAL_FORMAT if provider_kind.to_s == 'wazo'
+
+    DEFAULT_BEELINE_OUTBOUND_DIAL_FORMAT if provider_kind.to_s == 'beeline'
   end
 
   def provider_connection_credentials_ref(payload, refs)
