@@ -35,6 +35,7 @@ jobs:
         run: |
           git diff --check "$BASE_SHA" "$HEAD_SHA"
           python3 -m unittest script/onelink/test_change_plan.py
+          python3 -m unittest script/onelink/test_workflow_native_deps.py
           python3 script/onelink/change_plan.py \
             --base "$BASE_SHA" \
             --head "$HEAD_SHA" \
@@ -93,6 +94,13 @@ jobs:
           mapfile -t files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list ruby)
           # Report legacy convention offenses while still blocking warnings, errors, and fatal issues.
           if ((${#files[@]})); then bundle exec rubocop --fail-level warning --force-exclusion "${files[@]}"; fi
+      - name: Install native libraries required by specs
+        run: |
+          # WhatsApp Opus decoder specs load the real libopus through Fiddle and
+          # fail, never skip, without it; GitHub-hosted runners do not ship it.
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libopus0
+          ruby -rfiddle -e 'lib = Fiddle.dlopen("libopus.so.0"); puts Fiddle::Function.new(lib["opus_get_version_string"], [], Fiddle::TYPE_VOIDP).call.to_s'
       - name: Run directly related Ruby specs
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

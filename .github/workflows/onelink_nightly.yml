@@ -110,6 +110,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Prepare database
         run: bundle exec rake db:create db:schema:load
+      - name: Install native libraries required by specs
+        run: |
+          # WhatsApp Opus decoder specs load the real libopus through Fiddle and
+          # fail, never skip, without it; GitHub-hosted runners do not ship it.
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libopus0
+          ruby -rfiddle -e 'lib = Fiddle.dlopen("libopus.so.0"); puts Fiddle::Function.new(lib["opus_get_version_string"], [], Fiddle::TYPE_VOIDP).call.to_s'
       - name: Run full Ruby suite shard
         env:
           SHARD: ${{ matrix.shard }}

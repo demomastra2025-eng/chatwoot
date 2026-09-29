@@ -59,6 +59,10 @@ git switch -c feature/<короткое-название>
   проверяет exact HEAD, но не публикует `nightly` proof, пригодный для promotion.
 - `.github/workflows/onelink_promote_production.yml` — ручное продвижение проверенного
   DEV SHA в PROD.
+- Каждый job с RSpec (`release-gate`, PR `backend`, nightly `backend`) до запуска спеков
+  ставит системную `libopus0` и проверяет, что `libopus.so.0` загружается: спеки WhatsApp
+  Opus decoder вызывают настоящий libopus через Fiddle и без него падают, а не пропускаются.
+  Контракт проверяет `script/onelink/test_workflow_native_deps.py`.
 
 Проверки выбираются по diff от последнего успешно развернутого DEV SHA: Ruby, Vue,
 migration и Docker-проверки запускаются только когда соответствующий слой изменился.
