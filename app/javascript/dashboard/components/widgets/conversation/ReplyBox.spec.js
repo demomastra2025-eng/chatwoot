@@ -311,7 +311,8 @@ describe('ReplyBox', () => {
         isPrivate: false,
         $store: {
           getters: {
-            'inboxes/getFilteredWhatsAppTemplates': inboxId =>
+            // The button follows the templates visible in conversations.
+            'inboxes/getConversationWhatsAppTemplates': inboxId =>
               inboxId === 143 ? [{ name: 'approved_template' }] : [],
           },
         },
