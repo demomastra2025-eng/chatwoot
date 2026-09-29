@@ -116,6 +116,12 @@ const mountSidebar = () =>
           template:
             '<li data-testid="notification-bell" :data-collapsed="String(isCollapsed)" :data-label="label" />',
         },
+        SidebarProfileMenu: {
+          name: 'SidebarProfileMenu',
+          props: ['isCollapsed'],
+          template:
+            '<div data-testid="profile-menu" :data-collapsed="String(isCollapsed)" />',
+        },
         SidebarGroup: {
           name: 'SidebarGroup',
           inheritAttrs: false,
@@ -133,6 +139,12 @@ const mountSidebar = () =>
 const testIdsIn = element =>
   [...element.querySelectorAll('[data-testid]')].map(node =>
     node.getAttribute('data-testid')
+  );
+const FOOTER_ITEMS = ['phone-toggle', 'profile-menu', 'notification-bell'];
+// The phone button, profile and bell in the order they appear in the footer.
+const footerItems = wrapper =>
+  testIdsIn(wrapper.get('[data-testid="sidebar-footer"]').element).filter(id =>
+    FOOTER_ITEMS.includes(id)
   );
 
 describe('Sidebar notifications and phone placement', () => {
@@ -162,23 +174,32 @@ describe('Sidebar notifications and phone placement', () => {
     mocks.uiSettings.value = {};
   });
 
-  it('puts the phone button just above the bell in the desktop rail footer', async () => {
+  it('puts the phone button directly above the profile in the desktop rail footer', async () => {
     setWindowWidth(1280);
     const wrapper = mountSidebar();
     await flushPromises();
 
-    const footer = wrapper.get('[data-testid="sidebar-rail-footer-actions"]');
-    expect(testIdsIn(footer.element)).toEqual([
+    expect(footerItems(wrapper)).toEqual([
       'phone-toggle',
+      'profile-menu',
       'notification-bell',
     ]);
-    // The rail itself no longer links to the notifications page.
+    expect(
+      wrapper.get('[data-testid="phone-toggle"]').attributes('data-collapsed')
+    ).toBe('true');
+    expect(
+      testIdsIn(
+        wrapper.get('[data-testid="sidebar-rail-footer-actions"]').element
+      )
+    ).toEqual(['notification-bell']);
+    // The rail itself holds neither the phone button nor the notifications.
     const rail = wrapper.get('nav');
+    expect(rail.find('[data-testid="phone-toggle"]').exists()).toBe(false);
     expect(rail.find('[data-testid="notification-bell"]').exists()).toBe(false);
     expect(rail.find('[data-name="Inbox"]').exists()).toBe(false);
   });
 
-  it('puts the phone button just above the bell in the mobile menu', async () => {
+  it('puts the phone button directly above the profile in the mobile menu', async () => {
     setWindowWidth(600);
     const wrapper = mountSidebar();
     await flushPromises();
@@ -186,13 +207,14 @@ describe('Sidebar notifications and phone placement', () => {
     expect(
       wrapper.find('[data-testid="sidebar-rail-footer-actions"]').exists()
     ).toBe(false);
-    const menuIds = testIdsIn(wrapper.get('nav').element);
-    const bellIndex = menuIds.indexOf('notification-bell');
-    expect(bellIndex).toBeGreaterThan(0);
-    expect(menuIds[bellIndex - 1]).toBe('phone-toggle');
+    expect(footerItems(wrapper)).toEqual(['phone-toggle', 'profile-menu']);
     expect(
-      wrapper.get('nav [data-testid="phone-toggle"]').attributes()
-    ).toMatchObject({ 'data-collapsed': 'false' });
+      wrapper.get('[data-testid="phone-toggle"]').attributes('data-collapsed')
+    ).toBe('false');
+    // The bell stays in the menu; the phone button left it.
+    const menuIds = testIdsIn(wrapper.get('nav').element);
+    expect(menuIds).toContain('notification-bell');
+    expect(menuIds).not.toContain('phone-toggle');
     setWindowWidth(1280);
   });
 
@@ -237,8 +259,7 @@ describe('Sidebar notifications and phone placement', () => {
     const wrapper = mountSidebar();
     await flushPromises();
 
-    const footer = wrapper.get('[data-testid="sidebar-rail-footer-actions"]');
-    expect(testIdsIn(footer.element)).toEqual(['notification-bell']);
+    expect(footerItems(wrapper)).toEqual(['profile-menu', 'notification-bell']);
 
     // The phone widget publishes the line once the SIP bootstrap finishes.
     usePhoneWidgetStore().publishSipState({
@@ -246,8 +267,9 @@ describe('Sidebar notifications and phone placement', () => {
       status: 'connecting',
     });
     await flushPromises();
-    expect(testIdsIn(footer.element)).toEqual([
+    expect(footerItems(wrapper)).toEqual([
       'phone-toggle',
+      'profile-menu',
       'notification-bell',
     ]);
   });

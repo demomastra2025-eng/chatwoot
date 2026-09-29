@@ -2088,7 +2088,7 @@ const menuItems = computed(() => {
 
 // Notifications open the side panel instead of a page. The desktop icon rail
 // shows the bell at the bottom, next to the profile menu; the phone widget
-// button sits just above the bell in both layouts.
+// button sits directly above the profile menu in both layouts.
 const notificationMenuItem = computed(() =>
   menuItems.value.find(item => item.name === 'Inbox')
 );
@@ -2338,20 +2338,8 @@ const desktopSidebarWidth = computed(() => {
           class="flex flex-col gap-1 m-0 list-none min-w-0"
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
-          <SidebarPhoneToggle
-            v-if="
-              showPhoneToggle &&
-              !isEffectivelyCollapsed &&
-              !notificationMenuItem
-            "
-            :is-collapsed="false"
-          />
           <template v-for="item in primaryMenuItems" :key="item.name">
             <template v-if="item.name === 'Inbox'">
-              <SidebarPhoneToggle
-                v-if="showPhoneToggle"
-                :is-collapsed="false"
-              />
               <SidebarNotificationBell
                 :is-collapsed="false"
                 :label="item.label"
@@ -2387,26 +2375,29 @@ const desktopSidebarWidth = computed(() => {
           "
         />
         <div
-          class="px-1 py-1.5 flex-shrink-0 flex w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
-          :class="
-            isEffectivelyCollapsed
-              ? 'flex-col justify-center'
-              : 'justify-between'
-          "
+          class="px-1 py-1.5 flex-shrink-0 flex flex-col w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
+          :class="isEffectivelyCollapsed ? 'justify-center' : 'items-stretch'"
+          data-testid="sidebar-footer"
         >
+          <!-- The phone button sits directly above the profile in both the
+               desktop icon rail and the expanded (mobile) menu. -->
+          <ul
+            v-if="showPhoneToggle"
+            class="flex flex-col gap-1 m-0 list-none"
+            :class="isEffectivelyCollapsed ? 'items-center' : 'w-full'"
+            data-testid="sidebar-footer-phone"
+          >
+            <SidebarPhoneToggle :is-collapsed="isEffectivelyCollapsed" />
+          </ul>
           <SidebarProfileMenu
             :is-collapsed="isEffectivelyCollapsed"
             @open-key-shortcut-modal="emit('openKeyShortcutModal')"
           />
           <ul
-            v-if="
-              isEffectivelyCollapsed &&
-              (showPhoneToggle || notificationMenuItem)
-            "
+            v-if="isEffectivelyCollapsed && notificationMenuItem"
             class="flex flex-col items-center gap-1 m-0 list-none"
             data-testid="sidebar-rail-footer-actions"
           >
-            <SidebarPhoneToggle v-if="showPhoneToggle" />
             <SidebarNotificationBell
               v-if="notificationMenuItem"
               :label="notificationMenuItem.label"
