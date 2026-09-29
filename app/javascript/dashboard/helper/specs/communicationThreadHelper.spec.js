@@ -4,6 +4,7 @@ import {
   buildCommunicationChannelFromRealtimePayload,
   decoratePayloadWithCommunicationThread,
   filterConversationsByCommunicationThreadMode,
+  getNotificationCommunicationThreadId,
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
@@ -16,6 +17,29 @@ import {
   isCommunicationVoiceChannel,
   isMessageInCommunicationThread,
 } from '../communicationThreadHelper';
+
+describe('#getNotificationCommunicationThreadId', () => {
+  it('reads both API and normalized notification payloads', () => {
+    expect(
+      getNotificationCommunicationThreadId({ communication_thread_id: 41 })
+    ).toBe(41);
+    expect(
+      getNotificationCommunicationThreadId({ communicationThreadId: 42 })
+    ).toBe(42);
+    expect(
+      getNotificationCommunicationThreadId({
+        primary_actor: { communication_thread_id: 43 },
+      })
+    ).toBe(43);
+  });
+
+  it('returns nothing for conversations outside a thread', () => {
+    expect(
+      getNotificationCommunicationThreadId({ communication_thread_id: null })
+    ).toBeFalsy();
+    expect(getNotificationCommunicationThreadId(undefined)).toBeUndefined();
+  });
+});
 
 const whatsappChannel = {
   conversation_id: 11,

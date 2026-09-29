@@ -117,6 +117,7 @@
       "STATUS": "Статус записи"
     },
     "CALENDAR": {
+      "ALL_RESOURCES_UNAVAILABLE": "Все специалисты недоступны",
       "AVAILABLE_SLOTS": "{count} свободно",
       "DESCRIPTION": "Управляйте записями, занятостью специалистов и блокировками времени в одном нативном календаре.",
       "MORE_APPOINTMENTS": "+ ещё {count}",
@@ -125,7 +126,10 @@
       "NO_APPOINTMENTS_STATUS": "В этом статусе записей нет",
       "NO_RESOURCES": "Добавьте хотя бы одного активного специалиста, чтобы начать работать с календарём.",
       "NO_SERVICE": "Без услуги",
-      "UNAVAILABLE_SLOT": "Это время недоступно"
+      "RESOURCES_UNAVAILABLE": "Недоступны: {names}",
+      "UNAVAILABLE": "Недоступно",
+      "UNAVAILABLE_SLOT": "Это время недоступно",
+      "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
     "DIALOGS": {
       "CLIENT": "Клиент",

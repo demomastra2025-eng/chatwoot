@@ -351,4 +351,89 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response.parsed_body['message_templates'].first['name']).to eq('keep_template')
     end
   end
+
+  describe 'PATCH /api/v1/accounts/{account.id}/inboxes/{inbox.id}/whatsapp_templates/{template_name}/visibility' do
+    let(:visibility_path) do
+      "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates/automation_only/visibility"
+    end
+
+    before do
+      whatsapp_channel.update!(
+        message_templates: [
+          {
+            'name' => 'automation_only',
+            'language' => 'en',
+            'status' => 'APPROVED',
+            'components' => [{ 'type' => 'BODY', 'text' => 'Automated message' }]
+          },
+          {
+            'name' => 'agent_reply',
+            'language' => 'en',
+            'status' => 'APPROVED',
+            'components' => [{ 'type' => 'BODY', 'text' => 'Agent reply' }]
+          }
+        ]
+      )
+    end
+
+    it 'stores picker visibility and returns the updated inbox' do
+      patch visibility_path,
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      templates = response.parsed_body['message_templates'].index_by { |template| template['name'] }
+      expect(templates['automation_only']['visible_in_conversation_picker']).to be(false)
+      expect(templates['agent_reply']).not_to have_key('visible_in_conversation_picker')
+      expect(whatsapp_channel.reload.message_templates.first['visible_in_conversation_picker']).to be(false)
+    end
+
+    it 'shows a hidden template in the picker again' do
+      whatsapp_channel.update_template_picker_visibility!('automation_only', visible: false)
+
+      patch visibility_path,
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: true },
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(whatsapp_channel.reload.message_templates.first['visible_in_conversation_picker']).to be(true)
+    end
+
+    it 'returns not found for a missing template' do
+      patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates/missing/visibility",
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'requires the visibility flag' do
+      patch visibility_path, headers: admin.create_new_auth_token, params: {}, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(whatsapp_channel.reload.message_templates.first).not_to have_key('visible_in_conversation_picker')
+    end
+
+    it 'returns unauthorized for non-admin users' do
+      patch visibility_path,
+            headers: agent.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(whatsapp_channel.reload.message_templates.first).not_to have_key('visible_in_conversation_picker')
+    end
+
+    it 'rejects channels that are not WhatsApp Cloud' do
+      patch "/api/v1/accounts/#{account.id}/inboxes/#{web_widget_inbox.id}/whatsapp_templates/automation_only/visibility",
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:bad_request)
+    end
+  end
 end

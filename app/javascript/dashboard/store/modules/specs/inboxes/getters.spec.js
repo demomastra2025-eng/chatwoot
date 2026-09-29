@@ -540,4 +540,64 @@ describe('#getters', () => {
       expect(result[0].name).toBe('fallback_template');
     });
   });
+
+  describe('#getConversationWhatsAppTemplates', () => {
+    it('excludes templates hidden from the conversation picker only', () => {
+      const filteredTemplates = [
+        { name: 'agent_reply', visible_in_conversation_picker: true },
+        { name: 'default_visible' },
+        { name: 'automation_only', visible_in_conversation_picker: false },
+      ];
+      const getterContext = {
+        getFilteredWhatsAppTemplates: vi.fn(() => filteredTemplates),
+      };
+
+      const result = getters.getConversationWhatsAppTemplates(
+        {},
+        getterContext
+      )(1);
+
+      expect(result.map(template => template.name)).toEqual([
+        'agent_reply',
+        'default_visible',
+      ]);
+      expect(getterContext.getFilteredWhatsAppTemplates).toHaveBeenCalledWith(
+        1
+      );
+    });
+
+    it('keeps hidden templates in the full filtered list for automations', () => {
+      const hiddenTemplates = [
+        {
+          name: 'automation_only',
+          status: 'approved',
+          visible_in_conversation_picker: false,
+          components: [{ type: 'BODY', text: 'Automated' }],
+        },
+      ];
+      const state = {
+        records: [
+          {
+            id: 1,
+            channel_type: 'Channel::Whatsapp',
+            message_templates: hiddenTemplates,
+          },
+        ],
+      };
+
+      const allTemplates = getters.getFilteredWhatsAppTemplates(state)(1);
+      const conversationTemplates = getters.getConversationWhatsAppTemplates(
+        state,
+        {
+          getFilteredWhatsAppTemplates:
+            getters.getFilteredWhatsAppTemplates(state),
+        }
+      )(1);
+
+      expect(allTemplates.map(template => template.name)).toEqual([
+        'automation_only',
+      ]);
+      expect(conversationTemplates).toEqual([]);
+    });
+  });
 });

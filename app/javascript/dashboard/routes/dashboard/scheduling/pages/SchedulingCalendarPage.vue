@@ -39,6 +39,7 @@ import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_VALUES,
+  DEFAULT_WORKSPACE_TIMEZONE,
   PAYMENT_STATUS_VALUES,
 } from '../constants';
 import {
@@ -50,6 +51,7 @@ import {
   buildMedelementProviderCommandDetails,
   hasMedelementReceptionIdentity,
   buildMedelementProviderCommandParams,
+  calendarDayAnchor,
   canCreateAppointmentConversation,
   formatCalendarTitle,
   isAppointmentProviderOwned,
@@ -100,6 +102,10 @@ const providerCommandsStore = useSchedulingProviderCommandsStore();
 const { currentAccount } = useAccount();
 const route = useRoute();
 const router = useRouter();
+// There is no account-level workspace timezone setting on this base yet, so
+// the calendar is rendered in the default company timezone. A future account
+// setting only has to replace this computed value.
+const workspaceTimezone = computed(() => DEFAULT_WORKSPACE_TIMEZONE);
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
 const contactSelectorFieldRef = ref(null);
@@ -236,6 +242,7 @@ const calendarTypeViews = computed(() =>
 
 const presentationOptions = computed(() =>
   ['calendar', 'list'].map(value => ({
+    icon: value === 'calendar' ? 'i-lucide-calendar-days' : 'i-lucide-list',
     label: presentationLabels.value[value],
     value,
   }))
@@ -245,7 +252,8 @@ const pageTitle = computed(() =>
   formatCalendarTitle(
     calendarStore.currentView,
     calendarStore.anchorDate,
-    locale.value
+    locale.value,
+    workspaceTimezone.value
   )
 );
 
@@ -610,6 +618,7 @@ const visibleAppointments = computed(() => {
 });
 
 function fetchCalendar() {
+  calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
   return calendarStore.fetchCalendar();
 }
 
@@ -1113,7 +1122,9 @@ const openCreateAppointment = (slot, defaults = {}) => {
 const handleAnchorDateSelect = async nextDate => {
   if (!nextDate) return;
 
-  calendarStore.setAnchorDate(nextDate.toISOString());
+  calendarStore.setAnchorDate(
+    calendarDayAnchor(nextDate, workspaceTimezone.value).toISOString()
+  );
   await fetchCalendar();
 };
 
@@ -1836,6 +1847,7 @@ onBeforeUnmount(() => {
 });
 
 onMounted(async () => {
+  calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
   calendarStore.hydratePreferences();
   currentPresentation.value = 'calendar';
   await loadPage();
@@ -1866,6 +1878,13 @@ onMounted(async () => {
       "
       @select-date="handleAnchorDateSelect"
     >
+      <template #leading>
+        <SchedulingViewSwitcher
+          v-model="currentPresentation"
+          :views="presentationOptions"
+          icon-only
+        />
+      </template>
       <template #actions>
         <SchedulingResourceFilter
           compact
@@ -1883,10 +1902,6 @@ onMounted(async () => {
           icon="i-lucide-filter"
           :aria-label="$t('SCHEDULING.TOOLBAR.FILTERS')"
           @click="openAppointmentFilterDialog"
-        />
-        <SchedulingViewSwitcher
-          v-model="currentPresentation"
-          :views="presentationOptions"
         />
         <Button
           size="sm"
@@ -1946,6 +1961,7 @@ onMounted(async () => {
           :view="calendarStore.currentView"
           :work-rules="calendarStore.workRules"
           :workday-overrides="calendarStore.workdayOverrides"
+          :workspace-timezone="workspaceTimezone"
           @change-status="
             updateAppointmentMutation($event.appointment, {
               status: $event.status,

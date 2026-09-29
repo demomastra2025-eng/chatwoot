@@ -9,6 +9,10 @@ import {
   MESSAGE_TYPES,
 } from 'dashboard/components-next/message/constants';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
+import {
+  conversationListReturnPath,
+  rememberConversationListReturnPath,
+} from 'dashboard/helper/conversationListReturnContext';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
@@ -449,6 +453,21 @@ const conversationPath = computed(() => {
   );
 });
 
+// The list URL the user is looking at. When another thread is already open,
+// reuse the list that thread was opened from instead of the thread URL.
+const currentListPath = () => {
+  const currentRoute = router.currentRoute?.value;
+  if (currentRoute?.name === 'communication_thread_conversation') {
+    return conversationListReturnPath({
+      accountId: accountId.value,
+      threadId: currentRoute.params?.communication_thread_id,
+    });
+  }
+  if (currentRoute?.params?.conversation_id) return undefined;
+
+  return `${window.location.pathname}${window.location.search}`;
+};
+
 const onCardClick = e => {
   if (suppressNextClick.value) {
     e.preventDefault();
@@ -459,6 +478,15 @@ const onCardClick = e => {
 
   const path = conversationPath.value;
   if (!path) return;
+  // Remember the list this thread was opened from so the header back button
+  // returns to the same folder and filters.
+  const navigationState = isCommunicationThreadChat.value
+    ? rememberConversationListReturnPath({
+        accountId: accountId.value,
+        threadId: props.chat.id,
+        path: currentListPath(),
+      })
+    : {};
 
   // Handle Ctrl/Cmd + Click for new tab
   if (e.metaKey || e.ctrlKey) {
@@ -474,7 +502,19 @@ const onCardClick = e => {
   // Skip if already active
   if (isActiveChat.value) return;
 
-  router.push(path);
+  if (!isCommunicationThreadChat.value) {
+    router.push(path);
+    return;
+  }
+
+  // Thread URLs keep their list filters in the query string; pass them as a
+  // query object so the history state can travel with the navigation.
+  const [targetPath, search = ''] = path.split('?');
+  router.push({
+    path: targetPath,
+    query: Object.fromEntries(new URLSearchParams(search)),
+    state: navigationState,
+  });
 };
 
 const onThumbnailHover = () => {

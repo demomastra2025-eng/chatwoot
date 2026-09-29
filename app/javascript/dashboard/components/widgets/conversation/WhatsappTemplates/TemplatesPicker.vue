@@ -29,8 +29,10 @@ const query = ref('');
 const isRefreshing = ref(false);
 const expandedTemplateName = ref('');
 
+// Admins can hide templates from conversations; they stay available to
+// automations and campaigns.
 const whatsAppTemplateMessages = useFunctionGetter(
-  'inboxes/getFilteredWhatsAppTemplates',
+  'inboxes/getConversationWhatsAppTemplates',
   toRef(props, 'inboxId')
 );
 

@@ -192,6 +192,64 @@ has been assigned to you"
     end
   end
 
+  context 'when push event data is built for a conversation in a communication thread' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+    let(:notification) do
+      create(:notification, account: account, notification_type: 'conversation_mention', primary_actor: conversation)
+    end
+
+    # Looks the link up in the database: the thread resolver links a new
+    # conversation on its own copy, so the conversation object in hand may have
+    # a stale (empty) thread association.
+    def thread_for(conversation)
+      existing_link = CommunicationThreadConversation.find_by(conversation_id: conversation.id)
+      return existing_link.communication_thread if existing_link
+
+      communication_thread = create(:communication_thread, account: account, contact: conversation.contact)
+      create(:communication_thread_conversation, account: account, communication_thread: communication_thread, conversation: conversation)
+      communication_thread
+    end
+
+    # The realtime listener serializes a notification loaded after the link exists.
+    def realtime_payload
+      described_class.find(notification.id).push_event_data
+    end
+
+    it 'includes the thread display id when communication threads are enabled' do
+      account.enable_features!('communication_threads')
+      communication_thread = thread_for(conversation)
+
+      expect(realtime_payload[:communication_thread_id]).to eq(communication_thread.display_id)
+    end
+
+    it 'returns no thread target when communication threads are disabled' do
+      thread_for(conversation)
+      account.disable_features!('communication_threads')
+
+      expect(realtime_payload).to include(communication_thread_id: nil)
+    end
+
+    it 'returns no thread target for a conversation outside any thread' do
+      account.enable_features!('communication_threads')
+      CommunicationThreadConversation.where(conversation_id: conversation.id).delete_all
+
+      expect(realtime_payload).to include(communication_thread_id: nil)
+    end
+
+    it 'returns no thread target for notifications about other records' do
+      account.enable_features!('communication_threads')
+      task_notification = create(
+        :notification,
+        account: account,
+        notification_type: 'task_assignment',
+        primary_actor: create(:crm_task, account: account)
+      )
+
+      expect(task_notification.push_event_data).to include(communication_thread_id: nil)
+    end
+  end
+
   context 'when fcm push data' do
     it 'returns correct data for primary actor conversation' do
       notification = create(:notification, notification_type: 'conversation_creation')

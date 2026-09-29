@@ -30,6 +30,11 @@ const mountGrid = props =>
     },
     global: {
       stubs: {
+        SchedulingVueCalCalendar: {
+          name: 'SchedulingVueCalCalendar',
+          props: { workspaceTimezone: String },
+          template: '<div class="calendar-stub" />',
+        },
         SchedulingStatusMenu: {
           template: '<div class="status-menu-stub" />',
         },
@@ -50,6 +55,41 @@ describe('SchedulingCalendarGrid', () => {
         return labels[key] || key;
       }),
     });
+  });
+
+  it('forwards the Workspace timezone to the interactive calendar', () => {
+    const wrapper = mountGrid({
+      presentation: 'calendar',
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingVueCalCalendar' })
+        .props('workspaceTimezone')
+    ).toBe('Asia/Almaty');
+  });
+
+  it('groups and formats list appointments in the Workspace timezone', () => {
+    const appointment = {
+      clientName: 'Early client',
+      // 01:00-01:30 on Sunday 29 March in Almaty, still Saturday in UTC.
+      endsAt: '2026-03-28T20:30:00.000Z',
+      id: 42,
+      resourceId: 12,
+      startsAt: '2026-03-28T20:00:00.000Z',
+      status: 'confirmed',
+    };
+    const zoned = mountGrid({
+      appointments: [appointment],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+    const browserLocal = mountGrid({ appointments: [appointment] });
+
+    expect(zoned.find('header').text()).toBe('Sunday, March 29');
+    expect(zoned.text()).toContain('01:00 AM - 01:30 AM');
+    expect(browserLocal.find('header').text()).toBe('Saturday, March 28');
+    expect(browserLocal.text()).toContain('08:00 PM - 08:30 PM');
   });
 
   it('renders appointment custom field summaries in list view', () => {

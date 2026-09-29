@@ -3,8 +3,11 @@ import {
   buildCalendarRange,
   buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
+  buildTimeOffIntervals,
+  calendarDayAnchor,
   canCreateAppointmentConversation,
   deriveVisibleMinuteWindow,
+  formatCalendarTitle,
   getServicePriceForResource,
   hasMedelementReceptionIdentity,
   isAppointmentProviderOwned,
@@ -262,6 +265,116 @@ describe('scheduling helpers', () => {
       to.getSeconds(),
       to.getMilliseconds(),
     ]).toEqual([2026, 2, 15, 23, 59, 59, 999]);
+  });
+
+  it('builds API day boundaries in the Workspace timezone', () => {
+    const { from, to } = buildCalendarRange(
+      'day',
+      '2026-03-09T12:00:00.000Z',
+      'Asia/Almaty'
+    );
+
+    expect(from.toISOString()).toBe('2026-03-08T19:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-03-09T18:59:59.999Z');
+  });
+
+  it('uses the Workspace calendar day when the UTC date is still the previous day', () => {
+    // 20:30 UTC on Sunday is already 01:30 on Monday in Almaty.
+    const { from, to } = buildCalendarRange(
+      'week',
+      '2026-03-08T20:30:00.000Z',
+      'Asia/Almaty'
+    );
+
+    expect(from.toISOString()).toBe('2026-03-08T19:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-03-15T18:59:59.999Z');
+  });
+
+  it('keeps the browser-local range when no Workspace timezone is given', () => {
+    const { from } = buildCalendarRange('day', '2026-03-09T12:00:00.000Z');
+
+    expect(from.toISOString()).toBe('2026-03-09T00:00:00.000Z');
+  });
+
+  it('shifts the anchor by Workspace calendar days and months', () => {
+    expect(
+      shiftAnchorDate(
+        'day',
+        '2026-03-08T20:30:00.000Z',
+        1,
+        'Asia/Almaty'
+      ).toISOString()
+    ).toBe('2026-03-09T20:30:00.000Z');
+    expect(
+      shiftAnchorDate(
+        'month',
+        '2026-01-30T19:30:00.000Z',
+        1,
+        'Asia/Almaty'
+      ).toISOString()
+    ).toBe('2026-02-27T19:30:00.000Z');
+  });
+
+  it('anchors a picked calendar day at Workspace noon', () => {
+    expect(
+      calendarDayAnchor(new Date(2026, 2, 9), 'Asia/Almaty').toISOString()
+    ).toBe('2026-03-09T07:00:00.000Z');
+    expect(calendarDayAnchor(new Date(2026, 2, 9)).toISOString()).toBe(
+      '2026-03-09T12:00:00.000Z'
+    );
+  });
+
+  it('formats calendar titles in the Workspace timezone', () => {
+    const anchor = '2026-09-03T19:00:00.000Z';
+
+    expect(formatCalendarTitle('day', anchor, 'en', 'Asia/Almaty')).toContain(
+      'September 4, 2026'
+    );
+    expect(formatCalendarTitle('month', anchor, 'en', 'Asia/Almaty')).toBe(
+      'September 2026'
+    );
+    expect(formatCalendarTitle('week', anchor, 'en', 'Asia/Almaty')).toBe(
+      'Aug 31 - Sep 6, 2026'
+    );
+  });
+
+  it('uses the supplied Workspace timezone converter for time-off intervals', () => {
+    const convertDate = vi.fn(value =>
+      value === 'starts-at'
+        ? new Date(2026, 2, 9, 10, 0)
+        : new Date(2026, 2, 9, 11, 0)
+    );
+    const column = {
+      date: new Date(2026, 2, 9),
+      resourceId: 7,
+    };
+
+    expect(
+      buildTimeOffIntervals(
+        [{ resourceId: 7, startsAt: 'starts-at', endsAt: 'ends-at' }],
+        column,
+        convertDate
+      )
+    ).toEqual([{ startMinute: 600, endMinute: 660 }]);
+    expect(convertDate).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the time-off title on clipped intervals for calendar labels', () => {
+    const column = { date: new Date(2026, 2, 9), resourceId: 7 };
+
+    expect(
+      buildTimeOffIntervals(
+        [
+          {
+            endsAt: new Date(2026, 2, 9, 17, 0),
+            resourceId: null,
+            startsAt: new Date(2026, 2, 9, 16, 0),
+            title: 'Training',
+          },
+        ],
+        column
+      )
+    ).toEqual([{ endMinute: 1020, startMinute: 960, title: 'Training' }]);
   });
 
   it('shifts list view by two weeks', () => {

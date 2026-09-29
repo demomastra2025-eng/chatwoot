@@ -1,5 +1,9 @@
 export const CALENDAR_STORAGE_KEY = 'onelink:scheduling:calendar-preferences';
 
+// Company timezone used by the appointment calendar until an account-level
+// workspace timezone setting exists. Specialist schedules default to it too.
+export const DEFAULT_WORKSPACE_TIMEZONE = 'Asia/Almaty';
+
 export const SCHEDULING_VIEW_ORDER = ['day', 'week', 'month', 'list', 'kanban'];
 
 export const SCHEDULING_VIEWS = [

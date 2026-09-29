@@ -84,6 +84,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     selectedResourceIds: [],
     showInactiveAppointments: false,
     statusFilters: [],
+    workspaceTimezone: null,
     ui: {
       error: null,
       isLoading: false,
@@ -95,9 +96,18 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     appointments: state => state.payload.appointments,
     breakRules: state => state.payload.breakRules,
     calendarTitle: state =>
-      formatCalendarTitle(state.currentView, state.anchorDate),
+      formatCalendarTitle(
+        state.currentView,
+        state.anchorDate,
+        undefined,
+        state.workspaceTimezone
+      ),
     currentRange: state =>
-      buildCalendarRange(state.currentView, state.anchorDate),
+      buildCalendarRange(
+        state.currentView,
+        state.anchorDate,
+        state.workspaceTimezone
+      ),
     expenses: state => state.payload.expenses,
     holidays: state => state.payload.holidays,
     payments: state => state.payload.payments,
@@ -168,11 +178,16 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.persistPreferences();
     },
 
+    setWorkspaceTimezone(timezone) {
+      this.workspaceTimezone = timezone || null;
+    },
+
     shiftAnchor(direction) {
       this.anchorDate = shiftAnchorDate(
         this.currentView,
         this.anchorDate,
-        direction
+        direction,
+        this.workspaceTimezone
       ).toISOString();
       this.persistPreferences();
     },
@@ -239,7 +254,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       try {
         const { from, to } = buildCalendarRange(
           this.currentView,
-          this.anchorDate
+          this.anchorDate,
+          this.workspaceTimezone
         );
         const includeSlots =
           options.includeSlots ?? ['day', 'week'].includes(this.currentView);
@@ -320,7 +336,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     appointmentMatchesActiveView(appointment) {
       const currentRange = buildCalendarRange(
         this.currentView,
-        this.anchorDate
+        this.anchorDate,
+        this.workspaceTimezone
       );
       const crmReferencesStore = useCrmReferencesStore();
       const matchesCustomFields = appointmentMatchesCustomFieldFilters(

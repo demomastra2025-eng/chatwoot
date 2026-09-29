@@ -32,6 +32,85 @@ RSpec.describe 'Notifications API', type: :request do
         expect(response_json['data']['payload'].first['primary_actor']).not_to be_nil
       end
 
+      describe 'communication thread targets' do
+        let(:conversation) { create(:conversation, account: account) }
+        let!(:thread_notification) do
+          create(
+            :notification,
+            account: account,
+            user: admin,
+            notification_type: 'conversation_creation',
+            primary_actor: conversation
+          )
+        end
+
+        # Database lookup: the conversation object in hand may carry a stale
+        # thread association when the resolver linked it on its own copy.
+        def thread_for(conversation)
+          existing_link = CommunicationThreadConversation.find_by(conversation_id: conversation.id)
+          return existing_link.communication_thread if existing_link
+
+          communication_thread = create(:communication_thread, account: account, contact: conversation.contact)
+          create(
+            :communication_thread_conversation,
+            account: account,
+            communication_thread: communication_thread,
+            conversation: conversation
+          )
+          communication_thread
+        end
+
+        def notification_payload
+          get "/api/v1/accounts/#{account.id}/notifications",
+              headers: admin.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:success)
+          response.parsed_body['data']['payload'].detect { |item| item['id'] == thread_notification.id }
+        end
+
+        it 'exposes the canonical communication thread target for conversation notifications' do
+          account.enable_features!('communication_threads')
+          communication_thread = thread_for(conversation)
+
+          expect(notification_payload['communication_thread_id']).to eq(communication_thread.display_id)
+        end
+
+        it 'does not expose thread targets when communication threads are disabled' do
+          account.disable_features!('communication_threads')
+          thread_for(conversation)
+
+          expect(notification_payload['communication_thread_id']).to be_nil
+        end
+
+        it 'returns no thread target for a conversation outside any thread' do
+          account.enable_features!('communication_threads')
+          CommunicationThreadConversation.where(conversation_id: conversation.id).delete_all
+
+          expect(notification_payload['communication_thread_id']).to be_nil
+        end
+
+        it 'returns the same thread target as the realtime notification payload' do
+          account.enable_features!('communication_threads')
+          communication_thread = thread_for(conversation)
+
+          thread_id = notification_payload['communication_thread_id']
+
+          expect(thread_id).to eq(communication_thread.display_id)
+          expect(Notification.find(thread_notification.id).push_event_data[:communication_thread_id]).to eq(thread_id)
+        end
+
+        it 'ignores a stale thread link whose thread belongs to another contact' do
+          account.enable_features!('communication_threads')
+          thread_for(conversation)
+          # Skip callbacks so the thread resolver cannot relink the conversation.
+          conversation.update_columns(contact_id: create(:contact, account: account).id) # rubocop:disable Rails/SkipsModelValidations
+
+          expect(notification_payload['communication_thread_id']).to be_nil
+          expect(Notification.find(thread_notification.id).push_event_data[:communication_thread_id]).to be_nil
+        end
+      end
+
       it 'returns orphaned notifications using the stored snapshot' do
         conversation = create(:conversation, :with_assignee, account: account)
         notification = create(

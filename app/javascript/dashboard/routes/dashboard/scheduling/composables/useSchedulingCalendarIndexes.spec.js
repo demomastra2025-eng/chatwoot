@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { utcToZonedTime } from 'date-fns-tz';
 
 import { useSchedulingCalendarIndexes } from './useSchedulingCalendarIndexes';
 
@@ -111,6 +112,53 @@ describe('useSchedulingCalendarIndexes', () => {
       availableSlots: 0,
       holidays: 1,
       timeOff: 0,
+    });
+  });
+
+  it('groups slots and appointments by the converted Workspace calendar day', () => {
+    // 20:00 UTC on 8 March is 01:00 on 9 March in Almaty (UTC+5).
+    const lateSlots = ref([
+      {
+        resourceId: 12,
+        startsAt: '2026-03-08T20:00:00.000Z',
+        endsAt: '2026-03-08T20:30:00.000Z',
+      },
+    ]);
+    const lateAppointments = ref([
+      {
+        id: 2,
+        resourceId: 12,
+        startsAt: '2026-03-08T21:00:00.000Z',
+        endsAt: '2026-03-08T21:30:00.000Z',
+      },
+    ]);
+    const days = [new Date(2026, 2, 8), new Date(2026, 2, 9)];
+    const zoned = useSchedulingCalendarIndexes({
+      appointments: lateAppointments,
+      convertDate: value => utcToZonedTime(new Date(value), 'Asia/Almaty'),
+      holidays: ref([]),
+      resources,
+      slots: lateSlots,
+      timeOffs: ref([]),
+    });
+    const browserLocal = useSchedulingCalendarIndexes({
+      appointments: lateAppointments,
+      holidays: ref([]),
+      resources,
+      slots: lateSlots,
+      timeOffs: ref([]),
+    });
+
+    expect(zoned.buildMonthStats(days).get('2026-03-09')).toMatchObject({
+      appointments: 1,
+      availableSlots: 1,
+    });
+    expect(
+      zoned.findFirstAvailableSlotForDay({ day: new Date(2026, 2, 9) })
+    ).toMatchObject({ startsAt: '2026-03-08T20:00:00.000Z' });
+    expect(browserLocal.buildMonthStats(days).get('2026-03-08')).toMatchObject({
+      appointments: 1,
+      availableSlots: 1,
     });
   });
 

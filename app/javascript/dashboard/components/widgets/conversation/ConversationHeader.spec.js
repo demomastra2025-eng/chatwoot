@@ -1,10 +1,11 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import chatlistRu from 'dashboard/i18n/locale/ru/chatlist.json';
 import conversationRu from 'dashboard/i18n/locale/ru/conversation.json';
 import schedulingRu from 'dashboard/i18n/locale/ru/scheduling.json';
 import ConversationHeader from './ConversationHeader.vue';
+import { rememberConversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 
 const translationMessages = {
   ...chatlistRu,
@@ -46,7 +47,7 @@ vi.mock('dashboard/helper/URLHelper', () => ({
 vi.mock('vue-router', () => ({
   useRoute: () => ({
     name: 'communication_thread_conversation',
-    params: {},
+    params: { communication_thread_id: 7 },
     query: { status: 'open' },
   }),
 }));
@@ -121,6 +122,49 @@ const mountComponent = props =>
   });
 
 describe('ConversationHeader', () => {
+  afterEach(() => {
+    window.sessionStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('returns to the remembered list URL with its filters', () => {
+    rememberConversationListReturnPath({
+      accountId: 530,
+      threadId: 7,
+      path: '/app/accounts/530/custom_view/9/conversations?status=pending&crm_stage_id=20',
+    });
+
+    const wrapper = mountComponent({ showBackButton: true });
+
+    expect(
+      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
+    ).toBe(
+      '/app/accounts/530/custom_view/9/conversations?status=pending&crm_stage_id=20'
+    );
+  });
+
+  it('falls back to the thread list URL when no list was remembered', () => {
+    const wrapper = mountComponent({ showBackButton: true });
+
+    expect(
+      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
+    ).toBe('/app/accounts/530/communication_threads');
+  });
+
+  it('ignores a list URL remembered for another thread', () => {
+    rememberConversationListReturnPath({
+      accountId: 530,
+      threadId: 8,
+      path: '/app/accounts/530/custom_view/9/conversations',
+    });
+
+    const wrapper = mountComponent({ showBackButton: true });
+
+    expect(
+      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
+    ).toBe('/app/accounts/530/communication_threads');
+  });
+
   it('shows communication thread contact identities instead of target inbox names', () => {
     const wrapper = mountComponent();
 

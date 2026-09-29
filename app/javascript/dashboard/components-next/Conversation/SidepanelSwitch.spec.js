@@ -123,7 +123,7 @@ describe('SidepanelSwitch', () => {
     });
   });
 
-  it('hides the CRM deals switch when conversation pipelines are hidden by account policy', () => {
+  it('keeps the CRM deals switch independent from navigation visibility', () => {
     testState.currentAccount.value = {
       settings: {
         dashboard_sidebar_hidden_items: ['Conversation:Pipelines'],
@@ -135,10 +135,10 @@ describe('SidepanelSwitch', () => {
 
     expect(
       wrapper.find('[data-icon="i-lucide-briefcase-business"]').exists()
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('hides the scheduling switch when appointment statuses are hidden by account policy', () => {
+  it('keeps the scheduling switch independent from navigation visibility', () => {
     testState.currentUser.value = {
       accounts: [{ id: 530, permissions: ['agent'] }],
     };
@@ -152,7 +152,39 @@ describe('SidepanelSwitch', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-icon="i-lucide-calendar-clock"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('hides the CRM deals switch for a custom role without deal permission', () => {
+    testState.currentUser.value = {
+      accounts: [{ id: 530, permissions: ['custom_role'] }],
+    };
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.find('[data-icon="i-lucide-briefcase-business"]').exists()
+    ).toBe(false);
+  });
+
+  it('hides the scheduling switch when scheduling is disabled', () => {
+    testState.isFeatureEnabledonAccount.value = (_accountId, feature) =>
+      feature !== 'scheduling';
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.find('[data-icon="i-lucide-calendar-clock"]').exists()).toBe(
       false
     );
+  });
+
+  it('keeps the existing touch and Copilot switches', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.find('[data-icon="i-lucide-timer-reset"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.find('[data-icon="i-woot-captain"]').exists()).toBe(true);
   });
 });

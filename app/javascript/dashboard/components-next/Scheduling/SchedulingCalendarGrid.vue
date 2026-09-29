@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { utcToZonedTime } from 'date-fns-tz';
 
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import {
@@ -69,6 +70,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  workspaceTimezone: {
+    type: String,
+    default: '',
+  },
 });
 
 const emit = defineEmits([
@@ -88,8 +93,14 @@ const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
 
+// The list shows the same workspace wall-clock time as the calendar grid.
+const toCalendarDate = value =>
+  props.workspaceTimezone
+    ? utcToZonedTime(new Date(value), props.workspaceTimezone)
+    : new Date(value);
+
 const listDays = computed(() =>
-  buildDayListForView(props.view, props.anchorDate)
+  buildDayListForView(props.view, toCalendarDate(props.anchorDate))
 );
 
 const getDayRange = day => {
@@ -103,8 +114,8 @@ const getDayRange = day => {
 };
 
 const getAppointmentDisplayRangeForDay = (appointment, day) => {
-  const startsAt = new Date(appointment.startsAt);
-  const endsAt = new Date(appointment.endsAt);
+  const startsAt = toCalendarDate(appointment.startsAt);
+  const endsAt = toCalendarDate(appointment.endsAt);
   const { end, start } = getDayRange(day);
 
   if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
@@ -199,6 +210,7 @@ const handleStatusChange = payload => {
         :view="view"
         :work-rules="workRules"
         :workday-overrides="workdayOverrides"
+        :workspace-timezone="workspaceTimezone"
         @create-appointment="emit('createAppointment', $event)"
         @move-appointment="emit('moveAppointment', $event)"
         @resize-appointment="emit('resizeAppointment', $event)"

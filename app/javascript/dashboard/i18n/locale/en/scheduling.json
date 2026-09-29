@@ -117,6 +117,7 @@
       "STATUS": "Appointment status"
     },
     "CALENDAR": {
+      "ALL_RESOURCES_UNAVAILABLE": "All specialists unavailable",
       "AVAILABLE_SLOTS": "{count} free",
       "DESCRIPTION": "Manage appointments, specialist capacity, and blocked time from one native workspace calendar.",
       "MORE_APPOINTMENTS": "+{count} more",
@@ -125,7 +126,10 @@
       "NO_APPOINTMENTS_STATUS": "No appointments in this status",
       "NO_RESOURCES": "Add at least one active specialist to start scheduling.",
       "NO_SERVICE": "No service",
-      "UNAVAILABLE_SLOT": "This time is unavailable"
+      "RESOURCES_UNAVAILABLE": "Unavailable: {names}",
+      "UNAVAILABLE": "Unavailable",
+      "UNAVAILABLE_SLOT": "This time is unavailable",
+      "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
     "DIALOGS": {
       "CLIENT": "Client",

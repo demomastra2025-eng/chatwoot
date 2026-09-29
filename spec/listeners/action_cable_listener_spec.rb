@@ -578,6 +578,43 @@ describe ActionCableListener do
     end
   end
 
+  describe 'notification payloads for a conversation in a communication thread' do
+    let!(:communication_thread) do
+      account.enable_features!('communication_threads')
+      thread = create(:communication_thread, account: account, contact: conversation.contact)
+      CommunicationThreadConversation.where(conversation_id: conversation.id).delete_all
+      create(:communication_thread_conversation, account: account, communication_thread: thread, conversation: conversation)
+      # The link is created behind the already-loaded conversation; drop its
+      # cached thread association so it reads the link like a freshly loaded record.
+      conversation.association(:communication_thread_conversation).reset
+      conversation.association(:communication_thread).reset
+      thread
+    end
+    let!(:notification) do
+      create(:notification, account: account, user: agent, notification_type: 'conversation_mention', primary_actor: conversation)
+    end
+
+    it 'sends the thread target with notification.created' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [agent.pubsub_token],
+        'notification.created',
+        hash_including(notification: hash_including(communication_thread_id: communication_thread.display_id))
+      )
+
+      listener.notification_created(Events::Base.new(:'notification.created', Time.zone.now, notification: notification))
+    end
+
+    it 'sends the thread target with notification.updated' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [agent.pubsub_token],
+        'notification.updated',
+        hash_including(notification: hash_including(communication_thread_id: communication_thread.display_id))
+      )
+
+      listener.notification_updated(Events::Base.new(:'notification.updated', Time.zone.now, notification: notification))
+    end
+  end
+
   describe '#notification_deleted' do
     let(:event_name) { :'notification.deleted' }
     let!(:notification) { create(:notification, account: account, user: agent) }

@@ -75,6 +75,76 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.visibleResources).toEqual([{ id: 5, name: 'Dr. Sam' }]);
   });
 
+  it('requests Workspace-timezone day boundaries once a timezone is set', async () => {
+    showMock.mockResolvedValue({ data: { payload: {} } });
+    const store = useSchedulingCalendarStore();
+    store.setView('day');
+    // 20:30 UTC on 8 March is already 9 March in Almaty (UTC+5).
+    store.setAnchorDate('2026-03-08T20:30:00.000Z');
+    store.setWorkspaceTimezone('Asia/Almaty');
+
+    await store.fetchCalendar();
+
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: '2026-03-08T19:00:00.000Z',
+        to: '2026-03-09T18:59:59.999Z',
+        view: 'day',
+      })
+    );
+    expect(store.currentRange.from.toISOString()).toBe(
+      '2026-03-08T19:00:00.000Z'
+    );
+  });
+
+  it('keeps browser-local day boundaries without a Workspace timezone', async () => {
+    showMock.mockResolvedValue({ data: { payload: {} } });
+    const store = useSchedulingCalendarStore();
+    store.setView('day');
+    store.setAnchorDate('2026-03-08T20:30:00.000Z');
+
+    await store.fetchCalendar();
+
+    expect(showMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: '2026-03-08T00:00:00.000Z',
+        to: '2026-03-08T23:59:59.999Z',
+      })
+    );
+  });
+
+  it('shifts the anchor across Workspace calendar days', () => {
+    const store = useSchedulingCalendarStore();
+    store.setView('day');
+    store.setAnchorDate('2026-03-08T20:30:00.000Z');
+    store.setWorkspaceTimezone('Asia/Almaty');
+
+    store.shiftAnchor(1);
+
+    expect(store.anchorDate).toBe('2026-03-09T20:30:00.000Z');
+    expect(store.currentRange.from.toISOString()).toBe(
+      '2026-03-09T19:00:00.000Z'
+    );
+  });
+
+  it('keeps realtime appointments that fall inside the Workspace day', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'day';
+    store.anchorDate = '2026-03-09T06:00:00.000Z';
+    store.setWorkspaceTimezone('Asia/Almaty');
+
+    // 19:30 UTC on 8 March is 00:30 on 9 March in Almaty.
+    store.syncAppointment({
+      ends_at: '2026-03-08T20:00:00.000Z',
+      id: 11,
+      resource_id: 5,
+      starts_at: '2026-03-08T19:30:00.000Z',
+      status: 'confirmed',
+    });
+
+    expect(store.payload.appointments.map(item => item.id)).toEqual([11]);
+  });
+
   it('passes appointment custom field filters to the calendar request', async () => {
     showMock.mockResolvedValue({
       data: {

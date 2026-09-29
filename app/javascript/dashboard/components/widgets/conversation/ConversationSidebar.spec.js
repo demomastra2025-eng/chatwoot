@@ -9,6 +9,24 @@ const mocks = vi.hoisted(() => ({
   uiSettings: null,
   width: null,
   updateUISettings: vi.fn(),
+  isFeatureEnabledonAccount: { __v_isRef: true, value: () => true },
+  permissions: ['administrator', 'crm_deal_manage', 'scheduling_manage'],
+}));
+
+vi.mock('dashboard/composables/store', () => ({
+  useMapGetter: name => {
+    const getters = {
+      'accounts/isFeatureEnabledonAccount': mocks.isFeatureEnabledonAccount,
+      getCurrentAccountId: { __v_isRef: true, value: 1 },
+      getCurrentUser: {
+        __v_isRef: true,
+        get value() {
+          return { accounts: [{ id: 1, permissions: mocks.permissions }] };
+        },
+      },
+    };
+    return getters[name];
+  },
 }));
 
 vi.mock('dashboard/composables/useUISettings', () => ({
@@ -61,6 +79,12 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
 describe('ConversationSidebar', () => {
   beforeEach(() => {
     mocks.currentAccount = ref({ settings: {} });
+    mocks.isFeatureEnabledonAccount.value = () => true;
+    mocks.permissions = [
+      'administrator',
+      'crm_deal_manage',
+      'scheduling_manage',
+    ];
     mocks.width = ref(390);
     mocks.updateUISettings.mockClear();
   });
@@ -112,7 +136,7 @@ describe('ConversationSidebar', () => {
     expect(wrapper.classes()).not.toContain('xl:w-[30rem]');
   });
 
-  it('does not render hidden deals or appointments panels from account visibility settings', () => {
+  it('renders the deals panel independently from navigation visibility', () => {
     mocks.currentAccount.value = {
       settings: {
         dashboard_sidebar_hidden_items: [
@@ -122,6 +146,50 @@ describe('ConversationSidebar', () => {
         dashboard_sidebar_hidden_items_version: 13,
       },
     };
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_crm_deal_panel_open: true,
+      is_scheduling_appointments_panel_open: false,
+      is_touch_sidebar_open: false,
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.findComponent({ name: 'CrmConversationDealsSidebar' }).exists()
+    ).toBe(true);
+  });
+
+  it('renders the appointments panel independently from navigation visibility', () => {
+    mocks.currentAccount.value = {
+      settings: {
+        dashboard_sidebar_hidden_items: [
+          'Conversation:Pipelines',
+          'Conversation:AppointmentStatuses',
+        ],
+        dashboard_sidebar_hidden_items_version: 13,
+      },
+    };
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_crm_deal_panel_open: false,
+      is_scheduling_appointments_panel_open: true,
+      is_touch_sidebar_open: false,
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper
+        .findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
+        .exists()
+    ).toBe(true);
+  });
+
+  it('does not render persisted deals or appointments panels that are unavailable', () => {
+    mocks.permissions = ['custom_role'];
+    mocks.isFeatureEnabledonAccount.value = (_accountId, feature) =>
+      feature !== 'scheduling';
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,

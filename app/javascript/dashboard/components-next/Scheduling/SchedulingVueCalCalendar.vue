@@ -3,10 +3,10 @@ import { computed, nextTick, onMounted, ref, toRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { VueCal } from 'vue-cal';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import {
   APPOINTMENT_STATUS_ICONS,
-  HOUR_ROW_HEIGHT,
   MINUTE_STEP,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 import { buildCustomFieldSummary } from 'dashboard/stores/crm/customFieldFormatter';
@@ -16,7 +16,6 @@ import {
   buildDayListForView,
   clipIntervalToDay,
   buildTimeOffIntervals,
-  deriveVisibleMinuteWindow,
   formatDateKey,
   formatTimeLabel,
   minuteOfDayFromDate,
@@ -29,6 +28,10 @@ import {
 import { useSchedulingCalendarIndexes } from 'dashboard/routes/dashboard/scheduling/composables/useSchedulingCalendarIndexes';
 
 const props = defineProps({
+  allDayEvents: {
+    type: Boolean,
+    default: false,
+  },
   anchorDate: {
     type: [Date, String],
     required: true,
@@ -85,6 +88,12 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  // IANA timezone used to render and emit calendar times. When it is empty the
+  // calendar keeps the browser-local behaviour for callers that do not opt in.
+  workspaceTimezone: {
+    type: String,
+    default: '',
+  },
 });
 
 const emit = defineEmits([
@@ -94,9 +103,10 @@ const emit = defineEmits([
   'selectAppointment',
 ]);
 
-const TIMELINE_ROW_HEIGHT_MULTIPLIER = 1.25;
 const EVENT_CLICK_SUPPRESSION_MS = 900;
+const TIMELINE_DISPLAY_STEP_MIN = 30;
 const TIMELINE_HALF_HOUR_STEP_MIN = 30;
+const TIMELINE_HOUR_HEIGHT = 48;
 const TIMELINE_HOUR_STEP_MIN = 60;
 
 const { t, locale } = useI18n();
@@ -116,6 +126,17 @@ const localeCode = computed(() => {
   return normalized;
 });
 
+// Calendar dates are wall-clock dates in the workspace timezone; API values stay UTC.
+const toCalendarDate = value =>
+  props.workspaceTimezone
+    ? utcToZonedTime(toDate(value), props.workspaceTimezone)
+    : toDate(value);
+const toApiIso = value =>
+  (props.workspaceTimezone
+    ? zonedTimeToUtc(toDate(value), props.workspaceTimezone)
+    : toDate(value)
+  ).toISOString();
+
 const appointmentsRef = toRef(props, 'appointments');
 const holidaysRef = toRef(props, 'holidays');
 const resourcesRef = toRef(props, 'resources');
@@ -129,6 +150,7 @@ const {
   slotStepMin,
 } = useSchedulingCalendarIndexes({
   appointments: appointmentsRef,
+  convertDate: toCalendarDate,
   holidays: holidaysRef,
   resources: resourcesRef,
   slots: slotsRef,
@@ -136,14 +158,17 @@ const {
 });
 
 const isTimelineView = computed(() => ['day', 'week'].includes(props.view));
+const buildWorkspaceTimeOffIntervals = column =>
+  buildTimeOffIntervals(props.timeOffs, column, toCalendarDate);
+const calendarAnchorDate = computed(() => toCalendarDate(props.anchorDate));
 const monthDays = computed(() =>
-  buildDayListForView('month', props.anchorDate)
+  buildDayListForView('month', calendarAnchorDate.value)
 );
 const columns = computed(() =>
-  buildCalendarColumns(props.view, props.anchorDate, props.resources)
+  buildCalendarColumns(props.view, calendarAnchorDate.value, props.resources)
 );
 const monthStats = computed(() => buildMonthStats(monthDays.value));
-const todayDateKey = computed(() => formatDateKey(new Date()));
+const todayDateKey = computed(() => formatDateKey(toCalendarDate(new Date())));
 
 const resourceById = computed(() => {
   return props.resources.reduce((result, resource) => {
@@ -152,26 +177,20 @@ const resourceById = computed(() => {
   }, {});
 });
 
-const timelineStepMin = computed(() => MINUTE_STEP);
+const timelineStepMin = computed(() => TIMELINE_DISPLAY_STEP_MIN);
 const timelineSlotDurationStepMin = computed(() =>
   Math.max(MINUTE_STEP, slotStepMin.value || MINUTE_STEP)
 );
 
 const visibleWindow = computed(() => {
-  return deriveVisibleMinuteWindow({
-    appointments: props.appointments,
-    columns: columns.value,
-    workRules: props.workRules,
-    workdayOverrides: props.workdayOverrides,
-  });
+  return {
+    startMinute: 0,
+    endMinute: 24 * 60,
+  };
 });
 
 const timeCellHeight = computed(() => {
-  return (
-    HOUR_ROW_HEIGHT *
-    TIMELINE_ROW_HEIGHT_MULTIPLIER *
-    (timelineStepMin.value / 60)
-  );
+  return TIMELINE_HOUR_HEIGHT * (timelineStepMin.value / 60);
 });
 
 const minutePixelSize = computed(() => {
@@ -214,7 +233,7 @@ const calendarCssVars = computed(() => ({
   '--scheduling-hour-grid-offset': timelineHourGridOffset.value,
   '--scheduling-hour-grid-size': timelineHourGridSize.value,
   '--scheduling-weekday-bar-size': weekdayBarSize.value,
-  '--vuecal-min-schedule-size': '0px',
+  '--vuecal-min-schedule-size': props.view === 'day' ? '7.5rem' : '0px',
 }));
 
 const mergeIntervals = intervals => {
@@ -240,48 +259,6 @@ const mergeIntervals = intervals => {
       result.push({ ...interval });
       return result;
     }, []);
-};
-
-const mergeLabeledIntervals = intervals => {
-  return intervals
-    .filter(Boolean)
-    .slice()
-    .sort((left, right) => left.startMinute - right.startMinute)
-    .reduce((result, interval) => {
-      const labels = new Set(
-        [interval.label].flat().filter(value => String(value || '').trim())
-      );
-      const lastInterval = result[result.length - 1];
-
-      if (!lastInterval) {
-        result.push({
-          startMinute: interval.startMinute,
-          endMinute: interval.endMinute,
-          labels,
-        });
-        return result;
-      }
-
-      if (interval.startMinute <= lastInterval.endMinute) {
-        lastInterval.endMinute = Math.max(
-          lastInterval.endMinute,
-          interval.endMinute
-        );
-        labels.forEach(label => lastInterval.labels.add(label));
-        return result;
-      }
-
-      result.push({
-        startMinute: interval.startMinute,
-        endMinute: interval.endMinute,
-        labels,
-      });
-      return result;
-    }, [])
-    .map(interval => ({
-      ...interval,
-      label: Array.from(interval.labels).join(', '),
-    }));
 };
 
 const subtractIntervals = (baseIntervals, blockedIntervals) => {
@@ -401,8 +378,8 @@ const buildAppointmentIntervalsForColumn = (
     })
     .map(appointment => {
       return clipIntervalToDay(
-        toDate(appointment.startsAt),
-        toDate(appointment.endsAt),
+        toCalendarDate(appointment.startsAt),
+        toCalendarDate(appointment.endsAt),
         column.date
       );
     })
@@ -415,7 +392,7 @@ const buildCreatableIntervalsForColumn = (
 ) => {
   return subtractIntervals(buildWorkingIntervalsForColumn(column), [
     ...buildBreakIntervals(props.breakRules, props.workdayOverrides, column),
-    ...buildTimeOffIntervals(props.timeOffs, column),
+    ...buildWorkspaceTimeOffIntervals(column),
     ...buildAppointmentIntervalsForColumn(column, { excludeAppointmentId }),
   ]);
 };
@@ -423,7 +400,7 @@ const buildCreatableIntervalsForColumn = (
 const buildAvailabilityDisplayIntervalsForColumn = column => {
   return subtractIntervals(buildWorkingIntervalsForColumn(column), [
     ...buildBreakIntervals(props.breakRules, props.workdayOverrides, column),
-    ...buildTimeOffIntervals(props.timeOffs, column),
+    ...buildWorkspaceTimeOffIntervals(column),
   ]);
 };
 
@@ -443,61 +420,10 @@ const resolveFullDayBackgroundKindForColumn = column => {
     return null;
   }
 
-  const timeOffIntervals = buildTimeOffIntervals(props.timeOffs, column);
+  const timeOffIntervals = buildWorkspaceTimeOffIntervals(column);
   const isDayOff =
     timeOffIntervals.length &&
     subtractIntervals(workingIntervals, timeOffIntervals).length === 0;
-
-  return isDayOff ? 'day-off' : 'closed';
-};
-
-const resolveFullDayBackgroundKindForDay = day => {
-  if (blockingHolidayForDay(day)) {
-    return 'holiday';
-  }
-
-  if (!props.resources.length) {
-    return null;
-  }
-
-  const dayColumns = columns.value.filter(column => {
-    return column.dateKey === formatDateKey(day);
-  });
-
-  if (!dayColumns.length) {
-    return 'closed';
-  }
-
-  const hasAnyWorkingIntervals = dayColumns.some(column => {
-    return buildWorkingIntervalsForColumn(column).length > 0;
-  });
-
-  if (!hasAnyWorkingIntervals) {
-    return 'closed';
-  }
-
-  const displayAvailabilityIntervals = mergeIntervals(
-    dayColumns.flatMap(column =>
-      buildAvailabilityDisplayIntervalsForColumn(column)
-    )
-  );
-
-  if (displayAvailabilityIntervals.length) {
-    return null;
-  }
-
-  const isDayOff = dayColumns.every(column => {
-    const workingIntervals = buildWorkingIntervalsForColumn(column);
-    if (!workingIntervals.length) {
-      return false;
-    }
-
-    const timeOffIntervals = buildTimeOffIntervals(props.timeOffs, column);
-    return (
-      timeOffIntervals.length &&
-      subtractIntervals(workingIntervals, timeOffIntervals).length === 0
-    );
-  });
 
   return isDayOff ? 'day-off' : 'closed';
 };
@@ -592,21 +518,17 @@ const findCreatableResourceForRange = ({
 
 const weekDays = computed(() =>
   isWeekSharedTimeline.value
-    ? buildDayListForView('week', props.anchorDate)
+    ? buildDayListForView('week', calendarAnchorDate.value)
     : []
 );
-const timelineIncludesToday = computed(() => {
-  if (!isTimelineView.value) {
-    return false;
-  }
+const timelineScrollMinute = computed(() => {
+  const configuredStartMinutes = columns.value.flatMap(column =>
+    buildWorkingIntervalsForColumn(column).map(interval => interval.startMinute)
+  );
 
-  const todayKey = todayDateKey.value;
-
-  if (props.view === 'day') {
-    return formatDateKey(props.anchorDate) === todayKey;
-  }
-
-  return weekDays.value.some(day => formatDateKey(day) === todayKey);
+  return configuredStartMinutes.length
+    ? Math.min(...configuredStartMinutes)
+    : 8 * 60;
 });
 
 const schedules = computed(() => {
@@ -698,9 +620,9 @@ const buildTimelinePayloadForStart = ({
         }
 
         return {
-          endsAt: endsAt.toISOString(),
+          endsAt: toApiIso(endsAt),
           resourceId,
-          startsAt: startsAt.toISOString(),
+          startsAt: toApiIso(startsAt),
         };
       })
       .find(Boolean) || null
@@ -719,6 +641,114 @@ const buildUnavailableIntervals = intervals => {
   );
 };
 
+const formatUnavailableTimeLabel = ({
+  endMinute,
+  startMinute,
+  unavailableResources = [],
+  totalResources = 1,
+}) => {
+  let label = t('SCHEDULING.CALENDAR.UNAVAILABLE');
+
+  if (totalResources > 1) {
+    label =
+      unavailableResources.length === totalResources
+        ? t('SCHEDULING.CALENDAR.ALL_RESOURCES_UNAVAILABLE')
+        : t('SCHEDULING.CALENDAR.RESOURCES_UNAVAILABLE', {
+            names: unavailableResources
+              .map(resource => resource.name)
+              .join(', '),
+          });
+  }
+
+  return t('SCHEDULING.CALENDAR.UNAVAILABLE_TIME_RANGE', {
+    end: formatTimeLabel(endMinute),
+    label,
+    start: formatTimeLabel(startMinute),
+  });
+};
+
+const buildWeekUnavailableSegments = day => {
+  const dateKey = formatDateKey(day);
+  const dayColumns = columns.value.filter(column => column.dateKey === dateKey);
+  const availabilityByResource = dayColumns.map(column => ({
+    intervals:
+      props.resources.length > 1
+        ? buildAvailabilityDisplayIntervalsForColumn(column)
+        : buildWorkingIntervalsForColumn(column),
+    resource: resourceById.value[column.resourceId] || {
+      id: column.resourceId,
+      name: '—',
+    },
+  }));
+  const boundaries = new Set([
+    visibleWindow.value.startMinute,
+    visibleWindow.value.endMinute,
+  ]);
+
+  availabilityByResource.forEach(({ intervals }) => {
+    intervals.forEach(interval => {
+      boundaries.add(
+        Math.max(visibleWindow.value.startMinute, interval.startMinute)
+      );
+      boundaries.add(
+        Math.min(visibleWindow.value.endMinute, interval.endMinute)
+      );
+    });
+  });
+
+  const sortedBoundaries = Array.from(boundaries)
+    .filter(
+      minute =>
+        minute >= visibleWindow.value.startMinute &&
+        minute <= visibleWindow.value.endMinute
+    )
+    .sort((left, right) => left - right);
+
+  return sortedBoundaries
+    .slice(0, -1)
+    .map((startMinute, index) => {
+      const endMinute = sortedBoundaries[index + 1];
+      const unavailableResources = availabilityByResource
+        .filter(({ intervals }) => {
+          return !intervals.some(
+            interval =>
+              interval.startMinute <= startMinute &&
+              interval.endMinute >= endMinute
+          );
+        })
+        .map(({ resource }) => resource);
+
+      return {
+        endMinute,
+        resourceKey: unavailableResources
+          .map(resource => resource.id)
+          .sort((left, right) => Number(left) - Number(right))
+          .join('-'),
+        startMinute,
+        unavailableResources,
+      };
+    })
+    .filter(
+      interval =>
+        interval.endMinute > interval.startMinute &&
+        interval.unavailableResources.length > 0
+    )
+    .reduce((result, interval) => {
+      const previous = result[result.length - 1];
+      if (
+        previous &&
+        previous.resourceKey === interval.resourceKey &&
+        previous.endMinute === interval.startMinute
+      ) {
+        previous.endMinute = interval.endMinute;
+        return result;
+      }
+
+      result.push(interval);
+      return result;
+    }, []);
+};
+
 const unavailableBackgroundEvents = computed(() => {
   if (!isTimelineView.value || !props.resources.length) {
     return [];
@@ -726,16 +756,12 @@ const unavailableBackgroundEvents = computed(() => {
 
   if (isWeekSharedTimeline.value) {
     return weekDays.value.flatMap(day => {
-      if (resolveFullDayBackgroundKindForDay(day)) {
+      if (blockingHolidayForDay(day)) {
         return [];
       }
 
       const dateKey = formatDateKey(day);
-      const intervals = buildUnavailableIntervals(
-        columns.value
-          .filter(column => column.dateKey === dateKey)
-          .flatMap(column => buildAvailabilityDisplayIntervalsForColumn(column))
-      );
+      const intervals = buildWeekUnavailableSegments(day);
 
       return intervals.map(interval => {
         const start = new Date(day);
@@ -752,6 +778,10 @@ const unavailableBackgroundEvents = computed(() => {
           end,
           background: true,
           backgroundKind: 'unavailable',
+          backgroundLabel: formatUnavailableTimeLabel({
+            ...interval,
+            totalResources: props.resources.length,
+          }),
           class:
             'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--unavailable',
         };
@@ -765,7 +795,7 @@ const unavailableBackgroundEvents = computed(() => {
     }
 
     const intervals = buildUnavailableIntervals(
-      buildAvailabilityDisplayIntervalsForColumn(column)
+      buildWorkingIntervalsForColumn(column)
     );
 
     return intervals.map(interval => {
@@ -784,6 +814,7 @@ const unavailableBackgroundEvents = computed(() => {
         schedule: column.resourceId,
         background: true,
         backgroundKind: 'unavailable',
+        backgroundLabel: formatUnavailableTimeLabel(interval),
         class:
           'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--unavailable',
       };
@@ -798,101 +829,69 @@ const timelineBackgroundEvents = computed(() => {
 
   if (isWeekSharedTimeline.value) {
     return weekDays.value.flatMap(day => {
-      const events = [];
       const dateKey = formatDateKey(day);
-      const fullDayKind = resolveFullDayBackgroundKindForDay(day);
       const holiday = blockingHolidayForDay(day);
+      const column = columns.value.find(item => item.dateKey === dateKey);
 
-      if (fullDayKind) {
-        const start = new Date(day);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 1);
+      if (!holiday && props.resources.length === 1 && column) {
+        const intervalEvent = (interval, kind) => {
+          const start = new Date(day);
+          start.setHours(0, 0, 0, 0);
+          start.setMinutes(interval.startMinute, 0, 0);
 
-        events.push({
-          id: `${fullDayKind}-week-${dateKey}`,
-          start,
-          end,
-          background: true,
-          backgroundKind: fullDayKind,
-          backgroundLabel: holiday?.title || '',
-          class: `scheduling-vue-cal__background-event scheduling-vue-cal__background-event--${fullDayKind}`,
-        });
+          const end = new Date(day);
+          end.setHours(0, 0, 0, 0);
+          end.setMinutes(interval.endMinute, 0, 0);
 
-        if (fullDayKind === 'holiday') {
-          return events;
-        }
-      }
+          return {
+            id: `${kind}-week-${dateKey}-${interval.startMinute}`,
+            start,
+            end,
+            background: true,
+            backgroundKind: kind,
+            backgroundLabel: [
+              interval.title,
+              `${formatTimeLabel(interval.startMinute)}–${formatTimeLabel(interval.endMinute)}`,
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            class: `scheduling-vue-cal__background-event scheduling-vue-cal__background-event--${kind}`,
+          };
+        };
 
-      const dayColumns = columns.value.filter(
-        column => column.dateKey === dateKey
-      );
-      const breakIntervals = mergeLabeledIntervals(
-        dayColumns.flatMap(column =>
-          buildBreakIntervals(
+        return [
+          ...buildBreakIntervals(
             props.breakRules,
             props.workdayOverrides,
             column
-          ).map(interval => ({
-            startMinute: interval.startMinute,
-            endMinute: interval.endMinute,
-            label: interval.title || '',
-          }))
-        )
-      );
-      const timeOffIntervals = mergeLabeledIntervals(
-        dayColumns.flatMap(column =>
-          buildTimeOffIntervals(props.timeOffs, column).map(interval => ({
-            startMinute: interval.startMinute,
-            endMinute: interval.endMinute,
-            label: interval.title || '',
-          }))
-        )
-      );
+          ).map(interval => intervalEvent(interval, 'break')),
+          ...buildWorkspaceTimeOffIntervals(column).map(interval =>
+            intervalEvent(interval, 'time-off')
+          ),
+        ];
+      }
 
-      breakIntervals.forEach(interval => {
-        const start = new Date(day);
-        start.setHours(0, 0, 0, 0);
-        start.setMinutes(interval.startMinute, 0, 0);
+      if (!holiday) {
+        return [];
+      }
 
-        const end = new Date(day);
-        end.setHours(0, 0, 0, 0);
-        end.setMinutes(interval.endMinute, 0, 0);
+      const start = new Date(day);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
 
-        events.push({
-          id: `break-week-${dateKey}-${interval.startMinute}`,
+      return [
+        {
+          id: `holiday-week-${dateKey}`,
           start,
           end,
           background: true,
-          backgroundKind: 'break',
-          backgroundLabel: interval.label || '',
+          backgroundKind: 'holiday',
+          backgroundLabel: holiday.title || '',
           class:
-            'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--break',
-        });
-      });
-
-      timeOffIntervals.forEach(interval => {
-        const start = new Date(day);
-        start.setHours(0, 0, 0, 0);
-        start.setMinutes(interval.startMinute, 0, 0);
-
-        const end = new Date(day);
-        end.setHours(0, 0, 0, 0);
-        end.setMinutes(interval.endMinute, 0, 0);
-
-        events.push({
-          id: `timeoff-week-${dateKey}-${interval.startMinute}`,
-          start,
-          end,
-          background: true,
-          backgroundKind: 'time-off',
-          backgroundLabel: interval.label || '',
-          class:
-            'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--time-off',
-        });
-      });
-
-      return events;
+            'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--holiday',
+        },
+      ];
     });
   }
 
@@ -914,7 +913,12 @@ const timelineBackgroundEvents = computed(() => {
         schedule: column.resourceId,
         background: true,
         backgroundKind: fullDayKind,
-        backgroundLabel: holiday?.title || '',
+        backgroundLabel:
+          holiday?.title ||
+          formatUnavailableTimeLabel({
+            startMinute: visibleWindow.value.startMinute,
+            endMinute: visibleWindow.value.endMinute,
+          }),
         class: `scheduling-vue-cal__background-event scheduling-vue-cal__background-event--${fullDayKind}`,
       });
 
@@ -943,13 +947,18 @@ const timelineBackgroundEvents = computed(() => {
         schedule: column.resourceId,
         background: true,
         backgroundKind: 'break',
-        backgroundLabel: interval.title || '',
+        backgroundLabel: [
+          interval.title,
+          `${formatTimeLabel(interval.startMinute)}–${formatTimeLabel(interval.endMinute)}`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         class:
           'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--break',
       });
     });
 
-    buildTimeOffIntervals(props.timeOffs, column).forEach(interval => {
+    buildWorkspaceTimeOffIntervals(column).forEach(interval => {
       const start = new Date(column.date);
       start.setHours(0, 0, 0, 0);
       start.setMinutes(interval.startMinute, 0, 0);
@@ -965,6 +974,12 @@ const timelineBackgroundEvents = computed(() => {
         schedule: column.resourceId,
         background: true,
         backgroundKind: 'time-off',
+        backgroundLabel: [
+          interval.title,
+          `${formatTimeLabel(interval.startMinute)}–${formatTimeLabel(interval.endMinute)}`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         class:
           'scheduling-vue-cal__background-event scheduling-vue-cal__background-event--time-off',
       });
@@ -990,9 +1005,10 @@ const appointmentEvents = computed(() => {
     const resourceName = appointment.resourceName || resource?.name || '';
 
     return {
+      allDay: Boolean(appointment.allDay),
       id: String(appointment.id),
-      start: toDate(appointment.startsAt),
-      end: toDate(appointment.endsAt),
+      start: toCalendarDate(appointment.startsAt),
+      end: toCalendarDate(appointment.endsAt),
       title: clientName,
       schedule:
         isWeekSharedTimeline.value || !props.resources.length
@@ -1115,6 +1131,10 @@ const isUnavailableBackgroundKind = backgroundKind => {
   ].includes(backgroundKind);
 };
 
+const shouldDisplayBackgroundLabel = backgroundKind => {
+  return !['unavailable', 'closed', 'day-off'].includes(backgroundKind);
+};
+
 const formatEventTimeRange = event => {
   return `${formatTimeLabel(minuteOfDayFromDate(event.start))}-${formatTimeLabel(minuteOfDayFromDate(event.end))}`;
 };
@@ -1136,7 +1156,7 @@ const customFieldSummaryTitle = appointment => {
 
 const eventTitle = event => {
   return [
-    formatEventTimeRange(event),
+    event.allDay ? '' : formatEventTimeRange(event),
     resolveEventStatusLabel(event),
     event.resourceName,
     event.clientName,
@@ -1227,9 +1247,9 @@ const defaultCreatePayload = day => {
   endsAt.setMinutes(endsAt.getMinutes() + defaultDuration);
 
   return {
-    endsAt: endsAt.toISOString(),
+    endsAt: toApiIso(endsAt),
     resourceId: props.resources[0]?.id || '',
-    startsAt: startsAt.toISOString(),
+    startsAt: toApiIso(startsAt),
   };
 };
 
@@ -1238,8 +1258,8 @@ const unavailableSlotMessage = () => {
 };
 
 const buildUnscheduledCreatePayload = ({ startsAt, endsAt }) => ({
-  endsAt: endsAt.toISOString(),
-  startsAt: startsAt.toISOString(),
+  endsAt: toApiIso(endsAt),
+  startsAt: toApiIso(startsAt),
 });
 
 const buildTimelineCreateRangeFromCursor = ({ cell, cursor }) => {
@@ -1247,10 +1267,12 @@ const buildTimelineCreateRangeFromCursor = ({ cell, cursor }) => {
     return null;
   }
 
+  // The grid shows 30-minute cells, but a click starts at the clicked
+  // 5-minute mark (same step as drag/resize), not at the nearest half hour.
   const startsAt = new Date(cell.start);
   startsAt.setHours(0, 0, 0, 0);
   startsAt.setMinutes(
-    snapMinute(minuteOfDayFromDate(cursor.date), timelineStepMin.value),
+    snapMinute(minuteOfDayFromDate(cursor.date), MINUTE_STEP),
     0,
     0
   );
@@ -1360,9 +1382,9 @@ const handleEventCreate = ({ event, resolve }) => {
   }
 
   emit('createAppointment', {
-    endsAt: endsAt.toISOString(),
+    endsAt: toApiIso(endsAt),
     resourceId,
-    startsAt: startsAt.toISOString(),
+    startsAt: toApiIso(startsAt),
   });
   resolve(false);
 };
@@ -1385,9 +1407,10 @@ const handleEventDrop = ({ event }) => {
     }
 
     emit('moveAppointment', {
+      allDay: Boolean(event.allDay),
       appointment,
-      endsAt: endsAt.toISOString(),
-      startsAt: startsAt.toISOString(),
+      endsAt: toApiIso(endsAt),
+      startsAt: toApiIso(startsAt),
     });
 
     return true;
@@ -1411,9 +1434,9 @@ const handleEventDrop = ({ event }) => {
 
   emit('moveAppointment', {
     appointment,
-    endsAt: endsAt.toISOString(),
+    endsAt: toApiIso(endsAt),
     resourceId,
-    startsAt: startsAt.toISOString(),
+    startsAt: toApiIso(startsAt),
   });
 
   return true;
@@ -1437,9 +1460,10 @@ const handleEventResizeEnd = ({ event }) => {
     }
 
     emit('resizeAppointment', {
+      allDay: Boolean(event.allDay),
       appointment,
-      endsAt: endsAt.toISOString(),
-      startsAt: startsAt.toISOString(),
+      endsAt: toApiIso(endsAt),
+      startsAt: toApiIso(startsAt),
     });
 
     return true;
@@ -1460,8 +1484,8 @@ const handleEventResizeEnd = ({ event }) => {
 
   emit('resizeAppointment', {
     appointment,
-    endsAt: endsAt.toISOString(),
-    startsAt: startsAt.toISOString(),
+    endsAt: toApiIso(endsAt),
+    startsAt: toApiIso(startsAt),
   });
 
   return true;
@@ -1491,6 +1515,14 @@ const handleEventClick = ({ event, e }) => {
   emit('selectAppointment', event.appointment);
 };
 
+const handleEventKeydown = (keyboardEvent, event) => {
+  if (!['Enter', ' '].includes(keyboardEvent.key)) return;
+
+  keyboardEvent.preventDefault();
+  keyboardEvent.stopPropagation();
+  emit('selectAppointment', event.appointment);
+};
+
 const autoScrollTimeline = async () => {
   if (!isTimelineView.value || !isVueCalReady.value) {
     return;
@@ -1503,12 +1535,7 @@ const autoScrollTimeline = async () => {
     return;
   }
 
-  if (timelineIncludesToday.value && viewApi.scrollToCurrentTime) {
-    viewApi.scrollToCurrentTime();
-    return;
-  }
-
-  viewApi.scrollToTime?.(visibleWindow.value.startMinute);
+  viewApi.scrollToTime?.(timelineScrollMinute.value);
 };
 
 const handleCalendarReady = () => {
@@ -1517,12 +1544,7 @@ const handleCalendarReady = () => {
 };
 
 watch(
-  [
-    () => props.view,
-    () => props.anchorDate,
-    () => visibleWindow.value.startMinute,
-    () => visibleWindow.value.endMinute,
-  ],
+  [() => props.view, () => props.anchorDate, () => timelineScrollMinute.value],
   autoScrollTimeline,
   {
     flush: 'post',
@@ -1549,12 +1571,14 @@ onMounted(() => {
         <VueCal
           ref="vueCalRef"
           class="scheduling-vue-cal__calendar bg-transparent"
+          :all-day-events="allDayEvents"
           :locale="localeCode"
           :events="calendarEvents"
           :schedules="schedules"
           :editable-events="editableEvents"
           events-on-month-view
-          :snap-to-interval="timelineStepMin"
+          :snap-to-interval="MINUTE_STEP"
+          :stack-events="false"
           :time="view !== 'month'"
           :watch-real-time="isTimelineView"
           :time-cell-height="timeCellHeight"
@@ -1565,7 +1589,7 @@ onMounted(() => {
           :today-button="false"
           :views="[view]"
           :view="view"
-          :view-date="anchorDate"
+          :view-date="calendarAnchorDate"
           :views-bar="false"
           @cell-click="handleCellClick"
           @event-create="handleEventCreate"
@@ -1605,6 +1629,8 @@ onMounted(() => {
           <template #schedule-heading="{ schedule }">
             <div
               class="scheduling-vue-cal__schedule-heading"
+              :title="formatScheduleHeadingLabel(schedule)"
+              :aria-label="formatScheduleHeadingLabel(schedule)"
               :style="{
                 '--schedule-accent':
                   resourceById[schedule.id]?.color || '#2563eb',
@@ -1646,11 +1672,9 @@ onMounted(() => {
               class="scheduling-vue-cal__time-label"
               :class="{
                 'scheduling-vue-cal__time-label--hour': minutesSum % 60 === 0,
-                'scheduling-vue-cal__time-label--muted': minutesSum % 30 !== 0,
-                'scheduling-vue-cal__time-label--half': minutesSum % 60 !== 0,
               }"
             >
-              {{ minutesSum % 30 === 0 ? format24 : '' }}
+              {{ minutesSum % 60 === 0 ? format24 : '' }}
             </label>
           </template>
 
@@ -1688,9 +1712,13 @@ onMounted(() => {
                   'scheduling-vue-cal__background-fill--unavailable':
                     isUnavailableBackgroundKind(event.backgroundKind),
                 }"
+                :title="event.backgroundLabel || undefined"
               >
                 <span
-                  v-if="event.backgroundLabel"
+                  v-if="
+                    event.backgroundLabel &&
+                    shouldDisplayBackgroundLabel(event.backgroundKind)
+                  "
                   class="scheduling-vue-cal__background-label"
                 >
                   {{ event.backgroundLabel }}
@@ -1701,6 +1729,8 @@ onMounted(() => {
             <template v-else-if="view !== 'month'">
               <div
                 class="scheduling-vue-cal__event-card"
+                role="button"
+                tabindex="0"
                 :class="{
                   'scheduling-vue-cal__event-card--muted':
                     isMutedAppointmentCard(event),
@@ -1711,6 +1741,8 @@ onMounted(() => {
                   '--appointment-accent': event.resourceColor || '#2563eb',
                 }"
                 :title="eventTitle(event)"
+                :aria-label="eventTitle(event)"
+                @keydown="handleEventKeydown($event, event)"
               >
                 <div class="scheduling-vue-cal__event-header">
                   <span class="scheduling-vue-cal__event-status-icon">
@@ -1733,9 +1765,12 @@ onMounted(() => {
                           isCancelledAppointmentCard(event),
                       }"
                     >
-                      <span class="scheduling-vue-cal__event-time">{{
-                        formatEventTimeRange(event)
-                      }}</span>
+                      <span
+                        v-if="!event.allDay"
+                        class="scheduling-vue-cal__event-time"
+                      >
+                        {{ formatEventTimeRange(event) }}
+                      </span>
                     </div>
 
                     <div class="scheduling-vue-cal__event-title">
@@ -1760,13 +1795,19 @@ onMounted(() => {
 
             <template v-else-if="!event.background">
               <div
-                class="truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                class="scheduling-vue-cal__month-event truncate rounded-md px-1.5 py-0.5 text-[11px] font-medium"
+                role="button"
+                tabindex="0"
                 :style="{
                   backgroundColor: `${event.resourceColor || '#2563eb'}22`,
                   color: event.resourceColor || '#2563eb',
                 }"
+                :aria-label="eventTitle(event)"
+                @keydown="handleEventKeydown($event, event)"
               >
-                {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
+                <template v-if="!event.allDay">
+                  {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
+                </template>
                 {{ event.clientName }}
                 <span v-if="event.resourceName" class="ml-1">
                   {{ event.resourceName }}
@@ -1827,23 +1868,9 @@ onMounted(() => {
 .scheduling-vue-cal :deep(.vuecal) {
   --scheduling-sticky-bg: rgb(var(--slate-2));
   --scheduling-slot-grid-bg: rgb(var(--surface-1));
-  --scheduling-slot-divider: rgb(var(--slate-8) / 0.32);
-  --scheduling-slot-half-hour-divider: rgb(var(--slate-9) / 0.16);
-  --scheduling-slot-hour-divider: rgb(var(--slate-9) / 0.28);
-  --scheduling-slot-dash-size: 8px;
-  --scheduling-slot-dash-pattern: radial-gradient(
-    ellipse 2px 0.4px at 2px 0.5px,
-    var(--scheduling-slot-divider) 98%,
-    transparent 100%
-  );
-  --scheduling-slot-grid: linear-gradient(
-    0deg,
-    var(--scheduling-slot-divider) 0,
-    var(--scheduling-slot-divider) 1px,
-    transparent 1px,
-    transparent var(--vuecal-time-cell-size)
-  );
-  --vuecal-border-color: rgb(var(--slate-7) / 0.88);
+  --scheduling-slot-half-hour-divider: rgb(var(--slate-8) / 0.08);
+  --scheduling-slot-hour-divider: rgb(var(--slate-8) / 0.2);
+  --vuecal-border-color: rgb(var(--slate-7) / 0.7);
   --vuecal-primary-color: rgb(var(--brand-color));
   --vuecal-secondary-color: var(--scheduling-sticky-bg);
   --vuecal-base-color: rgb(var(--slate-12));
@@ -1867,12 +1894,12 @@ onMounted(() => {
 
 .scheduling-vue-cal :deep(.vuecal__schedule--heading) {
   height: 100%;
+  min-width: 0;
   align-items: stretch;
-  overflow: visible;
+  overflow: hidden;
+  border-right: 1px solid var(--vuecal-border-color);
   background: transparent !important;
-  box-shadow:
-    inset 0 -1px 0 0 var(--vuecal-border-color),
-    inset -1px 0 0 0 var(--vuecal-border-color);
+  box-shadow: inset 0 -1px 0 0 var(--vuecal-border-color);
 }
 
 .scheduling-vue-cal :deep(.vuecal__weekdays-headings),
@@ -1994,8 +2021,26 @@ onMounted(() => {
   background: rgb(var(--ruby-9));
 }
 
+.scheduling-vue-cal--day :deep(.vuecal__schedules-headings),
+.scheduling-vue-cal--day :deep(.vuecal__cell--has-schedules) {
+  display: grid;
+  grid-template-columns: repeat(var(--vuecal-schedules-count), minmax(0, 1fr));
+}
+
 .scheduling-vue-cal :deep(.vuecal__schedule--cell) {
+  min-width: 0;
+  border-right: 1px solid var(--vuecal-border-color);
   background: transparent;
+  box-shadow: none;
+}
+
+.scheduling-vue-cal
+  :deep(
+    .vuecal__scrollable--day-view
+      .vuecal__schedule--cell
+      + .vuecal__schedule--cell
+  ) {
+  border-left: 0 !important;
 }
 
 .scheduling-vue-cal :deep(.vuecal__body) {
@@ -2027,28 +2072,16 @@ onMounted(() => {
       var(--scheduling-slot-half-hour-divider)
         calc(var(--scheduling-half-hour-grid-size) - 1px)
         var(--scheduling-half-hour-grid-size)
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 calc(var(--scheduling-half-hour-grid-size) - 1px),
-      var(--scheduling-slot-grid-bg)
-        calc(var(--scheduling-half-hour-grid-size) - 1px)
-        var(--scheduling-half-hour-grid-size)
-    ),
-    var(--scheduling-slot-dash-pattern);
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+    );
+  background-repeat: no-repeat, no-repeat, no-repeat;
   background-position:
     right top,
-    0 calc(var(--scheduling-hour-grid-offset) + 1px),
-    0 calc(var(--scheduling-half-hour-grid-offset) + 1px),
-    0 calc(var(--scheduling-half-hour-grid-offset) + 1px),
-    0 1px;
+    0 var(--scheduling-hour-grid-offset),
+    0 var(--scheduling-half-hour-grid-offset);
   background-size:
     1px 100%,
     100% 100%,
-    100% 100%,
-    100% 100%,
-    var(--scheduling-slot-dash-size) var(--vuecal-time-cell-size);
+    100% 100%;
   box-shadow: none;
 }
 
@@ -2207,16 +2240,6 @@ onMounted(() => {
 .scheduling-vue-cal__time-label--hour {
   color: var(--vuecal-base-color);
   font-size: 0.7em;
-  font-weight: 500;
-}
-
-.scheduling-vue-cal__time-label--muted {
-  color: transparent;
-}
-
-.scheduling-vue-cal__time-label--half {
-  color: rgb(var(--slate-9));
-  font-size: 0.55rem;
   font-weight: 500;
 }
 
@@ -2416,11 +2439,15 @@ onMounted(() => {
 .scheduling-vue-cal__schedule-heading {
   display: flex;
   height: 100%;
+  width: 100%;
   min-width: 0;
   align-items: center;
+  overflow: hidden;
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-heading {
+  padding-right: 0.5rem;
+  padding-left: 0.5rem;
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
 }
@@ -2432,6 +2459,7 @@ onMounted(() => {
 .scheduling-vue-cal__schedule-chip {
   display: inline-flex;
   max-width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.1875rem;
   margin: auto 0;
@@ -2449,6 +2477,7 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-chip {
+  width: 100%;
   gap: 0.375rem;
   padding: 0;
   border: 0;
@@ -2481,7 +2510,8 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal__schedule-label {
-  display: inline-flex;
+  display: block;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
@@ -2492,6 +2522,8 @@ onMounted(() => {
   letter-spacing: 0;
   line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-label {
@@ -2508,10 +2540,10 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal__event-card {
-  --event-slot-inset-top: 0.25rem;
-  --event-slot-inset-right: 0.25rem;
-  --event-slot-inset-bottom: 0.25rem;
-  --event-slot-inset-left: 0.25rem;
+  --event-slot-inset-top: 0;
+  --event-slot-inset-right: 0.125rem;
+  --event-slot-inset-bottom: 0;
+  --event-slot-inset-left: 0.125rem;
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
@@ -2554,6 +2586,19 @@ onMounted(() => {
   border-color: rgb(var(--ruby-7) / 0.3);
   background: rgb(var(--ruby-4) / 0.88);
   color: rgb(var(--ruby-11));
+}
+
+.scheduling-vue-cal__event-card:focus-visible,
+.scheduling-vue-cal__month-event:focus-visible {
+  outline: 2px solid rgb(var(--brand-color));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scheduling-vue-cal :deep(.vuecal__event:not(.vuecal__event--background)),
+  .scheduling-vue-cal__event-card {
+    transition: none;
+  }
 }
 
 .scheduling-vue-cal__event-header {

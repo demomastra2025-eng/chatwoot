@@ -1,5 +1,11 @@
 {
   "SCHEDULING": {
+    "CALENDAR": {
+      "ALL_RESOURCES_UNAVAILABLE": "Барлық мамандар қолжетімсіз",
+      "RESOURCES_UNAVAILABLE": "Қолжетімсіз: {names}",
+      "UNAVAILABLE": "Қолжетімсіз",
+      "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
+    },
     "TOOLBAR": {
       "SHOW_INACTIVE_APPOINTMENTS": "Өзекті емес жазбаларды көрсету"
     },

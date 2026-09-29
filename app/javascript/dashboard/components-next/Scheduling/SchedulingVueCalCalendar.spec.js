@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { VueCal } from 'vue-cal';
 
 import SchedulingVueCalCalendar from './SchedulingVueCalCalendar.vue';
 
@@ -52,10 +53,15 @@ describe('SchedulingVueCalCalendar', () => {
     HTMLElement.prototype.scrollTo = vi.fn();
     useI18n.mockReturnValue({
       locale: { value: 'en' },
-      t: vi.fn(key => {
+      t: vi.fn((key, params = {}) => {
         const labels = {
           'CHOICE_TOGGLE.NO': 'No',
           'CHOICE_TOGGLE.YES': 'Yes',
+          'SCHEDULING.CALENDAR.ALL_RESOURCES_UNAVAILABLE':
+            'All specialists unavailable',
+          'SCHEDULING.CALENDAR.RESOURCES_UNAVAILABLE': `Unavailable: ${params.names}`,
+          'SCHEDULING.CALENDAR.UNAVAILABLE': 'Unavailable',
+          'SCHEDULING.CALENDAR.UNAVAILABLE_TIME_RANGE': `${params.label} · ${params.start}–${params.end}`,
         };
 
         return labels[key] || key;
@@ -156,6 +162,29 @@ describe('SchedulingVueCalCalendar', () => {
     ).toBe(true);
   }, 30000);
 
+  it('opens an appointment from the keyboard-focusable event card', async () => {
+    const appointment = {
+      id: 48,
+      clientName: 'Keyboard customer',
+      endsAt: '2026-03-09T10:30:00.000Z',
+      resourceId: 12,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({ appointments: [appointment] });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCard = wrapper.find('.scheduling-vue-cal__event-card');
+    expect(eventCard.attributes('role')).toBe('button');
+    expect(eventCard.attributes('tabindex')).toBe('0');
+
+    await eventCard.trigger('keydown', { key: 'Enter' });
+
+    expect(wrapper.emitted('selectAppointment')).toEqual([[appointment]]);
+  });
+
   it('renders time and client name in a single event summary row', async () => {
     const wrapper = mountCalendar({
       appointments: [
@@ -184,6 +213,265 @@ describe('SchedulingVueCalCalendar', () => {
 
     const subtitle = wrapper.find('.scheduling-vue-cal__event-subtitle');
     expect(subtitle.text()).toContain('Dr. Sam');
+  });
+
+  it('omits synthetic times from all-day event text and accessible names', async () => {
+    const wrapper = mountCalendar({
+      allDayEvents: true,
+      appointments: [
+        {
+          allDay: true,
+          id: 49,
+          clientName: 'All-day follow-up',
+          endsAt: '2026-03-09T23:59:59.999Z',
+          startsAt: '2026-03-09T00:00:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCard = wrapper.find('.scheduling-vue-cal__event-card');
+    expect(eventCard.text()).toContain('All-day follow-up');
+    expect(eventCard.find('.scheduling-vue-cal__event-time').exists()).toBe(
+      false
+    );
+    expect(eventCard.attributes('aria-label')).toContain('All-day follow-up');
+    expect(eventCard.attributes('aria-label')).not.toMatch(/\d{2}:\d{2}/);
+  });
+
+  it('renders appointment times in the Workspace timezone', async () => {
+    const appointment = {
+      id: 81,
+      clientName: 'Almaty client',
+      endsAt: '2026-03-09T05:30:00.000Z',
+      resourceId: 12,
+      startsAt: '2026-03-09T05:00:00.000Z',
+      status: 'scheduled',
+    };
+    const zoned = mountCalendar({
+      appointments: [appointment],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+    const browserLocal = mountCalendar({ appointments: [appointment] });
+
+    await nextTick();
+    await nextTick();
+
+    expect(zoned.find('.scheduling-vue-cal__event-time').text()).toBe(
+      '10:00-10:30'
+    );
+    expect(browserLocal.find('.scheduling-vue-cal__event-time').text()).toBe(
+      '05:00-05:30'
+    );
+  });
+
+  it('keeps an appointment that crosses Workspace midnight on its calendar days', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        {
+          id: 82,
+          clientName: 'Late client',
+          // 23:30-00:30 in Almaty (UTC+5).
+          endsAt: '2026-03-09T19:30:00.000Z',
+          resourceId: 12,
+          startsAt: '2026-03-09T18:30:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    await nextTick();
+
+    const event = wrapper
+      .findComponent(VueCal)
+      .props('events')
+      .find(item => item.id === '82');
+
+    expect([
+      event.start.getDate(),
+      event.start.getHours(),
+      event.start.getMinutes(),
+    ]).toEqual([9, 23, 30]);
+    expect([
+      event.end.getDate(),
+      event.end.getHours(),
+      event.end.getMinutes(),
+    ]).toEqual([10, 0, 30]);
+  });
+
+  it('emits UTC times for drag and resize in the Workspace timezone', async () => {
+    const appointment = {
+      id: 83,
+      clientName: 'Moved client',
+      endsAt: '2026-03-09T05:30:00.000Z',
+      resourceId: 12,
+      startsAt: '2026-03-09T05:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({
+      appointments: [appointment],
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    await nextTick();
+
+    const vueCal = wrapper.findComponent(VueCal);
+    // vue-cal reports wall-clock dates: 11:05-11:35 on the Workspace calendar.
+    vueCal.vm.$emit('eventDrop', {
+      event: {
+        appointment,
+        end: new Date(2026, 2, 9, 11, 35),
+        schedule: null,
+        start: new Date(2026, 2, 9, 11, 5),
+      },
+    });
+    vueCal.vm.$emit('eventResizeEnd', {
+      event: {
+        appointment,
+        end: new Date(2026, 2, 9, 10, 45),
+        start: new Date(2026, 2, 9, 10, 0),
+      },
+    });
+
+    expect(wrapper.emitted('moveAppointment')).toEqual([
+      [
+        {
+          appointment,
+          endsAt: '2026-03-09T06:35:00.000Z',
+          resourceId: 12,
+          startsAt: '2026-03-09T06:05:00.000Z',
+        },
+      ],
+    ]);
+    expect(wrapper.emitted('resizeAppointment')).toEqual([
+      [
+        {
+          appointment,
+          endsAt: '2026-03-09T05:45:00.000Z',
+          startsAt: '2026-03-09T05:00:00.000Z',
+        },
+      ],
+    ]);
+  });
+
+  it('rejects a drop outside Workspace working hours', async () => {
+    const appointment = {
+      id: 84,
+      clientName: 'Early client',
+      endsAt: '2026-03-09T05:30:00.000Z',
+      resourceId: 12,
+      startsAt: '2026-03-09T05:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({
+      appointments: [appointment],
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    await nextTick();
+
+    // 08:00 on the Workspace calendar is before the 09:00 work rule even
+    // though it is 03:00 UTC.
+    wrapper.findComponent(VueCal).vm.$emit('eventDrop', {
+      event: {
+        appointment,
+        end: new Date(2026, 2, 9, 8, 30),
+        schedule: null,
+        start: new Date(2026, 2, 9, 8, 0),
+      },
+    });
+
+    expect(wrapper.emitted('moveAppointment')).toBeUndefined();
+  });
+
+  it('labels breaks and Workspace time off for a single specialist week', async () => {
+    const wrapper = mountCalendar({
+      breakRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 780,
+          endMinute: 840,
+          title: 'Lunch',
+          weekday: 1,
+        },
+      ],
+      timeOffs: [
+        {
+          id: 3,
+          // 16:00-17:00 in Almaty.
+          endsAt: '2026-03-09T12:00:00.000Z',
+          resourceId: 12,
+          startsAt: '2026-03-09T11:00:00.000Z',
+          title: 'Training',
+        },
+      ],
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1080,
+          weekday: 1,
+        },
+      ],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const labels = wrapper
+      .findComponent(VueCal)
+      .props('events')
+      .filter(event => ['break', 'time-off'].includes(event.backgroundKind))
+      .map(event => event.backgroundLabel);
+
+    expect(labels).toEqual(
+      expect.arrayContaining(['Lunch · 13:00–14:00', 'Training · 16:00–17:00'])
+    );
+    expect(wrapper.text()).toContain('Lunch · 13:00–14:00');
+  });
+
+  it('marks holidays as full-day backgrounds', async () => {
+    const wrapper = mountCalendar({
+      holidays: [{ id: 5, date: '2026-03-09', title: 'Nauryz' }],
+    });
+
+    await nextTick();
+
+    const holidayEvent = wrapper
+      .findComponent(VueCal)
+      .props('events')
+      .find(event => event.backgroundKind === 'holiday');
+
+    expect(holidayEvent.backgroundLabel).toBe('Nauryz');
   });
 
   it('includes managed custom field summary in appointment tooltips', async () => {
@@ -238,6 +526,149 @@ describe('SchedulingVueCalCalendar', () => {
     expect(wrapper.find('.vuecal__time-cell--half-hour').exists()).toBe(true);
   });
 
+  it('renders a clean 30-minute timeline while keeping five-minute snapping', async () => {
+    const wrapper = mountCalendar({ view: 'day' });
+
+    await nextTick();
+    await nextTick();
+
+    const vueCal = wrapper.findComponent(VueCal);
+
+    expect(vueCal.props('timeStep')).toBe(30);
+    expect(vueCal.props('snapToInterval')).toBe(5);
+    expect(vueCal.props('timeCellHeight')).toBe(24);
+    expect(vueCal.props('timeFrom')).toBe(0);
+    expect(vueCal.props('timeTo')).toBe(24 * 60);
+    expect(wrapper.findAll('.vuecal__time-cell')).toHaveLength(48);
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('00:05');
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('00:30');
+  });
+
+  it('starts a click-created appointment at the clicked five-minute mark', async () => {
+    const wrapper = mountCalendar({
+      resources: [{ ...baseProps.resources[0], slotDurationMin: 15 }],
+      view: 'day',
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+      workspaceTimezone: 'Asia/Almaty',
+    });
+
+    await nextTick();
+
+    const vueCal = wrapper.findComponent(VueCal);
+    // vue-cal reports the exact wall-clock minute under the cursor. Both
+    // clicks are in the lower half of a 30-minute cell; 16:45 is the last
+    // 15-minute slot before the 17:00 end of the working day.
+    [
+      [10, 20],
+      [16, 45],
+    ].forEach(([hours, minutes]) => {
+      vueCal.vm.$emit('cellClick', {
+        cell: {
+          end: new Date(2026, 2, 9, 23, 59),
+          schedule: 12,
+          start: new Date(2026, 2, 9),
+        },
+        cursor: { date: new Date(2026, 2, 9, hours, minutes) },
+        e: {},
+      });
+    });
+
+    expect(wrapper.emitted('createAppointment')).toEqual([
+      [
+        {
+          endsAt: '2026-03-09T05:35:00.000Z',
+          resourceId: 12,
+          startsAt: '2026-03-09T05:20:00.000Z',
+        },
+      ],
+      [
+        {
+          endsAt: '2026-03-09T12:00:00.000Z',
+          resourceId: 12,
+          startsAt: '2026-03-09T11:45:00.000Z',
+        },
+      ],
+    ]);
+  });
+
+  it('starts a click-created unscheduled item at the clicked five-minute mark', async () => {
+    const wrapper = mountCalendar({
+      allowCreateWithoutResources: true,
+      resources: [],
+      view: 'day',
+    });
+
+    await nextTick();
+
+    wrapper.findComponent(VueCal).vm.$emit('cellClick', {
+      cell: {
+        end: new Date(2026, 2, 9, 23, 59),
+        start: new Date(2026, 2, 9),
+      },
+      cursor: { date: new Date(2026, 2, 9, 10, 20) },
+      e: {},
+    });
+
+    const [[payload]] = wrapper.emitted('createAppointment');
+    expect(new Date(payload.startsAt)).toEqual(new Date(2026, 2, 9, 10, 20));
+    expect(new Date(payload.endsAt)).toEqual(new Date(2026, 2, 9, 11, 20));
+  });
+
+  it('scrolls to 08:00 without a schedule and to the configured working-day start', async () => {
+    const wrapper = mountCalendar({ view: 'day' });
+    await nextTick();
+    await nextTick();
+    const vueCal = wrapper.findComponent(VueCal);
+    const scrollToTime = vi.spyOn(vueCal.vm.view, 'scrollToTime');
+
+    await wrapper.setProps({ view: 'week' });
+    await nextTick();
+    expect(scrollToTime).toHaveBeenLastCalledWith(8 * 60);
+
+    await wrapper.setProps({
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+    });
+    await nextTick();
+    expect(scrollToTime).toHaveBeenLastCalledWith(9 * 60);
+  });
+
+  it('keeps long specialist names inside their day columns', async () => {
+    const longName = 'Dr. Alexandra Very Long Specialist Name';
+    const wrapper = mountCalendar({
+      view: 'day',
+      resources: [{ ...baseProps.resources[0], name: longName }],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const heading = wrapper.find('.scheduling-vue-cal__schedule-heading');
+
+    expect(heading.attributes('title')).toBe(longName);
+    expect(heading.attributes('aria-label')).toBe(longName);
+    expect(heading.find('.scheduling-vue-cal__schedule-label').text()).toBe(
+      longName
+    );
+  });
+
   it('shows the selected resource count in weekly header labels', async () => {
     const wrapper = mountCalendar({
       resources: [
@@ -268,5 +699,94 @@ describe('SchedulingVueCalCalendar', () => {
 
     expect(wrapper.text()).toContain('2 specialists');
     expect(wrapper.text()).not.toContain('1 specialist');
+  });
+
+  it('shows unavailable time and affected specialists in a shared week', async () => {
+    const wrapper = mountCalendar({
+      resources: [
+        { ...baseProps.resources[0], name: 'Dr. Sam' },
+        {
+          id: 18,
+          name: 'Dr. Lee',
+          color: '#2563eb',
+          slotDurationMin: 30,
+        },
+      ],
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+        {
+          id: 2,
+          active: true,
+          resourceId: 18,
+          startMinute: 600,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const unavailableEvents = wrapper
+      .findComponent(VueCal)
+      .props('events')
+      .filter(event => event.backgroundKind === 'unavailable');
+
+    expect(unavailableEvents.map(event => event.backgroundLabel)).toEqual(
+      expect.arrayContaining([
+        'Unavailable: Dr. Lee · 09:00–10:00',
+        'All specialists unavailable · 00:00–09:00',
+      ])
+    );
+    expect(wrapper.text()).not.toContain('Unavailable: Dr. Lee');
+    expect(wrapper.text()).not.toContain('All specialists unavailable');
+    expect(
+      wrapper
+        .findAll('.scheduling-vue-cal__background-fill')
+        .map(node => node.attributes('title'))
+    ).toContain('Unavailable: Dr. Lee · 09:00–10:00');
+  });
+
+  it('lays overlapping appointments side by side instead of stacking them', async () => {
+    const appointment = {
+      clientName: 'Alex Doe',
+      durationMin: 60,
+      endsAt: '2026-03-09T11:00:00.000Z',
+      resourceId: 12,
+      serviceNameSnapshot: 'Consultation',
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({
+      appointments: [
+        { ...appointment, id: 71 },
+        { ...appointment, id: 72, clientName: 'Blair Doe' },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCards = wrapper.findAll('.scheduling-vue-cal__event-card');
+    const overlapClasses = eventCards.map(
+      card => card.element.closest('.vuecal__event')?.className || ''
+    );
+
+    expect(wrapper.findComponent(VueCal).props('stackEvents')).toBe(false);
+    expect(eventCards).toHaveLength(2);
+    expect(overlapClasses).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('vuecal__event--stack-1-2'),
+        expect.stringContaining('vuecal__event--stack-2-2'),
+      ])
+    );
   });
 });

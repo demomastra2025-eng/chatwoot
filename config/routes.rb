@@ -454,7 +454,9 @@ Rails.application.routes.draw do
             resources :whatsapp_templates,
                       only: [:create, :destroy],
                       controller: 'inbox_whatsapp_templates',
-                      param: :template_name
+                      param: :template_name do
+              patch :visibility, on: :member
+            end
           end
 
           namespace :telephony do

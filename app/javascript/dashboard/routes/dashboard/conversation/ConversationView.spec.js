@@ -35,4 +35,64 @@ describe('ConversationView', () => {
       });
     });
   });
+
+  describe('#shouldShowSidebar', () => {
+    const closedPanels = {
+      is_contact_sidebar_open: false,
+      is_crm_deal_panel_open: false,
+      is_scheduling_appointments_panel_open: false,
+      is_touch_sidebar_open: false,
+    };
+
+    it.each(['contact', 'deals', 'appointments'])(
+      'opens the route sidebar for an available %s panel',
+      activePanel => {
+        const context = {
+          currentChat: { id: 42 },
+          activePanel,
+          uiSettings: closedPanels,
+        };
+
+        expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
+          true
+        );
+      }
+    );
+
+    it('keeps the route sidebar closed for an unavailable persisted panel', () => {
+      const context = {
+        currentChat: { id: 42 },
+        activePanel: null,
+        uiSettings: { ...closedPanels, is_crm_deal_panel_open: true },
+      };
+
+      expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
+        false
+      );
+    });
+
+    it('keeps the existing touch panel behaviour', () => {
+      const context = {
+        currentChat: { id: 42 },
+        activePanel: null,
+        uiSettings: { ...closedPanels, is_touch_sidebar_open: true },
+      };
+
+      expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
+        true
+      );
+    });
+
+    it('never opens the sidebar without a selected chat', () => {
+      const context = {
+        currentChat: {},
+        activePanel: 'contact',
+        uiSettings: closedPanels,
+      };
+
+      expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
+        false
+      );
+    });
+  });
 });

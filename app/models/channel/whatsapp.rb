@@ -24,6 +24,7 @@ class Channel::Whatsapp < ApplicationRecord
   include WhatsappProviderLifecycle
   include WhatsappChannelRouting
   include Whatsapp::TemplateMediaSourceAssociation
+  include Whatsapp::TemplatePickerVisibility
 
   self.table_name = 'channel_whatsapp'
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
@@ -77,20 +78,6 @@ class Channel::Whatsapp < ApplicationRecord
     # rubocop:disable Rails/SkipsModelValidations
     update_column(:message_templates_last_updated, Time.zone.now)
     # rubocop:enable Rails/SkipsModelValidations
-  end
-
-  def update_message_templates_cache!(templates)
-    # Provider template sync already validated the upstream payload. Avoid running
-    # provider validations again, but still invalidate the inbox cache observed by
-    # active browser sessions.
-    # rubocop:disable Rails/SkipsModelValidations
-    updated = update_columns(
-      message_templates: templates,
-      message_templates_last_updated: Time.current.utc
-    )
-    # rubocop:enable Rails/SkipsModelValidations
-    inbox&.update_account_cache if updated
-    updated
   end
 
   delegate :send_message, to: :provider_service

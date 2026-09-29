@@ -346,6 +346,62 @@ RSpec.describe Channel::Whatsapp do
       expect(channel.message_templates_last_updated).to be_present
       expect(inbox).to have_received(:update_account_cache)
     end
+
+    it 'preserves conversation picker visibility across provider syncs' do
+      channel.update!(
+        message_templates: [
+          { 'name' => 'automation_only', 'language' => 'en', 'visible_in_conversation_picker' => false }
+        ]
+      )
+
+      channel.update_message_templates_cache!([
+                                                { 'name' => 'automation_only', 'language' => 'ru' },
+                                                { 'name' => 'agent_reply', 'language' => 'ru' }
+                                              ])
+
+      templates = channel.reload.message_templates.index_by { |template| template['name'] }
+      expect(templates['automation_only']['visible_in_conversation_picker']).to be(false)
+      expect(templates['agent_reply']).not_to have_key('visible_in_conversation_picker')
+    end
+  end
+
+  describe '#update_template_picker_visibility!' do
+    let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
+
+    it 'updates every language variant with the same template name' do
+      channel.update!(
+        message_templates: [
+          { 'name' => 'order_update', 'language' => 'en' },
+          { 'name' => 'order_update', 'language' => 'ru' },
+          { 'name' => 'delivery_update', 'language' => 'ru' }
+        ]
+      )
+
+      expect(channel.update_template_picker_visibility!('order_update', visible: false)).to be(true)
+
+      templates = channel.reload.message_templates
+      order_templates = templates.select { |template| template['name'] == 'order_update' }
+      expect(order_templates).to all(include('visible_in_conversation_picker' => false))
+      expect(templates.last).not_to have_key('visible_in_conversation_picker')
+    end
+
+    it 'invalidates the inbox cache after a visibility change' do
+      channel.update!(message_templates: [{ 'name' => 'order_update', 'language' => 'en' }])
+      inbox = channel.inbox
+      allow(inbox).to receive(:update_account_cache)
+      allow(channel).to receive(:inbox).and_return(inbox)
+
+      channel.update_template_picker_visibility!('order_update', visible: false)
+
+      expect(inbox).to have_received(:update_account_cache)
+    end
+
+    it 'returns false when the template does not exist' do
+      channel.update!(message_templates: [{ 'name' => 'order_update', 'language' => 'en' }])
+
+      expect(channel.update_template_picker_visibility!('missing', visible: false)).to be(false)
+      expect(channel.reload.message_templates.first).not_to have_key('visible_in_conversation_picker')
+    end
   end
 
   describe '#record_provider_configuration_error!' do

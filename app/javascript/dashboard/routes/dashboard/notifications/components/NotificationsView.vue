@@ -5,6 +5,7 @@ import TableFooter from 'dashboard/components/widgets/TableFooter.vue';
 
 import NotificationTable from './NotificationTable.vue';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper.js';
+import { getNotificationCommunicationThreadId } from 'dashboard/helper/communicationThreadHelper';
 
 import { ACCOUNT_EVENTS } from '../../../../helper/AnalyticsHelper/events';
 export default {
@@ -29,6 +30,8 @@ export default {
       this.$store.dispatch('notifications/get', { page });
     },
     openConversation(notification) {
+      const communicationThreadId =
+        getNotificationCommunicationThreadId(notification);
       const {
         primary_actor_id: primaryActorId,
         primary_actor_type: primaryActorType,
@@ -55,7 +58,8 @@ export default {
           conversationUrl({
             accountId: this.accountId,
             activeInbox: inboxId || camelInboxId,
-            id: conversationId,
+            id: communicationThreadId || conversationId,
+            communicationThread: Boolean(communicationThreadId),
           })
         )
       );

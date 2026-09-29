@@ -5,13 +5,25 @@ import ConversationCard from './ConversationCard.vue';
 
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
+  currentRoute: {
+    value: { name: 'communication_threads_dashboard', params: {} },
+  },
   mapGetters: {},
   storeGetters: {},
 }));
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: mocks.routerPush }),
+  useRouter: () => ({
+    push: mocks.routerPush,
+    currentRoute: mocks.currentRoute,
+  }),
 }));
+
+const threadPush = (path, query) =>
+  expect.objectContaining({
+    path,
+    query,
+  });
 
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ getters: mocks.storeGetters }),
@@ -81,6 +93,11 @@ describe('ConversationCard', () => {
 
   beforeEach(() => {
     window.history.replaceState({}, '', '/');
+    window.sessionStorage.clear();
+    mocks.currentRoute.value = {
+      name: 'communication_threads_dashboard',
+      params: {},
+    };
     mocks.routerPush.mockClear();
     mocks.mapGetters = {
       getSelectedChat: getter({ id: 630, is_communication_thread: true }),
@@ -132,8 +149,95 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+      threadPush('/app/accounts/530/communication_threads/5', {
+        status: 'open',
+        assignee_type: 'all',
+      })
     );
+  });
+
+  it('remembers the filtered list URL when opening a communication thread', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/app/accounts/530/communication_threads?status=pending&crm_stage_id=20'
+    );
+    mocks.mapGetters.getSelectedChat = getter({ id: 999 });
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+      },
+      activeStatus: 'pending',
+      communicationThreadMode: true,
+    });
+
+    await wrapper.trigger('click');
+
+    const listPath =
+      '/app/accounts/530/communication_threads?status=pending&crm_stage_id=20';
+    const [[pushArg]] = mocks.routerPush.mock.calls;
+    expect(pushArg.path).toBe('/app/accounts/530/communication_threads/5');
+    expect(pushArg.query).toMatchObject({
+      status: 'pending',
+      assignee_type: 'all',
+    });
+    expect(pushArg.state).toEqual({
+      conversationListReturnPath: {
+        accountId: '530',
+        threadId: '5',
+        path: listPath,
+      },
+    });
+    expect(
+      window.sessionStorage.getItem('conversation_list_return_path:530:5')
+    ).toBe(listPath);
+  });
+
+  it('keeps the original list when switching from one open thread to another', async () => {
+    const listPath =
+      '/app/accounts/530/custom_view/9/conversations?status=open';
+    window.sessionStorage.setItem(
+      'conversation_list_return_path:530:4',
+      listPath
+    );
+    window.history.replaceState(
+      {},
+      '',
+      '/app/accounts/530/communication_threads/4?status=open'
+    );
+    mocks.currentRoute.value = {
+      name: 'communication_thread_conversation',
+      params: { communication_thread_id: '4' },
+    };
+    mocks.mapGetters.getSelectedChat = getter({
+      id: 4,
+      is_communication_thread: true,
+    });
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+      },
+      communicationThreadMode: true,
+    });
+
+    await wrapper.trigger('click');
+
+    expect(
+      window.sessionStorage.getItem('conversation_list_return_path:530:5')
+    ).toBe(listPath);
+    expect(mocks.routerPush.mock.calls[0][0].state).toEqual({
+      conversationListReturnPath: {
+        accountId: '530',
+        threadId: '5',
+        path: listPath,
+      },
+    });
   });
 
   it('preserves the assignee tab query when opening a communication thread', async () => {
@@ -157,7 +261,10 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+      threadPush('/app/accounts/530/communication_threads/5', {
+        status: 'open',
+        assignee_type: 'all',
+      })
     );
   });
 
@@ -182,7 +289,10 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
+      threadPush('/app/accounts/530/communication_threads/5', {
+        status: 'open',
+        assignee_type: 'me',
+      })
     );
   });
 
@@ -218,7 +328,10 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+      threadPush('/app/accounts/530/communication_threads/5', {
+        status: 'open',
+        assignee_type: 'all',
+      })
     );
   });
 

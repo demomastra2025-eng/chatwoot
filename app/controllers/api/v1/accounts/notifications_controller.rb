@@ -10,6 +10,7 @@ class Api::V1::Accounts::NotificationsController < Api::V1::Accounts::BaseContro
     @notifications = notification_finder.notifications
     @unread_count = notification_finder.unread_count
     @count = notification_finder.count
+    @communication_thread_ids_by_conversation_id = communication_thread_ids_by_conversation_id
   end
 
   def read_all
@@ -78,5 +79,27 @@ class Api::V1::Accounts::NotificationsController < Api::V1::Accounts::BaseContro
 
   def notification_finder
     @notification_finder ||= NotificationFinder.new(Current.user, Current.account, params)
+  end
+
+  # Conversation notifications that belong to a communication thread link to the
+  # unified thread view. One query per page; empty when the feature is off.
+  # Same rule as Notification#communication_thread_display_id (realtime payload)
+  # and Conversation#communication_thread: a link whose thread belongs to another
+  # contact is ignored.
+  def communication_thread_ids_by_conversation_id
+    return {} unless Current.account.feature_enabled?('communication_threads')
+
+    conversation_ids = @notifications.filter_map do |notification|
+      notification.primary_actor_id if notification.primary_actor_type == 'Conversation'
+    end
+    return {} if conversation_ids.empty?
+
+    CommunicationThreadConversation
+      .joins(:communication_thread, :conversation)
+      .where(account_id: Current.account.id, conversation_id: conversation_ids)
+      .where('communication_threads.account_id = conversations.account_id')
+      .where('communication_threads.contact_id = conversations.contact_id')
+      .pluck(:conversation_id, 'communication_threads.display_id')
+      .to_h
   end
 end

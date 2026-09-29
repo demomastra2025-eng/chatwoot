@@ -7,6 +7,14 @@ export const isCommunicationThread = chat => {
   );
 };
 
+// Thread display id attached by the notifications API (raw or camelCased) when
+// the notified conversation belongs to a communication thread.
+export const getNotificationCommunicationThreadId = notification =>
+  notification?.communicationThreadId ||
+  notification?.communication_thread_id ||
+  notification?.primaryActor?.communicationThreadId ||
+  notification?.primary_actor?.communication_thread_id;
+
 export const matchesCommunicationThreadMode = (
   conversation,
   communicationThreadMode = false

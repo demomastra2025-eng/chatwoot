@@ -12,6 +12,7 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import {
   DEFAULT_VISIBLE_END_MINUTE,
@@ -297,79 +298,136 @@ export const toDate = value => {
 
 export const formatDateKey = value => format(toDate(value), 'yyyy-MM-dd');
 
-export const buildCalendarRange = (view, anchorDate) => {
-  const date = toDate(anchorDate);
+export const buildCalendarRange = (view, anchorDate, timezone) => {
+  const date = timezone
+    ? utcToZonedTime(toDate(anchorDate), timezone)
+    : toDate(anchorDate);
+  let range;
 
   switch (view) {
     case 'day':
-      return {
+      range = {
         from: startOfDay(date),
         to: endOfDay(date),
       };
+      break;
     case 'month':
-      return {
+      range = {
         from: startOfWeek(startOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
         to: endOfWeek(endOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
       };
+      break;
     case 'list':
     case 'kanban':
-      return {
+      range = {
         from: startOfDay(date),
         to: endOfDay(addDays(date, 13)),
       };
+      break;
     case 'week':
     default:
-      return {
+      range = {
         from: startOfWeek(date, { weekStartsOn: WEEK_STARTS_ON }),
         to: endOfWeek(date, { weekStartsOn: WEEK_STARTS_ON }),
       };
   }
+
+  if (!timezone) return range;
+
+  return {
+    from: zonedTimeToUtc(range.from, timezone),
+    to: zonedTimeToUtc(range.to, timezone),
+  };
 };
 
-export const shiftAnchorDate = (view, anchorDate, direction) => {
-  const date = toDate(anchorDate);
+export const shiftAnchorDate = (view, anchorDate, direction, timezone) => {
+  const date = timezone
+    ? utcToZonedTime(toDate(anchorDate), timezone)
+    : toDate(anchorDate);
+  let shiftedDate;
 
   switch (view) {
     case 'day':
-      return addDays(date, direction);
+      shiftedDate = addDays(date, direction);
+      break;
     case 'month':
-      return addMonths(date, direction);
+      shiftedDate = addMonths(date, direction);
+      break;
     case 'list':
     case 'kanban':
-      return addDays(date, direction * 14);
+      shiftedDate = addDays(date, direction * 14);
+      break;
     case 'week':
     default:
-      return addWeeks(date, direction);
+      shiftedDate = addWeeks(date, direction);
   }
+
+  return timezone ? zonedTimeToUtc(shiftedDate, timezone) : shiftedDate;
 };
 
-export const formatCalendarTitle = (view, anchorDate, locale) => {
-  const { from, to } = buildCalendarRange(view, anchorDate);
+// Date pickers return a browser-local calendar day. Anchor it at noon of the
+// same calendar day in the workspace timezone so the selected day never moves
+// when the browser timezone differs from the workspace timezone.
+export const calendarDayAnchor = (pickedDate, timezone) => {
+  const date = toDate(pickedDate);
+  const noon = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    12,
+    0,
+    0,
+    0
+  );
+
+  return timezone ? zonedTimeToUtc(noon, timezone) : noon;
+};
+
+export const formatCalendarTitle = (view, anchorDate, locale, timezone) => {
+  const range = buildCalendarRange(view, anchorDate, timezone);
+  const calendarOptions = options =>
+    timezone ? { ...options, timeZone: timezone } : options;
 
   if (view === 'day') {
-    return formatLocalizedDate(from, locale, {
-      day: 'numeric',
-      month: 'long',
-      weekday: 'long',
-      year: 'numeric',
-    });
+    return formatLocalizedDate(
+      timezone ? toDate(anchorDate) : range.from,
+      locale,
+      calendarOptions({
+        day: 'numeric',
+        month: 'long',
+        weekday: 'long',
+        year: 'numeric',
+      })
+    );
   }
 
   if (view === 'month') {
-    return formatLocalizedDate(from, locale, {
-      month: 'long',
-      year: 'numeric',
-    });
+    return formatLocalizedDate(
+      timezone ? toDate(anchorDate) : range.from,
+      locale,
+      calendarOptions({
+        month: 'long',
+        year: 'numeric',
+      })
+    );
   }
 
-  return `${formatLocalizedDate(from, locale, {
-    day: 'numeric',
-    month: 'short',
-  })} - ${formatLocalizedDate(to, locale, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  })}`;
+  return `${formatLocalizedDate(
+    range.from,
+    locale,
+    calendarOptions({
+      day: 'numeric',
+      month: 'short',
+    })
+  )} - ${formatLocalizedDate(
+    range.to,
+    locale,
+    calendarOptions({
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+  )}`;
 };
 
 export const buildDayListForView = (view, anchorDate) => {
@@ -552,17 +610,23 @@ export const clipIntervalToDay = (startsAt, endsAt, day) => {
   };
 };
 
-export const buildTimeOffIntervals = (timeOffs, column) => {
+export const buildTimeOffIntervals = (
+  timeOffs,
+  column,
+  convertDate = toDate
+) => {
   return timeOffs
     .filter(
       item => item.resourceId === null || item.resourceId === column.resourceId
     )
     .map(item => {
-      return clipIntervalToDay(
-        toDate(item.startsAt),
-        toDate(item.endsAt),
+      const interval = clipIntervalToDay(
+        convertDate(item.startsAt),
+        convertDate(item.endsAt),
         column.date
       );
+
+      return interval && { ...interval, title: item.title || undefined };
     })
     .filter(Boolean);
 };

@@ -145,6 +145,15 @@ class Inboxes extends CacheEnabledApiClient {
     );
   }
 
+  updateWhatsAppTemplateVisibility(inboxId, templateName, visible) {
+    return axios.patch(
+      `${this.url}/${inboxId}/whatsapp_templates/${encodeURIComponent(
+        templateName
+      )}/visibility`,
+      { visible_in_conversation_picker: visible }
+    );
+  }
+
   getCSATTemplateStatus(inboxId) {
     return axios.get(`${this.url}/${inboxId}/csat_template`);
   }

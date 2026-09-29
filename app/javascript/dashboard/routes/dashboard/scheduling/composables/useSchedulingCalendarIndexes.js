@@ -27,12 +27,15 @@ const pushMapArray = (map, key, value) => {
   map.set(key, [value]);
 };
 
+// `convertDate` maps API instants to the calendar's wall-clock dates (for
+// example the workspace timezone). It defaults to browser-local dates.
 export const useSchedulingCalendarIndexes = ({
   appointments,
   holidays,
   resources,
   slots,
   timeOffs,
+  convertDate = toDate,
 }) => {
   const slotStepMin = computed(() => {
     if (!resources.value.length) {
@@ -57,7 +60,7 @@ export const useSchedulingCalendarIndexes = ({
     const result = new Map();
 
     slots.value.forEach(slot => {
-      const startsAt = toDate(slot.startsAt);
+      const startsAt = convertDate(slot.startsAt);
       if (Number.isNaN(startsAt.getTime())) return;
 
       const dateKey = formatDateKey(startsAt);
@@ -78,19 +81,19 @@ export const useSchedulingCalendarIndexes = ({
     }, new Map());
 
     appointments.value.forEach(appointment => {
-      const key = formatDateKey(appointment.startsAt);
+      const key = formatDateKey(convertDate(appointment.startsAt));
       const stat = stats.get(key);
       if (stat) stat.appointments += 1;
     });
 
     slots.value.forEach(slot => {
-      const key = formatDateKey(slot.startsAt);
+      const key = formatDateKey(convertDate(slot.startsAt));
       const stat = stats.get(key);
       if (stat) stat.availableSlots += 1;
     });
 
     timeOffs.value.forEach(timeOff => {
-      const key = formatDateKey(timeOff.startsAt);
+      const key = formatDateKey(convertDate(timeOff.startsAt));
       const stat = stats.get(key);
       if (stat) stat.timeOff += 1;
     });
@@ -121,8 +124,8 @@ export const useSchedulingCalendarIndexes = ({
       return true;
     }
 
-    const startDate = toDate(startsAt);
-    const endDate = toDate(endsAt);
+    const startDate = convertDate(startsAt);
+    const endDate = convertDate(endsAt);
 
     if (
       Number.isNaN(startDate.getTime()) ||
@@ -151,8 +154,8 @@ export const useSchedulingCalendarIndexes = ({
         return false;
       }
 
-      const candidateStart = toDate(candidate.startsAt);
-      const candidateEnd = toDate(candidate.endsAt);
+      const candidateStart = convertDate(candidate.startsAt);
+      const candidateEnd = convertDate(candidate.endsAt);
 
       return (
         candidateStart <= startDate &&
@@ -170,7 +173,7 @@ export const useSchedulingCalendarIndexes = ({
     const preferredIds = preferredResourceIds.map(Number);
 
     const slotsForDay = slots.value
-      .filter(slot => formatDateKey(slot.startsAt) === dateKey)
+      .filter(slot => formatDateKey(convertDate(slot.startsAt)) === dateKey)
       .sort(
         (left, right) => new Date(left.startsAt) - new Date(right.startsAt)
       );

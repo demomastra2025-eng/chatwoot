@@ -477,6 +477,12 @@ export const getters = {
       return true;
     });
   },
+  // Templates offered in the conversation reply picker: supported templates
+  // minus the ones an admin hid from conversations (automation still sees them).
+  getConversationWhatsAppTemplates: ($state, $getters) => inboxId =>
+    $getters
+      .getFilteredWhatsAppTemplates(inboxId)
+      .filter(template => template.visible_in_conversation_picker !== false),
   getNewConversationInboxes($state) {
     return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
@@ -1231,6 +1237,22 @@ export const actions = {
       const response = await InboxesAPI.deleteWhatsAppTemplate(
         inboxId,
         templateName
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  updateWhatsAppTemplateVisibility: async (
+    { commit },
+    { inboxId, templateName, visible }
+  ) => {
+    try {
+      const response = await InboxesAPI.updateWhatsAppTemplateVisibility(
+        inboxId,
+        templateName,
+        visible
       );
       commit(types.default.EDIT_INBOXES, response.data);
       return response.data;

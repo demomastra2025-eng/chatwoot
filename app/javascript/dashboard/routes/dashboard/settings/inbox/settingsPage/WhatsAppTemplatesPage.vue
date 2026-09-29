@@ -8,6 +8,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import CreateWhatsAppTemplateDialog from './components/CreateWhatsAppTemplateDialog.vue';
 import {
   groupWhatsAppTemplates,
@@ -36,6 +37,7 @@ const store = useStore();
 const searchQuery = ref('');
 const isSyncingTemplates = ref(false);
 const isDeletingTemplate = ref(false);
+const updatingVisibility = ref(new Set());
 const templatePendingDelete = ref(null);
 const createDialogRef = ref(null);
 const deleteDialogRef = ref(null);
@@ -130,6 +132,33 @@ const getStatusClass = templateStatus => {
 
 const canDeleteTemplate = templateGroup =>
   templateGroup?.name && templateGroup.name !== csatTemplateName.value;
+
+// A template is offered in the conversation picker unless an admin hid it;
+// the flag is stored on every language variant of the template name.
+const isVisibleInConversations = templateGroup =>
+  templateGroup.variants.some(
+    variant => variant.visible_in_conversation_picker !== false
+  );
+
+const updateTemplateVisibility = async (templateGroup, visible) => {
+  const templateName = templateGroup.name;
+  if (updatingVisibility.value.has(templateName)) return;
+
+  updatingVisibility.value.add(templateName);
+  try {
+    await store.dispatch('inboxes/updateWhatsAppTemplateVisibility', {
+      inboxId: props.inbox.id,
+      templateName,
+      visible,
+    });
+  } catch (error) {
+    useAlert(
+      error.message || t('WHATSAPP_TEMPLATES.MANAGEMENT.VISIBILITY_ERROR')
+    );
+  } finally {
+    updatingVisibility.value.delete(templateName);
+  }
+};
 
 const sectionComponent = computed(() =>
   props.embedded ? 'div' : SettingsFieldSection
@@ -316,13 +345,34 @@ const getTemplateParameters = template =>
                 </div>
               </div>
 
-              <Button
-                v-if="canDeleteTemplate(templateGroup)"
-                variant="ghost"
-                color="ruby"
-                icon="i-lucide-trash-2"
-                @click="openDeleteDialog(templateGroup)"
-              />
+              <div class="flex shrink-0 items-center gap-3">
+                <label
+                  class="flex cursor-pointer items-center gap-2 text-xs font-medium text-n-slate-11"
+                >
+                  <span>
+                    {{
+                      t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
+                    }}
+                  </span>
+                  <Switch
+                    :model-value="isVisibleInConversations(templateGroup)"
+                    :aria-label="
+                      t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
+                    "
+                    :disabled="updatingVisibility.has(templateGroup.name)"
+                    @update:model-value="
+                      updateTemplateVisibility(templateGroup, $event)
+                    "
+                  />
+                </label>
+                <Button
+                  v-if="canDeleteTemplate(templateGroup)"
+                  variant="ghost"
+                  color="ruby"
+                  icon="i-lucide-trash-2"
+                  @click="openDeleteDialog(templateGroup)"
+                />
+              </div>
             </div>
 
             <div
