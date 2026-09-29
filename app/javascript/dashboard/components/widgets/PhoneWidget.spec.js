@@ -984,6 +984,209 @@ describe('PhoneWidget', () => {
     });
   });
 
+  describe('moving the phone', () => {
+    const POSITION_KEY = 'onelink:phone-widget-position';
+    const widgetBox = { left: 0, top: 0, width: 336, height: 300 };
+    let resizeCallbacks = [];
+    const originalInnerWidth = window.innerWidth;
+    const originalInnerHeight = window.innerHeight;
+    const originalResizeObserver = globalThis.ResizeObserver;
+
+    const setWindowSize = (width, height) => {
+      window.innerWidth = width;
+      window.innerHeight = height;
+    };
+    const widget = wrapper => wrapper.get('[data-testid="phone-widget"]');
+    const placeOf = wrapper => ({
+      left: widget(wrapper).element.style.left,
+      top: widget(wrapper).element.style.top,
+    });
+    const dragHandle = wrapper =>
+      wrapper.get('[data-testid="phone-widget-drag-handle"]');
+    const pointer = (type, clientX, clientY) =>
+      window.dispatchEvent(new MouseEvent(type, { clientX, clientY }));
+    // A real pointerdown (button 0 by default) that bubbles to the header.
+    const press = async (element, clientX, clientY, init = {}) => {
+      const PointerEventClass = window.PointerEvent || window.MouseEvent;
+      element.dispatchEvent(
+        new PointerEventClass('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX,
+          clientY,
+          ...init,
+        })
+      );
+      await flushPromises();
+    };
+    const savedPlace = () =>
+      JSON.parse(window.localStorage.getItem(POSITION_KEY) || 'null');
+    let spies = [];
+
+    beforeEach(() => {
+      window.localStorage.clear();
+      setWindowSize(1280, 800);
+      // The default place: top-16 and right-4 of a 1280px window.
+      Object.assign(widgetBox, { left: 928, top: 64, width: 336, height: 300 });
+      spies = [
+        vi
+          .spyOn(Element.prototype, 'getBoundingClientRect')
+          .mockImplementation(function boundingRect() {
+            if (this.dataset?.testid !== 'phone-widget') {
+              return { left: 0, top: 0, width: 0, height: 0 };
+            }
+            return { ...widgetBox };
+          }),
+      ];
+      resizeCallbacks = [];
+      globalThis.ResizeObserver = class {
+        constructor(callback) {
+          resizeCallbacks.push(callback);
+        }
+
+        observe() {}
+
+        disconnect() {}
+      };
+    });
+
+    afterEach(() => {
+      spies.forEach(spy => spy.mockRestore());
+      window.localStorage.clear();
+      setWindowSize(originalInnerWidth, originalInnerHeight);
+      globalThis.ResizeObserver = originalResizeObserver;
+    });
+
+    it('opens at its default place until it is moved', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect(widget(wrapper).classes()).toContain('top-16');
+      expect(placeOf(wrapper)).toEqual({ left: '', top: '' });
+    });
+
+    it('drags by the header, stays inside the window and remembers the place', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await press(dragHandle(wrapper).element, 1000, 80);
+      pointer('pointermove', 700, 300);
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '628px', top: '284px' });
+      expect(widget(wrapper).classes()).not.toContain('top-16');
+
+      // Far past the bottom-right corner: clamped to the window.
+      pointer('pointermove', 5000, 5000);
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '936px', top: '492px' });
+      expect(savedPlace()).toBeNull();
+
+      pointer('pointerup', 5000, 5000);
+      await flushPromises();
+      expect(savedPlace()).toEqual({ left: 936, top: 492 });
+
+      // Moving the pointer after the drag ended does nothing.
+      pointer('pointermove', 10, 10);
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '936px', top: '492px' });
+
+      // Past the top-left corner (touch drag reports the same pointer events).
+      widgetBox.left = 936;
+      widgetBox.top = 492;
+      await press(dragHandle(wrapper).element, 950, 500, {
+        pointerType: 'touch',
+      });
+      pointer('pointermove', -800, -800);
+      pointer('pointercancel', -800, -800);
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '8px', top: '8px' });
+      expect(savedPlace()).toEqual({ left: 8, top: 8 });
+    });
+
+    it('does not start a drag from the header buttons or a secondary button', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      await press(
+        wrapper.get('[data-testid="phone-widget-ringtone"]').element,
+        1100,
+        80
+      );
+      pointer('pointermove', 200, 200);
+      pointer('pointerup', 200, 200);
+      await press(dragHandle(wrapper).element, 1000, 80, { button: 2 });
+      pointer('pointermove', 200, 200);
+      pointer('pointerup', 200, 200);
+      await flushPromises();
+
+      expect(placeOf(wrapper)).toEqual({ left: '', top: '' });
+      expect(savedPlace()).toBeNull();
+    });
+
+    it('restores the remembered place and pulls it into a smaller window', async () => {
+      window.localStorage.setItem(
+        POSITION_KEY,
+        JSON.stringify({ left: 2000, top: 2000 })
+      );
+      setWindowSize(1024, 700);
+
+      const wrapper = mountComponent();
+      await flushPromises();
+
+      expect(placeOf(wrapper)).toEqual({ left: '680px', top: '392px' });
+    });
+
+    it('stays inside the window when the window shrinks and when the phone grows', async () => {
+      window.localStorage.setItem(
+        POSITION_KEY,
+        JSON.stringify({ left: 900, top: 450 })
+      );
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '900px', top: '450px' });
+
+      setWindowSize(1000, 600);
+      window.dispatchEvent(new Event('resize'));
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '656px', top: '292px' });
+
+      // A call card makes the phone taller (ResizeObserver in the browser).
+      widgetBox.height = 500;
+      resizeCallbacks.forEach(callback => callback([]));
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '656px', top: '92px' });
+
+      // The same happens when the keypad opens, without a ResizeObserver.
+      widgetBox.height = 560;
+      await wrapper.get('[data-testid="phone-widget-expand"]').trigger('click');
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '656px', top: '32px' });
+      // Clamping for a small window does not overwrite the chosen place.
+      expect(savedPlace()).toEqual({ left: 900, top: 450 });
+    });
+
+    it('opens at the default place when the browser storage is blocked', async () => {
+      spies.push(
+        vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+          throw new Error('SecurityError');
+        }),
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+          throw new Error('SecurityError');
+        })
+      );
+
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '', top: '' });
+
+      await press(dragHandle(wrapper).element, 1000, 80);
+      pointer('pointermove', 900, 100);
+      pointer('pointerup', 900, 100);
+      await flushPromises();
+      expect(placeOf(wrapper)).toEqual({ left: '828px', top: '84px' });
+    });
+  });
+
   describe('showing and hiding the phone', () => {
     const hiddenIn = (...accountIds) => ({
       phone_widget_hidden_accounts: Object.fromEntries(

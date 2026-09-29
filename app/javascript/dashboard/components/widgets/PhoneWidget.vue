@@ -6,6 +6,7 @@ import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { usePhoneWidgetVisibility } from 'dashboard/composables/usePhoneWidgetVisibility';
+import { usePhoneWidgetPosition } from 'dashboard/composables/usePhoneWidgetPosition';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { normalizeDialNumber } from 'dashboard/helper/phoneDialNumber';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
@@ -54,6 +55,10 @@ const hasBootstrapped = ref(false);
 const sipSessions = ref([]);
 const connectingKeys = ref(new Set());
 const callButton = ref(null);
+const widgetRef = ref(null);
+// Dragged by its header anywhere on screen, never past the window edges.
+const { position, positionStyle, isDragging, startDrag, scheduleClamp } =
+  usePhoneWidgetPosition(widgetRef);
 let handoverTimer = null;
 
 const voiceInboxes = computed(() =>
@@ -353,6 +358,17 @@ watch(incomingCallKeys, (keys, previousKeys = []) => {
     phoneWidgetStore.setCallDismissed(false);
   }
 });
+// The phone grows and shrinks between the dialer, the keypad and call cards;
+// keep a moved phone inside the window (ResizeObserver covers the rest).
+watch(
+  [
+    hasOwnCall,
+    isExpanded,
+    () => (callsStore.incomingCalls || []).length,
+    () => availableVoiceInboxes.value.length,
+  ],
+  scheduleClamp
+);
 onMounted(() => {
   WebphoneClient.addEventListener('call:sessions-changed', syncSessions);
   syncSessions();
@@ -367,18 +383,32 @@ onUnmounted(() => {
 <template>
   <div
     v-if="availableVoiceInboxes.length && isVisible"
-    class="fixed ltr:right-4 rtl:left-4 top-16 z-40 w-[336px] max-w-[calc(100vw-2rem)]"
+    ref="widgetRef"
+    class="fixed z-40 w-[336px] max-w-[calc(100vw-2rem)]"
+    :class="{ 'ltr:right-4 rtl:left-4 top-16': !position }"
+    :style="positionStyle"
     :data-state="callState"
     data-testid="phone-widget"
   >
     <section
-      class="flex max-h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
+      class="flex flex-col overflow-hidden rounded-xl border border-n-strong bg-n-solid-2 text-n-slate-12 shadow-xl"
+      :class="
+        position ? 'max-h-[calc(100vh-1rem)]' : 'max-h-[calc(100vh-5rem)]'
+      "
       :aria-label="t('PHONE_WIDGET.TITLE')"
       data-testid="phone-widget-panel"
     >
       <header
-        class="flex shrink-0 items-center gap-1.5 border-b border-n-weak px-4 py-3"
+        class="flex shrink-0 touch-none select-none items-center gap-1.5 border-b border-n-weak px-4 py-3 ltr:pl-2 rtl:pr-2"
+        :class="isDragging ? 'cursor-grabbing' : 'cursor-grab'"
+        data-testid="phone-widget-drag-handle"
+        @pointerdown="startDrag"
       >
+        <span
+          class="i-lucide-grip-vertical size-4 shrink-0 text-n-slate-10"
+          :title="t('PHONE_WIDGET.DRAG')"
+          aria-hidden="true"
+        />
         <div
           class="flex min-w-0 flex-1 items-center gap-1.5"
           role="status"
