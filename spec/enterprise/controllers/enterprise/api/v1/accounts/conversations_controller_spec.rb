@@ -58,6 +58,8 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
     end
 
     it 'turns on typing and schedules captain when an agent moves the conversation back to pending' do
+      human_generation = conversation.current_captain_control_generation
+
       post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
            params: { status: 'pending' },
            headers: admin.create_new_auth_token,
@@ -73,7 +75,10 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
         assistant,
         expected_last_message_id: conversation.messages.incoming.last.id
       )
-      expect(conversation.messages.incoming.last.additional_attributes['captain_control_generation']).to eq(0)
+      # An explicit staff return to pending starts a new Captain run (ControlService#prepare_ai!):
+      # the reply must be fenced to that new generation, or the job would discard itself as stale.
+      expect(conversation.reload.current_captain_control_generation).to eq(human_generation + 1)
+      expect(conversation.messages.incoming.last.additional_attributes['captain_control_generation']).to eq(human_generation + 1)
     end
 
     it 'turns off typing when the conversation leaves pending' do
