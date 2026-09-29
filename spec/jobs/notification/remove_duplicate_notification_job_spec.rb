@@ -19,4 +19,17 @@ RSpec.describe Notification::RemoveDuplicateNotificationJob do
     described_class.perform_now(duplicate_notification)
     expect(Notification.count).to eq(1)
   end
+
+  it 'keeps the notification of another actor type that shares the id' do
+    account = conversation.account
+    task = create(:crm_task, id: conversation.id, account: account)
+    conversation_notification = create(:notification, user: user, account: account,
+                                                      notification_type: 'conversation_creation', primary_actor: conversation)
+    task_notification = create(:notification, user: user, account: account,
+                                              notification_type: 'task_assignment', primary_actor: task)
+
+    described_class.perform_now(task_notification)
+
+    expect(Notification.where(id: [conversation_notification.id, task_notification.id]).count).to eq(2)
+  end
 end

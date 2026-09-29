@@ -67,6 +67,30 @@ describe('#mutations', () => {
         4: { id: 4, primary_actor_id: 4 },
       });
     });
+
+    it('keeps notifications of different actor types that share an id', () => {
+      const state = { records: {} };
+      mutations[types.SET_NOTIFICATIONS](state, [
+        { id: 2, primary_actor_type: 'Crm::Task', primary_actor_id: 42 },
+        { id: 1, primary_actor_type: 'Conversation', primary_actor_id: 42 },
+      ]);
+
+      expect(Object.keys(state.records).sort()).toEqual(['1', '2']);
+    });
+
+    it('still replaces an older notification of the same actor', () => {
+      const state = {
+        records: {
+          1: { id: 1, primary_actor_type: 'Conversation', primary_actor_id: 42 },
+        },
+      };
+      mutations[types.SET_NOTIFICATIONS](state, [
+        { id: 5, primary_actor_type: 'Conversation', primary_actor_id: 42 },
+        { id: 6, primary_actor_type: 'Crm::Deal', primary_actor_id: 42 },
+      ]);
+
+      expect(Object.keys(state.records).sort()).toEqual(['5', '6']);
+    });
   });
   describe('#UPDATE_NOTIFICATION', () => {
     it('update notifications ', () => {

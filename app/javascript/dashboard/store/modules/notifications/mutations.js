@@ -1,5 +1,12 @@
 import types from '../../mutation-types';
 
+// Conversation, CRM task/deal and appointment ids are separate sequences, so a
+// notification actor is identified by its type and id together.
+const sameNotificationActor = (record, notification) =>
+  record.primary_actor_id === notification.primary_actor_id &&
+  (record.primary_actor_type ?? null) ===
+    (notification.primary_actor_type ?? null);
+
 export const mutations = {
   [types.SET_NOTIFICATIONS_UI_FLAG]($state, data) {
     $state.uiFlags = {
@@ -25,12 +32,12 @@ export const mutations = {
   },
   [types.SET_NOTIFICATIONS]: ($state, data) => {
     data.forEach(notification => {
-      // Find existing notification with same primary_actor_id (primary_actor_id is unique)
+      // Find an existing notification of the same primary actor (type + id)
       const existingNotification = Object.values($state.records).find(
-        record => record.primary_actor_id === notification.primary_actor_id
+        record => sameNotificationActor(record, notification)
       );
       // This is to handle the case where the same notification is received multiple times
-      // On reconnect, if there is existing notification with same primary_actor_id,
+      // On reconnect, if there is existing notification of the same primary actor,
       // it will be deleted and the new one will be added. So it will solve with duplicate notification
       if (existingNotification) {
         delete $state.records[existingNotification.id];
