@@ -307,6 +307,23 @@ RSpec.describe 'Captain pending conversation safety nets' do # rubocop:disable R
     end
   end
 
+  describe 'the release boundary' do
+    it 'v4: answers a message stamped by the previous release instead of dropping the reply' do
+      working_hours!(open: true)
+      conversation = pending_conversation!
+      message = incoming!(conversation)
+      legacy_stamp = message.reload.additional_attributes.to_h.slice('captain_control_generation')
+      message.update_columns(additional_attributes: legacy_stamp) # rubocop:disable Rails/SkipsModelValidations
+      allow(Captain::Assistant::AgentRunnerService).to receive(:new)
+        .and_return(instance_double(Captain::Assistant::AgentRunnerService, generate_response: { 'response' => 'Здравствуйте!' }))
+
+      with_events { Captain::Conversation::ResponseBuilderJob.perform_now(conversation, assistant, expected_last_message_id: message.id) }
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(public_texts(conversation)).to eq(['Здравствуйте!'])
+    end
+  end
+
   describe 'accepted Captain rules that stay in place' do
     def run_captain_turn!(conversation, message, response)
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: response)

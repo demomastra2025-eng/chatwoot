@@ -381,6 +381,41 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
     end
 
+    context 'when the incoming message was stamped by the previous release' do
+      let(:incoming) { conversation.messages.incoming.last }
+
+      before do
+        legacy_stamp = incoming.reload.additional_attributes.to_h.except('captain_status_transition_id')
+        incoming.update_columns(additional_attributes: legacy_stamp.merge('captain_control_generation' => 0)) # rubocop:disable Rails/SkipsModelValidations
+      end
+
+      it 'replies without an epoch fence instead of dropping the reply' do
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+        expect(conversation.reload.status).to eq('pending')
+        expect(conversation.messages.outgoing.where(sender: assistant).pluck(:content)).to eq(['Hey, welcome to Captain V2'])
+      end
+
+      it 'hands a failed turn to people instead of leaving it silent' do
+        allow(agent_runner_service).to receive(:generate_response).and_raise(StandardError, 'provider down')
+
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+        expect(conversation.reload.status).to eq('open')
+        expect(conversation.messages.where(private: true).pluck(:content)).to eq([described_class::FAILED_TURN_HANDOFF_NOTE])
+      end
+
+      it 'still stops after a human took the conversation over' do
+        agent = create(:user, account: account, role: :agent)
+        create(:message, conversation: conversation, message_type: :outgoing, sender: agent, account: account, inbox: inbox, content: 'Agent here')
+        expect(agent_runner_service).not_to receive(:generate_response)
+
+        described_class.perform_now(conversation, assistant, expected_last_message_id: incoming.id)
+
+        expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+      end
+    end
+
     it 'skips a buffered stale job when the latest incoming no longer matches the buffer state' do
       buffer_token = SecureRandom.uuid
       expected_last_message_id = conversation.messages.incoming.last.id

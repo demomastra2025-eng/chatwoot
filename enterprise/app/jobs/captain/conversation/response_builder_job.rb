@@ -1081,10 +1081,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     message_fence_attributes['captain_control_generation']
   end
 
+  # A message stamped by the previous release carries only the control
+  # generation. A missing status epoch means no epoch fence for that run (the
+  # generation, status, human-reply and last-message fences still apply); it is
+  # not a stale epoch that would drop the reply.
   def message_status_transition_id
     return if @expected_last_message_id.blank?
 
-    message_fence_attributes.fetch('captain_status_transition_id', -1)
+    message_fence_attributes['captain_status_transition_id']
   end
 
   def message_fence_attributes
