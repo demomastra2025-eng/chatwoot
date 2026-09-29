@@ -5,9 +5,10 @@ module Enterprise::MessageTemplates::HookExecutionService
     super
     return unless should_process_captain_response?
 
-    return unless inbox.captain_auto_reply_allowed? && inbox.captain_active?
+    auto_reply_allowed = inbox.captain_auto_reply_allowed?
+    return schedule_captain_response if auto_reply_allowed && inbox.captain_active?
 
-    schedule_captain_response
+    open_conversation_for_human_response(quota_used_up: auto_reply_allowed)
   end
 
   def should_send_greeting?
@@ -88,10 +89,50 @@ module Enterprise::MessageTemplates::HookExecutionService
     conversation.pending?
   end
 
+  # Captain handles a pending conversation only while it may answer now. When it
+  # is outside its schedule or out of quota, the inbox greeting, out-of-office and
+  # email-collect templates apply as in an inbox without Captain.
   def captain_handling_conversation?
     conversation_accepts_captain_response? &&
       inbox.respond_to?(:captain_assistant) &&
       inbox.captain_assistant.present? &&
-      inbox.captain_auto_reply_allowed?
+      inbox.captain_auto_reply_allowed? &&
+      inbox.captain_active?
+  end
+
+  # System safety net: Captain answers only pending conversations, so a pending
+  # conversation that Captain may not answer now must not wait unseen. It opens
+  # for people through the standard status transition (system source, no actor),
+  # which runs assignment and notifications. This is not a Captain handoff
+  # decision; the customer only gets the inbox templates sent above, plus the
+  # assistant's own handoff message when quota ran out.
+  def open_conversation_for_human_response(quota_used_up:)
+    previous_current = [Current.user, Current.executed_by]
+    Current.user = Current.executed_by = nil
+    quota_used_up ? handoff_without_captain_quota : open_outside_captain_schedule
+    return if conversation.pending?
+
+    Captain::Conversation::TypingIndicatorService.turn_off(conversation: conversation, assistant: inbox.captain_assistant)
+  ensure
+    Current.user, Current.executed_by = previous_current if previous_current
+  end
+
+  def open_outside_captain_schedule
+    Rails.logger.info("[CAPTAIN][AutoReply] Opening conversation #{conversation.id} because Captain auto-reply is not allowed now")
+    Conversation.transaction do
+      next unless Conversation.lock.find(conversation.id).pending?
+
+      Conversations::StatusTransitionService.new(conversation: conversation, params: { status: 'open' }, source: 'system').perform
+    end
+  end
+
+  # Captain may answer now but the account has no Captain quota left. The fenced
+  # system handoff opens the conversation once; a human reply or status change
+  # that came first wins.
+  def handoff_without_captain_quota
+    Rails.logger.info("[CAPTAIN][AutoReply] Handing conversation #{conversation.id} to people because Captain quota is used up")
+    conversation.bot_handoff!(actor: nil, source: 'system', fence: { last_message_id: message.id }) do
+      Captain::SystemHandoffMessageService.new(conversation: conversation, assistant: inbox.captain_assistant).perform
+    end
   end
 end
