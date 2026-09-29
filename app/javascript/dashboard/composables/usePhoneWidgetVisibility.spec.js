@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   isCallHandledByAnotherOperator,
+  isEmployeeOwnCall,
   useCallsStore,
 } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
@@ -163,6 +164,136 @@ describe('usePhoneWidgetVisibility', () => {
       'sipuni:own-1',
     ]);
     expect(isVisible.value).toBe(true);
+  });
+
+  describe('info-only call cards of calls the employee cannot join', () => {
+    beforeEach(() => {
+      settingsState.settings.value = {
+        [PHONE_WIDGET_HIDDEN_UI_SETTINGS_KEY]: { 7: true },
+      };
+    });
+
+    it('keeps a hidden phone hidden while the AI voice agent handles a call', () => {
+      const callsStore = useCallsStore();
+      const { isVisible, hasCallActivity, ownIncomingCalls } =
+        usePhoneWidgetVisibility();
+
+      callsStore.handleCallStatusChanged({
+        callSid: 'sipuni:ai-1',
+        provider: 'sipuni',
+        status: 'in_progress',
+        callDirection: 'inbound',
+        inboxId: 43,
+        accountId: 7,
+        browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+        serverManagedVoiceCall: true,
+        currentUserId: 1,
+      });
+
+      expect(callsStore.incomingCalls.map(call => call.callSid)).toEqual([
+        'sipuni:ai-1',
+      ]);
+      expect(ownIncomingCalls.value).toEqual([]);
+      expect(hasCallActivity.value).toBe(false);
+      expect(isVisible.value).toBe(false);
+    });
+
+    it('keeps it hidden for an AI-handled card added from voice_call.incoming', () => {
+      const callsStore = useCallsStore();
+      const { isVisible } = usePhoneWidgetVisibility();
+
+      callsStore.addCall({
+        ...ringingCall('sipuni:ai-2'),
+        serverManagedVoiceCall: true,
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+      });
+
+      expect(callsStore.incomingCalls).toHaveLength(1);
+      expect(isVisible.value).toBe(false);
+    });
+
+    it('keeps it hidden for an in-progress call nobody here claimed', () => {
+      const callsStore = useCallsStore();
+      const { isVisible, hasCallActivity } = usePhoneWidgetVisibility();
+
+      callsStore.handleCallStatusChanged({
+        callSid: 'sipuni:unclaimed-1',
+        provider: 'sipuni',
+        status: 'in_progress',
+        callDirection: 'inbound',
+        inboxId: 43,
+        accountId: 7,
+        currentUserId: 1,
+      });
+
+      expect(callsStore.incomingCalls[0]?.browserJoinUnsupportedReason).toBe(
+        'CALL_IN_PROGRESS'
+      );
+      expect(hasCallActivity.value).toBe(false);
+      expect(isVisible.value).toBe(false);
+    });
+
+    it('still pops for an in-progress call the employee claimed', () => {
+      const callsStore = useCallsStore();
+      const { isVisible } = usePhoneWidgetVisibility();
+
+      callsStore.handleCallStatusChanged({
+        callSid: 'sipuni:mine-1',
+        provider: 'sipuni',
+        status: 'in_progress',
+        callDirection: 'inbound',
+        inboxId: 43,
+        accountId: 7,
+        operatorClaim: { user_id: 1 },
+        currentUserId: 1,
+      });
+
+      expect(isVisible.value).toBe(true);
+    });
+  });
+
+  it.each([
+    ['it rings for the employee', {}, true],
+    ['it is being started', { callDirection: 'outbound' }, true],
+    [
+      'the employee claimed it',
+      {
+        operatorClaim: { user_id: 1 },
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+      },
+      true,
+    ],
+    [
+      'a colleague took it',
+      {
+        operatorClaim: { user_id: 99 },
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      },
+      false,
+    ],
+    [
+      'the AI voice agent handles it',
+      {
+        serverManagedVoiceCall: true,
+        browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+      },
+      false,
+    ],
+    [
+      'it is in progress and unclaimed',
+      {
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+      },
+      false,
+    ],
+  ])('counts a call as the employee own when %s', (_, overrides, expected) => {
+    expect(isEmployeeOwnCall({ ...ringingCall(), ...overrides }, 1)).toBe(
+      expected
+    );
   });
 
   it.each([

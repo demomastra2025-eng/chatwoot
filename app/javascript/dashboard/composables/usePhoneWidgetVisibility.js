@@ -1,10 +1,7 @@
 import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import {
-  isCallHandledByAnotherOperator,
-  useCallsStore,
-} from 'dashboard/stores/calls';
+import { isEmployeeOwnCall, useCallsStore } from 'dashboard/stores/calls';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 
 // { [accountId]: true } for the accounts where the employee hid the phone.
@@ -23,8 +20,10 @@ const hiddenAccountsFrom = uiSettings => {
  * account in the UI settings; the employee's own call (incoming, active or an
  * outbound call being started) shows the phone anyway until the employee
  * hides it for that call, and afterwards the saved choice applies again.
- * Calls a colleague took (info cards of inboxes that show calls handled by
- * other operators) never bring a hidden phone back.
+ * Info-only call cards never bring a hidden phone back: calls a colleague took
+ * (inboxes that show calls handled by other operators), calls the AI voice
+ * agent handles and in-progress calls nobody here claimed (see
+ * isEmployeeOwnCall).
  */
 export function usePhoneWidgetVisibility() {
   const { uiSettings, updateUISettings } = useUISettings();
@@ -38,8 +37,8 @@ export function usePhoneWidgetVisibility() {
     () => hiddenAccountsFrom(uiSettings.value)[accountKey.value] === true
   );
   const ownIncomingCalls = computed(() =>
-    (callsStore.incomingCalls || []).filter(
-      call => !isCallHandledByAnotherOperator(call, currentUser.value?.id)
+    (callsStore.incomingCalls || []).filter(call =>
+      isEmployeeOwnCall(call, currentUser.value?.id)
     )
   );
   const hasCallActivity = computed(() =>

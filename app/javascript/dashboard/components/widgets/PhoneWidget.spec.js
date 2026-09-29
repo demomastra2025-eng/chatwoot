@@ -1031,6 +1031,72 @@ describe('PhoneWidget', () => {
       });
     });
 
+    describe('info-only cards of calls this employee cannot join', () => {
+      const aiAgentCall = (callSid = 'sipuni:ai-1') =>
+        incomingCall({
+          callSid,
+          status: 'in_progress',
+          serverManagedVoiceCall: true,
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
+        });
+      const unclaimedInProgressCall = (callSid = 'sipuni:unclaimed-1') =>
+        incomingCall({
+          callSid,
+          status: 'in_progress',
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+        });
+
+      beforeEach(() => {
+        values.getCurrentUser = { id: 1, name: 'Иван Иванов' };
+      });
+
+      it.each([
+        ['the AI voice agent handles', aiAgentCall],
+        ['nobody here claimed', unclaimedInProgressCall],
+      ])(
+        'does not pop a hidden phone for a call %s',
+        async (_, infoCall) => {
+          settingsState.settings.value = hiddenIn(1);
+          const wrapper = mountComponent();
+          await flushPromises();
+
+          setIncomingCalls([infoCall()]);
+          await flushPromises();
+          expect(widgetShown(wrapper)).toBe(false);
+
+          // The employee's own ringing call still pops the phone.
+          setIncomingCalls([infoCall(), incomingCall()]);
+          await flushPromises();
+          expect(widgetShown(wrapper)).toBe(true);
+        }
+      );
+
+      it.each([
+        ['the AI voice agent handles', aiAgentCall],
+        ['nobody here claimed', unclaimedInProgressCall],
+      ])(
+        'does not clear the dismissal of the current call for a call %s',
+        async (_, infoCall) => {
+          const wrapper = mountComponent();
+          await flushPromises();
+          setIncomingCalls([incomingCall()]);
+          await flushPromises();
+          await wrapper
+            .get('[data-testid="phone-widget-hide"]')
+            .trigger('click');
+          expect(widgetShown(wrapper)).toBe(false);
+
+          setIncomingCalls([incomingCall(), infoCall('sipuni:info-2')]);
+          await flushPromises();
+
+          expect(widgetShown(wrapper)).toBe(false);
+          expect(usePhoneWidgetStore().callDismissed).toBe(true);
+        }
+      );
+    });
+
     it('does not offer the sidebar button without a browser SIP line', async () => {
       webphoneClient.sessions = {};
       mountComponent();

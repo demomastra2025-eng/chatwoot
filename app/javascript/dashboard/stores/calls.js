@@ -21,6 +21,33 @@ export const isCallHandledByAnotherOperator = (call, currentUserId) => {
   return String(claimedByUserId) !== String(currentUserId);
 };
 
+// Whether a (not yet active) call card is the employee's own call: one that
+// rings for them, that they can join, that they are starting, or that the
+// server says they took. Info-only cards - a call the AI voice agent handles,
+// an in-progress call nobody here claimed, a call a colleague took - are not,
+// so they never bring a hidden phone back.
+export const isEmployeeOwnCall = (call, currentUserId) => {
+  if (!call) return false;
+  if (call.isActive) return true;
+
+  const claimedByUserId = operatorClaimUserId(call.operatorClaim);
+  if (
+    isPresent(claimedByUserId) &&
+    isPresent(currentUserId) &&
+    String(claimedByUserId) === String(currentUserId)
+  ) {
+    return true;
+  }
+  if (isCallHandledByAnotherOperator(call, currentUserId)) return false;
+  if (call.serverManagedVoiceCall) return false;
+  if (call.browserJoinUnsupportedReason === 'AI_AGENT_HANDLING') return false;
+
+  const direction = call.callDirection || call.direction;
+  if (direction === 'outbound') return true;
+
+  return call.browserJoinSupported !== false;
+};
+
 const sameValue = (left, right) =>
   isPresent(left) && isPresent(right) && String(left) === String(right);
 
