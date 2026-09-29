@@ -20,6 +20,10 @@ const existingAppointment = {
   status: 'confirmed',
 };
 
+// Form times are the clinic wall clock (Asia/Almaty, UTC+5 all year), like
+// the calendar grid; this is the instant they are saved as.
+const clinicIso = wallClock => new Date(`${wallClock}:00+05:00`).toISOString();
+
 const manualReviewCommand = {
   id: 55,
   operation: 'create_reception',
@@ -369,6 +373,33 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(payload).not.toHaveProperty('client_middle_name');
   });
 
+  it('shows and edits appointment times on the clinic clock', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    // 10:00Z is 15:00 in the clinic, whatever the browser timezone is.
+    expect(wrapper.vm.appointmentForms['appointment-501']).toMatchObject({
+      endsAt: '2026-06-27T15:30',
+      startsAt: '2026-06-27T15:00',
+    });
+    expect(wrapper.vm.appointmentMeta(existingAppointment)).toContain('15:00');
+    expect(wrapper.vm.appointmentMeta(existingAppointment)).toContain('15:30');
+
+    // The 30 minute service moves the end on the clinic clock, across
+    // midnight too.
+    const form = wrapper.vm.appointmentForms['appointment-501'];
+    form.startsAt = '2026-06-27T23:45';
+    wrapper.vm.updateFormEndFromDuration(form);
+    expect(form.endsAt).toBe('2026-06-28T00:15');
+
+    await wrapper.vm.saveAppointment(existingAppointment);
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload).toMatchObject({
+      ends_at: '2026-06-27T19:15:00.000Z',
+      starts_at: '2026-06-27T18:45:00.000Z',
+    });
+  });
+
   it('updates an existing appointment from the inline edit form', async () => {
     const wrapper = mountComponent();
     await flushPromises();
@@ -395,13 +426,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       client_phone: 'test-phone-4567',
       contact_id: 42,
       conversation_id: 123,
-      ends_at: new Date('2026-06-27T11:00').toISOString(),
+      ends_at: clinicIso('2026-06-27T11:00'),
       resource_id: 7,
       service_amount: 7000,
       service_id: 9,
       service_ids: [9],
       source: 'conversation',
-      starts_at: new Date('2026-06-27T10:30').toISOString(),
+      starts_at: clinicIso('2026-06-27T10:30'),
       status: 'completed',
     });
     expect(mocks.dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
@@ -959,13 +990,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       client_phone: 'test-phone-4567',
       contact_id: 42,
       conversation_display_id: 123,
-      ends_at: new Date('2026-06-27T10:30').toISOString(),
+      ends_at: clinicIso('2026-06-27T10:30'),
       resource_id: 7,
       service_amount: 5000,
       service_id: 9,
       service_ids: [9],
       source: 'conversation',
-      starts_at: new Date('2026-06-27T10:00').toISOString(),
+      starts_at: clinicIso('2026-06-27T10:00'),
       status: 'completed',
     });
     expect(mocks.dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
@@ -1163,13 +1194,13 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       client_phone: 'test-phone-4567',
       contact_id: 42,
       conversation_display_id: 123,
-      ends_at: new Date('2026-06-27T10:30').toISOString(),
+      ends_at: clinicIso('2026-06-27T10:30'),
       resource_id: 7,
       service_amount: 3000,
       service_ids: [],
       service_name_snapshot: 'Осмотр',
       source: 'conversation',
-      starts_at: new Date('2026-06-27T10:00').toISOString(),
+      starts_at: clinicIso('2026-06-27T10:00'),
       status: 'scheduled',
     });
   });

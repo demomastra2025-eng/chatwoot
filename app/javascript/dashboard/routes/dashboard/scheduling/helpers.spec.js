@@ -22,7 +22,73 @@ import {
   resolveAppointmentConversationTarget,
   servicesAvailableForResource,
   shiftAnchorDate,
+  addMinutesToDateTimeInputValue,
+  dateTimeInputDurationMinutes,
+  formatSchedulingDateTime,
+  fromDateTimeInputValue,
+  minuteOfDayFromDate,
+  toDateTimeInputValue,
 } from './helpers';
+
+// Clinic clock helpers: with the workspace timezone the results must not
+// depend on the process timezone (run with TZ=UTC and TZ=Europe/Berlin).
+describe('scheduling helpers on the clinic clock (Asia/Almaty)', () => {
+  const ALMATY = 'Asia/Almaty';
+
+  it('shows an instant as the clinic wall clock in a date/time input', () => {
+    expect(toDateTimeInputValue('2026-09-29T05:00:00.000Z', ALMATY)).toBe(
+      '2026-09-29T10:00'
+    );
+    // 21:30Z is already the next day in Almaty.
+    expect(toDateTimeInputValue('2026-03-28T21:30:00.000Z', ALMATY)).toBe(
+      '2026-03-29T02:30'
+    );
+  });
+
+  it('reads a typed clinic wall clock as the right instant', () => {
+    expect(fromDateTimeInputValue('2026-09-29T10:00', ALMATY)).toBe(
+      '2026-09-29T05:00:00.000Z'
+    );
+    // Inside the Berlin DST gap, but a normal time on the clinic clock.
+    expect(fromDateTimeInputValue('2026-03-29T02:30', ALMATY)).toBe(
+      '2026-03-28T21:30:00.000Z'
+    );
+    expect(fromDateTimeInputValue('', ALMATY)).toBeNull();
+  });
+
+  it('moves and measures date/time input values on the clinic clock', () => {
+    expect(addMinutesToDateTimeInputValue('2026-09-29T23:40', 45, ALMATY)).toBe(
+      '2026-09-30T00:25'
+    );
+    expect(
+      dateTimeInputDurationMinutes(
+        '2026-03-29T01:30',
+        '2026-03-29T03:00',
+        ALMATY
+      )
+    ).toBe(90);
+  });
+
+  it('reads the minute of day and formats date and time on the clinic clock', () => {
+    expect(minuteOfDayFromDate('2026-09-29T05:15:00.000Z', ALMATY)).toBe(
+      10 * 60 + 15
+    );
+    expect(
+      formatSchedulingDateTime('2026-09-29T05:00:00.000Z', 'en', ALMATY)
+    ).toContain('10:00');
+    expect(formatSchedulingDateTime('', 'en', ALMATY)).toBe('—');
+  });
+
+  it('keeps the browser-local behaviour without a timezone', () => {
+    const local = new Date(2026, 8, 29, 10, 0);
+
+    expect(toDateTimeInputValue(local)).toBe('2026-09-29T10:00');
+    expect(fromDateTimeInputValue('2026-09-29T10:00')).toBe(
+      local.toISOString()
+    );
+    expect(minuteOfDayFromDate(local)).toBe(10 * 60);
+  });
+});
 
 describe('scheduling helpers', () => {
   it('identifies provider-owned Medelement appointments', () => {
@@ -291,9 +357,18 @@ describe('scheduling helpers', () => {
   });
 
   it('keeps the browser-local range when no Workspace timezone is given', () => {
-    const { from } = buildCalendarRange('day', '2026-03-09T12:00:00.000Z');
+    const anchor = '2026-03-09T12:00:00.000Z';
+    const { from } = buildCalendarRange('day', anchor);
+    const anchorDate = new Date(anchor);
 
-    expect(from.toISOString()).toBe('2026-03-09T00:00:00.000Z');
+    // Browser-local midnight of the anchor day, in any process timezone.
+    expect(from.toISOString()).toBe(
+      new Date(
+        anchorDate.getFullYear(),
+        anchorDate.getMonth(),
+        anchorDate.getDate()
+      ).toISOString()
+    );
   });
 
   it('shifts the anchor by Workspace calendar days and months', () => {
@@ -319,8 +394,9 @@ describe('scheduling helpers', () => {
     expect(
       calendarDayAnchor(new Date(2026, 2, 9), 'Asia/Almaty').toISOString()
     ).toBe('2026-03-09T07:00:00.000Z');
+    // Without a Workspace timezone: browser-local noon of the picked day.
     expect(calendarDayAnchor(new Date(2026, 2, 9)).toISOString()).toBe(
-      '2026-03-09T12:00:00.000Z'
+      new Date(2026, 2, 9, 12, 0).toISOString()
     );
   });
 

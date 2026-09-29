@@ -35,6 +35,7 @@ import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/refere
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
+  addMinutesToDateTimeInputValue,
   appointmentCancellationAlertMessage,
   fromDateTimeInputValue,
   getServicePriceForResource,
@@ -52,6 +53,7 @@ import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_VALUES,
+  DEFAULT_WORKSPACE_TIMEZONE,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
@@ -60,8 +62,14 @@ const props = defineProps({
     type: Object,
   },
 });
-
 const emit = defineEmits(['close']);
+// Appointments are shown and edited on the clinic clock, the same timezone as
+// the calendar grid, whatever the browser timezone is.
+const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
+const toClinicDateTime = value =>
+  toDateTimeInputValue(value, SCHEDULING_TIMEZONE);
+const fromClinicDateTime = value =>
+  fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 
 const NEW_APPOINTMENT_KEY = 'new-appointment';
 
@@ -293,8 +301,8 @@ const buildDefaultAppointmentTimes = () => {
   );
 
   return {
-    endsAt: toDateTimeInputValue(endsAt),
-    startsAt: toDateTimeInputValue(startsAt),
+    endsAt: toClinicDateTime(endsAt),
+    startsAt: toClinicDateTime(startsAt),
   };
 };
 
@@ -442,7 +450,7 @@ const formFromAppointment = appointment => {
       createConversationDisplayId.value ||
       '',
     conversationId: appointment.conversationId || '',
-    endsAt: toDateTimeInputValue(appointment.endsAt),
+    endsAt: toClinicDateTime(appointment.endsAt),
     medelementCabinetCode:
       appointment.customAttributes?.medelementCabinetCode ||
       appointment.customAttributes?.medelement_cabinet_code ||
@@ -455,7 +463,7 @@ const formFromAppointment = appointment => {
         : String(appointment.serviceAmount),
     serviceId: appointment.serviceId || '',
     serviceNameSnapshot: appointment.serviceNameSnapshot || '',
-    startsAt: toDateTimeInputValue(appointment.startsAt),
+    startsAt: toClinicDateTime(appointment.startsAt),
     status: appointment.status || 'scheduled',
   };
 };
@@ -488,9 +496,7 @@ const medelementCabinetOptionsForForm = form =>
 
 const updateFormEndFromDuration = form => {
   if (!form?.startsAt) return;
-
-  const startsAt = new Date(form.startsAt);
-  if (Number.isNaN(startsAt.getTime())) return;
+  if (Number.isNaN(new Date(form.startsAt).getTime())) return;
 
   const durationMin = Math.max(
     Number(selectedServiceForForm(form)?.durationMin) ||
@@ -498,9 +504,11 @@ const updateFormEndFromDuration = form => {
       30,
     5
   );
-  const endsAt = new Date(startsAt);
-  endsAt.setMinutes(endsAt.getMinutes() + durationMin);
-  form.endsAt = toDateTimeInputValue(endsAt);
+  form.endsAt = addMinutesToDateTimeInputValue(
+    form.startsAt,
+    durationMin,
+    SCHEDULING_TIMEZONE
+  );
 };
 
 const syncFormServiceFields = form => {
@@ -651,12 +659,12 @@ const buildAppointmentPayload = form =>
       custom_attributes: form.medelementCabinetCode
         ? { medelement_cabinet_code: form.medelementCabinetCode }
         : undefined,
-      ends_at: fromDateTimeInputValue(form.endsAt),
+      ends_at: fromClinicDateTime(form.endsAt),
       resource_id: toNumeric(form.resourceId),
       service_amount:
         toIntegerNumeric(form.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
-      starts_at: fromDateTimeInputValue(form.startsAt),
+      starts_at: fromClinicDateTime(form.startsAt),
       status: form.status || 'scheduled',
     },
     {
@@ -693,12 +701,12 @@ const buildCreatePayload = () =>
             },
           }
         : {}),
-      ends_at: fromDateTimeInputValue(createForm.endsAt),
+      ends_at: fromClinicDateTime(createForm.endsAt),
       resource_id: toNumeric(createForm.resourceId),
       service_amount:
         toIntegerNumeric(createForm.serviceAmount || 0, 'service_amount') || 0,
       source: 'conversation',
-      starts_at: fromDateTimeInputValue(createForm.startsAt),
+      starts_at: fromClinicDateTime(createForm.startsAt),
       status: createForm.status || 'scheduled',
     },
     {
@@ -796,9 +804,7 @@ const scrollToTop = async () => {
 
 const updateCreateEndFromDuration = () => {
   if (!createForm.startsAt) return;
-
-  const startsAt = new Date(createForm.startsAt);
-  if (Number.isNaN(startsAt.getTime())) return;
+  if (Number.isNaN(new Date(createForm.startsAt).getTime())) return;
 
   const durationMin = Math.max(
     Number(selectedCreateService.value?.durationMin) ||
@@ -806,9 +812,11 @@ const updateCreateEndFromDuration = () => {
       30,
     5
   );
-  const endsAt = new Date(startsAt);
-  endsAt.setMinutes(endsAt.getMinutes() + durationMin);
-  createForm.endsAt = toDateTimeInputValue(endsAt);
+  createForm.endsAt = addMinutesToDateTimeInputValue(
+    createForm.startsAt,
+    durationMin,
+    SCHEDULING_TIMEZONE
+  );
 };
 
 const syncCreateServiceFields = () => {
@@ -1096,16 +1104,19 @@ const formatDateTimeRange = appointment => {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+    timeZone: SCHEDULING_TIMEZONE,
   }).format(start);
   const startTime = new Intl.DateTimeFormat(locale.value, {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: SCHEDULING_TIMEZONE,
   }).format(start);
   const endTime =
     end && !Number.isNaN(end.getTime())
       ? new Intl.DateTimeFormat(locale.value, {
           hour: '2-digit',
           minute: '2-digit',
+          timeZone: SCHEDULING_TIMEZONE,
         }).format(end)
       : '';
 

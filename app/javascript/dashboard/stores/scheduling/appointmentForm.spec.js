@@ -282,6 +282,51 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  // The grid shows appointments on the clinic clock (Asia/Almaty, UTC+5);
+  // the drawer must show and save the same wall clock in any browser zone.
+  // These expectations hold for any process TZ (run with UTC and Berlin).
+  describe('clinic timezone', () => {
+    it('opens a grid slot at the clinic time and saves the same instant', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openCreate(
+        {
+          endsAt: '2026-09-29T05:30:00.000Z',
+          startsAt: '2026-09-29T05:00:00.000Z',
+        },
+        { resourceId: 3 }
+      );
+
+      expect(store.form.startsAt).toBe('2026-09-29T10:00');
+      expect(store.form.endsAt).toBe('2026-09-29T10:30');
+      expect(store.buildPayload()).toMatchObject({
+        ends_at: '2026-09-29T05:30:00.000Z',
+        starts_at: '2026-09-29T05:00:00.000Z',
+      });
+    });
+
+    it('edits an appointment at the clinic time and reads typed times there', () => {
+      const store = useSchedulingAppointmentFormStore();
+      store.openEdit({
+        id: 9,
+        endsAt: '2026-03-29T01:00:00.000Z',
+        resourceId: 3,
+        startsAt: '2026-03-29T00:30:00.000Z',
+      });
+
+      expect(store.form.startsAt).toBe('2026-03-29T05:30');
+      expect(store.form.endsAt).toBe('2026-03-29T06:00');
+
+      // 02:30 is inside the Berlin DST gap that night; on the clinic clock it
+      // is a normal time and keeps the 30 minute duration.
+      store.updateField('startsAt', '2026-03-29T02:30');
+      expect(store.form.endsAt).toBe('2026-03-29T03:00');
+      expect(store.buildPayload()).toMatchObject({
+        ends_at: '2026-03-28T22:00:00.000Z',
+        starts_at: '2026-03-28T21:30:00.000Z',
+      });
+    });
+  });
+
   it('keeps the appointment duration when the start time changes', () => {
     const store = useSchedulingAppointmentFormStore();
     store.openCreate({

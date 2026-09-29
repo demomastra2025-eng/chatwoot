@@ -5,7 +5,10 @@ import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import SchedulingStatusMenu from './SchedulingStatusMenu.vue';
-import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
+import {
+  APPOINTMENT_STATUS_ICONS,
+  DEFAULT_WORKSPACE_TIMEZONE,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 import {
   isAppointmentProviderOwned,
   providerBookingNeedsReview,
@@ -25,6 +28,11 @@ const props = defineProps({
   resources: {
     type: Array,
     default: () => [],
+  },
+  // Cards show times on the clinic clock, like the calendar grid.
+  workspaceTimezone: {
+    type: String,
+    default: DEFAULT_WORKSPACE_TIMEZONE,
   },
 });
 
@@ -119,12 +127,14 @@ const formatDateLabel = value =>
     day: 'numeric',
     month: 'short',
     weekday: 'short',
+    timeZone: props.workspaceTimezone || undefined,
   }).format(new Date(value));
 
 const formatTimeLabel = value =>
   new Intl.DateTimeFormat(localeCode.value, {
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: props.workspaceTimezone || undefined,
   }).format(new Date(value));
 
 const formatTimeRange = appointment =>

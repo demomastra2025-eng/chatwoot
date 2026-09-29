@@ -54,6 +54,7 @@ import {
   calendarDayAnchor,
   canCreateAppointmentConversation,
   formatCalendarTitle,
+  formatSchedulingDateTime,
   isAppointmentProviderOwned,
   isMedelementResource,
   medelementCommandFailureMessage,
@@ -347,17 +348,9 @@ const providerCommandTitle = computed(() => {
 
   return t('SCHEDULING.MEDELEMENT.CONFIRM_TITLE');
 });
-const formatProviderCommandDateTime = value => {
-  if (!value) return '—';
-
-  return new Intl.DateTimeFormat(
-    locale.value?.replace(/_/g, '-') || undefined,
-    {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }
-  ).format(new Date(value));
-};
+// On the clinic clock, the same time the grid and the drawer show.
+const formatProviderCommandDateTime = value =>
+  formatSchedulingDateTime(value, locale.value, workspaceTimezone.value);
 const formatProviderCommandRange = (startsAt, endsAt) => {
   const start = formatProviderCommandDateTime(startsAt);
   const end = formatProviderCommandDateTime(endsAt);

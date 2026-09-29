@@ -1,7 +1,10 @@
 import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
-import { PAYMENT_METHOD_VALUES } from 'dashboard/routes/dashboard/scheduling/constants';
+import {
+  DEFAULT_WORKSPACE_TIMEZONE,
+  PAYMENT_METHOD_VALUES,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 import { schedulingContactNameParts } from './contactName';
 import {
   compactPayload,
@@ -12,10 +15,20 @@ import {
   toNumeric,
 } from './shared';
 import {
+  addMinutesToDateTimeInputValue,
+  dateTimeInputDurationMinutes,
   fromDateTimeInputValue,
   getServicePriceForResource,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
+
+// The drawer shows and reads start/end on the clinic clock, the same zone as
+// the calendar grid, whatever the browser timezone is.
+const SCHEDULING_TIMEZONE = DEFAULT_WORKSPACE_TIMEZONE;
+const toFormDateTime = value =>
+  toDateTimeInputValue(value, SCHEDULING_TIMEZONE);
+const fromFormDateTime = value =>
+  fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 
 const DEFAULT_PREPAID_PAYMENT_METHOD =
   PAYMENT_METHOD_VALUES.find(value => value === 'cash') ||
@@ -244,9 +257,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.form = {
           ...this.form,
           ...defaults,
-          endsAt: toDateTimeInputValue(slot.endsAt),
+          endsAt: toFormDateTime(slot.endsAt),
           resourceId: slot.resourceId || defaults.resourceId || '',
-          startsAt: toDateTimeInputValue(slot.startsAt),
+          startsAt: toFormDateTime(slot.startsAt),
         };
         this.form = normalizePrepaymentForm(this.form);
       },
@@ -281,7 +294,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversationDisplayId: appointment.conversationDisplayId || '',
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
-          endsAt: toDateTimeInputValue(appointment.endsAt),
+          endsAt: toFormDateTime(appointment.endsAt),
           medelementCabinetCode:
             appointment.customAttributes?.medelement_cabinet_code ||
             appointment.customAttributes?.medelementCabinetCode ||
@@ -297,7 +310,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : normalizeIdArray([appointment.serviceId]),
           serviceNameSnapshot: appointment.serviceNameSnapshot || '',
           source: appointment.source || 'manual',
-          startsAt: toDateTimeInputValue(appointment.startsAt),
+          startsAt: toFormDateTime(appointment.startsAt),
           status: appointment.status || 'scheduled',
         };
         this.form = normalizePrepaymentForm(this.form);
@@ -316,9 +329,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       updateField(field, value) {
-        const currentStart = new Date(this.form.startsAt);
-        const currentEnd = new Date(this.form.endsAt);
-        const durationMs = currentEnd - currentStart;
+        const durationMinutes = dateTimeInputDurationMinutes(
+          this.form.startsAt,
+          this.form.endsAt,
+          SCHEDULING_TIMEZONE
+        );
         const normalizedValue =
           field === 'serviceIds' ? normalizeIdArray(value) : value;
         const normalizedServiceIds =
@@ -335,10 +350,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
                   : {}),
               }
             : {}),
-          ...(field === 'startsAt' && durationMs > 0 && value
+          ...(field === 'startsAt' && durationMinutes > 0 && value
             ? {
-                endsAt: toDateTimeInputValue(
-                  new Date(new Date(value).getTime() + durationMs)
+                endsAt: addMinutesToDateTimeInputValue(
+                  value,
+                  durationMinutes,
+                  SCHEDULING_TIMEZONE
                 ),
               }
             : {}),
@@ -560,7 +577,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
                 }
               : {}),
           },
-          ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
+          ends_at: fromFormDateTime(normalizedForm.endsAt),
           prepaid_amount:
             toIntegerNumeric(normalizedForm.prepaidAmount, 'prepaid_amount') ||
             0,
@@ -576,7 +593,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
             ? undefined
             : normalizedForm.serviceNameSnapshot,
           source: normalizedForm.source || 'manual',
-          starts_at: fromDateTimeInputValue(normalizedForm.startsAt),
+          starts_at: fromFormDateTime(normalizedForm.startsAt),
           status: normalizedForm.status,
           ...(this.requirements.companyEnabled
             ? {

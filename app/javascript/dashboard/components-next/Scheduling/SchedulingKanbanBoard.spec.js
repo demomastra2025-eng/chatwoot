@@ -103,4 +103,23 @@ describe('SchedulingKanbanBoard', () => {
     expect(wrapper.text()).toContain('Needs Lab:');
     expect(wrapper.text()).toContain('Yes');
   });
+
+  // Same clock as the calendar grid, in any browser timezone.
+  it('shows card dates and times on the clinic clock (Asia/Almaty)', () => {
+    const wrapper = mountBoard({
+      appointments: [
+        {
+          clientName: 'Alex Doe',
+          endsAt: '2026-03-28T22:00:00.000Z',
+          id: 42,
+          resourceId: 12,
+          startsAt: '2026-03-28T21:30:00.000Z',
+          status: 'scheduled',
+        },
+      ],
+    });
+
+    expect(wrapper.text()).toContain('02:30 AM - 03:00 AM');
+    expect(wrapper.text()).toContain('Sun, Mar 29');
+  });
 });

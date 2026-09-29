@@ -483,7 +483,42 @@ export const formatTimeLabel = minute => {
   return `${hours}:${minutes}`;
 };
 
-export const minuteOfDayFromDate = value => {
+// Wall-clock parts of an instant in a timezone. Read through Intl instead of
+// a zoned local Date, so a time inside the browser's own DST gap (e.g. 02:30
+// in Berlin on the last Sunday of March) is not shifted by an hour.
+const zonedWallClockParts = (value, timezone) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  })
+    .formatToParts(toDate(value))
+    .reduce((result, part) => {
+      result[part.type] = part.value;
+      return result;
+    }, {});
+
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    // Some engines print midnight as "24" even with h23.
+    hour: parts.hour === '24' ? '00' : parts.hour,
+    minute: parts.minute,
+  };
+};
+
+// With a timezone the minute of day is read on the workspace clock, like the
+// calendar grid; without one it stays browser-local.
+export const minuteOfDayFromDate = (value, timezone) => {
+  if (timezone) {
+    const { hour, minute } = zonedWallClockParts(value, timezone);
+    return Number(hour) * 60 + Number(minute);
+  }
   const date = toDate(value);
   return date.getHours() * 60 + date.getMinutes();
 };
@@ -496,14 +531,58 @@ export const snapMinute = (minute, step = MINUTE_STEP) => {
   return clampMinute(Math.round(minute / step) * step);
 };
 
-export const toDateTimeInputValue = value => {
+const DATE_TIME_INPUT_FORMAT = "yyyy-MM-dd'T'HH:mm";
+
+// Date/time inputs hold a wall-clock "yyyy-MM-ddTHH:mm" value. With a
+// timezone (the scheduling workspace timezone) that wall clock is read and
+// written in that zone, so a form shows the same time as the calendar grid in
+// any browser timezone; without one it stays browser-local (snooze, touches,
+// CRM tasks).
+export const toDateTimeInputValue = (value, timezone) => {
   if (!value) return '';
-  return format(toDate(value), "yyyy-MM-dd'T'HH:mm");
+  if (timezone) {
+    const { year, month, day, hour, minute } = zonedWallClockParts(
+      value,
+      timezone
+    );
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  }
+  return format(toDate(value), DATE_TIME_INPUT_FORMAT);
 };
 
-export const fromDateTimeInputValue = value => {
+export const fromDateTimeInputValue = (value, timezone) => {
   if (!value) return null;
-  return new Date(value).toISOString();
+  const date = timezone ? zonedTimeToUtc(value, timezone) : new Date(value);
+  return date.toISOString();
+};
+
+// Moves a date/time input value by a duration on the real clock (the same
+// instant arithmetic the backend uses), keeping its timezone reading.
+export const addMinutesToDateTimeInputValue = (value, minutes, timezone) => {
+  const isoValue = fromDateTimeInputValue(value, timezone);
+  if (!isoValue) return '';
+  return toDateTimeInputValue(
+    new Date(new Date(isoValue).getTime() + minutes * 60 * 1000),
+    timezone
+  );
+};
+
+export const dateTimeInputDurationMinutes = (startsAt, endsAt, timezone) => {
+  const start = fromDateTimeInputValue(startsAt, timezone);
+  const end = fromDateTimeInputValue(endsAt, timezone);
+  if (!start || !end) return 0;
+  return (new Date(end).getTime() - new Date(start).getTime()) / 60000;
+};
+
+// Date and time of an appointment (or a provider command) on the workspace
+// clock, e.g. in the MedElement move confirmation.
+export const formatSchedulingDateTime = (value, locale, timezone) => {
+  if (!value) return '—';
+  return formatLocalizedDate(toDate(value), locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    ...(timezone ? { timeZone: timezone } : {}),
+  });
 };
 
 export const deriveVisibleMinuteWindow = ({

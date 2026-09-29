@@ -8,7 +8,10 @@ import {
   providerBookingNeedsReview,
   providerBookingStatusMessage,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
-import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
+import {
+  APPOINTMENT_STATUS_ICONS,
+  DEFAULT_WORKSPACE_TIMEZONE,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 
 const props = defineProps({
   appointment: {
@@ -91,8 +94,11 @@ const paymentStatusLabel = computed(() => {
   return labels[props.appointment.paymentStatus] || labels.awaiting_payment;
 });
 
+// On the clinic clock, like the calendar grid.
 const timeRange = computed(() => {
-  return `${formatTimeLabel(minuteOfDayFromDate(props.appointment.startsAt))} - ${formatTimeLabel(minuteOfDayFromDate(props.appointment.endsAt))}`;
+  const clinicMinute = value =>
+    formatTimeLabel(minuteOfDayFromDate(value, DEFAULT_WORKSPACE_TIMEZONE));
+  return `${clinicMinute(props.appointment.startsAt)} - ${clinicMinute(props.appointment.endsAt)}`;
 });
 
 const backgroundStyle = computed(() => {
