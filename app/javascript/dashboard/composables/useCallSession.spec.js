@@ -196,6 +196,31 @@ describe('useCallSession', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it('retries a bootstrap the SIP provider rejected only once a minute', async () => {
+    vi.useFakeTimers();
+    const consoleErrorSpy = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => {});
+    routeMock.params = { inbox_id: '5245' };
+    inboxGetterMock.mockReturnValue({ id: 5245, provider: 'asterisk_analog' });
+    initializeDeviceMock.mockRejectedValue(
+      Object.assign(new Error('403 Forbidden'), { sipCode: 403 })
+    );
+
+    mountUseCallSession();
+    await vi.advanceTimersByTimeAsync(0);
+    const attempts = initializeDeviceMock.mock.calls.length;
+    expect(attempts).toBeGreaterThan(0);
+
+    // A transient failure retries after 10 s; a rejected line does not.
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(initializeDeviceMock).toHaveBeenCalledTimes(attempts);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(initializeDeviceMock).toHaveBeenCalledTimes(attempts + 1);
+    consoleErrorSpy.mockRestore();
+  });
+
   it('bootstraps browser calling for the active voice inbox route', async () => {
     routeMock.params = { inbox_id: '4696' };
     inboxGetterMock.mockReturnValue({ id: 4696, provider: 'sipuni' });

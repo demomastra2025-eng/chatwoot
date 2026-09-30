@@ -11,6 +11,23 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+// A SIP provider that rejects the line's credentials (401/403/407) keeps
+// rejecting them: retrying every few seconds only floods the provider with
+// REGISTERs and the server with webphone tokens. Same pace as the webphone's
+// own credential retry.
+const CREDENTIAL_FAILURE_BOOTSTRAP_RETRY_MS = 60_000;
+const SIP_CREDENTIAL_FAILURE_CODES = new Set([401, 403, 407]);
+const bootstrapRetryDelay = error => {
+  const codes = [
+    error?.response?.status,
+    error?.status,
+    error?.sipCode,
+    error?.sip_code,
+  ].map(Number);
+  return codes.some(code => SIP_CREDENTIAL_FAILURE_CODES.has(code))
+    ? CREDENTIAL_FAILURE_BOOTSTRAP_RETRY_MS
+    : INCOMING_BOOTSTRAP_RETRY_MS;
+};
 const TERMINAL_CLAIM_FAILURE_CODES = new Set([
   'CALL_NOT_CLAIMABLE',
   'CALL_ALREADY_CLAIMED',
@@ -1218,7 +1235,7 @@ export function useCallSession() {
       bootstrapRetryTimer = window.setTimeout(
         // eslint-disable-next-line no-use-before-define
         bootstrapIncomingSupport,
-        INCOMING_BOOTSTRAP_RETRY_MS
+        bootstrapRetryDelay(error)
       );
     }
 
