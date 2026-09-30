@@ -522,7 +522,11 @@ describe('#getters', () => {
 
   describe('#getSelectedChatAttachmentsLoaded', () => {
     it('returns true when attachments have been fetched for the selected chat', () => {
-      const state = { selectedChatId: 1, attachments: { 1: [] } };
+      const state = {
+        selectedChatId: 1,
+        attachments: { 1: [] },
+        fullyLoadedAttachments: { 1: true },
+      };
       expect(getters.getSelectedChatAttachmentsLoaded(state)).toBe(true);
     });
 
@@ -530,8 +534,20 @@ describe('#getters', () => {
       const state = {
         selectedChatId: 1,
         attachments: { 1: [{ id: 1, file_name: 'test' }] },
+        fullyLoadedAttachments: { 1: true },
       };
       expect(getters.getSelectedChatAttachmentsLoaded(state)).toBe(true);
+    });
+
+    it('returns false for a partial list built from new or sent messages only', () => {
+      // ADD_CONVERSATION_ATTACHMENTS creates attachments[id] for a message
+      // that arrives while the chat is open; that is not the chat's full list.
+      const state = {
+        selectedChatId: 1,
+        attachments: { 1: [{ id: 9, file_name: 'new-photo' }] },
+        fullyLoadedAttachments: {},
+      };
+      expect(getters.getSelectedChatAttachmentsLoaded(state)).toBe(false);
     });
 
     it('returns false when attachments have not been fetched yet', () => {

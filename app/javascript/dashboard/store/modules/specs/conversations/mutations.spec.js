@@ -756,6 +756,23 @@ describe('#mutations', () => {
       mutations[types.SET_ALL_ATTACHMENTS](state, { id: 1, data });
       expect(state.attachments[1]).toEqual([]);
     });
+    it('marks the full list as loaded, unlike an attachment of a new message', () => {
+      const state = {
+        allConversations: [{ id: 1 }, { id: 2 }],
+        attachments: {},
+        fullyLoadedAttachments: {},
+      };
+      mutations[types.ADD_CONVERSATION_ATTACHMENTS](state, {
+        id: 5,
+        conversation_id: 2,
+        status: 'sent',
+        attachments: [{ id: 9, message_id: 5 }],
+      });
+      mutations[types.SET_ALL_ATTACHMENTS](state, { id: 1, data: [] });
+
+      expect(state.fullyLoadedAttachments).toEqual({ 1: true });
+      expect(state.attachments[2]).toEqual([{ id: 9, message_id: 5 }]);
+    });
   });
 
   describe('#ADD_CONVERSATION_ATTACHMENTS', () => {

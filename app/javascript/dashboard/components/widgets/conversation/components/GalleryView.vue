@@ -46,10 +46,22 @@ const ALLOWED_FILE_TYPES = {
 const isDownloading = ref(false);
 const activeAttachment = ref({});
 const activeFileType = ref('');
+// Position of an attachment in the list: by attachment id, else by message.
+const indexOfAttachment = (attachments, target) => {
+  if (!target) return -1;
+
+  if (target.id !== undefined && target.id !== null) {
+    const index = attachments.findIndex(item => item.id === target.id);
+    if (index >= 0) return index;
+  }
+
+  return attachments.findIndex(item => item.message_id === target.message_id);
+};
+
+// -1 while the opened attachment is not in the list yet; corrected by the
+// watcher below once the chat's full list arrives.
 const activeImageIndex = ref(
-  props.allAttachments.findIndex(
-    attachment => attachment.message_id === props.attachment.message_id
-  ) || 0
+  indexOfAttachment(props.allAttachments, props.attachment)
 );
 
 const imageRef = useTemplateRef('imageRef');
@@ -169,14 +181,18 @@ useKeyboardEvents(keyboardEvents);
 
 // The open chat's attachments are no longer loaded on every chat switch (the
 // «Файлы» panel loads them while it is open). A gallery opened from a message
-// loads them itself so the previous/next navigation keeps working.
+// loads them itself so the previous/next navigation keeps working. The list
+// in the store can be partial: a message that arrives or is sent while the
+// chat is open adds its attachments without the rest of the history. So the
+// full list is fetched unless it was fetched already and has this attachment.
 const loadSelectedChatAttachments = () => {
-  if (props.allAttachments.length) return;
-
   const selectedChat = getters.getSelectedChat?.value;
-  if (!selectedChat?.id || getters.getSelectedChatAttachmentsLoaded?.value) {
-    return;
-  }
+  if (!selectedChat?.id) return;
+
+  const hasFullList = Boolean(getters.getSelectedChatAttachmentsLoaded?.value);
+  const listsOpenedAttachment =
+    indexOfAttachment(props.allAttachments, props.attachment) >= 0;
+  if (hasFullList && listsOpenedAttachment) return;
 
   store.dispatch('fetchAllAttachments', {
     conversationId: selectedChat.id,
@@ -184,14 +200,15 @@ const loadSelectedChatAttachments = () => {
   });
 };
 
+// Keep the counter and previous/next on the attachment being shown when the
+// list grows (full list loaded, a new message arrived).
 watch(
   () => props.allAttachments,
   attachments => {
-    if (activeImageIndex.value >= 0) return;
-
-    const index = attachments.findIndex(
-      attachment => attachment.message_id === props.attachment.message_id
-    );
+    const shown = Object.keys(activeAttachment.value || {}).length
+      ? activeAttachment.value
+      : props.attachment;
+    const index = indexOfAttachment(attachments, shown);
     if (index >= 0) activeImageIndex.value = index;
   }
 );

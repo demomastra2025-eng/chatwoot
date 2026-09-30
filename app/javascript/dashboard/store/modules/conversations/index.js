@@ -22,6 +22,8 @@ import { timestampInSeconds } from 'dashboard/helper/timestampHelper';
 const state = {
   allConversations: [],
   attachments: {},
+  // Chats whose full attachment list was fetched (see SET_ALL_ATTACHMENTS).
+  fullyLoadedAttachments: {},
   listLoadingStatus: true,
   listLoadingError: false,
   chatStatusFilter: wootConstants.STATUS_TYPE.OPEN,
@@ -490,6 +492,10 @@ export const mutations = {
   },
   [types.SET_ALL_ATTACHMENTS](_state, { id, data }) {
     _state.attachments[id] = [...data];
+    _state.fullyLoadedAttachments = {
+      ...(_state.fullyLoadedAttachments || {}),
+      [id]: true,
+    };
   },
   [types.SET_MISSING_MESSAGES](_state, { id, data, conversationType }) {
     const chat = getConversationById(_state)(id, conversationType);

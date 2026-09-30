@@ -101,8 +101,14 @@ const getters = {
   getSelectedChatAttachments: ({ selectedChatId, attachments }) => {
     return attachments[selectedChatId] || [];
   },
-  getSelectedChatAttachmentsLoaded: ({ selectedChatId, attachments }) =>
-    selectedChatId !== null && attachments[selectedChatId] !== undefined,
+  // True only once the chat's full list was fetched (SET_ALL_ATTACHMENTS). A
+  // list started by a message that arrived or was sent while the chat is open
+  // (ADD_CONVERSATION_ATTACHMENTS) is partial.
+  getSelectedChatAttachmentsLoaded: ({
+    selectedChatId,
+    fullyLoadedAttachments = {},
+  }) =>
+    selectedChatId !== null && Boolean(fullyLoadedAttachments[selectedChatId]),
   getChatListFilters: ({ conversationFilters }) => conversationFilters,
   getLastEmailInSelectedChat: (stage, _getters) => {
     const selectedChat = _getters.getSelectedChat;
