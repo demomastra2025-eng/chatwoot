@@ -461,12 +461,19 @@
       }
     },
     "PLAYGROUND": {
-      "USER": "You",
-      "ASSISTANT": "Assistant",
-      "MESSAGE_PLACEHOLDER": "Type your message...",
-      "HEADER": "Playground",
-      "DESCRIPTION": "Use this playground to send messages to your assistant and check if it responds accurately, quickly, and in the tone you expect.",
-      "CREDIT_NOTE": "Messages sent here will count toward your Captain credits."
+      "USER": "Сіз",
+      "ASSISTANT": "AI-агент",
+      "MESSAGE_PLACEHOLDER": "Хабарламаңызды жазыңыз...",
+      "HEADER": "Сынақ алаңы",
+      "DESCRIPTION": "AI-агентке хабарлама жіберіп, оның қаншалықты дәл, жылдам және қажетті үнмен жауап беретінін тексеру үшін осы алаңды пайдаланыңыз.",
+      "CREDIT_NOTE": "Мұнда жіберілген хабарламалар AI кредиттеріне есептеледі.",
+      "TRACE_TITLE": "Орындалу барысы",
+      "TRACE_DESCRIPTION": "Әр жауап үшін агент шешімдері мен шақырылған құралдар.",
+      "TRACE_EMPTY": "Орындалу барысын көру үшін хабарлама жіберіңіз.",
+      "TRACE_RESPONSE": "Жауап {number}",
+      "TRACE_REASONING": "Пайымдау",
+      "TRACE_TOOLS": "Құралдар",
+      "TRACE_NO_TOOLS": "Құралдар шақырылмады"
     },
     "PAYWALL": {
       "TITLE": "Upgrade to use Captain AI",

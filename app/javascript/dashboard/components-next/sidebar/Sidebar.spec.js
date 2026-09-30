@@ -298,6 +298,17 @@ describe('Sidebar', () => {
       );
     });
 
+    it('highlights only «Площадка» while the sandbox page is open', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'captain_assistants_playground_index',
+      });
+
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Sandbox', active: true },
+      ]);
+    });
+
     it('hides «Тестирование» and «Расходы» from employees', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,

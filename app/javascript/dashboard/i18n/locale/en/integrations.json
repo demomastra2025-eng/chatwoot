@@ -470,7 +470,14 @@
       "MESSAGE_PLACEHOLDER": "Type your message...",
       "HEADER": "Playground",
       "DESCRIPTION": "Use this playground to send messages to your AI agent and check if it responds accurately, quickly, and in the tone you expect.",
-      "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits."
+      "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits.",
+      "TRACE_TITLE": "Execution trace",
+      "TRACE_DESCRIPTION": "Agent decisions and tools called for each response.",
+      "TRACE_EMPTY": "Send a message to see the trace.",
+      "TRACE_RESPONSE": "Response {number}",
+      "TRACE_REASONING": "Reasoning",
+      "TRACE_TOOLS": "Tools",
+      "TRACE_NO_TOOLS": "No tools were called"
     },
     "EVALUATIONS": {
       "TITLE": "Testing",
