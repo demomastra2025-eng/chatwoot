@@ -43,8 +43,10 @@ const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
 const callsStore = useCallsStore();
 const phoneWidgetStore = usePhoneWidgetStore();
-// Hiding only takes the widget off screen: this component stays mounted, so
-// the SIP sessions below keep running and calls still bring the phone back.
+// Hiding only takes the widget off screen (v-show): this component and its
+// call list stay mounted, so the SIP sessions keep running, browser SIP
+// INVITEs are still reported and put in the calls store, and a new incoming
+// call brings the phone back and rings.
 const { hasCallActivity, isVisible, ownIncomingCalls, hide } =
   usePhoneWidgetVisibility();
 const phone = ref('');
@@ -384,7 +386,8 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-if="availableVoiceInboxes.length && isVisible"
+    v-if="availableVoiceInboxes.length"
+    v-show="isVisible"
     ref="widgetRef"
     class="fixed z-40 w-[336px] max-w-[calc(100vw-2rem)]"
     :class="{ 'ltr:right-4 rtl:left-4 top-16': !position }"
@@ -507,7 +510,9 @@ onUnmounted(() => {
       <div class="min-h-0 overflow-y-auto">
         <!-- Incoming, outgoing and connected calls: answer, decline, hang up
              and open the conversation right here. -->
-        <FloatingCallWidget embedded />
+        <!-- Always mounted: its call session listens for SIP INVITEs even
+             while the phone is hidden; a hidden phone stays silent. -->
+        <FloatingCallWidget embedded :silent="!isVisible" />
         <div
           v-show="!hasOwnCall"
           class="px-4 py-3"

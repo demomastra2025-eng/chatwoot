@@ -226,7 +226,10 @@ describe('PhoneWidget', () => {
     expect(webphoneClient.bootstrapIncomingSupport).toHaveBeenCalledOnce();
     const phoneWidgetStore = usePhoneWidgetStore();
     await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
-    expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+    // Hidden only visually: the phone and its call list stay mounted.
+    expect(
+      wrapper.get('[data-testid="phone-widget"]').element.style.display
+    ).toBe('none');
     expect(phoneWidgetStore.status).toBe('ready');
 
     webphoneClient.sessions['sip_profile:83'].registered = false;
@@ -723,7 +726,10 @@ describe('PhoneWidget', () => {
       expect(action.text()).toBe('');
 
       await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
-      expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+      // Hidden only visually: the phone and its call list stay mounted.
+      expect(
+        wrapper.get('[data-testid="phone-widget"]').element.style.display
+      ).toBe('none');
       expect(usePhoneWidgetStore().status).toBe('ownerTab');
     });
 
@@ -1275,8 +1281,12 @@ describe('PhoneWidget', () => {
         accountIds.map(id => [id, true])
       ),
     });
-    const widgetShown = wrapper =>
-      wrapper.find('[data-testid="phone-widget-panel"]').exists();
+    // Hiding keeps the phone mounted (so SIP INVITEs are still reported) and
+    // only takes it off screen.
+    const widgetShown = wrapper => {
+      const phone = wrapper.find('[data-testid="phone-widget"]');
+      return phone.exists() && phone.element.style.display !== 'none';
+    };
 
     it('hidden does not unregister SIP: sessions stay registered and keep updating', async () => {
       const wrapper = mountComponent();
@@ -1290,7 +1300,10 @@ describe('PhoneWidget', () => {
       expect(settingsState.update).toHaveBeenCalledWith({
         phone_widget_hidden_accounts: { 1: true },
       });
-      expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(false);
+      // Hidden only visually: the phone and its call list stay mounted.
+      expect(
+        wrapper.get('[data-testid="phone-widget"]').element.style.display
+      ).toBe('none');
       TEARDOWN_METHODS.forEach(method => {
         expect(webphoneClient[method]).not.toHaveBeenCalled();
       });

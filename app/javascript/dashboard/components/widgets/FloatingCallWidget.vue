@@ -22,6 +22,9 @@ const props = defineProps({
   // only call window. Standalone cards are kept for employees without a
   // browser SIP line (no phone widget).
   embedded: { type: Boolean, default: false },
+  // The phone widget keeps its call list mounted while it is hidden so that
+  // incoming calls are still reported; a hidden list never rings.
+  silent: { type: Boolean, default: false },
 });
 
 const router = useRouter();
@@ -134,6 +137,7 @@ const visibleCalls = computed(() =>
 );
 const shouldPlayIncomingCallRingtone = computed(
   () =>
+    !props.silent &&
     !isJoining.value &&
     visibleCalls.value.some(
       call =>

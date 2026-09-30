@@ -175,6 +175,11 @@ const mountPhone = () => {
   return wrapper;
 };
 const panel = wrapper => wrapper.find('[data-testid="phone-widget-panel"]');
+// Hiding keeps the phone and its call list mounted, only off screen.
+const phoneShown = wrapper => {
+  const phone = wrapper.find('[data-testid="phone-widget"]');
+  return phone.exists() && phone.element.style.display !== 'none';
+};
 
 describe('PhoneWidget with its calls', () => {
   beforeEach(() => {
@@ -247,13 +252,15 @@ describe('PhoneWidget with its calls', () => {
     };
     const wrapper = mountPhone();
     await flushPromises();
-    expect(panel(wrapper).exists()).toBe(false);
+    expect(phoneShown(wrapper)).toBe(false);
+    expect(ringtone.active.value).toBe(false);
 
     state.incomingCalls = [ringingCall];
     state.hasIncomingCall = true;
     await flushPromises();
 
     const card = panel(wrapper).get('[data-testid="phone-widget-call-card"]');
+    expect(phoneShown(wrapper)).toBe(true);
     expect(ringtone.active.value).toBe(true);
 
     await card
@@ -288,8 +295,11 @@ describe('PhoneWidget with its calls', () => {
 
     await wrapper.get('[data-testid="phone-widget-hide"]').trigger('click');
 
-    expect(panel(wrapper).exists()).toBe(false);
-    expect(ringtone.mounted).toBe(0);
+    expect(phoneShown(wrapper)).toBe(false);
+    // The call list stays mounted so its call session keeps listening for
+    // SIP INVITEs, but a hidden phone never rings.
+    expect(ringtone.mounted).toBe(1);
+    expect(ringtone.active.value).toBe(false);
     expect(usePhoneWidgetStore().callDismissed).toBe(true);
     // Hiding never touches the call itself.
     expect(session.rejectIncomingCall).not.toHaveBeenCalled();
