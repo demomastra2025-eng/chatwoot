@@ -2667,11 +2667,23 @@ export class JanusSipVoiceClient extends EventTarget {
     this.remoteTracks = {};
     this.rebuildRemoteStream();
     this.resetCurrentCall();
-    if (detail.reason !== 'incoming_call_preempted') {
+    if (JanusSipVoiceClient.isOperatorHangupOfSentCall(detail)) {
+      // Like a remote hangup: the registration stays, nothing to rebuild.
+      this.schedulePostCallRegistrationRecovery();
+    } else if (detail.reason !== 'incoming_call_preempted') {
       this.recoverSipHandleAfterOutboundFailure();
     }
     this.dispatchEvent(createCallStageEvent({ ...detail, stage: 'failed' }));
     return true;
+  }
+
+  // The operator hanging up a call whose INVITE already went out (ringing or
+  // connected) is an ordinary SIP hangup on a healthy handle: the line must
+  // stay registered. Only a start that failed, or was abandoned before the
+  // INVITE while an offer may still be pending on the handle, needs a fresh
+  // handle and registration.
+  static isOperatorHangupOfSentCall({ reason, sipCallSent } = {}) {
+    return reason === 'operator_cancelled' && sipCallSent === true;
   }
 
   cancelOutboundAttempt(reason = 'operator_cancelled') {

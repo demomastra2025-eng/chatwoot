@@ -1985,6 +1985,65 @@ describe('janusSipVoiceClient', () => {
     ).toHaveLength(0);
   });
 
+  it.each([
+    ['ringing', []],
+    ['connected', ['accepted']],
+  ])(
+    'keeps the SIP registration when the operator hangs up a %s outbound call',
+    async (_state, events) => {
+      const unregisteredHandler = vi.fn();
+      JanusSipVoiceClient.addEventListener(
+        'call:unregistered',
+        unregisteredHandler
+      );
+      await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+        inboxId: 4769,
+      });
+      await JanusSipVoiceClient.joinClientCall({
+        callDirection: 'outbound',
+        callRef: 'sipuni:local:operator-hangup',
+        toNumber: '+77015558623',
+      });
+      events.forEach(event => {
+        pluginState.options?.onmessage?.({
+          result: { event, call_id: 'outbound-call-id' },
+        });
+      });
+      pluginSendMock.mockClear();
+      updatePresenceMock.mockClear();
+
+      const ended = await JanusSipVoiceClient.endClientCall({
+        callRef: 'sipuni:local:operator-hangup',
+      });
+      await new Promise(resolve => {
+        window.setTimeout(resolve, 300);
+      });
+      JanusSipVoiceClient.removeEventListener(
+        'call:unregistered',
+        unregisteredHandler
+      );
+
+      expect(ended).toEqual(expect.objectContaining({ ended: true }));
+      expect(pluginSendMock).toHaveBeenCalledWith({
+        message: { request: 'hangup' },
+      });
+      expect(
+        pluginSendMock.mock.calls.filter(([payload]) =>
+          ['unregister', 'register'].includes(payload?.message?.request)
+        )
+      ).toHaveLength(0);
+      expect(pluginDetachMock).not.toHaveBeenCalled();
+      expect(janusDestroyMock).not.toHaveBeenCalled();
+      expect(unregisteredHandler).not.toHaveBeenCalled();
+      expect(updatePresenceMock).not.toHaveBeenCalledWith(
+        false,
+        expect.anything()
+      );
+      expect(JanusSipVoiceClient.registered).toBe(true);
+      expect(JanusSipVoiceClient.initialized).toBe(true);
+    }
+  );
+
   it('times out before a SIP call when createOffer never settles', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
