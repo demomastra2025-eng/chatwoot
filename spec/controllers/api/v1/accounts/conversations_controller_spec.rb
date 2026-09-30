@@ -1079,6 +1079,61 @@ RSpec.describe 'Conversations API', type: :request do
         assistant: assistant
       )
     end
+
+    # A unified thread cancels through the channel conversation where Captain
+    # is typing (addressed by its display id), never through the thread id.
+    context 'when the conversation is a channel of a communication thread' do
+      let(:communication_thread) do
+        create(:communication_thread, account: account, contact: conversation.contact)
+      end
+
+      before do
+        create(:communication_thread_conversation, account: account, communication_thread: communication_thread,
+                                                   conversation: conversation, primary: true)
+      end
+
+      it 'cancels the Captain response of that channel conversation' do
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/cancel_captain_response",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(JSON.parse(Redis::Alfred.get(cancellation_key))).to include('cancelled_by_id' => agent.id)
+        expect(Captain::Conversation::TypingIndicatorService).to have_received(:turn_off).with(
+          conversation: conversation,
+          assistant: assistant
+        )
+      end
+
+      it 'rejects an agent without access to the channel conversation' do
+        outsider = create(:user, account: account, role: :agent)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/cancel_captain_response",
+             headers: outsider.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unauthorized)
+        expect(Redis::Alfred.get(cancellation_key)).to be_nil
+        expect(Captain::Conversation::TypingIndicatorService).not_to have_received(:turn_off)
+      end
+    end
+
+    it 'does not resolve an id that is no conversation of the account' do
+      other_account_conversation = create(:conversation, account: create(:account))
+      missing_display_id = account.conversations.maximum(:display_id).to_i + 100
+
+      post "/api/v1/accounts/#{account.id}/conversations/#{missing_display_id}/cancel_captain_response",
+           headers: agent.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:not_found)
+      expect(Captain::Conversation::TypingIndicatorService).not_to have_received(:turn_off)
+      expect(
+        Redis::Alfred.get(
+          format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: other_account_conversation.id)
+        )
+      ).to be_nil
+    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/update_last_seen' do

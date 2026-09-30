@@ -1,8 +1,106 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import ConversationApi from 'dashboard/api/inbox/conversation';
 import MessagesView from './MessagesView.vue';
 
 describe('MessagesView', () => {
+  describe('cancelling a Captain response', () => {
+    const typingStore = typingByConversationId => ({
+      getters: {
+        'conversationTypingStatus/getUserList': conversationId =>
+          typingByConversationId[conversationId] || [],
+      },
+    });
+    const captainTyping = [{ id: 3, type: 'captain_assistant' }];
+    const agentTyping = [{ id: 9, type: 'user' }];
+
+    it('targets the channel conversation where Captain types, not the thread id', () => {
+      expect(
+        MessagesView.computed.captainResponseConversationId.call({
+          currentChat: {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11, 22],
+            channels: [{ conversation_id: 11 }, { conversation_id: 22 }],
+          },
+          $store: typingStore({
+            7: captainTyping,
+            11: agentTyping,
+            22: captainTyping,
+          }),
+        })
+      ).toBe(22);
+    });
+
+    it('also finds the channel conversation from the thread channels', () => {
+      expect(
+        MessagesView.computed.captainResponseConversationId.call({
+          currentChat: {
+            id: 7,
+            is_communication_thread: true,
+            channels: [{ conversation_id: 31 }, { conversation_id: 32 }],
+          },
+          $store: typingStore({ 31: captainTyping }),
+        })
+      ).toBe(31);
+    });
+
+    it('has no target when Captain types in none of the thread channels', () => {
+      expect(
+        MessagesView.computed.captainResponseConversationId.call({
+          currentChat: {
+            id: 7,
+            is_communication_thread: true,
+            conversation_ids: [11],
+          },
+          $store: typingStore({ 7: captainTyping, 11: agentTyping }),
+        })
+      ).toBeUndefined();
+    });
+
+    it('targets the open conversation outside a thread', () => {
+      expect(
+        MessagesView.computed.captainResponseConversationId.call({
+          currentChat: { id: 987, communication_thread_id: 321 },
+          $store: typingStore({}),
+        })
+      ).toBe(987);
+    });
+
+    it('sends the channel conversation id to the cancel endpoint', async () => {
+      const cancel = vi
+        .spyOn(ConversationApi, 'cancelCaptainResponse')
+        .mockResolvedValue({});
+      const context = {
+        captainResponseConversationId: 22,
+        currentChat: { id: 7, is_communication_thread: true },
+        isCancellingCaptainResponse: false,
+      };
+
+      await MessagesView.methods.cancelCaptainResponse.call(context);
+
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(cancel).toHaveBeenCalledWith({ conversationId: 22 });
+      expect(context.isCancellingCaptainResponse).toBe(false);
+      cancel.mockRestore();
+    });
+
+    it('does not call the endpoint without a channel conversation', async () => {
+      const cancel = vi
+        .spyOn(ConversationApi, 'cancelCaptainResponse')
+        .mockResolvedValue({});
+
+      await MessagesView.methods.cancelCaptainResponse.call({
+        captainResponseConversationId: undefined,
+        currentChat: { id: 7, is_communication_thread: true },
+        isCancellingCaptainResponse: false,
+      });
+
+      expect(cancel).not.toHaveBeenCalled();
+      cancel.mockRestore();
+    });
+  });
+
   it('does not show the messaging-window banner for voice conversations', () => {
     expect(
       MessagesView.computed.shouldShowReplyWindowBanner.call({

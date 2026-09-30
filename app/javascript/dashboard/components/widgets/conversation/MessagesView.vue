@@ -158,6 +158,26 @@ export default {
         user => user.type === 'captain_assistant'
       );
     },
+    // Captain answers inside one channel conversation. A unified thread has
+    // its own id, so the cancel request must target the channel conversation
+    // where Captain is typing, never the thread id.
+    captainResponseConversationId() {
+      const chat = this.currentChat;
+      if (!chat?.is_communication_thread) return chat?.id;
+
+      const getTypingUsers =
+        this.$store.getters['conversationTypingStatus/getUserList'];
+      const channelConversationIds = [
+        ...(chat.conversation_ids || []),
+        ...(chat.channels || []).map(channel => channel.conversation_id),
+      ].filter(id => id !== undefined && id !== null && id !== '');
+
+      return [...new Set(channelConversationIds)].find(conversationId =>
+        getTypingUsers(conversationId).some(
+          user => user.type === 'captain_assistant'
+        )
+      );
+    },
     typingUserNames() {
       const userList = this.typingUsersList;
       if (this.isAnyoneTyping) {
@@ -752,13 +772,12 @@ export default {
       await this.$store.dispatch('sendMessageWithData', payload);
     },
     async cancelCaptainResponse() {
-      if (this.isCancellingCaptainResponse || !this.currentChat?.id) return;
+      const conversationId = this.captainResponseConversationId;
+      if (this.isCancellingCaptainResponse || !conversationId) return;
 
       this.isCancellingCaptainResponse = true;
       try {
-        await ConversationApi.cancelCaptainResponse({
-          conversationId: this.currentChat.id,
-        });
+        await ConversationApi.cancelCaptainResponse({ conversationId });
       } catch (error) {
         useAlert(this.$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL_FAILED'));
       } finally {
@@ -882,7 +901,9 @@ export default {
             class="inline-flex items-center justify-center flex-shrink-0 rounded-full bg-n-alpha-2 text-n-slate-11 hover:bg-n-alpha-3 hover:text-n-slate-12 disabled:opacity-50 disabled:cursor-not-allowed ltr:ml-2 rtl:mr-2 size-8"
             :title="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
             :aria-label="$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL')"
-            :disabled="isCancellingCaptainResponse"
+            :disabled="
+              isCancellingCaptainResponse || !captainResponseConversationId
+            "
             @click="cancelCaptainResponse"
           >
             <Icon icon="i-ph-stop-fill" class="size-[1.375rem] text-current" />
