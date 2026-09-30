@@ -53,6 +53,34 @@ RSpec.describe Telephony::SipProfile do
     end
   end
 
+  describe '#registration_context_matches?' do
+    let(:profile) do
+      create(
+        :telephony_sip_profile,
+        availability_mode: 'browser_webphone',
+        sip_username: '1003',
+        sip_host: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+        agent_aor: 'sip:1003@VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ'
+      )
+    end
+
+    it 'compares the SIP host case-insensitively like SIP does' do
+      context = profile.registration_context_payload.merge('sip_host' => 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ')
+
+      expect(profile.sip_host).to eq('vpbx-company-test.cloudpbx.beeline.kz')
+      expect(profile.registration_context_matches?(context)).to be(true)
+      expect(profile.registration_context_matches?(context.merge('sip_host' => ' Vpbx-Company-Test.cloudpbx.beeline.kz '))).to be(true)
+    end
+
+    it 'still rejects another SIP host, user or config version' do
+      context = profile.registration_context_payload
+
+      expect(profile.registration_context_matches?(context.merge('sip_host' => 'vpbx-company-other.cloudpbx.beeline.kz'))).to be(false)
+      expect(profile.registration_context_matches?(context.merge('sip_username' => '1004'))).to be(false)
+      expect(profile.registration_context_matches?(context.merge('registration_config_version' => 'old-version'))).to be(false)
+    end
+  end
+
   describe '#registered_for_routing?' do
     def browser_registration_context(profile, suffix: 'current')
       {

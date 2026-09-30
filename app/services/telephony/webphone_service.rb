@@ -383,7 +383,18 @@ class Telephony::WebphoneService
   def registration_context_matches?(record, context)
     return true unless record.is_a?(Telephony::SipProfile)
 
-    record.registration_context_matches?(registration_context_for(record, context))
+    mismatched_keys = record.registration_context_mismatched_keys(registration_context_for(record, context))
+    log_registration_context_mismatch(record, mismatched_keys) if mismatched_keys.any?
+    mismatched_keys.empty?
+  end
+
+  # A refused presence makes the browser drop a registration the SIP provider accepted; log which
+  # context keys differed (names only, the values are SIP identifiers).
+  def log_registration_context_mismatch(record, mismatched_keys)
+    Rails.logger.info(
+      'TELEPHONY_WEBPHONE_PRESENCE_CONTEXT_MISMATCH ' \
+      "account_id=#{account.id} sip_profile_id=#{record.id} inbox_id=#{record.inbox_id} keys=#{mismatched_keys.join(',')}"
+    )
   end
 
   def browser_registration_context_matches?(record, context)

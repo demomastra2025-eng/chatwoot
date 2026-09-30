@@ -747,6 +747,72 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  // DEV 30.09 (Beeline, remote Janus): Janus answers REGISTER with the SIP
+  // plugin `registered` event, the browser reports registered=true and the
+  // backend refuses it (its SIP host check was case-sensitive). The client
+  // must then report offline without a SIP failure and tear the Janus session
+  // down — the ~0.5 s detach/destroy seen in the Janus log on every cycle.
+  it('tears a Beeline registration down when the backend refuses its presence', async () => {
+    const client = createJanusSipVoiceClient();
+    pluginSendMock.mockImplementation(({ message } = {}) => {
+      if (message?.request !== 'register') return;
+      window.setTimeout(() => {
+        pluginState.options?.onmessage?.({
+          sip: 'event',
+          result: {
+            event: 'registered',
+            username: '1001',
+            register_sent: true,
+            master_id: 2960291616,
+          },
+        });
+      }, 0);
+    });
+    updatePresenceMock.mockResolvedValueOnce({
+      presence_update_accepted: false,
+      reason: 'sip_profile_registration_context_mismatch',
+      registered_for_routing: false,
+    });
+
+    const initialization = client.initializeDevice(
+      {
+        ...beelineSession,
+        sipProfileId: 145,
+        registrationConfigVersion: 'version-1',
+        registrationInstanceId: 'registration-1',
+        sip: {
+          ...beelineSession.sip,
+          host: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+        },
+      },
+      { inboxId: 5245 }
+    );
+    await expect(initialization).rejects.toThrow(
+      'sip_profile_registration_context_mismatch'
+    );
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+
+    const [online, offline] = updatePresenceMock.mock.calls.slice(-2);
+    expect(online[0]).toBe(true);
+    expect(online[1].context).toEqual(
+      expect.objectContaining({
+        sip_host: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+        registration_instance_id: 'registration-1',
+        presence_sequence: 1,
+      })
+    );
+    expect(offline[0]).toBe(false);
+    expect(offline[1].context).toEqual(
+      expect.objectContaining({ presence_sequence: 2 })
+    );
+    expect(offline[1].context).not.toHaveProperty('registration_failure_code');
+    expect(pluginDetachMock).toHaveBeenCalled();
+    expect(janusDestroyMock).toHaveBeenCalled();
+    expect(client.registered).toBe(false);
+  });
+
   it('unregisters the browser SIP device when backend no longer routes the presence', async () => {
     const client = createJanusSipVoiceClient();
     let resolvePresence;

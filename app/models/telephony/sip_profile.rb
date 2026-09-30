@@ -164,6 +164,10 @@ class Telephony::SipProfile < ApplicationRecord
     status
     registration_config_version
   ].freeze
+  # SIP host names are case-insensitive (RFC 3261 19.1.4). The webphone token gives the browser the
+  # provider SIP domain as configured (Beeline: VPBX-COMPANY-….CLOUDPBX.BEELINE.KZ) while sip_host is
+  # stored downcased, so the browser presence must not be refused over letter case.
+  CASE_INSENSITIVE_REGISTRATION_CONTEXT_KEYS = %w[sip_host].freeze
   REGISTRATION_INSTANCE_CONTEXT_KEYS = %w[
     registration_instance_id
     janus_session_id
@@ -235,13 +239,19 @@ class Telephony::SipProfile < ApplicationRecord
   end
 
   def registration_context_matches?(context)
+    registration_context_mismatched_keys(context).empty?
+  end
+
+  def registration_context_mismatched_keys(context)
     source = context.to_h.with_indifferent_access
     expected = registration_context_payload.with_indifferent_access
 
-    REGISTRATION_CONTEXT_KEYS.all? do |key|
+    REGISTRATION_CONTEXT_KEYS.reject do |key|
       source_value = first_present(source[key], source[key.camelize(:lower)])
       expected_value = expected[key]
-      expected_value.present? ? source_value.to_s == expected_value.to_s : source_value.blank?
+      next source_value.blank? if expected_value.blank?
+
+      comparable_registration_value(key, source_value) == comparable_registration_value(key, expected_value)
     end
   end
 
@@ -631,6 +641,12 @@ class Telephony::SipProfile < ApplicationRecord
 
   def first_present(*values)
     values.find(&:present?)
+  end
+
+  def comparable_registration_value(key, value)
+    return value.to_s.strip.downcase if CASE_INSENSITIVE_REGISTRATION_CONTEXT_KEYS.include?(key)
+
+    value.to_s
   end
 
   def sip_password_configured?

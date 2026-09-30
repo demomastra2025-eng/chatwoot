@@ -367,6 +367,114 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  # Beeline hands out the SIP domain in upper case (VPBX-COMPANY-….CLOUDPBX.BEELINE.KZ). The token
+  # carries it as typed, the SIP profile stores its host downcased; SIP host names are
+  # case-insensitive (RFC 3261 19.1.4), so the browser presence must still be accepted.
+  context 'when the Beeline SIP domain is stored in upper case' do
+    let(:beeline_connection) do
+      create(
+        :telephony_provider_connection,
+        account: account, provider_kind: 'beeline', host: 'cloudpbx.beeline.kz', port: 5060, transport: 'udp',
+        metadata: { sip_domain: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ', outbound_proxy: '46.227.186.231:6050', codec: 'pcma' }
+      )
+    end
+    let(:beeline_channel) do
+      create(
+        :channel_voice,
+        account: account, provider: 'beeline', phone_number: '+77000001003',
+        provider_config: { provider_kind: 'beeline', provider_connection_id: beeline_connection.id, number_ref: 'beeline-upper-ref' }
+      )
+    end
+    let!(:beeline_profile) do
+      create(:inbox_member, inbox: beeline_channel.inbox, user: administrator)
+      create(
+        :telephony_sip_profile,
+        account: account, inbox: beeline_channel.inbox, user: administrator, internal_extension: '1003',
+        provider_connection: beeline_connection, sip_username: '1003', sip_password: 'test-beeline-password',
+        sip_host: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ', agent_ref: 'local-profile-beeline-1003',
+        availability_mode: 'browser_webphone', status: 'active', agent_aor: 'sip:1003@VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ'
+      )
+    end
+
+    # What janusSipVoiceClient#presenceContext sends after Janus reports `registered`.
+    def browser_presence_context(token_payload, sequence)
+      {
+        sip_profile_id: token_payload['sip_profile_id'],
+        registration_config_version: token_payload['registration_config_version'],
+        registration_instance_id: token_payload['registration_instance_id'],
+        account_id: token_payload['account_id'],
+        inbox_id: token_payload['inbox_id'],
+        internal_extension: token_payload.dig('sip', 'internal_extension'),
+        sip_username: token_payload.dig('sip', 'username'),
+        sip_host: token_payload.dig('sip', 'host'),
+        agent_aor: token_payload.dig('sip', 'uri'),
+        session_key: token_payload['session_key'],
+        janus_session_id: 4_223_353_468_373_970,
+        janus_handle_id: 5_643_901_401_044_634,
+        janus_unique_id: 'janus-unique-upper',
+        presence_sequence: sequence
+      }
+    end
+
+    def fetch_beeline_token
+      with_modified_env(TELEPHONY_BEELINE_JANUS_WS_URL: 'wss://janus-beeline.example.test/janus-beeline') do
+        post path, params: { client_instance_id: 'test-tab', inbox_id: beeline_channel.inbox.id }, headers: headers, as: :json
+      end
+      response.parsed_body.fetch('payload')
+    end
+
+    it 'accepts the browser presence built from the token contract' do
+      token_payload = fetch_beeline_token
+      expect(token_payload.dig('sip', 'host')).to eq('VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ')
+      expect(beeline_profile.reload.sip_host).to eq('vpbx-company-test.cloudpbx.beeline.kz')
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+           params: { registered: true, inbox_id: beeline_channel.inbox.id }.merge(browser_presence_context(token_payload, 1)),
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload']).to include('presence_update_accepted' => true, 'registered_for_routing' => true)
+      expect(response.parsed_body['payload']).not_to include('reason' => 'sip_profile_registration_context_mismatch')
+      expect(beeline_profile.reload.registered_for_routing?).to be(true)
+    end
+
+    it 'keeps the SIP failure of an offline report built from the token contract' do
+      token_payload = fetch_beeline_token
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+           params: { registered: false, inbox_id: beeline_channel.inbox.id }.merge(
+             browser_presence_context(token_payload, 1).merge(registration_failure_code: 403, registration_failure_reason: 'Forbidden')
+           ),
+           headers: headers,
+           as: :json
+
+      expect(response.parsed_body['payload']).to include('presence_update_accepted' => true)
+      expect(beeline_profile.reload.metadata['last_registration_failure']).to include('code' => 403, 'reason' => 'Forbidden')
+    end
+
+    it 'still rejects a presence for another SIP host and logs the differing key' do
+      token_payload = fetch_beeline_token
+      allow(Rails.logger).to receive(:info).and_call_original
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+           params: { registered: true, inbox_id: beeline_channel.inbox.id }.merge(
+             browser_presence_context(token_payload, 1).merge(sip_host: 'vpbx-company-other.cloudpbx.beeline.kz')
+           ),
+           headers: headers,
+           as: :json
+
+      expect(response.parsed_body['payload']).to include(
+        'presence_update_accepted' => false,
+        'reason' => 'sip_profile_registration_context_mismatch'
+      )
+      expect(beeline_profile.reload.registered_for_routing?).to be(false)
+      expect(Rails.logger).to have_received(:info).with(
+        a_string_including('TELEPHONY_WEBPHONE_PRESENCE_CONTEXT_MISMATCH', "sip_profile_id=#{beeline_profile.id}", 'keys=sip_host')
+      )
+    end
+  end
+
   it 'keeps the registrar-only Janus contract for other native SIP providers' do
     %w[sipuni binotel asterisk_analog wazo].each_with_index do |provider_kind, index|
       provider_connection = create(
