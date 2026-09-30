@@ -355,7 +355,15 @@ export const filterSidebarMenuItems = (menuItems, settings) => {
         return [sidebarItem];
       }
 
-      const children = filterItems(sidebarItem.children);
+      let children = filterItems(sidebarItem.children);
+      // Hiding every conversation list must not remove the whole «Диалоги»
+      // section: fall back to «Все» (aset/dev keeps «Все» as the base list).
+      if (!children.length && getItemKey(sidebarItem) === 'Conversation') {
+        children = sidebarItem.children.filter(
+          child =>
+            getItemKey(child) === CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY
+        );
+      }
       if (!children.length && !sidebarItem.to) {
         return [];
       }

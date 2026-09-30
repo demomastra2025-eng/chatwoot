@@ -145,6 +145,37 @@ describe('sidebarVisibility', () => {
     ]);
   });
 
+  it('keeps «Все» and the «Диалоги» section when every conversation list is hidden', () => {
+    const items = [
+      {
+        name: 'Conversation',
+        children: [
+          { name: 'Assignee:all', visibilityKey: 'Conversation:Assignee:all' },
+          { name: 'Assignee:me', visibilityKey: 'Conversation:Assignee:me' },
+          { name: 'Folders', visibilityKey: 'Conversation:Folders' },
+        ],
+      },
+      { name: 'Reports' },
+    ];
+
+    const filtered = filterSidebarMenuItems(
+      items,
+      currentSettings([
+        'Conversation:Assignee:all',
+        'Conversation:Assignee:me',
+        'Conversation:Folders',
+      ])
+    );
+
+    expect(filtered.map(item => item.name)).toEqual([
+      'Conversation',
+      'Reports',
+    ]);
+    expect(filtered[0].children.map(item => item.name)).toEqual([
+      'Assignee:all',
+    ]);
+  });
+
   it('normalizes saved order and appends new or missing sections', () => {
     expect(
       normalizeSidebarItemOrder(['Contacts', 'Conversation', 'Contacts', 'Old'])
