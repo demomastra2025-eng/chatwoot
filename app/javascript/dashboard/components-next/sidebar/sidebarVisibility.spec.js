@@ -29,7 +29,7 @@ describe('sidebarVisibility', () => {
 
     expect(itemKeys).toEqual([
       'Conversation',
-      'Campaigns',
+      'Campaigns:MassBroadcasts',
       'Captain',
       'Contacts',
       'Companies',
@@ -41,6 +41,7 @@ describe('sidebarVisibility', () => {
       'Settings',
     ]);
     expect(itemKeys).not.toContain('Inbox');
+    expect(itemKeys).not.toContain('Campaigns');
     expect(
       SIDEBAR_VISIBILITY_ITEMS.find(item => item.key === 'Settings')
         .configurable
@@ -53,34 +54,174 @@ describe('sidebarVisibility', () => {
       expect.arrayContaining([
         'Conversation:Assignee',
         'Conversation:Assignee:all',
-        'Conversation:Statuses',
-        'Conversation:Open',
         'Conversation:Pipelines',
         'Conversation:AppointmentStatuses',
         'Conversation:AppointmentStatus:no_show',
         'Conversation:Folders',
         'Conversation:Teams',
+        'Conversation:Organization',
         'Conversation:Labels',
       ])
     );
+    const conversationKeys = SIDEBAR_VISIBILITY_ITEMS.find(
+      item => item.key === 'Conversation'
+    ).children.map(child => child.key);
+    [
+      'Conversation:Statuses',
+      'Conversation:Pending',
+      'Conversation:Open',
+      'Conversation:Snoozed',
+      'Conversation:Resolved',
+    ].forEach(statusKey => expect(conversationKeys).not.toContain(statusKey));
   });
 
-  it('keeps conversation statuses hidden by default for unsaved accounts', () => {
+  it('shows the lists and broadcasts by default for unsaved accounts', () => {
     const visibilityState = buildSidebarVisibilityState({});
 
-    expect(visibilityState['Conversation:Statuses']).toBe(false);
-    expect(visibilityState['Conversation:Open']).toBe(true);
+    expect(visibilityState['Conversation:Statuses']).toBeUndefined();
+    expect(visibilityState['Conversation:Open']).toBeUndefined();
     expect(visibilityState['Conversation:Pipelines']).toBe(true);
-    expect(visibilityState.Campaigns).toBe(true);
+    expect(visibilityState['Conversation:Organization']).toBe(true);
+    expect(visibilityState['Campaigns:MassBroadcasts']).toBe(true);
+    expect(visibilityState.Campaigns).toBeUndefined();
     expect(visibilityState.Inbox).toBeUndefined();
     expect(visibilityState.Settings).toBeUndefined();
     expect(visibilityState['Settings:Macros']).toBeUndefined();
   });
 
-  it('respects explicitly saved status visibility in the current schema', () => {
+  it.each([undefined, 7, 17, 20, SIDEBAR_VISIBILITY_CURRENT_VERSION])(
+    'drops the removed status group keys saved with version %s',
+    version => {
+      const settings = {
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Conversation:Statuses',
+          'Conversation:Pending',
+          'Conversation:Open',
+          'Conversation:Snoozed',
+          'Conversation:Resolved',
+          'Conversation:Teams',
+        ],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: version,
+      };
+
+      expect(getSidebarHiddenItems(settings)).toEqual(['Conversation:Teams']);
+      expect(getConversationSidebarHiddenItems(settings)).toEqual([
+        'Conversation:Teams',
+      ]);
+    }
+  );
+
+  describe('legacy outbound group (before version 21)', () => {
+    const legacySettings = (hiddenItems, version, extra = {}) => ({
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: hiddenItems,
+      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: version,
+      ...extra,
+    });
+
+    it.each([
+      [['Campaigns'], 20],
+      [['Campaigns'], 17],
+      [['Campaigns'], 7],
+      [['Campaigns:Touches'], 16],
+      [['Campaigns:PersonalBroadcasts'], 2],
+      [['Campaigns:MassBroadcasts'], 17],
+    ])(
+      'keeps broadcasts hidden for hidden %j (version %s)',
+      (hidden, version) => {
+        const settings = legacySettings(hidden, version);
+
+        expect(getSidebarHiddenItems(settings)).toEqual([
+          'Campaigns:MassBroadcasts',
+        ]);
+        expect(
+          buildSidebarVisibilityState(settings)['Campaigns:MassBroadcasts']
+        ).toBe(false);
+        expect(
+          filterSidebarMenuItems(
+            [
+              {
+                name: 'Mass broadcasts',
+                visibilityKey: 'Campaigns:MassBroadcasts',
+              },
+              { name: 'Reports' },
+            ],
+            settings
+          ).map(item => item.name)
+        ).toEqual(['Reports']);
+      }
+    );
+
+    it.each([7, 17, 20])(
+      'shows broadcasts when the outbound group was visible (version %s)',
+      version => {
+        expect(
+          getSidebarHiddenItems(legacySettings(['Reports'], version))
+        ).toEqual(['Reports']);
+      }
+    );
+
+    it('keeps the saved position of the old outbound group for broadcasts', () => {
+      const order = [
+        'Contacts',
+        'Campaigns',
+        'Conversation',
+        'Statuses',
+        'Captain',
+      ];
+
+      expect(
+        getSidebarItemOrder(
+          legacySettings([], 20, { [SIDEBAR_ORDER_UI_SETTINGS_KEY]: order })
+        ).slice(0, 4)
+      ).toEqual([
+        'Contacts',
+        'Campaigns:MassBroadcasts',
+        'Conversation',
+        'Captain',
+      ]);
+      expect(
+        normalizeSidebarItemOrder([
+          'Campaigns:MassBroadcasts',
+          'Reports',
+          'Campaigns',
+        ]).filter(key => key === 'Campaigns:MassBroadcasts')
+      ).toHaveLength(1);
+      expect(normalizeSidebarItemOrder(['Reports', 'Campaigns'])[1]).toBe(
+        'Campaigns:MassBroadcasts'
+      );
+    });
+
+    it('saves migrated settings back without legacy keys', () => {
+      const settings = legacySettings(
+        ['Campaigns', 'Conversation:Statuses', 'Conversation:Labels'],
+        20
+      );
+      const state = buildSidebarVisibilityState(settings);
+
+      expect(getSidebarHiddenItemsFromState(state)).toEqual([
+        'Conversation:Labels',
+        'Campaigns:MassBroadcasts',
+      ]);
+      expect(state.Campaigns).toBeUndefined();
+    });
+  });
+
+  it('never hides the main navigation section key itself', () => {
+    const settings = currentSettings([
+      'Conversation:Organization',
+      'Conversation:Folders',
+    ]);
+
+    expect(getSidebarHiddenItems(settings)).toEqual(['Conversation:Folders']);
+    expect(getConversationSidebarHiddenItems(settings)).toEqual([
+      'Conversation:Folders',
+    ]);
     expect(
-      buildSidebarVisibilityState(currentSettings([]))['Conversation:Statuses']
-    ).toBe(true);
+      getConversationSidebarHiddenItemsFromState({
+        'Conversation:Organization': false,
+        'Conversation:Folders': false,
+      })
+    ).toEqual(['Conversation:Folders']);
   });
 
   it('drops keys that are no longer configurable, including notifications and personal-only items', () => {
@@ -182,7 +323,7 @@ describe('sidebarVisibility', () => {
     ).toEqual([
       'Contacts',
       'Conversation',
-      'Campaigns',
+      'Campaigns:MassBroadcasts',
       'Captain',
       'Companies',
       'CRM',
@@ -411,14 +552,14 @@ describe('sidebarVisibility', () => {
     const state = buildSidebarVisibilityState(currentSettings([]));
     state.Conversation = false;
     state['Conversation:Pipelines'] = false;
-    state.Campaigns = false;
+    state['Campaigns:MassBroadcasts'] = false;
     state.Settings = false;
     state['Settings:Macros'] = false;
 
     expect(getSidebarHiddenItemsFromState(state)).toEqual([
       'Conversation',
       'Conversation:Pipelines',
-      'Campaigns',
+      'Campaigns:MassBroadcasts',
     ]);
     expect(getConversationSidebarHiddenItemsFromState(state)).toEqual([
       'Conversation:Pipelines',
@@ -428,9 +569,13 @@ describe('sidebarVisibility', () => {
   it('reads conversation hidden items from account settings only', () => {
     expect(
       getConversationSidebarHiddenItems(
-        currentSettings(['Reports', 'Conversation:Labels', 'Conversation:Open'])
+        currentSettings([
+          'Reports',
+          'Conversation:Labels',
+          'Conversation:Folders',
+        ])
       )
-    ).toEqual(['Conversation:Open', 'Conversation:Labels']);
+    ).toEqual(['Conversation:Folders', 'Conversation:Labels']);
   });
 
   it('builds effective settings from the account and ignores personal overrides', () => {

@@ -36,6 +36,7 @@ import {
 import {
   CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
   CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS,
+  MASS_BROADCASTS_VISIBILITY_KEY,
   buildEffectiveSidebarVisibilitySettings,
   filterSidebarMenuItems,
 } from './sidebarVisibility';
@@ -132,13 +133,6 @@ const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
   'companies_dashboard_show',
 ];
-// Status filters combine with any scope, so they stay highlighted next to it.
-const CONVERSATION_STATUS_CHILD_NAMES = new Set([
-  'Pending',
-  'Open',
-  'Snoozed',
-  'Resolved',
-]);
 
 const accountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -194,6 +188,13 @@ const hasAutomationRules = computed(() => {
   return (
     checkPermissions(['administrator']) &&
     isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.AUTOMATIONS)
+  );
+});
+
+const hasOutboundReminders = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.CAMPAIGNS
   );
 });
 
@@ -307,7 +308,6 @@ const conversationStats = useMapGetter('conversationStats/getStats');
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
 );
-const selectedConversation = useMapGetter('getSelectedChat');
 
 const getSidebarUnreadCount = (collection, key) => {
   if (!key) return 0;
@@ -316,7 +316,6 @@ const getSidebarUnreadCount = (collection, key) => {
   );
 };
 
-const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
 const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
 const appointmentStatusCount = status =>
   getSidebarUnreadCount('appointment_statuses', status);
@@ -530,83 +529,6 @@ const conversationSidebarRoute = computed(() => {
   );
 });
 
-const currentConversationScope = computed(() => {
-  switch (route.name) {
-    case 'inbox_conversation': {
-      const selectedConversationInboxId = Number(
-        selectedConversation.value?.inbox_id
-      );
-
-      if (
-        Number.isFinite(selectedConversationInboxId) &&
-        selectedConversationInboxId > 0
-      ) {
-        return {
-          name: 'inbox_dashboard',
-          params: { inbox_id: selectedConversationInboxId },
-        };
-      }
-
-      return {
-        name: 'home',
-        params: {},
-      };
-    }
-    case 'inbox_dashboard':
-    case 'conversation_through_inbox':
-      return {
-        name: 'inbox_dashboard',
-        params: { inbox_id: route.params.inbox_id },
-      };
-    case 'communication_threads_dashboard':
-    case 'communication_thread_conversation':
-      return {
-        name: 'communication_threads_dashboard',
-        params: {},
-      };
-    case 'label_conversations':
-    case 'conversations_through_label':
-      return {
-        name: 'label_conversations',
-        params: { label: route.params.label },
-      };
-    case 'team_conversations':
-    case 'conversations_through_team':
-      return {
-        name: 'team_conversations',
-        params: { teamId: route.params.teamId },
-      };
-    case 'folder_conversations':
-    case 'conversations_through_folders':
-      return {
-        name: 'folder_conversations',
-        params: { id: route.params.id },
-      };
-    case INBOX_FLOW_ROUTE_NAMES.dialog.show: {
-      const selectedInboxId = Number(
-        route.params.inboxId || route.params.inbox_id
-      );
-
-      if (Number.isFinite(selectedInboxId) && selectedInboxId > 0) {
-        return {
-          name: 'inbox_dashboard',
-          params: { inbox_id: selectedInboxId },
-        };
-      }
-
-      return {
-        name: 'home',
-        params: {},
-      };
-    }
-    default:
-      return {
-        name: 'home',
-        params: {},
-      };
-  }
-});
-
 const inboxFlowRouteNames = computed(() =>
   conversationSidebarRoute.value
     ? INBOX_FLOW_ROUTE_NAMES.dialog
@@ -631,13 +553,6 @@ const withConversationStatus = (name, params = {}, queryOverrides = {}) =>
     resolveConversationRouteName(name),
     params,
     conversationNavigationQuery(queryOverrides)
-  );
-
-const withCurrentConversationScopeStatus = status =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({ status })
   );
 
 // Conversation scopes are exclusive: an assignee list, a pipeline or stage, an
@@ -1352,6 +1267,19 @@ const buildSettingsMenuItems = () =>
       activeOn: ['automation_list'],
       to: accountScopedRoute('automation_list'),
     }),
+    // Reminders (the touch engine) run live appointment reminders; the list
+    // stays reachable here to inspect, approve or cancel them.
+    onlyIf(hasOutboundReminders.value, {
+      name: 'Settings Reminders',
+      visibilityKey: 'Settings:Reminders',
+      label: t('SIDEBAR.TOUCHES'),
+      icon: 'i-lucide-bell-ring',
+      activeOn: [
+        'outbound_touches_index',
+        'outbound_broadcasts_personal_index',
+      ],
+      to: accountScopedRoute('outbound_touches_index'),
+    }),
     settingsSection('Team', t('SIDEBAR.SETTINGS_SECTIONS.TEAM')),
     {
       name: 'Employees',
@@ -1476,51 +1404,9 @@ const menuItems = computed(() => {
         ),
         actionItems: conversationSidebarActionItems.value,
         children: [
+          // The conversation status is picked in the list header, so the
+          // sidebar has no status group.
           ...conversationAssigneeStatusItems.value,
-          {
-            name: 'Statuses',
-            visibilityKey: 'Conversation:Statuses',
-            label: t('CHAT_LIST.CHAT_SORT.STATUS'),
-            icon: 'i-lucide-list-filter',
-            children: [
-              {
-                name: 'Pending',
-                visibilityKey: 'Conversation:Pending',
-                label: t('SIDEBAR.PENDING_CONVERSATIONS'),
-                icon: 'i-woot-captain',
-                badge: statusUnreadCount('pending'),
-                activeOn: conversationStatusActiveOn,
-                to: withCurrentConversationScopeStatus('pending'),
-              },
-              {
-                name: 'Open',
-                visibilityKey: 'Conversation:Open',
-                label: t('SIDEBAR.OPEN_CONVERSATIONS'),
-                icon: 'i-lucide-inbox',
-                badge: statusUnreadCount('open'),
-                activeOn: conversationStatusActiveOn,
-                to: withCurrentConversationScopeStatus('open'),
-              },
-              {
-                name: 'Snoozed',
-                visibilityKey: 'Conversation:Snoozed',
-                icon: 'i-lucide-timer-reset',
-                badge: statusUnreadCount('snoozed'),
-                activeOn: conversationStatusActiveOn,
-                label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
-                to: withCurrentConversationScopeStatus('snoozed'),
-              },
-              {
-                name: 'Resolved',
-                visibilityKey: 'Conversation:Resolved',
-                icon: 'i-lucide-check-check',
-                badge: statusUnreadCount('resolved'),
-                activeOn: conversationStatusActiveOn,
-                label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
-                to: withCurrentConversationScopeStatus('resolved'),
-              },
-            ],
-          },
           ...crmPipelineSidebarItems.value,
           ...appointmentStatusSidebarItems.value,
           {
@@ -1608,59 +1494,21 @@ const menuItems = computed(() => {
             : []),
         ],
       },
-      {
-        name: 'Campaigns',
-        label: t('SIDEBAR.OUTBOUND'),
-        icon: 'i-lucide-send',
-        defaultChildName: 'Touches',
-        children: [
-          {
-            name: 'Touches',
-            visibilityKey: 'Campaigns:Touches',
-            label: t('SIDEBAR.TOUCHES'),
-            icon: 'i-lucide-send',
-            activeOn: [
-              'outbound_touches_index',
-              'outbound_broadcasts_personal_index',
-            ],
-            to: accountScopedRoute('outbound_touches_index'),
-          },
-          // Administrators manage quick replies and WhatsApp templates in the
-          // settings hub; other employees keep both under Outbound.
-          ...(!hasSettingsAccess.value
-            ? [
-                {
-                  name: 'Templates',
-                  visibilityKey: 'Campaigns:Templates',
-                  label: t('SIDEBAR.CANNED_RESPONSES'),
-                  icon: 'i-lucide-file-text',
-                  activeOn: ['outbound_templates_index'],
-                  to: accountScopedRoute('outbound_templates_index'),
-                },
-                {
-                  name: 'WhatsApp Templates',
-                  visibilityKey: 'Campaigns:WhatsAppTemplates',
-                  label: t('SIDEBAR.WHATSAPP_TEMPLATES'),
-                  icon: 'i-lucide-message-circle-code',
-                  activeOn: ['outbound_whatsapp_templates_index'],
-                  to: accountScopedRoute('outbound_whatsapp_templates_index'),
-                },
-              ]
-            : []),
-          ...(checkPermissions(['administrator'])
-            ? [
-                {
-                  name: 'Mass broadcasts',
-                  visibilityKey: 'Campaigns:MassBroadcasts',
-                  label: t('SIDEBAR.MASS_BROADCASTS'),
-                  icon: 'i-lucide-radio-tower',
-                  activeOn: ['outbound_broadcasts_index'],
-                  to: accountScopedRoute('outbound_broadcasts_index'),
-                },
-              ]
-            : []),
-        ],
-      },
+      // Outbound is a single administrator item without a secondary column.
+      // Quick replies and WhatsApp templates live in the settings hub; the
+      // reminders list (former touches) is reached from Settings > Automation.
+      ...(checkPermissions(['administrator'])
+        ? [
+            {
+              name: 'Mass broadcasts',
+              visibilityKey: MASS_BROADCASTS_VISIBILITY_KEY,
+              label: t('SIDEBAR.MASS_BROADCASTS'),
+              icon: 'i-lucide-megaphone',
+              activeOn: ['outbound_broadcasts_index'],
+              to: accountScopedRoute('outbound_broadcasts_index'),
+            },
+          ]
+        : []),
       {
         name: 'Captain',
         icon: 'i-woot-captain',
@@ -2140,14 +1988,8 @@ const activeChildNamesFor = item => {
   const matchingNames = navigableChildrenFor(item)
     .filter(matchesChildRoute)
     .map(child => child.name);
-  const statusNames = matchingNames.filter(name =>
-    CONVERSATION_STATUS_CHILD_NAMES.has(name)
-  );
-  const scopeNames = matchingNames.filter(
-    name => !CONVERSATION_STATUS_CHILD_NAMES.has(name)
-  );
 
-  return [...selectExclusiveSidebarChildNames(scopeNames), ...statusNames];
+  return selectExclusiveSidebarChildNames(matchingNames);
 };
 
 const hasSecondaryColumn = item => !!item?.children?.length;

@@ -122,7 +122,6 @@ describe('ConversationVisibilitySettings', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.vm.groupedVisibilityItems.map(group => group.key)).toEqual([
-      'statuses',
       'pipeline',
       'appointments',
     ]);
@@ -137,7 +136,6 @@ describe('ConversationVisibilitySettings', () => {
       'folders',
       'teams',
       'labels',
-      'statuses',
       'pipeline',
       'appointments',
     ]);
@@ -183,32 +181,57 @@ describe('ConversationVisibilitySettings', () => {
     expect(
       wrapper.find('#conversation-visibility-conversation-labels').exists()
     ).toBe(true);
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.STATUSES'
     );
   });
 
-  it('keeps statuses hidden by default and exposes each status once enabled', async () => {
+  it('has no status group rows: statuses are picked in the list header', async () => {
     const wrapper = mountComponent();
-    const statusesGroup = wrapper.vm.groupedVisibilityItems.find(
-      group => group.key === 'statuses'
-    );
 
-    expect(wrapper.vm.isGroupEnabled(statusesGroup)).toBe(false);
-    expect(wrapper.vm.groupSummary(statusesGroup)).toBe(
-      'CONVERSATION_WORKFLOW.VISIBILITY.SUMMARY.HIDDEN'
-    );
-
-    wrapper.vm.toggleGroup(statusesGroup);
-    wrapper.vm.toggleGroupExpansion(statusesGroup);
+    expect(
+      wrapper.vm.groupedVisibilityItems.find(group => group.key === 'statuses')
+    ).toBeUndefined();
+    expect(
+      wrapper.find('#conversation-visibility-conversation-statuses').exists()
+    ).toBe(false);
+    wrapper.vm.navigationRows
+      .filter(row => row.isGroup)
+      .forEach(row => wrapper.vm.toggleGroupExpansion(row));
     await wrapper.vm.$nextTick();
+    ['pending', 'open', 'snoozed', 'resolved'].forEach(status =>
+      expect(
+        wrapper.find(`#conversation-visibility-conversation-${status}`).exists()
+      ).toBe(false)
+    );
+  });
 
-    expect(
-      wrapper.find('#conversation-visibility-conversation-open').exists()
-    ).toBe(true);
-    expect(
-      wrapper.find('#conversation-visibility-conversation-resolved').exists()
-    ).toBe(true);
+  it('drops saved status keys when saving another change', async () => {
+    currentAccount.value = {
+      settings: {
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Conversation:Statuses',
+          'Conversation:Open',
+          'Campaigns',
+        ],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 20,
+      },
+    };
+    const wrapper = mountComponent();
+
+    expect(wrapper.vm.hasChanges).toBe(false);
+    wrapper.vm.visibilityDraft['Conversation:Teams'] = false;
+    await wrapper.vm.saveVisibility();
+
+    expect(updateAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+          'Campaigns:MassBroadcasts',
+          'Conversation:Teams',
+        ],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 21,
+      })
+    );
   });
 
   it('shows a retry banner when pipelines fail to load', async () => {
@@ -340,7 +363,6 @@ describe('ConversationVisibilitySettings', () => {
           'Conversation:Assignee',
           'Conversation:Assignee:me',
           'Conversation:Assignee:unassigned',
-          'Conversation:Statuses',
         ],
       })
     );
@@ -373,7 +395,6 @@ describe('ConversationVisibilitySettings', () => {
       expect.objectContaining({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
           'Conversation:Assignee:unassigned',
-          'Conversation:Statuses',
         ],
       })
     );
@@ -564,10 +585,7 @@ describe('ConversationVisibilitySettings', () => {
     await wrapper.vm.saveVisibility();
 
     expect(updateAccount).toHaveBeenCalledWith({
-      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
-        'Conversation:Statuses',
-        'Conversation:Folders',
-      ],
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Folders'],
       [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
         SIDEBAR_VISIBILITY_CURRENT_VERSION,
     });

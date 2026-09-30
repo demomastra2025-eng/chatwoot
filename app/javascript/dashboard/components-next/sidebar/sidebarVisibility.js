@@ -10,9 +10,11 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
 export const SIDEBAR_ORDER_UI_SETTINGS_KEY = 'dashboard_sidebar_item_order';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 20;
+// Version 21: the conversation status group left the sidebar (the status is
+// picked in the list header) and the outbound group became the single
+// administrator item «Рассылки» (Campaigns:MassBroadcasts).
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 21;
 
-export const CONVERSATION_STATUSES_VISIBILITY_KEY = 'Conversation:Statuses';
 export const CONVERSATION_ASSIGNEE_VISIBILITY_KEY = 'Conversation:Assignee';
 const CONVERSATION_ASSIGNEE_ALL_VISIBILITY_KEY = 'Conversation:Assignee:all';
 const CONVERSATION_ASSIGNEE_ME_VISIBILITY_KEY = 'Conversation:Assignee:me';
@@ -23,13 +25,10 @@ const CONVERSATION_ASSIGNEE_ITEM_KEYS = new Set([
   CONVERSATION_ASSIGNEE_ME_VISIBILITY_KEY,
   CONVERSATION_ASSIGNEE_UNASSIGNED_VISIBILITY_KEY,
 ]);
-export const CONVERSATION_STATUS_VISIBILITY_KEYS = Object.freeze([
-  'Conversation:Pending',
-  'Conversation:Open',
-  'Conversation:Snoozed',
-  'Conversation:Resolved',
-]);
 export const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
+// Section key grouping Folders, Teams and Tags; it is never hidden itself.
+export const CONVERSATION_ORGANIZATION_VISIBILITY_KEY =
+  'Conversation:Organization';
 export const CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY =
   'Conversation:AppointmentStatuses';
 export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
@@ -41,6 +40,14 @@ export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
 });
 const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
   'Conversation:DefaultPipeline';
+export const MASS_BROADCASTS_VISIBILITY_KEY = 'Campaigns:MassBroadcasts';
+// Saved settings before version 21 may still name the removed outbound group
+// («Исходящие») or its old children.
+const LEGACY_OUTBOUND_VISIBILITY_KEYS = Object.freeze([
+  'Campaigns',
+  'Campaigns:Touches',
+  'Campaigns:PersonalBroadcasts',
+]);
 // Notifications keep a product-defined first position and cannot be hidden.
 const PINNED_FIRST_ITEM_KEY = 'Inbox';
 
@@ -69,14 +76,6 @@ export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     'CHAT_LIST.ASSIGNEE_TYPE_TABS.unassigned'
   ),
   item(
-    CONVERSATION_STATUSES_VISIBILITY_KEY,
-    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STATUSES'
-  ),
-  item('Conversation:Pending', 'SIDEBAR.PENDING_CONVERSATIONS'),
-  item('Conversation:Open', 'SIDEBAR.OPEN_CONVERSATIONS'),
-  item('Conversation:Snoozed', 'SIDEBAR.SNOOZED_CONVERSATIONS'),
-  item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
-  item(
     CONVERSATION_PIPELINES_VISIBILITY_KEY,
     'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
   ),
@@ -104,6 +103,10 @@ export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
     'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
   ),
+  item(
+    CONVERSATION_ORGANIZATION_VISIBILITY_KEY,
+    'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ORGANIZATION'
+  ),
   item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
   item('Conversation:Teams', 'SIDEBAR.TEAMS'),
   item('Conversation:Labels', 'SIDEBAR.LABELS'),
@@ -117,7 +120,7 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     'SIDEBAR.CONVERSATIONS',
     CONVERSATION_SIDEBAR_VISIBILITY_ITEMS
   ),
-  item('Campaigns', 'SIDEBAR.OUTBOUND'),
+  item(MASS_BROADCASTS_VISIBILITY_KEY, 'SIDEBAR.MASS_BROADCASTS'),
   item('Captain', 'SIDEBAR.CAPTAIN'),
   item('Contacts', 'SIDEBAR.CONTACTS'),
   item('Companies', 'SIDEBAR.COMPANIES'),
@@ -133,11 +136,19 @@ const DEFAULT_SIDEBAR_ITEM_ORDER = Object.freeze(
   SIDEBAR_VISIBILITY_ITEMS.map(sidebarItem => sidebarItem.key)
 );
 
+// A saved order keeps «Рассылки» where the old outbound group («Исходящие»)
+// used to be.
+const migrateLegacySidebarOrderKey = key =>
+  LEGACY_OUTBOUND_VISIBILITY_KEYS.includes(key)
+    ? MASS_BROADCASTS_VISIBILITY_KEY
+    : key;
+
 export const normalizeSidebarItemOrder = order => {
   const supportedKeys = new Set(DEFAULT_SIDEBAR_ITEM_ORDER);
   const normalizedOrder = [];
 
-  (Array.isArray(order) ? order : []).forEach(key => {
+  (Array.isArray(order) ? order : []).forEach(savedKey => {
+    const key = migrateLegacySidebarOrderKey(savedKey);
     if (supportedKeys.has(key) && !normalizedOrder.includes(key)) {
       normalizedOrder.push(key);
     }
@@ -180,12 +191,22 @@ export const normalizeSidebarHiddenItems = hiddenItems => {
   return SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => hiddenItemsSet.has(key));
 };
 
-// Statuses were hidden by default before the schema was versioned.
-const normalizeDefaultConversationStatusVisibility = (hiddenItems, version) => {
+// Before version 21 the outbound group («Исходящие», key Campaigns) held
+// «Рассылки»; older settings may still name its former children. Hiding any
+// of them keeps «Рассылки» hidden. The removed status group keys
+// (Conversation:Statuses, Conversation:Open...) are simply dropped by
+// normalizeSidebarHiddenItems.
+const normalizeLegacyOutboundVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  if (Number(version || 0) >= 21) return hiddenItemsSet;
 
-  if (Number(version || 0) < 8) {
-    hiddenItemsSet.add(CONVERSATION_STATUSES_VISIBILITY_KEY);
+  const outboundWasHidden = LEGACY_OUTBOUND_VISIBILITY_KEYS.some(key =>
+    hiddenItemsSet.has(key)
+  );
+  LEGACY_OUTBOUND_VISIBILITY_KEYS.forEach(key => hiddenItemsSet.delete(key));
+
+  if (outboundWasHidden) {
+    hiddenItemsSet.add(MASS_BROADCASTS_VISIBILITY_KEY);
   }
 
   return hiddenItemsSet;
@@ -240,10 +261,6 @@ export const getSidebarHiddenItems = settings => {
   const version = settings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY];
   let hiddenItems = settings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY];
 
-  hiddenItems = normalizeDefaultConversationStatusVisibility(
-    hiddenItems,
-    version
-  );
   hiddenItems = normalizeLegacyConversationPipelinesVisibility(
     hiddenItems,
     version
@@ -252,6 +269,8 @@ export const getSidebarHiddenItems = settings => {
     hiddenItems,
     version
   );
+  hiddenItems = normalizeLegacyOutboundVisibility(hiddenItems, version);
+  hiddenItems.delete(CONVERSATION_ORGANIZATION_VISIBILITY_KEY);
 
   return normalizeSidebarHiddenItems(Array.from(hiddenItems));
 };
@@ -303,6 +322,7 @@ const conversationVisibilityItemKeys = new Set(
 const normalizeConversationSidebarHiddenItems = hiddenItems => {
   const normalizedHiddenItems =
     normalizeConversationAssigneeHiddenItems(hiddenItems);
+  normalizedHiddenItems.delete(CONVERSATION_ORGANIZATION_VISIBILITY_KEY);
 
   return CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(
     visibilityItem => visibilityItem.key

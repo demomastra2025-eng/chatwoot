@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import campaignsRoutes from 'dashboard/routes/dashboard/campaigns/campaigns.routes';
+import enSettings from 'dashboard/i18n/locale/en/settings.json';
 import Sidebar from './Sidebar.vue';
 import SidebarGroup from './SidebarGroup.vue';
 import SidebarSecondaryColumn from './SidebarSecondaryColumn.vue';
@@ -256,6 +257,7 @@ describe('Sidebar', () => {
         'Settings Integrations',
         'Settings Agent Bots',
         'Settings Automation',
+        'Settings Reminders',
         'Employees',
         'Teams',
         'Roles',
@@ -273,22 +275,73 @@ describe('Sidebar', () => {
       ]);
     });
 
-    it('keeps quick replies and WhatsApp templates in the hub instead of Outbound', async () => {
+    it('keeps quick replies and WhatsApp templates only in the hub', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
         routeName: 'outbound_whatsapp_templates_index',
       });
 
-      expect(navigationChildNames(sidebarGroup(wrapper, 'Campaigns'))).toEqual([
-        'Touches',
-        'Mass broadcasts',
-      ]);
+      expect(groupNames(wrapper)).not.toContain('Campaigns');
       expect(secondaryColumn(wrapper).props('label')).toBe(
         sidebarGroup(wrapper, 'Settings').props('label')
       );
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'Settings WhatsApp Templates', active: true },
       ]);
+    });
+
+    it('shows broadcasts as one top-level item without a secondary column', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'outbound_broadcasts_index',
+      });
+      const broadcasts = sidebarGroup(wrapper, 'Mass broadcasts');
+
+      expect(groupNames(wrapper)).not.toContain('Campaigns');
+      expect(broadcasts.props('label')).toBe(
+        enSettings.SIDEBAR.MASS_BROADCASTS
+      );
+      expect(broadcasts.props('icon')).toBe('i-lucide-megaphone');
+      expect(broadcasts.props('children') || []).toEqual([]);
+      expect(broadcasts.props('to')).toMatchObject({
+        name: 'outbound_broadcasts_index',
+      });
+      expect(secondaryColumn(wrapper).exists()).toBe(false);
+    });
+
+    it('opens the reminders list (former touches) from the settings hub', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'outbound_touches_index',
+      });
+      const reminders = sidebarGroup(wrapper, 'Settings')
+        .props('children')
+        .find(child => child.name === 'Settings Reminders');
+
+      expect(reminders.label).toBe(enSettings.SIDEBAR.TOUCHES);
+      expect(reminders.to).toMatchObject({ name: 'outbound_touches_index' });
+      expect(secondaryColumn(wrapper).props('label')).toBe(
+        sidebarGroup(wrapper, 'Settings').props('label')
+      );
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Settings Reminders', active: true },
+      ]);
+    });
+
+    it('has no status group in the conversation navigation', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'communication_threads_dashboard',
+      });
+
+      expect(
+        navigationChildNames(sidebarGroup(wrapper, 'Conversation'))
+      ).not.toContain('Statuses');
+      expect(
+        navigationChildNames(sidebarGroup(wrapper, 'Conversation'))
+      ).toEqual(
+        expect.arrayContaining(['Assignee:all', 'AppointmentStatuses', 'Teams'])
+      );
     });
 
     it('replaces the Contacts gear with the hub', async () => {
@@ -304,47 +357,25 @@ describe('Sidebar', () => {
   });
 
   describe('for an agent', () => {
-    it('has no settings hub and keeps both template pages under Outbound', async () => {
+    it('has no settings hub and no outbound entry', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,
         routeName: 'outbound_templates_index',
       });
 
       expect(groupNames(wrapper)).not.toContain('Settings');
-      expect(navigationChildNames(sidebarGroup(wrapper, 'Campaigns'))).toEqual([
-        'Touches',
-        'Templates',
-        'WhatsApp Templates',
-      ]);
-      expect(renderedLeaves(wrapper)).toEqual([
-        { name: 'Touches', active: false },
-        { name: 'Templates', active: true },
-        { name: 'WhatsApp Templates', active: false },
-      ]);
+      expect(groupNames(wrapper)).not.toContain('Campaigns');
+      expect(groupNames(wrapper)).not.toContain('Mass broadcasts');
     });
 
-    it('opens WhatsApp templates from Outbound', async () => {
+    it('opens a template page by its link without an outbound column', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,
         routeName: 'outbound_whatsapp_templates_index',
       });
-      const whatsAppTemplates = sidebarGroup(wrapper, 'Campaigns')
-        .props('children')
-        .find(child => child.name === 'WhatsApp Templates');
 
-      expect(whatsAppTemplates.to).toEqual({
-        name: 'outbound_whatsapp_templates_index',
-        params: { accountId: ACCOUNT_ID },
-        query: {},
-      });
-      expect(secondaryColumn(wrapper).props('label')).toBe(
-        sidebarGroup(wrapper, 'Campaigns').props('label')
-      );
-      expect(renderedLeaves(wrapper)).toEqual([
-        { name: 'Touches', active: false },
-        { name: 'Templates', active: false },
-        { name: 'WhatsApp Templates', active: true },
-      ]);
+      expect(groupNames(wrapper)).not.toContain('Campaigns');
+      expect(secondaryColumn(wrapper).exists()).toBe(false);
     });
 
     it('keeps the tag settings shortcut next to Contacts', async () => {
@@ -375,21 +406,16 @@ describe('Sidebar', () => {
       ]);
     });
 
-    it('keeps both template pages under Outbound and the Contacts gear', async () => {
+    it('has no outbound entry and keeps the Contacts gear', async () => {
       const wrapper = await mountSidebar({
         permissions: CRM_SETTINGS_ROLE,
         routeName: 'outbound_whatsapp_templates_index',
       });
 
-      expect(navigationChildNames(sidebarGroup(wrapper, 'Campaigns'))).toEqual([
-        'Touches',
-        'Templates',
-        'WhatsApp Templates',
-      ]);
-      expect(renderedLeaves(wrapper)).toEqual([
-        { name: 'Touches', active: false },
-        { name: 'Templates', active: false },
-        { name: 'WhatsApp Templates', active: true },
+      expect(groupNames(wrapper)).not.toContain('Campaigns');
+      expect(groupNames(wrapper)).not.toContain('Mass broadcasts');
+      expect(navigationChildNames(sidebarGroup(wrapper, 'Settings'))).toEqual([
+        'Additional Fields',
       ]);
       expect(sidebarGroup(wrapper, 'Contacts').props('actionIcon')).toBe(
         'i-lucide-settings-2'

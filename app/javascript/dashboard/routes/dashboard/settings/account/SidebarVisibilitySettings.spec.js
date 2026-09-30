@@ -76,7 +76,8 @@ describe('SidebarVisibilitySettings', () => {
       'SIDEBAR.INBOX'
     );
     expect(wrapper.text()).toContain('SIDEBAR.CONVERSATIONS');
-    expect(wrapper.text()).toContain('SIDEBAR.OUTBOUND');
+    expect(wrapper.text()).toContain('SIDEBAR.MASS_BROADCASTS');
+    expect(wrapper.text()).not.toContain('SIDEBAR.OUTBOUND');
     expect(wrapper.text()).toContain('SIDEBAR.ADDITIONAL');
     expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
@@ -140,7 +141,7 @@ describe('SidebarVisibilitySettings', () => {
     currentAccount.value = {
       settings: {
         [SIDEBAR_ORDER_UI_SETTINGS_KEY]: ['Contacts', 'Conversation'],
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:MassBroadcasts'],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       },
@@ -148,15 +149,61 @@ describe('SidebarVisibilitySettings', () => {
 
     const wrapper = mountComponent();
 
-    expect(wrapper.vm.visibilityDraft.Campaigns).toBe(false);
+    expect(wrapper.vm.visibilityDraft['Campaigns:MassBroadcasts']).toBe(false);
     expect(wrapper.vm.visibilityDraft.Reports).toBe(true);
     expect(wrapper.vm.draftItemOrder.slice(0, 3)).toEqual([
       'Contacts',
       'Conversation',
-      'Campaigns',
+      'Campaigns:MassBroadcasts',
     ]);
     expect(wrapper.vm.hasChanges).toBe(false);
   });
+
+  it.each([7, 17, 20])(
+    'opens a version %s menu with the old outbound group as broadcasts and saves it as version 21',
+    async version => {
+      currentAccount.value = {
+        settings: {
+          [SIDEBAR_ORDER_UI_SETTINGS_KEY]: [
+            'Contacts',
+            'Campaigns',
+            'Conversation',
+          ],
+          [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+            'Campaigns',
+            'Conversation:Statuses',
+          ],
+          [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: version,
+        },
+      };
+
+      const wrapper = mountComponent();
+
+      expect(wrapper.vm.visibilityDraft['Campaigns:MassBroadcasts']).toBe(
+        false
+      );
+      expect(wrapper.vm.visibilityDraft.Campaigns).toBeUndefined();
+      expect(wrapper.vm.draftItemOrder.slice(0, 3)).toEqual([
+        'Contacts',
+        'Campaigns:MassBroadcasts',
+        'Conversation',
+      ]);
+      expect(wrapper.text()).not.toContain('SIDEBAR.OUTBOUND');
+
+      await wrapper.vm.saveSidebarVisibility();
+
+      const payload = updateAccount.mock.calls[0][0];
+      expect(payload[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]).toEqual([
+        'Campaigns:MassBroadcasts',
+      ]);
+      expect(payload[SIDEBAR_ORDER_UI_SETTINGS_KEY].slice(0, 3)).toEqual([
+        'Contacts',
+        'Campaigns:MassBroadcasts',
+        'Conversation',
+      ]);
+      expect(payload[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]).toBe(21);
+    }
+  );
 
   it('moves a section with the arrow buttons and saves the new order', async () => {
     const wrapper = mountComponent();
