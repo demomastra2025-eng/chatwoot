@@ -64,8 +64,16 @@ const compareCatalogText = (leftValue, rightValue) =>
     numeric: true,
   });
 
+const FALLBACK_CATALOG_LOCALE = 'en';
+
 const translateCatalogValue = ({ t, te }, key, fallback) => {
-  if (typeof te === 'function' && te(key)) {
+  // `te` only looks at the current locale. A catalog key that exists only in
+  // English (kk has part of the catalog) still resolves through the i18n
+  // fallback locale instead of showing the raw backend value.
+  if (
+    typeof te === 'function' &&
+    (te(key) || te(key, FALLBACK_CATALOG_LOCALE))
+  ) {
     // The catalog keys are derived from stable field/tool ids at runtime.
     // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
     return t(key);

@@ -172,6 +172,41 @@ describe('captainCatalog helper', () => {
     expect(result.original_title).toBe('Handoff to Human');
   });
 
+  it('uses the English catalog text when the current locale lacks the tool', () => {
+    const tool = {
+      id: 'create_touch',
+      title: 'Create Touch',
+      description: 'Create a delayed outbound touch',
+      group_name: 'Outbound',
+    };
+    const english = {
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_touch.TITLE':
+        'Create outbound reminder',
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_touch.DESCRIPTION':
+        'Create a scheduled outbound reminder.',
+      'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.GROUPS.OUTBOUND': 'Outbound',
+    };
+    // Current locale (kk) has none of the keys; `t` falls back to English.
+    const t = key => english[key] || key;
+    const te = (key, locale) =>
+      locale === 'en' ? Object.hasOwn(english, key) : false;
+
+    const result = localizeCatalogTool(tool, { t, te });
+
+    expect(result.title).toBe('Create outbound reminder');
+    expect(result.description).toBe('Create a scheduled outbound reminder.');
+    expect(result.title).not.toMatch(/touch/i);
+    expect(result.original_title).toBe('Create Touch');
+  });
+
+  it('keeps the backend value when no locale knows the key', () => {
+    const tool = { id: 'custom_tool', title: 'Custom tool', group_name: 'X' };
+    const t = key => key;
+    const te = () => false;
+
+    expect(localizeCatalogTool(tool, { t, te }).title).toBe('Custom tool');
+  });
+
   it('still matches search against original titles after localization', () => {
     const item = {
       id: 'appointment.id',

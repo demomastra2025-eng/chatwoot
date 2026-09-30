@@ -8,6 +8,7 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
 import { copyTextToClipboard } from 'shared/helpers/clipboard';
+import { localizeCatalogTool } from 'dashboard/helper/captainCatalog';
 
 import {
   accessPolicyForMode,
@@ -20,7 +21,7 @@ const props = defineProps({
   accessToken: { type: String, default: '' },
 });
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const { accountId, currentAccount } = useAccount();
 
 const MCP_SETTINGS_TIMEOUT_MS = 8000;
@@ -174,7 +175,19 @@ const toolIdsForGroup = (group, openApi) =>
       .filter(tool => isOpenApiTool(tool) === openApi)
       .map(toolPolicyId)
   );
-const toolTitle = tool => tool.title || tool.name || toolPolicyId(tool);
+// AI (Captain) tools come with English backend titles («Create Touch»); show
+// the same localized titles and groups as the AI agent tool settings.
+const localizedCaptainTool = tool =>
+  isOpenApiTool(tool) ? null : localizeCatalogTool(tool, { t, te });
+const toolTitle = tool =>
+  localizedCaptainTool(tool)?.title ||
+  tool.title ||
+  tool.name ||
+  toolPolicyId(tool);
+const toolGroupName = tool =>
+  localizedCaptainTool(tool)?.group_label ||
+  tool.group_name ||
+  t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP');
 const stateLabel = enabled => {
   if (enabled) {
     return t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.STATE_ENABLED');
@@ -237,9 +250,7 @@ const groupedCatalogTools = computed(() => {
     const groupId = groupKeyFor(tool);
     const existing = groups.get(groupId) || {
       id: groupId,
-      name:
-        tool.group_name ||
-        t('PROFILE_SETTINGS.FORM.MCP_CONFIGURATION.OTHER_GROUP'),
+      name: toolGroupName(tool),
       tools: [],
     };
 
