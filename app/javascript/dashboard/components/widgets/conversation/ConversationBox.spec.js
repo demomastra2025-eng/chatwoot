@@ -27,13 +27,29 @@ describe('ConversationBox labels', () => {
     expect(context.activeIndex).toBe(0);
   });
 
-  it('passes the labels of the open chat to the label store', () => {
+  it('passes the payload labels of a channel conversation to the label store', () => {
+    const dispatch = vi.fn();
+
+    ConversationBox.methods.fetchLabels.call({
+      currentChat: { id: 7, labels: ['vip'] },
+      $store: { dispatch },
+    });
+
+    expect(dispatch).toHaveBeenCalledWith('conversationLabels/get', {
+      conversationId: 7,
+      isCommunicationThread: false,
+      labels: ['vip'],
+    });
+  });
+
+  it('asks the API for thread labels, which also hold the contact labels', () => {
     const dispatch = vi.fn();
 
     ConversationBox.methods.fetchLabels.call({
       currentChat: {
         id: 7,
         is_communication_thread: true,
+        // A realtime thread update carries only the conversations' labels.
         labels: ['vip'],
       },
       $store: { dispatch },
@@ -42,8 +58,8 @@ describe('ConversationBox labels', () => {
     expect(dispatch).toHaveBeenCalledWith('conversationLabels/get', {
       conversationId: 7,
       isCommunicationThread: true,
-      labels: ['vip'],
     });
+    expect(dispatch.mock.calls[0][1]).not.toHaveProperty('labels');
   });
 
   it('does not load labels without an open chat', () => {

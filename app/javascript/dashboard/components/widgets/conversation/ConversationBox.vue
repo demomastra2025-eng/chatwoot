@@ -88,12 +88,16 @@ export default {
       if (!this.currentChat.id) {
         return;
       }
+      const isCommunicationThread = Boolean(
+        this.currentChat.is_communication_thread
+      );
       this.$store.dispatch('conversationLabels/get', {
         conversationId: this.currentChat.id,
-        isCommunicationThread: Boolean(
-          this.currentChat.is_communication_thread
-        ),
-        labels: this.currentChat.labels,
+        isCommunicationThread,
+        // A thread's realtime payload carries only its conversations' labels,
+        // not the contact labels its label endpoint adds, so threads always
+        // ask the API. Channel conversations reuse the labels of their payload.
+        ...(isCommunicationThread ? {} : { labels: this.currentChat.labels }),
       });
     },
     onDashboardAppTabChange(index) {
