@@ -62,7 +62,6 @@ import {
   isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
-import { resolveDialogDealCount } from './crmDefaultPipelineSidebar';
 import { resolveVisibleConversationPipelines } from './conversationPipelineVisibility';
 import { conversationListContextState } from 'dashboard/helper/conversationListContext';
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
@@ -71,7 +70,6 @@ import {
   selectExclusiveSidebarChildNames,
 } from './sidebarActiveSelection';
 import {
-  APPOINTMENT_STATUS_ANY,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_VALUES,
@@ -320,18 +318,8 @@ const getSidebarUnreadCount = (collection, key) => {
 
 const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
 const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
-const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
 const appointmentStatusCount = status =>
   getSidebarUnreadCount('appointment_statuses', status);
-const appointmentStatusTotalCount = computed(() => {
-  const anyCount = appointmentStatusCount(APPOINTMENT_STATUS_ANY);
-  if (anyCount > 0) return anyCount;
-
-  return APPOINTMENT_STATUS_VALUES.reduce(
-    (total, status) => total + appointmentStatusCount(status),
-    0
-  );
-});
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved', 'all'];
 const conversationAssigneeTypes = [
@@ -395,10 +383,6 @@ const currentAppointmentStatus = computed(() => {
   const status = currentAppointmentStatusFilter.value;
   return APPOINTMENT_STATUS_VALUES.includes(status) ? status : '';
 });
-
-const hasAnyAppointmentStatusFilter = computed(
-  () => currentAppointmentStatusFilter.value === APPOINTMENT_STATUS_ANY
-);
 
 const truthyQueryValue = value =>
   value === true || value === 'true' || value === '1' || value === 1;
@@ -712,24 +696,6 @@ const withTeamScopeToggle = () =>
     ? withAccountWideConversationScope()
     : withAccountWideConversationScope({ team_scope: 'any' });
 
-const isCurrentCrmPipelineOnly = pipelineId => {
-  const routePipelineId =
-    route.query.crm_pipeline_id ?? route.query.crmPipelineId;
-  const routeStageId = route.query.crm_stage_id ?? route.query.crmStageId;
-
-  return String(routePipelineId || '') === String(pipelineId) && !routeStageId;
-};
-
-const withCurrentConversationScopeCrmPipelineToggle = pipelineId =>
-  isCurrentCrmPipelineOnly(pipelineId)
-    ? withAccountWideConversationScope({
-        status: currentConversationStatus.value,
-      })
-    : withAccountWideConversationScope({
-        crm_pipeline_id: pipelineId,
-        status: currentConversationStatus.value,
-      });
-
 const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
   withAccountWideConversationScope({
     crm_pipeline_id: pipelineId,
@@ -741,14 +707,6 @@ const withCurrentConversationScopeAppointmentStatus = status =>
   withAccountWideConversationScope({
     appointment_status:
       currentAppointmentStatus.value === status ? undefined : status,
-    status: currentConversationStatus.value,
-  });
-
-const withCurrentConversationScopeAnyAppointments = () =>
-  withAccountWideConversationScope({
-    appointment_status: hasAnyAppointmentStatusFilter.value
-      ? undefined
-      : APPOINTMENT_STATUS_ANY,
     status: currentConversationStatus.value,
   });
 
@@ -779,12 +737,7 @@ const appointmentStatusSidebarItems = computed(() => {
       visibilityKey: CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
       label: t('SCHEDULING.DIALOGS.SIDEBAR_TITLE'),
       icon: 'i-lucide-calendar-clock',
-      count: appointmentStatusTotalCount.value,
-      active: hasAnyAppointmentStatusFilter.value,
-      suppressExactPathActive: true,
-      activeOn: [],
       suppressHeaderActiveWhenChildActive: true,
-      to: withCurrentConversationScopeAnyAppointments(),
       children: APPOINTMENT_STATUS_VALUES.map(status => ({
         name: `AppointmentStatus:${status}`,
         visibilityKey: CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS[status],
@@ -817,16 +770,11 @@ const crmPipelineSidebarItems = computed(() => {
     visibilityKey: 'Conversation:Pipelines',
     label: pipeline.name || t('SIDEBAR.PIPELINES'),
     icon: 'i-lucide-filter',
-    active: isCurrentCrmPipelineOnly(pipeline.id),
-    activeOn: conversationStatusActiveOn,
-    count: resolveDialogDealCount(pipeline),
-    to: withCurrentConversationScopeCrmPipelineToggle(pipeline.id),
     suppressHeaderActiveWhenChildActive: true,
     children: pipeline.stages.map(stage => ({
       name: `PipelineStage:${pipeline.id}:${stage.id}`,
       label: stage.name,
       connectorColor: stage.color,
-      count: resolveDialogDealCount(stage),
       activeOn: conversationStatusActiveOn,
       to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
     })),
@@ -1294,7 +1242,7 @@ const buildSettingsMenuItems = () =>
     {
       name: 'Navigation',
       label: t('SIDEBAR.VISIBILITY'),
-      icon: 'i-lucide-panel-left',
+      icon: 'i-lucide-eye',
       activeOn: ['workspace_sidebar_visibility_settings_index'],
       to: accountScopedRoute('workspace_sidebar_visibility_settings_index'),
     },
@@ -1319,7 +1267,7 @@ const buildSettingsMenuItems = () =>
     {
       name: 'Conversation Navigation',
       label: t('CONVERSATION_WORKFLOW.TABS.VISIBILITY'),
-      icon: 'i-lucide-list-tree',
+      icon: 'i-lucide-panel-left',
       activeOn: ['workspace_conversation_visibility_settings_index'],
       to: accountScopedRoute(
         'workspace_conversation_visibility_settings_index'
@@ -1621,6 +1569,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
+                  hideTopSeparator: true,
                   actionItems: labelSidebarActionItems.value,
                   active: hasRouteLabelsScopeAny(),
                   to: withLabelsScopeToggle(),
@@ -1631,15 +1580,11 @@ const menuItems = computed(() => {
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
-                      badge: labelUnreadCount(label.title),
-                      compactIconGap: labelMarkerType(label) === 'emoji',
-                      iconClass:
-                        labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
-                            ? 'text-xl leading-none'
-                            : 'size-3 rounded-sm',
+                            ? 'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none'
+                            : 'size-2.5 rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1865,14 +1810,11 @@ const menuItems = computed(() => {
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
-                    compactIconGap: labelMarkerType(label) === 'emoji',
-                    iconClass:
-                      labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
-                          ? 'text-xl leading-none'
-                          : 'size-3 rounded-sm',
+                          ? 'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none'
+                          : 'size-2.5 rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined
@@ -1901,7 +1843,7 @@ const menuItems = computed(() => {
       {
         name: 'CRM',
         label: t('SIDEBAR.PIPELINES'),
-        icon: 'i-lucide-filter',
+        icon: 'i-lucide-briefcase-business',
         to: accountScopedRoute('crm_deals_index'),
         activeOn: ['crm_deals_index', 'crm_settings_index'],
       },

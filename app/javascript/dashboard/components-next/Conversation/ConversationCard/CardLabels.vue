@@ -91,7 +91,10 @@ const updateVisibleLabels = () => {
           :style="{ backgroundColor: labelMarkerColor(label) }"
           class="size-2 rounded-full flex-shrink-0"
         />
-        <span v-else class="flex-shrink-0 text-xl leading-none">
+        <span
+          v-else
+          class="inline-flex items-center justify-center size-3 flex-shrink-0 overflow-hidden text-xs leading-none"
+        >
           {{ labelMarkerEmoji(label) }}
         </span>
         <span
