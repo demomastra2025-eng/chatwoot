@@ -156,6 +156,92 @@ export const initWhatsAppEmbeddedSignup = (
   });
 };
 
+// --- Mobile-safe completion -------------------------------------------------
+// On phones Meta opens as a separate tab. The dashboard tab can be suspended or
+// reloaded meanwhile, and Meta's WA_EMBEDDED_SIGNUP message is often never
+// delivered even though FB.login returns the auth code. The helpers below keep
+// a small pending-attempt marker (no secrets) so a resumed/reloaded tab can
+// ask the server for the outcome instead of spinning forever.
+
+export const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
+const PENDING_SIGNUP_STORAGE_PREFIX = 'onelink:whatsapp-embedded-signup:';
+
+export const generateSignupNonce = (cryptoImpl = window.crypto) => {
+  const bytes = new Uint8Array(24);
+  cryptoImpl.getRandomValues(bytes);
+  let binary = '';
+  bytes.forEach(byte => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
+const pendingSignupStorageKey = (accountId, userId) =>
+  `${PENDING_SIGNUP_STORAGE_PREFIX}${accountId || 'account'}:${userId || 'user'}`;
+
+const safeStorage = () => {
+  try {
+    return window.localStorage || null;
+  } catch {
+    return null;
+  }
+};
+
+export const savePendingSignup = (accountId, userId, attempt) => {
+  try {
+    safeStorage()?.setItem(
+      pendingSignupStorageKey(accountId, userId),
+      JSON.stringify(attempt)
+    );
+  } catch {
+    // Storage can be unavailable (private mode, quota); resume is best effort.
+  }
+};
+
+export const clearPendingSignup = (accountId, userId) => {
+  try {
+    safeStorage()?.removeItem(pendingSignupStorageKey(accountId, userId));
+  } catch {
+    // Ignore unavailable storage.
+  }
+};
+
+export const loadPendingSignup = (accountId, userId, now = Date.now()) => {
+  let attempt = null;
+  try {
+    const raw = safeStorage()?.getItem(
+      pendingSignupStorageKey(accountId, userId)
+    );
+    attempt = raw ? JSON.parse(raw) : null;
+  } catch {
+    attempt = null;
+  }
+
+  const valid =
+    attempt &&
+    typeof attempt.nonce === 'string' &&
+    Object.values(EMBEDDED_SIGNUP_FLOW).includes(attempt.flow) &&
+    Number.isFinite(attempt.startedAt) &&
+    now - attempt.startedAt >= 0 &&
+    now - attempt.startedAt < PENDING_SIGNUP_TTL_MS;
+
+  if (!valid) {
+    if (attempt) clearPendingSignup(accountId, userId);
+    return null;
+  }
+  return attempt;
+};
+
+// Facebook/Instagram/Messenger/LINE/WhatsApp and similar in-app browsers do not
+// keep a popup connected to the page that opened it, so Meta cannot report back.
+export const isLikelyInAppBrowser = (userAgent = navigator.userAgent || '') =>
+  /FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|Line\/|WhatsApp|Snapchat|MicroMessenger|; wv\)/i.test(
+    userAgent
+  );
+
 export const setupFacebookSdk = async (appId, apiVersion) => {
   const version = apiVersion || 'v25.0';
   await loadFacebookSdk();

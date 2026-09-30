@@ -395,7 +395,23 @@
           "AUTH_NOT_COMPLETED": "Authentication not completed. Please restart the process.",
           "SUCCESS_FALLBACK": "WhatsApp Business Account has been successfully configured",
           "MANUAL_FALLBACK": "If your number is already connected to the WhatsApp Business Platform (API), or if you’re a tech provider onboarding your own number, please use the {link} flow",
-          "MANUAL_LINK_TEXT": "manual setup flow"
+          "MANUAL_LINK_TEXT": "manual setup flow",
+          "RESUMING": "Checking the WhatsApp connection status...",
+          "IN_APP_BROWSER": "This page is open in another app's built-in browser, which cannot receive the result from Meta. Open OneLink in Safari or Chrome to connect WhatsApp.",
+          "RECOVERY": {
+            "CONTINUE": "Continue connection",
+            "CANCEL": "Cancel",
+            "TIP": "On a phone Meta opens in a new tab. After you tap “Finish” there, come back to this tab.",
+            "WAITING_TITLE": "Waiting for Meta",
+            "WAITING_DESC": "If you have already finished in the Meta window but the connection did not continue, tap “Continue connection”. Meta opens again — choose the same business account and number.",
+            "INTERRUPTED_TITLE": "WhatsApp connection was not finished",
+            "INTERRUPTED_DESC": "While you were in Meta, the browser paused or reloaded this page and the result did not reach OneLink. Tap “Continue connection” and choose the same business account and number in Meta.",
+            "TIMEOUT_TITLE": "Meta did not respond in time",
+            "TIMEOUT_DESC": "Tap “Continue connection” to open Meta again.",
+            "FAILED_TITLE": "Could not connect WhatsApp",
+            "WABA_AMBIGUOUS": "Meta returned several WhatsApp Business accounts, so OneLink cannot tell which one you chose. Tap “Continue connection” and finish the setup in Meta again.",
+            "WABA_NOT_FOUND": "Meta did not share a WhatsApp Business account with OneLink. Tap “Continue connection” and finish every step in Meta."
+          }
         },
         "API": {
           "ERROR_MESSAGE": "We were not able to save the WhatsApp channel"

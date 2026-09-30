@@ -10,6 +10,12 @@ import {
   isEmbeddedSignupErrorEvent,
   isEmbeddedSignupFinishEvent,
   isValidBusinessData,
+  generateSignupNonce,
+  savePendingSignup,
+  loadPendingSignup,
+  clearPendingSignup,
+  isLikelyInAppBrowser,
+  PENDING_SIGNUP_TTL_MS,
 } from './utils';
 
 describe('WhatsApp Embedded Signup utils', () => {
@@ -218,6 +224,99 @@ describe('WhatsApp Embedded Signup utils', () => {
       handler({ origin: 'https://badfacebook.com', data });
 
       expect(onEmbeddedSignupData).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('mobile-safe pending signup', () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+    });
+
+    it('generates URL-safe nonces accepted by the server format', () => {
+      const first = generateSignupNonce();
+      const second = generateSignupNonce();
+
+      expect(first).toMatch(/^[A-Za-z0-9_-]{32}$/);
+      expect(second).not.toBe(first);
+    });
+
+    it('stores and restores a pending attempt per account and user', () => {
+      const attempt = {
+        nonce: generateSignupNonce(),
+        flow: 'coexistence',
+        startedAt: 1_000,
+        codeSubmitted: false,
+      };
+      savePendingSignup(3, 7, attempt);
+
+      expect(loadPendingSignup(3, 7, 2_000)).toEqual(attempt);
+      expect(loadPendingSignup(3, 8, 2_000)).toBeNull();
+
+      clearPendingSignup(3, 7);
+      expect(loadPendingSignup(3, 7, 2_000)).toBeNull();
+    });
+
+    it('drops expired or malformed pending attempts', () => {
+      savePendingSignup(3, 7, {
+        nonce: 'n'.repeat(32),
+        flow: 'standard',
+        startedAt: 0,
+      });
+      expect(loadPendingSignup(3, 7, PENDING_SIGNUP_TTL_MS + 1)).toBeNull();
+      expect(window.localStorage.length).toBe(0);
+
+      savePendingSignup(3, 7, { nonce: 'n'.repeat(32), flow: 'other' });
+      expect(loadPendingSignup(3, 7, 10)).toBeNull();
+
+      window.localStorage.setItem(
+        'onelink:whatsapp-embedded-signup:3:7',
+        '{broken'
+      );
+      expect(loadPendingSignup(3, 7, 10)).toBeNull();
+    });
+
+    it('survives unavailable storage', () => {
+      const getItem = vi
+        .spyOn(Storage.prototype, 'getItem')
+        .mockImplementation(() => {
+          throw new Error('blocked');
+        });
+      const setItem = vi
+        .spyOn(Storage.prototype, 'setItem')
+        .mockImplementation(() => {
+          throw new Error('blocked');
+        });
+
+      expect(() =>
+        savePendingSignup(3, 7, { nonce: 'x', flow: 'standard' })
+      ).not.toThrow();
+      expect(loadPendingSignup(3, 7)).toBeNull();
+
+      getItem.mockRestore();
+      setItem.mockRestore();
+    });
+
+    it('recognises in-app browsers that cannot receive the Meta result', () => {
+      expect(
+        isLikelyInAppBrowser(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 330.0'
+        )
+      ).toBe(true);
+      expect(
+        isLikelyInAppBrowser(
+          'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP1A; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/126.0 Mobile Safari/537.36'
+        )
+      ).toBe(true);
+      expect(
+        isLikelyInAppBrowser(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'
+        )
+      ).toBe(false);
+      expect(
+        isLikelyInAppBrowser(
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0 Mobile/15E148 Safari/604.1'
+        )
+      ).toBe(false);
     });
   });
 });

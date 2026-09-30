@@ -172,6 +172,33 @@ describe('WhatsApp reauthorization', () => {
     wrapper.unmount();
   });
 
+  it('reauthorizes with the auth code alone when Meta never posts the session message', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      initWhatsAppEmbeddedSignupMock.mockResolvedValue('mobile-code');
+      dispatchMock.mockResolvedValue({ id: 42 });
+      const wrapper = buildWrapper({
+        providerConfig: { embedded_signup_flow: 'standard' },
+      });
+      await flushPromises();
+
+      await wrapper.vm.requestAuthorization();
+      expect(dispatchMock).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(4000);
+      await flushPromises();
+
+      expect(dispatchMock).toHaveBeenCalledWith('inboxes/reauthorizeWhatsApp', {
+        inboxId: 42,
+        code: 'mobile-code',
+        signup_type: 'standard',
+      });
+      wrapper.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('submits the PIN through registration without opening Meta login', async () => {
     dispatchMock.mockResolvedValue({ id: 42 });
     const wrapper = buildWrapper({

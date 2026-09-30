@@ -41,6 +41,9 @@ const { t } = useI18n();
 const store = useStore();
 
 const SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
+// Mobile popups often deliver the FB.login code without Meta's session event.
+// Reauthorization already knows its WABA and number, so the code is enough.
+const BUSINESS_INFO_GRACE_MS = 4000;
 
 const isRequestingAuthorization = ref(false);
 const isSubmittingReauthorization = ref(false);
@@ -54,6 +57,7 @@ const registrationErrorCode = ref(null);
 const isSubmittingRegistration = ref(false);
 let signupMessageHandler = null;
 let signupTimeout = null;
+let businessInfoGraceTimeout = null;
 
 const whatsappAppId = computed(() => window.chatwootConfig?.whatsappAppId);
 const whatsappConfigurationId = computed(
@@ -153,6 +157,10 @@ const removeSignupMessageListener = () => {
 };
 
 const clearSignupTimeout = () => {
+  if (businessInfoGraceTimeout) {
+    window.clearTimeout(businessInfoGraceTimeout);
+    businessInfoGraceTimeout = null;
+  }
   if (!signupTimeout) return;
 
   window.clearTimeout(signupTimeout);
@@ -228,25 +236,37 @@ const registerPhoneNumber = async () => {
   }
 };
 
-const completeReauthorizationIfReady = async () => {
+const completeReauthorizationIfReady = async ({
+  allowCodeOnly = false,
+} = {}) => {
   if (isSubmittingReauthorization.value || !authCode.value) return;
 
   const businessData = signupBusinessData.value;
   const flow = signupFlow.value;
-  if (!businessData || !isValidBusinessData(businessData, flow)) return;
+  const hasBusinessData =
+    !!businessData && isValidBusinessData(businessData, flow);
+  if (!hasBusinessData && !allowCodeOnly) return;
 
+  if (businessInfoGraceTimeout) {
+    window.clearTimeout(businessInfoGraceTimeout);
+    businessInfoGraceTimeout = null;
+  }
   isSubmittingReauthorization.value = true;
   const authorizationCode = authCode.value;
   authCode.value = null;
 
   try {
-    await reauthorizeWhatsApp({
-      code: authorizationCode,
-      signup_type: flow,
-      business_id: businessData.business_id || '',
-      waba_id: businessData.waba_id,
-      phone_number_id: businessData.phone_number_id || '',
-    });
+    await reauthorizeWhatsApp(
+      hasBusinessData
+        ? {
+            code: authorizationCode,
+            signup_type: flow,
+            business_id: businessData.business_id || '',
+            waba_id: businessData.waba_id,
+            phone_number_id: businessData.phone_number_id || '',
+          }
+        : { code: authorizationCode, signup_type: reauthorizationFlow.value }
+    );
   } catch {
     // The reauthorization action already surfaced a user-friendly error.
   } finally {
@@ -316,6 +336,12 @@ const handleLoginAndReauthorize = async () => {
       reauthorizationFlow.value
     );
     await completeReauthorizationIfReady();
+    if (authCode.value && !isSubmittingReauthorization.value) {
+      businessInfoGraceTimeout = window.setTimeout(() => {
+        businessInfoGraceTimeout = null;
+        completeReauthorizationIfReady({ allowCodeOnly: true });
+      }, BUSINESS_INFO_GRACE_MS);
+    }
   } catch (error) {
     resetSignupState();
     throw error;
