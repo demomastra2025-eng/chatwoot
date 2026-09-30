@@ -218,7 +218,17 @@ RSpec.describe 'Telephony Calls API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.media_type).to eq('audio/wav')
+    expect(response.headers['Content-Disposition']).to start_with('inline')
+    expect(response.headers['X-Content-Type-Options']).to eq('nosniff')
     expect(response.body).to start_with('RIFF')
+
+    get signed_recording_url.sub(/recording_token=[^&]+/, 'recording_token=tampered')
+
+    expect(response).to have_http_status(:not_found)
+
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording"
+
+    expect(response).to have_http_status(:unauthorized)
 
     get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: headers
 

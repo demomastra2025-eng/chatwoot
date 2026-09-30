@@ -345,8 +345,35 @@ const seek = event => {
   currentTime.value = nextTime;
 };
 
+const playNativeAudio = async () => {
+  const audio = audioElement.value;
+  if (!audio) return;
+
+  try {
+    await audio.play();
+  } catch {
+    isPlaying.value = false;
+  }
+};
+
+// The waveform player becomes ready only after WaveSurfer has downloaded and
+// decoded the whole file, and it is not even started while the chip is
+// hidden (e.g. mounted inside a closed call-recording accordion, where the
+// resize observer never reports a width). Instead of silently ignoring the
+// click in that window, play through the native <audio> element.
+const playBeforeWaveformReady = async () => {
+  if (!timeStampURL.value) return;
+
+  emitter.emit('pause_playing_audio', uid);
+  await activateNativeFallback();
+  await playNativeAudio();
+};
+
 const playOrPause = async () => {
-  if (!isAudioReady.value) return;
+  if (!isAudioReady.value) {
+    await playBeforeWaveformReady();
+    return;
+  }
 
   emitter.emit('pause_playing_audio', uid);
 
@@ -362,14 +389,10 @@ const playOrPause = async () => {
   const audio = audioElement.value;
   if (!audio) return;
 
-  try {
-    if (audio.paused) {
-      await audio.play();
-    } else {
-      audio.pause();
-    }
-  } catch {
-    isPlaying.value = false;
+  if (audio.paused) {
+    await playNativeAudio();
+  } else {
+    audio.pause();
   }
 };
 
