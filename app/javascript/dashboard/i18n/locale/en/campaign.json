@@ -486,21 +486,21 @@
       }
     },
     "TOUCHES": {
-      "TITLE": "Personal campaigns",
-      "DESCRIPTION": "Create and manage personal campaigns for one contact and one channel in a single list.",
+      "TITLE": "Reminders",
+      "DESCRIPTION": "Create and manage reminders for one contact and one channel in a single list.",
       "COUNT": "{n} items",
-      "EMPTY_TITLE": "No personal campaigns yet.",
-      "EMPTY_SUBTITLE": "Create a personal campaign for a specific contact and channel.",
+      "EMPTY_TITLE": "No reminders yet.",
+      "EMPTY_SUBTITLE": "Create a reminder for a specific contact and channel.",
       "ACTIONS": {
-        "CREATE": "Create personal",
+        "CREATE": "Create reminder",
         "PLANS": "Follow-ups"
       },
       "EDITOR": {
-        "CREATE_TITLE": "Create personal campaign",
-        "EDIT_TITLE": "Edit personal campaign",
-        "SAVE": "Save personal campaign",
-        "SUCCESS_CREATED": "Personal campaign created.",
-        "SUCCESS_UPDATED": "Personal campaign updated."
+        "CREATE_TITLE": "Create reminder",
+        "EDIT_TITLE": "Edit reminder",
+        "SAVE": "Save reminder",
+        "SUCCESS_CREATED": "Reminder created.",
+        "SUCCESS_UPDATED": "Reminder updated."
       },
       "PLANS_MODAL": {
         "TITLE": "Follow-ups",
@@ -508,7 +508,7 @@
         "CREATE": "Create follow-up",
         "CREATE_TITLE": "Create follow-up",
         "EDIT_TITLE": "Edit follow-up",
-        "EDITOR_DESCRIPTION": "Build a reusable sequence of personal campaigns that can be applied later.",
+        "EDITOR_DESCRIPTION": "Build a reusable group of reminders that can be applied later.",
         "SAVE": "Save follow-up"
       },
       "REFRESH": "Refresh",
@@ -563,7 +563,7 @@
         "FAILED": "Failed"
       },
       "ACTION_TYPES": {
-        "SEND_MESSAGE": "Personal campaign",
+        "SEND_MESSAGE": "Reminder",
         "AI_AGENT_WAKEUP": "AI wakeup"
       },
       "REPEAT": {
@@ -584,7 +584,7 @@
         "LOAD_PLANS": "Failed to load follow-ups.",
         "APPROVE_TOUCH": "Failed to approve the reminder.",
         "CANCEL_TOUCH": "Failed to cancel the reminder.",
-        "DELETE_TOUCH": "Failed to delete the personal campaign.",
+        "DELETE_TOUCH": "Failed to delete the reminder.",
         "ARCHIVE_PLAN": "Failed to archive the follow-up.",
         "APPLY_PLAN": "Failed to apply the follow-up.",
         "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a follow-up.",
@@ -613,12 +613,12 @@
         }
       },
       "CONFIRM_DELETE": {
-        "TITLE": "Delete personal campaign?",
-        "DESCRIPTION": "This personal campaign will be removed permanently.",
+        "TITLE": "Delete reminder?",
+        "DESCRIPTION": "This reminder will be removed permanently.",
         "CONFIRM": "Delete",
         "API": {
-          "SUCCESS_MESSAGE": "Personal campaign deleted.",
-          "ERROR_MESSAGE": "Failed to delete the personal campaign."
+          "SUCCESS_MESSAGE": "Reminder deleted.",
+          "ERROR_MESSAGE": "Failed to delete the reminder."
         }
       },
       "PLANS": {
@@ -642,7 +642,7 @@
         }
       },
       "ANALYTICS": {
-        "TITLE": "Personal campaign analytics",
+        "TITLE": "Reminder analytics",
         "DESCRIPTION": "Status, routing, and execution timeline.",
         "UNAVAILABLE": "—",
         "ERROR": "Last error",
@@ -812,7 +812,7 @@
       "TOUCH_PLAN_EDITOR": {
         "CREATE_TITLE": "Create follow-up",
         "EDIT_TITLE": "Edit follow-up",
-        "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
+        "DESCRIPTION": "Build a reusable group of reminders and apply it from any supported record.",
         "CREATE": "Create follow-up",
         "SAVE": "Save follow-up",
         "ADD_STEP": "Add step",
@@ -987,7 +987,7 @@
     "TOUCH_PLAN_EDITOR": {
       "CREATE_TITLE": "Create follow-up",
       "EDIT_TITLE": "Edit follow-up",
-      "DESCRIPTION": "Build a reusable sequence of personal campaigns and apply it from any supported record.",
+      "DESCRIPTION": "Build a reusable group of reminders and apply it from any supported record.",
       "CREATE": "Create follow-up",
       "SAVE": "Save follow-up",
       "ADD_STEP": "Add step",

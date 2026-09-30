@@ -168,9 +168,9 @@
           "NOTE": "Show the company field in appointment forms and allow linking visits to a company."
         },
         "TOUCH_PLAN": {
-          "LABEL": "Default reminder plan",
-          "NOTE": "Automatically apply this reminder plan when a new appointment is created.",
-          "PLACEHOLDER": "No default reminder plan"
+          "LABEL": "Әдепкі еске салу жоспары",
+          "NOTE": "Жаңа жазылу жасалғанда осы еске салу жоспарын автоматты түрде қолдану.",
+          "PLACEHOLDER": "Әдепкі еске салу жоспары жоқ"
         }
       },
       "LOGO": {
