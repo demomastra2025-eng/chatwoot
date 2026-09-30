@@ -308,7 +308,9 @@ onMounted(() => {
                 value => toggleSidebarUIState('is_shared_files_open', value)
               "
             >
-              <SharedFiles />
+              <SharedFiles
+                v-if="isContactSidebarItemOpen('is_shared_files_open')"
+              />
             </AccordionItem>
           </div>
         </template>

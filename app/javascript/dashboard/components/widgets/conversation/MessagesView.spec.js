@@ -683,6 +683,7 @@ describe('MessagesView', () => {
   describe('currentChat watcher', () => {
     it('refreshes chat-scoped state when direct and thread ids collide', () => {
       const context = {
+        $store: { dispatch: vi.fn() },
         fetchAllAttachmentsFromCurrentChat: vi.fn(),
         fetchSuggestions: vi.fn(),
         messageSentSinceOpened: true,
@@ -698,7 +699,12 @@ describe('MessagesView', () => {
         { id: 987 }
       );
 
-      expect(context.fetchAllAttachmentsFromCurrentChat).toHaveBeenCalled();
+      // Attachments are loaded by the «Файлы» panel, not on every switch.
+      expect(context.fetchAllAttachmentsFromCurrentChat).not.toHaveBeenCalled();
+      expect(context.$store.dispatch).not.toHaveBeenCalledWith(
+        'fetchAllAttachments',
+        expect.anything()
+      );
       expect(context.fetchSuggestions).toHaveBeenCalled();
       expect(context.messageSentSinceOpened).toBe(false);
       expect(context.resetOpenedUnreadMessages).toHaveBeenCalled();

@@ -381,7 +381,8 @@ export default {
       }
       this.conversationHistoryGeneration += 1;
       this.hasUserScrolled = false;
-      this.fetchAllAttachmentsFromCurrentChat();
+      // Attachments are loaded by the «Файлы» side panel when it is open
+      // and by the gallery when it opens, not on every chat switch.
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
       this.resetOpenedUnreadMessages();
@@ -400,7 +401,6 @@ export default {
 
   mounted() {
     this.addScrollListener();
-    this.fetchAllAttachmentsFromCurrentChat();
     this.fetchSuggestions();
   },
 
@@ -451,14 +451,6 @@ export default {
         this.currentAccountId,
         this.currentChat.id
       );
-    },
-    fetchAllAttachmentsFromCurrentChat() {
-      this.$store.dispatch('fetchAllAttachments', {
-        conversationId: this.currentChat.id,
-        isCommunicationThread: Boolean(
-          this.currentChat.is_communication_thread
-        ),
-      });
     },
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);

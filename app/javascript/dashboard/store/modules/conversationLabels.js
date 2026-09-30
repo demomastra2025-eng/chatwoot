@@ -48,6 +48,20 @@ export const actions = {
       payload,
       rootGetters
     );
+    // The open chat payload already carries its labels: use them instead of
+    // another request.
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      hasOwnProperty(payload, 'labels') &&
+      Array.isArray(payload.labels)
+    ) {
+      commit(types.default.SET_CONVERSATION_LABELS, {
+        id: conversationId,
+        data: payload.labels,
+      });
+      return;
+    }
     commit(types.default.SET_CONVERSATION_LABELS_UI_FLAG, {
       isFetching: true,
     });

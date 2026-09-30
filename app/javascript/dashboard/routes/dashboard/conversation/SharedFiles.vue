@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -25,9 +26,40 @@ const MEDIA_PEEK_LIMIT = 6;
 const FILES_PEEK_LIMIT = 3;
 
 const { t } = useI18n();
+const store = useStore();
 
 const allAttachments = useMapGetter('getSelectedChatAttachments');
 const attachmentsLoaded = useMapGetter('getSelectedChatAttachmentsLoaded');
+const selectedChat = useMapGetter('getSelectedChat');
+
+// The panel is mounted only while the «Файлы» accordion is open, so the
+// attachments of a chat are requested only when someone looks at them, and
+// again only when another chat (or the thread instead of a channel
+// conversation with the same id) is opened, not on every chat update.
+const attachmentTarget = computed(() => {
+  const conversationId = selectedChat.value?.id;
+  if (!conversationId) return '';
+
+  const type = selectedChat.value.is_communication_thread
+    ? 'communication_thread'
+    : 'conversation';
+  return `${type}:${conversationId}`;
+});
+
+watch(
+  attachmentTarget,
+  target => {
+    if (!target) return;
+
+    store.dispatch('fetchAllAttachments', {
+      conversationId: selectedChat.value.id,
+      isCommunicationThread: Boolean(
+        selectedChat.value.is_communication_thread
+      ),
+    });
+  },
+  { immediate: true }
+);
 
 const sortedAttachments = computed(() =>
   [...allAttachments.value].sort(

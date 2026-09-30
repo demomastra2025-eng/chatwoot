@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, useTemplateRef } from 'vue';
+import { ref, computed, onMounted, useTemplateRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 
 import { useStoreGetters } from 'dashboard/composables/store';
@@ -32,6 +33,7 @@ const emit = defineEmits(['close']);
 const show = defineModel('show', { type: Boolean, default: false });
 
 const { t } = useI18n();
+const store = useStore();
 const getters = useStoreGetters();
 
 const ALLOWED_FILE_TYPES = {
@@ -165,8 +167,38 @@ const keyboardEvents = {
 
 useKeyboardEvents(keyboardEvents);
 
+// The open chat's attachments are no longer loaded on every chat switch (the
+// «Файлы» panel loads them while it is open). A gallery opened from a message
+// loads them itself so the previous/next navigation keeps working.
+const loadSelectedChatAttachments = () => {
+  if (props.allAttachments.length) return;
+
+  const selectedChat = getters.getSelectedChat?.value;
+  if (!selectedChat?.id || getters.getSelectedChatAttachmentsLoaded?.value) {
+    return;
+  }
+
+  store.dispatch('fetchAllAttachments', {
+    conversationId: selectedChat.id,
+    isCommunicationThread: Boolean(selectedChat.is_communication_thread),
+  });
+};
+
+watch(
+  () => props.allAttachments,
+  attachments => {
+    if (activeImageIndex.value >= 0) return;
+
+    const index = attachments.findIndex(
+      attachment => attachment.message_id === props.attachment.message_id
+    );
+    if (index >= 0) activeImageIndex.value = index;
+  }
+);
+
 onMounted(() => {
   setImageAndVideoSrc(props.attachment);
+  loadSelectedChatAttachments();
 });
 </script>
 

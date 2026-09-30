@@ -8,6 +8,33 @@ vi.mock('axios');
 
 describe('#actions', () => {
   describe('#get', () => {
+    it('uses labels already present on the selected chat without an API request', async () => {
+      axios.get.mockClear();
+      commit.mockClear();
+      await actions.get(
+        { commit },
+        { conversationId: 1, isCommunicationThread: true, labels: ['priority'] }
+      );
+
+      expect(axios.get).not.toHaveBeenCalled();
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_CONVERSATION_LABELS, { id: 1, data: ['priority'] }],
+      ]);
+    });
+
+    it('still requests the labels when the chat payload has none', async () => {
+      axios.get.mockClear();
+      axios.get.mockResolvedValue({ data: { payload: ['vip'] } });
+      commit.mockClear();
+      await actions.get({ commit }, { conversationId: 1, labels: undefined });
+
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledWith(
+        types.default.SET_CONVERSATION_LABELS,
+        { id: 1, data: ['vip'] }
+      );
+    });
+
     it('sends correct actions if API is success', async () => {
       axios.get.mockResolvedValue({
         data: { payload: ['customer-success', 'on-hold'] },
