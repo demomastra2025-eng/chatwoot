@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
   route: null,
   user: null,
   accountSettings: {},
+  sidebarUnreadCounts: {},
+  labels: [],
   knownRoutes: new Map(),
   crmStore: {
     pipelines: [],
@@ -121,11 +123,11 @@ const buildStore = () => ({
     'globalConfig/isOnChatwootCloud': false,
     'globalConfig/isACustomBrandedInstance': false,
     'inboxes/getInboxes': [],
-    'labels/getLabelsOnSidebar': [],
+    'labels/getLabelsOnSidebar': mocks.labels,
     'teams/getMyTeams': [],
     'customViews/getContactCustomViews': [],
     'customViews/getConversationCustomViews': [],
-    getConversationSidebarUnreadCounts: {},
+    getConversationSidebarUnreadCounts: mocks.sidebarUnreadCounts,
     'conversationStats/getStats': {},
     getSelectedChat: null,
     getUISettings: {},
@@ -220,7 +222,94 @@ describe('Sidebar', () => {
     // The rail footer reads the phone widget store (notifications track).
     setActivePinia(createPinia());
     mocks.accountSettings = {};
+    mocks.sidebarUnreadCounts = {};
+    mocks.labels = [];
     mocks.crmStore.pipelines = [];
+  });
+
+  const conversationChild = (wrapper, name) =>
+    sidebarGroup(wrapper, 'Conversation')
+      .props('children')
+      .find(child => child.name === name);
+
+  describe('conversation business sections', () => {
+    it('shows pipelines as plain labels without counters', async () => {
+      mocks.crmStore.pipelines = [
+        {
+          id: 1,
+          name: 'Main pipeline',
+          default: true,
+          active: true,
+          position: 1,
+          dialog_deal_count: 12,
+          stages: [
+            {
+              id: 11,
+              name: 'New',
+              active: true,
+              position: 1,
+              color: '#f00',
+              dialog_deal_count: 0,
+            },
+            {
+              id: 12,
+              name: 'Won',
+              active: true,
+              position: 2,
+              dialog_deal_count: 4,
+            },
+          ],
+        },
+      ];
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'communication_threads_dashboard',
+      });
+      const pipeline = conversationChild(wrapper, 'Pipeline:1');
+
+      expect(pipeline.label).toBe('Main pipeline');
+      expect(pipeline.to).toBeUndefined();
+      expect(pipeline.count).toBeUndefined();
+      expect(pipeline.active).toBeUndefined();
+      expect(pipeline.children.map(stage => stage.name)).toEqual([
+        'PipelineStage:1:11',
+        'PipelineStage:1:12',
+      ]);
+      pipeline.children.forEach(stage => {
+        expect(stage.count).toBeUndefined();
+        expect(stage.badge).toBeUndefined();
+      });
+      expect(pipeline.children[0].to.query).toMatchObject({
+        crm_pipeline_id: 1,
+        crm_stage_id: 11,
+      });
+    });
+
+    it('shows «Записи» as a plain label and keeps the status counters', async () => {
+      mocks.sidebarUnreadCounts = {
+        appointment_statuses: { any: 9, scheduled: 3, confirmed: 2 },
+      };
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'communication_threads_dashboard',
+      });
+      const appointments = conversationChild(wrapper, 'AppointmentStatuses');
+
+      expect(appointments.to).toBeUndefined();
+      expect(appointments.count).toBeUndefined();
+      expect(appointments.active).toBeUndefined();
+      expect(
+        Object.fromEntries(
+          appointments.children.map(child => [child.name, child.count])
+        )
+      ).toMatchObject({
+        'AppointmentStatus:scheduled': 3,
+        'AppointmentStatus:confirmed': 2,
+      });
+      expect(appointments.children[0].to.query).toMatchObject({
+        appointment_status: 'scheduled',
+      });
+    });
   });
 
   describe('for an administrator', () => {
