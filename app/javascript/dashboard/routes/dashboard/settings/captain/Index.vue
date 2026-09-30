@@ -27,6 +27,15 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
+// «Расходы» in the AI menu opens this page with only the usage section; the
+// full «Настройки ИИ» page keeps every section, usage included.
+const props = defineProps({
+  section: {
+    type: String,
+    default: 'settings',
+  },
+});
+
 const { t } = useI18n();
 const { captainEnabled } = useCaptain();
 const { isEnterprise, enterprisePlanName } = useConfig();
@@ -45,6 +54,7 @@ const {
 } = storeToRefs(captainConfigStore);
 
 const isLoading = computed(() => uiFlags.value.isFetching);
+const isUsagePage = computed(() => props.section === 'usage');
 const audioTranscriptionPrompt = ref('');
 const knowledgeChunkSize = ref(0);
 const moderationFailureMode = ref('fail_open');
@@ -1013,14 +1023,23 @@ onMounted(() => {
   >
     <template #header>
       <BaseSettingsHeader
-        :title="t('CAPTAIN_SETTINGS.TITLE')"
-        :description="t('CAPTAIN_SETTINGS.DESCRIPTION')"
+        :title="
+          isUsagePage
+            ? t('CAPTAIN_SETTINGS.USAGE.TITLE')
+            : t('CAPTAIN_SETTINGS.TITLE')
+        "
+        :description="
+          isUsagePage
+            ? t('CAPTAIN_SETTINGS.USAGE.DESCRIPTION')
+            : t('CAPTAIN_SETTINGS.DESCRIPTION')
+        "
         icon-name="captain"
       />
     </template>
     <template #body>
       <div v-if="captainEnabled" class="flex flex-col gap-8">
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.TITLE')"
           :description="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.DESCRIPTION')"
         >
@@ -1122,6 +1141,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.RELIABILITY.TITLE')"
           :description="t('CAPTAIN_SETTINGS.RELIABILITY.DESCRIPTION')"
           with-border
@@ -1159,6 +1179,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.WEB_ACCESS.TITLE')"
           :description="t('CAPTAIN_SETTINGS.WEB_ACCESS.DESCRIPTION')"
           with-border
@@ -1586,6 +1607,7 @@ onMounted(() => {
 
         <!-- Model Configuration Section -->
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.TITLE')"
           :description="t('CAPTAIN_SETTINGS.MODEL_CONFIG.DESCRIPTION')"
         >
@@ -1848,6 +1870,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_TITLE')"
           :description="
             t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_DESCRIPTION')

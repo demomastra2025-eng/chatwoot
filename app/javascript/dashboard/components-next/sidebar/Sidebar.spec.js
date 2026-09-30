@@ -234,6 +234,67 @@ describe('Sidebar', () => {
       .props('children')
       .find(child => child.name === name);
 
+  describe('AI group', () => {
+    it('is labelled «AI Агенты» and lists the AI pages without icons', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'captain_usage_index',
+      });
+      const captain = sidebarGroup(wrapper, 'Captain');
+
+      expect(captain.props('label')).toBe(enSettings.SIDEBAR.CAPTAIN);
+      expect(captain.props('label')).not.toBe('AI');
+      expect(navigationChildNames(captain)).toEqual([
+        'Profile',
+        'Prompts',
+        'Sandbox',
+        'Follow-up scenarios',
+        'Tools',
+        'Observability',
+        'Evaluations',
+        'Knowledge Base',
+        'AI expenses',
+      ]);
+      captain
+        .props('children')
+        .forEach(child => expect(child.icon).toBeUndefined());
+      const children = captain.props('children');
+      expect(children.find(child => child.name === 'Sandbox').to).toMatchObject(
+        {
+          name: 'captain_assistants_index',
+          params: { navigationPath: 'captain_assistants_playground_index' },
+        }
+      );
+      expect(
+        children.find(child => child.name === 'AI expenses').to
+      ).toMatchObject({ name: 'captain_usage_index' });
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'AI expenses', active: true },
+      ]);
+      // The AI settings page stays in the settings hub.
+      expect(navigationChildNames(sidebarGroup(wrapper, 'Settings'))).toContain(
+        'Settings Captain'
+      );
+    });
+
+    it('hides «Тестирование» and «Расходы» from employees', async () => {
+      const wrapper = await mountSidebar({
+        permissions: AGENT,
+        routeName: 'contacts_dashboard_index',
+      });
+
+      expect(navigationChildNames(sidebarGroup(wrapper, 'Captain'))).toEqual([
+        'Profile',
+        'Prompts',
+        'Sandbox',
+        'Follow-up scenarios',
+        'Tools',
+        'Observability',
+        'Knowledge Base',
+      ]);
+    });
+  });
+
   describe('tags in the sidebar', () => {
     const markerClass = child => child.icon.props.class;
 

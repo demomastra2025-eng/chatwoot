@@ -153,10 +153,11 @@ const basePayload = ({ audioModel }) => ({
   },
 });
 
-const mountComponent = store => {
+const mountComponent = (store, props = {}) => {
   vi.spyOn(store, 'fetch').mockResolvedValue();
 
   return shallowMount(Index, {
+    props,
     global: {
       stubs: {
         SettingsLayout: {
@@ -383,6 +384,52 @@ describe('Captain settings OpenRouter UX', () => {
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.TODAY_SPEND');
     expect(wrapper.text()).toContain('openai/gpt-5.4');
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS');
+  });
+
+  it('shows only the usage section on the «Расходы» page', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload(
+      basePayload({
+        audioModel: {
+          id: 'openai/gpt-audio-mini',
+          display_name: 'GPT Audio Mini',
+          provider: 'openrouter',
+          provider_configured: true,
+          type: 'chat',
+          capabilities: ['audio_input', 'text_output', 'transcription'],
+        },
+      })
+    );
+
+    const usageWrapper = mountComponent(store, { section: 'usage' });
+
+    expect(
+      usageWrapper.find('[data-test="captain-usage-section"]').exists()
+    ).toBe(true);
+    expect(
+      usageWrapper.find('[data-test="captain-web-access-section"]').exists()
+    ).toBe(false);
+    expect(
+      usageWrapper.find('[data-test="captain-reliability-section"]').exists()
+    ).toBe(false);
+    expect(
+      usageWrapper.find('[data-test="captain-text-improvement"]').exists()
+    ).toBe(false);
+    expect(usageWrapper.text()).not.toContain(
+      'CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE'
+    );
+
+    // The full AI settings page keeps every section, usage included.
+    const settingsWrapper = mountComponent(store);
+    expect(
+      settingsWrapper.find('[data-test="captain-usage-section"]').exists()
+    ).toBe(true);
+    expect(
+      settingsWrapper.find('[data-test="captain-web-access-section"]').exists()
+    ).toBe(true);
+    expect(
+      settingsWrapper.find('[data-test="captain-text-improvement"]').exists()
+    ).toBe(true);
   });
 
   it('renders web access controls and saves shared agent settings', async () => {

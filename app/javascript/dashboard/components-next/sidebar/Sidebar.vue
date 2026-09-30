@@ -1512,15 +1512,16 @@ const menuItems = computed(() => {
       {
         name: 'Captain',
         icon: 'i-woot-captain',
-        label: 'AI',
+        label: t('SIDEBAR.CAPTAIN'),
         defaultChildName: 'Profile',
         activeOn: ['captain_assistants_create_index'],
+        // As in aset/dev the AI children have no icons. «Тестирование» and the
+        // «Настройки ИИ» page (settings hub) stay.
         children: [
           {
             name: 'Profile',
             visibilityKey: 'Captain:Settings',
             label: t('PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
-            icon: 'i-lucide-id-card',
             activeOn: ['captain_assistants_settings_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_settings_index',
@@ -1530,7 +1531,6 @@ const menuItems = computed(() => {
             name: 'Prompts',
             visibilityKey: 'Captain:Prompts',
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
-            icon: 'i-lucide-message-square-text',
             activeOn: [
               'captain_assistants_prompts_index',
               'captain_assistants_scenarios_index',
@@ -1543,10 +1543,18 @@ const menuItems = computed(() => {
             }),
           },
           {
+            name: 'Sandbox',
+            visibilityKey: 'Captain:Playground',
+            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
+            activeOn: ['captain_assistants_playground_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_playground_index',
+            }),
+          },
+          {
             name: 'Follow-up scenarios',
             visibilityKey: 'Captain:FollowUps',
             label: t('SIDEBAR.CAPTAIN_FOLLOW_UPS'),
-            icon: 'i-lucide-route',
             activeOn: ['captain_assistants_follow_ups_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_follow_ups_index',
@@ -1556,7 +1564,6 @@ const menuItems = computed(() => {
             name: 'Tools',
             visibilityKey: 'Captain:Tools',
             label: t('SIDEBAR.CAPTAIN_TOOLS'),
-            icon: 'i-lucide-wrench',
             activeOn: ['captain_tools_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_tools_index',
@@ -1566,7 +1573,6 @@ const menuItems = computed(() => {
             name: 'Observability',
             visibilityKey: 'Captain:Observability',
             label: t('SIDEBAR.CAPTAIN_OBSERVABILITY'),
-            icon: 'i-lucide-activity',
             activeOn: ['captain_observability_index'],
             to: accountScopedRoute('captain_observability_index'),
           },
@@ -1576,7 +1582,6 @@ const menuItems = computed(() => {
                   name: 'Evaluations',
                   visibilityKey: 'Captain:Evaluations',
                   label: t('SIDEBAR.CAPTAIN_EVALUATIONS'),
-                  icon: 'i-lucide-clipboard-check',
                   activeOn: ['captain_evaluations_index'],
                   to: accountScopedRoute('captain_evaluations_index'),
                 },
@@ -1586,7 +1591,6 @@ const menuItems = computed(() => {
             name: 'Knowledge Base',
             visibilityKey: 'Captain:FAQs',
             label: t('SIDEBAR.CAPTAIN_RESPONSES'),
-            icon: 'i-lucide-book-open',
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
@@ -1596,6 +1600,17 @@ const menuItems = computed(() => {
               navigationPath: 'captain_assistants_responses_index',
             }),
           },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'AI expenses',
+                  visibilityKey: 'Captain:Usage',
+                  label: t('SIDEBAR.CAPTAIN_USAGE'),
+                  activeOn: ['captain_usage_index'],
+                  to: accountScopedRoute('captain_usage_index'),
+                },
+              ]
+            : []),
         ],
       },
       {
