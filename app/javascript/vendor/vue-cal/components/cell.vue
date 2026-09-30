@@ -289,6 +289,16 @@ const eventStyles = computed(() => {
 
     const rightOrLeft = isRTL ? 'right' : 'left'
     const widthOrHeight = isHzl ? 'height' : 'width'
+
+    // OneLink patch: a caller-computed `event.layout = { left, width }` (in %)
+    // replaces the built-in overlap split, so every event of an overlap
+    // cluster can share the same column grid.
+    const layout = event.layout
+    if (!isHzl && layout && Number.isFinite(layout.left) && Number.isFinite(layout.width)) {
+      styles[eventId] = { [rightOrLeft]: `${layout.left}%`, width: `${layout.width}%` }
+      continue
+    }
+
     styles[eventId] = { [isHzl ? 'top' : rightOrLeft]: `${(100 / maxConcurrent) * position}%` }
     // Stack overlapping events on top of each other if the stackEvents prop is set to true.
     if (config.stackEvents) {

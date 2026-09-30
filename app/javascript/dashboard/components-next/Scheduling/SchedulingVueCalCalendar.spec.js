@@ -543,7 +543,8 @@ describe('SchedulingVueCalCalendar', () => {
 
     expect(vueCal.props('timeStep')).toBe(30);
     expect(vueCal.props('snapToInterval')).toBe(5);
-    expect(vueCal.props('timeCellHeight')).toBe(24);
+    // 40px per half hour so a 30-minute visit shows two full text lines.
+    expect(vueCal.props('timeCellHeight')).toBe(40);
     expect(vueCal.props('timeFrom')).toBe(0);
     expect(vueCal.props('timeTo')).toBe(24 * 60);
     expect(wrapper.findAll('.vuecal__time-cell')).toHaveLength(48);
@@ -795,5 +796,165 @@ describe('SchedulingVueCalCalendar', () => {
         expect.stringContaining('vuecal__event--stack-2-2'),
       ])
     );
+    const widths = eventCards.map(
+      card => card.element.closest('.vuecal__event').style.width
+    );
+    expect(widths).toEqual(['50%', '50%']);
+  });
+
+  const visit = (id, overrides = {}) => ({
+    clientName: `Client ${id}`,
+    endsAt: '2026-03-09T10:30:00.000Z',
+    id,
+    resourceId: 12,
+    serviceNameSnapshot: 'Consultation',
+    startsAt: '2026-03-09T10:00:00.000Z',
+    status: 'scheduled',
+    ...overrides,
+  });
+
+  const cardFor = (wrapper, name) =>
+    wrapper
+      .findAll('.scheduling-vue-cal__event-card')
+      .find(card => card.text().includes(name));
+
+  it('colours cards by status: confirmed green, scheduled blue, completed muted', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        visit(1, { clientName: 'Confirmed client', status: 'confirmed' }),
+        visit(2, {
+          clientName: 'Scheduled client',
+          endsAt: '2026-03-09T11:30:00.000Z',
+          startsAt: '2026-03-09T11:00:00.000Z',
+        }),
+        visit(3, {
+          clientName: 'Completed client',
+          endsAt: '2026-03-09T12:30:00.000Z',
+          startsAt: '2026-03-09T12:00:00.000Z',
+          status: 'completed',
+        }),
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const confirmed = cardFor(wrapper, 'Confirmed client');
+    const scheduled = cardFor(wrapper, 'Scheduled client');
+    const completed = cardFor(wrapper, 'Completed client');
+
+    expect(confirmed.classes()).toContain(
+      'scheduling-vue-cal__event-card--solid'
+    );
+    expect(
+      confirmed.element.style.getPropertyValue('--appointment-accent')
+    ).toBe('#15803D');
+    expect(
+      scheduled.element.style.getPropertyValue('--appointment-accent')
+    ).toBe('#2563EB');
+    expect(completed.classes()).toEqual(
+      expect.arrayContaining([
+        'scheduling-vue-cal__event-card--muted',
+        'scheduling-vue-cal__event-card--regular',
+      ])
+    );
+  });
+
+  it('keeps cancelled visits visible in a narrow outlined lane beside live ones', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        visit(1, { clientName: 'Cancelled A', status: 'cancelled' }),
+        visit(2, { clientName: 'Cancelled B', status: 'cancelled' }),
+        visit(3, { clientName: 'Live visit', status: 'confirmed' }),
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventBox = name =>
+      cardFor(wrapper, name).element.closest('.vuecal__event').style;
+
+    expect(eventBox('Live visit').left).toBe('0%');
+    expect(eventBox('Live visit').width).toBe('72%');
+    expect(eventBox('Cancelled A').left).toBe('72%');
+    expect(eventBox('Cancelled A').width).toBe('14%');
+    expect(eventBox('Cancelled B').left).toBe('86%');
+    expect(cardFor(wrapper, 'Cancelled A').classes()).toEqual(
+      expect.arrayContaining([
+        'scheduling-vue-cal__event-card--ghost',
+        'scheduling-vue-cal__event-card--cancelled',
+      ])
+    );
+  });
+
+  it('uses a single line for short visits and keeps the details in the tooltip', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        visit(1, {
+          clientName: 'Quick visit',
+          endsAt: '2026-03-09T10:15:00.000Z',
+          resourceName: 'Dr. Sam',
+        }),
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const card = cardFor(wrapper, 'Quick visit');
+
+    expect(card.classes()).toContain('scheduling-vue-cal__event-card--compact');
+    expect(
+      card
+        .find('.scheduling-vue-cal__event-summary')
+        .find('.scheduling-vue-cal__event-subtitle--inline')
+        .text()
+    ).toBe('Consultation · Dr. Sam');
+    expect(card.attributes('title')).toContain('Quick visit');
+    expect(card.attributes('title')).toContain('Consultation · Dr. Sam');
+  });
+
+  it('shows a status legend for appointments but not for resource-coloured calendars', async () => {
+    const byStatus = mountCalendar({ view: 'day' });
+    const byResource = mountCalendar({ colorBy: 'resource', view: 'day' });
+
+    await nextTick();
+
+    const legendStatuses = byStatus
+      .findAll('.scheduling-vue-cal__legend-item')
+      .map(item => item.attributes('data-status'));
+
+    expect(legendStatuses).toEqual([
+      'scheduled',
+      'confirmed',
+      'completed',
+      'cancelled',
+      'no_show',
+    ]);
+    expect(
+      byStatus
+        .find('[data-status="confirmed"] .scheduling-vue-cal__legend-swatch')
+        .element.style.getPropertyValue('--appointment-accent')
+    ).toBe('#15803D');
+    expect(byResource.find('.scheduling-vue-cal__legend').exists()).toBe(false);
+  });
+
+  it('keeps resource colours when the calendar is coloured by resource', async () => {
+    const wrapper = mountCalendar({
+      colorBy: 'resource',
+      appointments: [
+        visit(1, { clientName: 'Task', resourceColor: '#f97316' }),
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    expect(
+      cardFor(wrapper, 'Task').element.style.getPropertyValue(
+        '--appointment-accent'
+      )
+    ).toBe('#f97316');
   });
 });

@@ -159,6 +159,7 @@ const handleResizeTask = payload => {
 
 <template>
   <SchedulingVueCalCalendar
+    color-by="resource"
     class="min-h-0 flex-1"
     :anchor-date="anchorDate"
     :appointments="calendarTasks"

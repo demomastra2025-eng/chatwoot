@@ -474,8 +474,8 @@ describe('ConversationCard', () => {
         'right-0',
         'top-2',
         'rounded-full',
-        'bg-n-blue-3',
-        'text-n-blue-11',
+        'bg-n-teal-3',
+        'text-n-teal-11',
       ])
     );
     expect(appointmentSticker.attributes('title')).toBe(

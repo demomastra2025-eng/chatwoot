@@ -277,9 +277,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'confirmed')
     ).toMatchObject({
-      iconClass: 'text-n-blue-11',
+      iconClass: 'text-n-teal-11',
       label: 'SCHEDULING.DIALOGS.APPOINTMENT_STATUS_SHORT.confirmed',
-      labelClass: 'text-n-blue-11',
+      labelClass: 'text-n-teal-11',
     });
     expect(
       wrapper.vm.statusOptions.find(option => option.value === 'scheduled')
@@ -310,7 +310,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     const html = wrapper.html();
     expect(html).toContain('i-lucide-badge-check');
-    expect(html).toContain('text-n-blue-11');
+    expect(html).toContain('text-n-teal-11');
     expect(html).not.toContain('appointment-status-dashed-rail');
     expect(html.indexOf('i-lucide-badge-check')).toBeLessThan(
       html.indexOf('Айша')

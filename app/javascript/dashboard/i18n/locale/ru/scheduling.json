@@ -127,6 +127,7 @@
       "NO_RESOURCES": "Добавьте хотя бы одного активного специалиста, чтобы начать работать с календарём.",
       "NO_SERVICE": "Без услуги",
       "RESOURCES_UNAVAILABLE": "Недоступны: {names}",
+      "STATUS_LEGEND": "Статусы приёмов",
       "UNAVAILABLE": "Недоступно",
       "UNAVAILABLE_SLOT": "Это время недоступно",
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"

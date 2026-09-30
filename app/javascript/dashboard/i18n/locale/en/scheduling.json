@@ -127,6 +127,7 @@
       "NO_RESOURCES": "Add at least one active specialist to start scheduling.",
       "NO_SERVICE": "No service",
       "RESOURCES_UNAVAILABLE": "Unavailable: {names}",
+      "STATUS_LEGEND": "Appointment statuses",
       "UNAVAILABLE": "Unavailable",
       "UNAVAILABLE_SLOT": "This time is unavailable",
       "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
