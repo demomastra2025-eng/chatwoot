@@ -1118,11 +1118,11 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    it 'does not resolve an id that is no conversation of the account' do
+    it 'does not resolve a display id that belongs only to another account' do
       other_account_conversation = create(:conversation, account: create(:account))
-      missing_display_id = account.conversations.maximum(:display_id).to_i + 100
+      other_account_conversation.update!(display_id: account.conversations.maximum(:display_id).to_i + 100)
 
-      post "/api/v1/accounts/#{account.id}/conversations/#{missing_display_id}/cancel_captain_response",
+      post "/api/v1/accounts/#{account.id}/conversations/#{other_account_conversation.display_id}/cancel_captain_response",
            headers: agent.create_new_auth_token,
            as: :json
 
