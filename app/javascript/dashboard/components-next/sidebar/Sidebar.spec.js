@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   accountSettings: {},
   sidebarUnreadCounts: {},
   labels: [],
+  teams: [],
   knownRoutes: new Map(),
   crmStore: {
     pipelines: [],
@@ -124,7 +125,7 @@ const buildStore = () => ({
     'globalConfig/isACustomBrandedInstance': false,
     'inboxes/getInboxes': [],
     'labels/getLabelsOnSidebar': mocks.labels,
-    'teams/getMyTeams': [],
+    'teams/getMyTeams': mocks.teams,
     'customViews/getContactCustomViews': [],
     'customViews/getConversationCustomViews': [],
     getConversationSidebarUnreadCounts: mocks.sidebarUnreadCounts,
@@ -224,6 +225,7 @@ describe('Sidebar', () => {
     mocks.accountSettings = {};
     mocks.sidebarUnreadCounts = {};
     mocks.labels = [];
+    mocks.teams = [];
     mocks.crmStore.pipelines = [];
   });
 
@@ -231,6 +233,66 @@ describe('Sidebar', () => {
     sidebarGroup(wrapper, 'Conversation')
       .props('children')
       .find(child => child.name === name);
+
+  describe('tags in the sidebar', () => {
+    const markerClass = child => child.icon.props.class;
+
+    it('shows tags without counters and with small markers, teams keep badges', async () => {
+      mocks.labels = [
+        { id: 1, title: 'vip', color: '#ff0000' },
+        {
+          id: 2,
+          title: 'urgent',
+          color: '#00ff00',
+          marker_type: 'emoji',
+          emoji: '🔥',
+        },
+      ];
+      mocks.sidebarUnreadCounts = {
+        labels: { vip: 4, urgent: 2 },
+        teams: { 5: 3 },
+      };
+      mocks.teams = [{ id: 5, name: 'Sales' }];
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'communication_threads_dashboard',
+      });
+      const tags = conversationChild(wrapper, 'Labels');
+
+      expect(tags.hideTopSeparator).toBe(true);
+      tags.children.forEach(tag => {
+        expect(tag.badge).toBeUndefined();
+        expect(tag.count).toBeUndefined();
+        expect(tag.iconClass).toBeUndefined();
+        expect(tag.compactIconGap).toBeUndefined();
+      });
+      const classes = tags.children.map(markerClass);
+      expect(classes).toEqual([
+        'size-2.5 rounded-sm',
+        'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none',
+      ]);
+      const [team] = conversationChild(wrapper, 'Teams').children;
+      expect(team.badge).toBe(3);
+      expect(classes.join(' ')).not.toContain('text-xl');
+      expect(classes.join(' ')).not.toContain('size-3');
+    });
+
+    it('uses the same small markers under Contacts', async () => {
+      mocks.labels = [{ id: 1, title: 'vip', color: '#ff0000' }];
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'contacts_dashboard_index',
+      });
+      const taggedWith = sidebarGroup(wrapper, 'Contacts')
+        .props('children')
+        .find(child => child.name === 'Tagged With');
+
+      expect(taggedWith.children.map(markerClass)).toEqual([
+        'size-2.5 rounded-sm',
+      ]);
+      expect(taggedWith.children[0].badge).toBeUndefined();
+    });
+  });
 
   describe('conversation business sections', () => {
     it('shows pipelines as plain labels without counters', async () => {
