@@ -59,14 +59,14 @@ describe('ChatListHeader', () => {
     expect(wrapper.find('.bg-n-slate-3').exists()).toBe(false);
   });
 
-  it('renders the status selector next to the page title in status-filter mode', async () => {
+  it('renders the status selector instead of the title in status-filter mode', async () => {
     const wrapper = mountComponent({
       showStatusFilter: true,
       activeStatus: 'open',
       showAiStatus: true,
     });
 
-    expect(wrapper.find('h1').text()).toBe('Открытые диалоги');
+    expect(wrapper.find('h1').exists()).toBe(false);
     const statusFilter = wrapper.find('[data-test-id="status-filter"]');
     expect(statusFilter.text()).toBe('open');
     expect(statusFilter.attributes('data-show-ai')).toBe('true');
@@ -75,37 +75,14 @@ describe('ChatListHeader', () => {
     expect(wrapper.emitted('statusFilterChange')).toEqual([['resolved']]);
   });
 
-  it('keeps the title and the status selector when other list filters are applied', () => {
+  it('keeps the status selector in place when other list filters are applied', () => {
     const wrapper = mountComponent({
       showStatusFilter: true,
       hasAppliedFilters: true,
       activeStatus: 'all',
     });
 
-    expect(wrapper.find('h1').text()).toBe('Открытые диалоги');
+    expect(wrapper.find('h1').exists()).toBe(false);
     expect(wrapper.find('[data-test-id="status-filter"]').text()).toBe('all');
   });
-
-  it.each([
-    ['a tag list', '#vip'],
-    ['a team list', 'Sales team'],
-    ['an inbox list', 'WhatsApp clinic'],
-    ['the mentions list', 'Mentions'],
-  ])(
-    'still shows which list is open (%s) as the visible heading',
-    (_, title) => {
-      const wrapper = mountComponent({
-        pageTitle: title,
-        showStatusFilter: true,
-        activeStatus: 'snoozed',
-      });
-
-      const heading = wrapper.get('h1');
-      expect(heading.text()).toBe(title);
-      expect(heading.isVisible()).toBe(true);
-      expect(wrapper.find('[data-test-id="status-filter"]').exists()).toBe(
-        true
-      );
-    }
-  );
 });
