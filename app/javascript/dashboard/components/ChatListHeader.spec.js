@@ -85,4 +85,51 @@ describe('ChatListHeader', () => {
     expect(wrapper.find('h1').exists()).toBe(false);
     expect(wrapper.find('[data-test-id="status-filter"]').text()).toBe('all');
   });
+
+  // 666f7bd5d asserted that tag, team, inbox and mention lists keep a
+  // visible h1. The status selector now replaces it everywhere (aset/dev),
+  // so the same lists assert the selector heading and the list name tooltip.
+  it.each([
+    ['a tag list', '#vip'],
+    ['a team list', 'Sales team'],
+    ['an inbox list', 'WhatsApp clinic'],
+    ['the mentions list', 'Mentions'],
+  ])(
+    'shows the status selector as the heading of %s and keeps its name as the tooltip',
+    (_, title) => {
+      const wrapper = mountComponent({
+        pageTitle: title,
+        showStatusFilter: true,
+        activeStatus: 'snoozed',
+      });
+
+      expect(wrapper.find('h1').exists()).toBe(false);
+      const statusFilter = wrapper.get('[data-test-id="status-filter"]');
+      expect(statusFilter.text()).toBe('snoozed');
+      expect(statusFilter.attributes('title')).toBe(title);
+    }
+  );
+
+  it('keeps the pending (AI) status visible without Captain', () => {
+    const wrapper = mountComponent({
+      showStatusFilter: true,
+      activeStatus: 'pending',
+      showAiStatus: false,
+    });
+
+    const statusFilter = wrapper.get('[data-test-id="status-filter"]');
+    expect(statusFilter.text()).toBe('pending');
+    expect(statusFilter.attributes('data-show-ai')).toBe('false');
+  });
+
+  it('shows the title without a selector in a saved folder', () => {
+    const wrapper = mountComponent({
+      pageTitle: 'Мои VIP',
+      hasActiveFolders: true,
+      showStatusFilter: false,
+    });
+
+    expect(wrapper.get('h1').text()).toBe('Мои VIP');
+    expect(wrapper.find('[data-test-id="status-filter"]').exists()).toBe(false);
+  });
 });
