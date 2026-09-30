@@ -3,7 +3,8 @@ require 'rails_helper'
 # Owner questions, answered as executable proofs:
 #   1. Setting «Подтвержден» in OneLink changes nothing in MedElement, and the next MedElement sync keeps it.
 #   2. Cancelling in OneLink sends exactly one MedElement reception removal, and later syncs keep the appointment cancelled.
-# rubocop:disable RSpec/DescribeClass
+# End-to-end proofs: each example walks one full owner scenario, so they are intentionally long.
+# rubocop:disable RSpec/DescribeClass, RSpec/MultipleExpectations, Metrics/MethodLength
 RSpec.describe 'MedElement boundary for local appointment statuses' do
   include ActiveJob::TestHelper
   include ActiveSupport::Testing::TimeHelpers
@@ -324,4 +325,4 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
     end
   end
 end
-# rubocop:enable RSpec/DescribeClass
+# rubocop:enable RSpec/DescribeClass, RSpec/MultipleExpectations, Metrics/MethodLength
