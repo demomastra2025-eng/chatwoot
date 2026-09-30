@@ -24,6 +24,7 @@ import {
   canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 import {
   getTemplateBodyPreview,
   groupWhatsAppTemplates,
@@ -1009,9 +1010,11 @@ export default {
         this.attachments = [...this.attachments, ...uploadedIds];
       } catch (error) {
         useAlert(
-          error?.response?.data?.error ||
-            error?.message ||
-            this.$t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOAD_ERROR')
+          reminderErrorMessage(
+            error,
+            this.$t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOAD_ERROR'),
+            this.$t
+          )
         );
       } finally {
         this.isUploadingAttachment = false;

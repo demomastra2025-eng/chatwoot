@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import TouchesAPI from 'dashboard/api/touches';
 import { useAlert } from 'dashboard/composables';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import { reminderErrorMessage } from './reminderErrors';
 
 const props = defineProps({
   selectedTouch: {
@@ -33,8 +34,11 @@ const handleDialogConfirm = async () => {
     dialogRef.value?.close();
   } catch (error) {
     useAlert(
-      error?.response?.data?.error ||
-        t('OUTBOUND_WORKSPACE.TOUCHES.CONFIRM_DELETE.API.ERROR_MESSAGE')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.CONFIRM_DELETE.API.ERROR_MESSAGE'),
+        t
+      )
     );
   }
 };

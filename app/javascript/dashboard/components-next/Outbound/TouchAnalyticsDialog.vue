@@ -6,6 +6,7 @@ import { getInboxIconByType } from 'dashboard/helper/inbox';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import { reminderLastError } from './reminderErrors';
 
 const props = defineProps({
   selectedTouch: {
@@ -65,6 +66,11 @@ const previewText = computed(() => {
 
   return t('OUTBOUND_WORKSPACE.TOUCHES.NO_CONTENT');
 });
+
+// The stored delivery error is backend English that may say "touch".
+const lastErrorText = computed(() =>
+  reminderLastError(props.selectedTouch?.last_error, t)
+);
 
 const inbox = computed(() => props.selectedTouch?.target?.inbox || null);
 const inboxName = computed(() => inbox.value?.name || fallbackValue.value);
@@ -214,13 +220,13 @@ defineExpose({ open, close });
       </div>
 
       <div
-        v-if="selectedTouch?.last_error"
+        v-if="lastErrorText"
         class="rounded-2xl bg-n-ruby-3 px-4 py-3 text-sm text-n-ruby-11"
       >
         <div class="mb-1 text-xs font-medium uppercase tracking-wide">
           {{ $t('OUTBOUND_WORKSPACE.TOUCHES.ANALYTICS.ERROR') }}
         </div>
-        <div>{{ selectedTouch.last_error }}</div>
+        <div data-test="reminder-last-error">{{ lastErrorText }}</div>
       </div>
     </div>
 

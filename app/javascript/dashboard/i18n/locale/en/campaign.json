@@ -588,7 +588,13 @@
         "ARCHIVE_PLAN": "Failed to archive the follow-up.",
         "APPLY_PLAN": "Failed to apply the follow-up.",
         "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a follow-up.",
-        "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a reminder in context."
+        "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a reminder in context.",
+        "DUPLICATE": "An open reminder with the same content already exists.",
+        "NOT_EDITABLE": "Only reminders that have not been sent yet can be changed.",
+        "NOT_DELETABLE": "Only reminders that have not been sent yet can be deleted.",
+        "TARGET_NOT_DELIVERABLE": "The reminder cannot be delivered through the selected channel.",
+        "TARGET_INBOX_MISSING": "The reminder has no channel to be sent from.",
+        "TARGET_CONTACT_MISSING": "The reminder has no recipient."
       },
       "ALL": {
         "LOADING": "Loading reminders...",

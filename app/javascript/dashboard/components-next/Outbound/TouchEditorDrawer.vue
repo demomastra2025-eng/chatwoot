@@ -43,6 +43,7 @@ import {
   canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 import {
   buildTouchContentModeTabs,
   isWhatsAppTemplateCapableChannel,
@@ -821,9 +822,11 @@ const uploadAttachmentFiles = async filesInput => {
     ];
   } catch (error) {
     useAlert(
-      error?.response?.data?.error ||
-        error?.message ||
-        t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOAD_ERROR')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ATTACHMENTS.UPLOAD_ERROR'),
+        t
+      )
     );
   } finally {
     ui.isUploadingAttachment = false;
@@ -1286,9 +1289,11 @@ const saveTouch = async () => {
     closeDrawer();
   } catch (error) {
     useAlert(
-      error?.response?.data?.error ||
-        error?.message ||
-        t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ERRORS.SAVE')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCH_EDITOR.ERRORS.SAVE'),
+        t
+      )
     );
   } finally {
     ui.isSaving = false;
