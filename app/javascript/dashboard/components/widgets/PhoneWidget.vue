@@ -79,6 +79,24 @@ const availableVoiceInboxes = computed(() =>
     )
   )
 );
+// Once this user has a browser SIP line, keep the phone (and the embedded call
+// cards with their SIP listeners) mounted. Live sessions briefly disappear while
+// a line re-registers; unmounting then lost incoming INVITEs and every remount
+// fetched a new webphone token, which triggered yet another re-registration.
+const hasBrowserLine = ref(false);
+watch(
+  () => availableVoiceInboxes.value.length > 0,
+  hasLine => {
+    if (hasLine) hasBrowserLine.value = true;
+  },
+  { immediate: true }
+);
+watch(
+  () => voiceInboxes.value.length,
+  count => {
+    if (count === 0) hasBrowserLine.value = false;
+  }
+);
 const selectedInbox = computed(() =>
   availableVoiceInboxes.value.find(
     inbox => String(inbox.id) === String(selectedInboxId.value)
@@ -343,12 +361,13 @@ watch(
   { immediate: true }
 );
 watch(accountId, () => {
+  hasBrowserLine.value = availableVoiceInboxes.value.length > 0;
   hasBootstrapped.value = false;
   bootstrap();
 });
 // The sidebar phone button shows the same line state as this header.
 watch(
-  [() => availableVoiceInboxes.value.length > 0, status],
+  [hasBrowserLine, status],
   ([available, value]) => {
     phoneWidgetStore.publishSipState({ available, status: value });
   },
@@ -386,8 +405,10 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-if="availableVoiceInboxes.length"
-    v-show="isVisible"
+    v-if="hasBrowserLine"
+    v-show="
+      isVisible && (availableVoiceInboxes.length > 0 || hasCall || hasOwnCall)
+    "
     ref="widgetRef"
     class="fixed z-40 w-[336px] max-w-[calc(100vw-2rem)]"
     :class="{ 'ltr:right-4 rtl:left-4 top-16': !position }"

@@ -860,9 +860,11 @@ describe('PhoneWidget', () => {
 
         vi.advanceTimersByTime(1);
         await wrapper.vm.$nextTick();
-        expect(wrapper.find('[data-testid="phone-widget"]').exists()).toBe(
-          false
-        );
+        // The line is gone for good: the phone leaves the screen but stays
+        // mounted, so its call cards keep listening for incoming INVITEs.
+        const phone = wrapper.find('[data-testid="phone-widget"]');
+        expect(phone.exists()).toBe(true);
+        expect(phone.isVisible()).toBe(false);
       } finally {
         vi.useRealTimers();
       }
