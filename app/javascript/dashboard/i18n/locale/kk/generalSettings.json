@@ -168,9 +168,9 @@
           "NOTE": "Show the company field in appointment forms and allow linking visits to a company."
         },
         "TOUCH_PLAN": {
-          "LABEL": "Default touch plan",
-          "NOTE": "Automatically apply this touch plan when a new appointment is created.",
-          "PLACEHOLDER": "No default touch plan"
+          "LABEL": "Default reminder plan",
+          "NOTE": "Automatically apply this reminder plan when a new appointment is created.",
+          "PLACEHOLDER": "No default reminder plan"
         }
       },
       "LOGO": {

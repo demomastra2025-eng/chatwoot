@@ -2,7 +2,7 @@
   "CANNED_MGMT": {
     "HEADER": "Templates",
     "LEARN_MORE": "Learn more about templates",
-    "DESCRIPTION": "Templates are reusable replies you can insert anywhere with '/'. Use them to standardize fast responses before richer touch flows land.",
+    "DESCRIPTION": "Templates are reusable replies you can insert anywhere with '/'. Use them to standardize fast responses before richer reminder flows land.",
     "COUNT": "{n} template | {n} templates",
     "HEADER_BTN_TXT": "Add template",
     "LOADING": "Fetching templates...",
@@ -12,7 +12,7 @@
     "LIST": {
       "404": "There are no templates available in this account.",
       "TITLE": "Manage templates",
-      "DESC": "Templates are reusable reply snippets you can insert in conversations and future touches.",
+      "DESC": "Templates are reusable reply snippets you can insert in conversations and future reminders.",
       "TABLE_HEADER": {
         "SHORT_CODE": "Short code",
         "CONTENT": "Content",

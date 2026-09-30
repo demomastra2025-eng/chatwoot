@@ -1336,8 +1336,8 @@
               "DESCRIPTION": "Create a CRM task from the current conversation context."
             },
             "create_touch": {
-              "TITLE": "Create outbound touch",
-              "DESCRIPTION": "Create a scheduled outbound touch from the current conversation or linked CRM context."
+              "TITLE": "Create outbound reminder",
+              "DESCRIPTION": "Create a scheduled outbound reminder from the current conversation or linked CRM context."
             },
             "request_confirmation": {
               "TITLE": "Request confirmation",
@@ -1444,28 +1444,28 @@
               "DESCRIPTION": "List approved WhatsApp/Twilio channel templates for a conversation or inbox."
             },
             "cancel_touch": {
-              "TITLE": "Cancel touch",
-              "DESCRIPTION": "Cancel a single draft or pending scheduled outbound touch by ID."
+              "TITLE": "Cancel reminder",
+              "DESCRIPTION": "Cancel a single draft or pending scheduled outbound reminder by ID."
             },
             "delete_touch": {
-              "TITLE": "Delete touch",
-              "DESCRIPTION": "Delete a draft, pending, failed, or cancelled scheduled outbound touch by ID."
+              "TITLE": "Delete reminder",
+              "DESCRIPTION": "Delete a draft, pending, failed, or cancelled scheduled outbound reminder by ID."
             },
             "cancel_touches": {
-              "TITLE": "Cancel touches",
-              "DESCRIPTION": "Cancel draft and pending scheduled touches for the current entity, optionally by touch plan."
+              "TITLE": "Cancel reminders",
+              "DESCRIPTION": "Cancel draft and pending scheduled reminders for the current entity, optionally by reminder plan."
             },
             "create_touch_plan": {
-              "TITLE": "Create touch plan",
-              "DESCRIPTION": "Create a reusable outbound touch plan with one or more scheduled touch definitions."
+              "TITLE": "Create reminder plan",
+              "DESCRIPTION": "Create a reusable outbound reminder plan with one or more scheduled reminder definitions."
             },
             "apply_touch_plan": {
-              "TITLE": "Apply touch plan",
-              "DESCRIPTION": "Apply an existing touch plan to the current conversation, deal, task, or appointment."
+              "TITLE": "Apply reminder plan",
+              "DESCRIPTION": "Apply an existing reminder plan to the current conversation, deal, task, or appointment."
             },
             "archive_touch_plan": {
-              "TITLE": "Archive touch plan",
-              "DESCRIPTION": "Archive an outbound touch plan so it is no longer used for new scheduled touches."
+              "TITLE": "Archive reminder plan",
+              "DESCRIPTION": "Archive an outbound reminder plan so it is no longer used for new scheduled reminders."
             },
             "send_message_to_conversation": {
               "TITLE": "Send message to conversation",
@@ -2450,7 +2450,7 @@
         },
         "ALLOW_FILE_ARTIFACTS": {
           "LABEL": "Allow the agent to use files from this tool response",
-          "HELP_TEXT": "When enabled, file links in the HTTP response are exposed as safe artifact candidates. The agent must explicitly choose and send them through native message or touch actions."
+          "HELP_TEXT": "When enabled, file links in the HTTP response are exposed as safe artifact candidates. The agent must explicitly choose and send them through native message or reminder actions."
         },
         "TEST_PANEL": {
           "TITLE": "Preview and test request",

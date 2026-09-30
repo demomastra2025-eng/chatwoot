@@ -360,7 +360,7 @@
         "meeting": "Meeting",
         "message": "Message",
         "task": "Task",
-        "touch": "Touch"
+        "touch": "Reminder"
       },
       "OUTCOME": {
         "answered": "Answered",
@@ -445,13 +445,13 @@
         "TITLE": "Additional fields"
       },
       "DEFAULT_TOUCH_PLAN": {
-        "DEAL_TITLE": "Default touch plan for deals",
-        "DEAL_DESCRIPTION": "Apply this touch plan automatically when a new deal is created.",
-        "TASK_TITLE": "Default touch plan for tasks",
-        "TASK_DESCRIPTION": "Apply this touch plan automatically when a new CRM task is created.",
-        "LABEL": "Touch plan",
+        "DEAL_TITLE": "Default reminder plan for deals",
+        "DEAL_DESCRIPTION": "Apply this reminder plan automatically when a new deal is created.",
+        "TASK_TITLE": "Default reminder plan for tasks",
+        "TASK_DESCRIPTION": "Apply this reminder plan automatically when a new CRM task is created.",
+        "LABEL": "Reminder plan",
         "NOTE": "Only plans that support this entity type are shown here.",
-        "PLACEHOLDER": "No default touch plan",
+        "PLACEHOLDER": "No default reminder plan",
         "SAVE": "Save default plan"
       },
       "LOADING": "Loading CRM settings...",

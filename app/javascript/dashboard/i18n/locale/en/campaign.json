@@ -504,7 +504,7 @@
       },
       "PLANS_MODAL": {
         "TITLE": "Follow-ups",
-        "DESCRIPTION": "Keep reusable follow-ups separate from one-off touches and open them only when needed.",
+        "DESCRIPTION": "Keep reusable follow-ups separate from one-off reminders and open them only when needed.",
         "CREATE": "Create follow-up",
         "CREATE_TITLE": "Create follow-up",
         "EDIT_TITLE": "Edit follow-up",
@@ -518,7 +518,7 @@
         "ALL_STATUSES": "All statuses"
       },
       "SUMMARY": {
-        "OPEN": "Open touches",
+        "OPEN": "Open reminders",
         "NEEDS_APPROVAL": "Drafts to approve",
         "FAILED": "Need attention",
         "COMPLETED": "Completed",
@@ -537,20 +537,20 @@
         "BEFORE_MINUTES": "{count} min before"
       },
       "HERO": {
-        "ALL_TITLE": "Manage scheduled touches in one place",
-        "ALL_DESCRIPTION": "Review pending and historical touches, update content, and keep execution clean without leaving the outbound workspace.",
+        "ALL_TITLE": "Manage scheduled reminders in one place",
+        "ALL_DESCRIPTION": "Review pending and historical reminders, update content, and keep execution clean without leaving the outbound workspace.",
         "PLANS_TITLE": "Build reusable follow-ups",
-        "PLANS_DESCRIPTION": "Create native touch sequences once, then apply them from a deal, task, appointment, or automation rule.",
-        "EXECUTION_TITLE": "Watch touch execution",
-        "EXECUTION_DESCRIPTION": "Focus on touches that are already processing, completed, cancelled, or failed and quickly inspect operational issues.",
-        "SCOPED_DESCRIPTION": "This workspace is filtered to {entity}. New touches and applied plans will stay scoped to this record.",
+        "PLANS_DESCRIPTION": "Create native reminder sequences once, then apply them from a deal, task, appointment, or automation rule.",
+        "EXECUTION_TITLE": "Watch reminder execution",
+        "EXECUTION_DESCRIPTION": "Focus on reminders that are already processing, completed, cancelled, or failed and quickly inspect operational issues.",
+        "SCOPED_DESCRIPTION": "This workspace is filtered to {entity}. New reminders and applied plans will stay scoped to this record.",
         "SCOPED_BADGE": "Scoped to {entity}",
         "FILTERED_BADGE": "Filtered: {status}",
-        "CREATE_TOUCH_CONTEXT_TITLE": "Create touches from here too",
-        "CREATE_TOUCH_CONTEXT_DESCRIPTION": "The global workspace now supports manual touch creation. If you start outside a record, choose the record type and ID in the drawer. Creating from the conversation, deal, task, or appointment is still the fastest path when route and owner should resolve immediately."
+        "CREATE_TOUCH_CONTEXT_TITLE": "Create reminders from here too",
+        "CREATE_TOUCH_CONTEXT_DESCRIPTION": "The global workspace now supports manual reminder creation. If you start outside a record, choose the record type and ID in the drawer. Creating from the conversation, deal, task, or appointment is still the fastest path when route and owner should resolve immediately."
       },
       "TABS": {
-        "ALL": "All touches",
+        "ALL": "All reminders",
         "PLANS": "Follow-ups",
         "EXECUTION": "Execution"
       },
@@ -580,25 +580,25 @@
         "APPOINTMENT": "Appointment"
       },
       "ERRORS": {
-        "LOAD_TOUCHES": "Failed to load touches.",
+        "LOAD_TOUCHES": "Failed to load reminders.",
         "LOAD_PLANS": "Failed to load follow-ups.",
-        "APPROVE_TOUCH": "Failed to approve the touch.",
-        "CANCEL_TOUCH": "Failed to cancel the touch.",
+        "APPROVE_TOUCH": "Failed to approve the reminder.",
+        "CANCEL_TOUCH": "Failed to cancel the reminder.",
         "DELETE_TOUCH": "Failed to delete the personal campaign.",
         "ARCHIVE_PLAN": "Failed to archive the follow-up.",
         "APPLY_PLAN": "Failed to apply the follow-up.",
         "APPLY_PLAN_REQUIRES_CONTEXT": "Select a conversation, deal, task, or appointment before applying a follow-up.",
-        "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a touch in context."
+        "CREATE_TOUCH_REQUIRES_CONTEXT": "Open a conversation, deal, task, or appointment first to create a reminder in context."
       },
       "ALL": {
-        "LOADING": "Loading touches...",
-        "EMPTY": "There are no touches yet.",
+        "LOADING": "Loading reminders...",
+        "EMPTY": "There are no reminders yet.",
         "APPROVE": "Approve",
         "CANCEL": "Cancel",
-        "APPROVE_SUCCESS": "Touch approved.",
-        "CANCEL_SUCCESS": "Touch cancelled.",
+        "APPROVE_SUCCESS": "Reminder approved.",
+        "CANCEL_SUCCESS": "Reminder cancelled.",
         "TABLE": {
-          "MESSAGE": "Touch",
+          "MESSAGE": "Reminder",
           "ENTITY": "Entity",
           "RECIPIENT": "Recipient",
           "SCHEDULE": "Scheduled for",
@@ -661,10 +661,10 @@
         }
       },
       "EXECUTION": {
-        "LOADING": "Loading touch execution...",
-        "EMPTY": "There is no touch execution history yet.",
+        "LOADING": "Loading reminder execution...",
+        "EMPTY": "There is no reminder execution history yet.",
         "TABLE": {
-          "MESSAGE": "Touch",
+          "MESSAGE": "Reminder",
           "ENTITY": "Entity",
           "STATUS": "Status",
           "EVENT_AT": "Updated at",
@@ -672,23 +672,23 @@
         }
       },
       "ENTITY_CARD": {
-        "TITLE": "Upcoming touches",
-        "DESCRIPTION": "Review scheduled touches for this record and open the full workspace when you need to manage plans.",
-        "LOADING": "Loading touches...",
-        "EMPTY": "No upcoming touches yet.",
-        "CREATE": "Add touch",
-        "VIEW_ALL": "All touches",
+        "TITLE": "Upcoming reminders",
+        "DESCRIPTION": "Review scheduled reminders for this record and open the full workspace when you need to manage plans.",
+        "LOADING": "Loading reminders...",
+        "EMPTY": "No upcoming reminders yet.",
+        "CREATE": "Add reminder",
+        "VIEW_ALL": "All reminders",
         "OPEN_PLANS": "Apply follow-up",
         "OPEN_EXECUTION": "Open execution",
         "OPEN_NEXT_STEP": "Edit timing or content if this follow-up needs to change.",
         "PLAN_TITLE": "Plan “{name}”",
         "NEXT_TRIGGER": "Next trigger: {time}",
-        "WAITING_TRIGGER": "Waiting for its trigger — the touch will be created before delivery",
+        "WAITING_TRIGGER": "Waiting for its trigger — the reminder will be created before delivery",
         "CANCEL_PLAN": "Stop plan",
-        "PLAN_CANCELLED": "Touch plan stopped.",
-        "PLAN_CANCEL_ERROR": "Could not stop the touch plan.",
-        "FAILED_TITLE": "{count} touches need attention",
-        "FAILED_NOTE": "Open execution to review failed or cancelled touches for this record.",
+        "PLAN_CANCELLED": "Reminder plan stopped.",
+        "PLAN_CANCEL_ERROR": "Could not stop the reminder plan.",
+        "FAILED_TITLE": "{count} reminders need attention",
+        "FAILED_NOTE": "Open execution to review failed or cancelled reminders for this record.",
         "SUMMARY": {
           "OPEN": "Open",
           "PLANS": "Active plans",
@@ -697,11 +697,11 @@
         }
       },
       "TOUCH_EDITOR": {
-        "CREATE_TITLE": "Create touch",
-        "EDIT_TITLE": "Edit touch",
-        "DESCRIPTION": "Create a scheduled touch for this record. Channel resolution and final status are handled by the touch engine.",
-        "CREATE": "Create touch",
-        "SAVE": "Save touch",
+        "CREATE_TITLE": "Create reminder",
+        "EDIT_TITLE": "Edit reminder",
+        "DESCRIPTION": "Create a scheduled reminder for this record. Channel resolution and final status are handled by the reminder engine.",
+        "CREATE": "Create reminder",
+        "SAVE": "Save reminder",
         "EDIT": "Edit",
         "TEXT_AUTHOR_HELP": {
           "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
@@ -715,11 +715,11 @@
           "MONTHLY": "Every month"
         },
         "REPEAT_MODE_HELP": {
-          "ONCE": "The touch will run only once at the selected time.",
-          "DAILY": "After each successful execution, the next touch will be scheduled for the same time on the following day.",
-          "WEEKLY": "After each successful execution, the next touch will be scheduled for the same weekday and time in the following week.",
-          "WEEKDAYS": "After each successful execution, the next touch will be scheduled for the next business day at the same time.",
-          "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
+          "ONCE": "The reminder will run only once at the selected time.",
+          "DAILY": "After each successful execution, the next reminder will be scheduled for the same time on the following day.",
+          "WEEKLY": "After each successful execution, the next reminder will be scheduled for the same weekday and time in the following week.",
+          "WEEKDAYS": "After each successful execution, the next reminder will be scheduled for the next business day at the same time.",
+          "MONTHLY": "After each successful execution, the next reminder will be scheduled for the same day and time in the next month."
         },
         "TIMING_MODE": {
           "ABSOLUTE": "Date and time",
@@ -727,11 +727,11 @@
         },
         "TIMING_MODE_HELP": {
           "ABSOLUTE": "Use an exact send time when the follow-up should fire on a fixed schedule.",
-          "RELATIVE": "Use the record timeline so the touch keeps following appointment, task, deal, or conversation changes."
+          "RELATIVE": "Use the record timeline so the reminder keeps following appointment, task, deal, or conversation changes."
         },
-        "CONTEXT_TITLE": "Touch context: {entity}",
-        "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
-        "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The touch will fail at execution time instead of sending.",
+        "CONTEXT_TITLE": "Reminder context: {entity}",
+        "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the reminder stays in draft instead of sending blindly.",
+        "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The reminder will fail at execution time instead of sending.",
         "ANCHORS": {
           "TOUCH_CREATED_AT": "Follow-up applied",
           "APPOINTMENT_CREATED_AT": "Appointment created",
@@ -748,11 +748,11 @@
           "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
         },
         "FIELDS": {
-          "ACTION_TYPE": "Touch type",
+          "ACTION_TYPE": "Reminder type",
           "ENTITY_TYPE": "Record type",
           "ENTITY_ID": "Record ID",
           "ENTITY_ID_PLACEHOLDER": "Enter the target record ID",
-          "ENTITY_NOTE": "Choose the record this touch belongs to. Conversation touches can be created directly here; other record types may remain draft until route resolution is complete.",
+          "ENTITY_NOTE": "Choose the record this reminder belongs to. Conversation reminders can be created directly here; other record types may remain draft until route resolution is complete.",
           "TEXT_AUTHOR": "Who writes the text",
           "AI_AGENT": "AI agent",
           "BODY": "Message",
@@ -767,7 +767,7 @@
           "TEMPLATE_EMPTY_DESCRIPTION": "Sync templates for the current WhatsApp inbox or switch back to free text.",
           "BODY_NOTE": "If the message contains {{...}}, {%...%}, or field:// references, template mode will be detected automatically.",
           "INSTRUCTIONS": "AI agent instructions",
-          "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this touch runs",
+          "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this reminder runs",
           "TIMING_MODE": "When to send",
           "SCHEDULED_AT": "Scheduled at",
           "RELATIVE_TOGGLE": "relative",
@@ -777,20 +777,20 @@
           "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
           "RELATIVE_OFFSET_NOTE": "Use a value greater than 0 minutes.",
           "RELATIVE_FIXED_TIME": "Exact time",
-          "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the touch will run at the selected time on that day.",
+          "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the reminder will run at the selected time on that day.",
           "RELATIVE_TIME_OF_DAY": "Time on that day",
           "AUTO_CANCEL": "Cancel on incoming reply",
-          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically.",
+          "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the reminder will be cancelled automatically.",
           "TEXT_MODE": "Text mode",
           "FREE_TEXT_TEMPLATE": "Free text template",
           "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Select a saved free text template"
         },
         "SUCCESS": {
-          "CREATED": "Touch created.",
-          "UPDATED": "Touch updated."
+          "CREATED": "Reminder created.",
+          "UPDATED": "Reminder updated."
         },
         "ERRORS": {
-          "SAVE": "Failed to save the touch."
+          "SAVE": "Failed to save the reminder."
         },
         "TEXT_MODE": {
           "STATIC": "Prepared text",
@@ -823,8 +823,8 @@
           "ENTITY_KINDS": "Supported entity types",
           "ENTITY_KINDS_NOTE": "Choose where this follow-up can be applied.",
           "ENTITY_KIND_HELP": "This follow-up can be attached to this record type.",
-          "STEPS": "Touches in follow-up",
-          "STEPS_NOTE": "These touches will be created when the follow-up is applied to: {entityKinds}."
+          "STEPS": "Reminders in follow-up",
+          "STEPS_NOTE": "These reminders will be created when the follow-up is applied to: {entityKinds}."
         },
         "SUCCESS": {
           "CREATED": "Follow-up created.",
@@ -851,11 +851,11 @@
       }
     },
     "TOUCH_EDITOR": {
-      "CREATE_TITLE": "Create touch",
-      "EDIT_TITLE": "Edit touch",
-      "DESCRIPTION": "Create a scheduled touch for this record. Channel resolution and final status are handled by the touch engine.",
-      "CREATE": "Create touch",
-      "SAVE": "Save touch",
+      "CREATE_TITLE": "Create reminder",
+      "EDIT_TITLE": "Edit reminder",
+      "DESCRIPTION": "Create a scheduled reminder for this record. Channel resolution and final status are handled by the reminder engine.",
+      "CREATE": "Create reminder",
+      "SAVE": "Save reminder",
       "EDIT": "Edit",
       "TEXT_AUTHOR_HELP": {
         "SELF": "Write the final text yourself. Liquid variables {{...}}, {%...%} tags, and field:// references are detected automatically.",
@@ -869,11 +869,11 @@
         "MONTHLY": "Every month"
       },
       "REPEAT_MODE_HELP": {
-        "ONCE": "The touch will run only once at the selected time.",
-        "DAILY": "After each successful execution, the next touch will be scheduled for the same time on the following day.",
-        "WEEKLY": "After each successful execution, the next touch will be scheduled for the same weekday and time in the following week.",
-        "WEEKDAYS": "After each successful execution, the next touch will be scheduled for the next business day at the same time.",
-        "MONTHLY": "After each successful execution, the next touch will be scheduled for the same day and time in the next month."
+        "ONCE": "The reminder will run only once at the selected time.",
+        "DAILY": "After each successful execution, the next reminder will be scheduled for the same time on the following day.",
+        "WEEKLY": "After each successful execution, the next reminder will be scheduled for the same weekday and time in the following week.",
+        "WEEKDAYS": "After each successful execution, the next reminder will be scheduled for the next business day at the same time.",
+        "MONTHLY": "After each successful execution, the next reminder will be scheduled for the same day and time in the next month."
       },
       "TIMING_MODE": {
         "ABSOLUTE": "Date and time",
@@ -881,11 +881,11 @@
       },
       "TIMING_MODE_HELP": {
         "ABSOLUTE": "Use an exact send time when the follow-up should fire on a fixed schedule.",
-        "RELATIVE": "Use the record timeline so the touch keeps following appointment, task, deal, or conversation changes."
+        "RELATIVE": "Use the record timeline so the reminder keeps following appointment, task, deal, or conversation changes."
       },
-      "CONTEXT_TITLE": "Touch context: {entity}",
-      "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
-      "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The touch will fail at execution time instead of sending.",
+      "CONTEXT_TITLE": "Reminder context: {entity}",
+      "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the reminder stays in draft instead of sending blindly.",
+      "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The reminder will fail at execution time instead of sending.",
       "ANCHORS": {
         "TOUCH_CREATED_AT": "Follow-up applied",
         "APPOINTMENT_CREATED_AT": "Appointment created",
@@ -902,11 +902,11 @@
         "CONVERSATION_WAITING_SINCE": "Conversation waiting for reply"
       },
       "FIELDS": {
-        "ACTION_TYPE": "Touch type",
+        "ACTION_TYPE": "Reminder type",
         "ENTITY_TYPE": "Record type",
         "ENTITY_ID": "Record ID",
         "ENTITY_ID_PLACEHOLDER": "Enter the target record ID",
-        "ENTITY_NOTE": "Choose the record this touch belongs to. Conversation touches can be created directly here; other record types may remain draft until route resolution is complete.",
+        "ENTITY_NOTE": "Choose the record this reminder belongs to. Conversation reminders can be created directly here; other record types may remain draft until route resolution is complete.",
         "TEXT_AUTHOR": "Who writes the text",
         "AI_AGENT": "AI agent",
         "FREE_TEXT_TAB": "Free text",
@@ -921,7 +921,7 @@
         "TEMPLATE_EMPTY": "No WhatsApp templates found",
         "TEMPLATE_EMPTY_DESCRIPTION": "Sync templates for the current WhatsApp inbox or switch back to free text.",
         "INSTRUCTIONS": "AI agent instructions",
-        "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this touch runs",
+        "INSTRUCTIONS_PLACEHOLDER": "Describe what message the AI agent should generate when this reminder runs",
         "TIMING_MODE": "When to send",
         "SCHEDULED_AT": "Scheduled at",
         "RELATIVE_TOGGLE": "relative",
@@ -937,7 +937,7 @@
         "RELATIVE_OFFSET_MINUTES": "Offset in minutes",
         "RELATIVE_OFFSET_NOTE": "Use a value greater than 0.",
         "RELATIVE_FIXED_TIME": "Exact time",
-        "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the touch will run at the selected time on that day.",
+        "RELATIVE_FIXED_TIME_DESCRIPTION": "The date will still be calculated before/after the anchor, but the reminder will run at the selected time on that day.",
         "RELATIVE_TIME_OF_DAY": "Time on that day",
         "RELATIVE_OFFSET_UNITS": {
           "MINUTES": "minutes",
@@ -945,14 +945,14 @@
           "DAYS": "days"
         },
         "AUTO_CANCEL": "Cancel on incoming reply",
-        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the touch will be cancelled automatically.",
+        "AUTO_CANCEL_DESCRIPTION": "If the contact replies in the same channel before execution, the reminder will be cancelled automatically.",
         "TEXT_MODE": "Text mode",
         "FREE_TEXT_TEMPLATE": "Free text template",
         "FREE_TEXT_TEMPLATE_PLACEHOLDER": "Select a saved free text template"
       },
       "ATTACHMENTS": {
         "TITLE": "Attachments",
-        "DESCRIPTION": "Files are uploaded to this account now and sent as native message attachments when the touch runs.",
+        "DESCRIPTION": "Files are uploaded to this account now and sent as native message attachments when the reminder runs.",
         "DROP_HINT": "Drag files here or click to choose.",
         "ADD": "Add file",
         "UPLOADING": "Uploading...",
@@ -961,11 +961,11 @@
         "UPLOAD_ERROR": "Failed to upload attachment."
       },
       "SUCCESS": {
-        "CREATED": "Touch created.",
-        "UPDATED": "Touch updated."
+        "CREATED": "Reminder created.",
+        "UPDATED": "Reminder updated."
       },
       "ERRORS": {
-        "SAVE": "Failed to save the touch."
+        "SAVE": "Failed to save the reminder."
       },
       "TEXT_MODE": {
         "STATIC": "Prepared text",
@@ -1008,8 +1008,8 @@
         "RELATIVE_BEFORE": "Before",
         "RELATIVE_MODE": "Before/after event",
         "ABSOLUTE_MODE": "Date and time",
-        "STEPS": "Touches in follow-up",
-        "STEPS_NOTE": "These touches will be created when the follow-up is applied to: {entityKinds}."
+        "STEPS": "Reminders in follow-up",
+        "STEPS_NOTE": "These reminders will be created when the follow-up is applied to: {entityKinds}."
       },
       "SUCCESS": {
         "CREATED": "Follow-up created.",
