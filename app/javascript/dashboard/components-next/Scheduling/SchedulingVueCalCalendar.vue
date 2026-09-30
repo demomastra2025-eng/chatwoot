@@ -1198,8 +1198,6 @@ const resolveEventStatusIcon = event =>
 
 const isMutedAppointmentCard = event => event.tone === 'muted';
 
-const isCancelledAppointmentCard = event => event.tone === 'ghost';
-
 const isSurfaceAppointmentCard = event => event.tone !== 'solid';
 
 const eventCardClasses = event => [
@@ -1207,8 +1205,6 @@ const eventCardClasses = event => [
   `scheduling-vue-cal__event-card--${event.density || 'regular'}`,
   {
     'scheduling-vue-cal__event-card--muted': isMutedAppointmentCard(event),
-    'scheduling-vue-cal__event-card--cancelled':
-      isCancelledAppointmentCard(event),
     'scheduling-vue-cal__event-card--no-show': event.status === 'no_show',
     'scheduling-vue-cal__event-card--resource-stripe': event.showResourceStripe,
   },

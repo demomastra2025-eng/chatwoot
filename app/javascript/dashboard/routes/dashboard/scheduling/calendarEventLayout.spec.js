@@ -149,7 +149,7 @@ describe('appointment status colours', () => {
   it('shows confirmed appointments in green and scheduled ones in blue', () => {
     expect(resolveAppointmentCalendarTone({ status: 'confirmed' })).toEqual({
       variant: 'solid',
-      accent: '#15803D',
+      accent: '#12A594',
     });
     expect(resolveAppointmentCalendarTone({ status: 'scheduled' })).toEqual({
       variant: 'solid',

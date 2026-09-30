@@ -848,7 +848,7 @@ describe('SchedulingVueCalCalendar', () => {
     );
     expect(
       confirmed.element.style.getPropertyValue('--appointment-accent')
-    ).toBe('#15803D');
+    ).toBe('#12A594');
     expect(
       scheduled.element.style.getPropertyValue('--appointment-accent')
     ).toBe('#2563EB');
@@ -881,10 +881,7 @@ describe('SchedulingVueCalCalendar', () => {
     expect(eventBox('Cancelled A').width).toBe('14%');
     expect(eventBox('Cancelled B').left).toBe('86%');
     expect(cardFor(wrapper, 'Cancelled A').classes()).toEqual(
-      expect.arrayContaining([
-        'scheduling-vue-cal__event-card--ghost',
-        'scheduling-vue-cal__event-card--cancelled',
-      ])
+      expect.arrayContaining(['scheduling-vue-cal__event-card--ghost'])
     );
   });
 
@@ -936,7 +933,7 @@ describe('SchedulingVueCalCalendar', () => {
       byStatus
         .find('[data-status="confirmed"] .scheduling-vue-cal__legend-swatch')
         .element.style.getPropertyValue('--appointment-accent')
-    ).toBe('#15803D');
+    ).toBe('#12A594');
     expect(byResource.find('.scheduling-vue-cal__legend').exists()).toBe(false);
   });
 
