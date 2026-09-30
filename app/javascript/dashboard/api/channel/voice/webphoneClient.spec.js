@@ -1434,6 +1434,84 @@ describe('webphoneClient', () => {
     );
   });
 
+  // Saving the channel settings destroys the line and re-initialises it for
+  // that inbox. A refused registration must leave the line listed (as failed)
+  // so the phone stays on screen instead of vanishing until a later bootstrap.
+  it('keeps an inbox-scoped native line listed when its registration fails', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'beeline',
+      calling_supported: true,
+      sip_profile_id: 145,
+      inbox_id: 5245,
+      session_key: 'sip_profile:145',
+      janusServer: 'wss://janus-beeline.example.test/janus-beeline',
+      sip: {
+        username: 'ext-1',
+        password: 'sip-secret',
+        host: 'VPBX-COMPANY-TEST.CLOUDPBX.BEELINE.KZ',
+      },
+    });
+    janusInitializeMock.mockRejectedValue(
+      new Error('sip_profile_registration_context_mismatch')
+    );
+    const changes = [];
+    const onChange = event => changes.push(event.detail);
+    WebphoneClient.addEventListener('call:sessions-changed', onChange);
+
+    await expect(
+      WebphoneClient.initializeDevice(5245, {
+        native: true,
+        provider: 'beeline',
+      })
+    ).rejects.toThrow('sip_profile_registration_context_mismatch');
+    WebphoneClient.removeEventListener('call:sessions-changed', onChange);
+
+    expect(WebphoneClient.sessions['sip_profile:145']).toEqual(
+      expect.objectContaining({
+        provider: 'beeline',
+        inboxId: 5245,
+        sipProfileId: 145,
+        registered: false,
+        reason: 'sip_profile_registration_context_mismatch',
+      })
+    );
+    expect(changes).toContainEqual({
+      sessionKey: 'sip_profile:145',
+      action: 'updated',
+    });
+  });
+
+  it('does not overwrite a newer line with the failure of a replaced one', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'beeline',
+      calling_supported: true,
+      sip_profile_id: 145,
+      inbox_id: 5245,
+      session_key: 'sip_profile:145',
+      janusServer: 'wss://janus-beeline.example.test/janus-beeline',
+      sip: { username: 'ext-1', password: 'sip-secret', host: 'pbx.test' },
+    });
+    const newerSession = {
+      provider: 'beeline',
+      sessionKey: 'sip_profile:145',
+      inboxId: 5245,
+      callingSupported: true,
+      registered: true,
+    };
+    janusInitializeMock.mockImplementation(async () => {
+      // A config refresh replaced this client while it was registering.
+      WebphoneClient.invalidateNativeSession('sip_profile:145');
+      WebphoneClient.sessions['sip_profile:145'] = newerSession;
+      throw new Error('stale_sip_registration');
+    });
+
+    await expect(
+      WebphoneClient.initializeDevice(5245, { native: true })
+    ).rejects.toThrow('stale_sip_registration');
+
+    expect(WebphoneClient.sessions['sip_profile:145']).toBe(newerSession);
+  });
+
   it('releases native SIP leases with keepalive semantics on pagehide', async () => {
     getNativeWebphoneTokenMock.mockResolvedValue({
       provider: 'sipuni',

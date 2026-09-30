@@ -664,6 +664,7 @@ class WebphoneClient extends EventTarget {
         const session = await this.initializeFromSession(state.response, {
           inboxId: state.inboxId,
           nativeGeneration: generation,
+          rememberFailure: false,
         });
         if (!this.isNativeSessionOwner(sessionKey, generation)) return null;
 
@@ -1190,9 +1191,11 @@ class WebphoneClient extends EventTarget {
       : null;
 
     try {
+      // The failure below records its own (post-teardown) session state.
       return await this.initializeFromSession(response, {
         inboxId,
         nativeGeneration,
+        rememberFailure: false,
       });
     } catch (error) {
       if (
@@ -1293,7 +1296,7 @@ class WebphoneClient extends EventTarget {
 
   async initializeFromSession(
     response,
-    { inboxId = null, nativeGeneration = null } = {}
+    { inboxId = null, nativeGeneration = null, rememberFailure = true } = {}
   ) {
     const provider = WebphoneClient.resolveProvider(response);
     if (!provider) {
@@ -1396,15 +1399,35 @@ class WebphoneClient extends EventTarget {
       provider,
     });
 
-    const session = await client.initializeDevice(
-      {
-        ...(response || {}),
-        provider,
-        sessionKey,
-        session_key: sessionKey,
-      },
-      { inboxId: resolvedInboxId }
-    );
+    let session;
+    try {
+      session = await client.initializeDevice(
+        {
+          ...(response || {}),
+          provider,
+          sessionKey,
+          session_key: sessionKey,
+        },
+        { inboxId: resolvedInboxId }
+      );
+    } catch (error) {
+      // A refresh (e.g. after saving the channel settings) removes the line
+      // before re-initialising it. If the registration then fails, keep the
+      // line listed as failed so the phone stays on screen and retryable.
+      if (
+        rememberFailure &&
+        isNative &&
+        this.isNativeSessionOwner(sessionKey, operationGeneration, client)
+      ) {
+        this.unsupportedSessionFromResponse(response, {
+          inboxId: resolvedInboxId,
+          reason: WebphoneClient.isPermanentNativeSipFailure(error)
+            ? 'sip_provider_credentials_failed'
+            : error?.message || 'webphone_session_initialization_failed',
+        });
+      }
+      throw error;
+    }
     if (
       isNative &&
       !this.isNativeSessionOwner(sessionKey, operationGeneration, client)
