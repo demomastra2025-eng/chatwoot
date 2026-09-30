@@ -23,7 +23,7 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
         user: Current.user,
         registered: ActiveModel::Type::Boolean.new.cast(params.require(:registered)),
         inbox: inbox,
-        registration_context: presence_params.to_h
+        registration_context: presence_params.to_h.merge(presence_failure_params.to_h)
       )
     )
   end
@@ -164,11 +164,13 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :janus_master_id,
       :janusMasterId,
       :presence_sequence,
-      :presenceSequence,
-      :registration_failure_code,
-      :registrationFailureCode,
-      :registration_failure_reason,
-      :registrationFailureReason
+      :presenceSequence
     )
+  end
+
+  # Registration failure diagnostics (Beeline) stay in their own permit list so the
+  # reviewed presence permit list above is unchanged.
+  def presence_failure_params
+    params.permit(:registration_failure_code, :registrationFailureCode, :registration_failure_reason, :registrationFailureReason)
   end
 end
