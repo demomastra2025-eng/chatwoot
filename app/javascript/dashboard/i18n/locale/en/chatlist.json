@@ -47,7 +47,7 @@
       "PLACEHOLDER": "Search by name, phone, account or identifier",
       "EMPTY": "No conversations match this search.",
       "CLEAR_BUTTON_LABEL": "Clear local search",
-      "RESULT_COUNT": "Found: {count}"
+      "RESULT_COUNT": "Found {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Status",

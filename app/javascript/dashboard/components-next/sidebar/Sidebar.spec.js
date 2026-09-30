@@ -234,6 +234,27 @@ describe('Sidebar', () => {
       .props('children')
       .find(child => child.name === name);
 
+  describe('icons', () => {
+    it('uses the aset/dev icons for deals and the navigation settings', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'general_settings_index',
+      });
+      const settingsChild = name =>
+        sidebarGroup(wrapper, 'Settings')
+          .props('children')
+          .find(child => child.name === name);
+
+      expect(sidebarGroup(wrapper, 'CRM').props('icon')).toBe(
+        'i-lucide-briefcase-business'
+      );
+      expect(settingsChild('Navigation').icon).toBe('i-lucide-eye');
+      expect(settingsChild('Conversation Navigation').icon).toBe(
+        'i-lucide-panel-left'
+      );
+    });
+  });
+
   describe('AI group', () => {
     it('is labelled «AI Агенты» and lists the AI pages without icons', async () => {
       const wrapper = await mountSidebar({

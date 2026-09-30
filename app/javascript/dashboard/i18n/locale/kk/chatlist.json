@@ -19,7 +19,7 @@
     "FILTER_ALL": "All",
     "ASSIGNEE_TYPE_TABS": {
       "me": "Mine",
-      "unassigned": "Unassigned",
+      "unassigned": "Тағайындалмағандар",
       "all": "All"
     },
     "CHAT_STATUS_FILTER_ITEMS": {
@@ -47,7 +47,7 @@
       "PLACEHOLDER": "Аты, нөмірі, аккаунты немесе идентификаторы бойынша іздеу",
       "EMPTY": "Бұл сұрау бойынша диалогтар табылмады.",
       "CLEAR_BUTTON_LABEL": "Жергілікті іздеуді тазарту",
-      "RESULT_COUNT": "Табылды: {count}"
+      "RESULT_COUNT": "Табылды {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Status",
