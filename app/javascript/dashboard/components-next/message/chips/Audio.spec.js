@@ -65,6 +65,7 @@ const playButton = chipWrapper => chipWrapper.findAll('button')[0];
 
 describe('Audio chip playback', () => {
   let playSpy;
+  let loadSpy;
   let widthSpy;
 
   beforeEach(() => {
@@ -75,9 +76,9 @@ describe('Audio chip playback', () => {
     vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(
       () => {}
     );
-    vi.spyOn(window.HTMLMediaElement.prototype, 'load').mockImplementation(
-      () => {}
-    );
+    loadSpy = vi
+      .spyOn(window.HTMLMediaElement.prototype, 'load')
+      .mockImplementation(() => {});
     vi.stubGlobal('requestAnimationFrame', cb => {
       queueMicrotask(() => cb(0));
       return 1;
@@ -136,6 +137,38 @@ describe('Audio chip playback', () => {
     expect(chip.find('audio').element.getAttribute('src')).toContain(
       'recording_token=signed'
     );
+  });
+
+  it('reloads the native source on the next play after it failed', async () => {
+    withContainerWidth(0);
+    const chip = mountChip();
+    await flushPromises();
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    const audio = chip.find('audio').element;
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    // Transient network error or an expired signed URL.
+    audio.removeAttribute('src');
+    audio.dispatchEvent(new Event('error'));
+    await flushPromises();
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(loadSpy).toHaveBeenCalledTimes(2);
+    expect(audio.getAttribute('src')).toContain('recording_token=signed');
+    expect(playSpy).toHaveBeenCalledTimes(2);
+
+    // A healthy source is not reloaded on every play.
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(loadSpy).toHaveBeenCalledTimes(2);
+    expect(playSpy).toHaveBeenCalledTimes(3);
   });
 
   it('keeps using the waveform player once it is ready', async () => {

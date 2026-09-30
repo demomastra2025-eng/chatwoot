@@ -110,6 +110,7 @@ const duration = ref(0);
 const playbackSpeed = ref(1);
 const waveSurfer = ref(null);
 const isFallbackMode = ref(false);
+const hasNativeAudioFailed = ref(false);
 const waveformInitFrameId = ref(0);
 
 const { uid } = getCurrentInstance();
@@ -263,6 +264,7 @@ const scheduleWaveformInit = () => {
 watch(timeStampURL, () => {
   const muted = isMuted.value;
   isFallbackMode.value = false;
+  hasNativeAudioFailed.value = false;
   clearPendingWaveformInit();
   destroyWaveform();
   unloadNativeAudio();
@@ -278,7 +280,7 @@ onUnmounted(() => {
   clearPendingWaveformInit();
   unloadNativeAudio();
   destroyWaveform();
-  clearAudioPlaybackState(attachment.id);
+  clearAudioPlaybackState(attachment.id, uid);
 });
 
 useResizeObserver(waveformContainer, () => {
@@ -365,7 +367,16 @@ const playBeforeWaveformReady = async () => {
   if (!timeStampURL.value) return;
 
   emitter.emit('pause_playing_audio', uid);
-  await activateNativeFallback();
+
+  if (isFallbackMode.value && hasNativeAudioFailed.value) {
+    // The native source failed earlier (network blip, expired signed URL):
+    // load it again from the current URL instead of replaying the dead one.
+    hasNativeAudioFailed.value = false;
+    await loadNativeAudio();
+  } else {
+    await activateNativeFallback();
+  }
+
   await playNativeAudio();
 };
 
@@ -481,14 +492,19 @@ const onNativeAudioEnded = () => {
 
 const onNativeAudioError = () => {
   if (!isFallbackMode.value) return;
+  hasNativeAudioFailed.value = true;
   resetPlayerState(isMuted.value);
 };
 
 watchEffect(() => {
-  setAudioPlaybackState(attachment.id, {
-    timeLabel: playbackTimeLabel.value,
-    isPlaying: isPlaying.value,
-  });
+  setAudioPlaybackState(
+    attachment.id,
+    {
+      timeLabel: playbackTimeLabel.value,
+      isPlaying: isPlaying.value,
+    },
+    uid
+  );
 });
 </script>
 
