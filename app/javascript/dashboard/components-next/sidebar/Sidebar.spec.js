@@ -573,6 +573,12 @@ describe('Sidebar', () => {
     });
 
     it('has no status group in the conversation navigation', async () => {
+      // Saved settings that show every list: before version 21 they showed
+      // the status group (AI, Открыто, Отложено, Закрыто).
+      mocks.accountSettings = {
+        dashboard_sidebar_hidden_items: [],
+        dashboard_sidebar_hidden_items_version: 20,
+      };
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
         routeName: 'communication_threads_dashboard',
