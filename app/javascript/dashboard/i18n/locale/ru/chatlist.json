@@ -19,7 +19,7 @@
     "FILTER_ALL": "Все",
     "ASSIGNEE_TYPE_TABS": {
       "me": "Мои",
-      "unassigned": "Неназначен",
+      "unassigned": "Неназначенные",
       "all": "Все"
     },
     "CHAT_STATUS_FILTER_ITEMS": {
@@ -47,7 +47,7 @@
       "PLACEHOLDER": "Поиск по имени, номеру, аккаунту или идентификатору",
       "EMPTY": "По этому запросу диалоги не найдены.",
       "CLEAR_BUTTON_LABEL": "Очистить локальный поиск",
-      "RESULT_COUNT": "Найдено: {count}"
+      "RESULT_COUNT": "Найдено {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Статус",
