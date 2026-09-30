@@ -571,6 +571,9 @@ Rails.application.routes.draw do
             resource :authorization, only: [:create] do
               post :session, action: :log_session
             end
+            resource :embedded_signup_attempt, only: [:create] do
+              post :status
+            end
             resource :phone_registration, only: [:create]
           end
 

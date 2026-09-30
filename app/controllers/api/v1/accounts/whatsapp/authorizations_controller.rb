@@ -1,4 +1,6 @@
 class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts::BaseController
+  include WhatsappEmbeddedSignupAttemptHandling
+
   AUTHORIZATION_ONLY_PROVIDER_CONFIG_KEYS = %w[calling_capabilities token_health].freeze
 
   class MissingRequiredParametersError < ArgumentError
@@ -18,7 +20,11 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   # If inbox_id is present in params, it performs reauthorization
   def create
     validate_embedded_signup_params!
-    channel = process_embedded_signup
+    return unless claim_signup_attempt
+
+    service = embedded_signup_service
+    channel = service.perform
+    complete_signup_attempt(channel, service)
     render_success_response(channel.inbox)
   rescue StandardError => e
     render_error_response(e)
@@ -41,13 +47,14 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
 
   private
 
-  def process_embedded_signup
-    service = Whatsapp::EmbeddedSignupService.new(
+  def embedded_signup_service
+    options = {
       account: Current.account,
       params: params.permit(:code, :business_id, :waba_id, :phone_number_id, :signup_type).to_h.symbolize_keys,
       inbox_id: params[:inbox_id]
-    )
-    service.perform
+    }
+    options[:resolve_waba_from_token] = true if resolve_waba_from_token?
+    Whatsapp::EmbeddedSignupService.new(**options)
   end
 
   def fetch_and_validate_inbox
@@ -131,10 +138,14 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
       error: client_authorization_error(error)
     }.merge(error_response_details(error))
 
+    fail_signup_attempt(response[:error_code])
     render json: response, status: :unprocessable_content
   end
 
   def error_response_details(error)
+    signup_attempt_details = signup_attempt_error_details(error)
+    return signup_attempt_details if signup_attempt_details
+
     case error
     when MissingRequiredParametersError
       { error_code: 'missing_required_parameters', details: { missing_parameters: error.missing_parameters } }
@@ -159,7 +170,8 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
     safe_error = error.is_a?(MissingRequiredParametersError) ||
                  error.is_a?(Whatsapp::ReauthorizationService::PhoneNumberMismatchError) ||
                  error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError) ||
-                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError)
+                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError) ||
+                 signup_attempt_client_safe_error?(error)
     return sanitized_authorization_error(error.message) if safe_error
 
     'WhatsApp authorization failed. Please check the connection details and try again.'
@@ -168,7 +180,7 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   def validate_embedded_signup_params!
     missing_params = []
     missing_params << 'code' if params[:code].blank?
-    missing_params << 'waba_id' if params[:waba_id].blank? && params[:inbox_id].blank?
+    missing_params << 'waba_id' if params[:waba_id].blank? && params[:inbox_id].blank? && !resolve_waba_from_token?
 
     return if missing_params.empty?
 

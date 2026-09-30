@@ -53,6 +53,9 @@ module Redis::RedisKeys
   WHATSAPP_WEB_EVENT_MUTEX = 'WHATSAPP_WEB_EVENT_LOCK::%<channel_id>s::%<remote_jid>s'.freeze
   WHATSAPP_WEB_EVENT_IN_FLIGHT = 'WHATSAPP_WEB_EVENT_IN_FLIGHT::%<channel_id>s::%<fingerprint>s'.freeze
   WHATSAPP_WEB_PENDING_MESSAGE_STATUS = 'WHATSAPP_WEB_PENDING_MESSAGE_STATUS::%<inbox_id>s::%<source_id>s'.freeze
+  # WhatsApp Cloud Embedded Signup attempt (state + single-use completion claim), keyed by nonce digest
+  WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT = 'WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT::%<account_id>d::%<user_id>d::%<digest>s'.freeze
+  WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT_CLAIM = 'WHATSAPP_EMBEDDED_SIGNUP_ATTEMPT_CLAIM::%<account_id>d::%<user_id>d::%<digest>s'.freeze
   CRM_PROCESS_MUTEX = 'CRM_PROCESS_MUTEX::%<hook_id>s'.freeze
   MACROCRM_SYNC_MUTEX = 'MACROCRM_SYNC_MUTEX::%<hook_id>s::%<conversation_id>s'.freeze
   MACROCRM_MANAGER_CHANGED_MUTEX = 'MACROCRM_MANAGER_CHANGED_MUTEX::%<hook_id>s::%<estate_id>s'.freeze

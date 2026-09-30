@@ -13,6 +13,10 @@ Rails.application.config.filter_parameters += [
   'pairingCode', 'pairing_code', 'disconnectionObject'
 ]
 
+# Meta OAuth / WhatsApp Embedded Signup: the exchangeable auth code and the signup
+# attempt nonce. Exact key match only, so keys like country_code stay readable.
+Rails.application.config.filter_parameters += [/\A(?:code|signup_nonce)\z/]
+
 # Regex to filter all occurrences of 'token' in keys except for 'website_token'
 filter_regex = /\A(?!.*\bwebsite_token\b).*token/i
 

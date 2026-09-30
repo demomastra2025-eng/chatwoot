@@ -4,7 +4,11 @@ class Whatsapp::EmbeddedSignupService
   class ReauthorizationFlowMismatchError < ArgumentError; end
   class ReauthorizationFlowRequiredError < ArgumentError; end
 
-  def initialize(account:, params:, inbox_id: nil)
+  include Whatsapp::EmbeddedSignupTokenWabaResolution
+
+  # resolve_waba_from_token: the browser delivered only the auth code (mobile popup
+  # lost Meta's session event), so the shared WABA is read from the token's scopes.
+  def initialize(account:, params:, inbox_id: nil, resolve_waba_from_token: false)
     @account = account
     @code = params[:code]
     @business_id = params[:business_id].presence
@@ -12,6 +16,7 @@ class Whatsapp::EmbeddedSignupService
     @phone_number_id = params[:phone_number_id].presence
     @signup_type = params[:signup_type].presence
     @inbox_id = inbox_id
+    @resolve_waba_from_token = resolve_waba_from_token && inbox_id.blank? && @waba_id.blank?
   end
 
   def perform
@@ -20,6 +25,7 @@ class Whatsapp::EmbeddedSignupService
     validate_parameters!
 
     access_token = exchange_code_for_token
+    resolve_waba_from_token!(access_token)
     phone_info = fetch_phone_info(access_token)
     @phone_number_id = phone_info[:phone_number_id]
     validate_coexistence_phone!(phone_info) if coexistence?
@@ -184,10 +190,6 @@ class Whatsapp::EmbeddedSignupService
     return if missing_params.empty?
 
     raise ArgumentError, "Required parameters are missing: #{missing_params.join(', ')}"
-  end
-
-  def required_signup_parameters
-    %i[code waba_id]
   end
 
   def resolve_reauthorization_context!
