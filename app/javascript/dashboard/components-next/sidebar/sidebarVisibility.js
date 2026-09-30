@@ -43,8 +43,9 @@ const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
 export const MASS_BROADCASTS_VISIBILITY_KEY = 'Campaigns:MassBroadcasts';
 // Saved settings before version 21 may still name the removed outbound group
 // («Исходящие») or its old children.
+const LEGACY_OUTBOUND_GROUP_VISIBILITY_KEY = 'Campaigns';
 const LEGACY_OUTBOUND_VISIBILITY_KEYS = Object.freeze([
-  'Campaigns',
+  LEGACY_OUTBOUND_GROUP_VISIBILITY_KEY,
   'Campaigns:Touches',
   'Campaigns:PersonalBroadcasts',
 ]);
@@ -192,16 +193,18 @@ export const normalizeSidebarHiddenItems = hiddenItems => {
 };
 
 // Before version 21 the outbound group («Исходящие», key Campaigns) held
-// «Рассылки»; older settings may still name its former children. Hiding any
-// of them keeps «Рассылки» hidden. The removed status group keys
-// (Conversation:Statuses, Conversation:Open...) are simply dropped by
-// normalizeSidebarHiddenItems.
+// «Рассылки»: hiding the whole group keeps «Рассылки» hidden. Its former
+// reminder children (Campaigns:Touches, Campaigns:PersonalBroadcasts) left the
+// menu; hiding them said nothing about broadcasts, so they are dropped and
+// «Рассылки» stays visible, as it is before version 21. The removed status
+// group keys (Conversation:Statuses, Conversation:Open...) are simply dropped
+// by normalizeSidebarHiddenItems.
 const normalizeLegacyOutboundVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
   if (Number(version || 0) >= 21) return hiddenItemsSet;
 
-  const outboundWasHidden = LEGACY_OUTBOUND_VISIBILITY_KEYS.some(key =>
-    hiddenItemsSet.has(key)
+  const outboundWasHidden = hiddenItemsSet.has(
+    LEGACY_OUTBOUND_GROUP_VISIBILITY_KEY
   );
   LEGACY_OUTBOUND_VISIBILITY_KEYS.forEach(key => hiddenItemsSet.delete(key));
 

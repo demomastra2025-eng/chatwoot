@@ -122,9 +122,9 @@ describe('sidebarVisibility', () => {
       [['Campaigns'], 20],
       [['Campaigns'], 17],
       [['Campaigns'], 7],
-      [['Campaigns:Touches'], 16],
-      [['Campaigns:PersonalBroadcasts'], 2],
+      [['Campaigns', 'Campaigns:Touches'], 16],
       [['Campaigns:MassBroadcasts'], 17],
+      [['Campaigns:MassBroadcasts', 'Campaigns:PersonalBroadcasts'], 12],
     ])(
       'keeps broadcasts hidden for hidden %j (version %s)',
       (hidden, version) => {
@@ -157,6 +157,24 @@ describe('sidebarVisibility', () => {
         expect(
           getSidebarHiddenItems(legacySettings(['Reports'], version))
         ).toEqual(['Reports']);
+      }
+    );
+
+    it.each([
+      [['Campaigns:Touches'], 16],
+      [['Campaigns:PersonalBroadcasts'], 2],
+      [['Campaigns:Touches', 'Campaigns:PersonalBroadcasts', 'Reports'], 17],
+    ])(
+      'keeps broadcasts visible when only the former reminder items %j were hidden (version %s)',
+      (hidden, version) => {
+        const settings = legacySettings(hidden, version);
+
+        expect(getSidebarHiddenItems(settings)).not.toContain(
+          'Campaigns:MassBroadcasts'
+        );
+        expect(
+          buildSidebarVisibilityState(settings)['Campaigns:MassBroadcasts']
+        ).toBe(true);
       }
     );
 
