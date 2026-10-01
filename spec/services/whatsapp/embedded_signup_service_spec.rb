@@ -38,6 +38,11 @@ describe Whatsapp::EmbeddedSignupService do
       allow(GlobalConfigService).to receive(:load)
         .with('WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN', false)
         .and_return(require_non_expiring_system_user_token)
+      facebook_api_client = instance_double(
+        Whatsapp::FacebookApiClient,
+        validate_waba_message_templates_access: true
+      )
+      allow(Whatsapp::FacebookApiClient).to receive(:new).with(access_token).and_return(facebook_api_client)
 
       # Mock service dependencies
       token_exchange = instance_double(Whatsapp::TokenExchangeService)
@@ -68,7 +73,17 @@ describe Whatsapp::EmbeddedSignupService do
       allow(channel).to receive(:setup_webhooks)
       allow(channel).to receive(:store_token_health!)
       allow(channel).to receive(:phone_number).and_return('+1234567890')
+      allow(channel).to receive(:ensure_reauthorization_required_for_callback!).and_return(false)
+      allow(channel).to receive(:reauthorization_callback_snapshot).and_return({})
+      allow(channel).to receive(:complete_reauthorization_after_callback!).and_return(true)
       allow(channel).to receive(:reauthorized!)
+      allow(channel).to receive(:clear_provider_authorization_error!)
+      inbox_double = instance_double(Inbox)
+      allow(inbox_double).to receive(:update_account_cache)
+      if inbox_double.respond_to?(:resolve_failed_whatsapp_deletion_recovery!)
+        allow(inbox_double).to receive(:resolve_failed_whatsapp_deletion_recovery!).and_return(false)
+      end
+      allow(channel).to receive(:inbox).and_return(inbox_double)
 
       health_service = instance_double(Whatsapp::HealthService)
       allow(Whatsapp::HealthService).to receive(:new).and_return(health_service)
@@ -339,6 +354,34 @@ describe Whatsapp::EmbeddedSignupService do
           .and_return(instance_double(Whatsapp::WebhookSetupService, register_callback: true))
       end
 
+      it 'keeps the durable reauthorization anchor through callback setup and clears errors afterward' do
+        existing_channel.update!(provider_config: existing_channel.provider_config.merge(
+          'embedded_signup_flow' => 'standard',
+          'phone_number_id' => params[:phone_number_id],
+          'business_account_id' => params[:waba_id],
+          'business_id' => params[:business_id]
+        ))
+        inbox_double = instance_double(Inbox)
+        if inbox_double.respond_to?(:resolve_failed_whatsapp_deletion_recovery!)
+          allow(inbox_double).to receive(:resolve_failed_whatsapp_deletion_recovery!).and_return(false)
+        end
+        allow(channel).to receive(:inbox).and_return(inbox_double)
+        webhook_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).with(channel).and_return(webhook_service)
+
+        expect(channel).to receive(:ensure_reauthorization_required_for_callback!).ordered
+        expect(channel).to receive(:store_token_health!).with(token_health).ordered
+        expect(channel).to receive(:reauthorization_callback_snapshot).ordered.and_return({})
+        expect(webhook_service).to receive(:register_callback).ordered.and_return(true)
+        expect(channel).to receive(:complete_reauthorization_after_callback!).with({}).ordered.and_return(true)
+        if inbox_double.respond_to?(:resolve_failed_whatsapp_deletion_recovery!)
+          expect(inbox_double).to receive(:resolve_failed_whatsapp_deletion_recovery!).ordered.and_return(false)
+        end
+        expect(inbox_double).to receive(:update_account_cache).ordered
+
+        service_with_inbox.perform
+      end
+
       it 'uses ReauthorizationService and sets up webhooks' do
         existing_channel.update!(provider_config: existing_channel.provider_config.merge(
           'embedded_signup_flow' => 'standard',
@@ -349,7 +392,7 @@ describe Whatsapp::EmbeddedSignupService do
         expect(reauth_service).to receive(:perform).and_yield(channel).and_return(channel)
         webhook_service = instance_double(Whatsapp::WebhookSetupService, register_callback: true)
         expect(Whatsapp::WebhookSetupService).to receive(:new).with(channel).and_return(webhook_service)
-        expect(channel).to receive(:reauthorized!)
+        expect(channel).to receive(:complete_reauthorization_after_callback!).with({}).and_return(true)
 
         result = service_with_inbox.perform
         expect(result).to eq(channel)
@@ -514,6 +557,91 @@ describe Whatsapp::EmbeddedSignupService do
           expect(whatsapp_channel.reauthorization_required?).to be false
         end
 
+        it 'keeps a durable reauthorization marker when callback setup fails without an earlier marker' do
+          whatsapp_channel.reauthorized!
+          expect(whatsapp_channel.reauthorization_required?).to be(false)
+
+          allow(Whatsapp::ReauthorizationService).to receive(:new).and_call_original
+          provider_service = instance_double(Whatsapp::Providers::WhatsappCloudService, validate_provider_config?: true)
+          allow(Whatsapp::Providers::WhatsappCloudService).to receive(:new).and_return(provider_service)
+          webhook_service = instance_double(Whatsapp::WebhookSetupService)
+          allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+          allow(webhook_service).to receive(:register_callback).and_raise('callback failed')
+
+          expect { service_with_real_inbox.perform }.to raise_error('callback failed')
+
+          expect(whatsapp_channel.reload.reauthorization_required?).to be(true)
+          expect(whatsapp_channel.provider_config['reauthorization_required']).to be(true)
+        end
+
+        it 'preserves an identical fresh authorization error recorded in the same timestamp during callback setup' do
+          fixed_time = Time.zone.at(1_800_000_000)
+          error_payload = {
+            'error' => {
+              'code' => 190,
+              'type' => 'OAuthException',
+              'message' => 'Repeated invalid token response',
+              'fbtrace_id' => 'same-trace'
+            }
+          }
+          health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: false)
+          allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(whatsapp_channel).and_return(health_check)
+
+          travel_to(fixed_time) do
+            whatsapp_channel.record_provider_authorization_error!(error_payload)
+            original_error = whatsapp_channel.reload.provider_config['authorization_error']
+
+            webhook_service = instance_double(Whatsapp::WebhookSetupService)
+            allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+            allow(webhook_service).to receive(:register_callback) do
+              whatsapp_channel.record_provider_authorization_error!(error_payload)
+              true
+            end
+            expect(whatsapp_channel).not_to receive(:reauthorized!)
+
+            expect { service_with_real_inbox.perform }
+              .to raise_error(Whatsapp::ReauthorizationService::CallbackAuthorizationStateChangedError)
+
+            updated_error = whatsapp_channel.reload.provider_config['authorization_error']
+            expect(updated_error).to include(
+              'code' => 190,
+              'type' => 'OAuthException',
+              'message' => 'Repeated invalid token response',
+              'fbtrace_id' => 'same-trace',
+              'recorded_at' => original_error['recorded_at']
+            )
+            expect(updated_error['occurrence_id']).not_to eq(original_error['occurrence_id'])
+            expect(whatsapp_channel.reauthorization_required?).to be(true)
+          end
+        end
+
+        it 'keeps a fresh authorization error recorded during callback setup' do
+          health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: false)
+          allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(whatsapp_channel).and_return(health_check)
+          webhook_service = instance_double(Whatsapp::WebhookSetupService)
+          allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+          allow(webhook_service).to receive(:register_callback) do
+            whatsapp_channel.record_provider_authorization_error!(
+              'error' => { 'code' => 190, 'message' => 'Fresh token failed during callback setup' }
+            )
+            true
+          end
+          expect(whatsapp_channel).not_to receive(:reauthorized!)
+
+          expect { service_with_real_inbox.perform }
+            .to raise_error(Whatsapp::ReauthorizationService::CallbackAuthorizationStateChangedError)
+
+          config = whatsapp_channel.reload.provider_config
+          expect(whatsapp_channel.reauthorization_required?).to be(true)
+          expect(config).to include(
+            'authorization_status' => 'reauthorization_required',
+            'authorization_error' => include(
+              'code' => 190,
+              'message' => 'Fresh token failed during callback setup'
+            )
+          )
+        end
+
         it 'keeps committed reauthorization config when strict webhook setup fails' do
           original_provider_config = whatsapp_channel.reload.provider_config.deep_dup
           allow(Whatsapp::ReauthorizationService).to receive(:new).and_call_original
@@ -571,6 +699,162 @@ describe Whatsapp::EmbeddedSignupService do
                                                                               messaging_limit_tier: 'TIER_1000'
                                                                             })
         end
+      end
+    end
+
+    context 'when a code-only mobile reauthorization must recover changed coexistence identifiers' do
+      let(:params) do
+        { code: 'mobile_reauth_code', signup_type: 'coexistence' }
+      end
+      let(:old_identity) do
+        {
+          'business_account_id' => '10001',
+          'phone_number_id' => '20001',
+          'business_id' => '30001',
+          'source' => 'embedded_signup',
+          'embedded_signup_flow' => 'coexistence'
+        }
+      end
+      let(:existing_channel) do
+        create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          provider_config: old_identity,
+          validate_provider_config: false,
+          sync_templates: false
+        )
+      end
+      let(:existing_inbox) { existing_channel.inbox || create(:inbox, account: account, channel: existing_channel) }
+      let(:mobile_service) do
+        described_class.new(account: account, params: params, inbox_id: existing_inbox.id)
+      end
+      let(:resolved_phone_info) do
+        {
+          phone_number_id: '20002',
+          phone_number: '+12025550100',
+          is_on_biz_app: true,
+          platform_type: 'CLOUD_API',
+          verified: false
+        }
+      end
+      let(:identity_resolution) do
+        Whatsapp::ReauthorizationIdentityResolver::Resolution.new(
+          account_id: account.id,
+          inbox_id: existing_inbox.id,
+          channel_id: existing_channel.id,
+          old_identity: old_identity,
+          target_identity: old_identity.merge(
+            'business_account_id' => '10002',
+            'phone_number_id' => '20002'
+          ),
+          phone_number: existing_channel.phone_number,
+          physical_phone: Whatsapp::ReauthorizationIdentityResolver.normalize_phone(existing_channel.phone_number),
+          owner_business_id: '30001',
+          access_token: access_token
+        )
+      end
+
+      # The complete code-only handoff is asserted in one regression example.
+      # rubocop:disable RSpec/ExampleLength, RSpec/MultipleExpectations
+      it 'uses the resolved exact pair for phone and permission checks and does not restart history sync' do
+        existing_channel.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          phone_number: '+12025550100',
+          provider_config: existing_channel.provider_config.to_h.merge(old_identity)
+        )
+        old_resolution = instance_double(Whatsapp::ReauthorizationIdentityResolver)
+        fallback_resolution = instance_double(Whatsapp::ReauthorizationIdentityResolver)
+        allow(old_resolution).to receive(:perform)
+          .and_raise(Whatsapp::ReauthorizationIdentityResolver::ResolutionError.new('business_asset_selection_mismatch'))
+        allow(fallback_resolution).to receive(:perform).and_return(identity_resolution)
+        expect(Whatsapp::ReauthorizationIdentityResolver).to receive(:new).with(
+          access_token: access_token,
+          account_id: account.id,
+          inbox_id: existing_inbox.id,
+          channel_id: existing_channel.id,
+          old_identity: old_identity,
+          phone_number: '+12025550100',
+          signup_type: 'coexistence',
+          requested_waba_id: '10001',
+          requested_phone_number_id: '20001',
+          requested_business_id: nil
+        ).ordered.and_return(old_resolution)
+        expect(Whatsapp::ReauthorizationIdentityResolver).to receive(:new).with(
+          access_token: access_token,
+          account_id: account.id,
+          inbox_id: existing_inbox.id,
+          channel_id: existing_channel.id,
+          old_identity: old_identity,
+          phone_number: '+12025550100',
+          signup_type: 'coexistence',
+          requested_waba_id: nil,
+          requested_phone_number_id: nil,
+          requested_business_id: nil
+        ).ordered.and_return(fallback_resolution)
+
+        phone_service = instance_double(Whatsapp::PhoneInfoService, perform: resolved_phone_info)
+        expect(Whatsapp::PhoneInfoService).to receive(:new)
+          .with('10002', '20002', access_token, coexistence: true).and_return(phone_service)
+        validation_service = instance_double(Whatsapp::TokenValidationService, perform: token_health)
+        expect(Whatsapp::TokenValidationService).to receive(:new).with(
+          access_token,
+          '10002',
+          phone_number_id: '20002',
+          require_non_expiring_system_user: false
+        ).and_return(validation_service)
+
+        reauth_service = instance_double(Whatsapp::ReauthorizationService)
+        expect(Whatsapp::ReauthorizationService).to receive(:new).with(
+          account: account,
+          inbox_id: existing_inbox.id,
+          phone_number_id: '20002',
+          business_id: '30001',
+          waba_id: '10002',
+          signup_type: 'coexistence',
+          identity_resolution: identity_resolution
+        ).and_return(reauth_service)
+        allow(reauth_service).to receive(:perform).with(access_token, resolved_phone_info).and_yield(channel).and_return(channel)
+
+        callback_service = instance_double(Whatsapp::WebhookSetupService, register_callback: true)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).with(channel).and_return(callback_service)
+
+        expect(Whatsapp::ChannelCreationService).not_to receive(:new)
+        expect { mobile_service.perform }.not_to have_enqueued_job(Whatsapp::CoexistenceSyncJob)
+        expect(channel).to have_received(:complete_reauthorization_after_callback!).with({})
+      end
+      # rubocop:enable RSpec/ExampleLength, RSpec/MultipleExpectations
+
+      it 'does not fall back to stored ids when a matching granular scope row is incomplete' do
+        existing_channel.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          phone_number: '+12025550100',
+          provider_config: existing_channel.provider_config.to_h.merge(old_identity)
+        )
+        previous_config = existing_channel.provider_config.deep_dup
+        incomplete_grant = Whatsapp::ReauthorizationIdentityResolver::ResolutionError.new('grant_targets_incomplete')
+        resolver = instance_double(Whatsapp::ReauthorizationIdentityResolver)
+        allow(resolver).to receive(:perform).and_raise(incomplete_grant)
+
+        expect(Whatsapp::ReauthorizationIdentityResolver).to receive(:new).once.with(
+          access_token: access_token,
+          account_id: account.id,
+          inbox_id: existing_inbox.id,
+          channel_id: existing_channel.id,
+          old_identity: old_identity,
+          phone_number: '+12025550100',
+          signup_type: 'coexistence',
+          requested_waba_id: '10001',
+          requested_phone_number_id: '20001',
+          requested_business_id: nil
+        ).and_return(resolver)
+        expect(Whatsapp::PhoneInfoService).not_to receive(:new)
+        expect(Whatsapp::ReauthorizationService).not_to receive(:new)
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+
+        expect { mobile_service.perform }
+          .to raise_error(Whatsapp::ReauthorizationIdentityResolver::ResolutionError) do |error|
+            expect(error.error_code).to eq('grant_targets_incomplete')
+          end
+        expect(existing_channel.reload.provider_config).to eq(previous_config)
       end
     end
 

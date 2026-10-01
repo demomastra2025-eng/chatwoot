@@ -116,7 +116,8 @@ class Channel::Whatsapp < ApplicationRecord # rubocop:disable Metrics/ClassLengt
         'code' => code,
         'type' => type,
         'message' => message,
-        'recorded_at' => Time.current.iso8601
+        'occurrence_id' => SecureRandom.uuid,
+        'recorded_at' => Time.current.iso8601(6)
       }.compact
     )
     true
@@ -168,7 +169,8 @@ class Channel::Whatsapp < ApplicationRecord # rubocop:disable Metrics/ClassLengt
       'type' => error['type'],
       'message' => error['message'],
       'fbtrace_id' => error['fbtrace_id'],
-      'recorded_at' => Time.current.iso8601
+      'occurrence_id' => SecureRandom.uuid,
+      'recorded_at' => Time.current.iso8601(6)
     }.compact
   end
 
@@ -195,7 +197,9 @@ class Channel::Whatsapp < ApplicationRecord # rubocop:disable Metrics/ClassLengt
     with_durable_reauthorization_lock do
       reload
       already_requires_reauthorization = reauthorization_required?
-      safe_error_payload = sanitize_provider_metadata(error_payload)
+      safe_error_payload = sanitize_provider_metadata(error_payload).deep_stringify_keys
+      safe_error_payload['occurrence_id'] ||= SecureRandom.uuid
+      safe_error_payload['recorded_at'] = Time.current.iso8601(6)
       mutate_provider_config! do |config|
         config.merge('authorization_status' => 'reauthorization_required', 'authorization_error' => safe_error_payload)
       end
