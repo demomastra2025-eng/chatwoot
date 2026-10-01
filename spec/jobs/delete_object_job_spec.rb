@@ -529,6 +529,7 @@ RSpec.describe DeleteObjectJob, type: :job do
       let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_whatsapp_web, account: account) }
       let!(:inbox) { channel.inbox }
+      let!(:conversation) { create(:conversation, account: account, inbox: inbox) }
 
       around do |example|
         with_modified_env(
@@ -542,15 +543,22 @@ RSpec.describe DeleteObjectJob, type: :job do
 
       it 'tears down the remote instance before destroying local records' do
         teardown_started = false
-        allow(channel).to receive(:teardown_provider_instance!) do
-          teardown_started = true
-        end
-        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+        stub_request(:delete, "https://evolution.example.com/instance/delete/#{channel.instance_name}")
+          .with(headers: { 'Apikey' => 'test-api-key' }).to_return do
+            expect(Conversation.exists?(conversation.id)).to be(true) unless teardown_started
+            teardown_started = true
+            { status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' } }
+          end
+        expect(inbox).to receive(:destroy!).and_wrap_original do |method, *args|
           expect(teardown_started).to be(true)
           method.call(*args)
         end
 
         described_class.perform_now(inbox)
+
+        expect(Channel::WhatsappWeb.exists?(channel.id)).to be(false)
+        expect(Inbox.exists?(inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
       end
     end
 
@@ -558,18 +566,35 @@ RSpec.describe DeleteObjectJob, type: :job do
       let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_telegram_personal, account: account) }
       let!(:inbox) { channel.inbox }
+      let!(:conversation) { create(:conversation, account: account, inbox: inbox) }
+
+      around do |example|
+        with_modified_env(
+          'TELEGRAM_PERSONAL_GATEWAY_URL' => 'http://telegram-personal-gateway.test',
+          'TELEGRAM_PERSONAL_GATEWAY_TOKEN' => 'test-gateway-token'
+        ) do
+          example.run
+        end
+      end
 
       it 'tears down the gateway runtime before destroying local records' do
         teardown_started = false
-        allow(channel).to receive(:teardown_runtime!) do
-          teardown_started = true
-        end
-        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+        stub_request(:delete, "http://telegram-personal-gateway.test/internal/channels/#{channel.id}")
+          .with(headers: { 'Authorization' => 'Bearer test-gateway-token' }).to_return do
+            expect(Conversation.exists?(conversation.id)).to be(true)
+            teardown_started = true
+            { status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' } }
+          end
+        expect(inbox).to receive(:destroy!).and_wrap_original do |method, *args|
           expect(teardown_started).to be(true)
           method.call(*args)
         end
 
         described_class.perform_now(inbox)
+
+        expect(Channel::TelegramPersonal.exists?(channel.id)).to be(false)
+        expect(Inbox.exists?(inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
       end
     end
 
