@@ -1,0 +1,116 @@
+<% content_for(:title) do %>
+  ???????????? ???????????????? (Audits)
+<% end %>
+
+<header class="main-content__header py-4 px-6 border-b border-slate-100 flex items-center justify-between" role="banner">
+  <div>
+    <h1 class="text-xl font-bold text-slate-900" id="page-title">
+      ???????????? ???????????????? ?????????????? (Audit Log)
+    </h1>
+    <p class="text-xs text-slate-500 mt-0.5">
+      ???????????????? ?????????????????? ??????????????, ??????????, ???????? ?? ?????????????????? ????????????????????
+    </p>
+  </div>
+  <div class="text-xs font-mono text-slate-400 bg-slate-50 px-2.5 py-1 rounded border border-slate-200">
+    ??????????????: <%= @audits.total_count rescue @audits.size %>
+  </div>
+</header>
+
+<section class="main-content__body p-6">
+  <!-- ?????????????? -->
+  <div class="mb-6 p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap gap-4 items-center">
+    <%= form_with url: super_admin_audits_path, method: :get, local: true, class: "flex flex-wrap gap-4 items-center w-full" do |f| %>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">?????? ????????????:</label>
+        <%= f.select :auditable_type, 
+                     options_for_select([['?????? ????????', '']] + @auditable_types.map { |t| [t, t] }, params[:auditable_type]), 
+                     {}, 
+                     class: "text-sm border border-slate-300 rounded px-2.5 py-1.5 bg-white" %>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">????????????????:</label>
+        <%= f.select :audit_action, 
+                     options_for_select([['?????? ????????????????', ''], ['???????????????? (create)', 'create'], ['???????????????????? (update)', 'update'], ['???????????????? (destroy)', 'destroy']], params[:audit_action]), 
+                     {}, 
+                     class: "text-sm border border-slate-300 rounded px-2.5 py-1.5 bg-white" %>
+      </div>
+
+      <div class="self-end flex gap-2">
+        <%= f.submit "??????????????????????", class: "bg-slate-900 text-white text-sm px-4 py-1.5 rounded hover:bg-slate-800 cursor-pointer font-medium" %>
+        <%= link_to "????????????????", super_admin_audits_path, class: "bg-white text-slate-700 border border-slate-300 text-sm px-3 py-1.5 rounded hover:bg-slate-100" %>
+      </div>
+    <% end %>
+  </div>
+
+  <!-- ?????????????? ?????????????? -->
+  <div class="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+    <table class="w-full text-left text-sm">
+      <thead class="bg-slate-100 text-slate-600 text-xs uppercase font-semibold">
+        <tr>
+          <th class="px-4 py-3">????????/??????????</th>
+          <th class="px-4 py-3">????????????????????????</th>
+          <th class="px-4 py-3">????????????</th>
+          <th class="px-4 py-3">????????????????</th>
+          <th class="px-4 py-3">??????????????????</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        <% if @audits.empty? %>
+          <tr>
+            <td colspan="5" class="px-4 py-8 text-center text-slate-400">
+              ?????????????? ???????????? ???? ??????????????
+            </td>
+          </tr>
+        <% else %>
+          <% @audits.each do |audit| %>
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-4 py-3 whitespace-nowrap text-xs text-slate-500 font-mono">
+                <%= audit.created_at.strftime('%Y-%m-%d %H:%M:%S') %>
+              </td>
+              <td class="px-4 py-3 text-xs text-slate-700">
+                <% if audit.user.present? %>
+                  <span class="font-medium"><%= audit.user.name rescue "ID #{audit.user_id}" %></span>
+                <% elsif audit.username.present? %>
+                  <span class="font-medium"><%= audit.username %></span>
+                <% else %>
+                  <span class="text-slate-400">?????????????? / Background</span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3 text-xs font-mono">
+                <span class="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 font-semibold">
+                  <%= audit.auditable_type %>
+                </span>
+                <span class="text-slate-500 ml-1">#<%= audit.auditable_id %></span>
+              </td>
+              <td class="px-4 py-3 text-xs">
+                <% action_color = case audit.action
+                     when 'create' then 'bg-green-100 text-green-800 border-green-200'
+                     when 'update' then 'bg-blue-100 text-blue-800 border-blue-200'
+                     when 'destroy' then 'bg-red-100 text-red-800 border-red-200'
+                     else 'bg-slate-100 text-slate-700 border-slate-200'
+                   end %>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold border <%= action_color %>">
+                  <%= audit.action %>
+                </span>
+              </td>
+              <td class="px-4 py-3 text-xs font-mono text-slate-600 max-w-md truncate">
+                <details class="cursor-pointer">
+                  <summary class="text-indigo-600 hover:underline">?????????????????? (<%= (audit.audited_changes || {}).keys.size %> ??????????)</summary>
+                  <pre class="mt-2 p-2 bg-slate-900 text-slate-100 text-[11px] rounded overflow-auto max-h-48 whitespace-pre-wrap font-mono"><%= JSON.pretty_generate(audit.audited_changes) rescue audit.audited_changes.inspect %></pre>
+                </details>
+              </td>
+            </tr>
+          <% end %>
+        <% end %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if @audits.respond_to?(:total_pages) && @audits.total_pages > 1 %>
+    <div class="mt-4 flex justify-between items-center text-xs text-slate-500">
+      <div>???????????????? <%= @audits.current_page %> ???? <%= @audits.total_pages %></div>
+      <%= paginate @audits %>
+    </div>
+  <% end %>
+</section>

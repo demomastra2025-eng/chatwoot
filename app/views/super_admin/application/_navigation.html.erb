@@ -1,10 +1,6 @@
 <%#
 # Navigation
-
 This partial is used to display the navigation in Administrate.
-By default, the navigation contains navigation links
-for all resources in the admin dashboard,
-as defined by the routes in the `admin/` namespace
 %>
 
 <%= vite_client_tag %>
@@ -20,7 +16,7 @@ as defined by the routes in the `admin/` namespace
   }
 %>
 
-<div class="border-slate-100 border-r w-56 flex-shrink-0 justify-between h-full flex flex-col" role="navigation">
+<div class="border-slate-200 border-r w-60 flex-shrink-0 justify-between h-full flex flex-col bg-slate-50" role="navigation">
   <%
     hidden_primary_nav_resources = %w[
       account_users
@@ -32,6 +28,7 @@ as defined by the routes in the `admin/` namespace
       instance_statuses
       monitorings
       settings
+      audits
     ]
 
     primary_nav_items = Administrate::Namespace.new(namespace).resources.filter_map do |resource|
@@ -49,37 +46,58 @@ as defined by the routes in the `admin/` namespace
     end
   %>
   <div>
-    <div class="flex mx-4 mb-4 border-slate-100 border-b py-6">
-      <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'Onelink Admin Dashboard', class: 'h-10'), super_admin_root_url %>
-      <div class="flex flex-col ml-3">
-        <div class="text-sm">Onelink <%= Chatwoot.config[:version] %></div>
-        <div class="text-xs text-slate-700 mt-0.5">Super Admin Console</div>
+    <!-- Logo & Brand Header with Environment Badge -->
+    <div class="flex flex-col mx-4 mb-3 border-slate-200 border-b py-4">
+      <div class="flex items-center">
+        <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'Onelink Admin Dashboard', class: 'h-8'), super_admin_root_url %>
+        <div class="flex flex-col ml-2.5">
+          <div class="text-sm font-bold text-slate-900 leading-tight">OneLink Admin</div>
+          <div class="text-[11px] text-slate-500">Super Admin Console</div>
+        </div>
+      </div>
+      
+      <!-- Release Info Bar -->
+      <div class="mt-3 flex items-center justify-between bg-white px-2.5 py-1.5 rounded border border-slate-200 text-[11px]">
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="font-semibold text-emerald-800">DEV</span>
+        </div>
+        <span class="font-mono text-slate-500" title="Active Git SHA">
+          <%= (defined?(GIT_HASH) && GIT_HASH.present?) ? GIT_HASH[0..7] : '93611c27' %>
+        </span>
       </div>
     </div>
 
-    <ul class="my-4">
-      <%= render partial: "nav_item", locals: { icon: 'icon-grid-line', url: super_admin_root_url, label: 'Dashboard' } %>
+    <!-- Navigation List -->
+    <ul class="my-2">
+      <%= render partial: "nav_item", locals: { icon: 'icon-grid-line', url: super_admin_root_url, label: '???????????? ????????????????' } %>
+      
       <% primary_nav_items.each do |item| %>
         <%= render partial: "nav_item", locals: {
-            icon: sidebar_icons[item[:resource].resource.to_sym],
+            icon: sidebar_icons[item[:resource].resource.to_sym] || 'icon-apps-2-line',
             url: item[:url],
             label: super_admin_resource_label(item[:resource]),
           }
         %>
-
       <% end %>
+
+      <!-- Custom Audits Log link -->
+      <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_audits_path, label: '???????????? ????????????' } %>
+
       <%= render 'settings_menu', open: settings_open? %>
     </ul>
   </div>
-  <div>
-    <ul class="my-4">
-      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring' } %>
+
+  <!-- Bottom Navigation -->
+  <div class="border-t border-slate-200 pt-2 bg-slate-50/50">
+    <ul class="my-2">
+      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring (Grafana)' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Push Diagnostics' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI Fleet' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI Observability' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Logs' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq Dashboard' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Instance Health' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: app_path, label: 'Agent Dashboard' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Instance Status' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: app_path, label: 'Agent App' } %>
       <%= render partial: "nav_item", locals: { icon: 'icon-logout-circle-r-line', url: super_admin_logout_url, label: 'Logout' } %>
     </ul>
   </div>

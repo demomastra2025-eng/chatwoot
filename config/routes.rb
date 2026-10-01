@@ -963,6 +963,7 @@ Rails.application.routes.draw do
   devise_scope :super_admin do
     get 'super_admin/logout', to: 'super_admin/devise/sessions#destroy'
     namespace :super_admin do
+      resources :audits, only: [:index, :show]
       root to: 'dashboard#index'
 
       resource :app_config, only: [:show, :create] do

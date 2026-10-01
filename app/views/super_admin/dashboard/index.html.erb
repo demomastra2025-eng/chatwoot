@@ -1,5 +1,5 @@
 <% content_for(:title) do %>
-  Admin Dashboard
+  ?????????? ???????????????? ????????????
 <% end %>
 
 <%= render_vue_component('DashboardIndex', {
@@ -7,5 +7,7 @@
   usersCount: @users_count,
   inboxesCount: @inboxes_count,
   conversationsCount: @conversations_count,
-  chartData: @data
+  chartData: @data,
+  healthAccounts: @health_accounts,
+  healthSummary: @health_summary
 }) %>
