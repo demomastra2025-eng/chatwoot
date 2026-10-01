@@ -19,7 +19,6 @@ on:
       - 'app/javascript/dashboard/api/captain/observability.js'
       - 'app/javascript/dashboard/components-next/sidebar/Sidebar.vue'
       - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js'
-      - 'app/javascript/dashboard/components/copilot/CopilotContainer.vue'
       - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
       - 'app/javascript/dashboard/i18n/locale/kk/integrations.json'
       - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
@@ -53,7 +52,6 @@ on:
       - 'app/javascript/dashboard/api/captain/observability.js'
       - 'app/javascript/dashboard/components-next/sidebar/Sidebar.vue'
       - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js'
-      - 'app/javascript/dashboard/components/copilot/CopilotContainer.vue'
       - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
       - 'app/javascript/dashboard/i18n/locale/kk/integrations.json'
       - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
@@ -104,7 +102,6 @@ jobs:
             'app/javascript/dashboard/routes/dashboard/captain/observability/**/*.{js,vue}' \
             app/javascript/dashboard/api/captain/observability.js \
             app/javascript/shared/components/charts/LineChart.vue \
-            app/javascript/dashboard/components/copilot/CopilotContainer.vue \
             app/javascript/dashboard/routes/dashboard/captain/captain.routes.js \
             app/javascript/dashboard/components-next/sidebar/Sidebar.vue \
             app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js

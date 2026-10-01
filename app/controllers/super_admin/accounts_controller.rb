@@ -192,9 +192,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     options[:notice] = notice if notice.present?
     options[:alert] = alert if alert.present?
 
-    # rubocop:disable Rails/I18nLocaleTexts
     redirect_back(**options)
-    # rubocop:enable Rails/I18nLocaleTexts
   end
 end
 
