@@ -17,7 +17,7 @@
 #  index_channel_whatsapp_on_phone_number  (phone_number) UNIQUE
 #
 
-class Channel::Whatsapp < ApplicationRecord
+class Channel::Whatsapp < ApplicationRecord # rubocop:disable Metrics/ClassLength -- keep recovery metadata mutations beside provider config lifecycle
   include Channelable
   include Reauthorizable
   include Whatsapp::DurableReauthorization
@@ -32,6 +32,8 @@ class Channel::Whatsapp < ApplicationRecord
   # default at the moment is 360dialog lets change later.
   PROVIDERS = %w[default whatsapp_cloud].freeze
   PROVIDER_LIFECYCLE_CONFIG_KEY = 'provider_lifecycle'.freeze
+  INBOX_DELETION_RECOVERY_CONFIG_KEY = 'inbox_deletion_recovery'.freeze
+  INBOX_DELETION_FAILURE_CODE = 'remote_teardown_failed'.freeze
   AUTHORIZATION_ERROR_CODE = 190
 
   before_validation :ensure_webhook_verify_token
@@ -229,6 +231,95 @@ class Channel::Whatsapp < ApplicationRecord
   def teardown_webhooks
     Whatsapp::WebhookTeardownService.new(self).perform
   end
+
+  public
+
+  def inbox_deletion_recovery
+    provider_config.to_h[INBOX_DELETION_RECOVERY_CONFIG_KEY].to_h.deep_stringify_keys
+  end
+
+  def inbox_deletion_attempt_id
+    inbox_deletion_recovery['attempt_id']
+  end
+
+  def inbox_deletion_attempt_pending?(attempt_id)
+    recovery = inbox_deletion_recovery
+    recovery['status'] == 'pending' && recovery['attempt_id'] == attempt_id
+  end
+
+  def inbox_deletion_failed?
+    inbox_deletion_recovery['status'] == 'failed'
+  end
+
+  def resolve_inbox_deletion_recovery!
+    resolved = false
+    mutate_provider_config! do |config|
+      recovery = config[INBOX_DELETION_RECOVERY_CONFIG_KEY].to_h.deep_stringify_keys
+      next config unless recovery['status'] == 'failed'
+
+      last_failure = recovery.slice('attempt_id', 'error_code', 'remote_outcome', 'failed_at')
+      resolved = true
+      config.merge(
+        INBOX_DELETION_RECOVERY_CONFIG_KEY => {
+          'status' => 'resolved',
+          'attempt_id' => recovery['attempt_id'],
+          'remote_outcome' => 'subscription_restored',
+          'resolved_at' => Time.current.iso8601,
+          'last_failure' => last_failure
+        }.compact
+      )
+    end
+    resolved
+  end
+
+  def inbox_deletion_recovery_payload
+    recovery = inbox_deletion_recovery
+    return unless recovery['status'] == 'failed'
+
+    {
+      status: 'failed',
+      remote_outcome: 'unknown',
+      error_code: INBOX_DELETION_FAILURE_CODE,
+      failed_at: recovery['failed_at']
+    }.compact
+  end
+
+  def mark_inbox_deletion_pending!(attempt_id:, requested_at:)
+    mutate_provider_config! do |config|
+      previous = config[INBOX_DELETION_RECOVERY_CONFIG_KEY].to_h.deep_stringify_keys
+      next config if previous['attempt_id'] == attempt_id && previous['status'] == 'pending'
+
+      last_failure = if previous['status'] == 'failed'
+                       previous.slice('attempt_id', 'error_code', 'remote_outcome', 'failed_at')
+                     else
+                       previous['last_failure']
+                     end
+      recovery = { 'attempt_id' => attempt_id, 'status' => 'pending', 'requested_at' => requested_at.iso8601 }
+      recovery['last_failure'] = last_failure if last_failure.present?
+      config.merge(INBOX_DELETION_RECOVERY_CONFIG_KEY => recovery)
+    end
+  end
+
+  def mark_inbox_deletion_failed!(attempt_id:, failed_at:)
+    updated = false
+    mutate_provider_config! do |config|
+      recovery = config[INBOX_DELETION_RECOVERY_CONFIG_KEY].to_h.deep_stringify_keys
+      next config unless recovery['attempt_id'] == attempt_id && recovery['status'] == 'pending'
+
+      updated = true
+      config.merge(
+        INBOX_DELETION_RECOVERY_CONFIG_KEY => recovery.merge(
+          'status' => 'failed',
+          'remote_outcome' => 'unknown',
+          'error_code' => INBOX_DELETION_FAILURE_CODE,
+          'failed_at' => failed_at.iso8601
+        )
+      )
+    end
+    updated
+  end
+
+  private
 
   def should_auto_setup_webhooks?
     # Only auto-setup webhooks for whatsapp_cloud provider with manual setup

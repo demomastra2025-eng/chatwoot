@@ -130,6 +130,9 @@ const description = computed(() => {
   if (props.whatsappRegistrationIncomplete) {
     return t('INBOX_MGMT.WHATSAPP_REGISTRATION_INCOMPLETE');
   }
+  if (props.inbox.deletion_recovery?.status === 'failed') {
+    return t('INBOX.REAUTHORIZE.DELETION_RECOVERY_DESCRIPTION');
+  }
   if (tokenExpiresSoon.value) {
     return t('INBOX.REAUTHORIZE.EXPIRING_DESCRIPTION');
   }

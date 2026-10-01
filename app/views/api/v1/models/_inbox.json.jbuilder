@@ -23,6 +23,7 @@ json.sender_name_type resource.sender_name_type
 json.business_name resource.business_name
 json.deleting resource.deleting?
 json.deleting_at resource.deleting_at&.iso8601
+json.deletion_recovery resource.deletion_recovery_payload if Current.account_user&.administrator?
 channel_missing = resource.channel_missing?
 json.channel_missing channel_missing
 

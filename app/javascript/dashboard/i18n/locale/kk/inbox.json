@@ -96,6 +96,7 @@
       "STANDARD_FLOW_BUTTON": "Тек Cloud API",
       "COEXISTENCE_FLOW_BUTTON": "WhatsApp Business + Cloud API",
       "EXPIRING_DESCRIPTION": "WhatsApp авторизациясының мерзімі жақында аяқталады. Сол нөмірді Meta арқылы қазір қайта қосыңыз — кіріс жәшігі, диалогтар, хабарламалар және баптаулар сақталады.",
+      "DELETION_RECOVERY_DESCRIPTION": "WhatsApp ажыратылғаны расталмады. Арна мен диалогтар тарихы сақталған. Жұмысты жалғастыру үшін осы бар арнаны Meta арқылы қайта қосыңыз.",
       "LOADING_FACEBOOK": "Loading Facebook SDK...",
       "SUCCESS": "WhatsApp reconnected successfully",
       "ERROR": "Failed to reconnect WhatsApp. Please try again.",

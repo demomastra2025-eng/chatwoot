@@ -823,16 +823,46 @@ export const actions = {
       throwErrorMessage(error);
     }
   },
-  delete: async ({ commit }, inboxId) => {
+  delete: async ({ commit, getters: inboxGetters }, inboxId) => {
+    const accountId = currentRouteAccountId();
     commit(types.default.SET_INBOXES_UI_FLAG, { isDeleting: true });
     try {
       clearTelegramPersonalDiagnosticsCache(inboxId);
-      await InboxesAPI.delete(inboxId);
-      removeInboxFromClientState(commit, inboxId);
+      const response = await InboxesAPI.delete(inboxId);
+      const isCurrentAccount = isCurrentRouteAccountId(accountId);
+      const currentInbox = inboxGetters?.getInbox?.(inboxId);
+      const recoveredBeforeResponse =
+        currentInbox?.deletion_recovery?.status === 'failed' &&
+        !isInboxPendingDeletion(currentInbox);
+      if (isCurrentAccount && !recoveredBeforeResponse) {
+        removeInboxFromClientState(commit, inboxId);
+      }
+
+      if (
+        isCurrentAccount &&
+        accountId &&
+        (response.status === 202 || response.data?.deleting === true)
+      ) {
+        try {
+          // A fast worker may restore the inbox before this accepted response
+          // reaches the browser. Reconcile the list after optimistic removal.
+          const refreshed = await InboxesAPI.refetchAndCommit(null, accountId);
+          if (isCurrentRouteAccountId(accountId)) {
+            commit(
+              types.default.SET_INBOXES,
+              withCurrentRouteAccountIdList(refreshed.data.payload, accountId)
+            );
+          }
+        } catch {
+          // The deletion was accepted; a later cache invalidation will retry.
+        }
+      }
       return null;
     } catch (error) {
       if ([404, 410].includes(error?.response?.status)) {
-        removeInboxFromClientState(commit, inboxId);
+        if (isCurrentRouteAccountId(accountId)) {
+          removeInboxFromClientState(commit, inboxId);
+        }
         return null;
       }
 

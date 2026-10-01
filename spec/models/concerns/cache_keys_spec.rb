@@ -32,7 +32,18 @@ RSpec.describe CacheKeys do
     it 'updates the cache key' do
       allow(Time).to receive(:now).and_return(Time.parse('2023-05-29 00:00:00 UTC'))
       test_model.update_cache_key('label')
-      expect(Redis::Alfred).to have_received(:setex).with('idb-cache-key-account-1-label', kind_of(Integer), CacheKeys::CACHE_KEYS_EXPIRY)
+      expect(Redis::Alfred).to have_received(:setex).with('idb-cache-key-account-1-label', kind_of(String), CacheKeys::CACHE_KEYS_EXPIRY)
+    end
+
+    it 'creates a distinct cache version when updates happen within the same second' do
+      versions = []
+      allow(Time).to receive(:now).and_return(Time.parse('2023-05-29 00:00:00 UTC'))
+      allow(Redis::Alfred).to receive(:setex) { |_key, version, _expiry| versions << version }
+
+      test_model.update_cache_key('inbox')
+      test_model.update_cache_key('inbox')
+
+      expect(versions.uniq.size).to eq(2)
     end
 
     it 'dispatches a cache update event' do
@@ -50,7 +61,7 @@ RSpec.describe CacheKeys do
     it 'invalidates all cache keys for cacheable models' do
       test_model.reset_cache_keys
       test_model.class.cacheable_models.each do |model|
-        expect(Redis::Alfred).to have_received(:setex).with("idb-cache-key-account-1-#{model.name.underscore}", kind_of(Integer),
+        expect(Redis::Alfred).to have_received(:setex).with("idb-cache-key-account-1-#{model.name.underscore}", kind_of(String),
                                                             CacheKeys::CACHE_KEYS_EXPIRY)
       end
     end

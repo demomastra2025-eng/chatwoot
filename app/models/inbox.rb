@@ -233,25 +233,92 @@ class Inbox < ApplicationRecord
     deleting_at.present?
   end
 
-  def mark_pending_deletion!(timestamp: Time.current)
-    return self if deleting?
+  def whatsapp_cloud_channel?
+    channel.is_a?(Channel::Whatsapp) && channel.provider == 'whatsapp_cloud'
+  end
+
+  def pending_deletion_attempt?(attempt_id)
+    deletion_intent_active?(attempt_id) &&
+      (!whatsapp_cloud_channel? || channel.inbox_deletion_attempt_pending?(attempt_id))
+  end
+
+  def deletion_intent_active?(attempt_id)
+    deleting? && attempt_id.present? && self[:deletion_attempt_id] == attempt_id
+  end
+
+  def deletion_recovery_payload
+    channel.inbox_deletion_recovery_payload if whatsapp_cloud_channel?
+  end
+
+  def deletion_recovery_failed?
+    !deleting? && self[:deletion_attempt_id].blank? && !account_deletion_requested? &&
+      whatsapp_cloud_channel? && channel.inbox_deletion_failed?
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity -- keep generation and legacy deletion transitions atomic.
+  def mark_pending_deletion!(timestamp: Time.current, attempt_id: nil)
+    if deleting?
+      if attempt_id.present?
+        return self if self[:deletion_attempt_id].present? && self[:deletion_attempt_id] != attempt_id
+
+        update!(deletion_attempt_id: attempt_id) if self[:deletion_attempt_id].blank?
+        if whatsapp_cloud_channel? && channel.inbox_deletion_attempt_id.blank?
+          channel.mark_inbox_deletion_pending!(attempt_id: attempt_id, requested_at: timestamp)
+        end
+      end
+      return self
+    end
 
     transaction do
       if channel_missing?
         # The required channel association cannot validate once its row is gone;
         # deleting such an inbox must still be possible.
-        self.deleting_at = timestamp
+        assign_attributes(deleting_at: timestamp, deletion_attempt_id: attempt_id)
         save!(validate: false)
         next
       end
 
-      update!(deleting_at: timestamp)
+      attempt_id ||= SecureRandom.uuid if whatsapp_cloud_channel?
+      update!(deleting_at: timestamp, deletion_attempt_id: attempt_id)
+
+      channel.mark_inbox_deletion_pending!(attempt_id: attempt_id, requested_at: timestamp) if whatsapp_cloud_channel?
       if (whatsapp_web? || telegram_personal? || weixin?) && channel.respond_to?(:mark_pending_deletion!)
         channel.mark_pending_deletion!(timestamp: timestamp)
       end
     end
 
     self
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  def restore_after_whatsapp_deletion_failure!(attempt_id:)
+    restored = false
+    with_lock do
+      reload
+      next unless deletion_intent_active?(attempt_id) && whatsapp_cloud_channel? && channel.inbox_deletion_attempt_pending?(attempt_id)
+      next if account_deletion_requested?
+      next unless channel.mark_inbox_deletion_failed!(attempt_id: attempt_id, failed_at: Time.current)
+
+      update!(deleting_at: nil, deletion_attempt_id: nil)
+      restored = true
+    end
+
+    return false unless restored
+
+    account.update_cache_key(self.class.name.underscore)
+    true
+  end
+
+  def resolve_failed_whatsapp_deletion_recovery!
+    resolved = false
+    with_lock do
+      reload
+      next if deleting? || self[:deletion_attempt_id].present? || account_deletion_requested?
+      next unless whatsapp_cloud_channel? && channel.inbox_deletion_failed?
+
+      resolved = channel.resolve_inbox_deletion_recovery!
+    end
+    resolved
   end
 
   def inbox_type
@@ -262,6 +329,10 @@ class Inbox < ApplicationRecord
     return 'Channel::WhatsappWeb' if whatsapp_web?
 
     channel_type
+  end
+
+  def account_deletion_requested?
+    account.reload.custom_attributes.to_h['marked_for_deletion_at'].present?
   end
 
   def webhook_data

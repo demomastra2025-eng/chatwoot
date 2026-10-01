@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
+ActiveRecord::Schema[7.1].define(version: 2026_10_01_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1698,6 +1698,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
     t.datetime "deleting_at"
+    t.string "deletion_attempt_id"
     t.index ["account_id", "deleting_at"], name: "index_inboxes_on_account_id_and_deleting_at"
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
