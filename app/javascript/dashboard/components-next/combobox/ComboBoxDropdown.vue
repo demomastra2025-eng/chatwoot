@@ -77,7 +77,13 @@ defineExpose({
       v-show="open"
       data-modal-safe-interaction
       class="dashboard-combobox-dropdown fixed z-[170] flex flex-col overflow-hidden rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
-      :style="props.dropdownStyle"
+      :style="[
+        props.dropdownStyle,
+        {
+          '--combobox-dropdown-max-height':
+            props.dropdownStyle.maxHeight || '320px',
+        },
+      ]"
       @mousedown.stop
       @mouseup.stop
       @click.stop
@@ -85,7 +91,7 @@ defineExpose({
       <div
         v-if="selectedLabelPreview"
         tabindex="0"
-        class="combobox-selected-label-preview mb-2 shrink-0 overflow-y-auto overscroll-contain break-words rounded-md bg-n-alpha-black2 px-3 text-sm leading-5 text-n-slate-12"
+        class="combobox-selected-label-preview mb-2 shrink-0 overflow-y-auto overscroll-contain break-words whitespace-pre-line rounded-md bg-n-alpha-black2 px-3 text-sm leading-5 text-n-slate-12"
         :title="selectedLabelPreview"
       >
         {{ selectedLabelPreview }}

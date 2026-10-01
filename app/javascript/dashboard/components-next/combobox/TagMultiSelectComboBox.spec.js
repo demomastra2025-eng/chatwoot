@@ -90,4 +90,40 @@ describe('TagMultiSelectComboBox', () => {
       'Полное наименование медицинской услуги'
     );
   });
+
+  it('previews the full selected label on open without changing selection', async () => {
+    const label =
+      'Магниторезонансная томография головного мозга с оценкой перфузии, МРТ-трактографией (C03.015.007)';
+    const secondLabel =
+      'Контрастное усиление для магнитно-резонансной томографии';
+    const wrapper = mount(TagMultiSelectComboBox, {
+      attachTo: document.body,
+      props: {
+        modelValue: [1, 2],
+        options: [
+          { label, value: 1 },
+          { label: secondLabel, value: 2 },
+        ],
+        wrapLabels: true,
+        clampSelectedLabels: true,
+        showSelectedLabelPreview: true,
+      },
+      global: {
+        stubs: {
+          OnClickOutside: {
+            template: '<div><slot /></div>',
+          },
+        },
+      },
+    });
+
+    await wrapper.get('button').trigger('click');
+
+    expect(
+      document.querySelector('.combobox-selected-label-preview').textContent
+    ).toBe([label, secondLabel].join('\n'));
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined();
+
+    wrapper.unmount();
+  });
 });
