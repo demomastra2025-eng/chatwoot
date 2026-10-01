@@ -25,6 +25,17 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'GET /super_admin/accounts/new' do
+    it 'renders the new workspace form for a super admin' do
+      sign_in(super_admin, scope: :super_admin)
+
+      get '/super_admin/accounts/new'
+
+      expect(response).to have_http_status(:success)
+      expect(response.body).to include('Outbound emails today')
+    end
+  end
+
   describe 'POST /super_admin/accounts/{account_id}/reset_cache' do
     before do
       create(:label, account: account)
