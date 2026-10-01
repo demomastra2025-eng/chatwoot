@@ -3,6 +3,14 @@ require 'rails_helper'
 RSpec.describe AccountEmailRateLimitable do
   let(:account) { create(:account) }
 
+  describe '#emails_sent_today' do
+    it 'returns zero without reading Redis for an unsaved account' do
+      expect(Redis::Alfred).not_to receive(:get)
+
+      expect(Account.new.emails_sent_today).to eq(0)
+    end
+  end
+
   describe '#email_rate_limit' do
     it 'returns account-level override when set' do
       account.update!(limits: { 'emails' => 50 })

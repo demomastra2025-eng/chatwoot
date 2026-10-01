@@ -9,6 +9,8 @@ module AccountEmailRateLimitable
   end
 
   def emails_sent_today
+    return 0 unless persisted?
+
     Redis::Alfred.get(email_count_cache_key).to_i
   end
 
