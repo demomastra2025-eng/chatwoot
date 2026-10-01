@@ -62,7 +62,8 @@ class Integrations::Medelement::AppointmentPatientIdentityDecision
   def provider_linked?
     appointment.external_ref.to_s.start_with?('medelement:reception:') ||
       appointment.custom_attributes.to_h['medelement_reception_code'].present? ||
-      appointment.custom_attributes.to_h['medelement_patient_code'].present?
+      appointment.custom_attributes.to_h['medelement_patient_code'].present? ||
+      appointment.patient_contact&.custom_attributes.to_h['medelement_patient_code'].present?
   end
 
   def ensure_linked_identity_unchanged!

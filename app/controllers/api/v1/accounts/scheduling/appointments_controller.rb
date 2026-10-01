@@ -159,6 +159,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
       :payments,
       :expense,
       :contact,
+      :patient_contact,
       :resource,
       conversation: [:communication_thread, :inbox]
     )

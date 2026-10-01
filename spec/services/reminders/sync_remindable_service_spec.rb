@@ -164,6 +164,122 @@ RSpec.describe Reminders::SyncRemindableService do
       )
     end
 
+    it 'moves an open separate-patient touch to the patient own primary number and back to the shared route' do
+      account = create(:account, limits: { non_web_inboxes: 10 })
+      inbox = create(:channel_whatsapp_web, account: account).inbox
+      owner = create(:contact, account: account, phone_number: '+77000000001')
+      owner_contact_inbox = create(:contact_inbox, contact: owner, inbox: inbox, source_id: '77000000001')
+      conversation = create(:conversation, account: account, inbox: inbox, contact: owner, contact_inbox: owner_contact_inbox)
+      patient = create(:contact, account: account, name: 'Relative', phone_number: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: owner, patient_contact: patient, conversation: conversation)
+      touch = create(:reminder, account: account, remindable: appointment, conversation: conversation, status: :pending)
+      expect(touch).to have_attributes(target_contact_id: owner.id, target_contact_inbox_id: owner_contact_inbox.id)
+
+      patient.update!(phone_number: '+77000000002')
+      described_class.new(remindable: appointment.reload).perform
+
+      own_contact_inbox = patient.contact_inboxes.find_by!(inbox: inbox, source_id: '77000000002')
+      expect(touch.reload).to be_pending
+      expect(touch).to have_attributes(target_contact_id: patient.id, target_inbox_id: inbox.id, target_contact_inbox_id: own_contact_inbox.id,
+                                       target_conversation_id: nil, conversation_id: nil)
+      expect(ContactInbox.where(contact: patient, source_id: owner_contact_inbox.source_id)).to be_empty
+
+      patient.update!(phone_number: nil)
+      described_class.new(remindable: appointment.reload).perform
+
+      expect(touch.reload).to have_attributes(target_contact_id: owner.id, target_contact_inbox_id: owner_contact_inbox.id,
+                                              target_conversation_id: conversation.id, conversation_id: conversation.id)
+      expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id)
+    end
+
+    context 'when the separate patient number is already a chat identity in the inbox' do
+      let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
+      let(:inbox) { create(:channel_whatsapp_web, account: account).inbox }
+      let(:owner) { create(:contact, account: account, phone_number: '+77000000001') }
+      let(:owner_contact_inbox) { create(:contact_inbox, contact: owner, inbox: inbox, source_id: '77000000001') }
+      let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: owner, contact_inbox: owner_contact_inbox) }
+      let(:patient) { create(:contact, account: account, name: 'Relative', phone_number: nil) }
+      let(:appointment) { create(:scheduling_appointment, account: account, contact: owner, patient_contact: patient, conversation: conversation) }
+      let!(:open_touch) { create(:reminder, account: account, remindable: appointment, conversation: conversation, status: :pending) }
+
+      it 'keeps the shared route when the owner already chats from that number' do
+        cloud_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
+                                                validate_provider_config: false).inbox
+        family_contact_inbox = create(:contact_inbox, contact: owner, inbox: cloud_inbox, source_id: '77000000009')
+        patient.update!(phone_number: '+77000000009')
+
+        described_class.new(remindable: appointment.reload).perform_for(open_touch, raise_errors: true)
+
+        expect(open_touch.reload).to have_attributes(status: 'pending', target_contact_id: owner.id, target_contact_inbox_id: owner_contact_inbox.id)
+        expect(family_contact_inbox.reload).to have_attributes(contact_id: owner.id, source_id: '77000000009')
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'asks for reassignment instead of taking over the chat of another contact' do
+        stranger = create(:contact, account: account, name: 'Stranger', phone_number: nil)
+        stranger_contact_inbox = create(:contact_inbox, contact: stranger, inbox: inbox, source_id: '77000000009')
+        patient.update!(phone_number: '+77000000009')
+
+        described_class.new(remindable: appointment.reload).perform_for(open_touch, raise_errors: true)
+
+        expect(open_touch.reload).to have_attributes(status: 'draft', target_contact_id: patient.id, target_contact_inbox_id: nil)
+        expect(open_touch).to be_route_reassignment_required
+        expect(stranger_contact_inbox.reload).to have_attributes(contact_id: stranger.id, source_id: '77000000009')
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'keeps the appointment edit working when the patient number is another contact chat' do
+        stranger = create(:contact, account: account, name: 'Stranger', phone_number: nil)
+        stranger_contact_inbox = create(:contact_inbox, contact: stranger, inbox: inbox, source_id: '77000000009')
+        patient.update!(phone_number: '+77000000009')
+        allow_any_instance_of(Scheduling::Appointments::UpsertService).to receive(:validate_availability!) # rubocop:disable RSpec/AnyInstance
+
+        expect do
+          Scheduling::Appointments::UpsertService.new(account: account, appointment: appointment.reload,
+                                                      params: { client_comment: 'Edited visit' }).perform
+        end.not_to raise_error
+
+        expect(appointment.reload.client_comment).to eq('Edited visit')
+        expect(open_touch.reload).to have_attributes(status: 'draft', target_contact_id: patient.id, target_contact_inbox_id: nil)
+        expect(open_touch).to be_route_reassignment_required
+        expect(stranger_contact_inbox.reload).to have_attributes(contact_id: stranger.id, source_id: '77000000009')
+      end
+
+      it 'rolls back only the touch savepoint when the patient contact inbox insert loses a race' do
+        stranger = create(:contact, account: account, name: 'Stranger', phone_number: nil)
+        stranger_contact_inbox = create(:contact_inbox, contact: stranger, inbox: inbox, source_id: '77000000009')
+        patient.update!(phone_number: '+77000000009')
+        # The holder check misses the concurrently created chat, so the insert itself collides inside the outer transaction.
+        allow(Reminders::PatientSubjectGuard).to receive(:foreign_chat_identity?).and_return(false)
+
+        ActiveRecord::Base.transaction do
+          described_class.new(remindable: appointment.reload).perform
+          appointment.update!(client_comment: 'Edited in the same transaction')
+        end
+
+        expect(appointment.reload.client_comment).to eq('Edited in the same transaction')
+        expect(open_touch.reload).to have_attributes(status: 'draft', target_contact_id: patient.id, target_contact_inbox_id: nil)
+        expect(open_touch).to be_route_reassignment_required
+        expect(stranger_contact_inbox.reload).to have_attributes(contact_id: stranger.id, source_id: '77000000009')
+      end
+
+      it 'isolates a database error of one touch sync from the surrounding transaction' do
+        allow(Reminders::TargetRouteResolver).to receive(:new).and_wrap_original do |original, **kwargs|
+          ActiveRecord::Base.connection.execute('SELECT 1 / 0')
+        rescue ActiveRecord::StatementInvalid
+          original.call(**kwargs)
+        end
+
+        ActiveRecord::Base.transaction do
+          described_class.new(remindable: appointment.reload).perform
+          appointment.update!(client_comment: 'Edited after a failed touch sync')
+        end
+
+        expect(appointment.reload.client_comment).to eq('Edited after a failed touch sync')
+        expect(open_touch.reload).to have_attributes(status: 'pending', target_contact_id: owner.id)
+      end
+    end
+
     it 'routes deal touches to the explicit primary contact instead of association order' do
       account = create(:account)
       inbox = create(:inbox, account: account)

@@ -2,6 +2,323 @@ require 'rails_helper'
 
 RSpec.describe Reminders::ExecuteService do
   describe '#perform' do
+    context 'when a separate patient card shares the communication owner number' do
+      let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
+      let(:inbox) { create(:channel_whatsapp_web, account: account).inbox }
+      let(:owner) { create(:contact, account: account, name: 'Owner', phone_number: '+77000000001') }
+      let(:owner_contact_inbox) { create(:contact_inbox, contact: owner, inbox: inbox, source_id: '77000000001') }
+      let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: owner, contact_inbox: owner_contact_inbox) }
+      let(:patient) { create(:contact, account: account, name: 'Relative', phone_number: nil) }
+      let(:appointment) do
+        create(:scheduling_appointment, account: account, contact: owner, patient_contact: patient, conversation: conversation,
+                                        client_name: 'Relative Patient', starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+      end
+
+      before { account.enable_features!('scheduling') }
+
+      def scheduled_touch(body = '[Пациент](field://appointment.client_name) [Время](field://appointment.start_time)')
+        create(:reminder, account: account, touch_conversation: conversation, conversation: conversation,
+                          remindable: appointment, status: :processing, body: body)
+      end
+
+      def visit_time
+        appointment.reload.starts_at.in_time_zone(appointment.resource.timezone).strftime('%H:%M')
+      end
+
+      def touch_messages(touch)
+        Message.outgoing.where(account_id: account.id).where("additional_attributes ->> 'touch_id' = ?", touch.id.to_s)
+      end
+
+      it 'uses the shared owner route with the relative name and visit time while the card has no own primary' do
+        touch = scheduled_touch
+
+        described_class.new(reminder: touch).perform
+
+        message = touch_messages(touch).sole
+        expect(touch.reload).to be_completed
+        expect(touch).to have_attributes(target_contact_id: owner.id, target_conversation_id: conversation.id)
+        expect(message.conversation_id).to eq(conversation.id)
+        expect(message.content).to include('Relative Patient', visit_time)
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'sends an already scheduled touch to the patient own primary number once the card gets one' do
+        touch = scheduled_touch
+        expect(touch.target_contact_id).to eq(owner.id)
+        patient.update!(phone_number: '+77000000002')
+        appointment.update!(starts_at: appointment.starts_at + 1.hour, ends_at: appointment.ends_at + 1.hour)
+
+        expect { described_class.new(reminder: touch).perform }.not_to(change { conversation.messages.outgoing.count })
+
+        own_contact_inbox = patient.contact_inboxes.find_by!(inbox: inbox, source_id: '77000000002')
+        message = touch_messages(touch).sole
+        expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: patient.id, target_inbox_id: inbox.id,
+                                                target_contact_inbox_id: own_contact_inbox.id, target_conversation_id: message.conversation_id)
+        expect(message.conversation).to have_attributes(contact_id: patient.id, inbox_id: inbox.id, contact_inbox_id: own_contact_inbox.id)
+        expect(message.content).to include('Relative Patient', visit_time)
+        expect(ContactInbox.where(inbox: inbox, contact: patient, source_id: owner_contact_inbox.source_id)).to be_empty
+        expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: patient.id)
+      end
+
+      it 'moves back to the shared owner route only after the own primary number is removed' do
+        patient.update!(phone_number: '+77000000002')
+        first = scheduled_touch('First visit reminder')
+        second = scheduled_touch('Second visit reminder')
+        expect(second.target_contact_id).to eq(patient.id)
+
+        described_class.new(reminder: first).perform
+        expect(touch_messages(first).sole.conversation.contact_id).to eq(patient.id)
+
+        patient.update!(phone_number: nil)
+        described_class.new(reminder: second).perform
+
+        expect(second.reload).to have_attributes(target_contact_id: owner.id, target_conversation_id: conversation.id)
+        expect(touch_messages(second).sole.conversation_id).to eq(conversation.id)
+      end
+
+      it 're-queues instead of sending on a stale route when the own number disappears during resolution' do
+        touch = scheduled_touch
+        patient.update!(phone_number: '+77000000002')
+        allow(Reminders::ConversationResolver).to receive(:new).and_wrap_original do |original, **kwargs|
+          resolver = original.call(**kwargs)
+          allow(resolver).to(receive(:perform).and_wrap_original { |perform| perform.call.tap { patient.update!(phone_number: nil) } })
+          resolver
+        end
+
+        expect { described_class.new(reminder: touch).perform }.not_to(change { Message.outgoing.count })
+
+        expect(touch.reload).to be_pending
+        expect(touch).to have_attributes(target_contact_id: owner.id, target_conversation_id: conversation.id)
+      end
+
+      it 'routes deferred and materialized plan steps to the own primary number at send time' do
+        account.enable_features!('deferred_touch_materialization')
+        plan = create(:reminder_group, account: account, entity_kinds: ['appointment'], touches: [
+                        { entity_kind: 'appointment', body: 'Plan visit reminder', timing_mode: 'relative', target_inbox_id: inbox.id,
+                          relative_anchor: 'appointment.starts_at', relative_offset_seconds: -1.day.to_i, timezone: 'UTC' }
+                      ])
+        enrollment = Reminders::EnrollGroupService.new(account: account, reminder_group: plan, remindable: appointment, actor: nil).perform
+        due_at = enrollment.next_due_at
+        patient.update!(phone_number: '+77000000002')
+
+        travel_to(due_at + 1.minute) do
+          touch = Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment, now: Time.current).perform.reminder
+          expect(touch).to have_attributes(target_contact_id: patient.id, target_inbox_id: inbox.id, conversation_id: nil)
+          described_class.new(reminder: touch, processing_claim: touch.mark_processing!).perform
+          expect(conversation.messages.outgoing).to be_empty
+          # A plan step whose first conversation was just opened is re-queued once by the live plan refresh (as for any
+          # contact); the next scheduler claim delivers it, still on the patient's own number.
+          described_class.new(reminder: touch, processing_claim: touch.mark_processing!).perform if touch.reload.pending?
+
+          expect(touch.reload).to be_completed
+          expect(touch_messages(touch).sole.conversation).to have_attributes(contact_id: patient.id, inbox_id: inbox.id)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
+
+      it 'materializes a plan step for a card whose number is another contact chat as a draft that needs reassignment' do
+        account.enable_features!('deferred_touch_materialization')
+        plan = create(:reminder_group, account: account, entity_kinds: ['appointment'], touches: [
+                        { entity_kind: 'appointment', body: 'Plan visit reminder', timing_mode: 'relative', target_inbox_id: inbox.id,
+                          relative_anchor: 'appointment.starts_at', relative_offset_seconds: -1.day.to_i, timezone: 'UTC' }
+                      ])
+        enrollment = Reminders::EnrollGroupService.new(account: account, reminder_group: plan, remindable: appointment, actor: nil).perform
+        due_at = enrollment.next_due_at
+        stranger = create(:contact, account: account, name: 'Stranger', phone_number: nil)
+        stranger_contact_inbox = create(:contact_inbox, contact: stranger, inbox: inbox, source_id: '77000000009')
+        patient.update!(phone_number: '+77000000009')
+
+        travel_to(due_at + 1.minute) do
+          claim = nil
+          expect { claim = Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment, now: Time.current).perform }.not_to raise_error
+
+          expect(claim).to have_attributes(status: 'materialized')
+          expect(claim.reminder.reload).to have_attributes(status: 'draft', target_contact_id: patient.id, target_contact_inbox_id: nil)
+          expect(claim.reminder).to be_route_reassignment_required
+        end
+        expect(stranger_contact_inbox.reload).to have_attributes(contact_id: stranger.id, source_id: '77000000009')
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'fails visibly on the own number without re-sending over the shared route' do
+        cloud_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
+                                                validate_provider_config: false).inbox
+        cloud_owner_inbox = create(:contact_inbox, contact: owner, inbox: cloud_inbox, source_id: '77000000001')
+        cloud_conversation = create(:conversation, account: account, inbox: cloud_inbox, contact: owner, contact_inbox: cloud_owner_inbox)
+        create(:message, account: account, inbox: cloud_inbox, conversation: cloud_conversation, message_type: :incoming)
+        appointment.update!(conversation: cloud_conversation)
+        touch = create(:reminder, account: account, touch_conversation: cloud_conversation, conversation: cloud_conversation,
+                                  remindable: appointment, status: :processing, body: 'Free text visit reminder')
+        patient.update!(phone_number: '+77000000002')
+
+        expect { described_class.new(reminder: touch).perform }
+          .to raise_error(Reminders::UndeliverableTargetError, /approved channel_template/)
+        expect(touch.reload).to be_failed
+        expect(touch.last_error).to include(described_class::ROUTE_CHANGE_FAILED, "contact ##{patient.id}")
+        expect(touch.last_error).to match(/approved channel_template/)
+        expect { described_class.new(reminder: touch).perform }.not_to(change { touch_messages(touch).count })
+        expect(touch_messages(touch)).to be_empty
+        expect(cloud_conversation.messages.outgoing).to be_empty
+      end
+
+      context 'with a Captain wakeup touch on the appointment' do
+        let(:assistant) { create(:captain_assistant, account: account) }
+
+        before do
+          allow_any_instance_of(Reminders::CaptainGeneratedMessageService) # rubocop:disable RSpec/AnyInstance
+            .to receive(:perform).and_return(content: 'Captain wakeup message', assistant: assistant, captain_trace: {})
+        end
+
+        def wakeup_touch
+          create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: appointment,
+                            status: :processing, action_type: :ai_agent_wakeup, metadata: { 'captain_assistant_id' => assistant.id })
+        end
+
+        it 'wakes up in the patient own conversation when the card gets its own number after scheduling' do
+          touch = wakeup_touch
+          expect(touch.target_contact_id).to eq(owner.id)
+          patient.update!(phone_number: '+77000000002')
+
+          described_class.new(reminder: touch).perform
+
+          own_contact_inbox = patient.contact_inboxes.find_by!(inbox: inbox, source_id: '77000000002')
+          message = touch_messages(touch).sole
+          expect(message).to have_attributes(content: 'Captain wakeup message', sender: assistant)
+          expect(message.conversation).to have_attributes(contact_id: patient.id, inbox_id: inbox.id, contact_inbox_id: own_contact_inbox.id)
+          expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: patient.id, target_contact_inbox_id: own_contact_inbox.id,
+                                                  target_conversation_id: message.conversation_id)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+
+        it 'reuses the patient open own-number conversation for the wakeup' do
+          touch = wakeup_touch
+          patient.update!(phone_number: '+77000000002')
+          own_contact_inbox = create(:contact_inbox, contact: patient, inbox: inbox, source_id: '77000000002')
+          own_conversation = create(:conversation, account: account, inbox: inbox, contact: patient, contact_inbox: own_contact_inbox,
+                                                   status: :open)
+
+          described_class.new(reminder: touch).perform
+
+          expect(touch_messages(touch).sole.conversation_id).to eq(own_conversation.id)
+          expect(touch.reload).to have_attributes(status: 'completed', target_conversation_id: own_conversation.id,
+                                                  target_contact_inbox_id: own_contact_inbox.id)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+
+        it 'keeps waking up on the shared owner conversation while the card has no number' do
+          touch = wakeup_touch
+
+          described_class.new(reminder: touch).perform
+
+          expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: owner.id, target_conversation_id: conversation.id)
+          expect(touch_messages(touch).sole.conversation_id).to eq(conversation.id)
+          expect(patient.contact_inboxes).to be_empty
+        end
+      end
+
+      def delivered_route(touch)
+        touch.reload.slice(:status, :target_contact_id, :target_inbox_id, :target_contact_inbox_id, :target_conversation_id, :conversation_id)
+      end
+
+      it 'keeps the shared route of a sent touch when the card gets its own number before a late delivery receipt' do
+        touch = scheduled_touch
+        described_class.new(reminder: touch).perform
+        message = touch_messages(touch).sole
+        sent_route = delivered_route(touch)
+        expect(sent_route).to include('status' => 'completed', 'target_contact_id' => owner.id, 'target_conversation_id' => conversation.id)
+
+        patient.update!(phone_number: '+77000000002')
+        touch.reload.record_delivery_status!(message_id: message.id, stage: 'delivered')
+
+        expect(touch.reload.delivery_stage).to eq('delivered')
+        expect(delivered_route(touch)).to eq(sent_route)
+        expect(message.reload.conversation_id).to eq(touch.target_conversation_id)
+      end
+
+      it 'keeps the own-number route of a sent touch when that number is removed before a read receipt' do
+        patient.update!(phone_number: '+77000000002')
+        touch = scheduled_touch
+        described_class.new(reminder: touch).perform
+        message = touch_messages(touch).sole
+        sent_route = delivered_route(touch)
+        expect(sent_route).to include('status' => 'completed', 'target_contact_id' => patient.id,
+                                      'target_conversation_id' => message.conversation_id)
+
+        patient.update!(phone_number: nil)
+        touch.reload.record_delivery_status!(message_id: message.id, stage: 'read')
+
+        expect(touch.reload.delivery_stage).to eq('read')
+        expect(delivered_route(touch)).to eq(sent_route)
+      end
+
+      it 'keeps the route of a sent touch when a provider failure receipt arrives after the card got its own number' do
+        touch = scheduled_touch
+        described_class.new(reminder: touch).perform
+        message = touch_messages(touch).sole
+        sent_route = delivered_route(touch)
+
+        patient.update!(phone_number: '+77000000002')
+        touch.reload.record_delivery_status!(message_id: message.id, stage: 'failed', error: 'Provider delivery failed')
+
+        expect(touch.reload).to have_attributes(status: 'failed', last_error: 'Provider delivery failed')
+        expect(delivered_route(touch)).to eq(sent_route.merge('status' => 'failed'))
+        expect(conversation.messages.outgoing.where(id: message.id)).to exist
+      end
+
+      it 'stays on the shared route when the card number is the owner chat identity behind another phone field' do
+        family_contact_inbox = create(:contact_inbox, contact: owner, inbox: inbox, source_id: '77000000009')
+        create(:conversation, account: account, inbox: inbox, contact: owner, contact_inbox: family_contact_inbox)
+        patient.update!(phone_number: '+77000000009')
+        touch = scheduled_touch
+
+        described_class.new(reminder: touch).perform
+
+        expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: owner.id, target_conversation_id: conversation.id)
+        expect(touch_messages(touch).sole.conversation_id).to eq(conversation.id)
+        expect(family_contact_inbox.reload).to have_attributes(contact_id: owner.id, source_id: '77000000009')
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'stays on the shared route on an official WhatsApp inbox where the owner chats from the card number' do
+        cloud_inbox = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false,
+                                                validate_provider_config: false).inbox
+        cloud_owner_inbox = create(:contact_inbox, contact: owner, inbox: cloud_inbox, source_id: '77000000009')
+        cloud_conversation = create(:conversation, account: account, inbox: cloud_inbox, contact: owner, contact_inbox: cloud_owner_inbox)
+        create(:message, account: account, inbox: cloud_inbox, conversation: cloud_conversation, message_type: :incoming)
+        appointment.update!(conversation: cloud_conversation)
+        patient.update!(phone_number: '+77000000009')
+        touch = create(:reminder, account: account, touch_conversation: cloud_conversation, conversation: cloud_conversation,
+                                  remindable: appointment, status: :processing, body: 'Free text visit reminder')
+
+        described_class.new(reminder: touch).perform
+
+        # The shared owner route addresses the owner's current identity in this inbox, as for any owner touch.
+        message = touch_messages(touch).sole
+        expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: owner.id, target_conversation_id: message.conversation_id)
+        expect(message.conversation).to have_attributes(contact_id: owner.id, inbox_id: cloud_inbox.id)
+        expect(cloud_owner_inbox.reload).to have_attributes(contact_id: owner.id, source_id: '77000000009')
+        expect(ContactInbox.where(inbox: cloud_inbox, source_id: '77000000009').pluck(:contact_id)).to eq([owner.id])
+        expect(patient.contact_inboxes).to be_empty
+      end
+
+      it 'fails visibly when the card number is already another contact chat in the inbox and never takes it over' do
+        stranger = create(:contact, account: account, name: 'Stranger', phone_number: nil)
+        stranger_contact_inbox = create(:contact_inbox, contact: stranger, inbox: inbox, source_id: '77000000009')
+        touch = scheduled_touch
+        patient.update!(phone_number: '+77000000009')
+
+        expect { described_class.new(reminder: touch).perform }
+          .to raise_error(Reminders::UndeliverableTargetError, Reminders::ConversationResolver::PATIENT_NUMBER_TAKEN)
+
+        expect(touch.reload).to have_attributes(status: 'failed', target_contact_id: patient.id,
+                                                last_error: Reminders::ConversationResolver::PATIENT_NUMBER_TAKEN)
+        expect(stranger_contact_inbox.reload).to have_attributes(contact_id: stranger.id, source_id: '77000000009')
+        expect(patient.contact_inboxes).to be_empty
+        expect(touch_messages(touch)).to be_empty
+        expect(conversation.messages.outgoing).to be_empty
+      end
+    end
+
     it 'runs the appointment provider guard before message materialization' do
       conversation = create(:conversation)
       appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
@@ -929,6 +1246,40 @@ RSpec.describe Reminders::ExecuteService do
           expect(appointment.reload.status).to eq('confirmed')
           expect(request.reload).to be_confirmed
           expect(request.resolution_metadata).to include('response_action_outcome' => 'appointment_confirmed')
+        end
+      end
+
+      it 'sends a separate patient confirmation to its own number and resolves it only from that conversation', :aggregate_failures do
+        travel_to(Time.utc(2026, 7, 12, 10, 0)) do
+          patient = create(:contact, account: account, name: 'Relative', phone_number: nil)
+          appointment.update!(patient_contact: patient, client_name: 'Relative Patient', conversation: conversation)
+          appointment_reminder.update!(response_action: 'confirm_appointment', response_button_index: 0)
+          expect(appointment_reminder.reload.target_contact_id).to eq(contact.id)
+          patient.update!(phone_number: '+77000000002')
+
+          expect { described_class.new(reminder: appointment_reminder).perform }.not_to(change { conversation.messages.outgoing.count })
+
+          own_contact_inbox = patient.contact_inboxes.find_by!(inbox: whatsapp_channel.inbox)
+          request = appointment_reminder.reload.confirmation_request
+          own_conversation = request.conversation
+          expect(own_contact_inbox.source_id).to eq('77000000002')
+          expect(own_conversation).to have_attributes(contact_id: patient.id, contact_inbox_id: own_contact_inbox.id)
+          expect(request).to have_attributes(contact_id: patient.id, delivery_message: own_conversation.messages.outgoing.sole)
+          expect(appointment_reminder).to have_attributes(target_contact_id: patient.id, target_conversation_id: own_conversation.id)
+          expect(appointment.reload).to have_attributes(contact_id: contact.id, conversation_id: conversation.id)
+
+          owner_text = create(:message, account: account, inbox: whatsapp_channel.inbox, conversation: conversation, sender: contact,
+                                        message_type: :incoming, content: 'Подтвердить')
+          expect(Confirmations::WhatsappReplyResolver.new(account: account, conversation: conversation, message: owner_text).perform)
+            .to include(handled: false)
+          expect(request.reload).to be_pending
+
+          reply = create(:message, account: account, inbox: whatsapp_channel.inbox, conversation: own_conversation, sender: patient,
+                                   message_type: :incoming, content: 'Подтвердить',
+                                   content_attributes: { 'interactive_reply_id' => "confirmation:#{request.token}:confirmed" })
+          expect(Confirmations::WhatsappReplyResolver.new(account: account, conversation: own_conversation, message: reply).perform)
+            .to include(handled: true, confirmation_request_id: request.id)
+          expect(appointment.reload.status).to eq('confirmed')
         end
       end
 

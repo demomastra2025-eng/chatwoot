@@ -168,6 +168,8 @@
       "TITLE": "Диалог ещё не создан"
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Карточка пациента",
+      "PATIENT_CARD_LINK": "Карточка пациента: {patientName} №{contactId}",
       "APPOINTMENT_DESCRIPTION": "Выберите специалиста, услугу и временной слот для приёма.",
       "APPOINTMENT_TITLE": "Детали записи",
       "APPOINTMENT_TYPE": "Тип записи",

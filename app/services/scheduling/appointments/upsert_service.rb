@@ -82,6 +82,7 @@ class Scheduling::Appointments::UpsertService
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
       apply_attributes!
+      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!

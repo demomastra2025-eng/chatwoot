@@ -210,6 +210,11 @@ kk:
       delivery_status:
         error_code: 'Error code: %{error_code}'
     activity:
+      number_history_transfer:
+        medelement: '%{phone} нөмірімен хат алмасу тарихы «%{from}» контактісінен «%{to}» контактісіне ауыстырылды. Негіз: МедЭлемент (автоматты түрде). %{time}.'
+        administrator: '%{phone} нөмірімен хат алмасу тарихы «%{from}» контактісінен «%{to}» контактісіне ауыстырылды. Негіз: әкімші %{user_name}. %{time}.'
+        reverted: '%{phone} нөмірімен хат алмасу тарихын ауыстыру болдырылмады: чат «%{from}» контактісінен «%{to}» контактісіне қайтарылды. Орындаған: %{user_name}. %{time}.'
+        whatsapp_account: 'WhatsApp бұл чат %{phone} нөмірімен бір аккаунт екенін растады: чат «%{from}» контактісінен «%{to}» контактісіне ауыстырылды (контактілер біріктірілмеді). %{time}.'
       captain:
         resolved: Conversation was marked resolved by %{user_name} due to inactivity
         open: Conversation was marked open by %{user_name}

@@ -33,7 +33,7 @@ RSpec.describe '/api/v1/widget/contacts', type: :request do
               as: :json
 
         expect(response).to have_http_status(:success)
-        expected_params = { contact: contact, params: params, discard_invalid_attrs: true }
+        expected_params = { contact: contact, params: params, discard_invalid_attrs: true, hmac_verified: false }
         expect(ContactIdentifyAction).to have_received(:new).with(expected_params)
         expect(identify_action).to have_received(:perform)
       end
@@ -206,6 +206,17 @@ RSpec.describe '/api/v1/widget/contacts', type: :request do
              as: :json
 
         expect(contact.reload.custom_attributes).to eq({ 'retained_key' => 'keep me' })
+      end
+
+      it 'never lets the visitor delete server-owned attributes' do
+        contact.update!(custom_attributes: { 'test' => 'value', 'medelement_patient_card' => true, 'secondary_phones' => ['+77000000009'] })
+
+        post '/api/v1/widget/contact/destroy_custom_attributes',
+             params: params.merge(custom_attributes: %w[test medelement_patient_card secondary_phones]),
+             headers: { 'X-Auth-Token' => token },
+             as: :json
+
+        expect(contact.reload.custom_attributes).to eq({ 'medelement_patient_card' => true, 'secondary_phones' => ['+77000000009'] })
       end
 
       it 'returns an empty hash when custom attributes are nil' do

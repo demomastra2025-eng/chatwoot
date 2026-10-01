@@ -220,13 +220,12 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   def local_identity_owner
     return if desired_iin.blank?
 
-    command.account.contacts.where.not(id: command.contact_id)
-           .where(
-             "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin",
-             iin: desired_iin
-           )
-           .where("COALESCE(custom_attributes ->> 'medelement_patient_code', '') <> ''")
-           .first
+    candidates = command.account.contacts
+    candidates = candidates.where.not(id: patient_contact.id) if patient_contact
+    candidates.where(
+      "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin",
+      iin: desired_iin
+    ).where("COALESCE(custom_attributes ->> 'medelement_patient_code', '') <> ''").first
   end
 
   def created_patient_readback(code)
@@ -281,9 +280,15 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def sync_primary_contact!(code, patient)
-    return if appointment_patient_owned?
-
     with_current_patient_identity do
+      if appointment_patient_owned?
+        next unless command.appointment.patient_contact_id
+
+        binding = Integrations::Medelement::PatientContactBinding.new(appointment: command.appointment)
+        binding.prepare!(patient_code: code)
+        command.appointment.save! if command.appointment.changed?
+        next
+      end
       update_contact_patient_ref!(code)
       sync_contact!(patient) if patient
     end
@@ -382,7 +387,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   def validate_patient_ref!(code)
     linked_contact = command.account.contacts.find_by("custom_attributes ->> 'medelement_patient_code' = ?", code.to_s)
-    return if linked_contact.blank? || linked_contact.id == command.contact_id
+    return if linked_contact.blank? || linked_contact.id == patient_contact&.id
 
     raise reconciliation_error('patient_ref_conflict')
   end
@@ -440,6 +445,14 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   def appointment_patient_owned?
     command.request_snapshot.dig(Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY, 'owned') == true
+  end
+
+  # The patient the command writes for. An owned appointment without a bound card is pre-release data whose chat
+  # contact still holds the patient code: it keeps that pre-binding owner until the repair task separates the card.
+  def patient_contact
+    return command.appointment.patient_contact if appointment_patient_owned? && command.appointment&.patient_contact_id
+
+    command.contact
   end
 
   def snapshot_patient_code

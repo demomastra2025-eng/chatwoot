@@ -2,7 +2,7 @@
 class Integrations::Medelement::OutboundChangeService
   APPOINTMENT_MOVE_KEYS = %w[starts_at ends_at resource_id].freeze
   APPOINTMENT_SNAPSHOT_KEYS = %w[
-    status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name
+    status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name patient_contact_id
     client_birth_date client_gender client_identifier client_comment service_amount duration_min custom_attributes
     external_ref resource_id service_id service_name_snapshot
   ].freeze

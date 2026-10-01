@@ -148,6 +148,8 @@
         "PHONE_MISMATCH": "Phone differs from contact data",
         "INVALID_RECEPTION": "Appointment could not be imported",
         "PATIENT_UNRESOLVED": "Patient is not linked to a contact",
+        "PATIENT_CARD_REPAIR_REQUIRED": "Patient card needs separation from the chat contact",
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement moved the appointment to another patient",
         "APPOINTMENT_AMOUNT_MISMATCH": "Appointment amount differs from MedElement",
         "LOCAL_PAYMENT_PRESERVED": "Local payment was preserved"
       },

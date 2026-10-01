@@ -5,9 +5,14 @@
 # But, In case of contact merge during prechat form contact update.
 # We don't want to update the name of the identified original contact.
 
+#
+# hmac_verified: true only on the widget setUser path after the identifier HMAC was verified. A patient card is never
+# merged with a visitor from identify unless that verified identifier is the card's own identifier; values the visitor
+# supplied about itself (custom attributes, email, phone) never prove a patient identity.
+
 class ContactIdentifyAction
   include UrlHelper
-  pattr_initialize [:contact!, :params!, { retain_original_contact_name: false, discard_invalid_attrs: false }]
+  pattr_initialize [:contact!, :params!, { retain_original_contact_name: false, discard_invalid_attrs: false, hmac_verified: false }]
 
   def perform
     @attributes_to_update = [:identifier, :name, :email, :phone_number]
@@ -16,6 +21,7 @@ class ContactIdentifyAction
       merge_if_existing_identified_contact
       merge_if_existing_email_contact
       merge_if_existing_phone_number_contact
+      skip_reserved_phone_number
       update_contact
     end
     @contact
@@ -30,25 +36,39 @@ class ContactIdentifyAction
   def merge_if_existing_identified_contact
     return unless merge_contacts?(existing_identified_contact, :identifier)
 
-    process_contact_merge(existing_identified_contact)
+    process_contact_merge(existing_identified_contact, :identifier)
   end
 
   def merge_if_existing_email_contact
     return unless merge_contacts?(existing_email_contact, :email)
 
-    process_contact_merge(existing_email_contact)
+    process_contact_merge(existing_email_contact, :email)
   end
 
   def merge_if_existing_phone_number_contact
     return unless merge_contacts?(existing_phone_number_contact, :phone_number)
     return unless mergable_phone_contact?
+    return if unverified_family_number?
 
-    process_contact_merge(existing_phone_number_contact)
+    process_contact_merge(existing_phone_number_contact, :phone_number)
   end
 
-  def process_contact_merge(mergee_contact)
+  # A visitor that types a family number (some card's recorded shared доп. номер) proves nothing about it: it is never
+  # merged into the contact holding the number, whose chats carry the card's notifications, and it does not take the
+  # number either (skip_reserved_phone_number).
+  def unverified_family_number?
+    return false if hmac_verified
+
+    Contacts::ServerOwnedAttributes.family_number?(account_id: account.id, phone: params[:phone_number])
+  end
+
+  def process_contact_merge(mergee_contact, key)
     @contact = merge_contact(mergee_contact, @contact)
     @attributes_to_update.delete(:name) if retain_original_contact_name
+  rescue Contacts::ReferenceMergeService::UnsafeMergeError
+    # The existing contact refuses the merge (a separate patient card, an in-flight provider write): keep the
+    # visitor separate and leave the colliding unique value with the existing contact.
+    @attributes_to_update.delete(key)
   end
 
   def existing_identified_contact
@@ -118,17 +138,37 @@ class ContactIdentifyAction
   def merge_contact(base_contact, merge_contact)
     return base_contact if base_contact.id == merge_contact.id
 
-    ContactMergeAction.new(
-      account: account,
-      base_contact: base_contact,
-      mergee_contact: merge_contact
-    ).perform
+    ensure_patient_card_merge_verified!(base_contact, merge_contact)
+    # Savepoint: a refused merge rolls back its partial reassignment without aborting the identify transaction.
+    ActiveRecord::Base.transaction(requires_new: true) do
+      ContactMergeAction.new(
+        account: account,
+        base_contact: base_contact,
+        mergee_contact: merge_contact,
+        verified_identifier: (params[:identifier].presence if hmac_verified)
+      ).perform
+    end
+  end
+
+  def ensure_patient_card_merge_verified!(base_contact, merge_contact)
+    return unless Contacts::SharedPhone.card?(base_contact) || Contacts::SharedPhone.card?(merge_contact)
+    return if hmac_verified && params[:identifier].present? && base_contact.identifier == params[:identifier].to_s
+
+    raise Contacts::ReferenceMergeService::UnsafeMergeError, 'A patient card is merged from identify only with its verified identifier'
+  end
+
+  def skip_reserved_phone_number
+    return unless Contacts::ServerOwnedAttributes.reserved_for_other?(account_id: account.id, phone: params[:phone_number],
+                                                                      contact_id: @contact.id)
+
+    @attributes_to_update.delete(:phone_number)
   end
 
   def custom_attributes
-    return @contact.custom_attributes if params[:custom_attributes].blank?
+    incoming = Contacts::ServerOwnedAttributes.strip(params[:custom_attributes])
+    return @contact.custom_attributes if incoming.blank?
 
-    (@contact.custom_attributes || {}).deep_merge(params[:custom_attributes].stringify_keys)
+    (@contact.custom_attributes || {}).deep_merge(incoming)
   end
 
   def additional_attributes

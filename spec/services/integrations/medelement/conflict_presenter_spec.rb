@@ -36,6 +36,16 @@ describe Integrations::Medelement::ConflictPresenter do
     )
   end
 
+  it 'does not offer to merge or delete a separate patient card bound to an appointment' do
+    primary_contact.update!(custom_attributes: { 'medelement_patient_code' => 'relative-2', 'medelement_patient_card' => true })
+    create(:scheduling_appointment, account: account, contact: conflicting_contact, patient_contact: primary_contact)
+    conflict = conflict_with(contact_id: primary_contact.id, conflicting_contact_id: conflicting_contact.id)
+
+    resolution = described_class.new(conflict: conflict).payload[:contact_resolution]
+
+    expect(resolution).to include(can_merge: false, can_delete_primary: false)
+  end
+
   it 'shows the legacy conflicting contact but does not allow destructive actions' do
     primary_contact.update!(custom_attributes: {
                               'phone_conflict_comment' => "Phone already belongs to contact ##{conflicting_contact.id}"

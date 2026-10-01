@@ -44,6 +44,8 @@ class Reminders::IncomingReplyCancellationService
   private
 
   def cancellable?
+    return false if Reminders::PatientSubjectGuard.foreign_reply?(reminder.remindable, message)
+
     Reminder::OPEN_STATUSES.include?(reminder.status) &&
       !reminder.delivery_materialized? &&
       Reminders::BooleanParam.truthy?(reminder.metadata.to_h['auto_cancel_on_incoming_explicit'])

@@ -75,11 +75,14 @@ module LeadForms
       [first_name, last_name].compact_blank.join(' ').presence
     end
 
+    # Lead submissions (public token endpoint, Meta leads) are unverified writers: server-owned custom attributes are
+    # dropped, a patient card's identifier/email/phone never files the lead under that card, and a family or reserved
+    # number is neither taken nor used to attach the lead to its holder (the typed phone stays in the field values).
     def create_contact_inbox!
       ::ContactInboxWithContactBuilder.new(
         inbox: lead_form.inbox,
         source_id: contact_source_id,
-        contact_attributes: contact_attributes,
+        contact_attributes: Contacts::ServerOwnedAttributes.unverified_create_attributes(account: account, attributes: contact_attributes),
         skip_runtime_events: true
       ).perform
     end

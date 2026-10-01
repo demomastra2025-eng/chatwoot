@@ -37,5 +37,25 @@ RSpec.describe 'Contact Merge Action API', type: :request do
         expect(merge_action).to have_received(:perform)
       end
     end
+
+    context 'when the merge would absorb a separate patient card' do
+      let(:agent) { create(:user, account: account, role: :agent) }
+      let!(:card) do
+        create(:contact, account: account, phone_number: nil,
+                         custom_attributes: { 'medelement_patient_code' => 'relative-2', 'medelement_patient_card' => true })
+      end
+
+      it 'returns unprocessable entity and keeps both contacts' do
+        post "/api/v1/accounts/#{account.id}/actions/contact_merge",
+             params: { base_contact_id: base_contact.id, mergee_contact_id: card.id },
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body['error']).to include('same patient code or IIN')
+        expect(card.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
+        expect(base_contact.reload).to be_present
+      end
+    end
   end
 end

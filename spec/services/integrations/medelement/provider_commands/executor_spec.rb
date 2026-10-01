@@ -571,6 +571,102 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     end
   end
 
+  context 'when updating a separately bound patient through the communication owner' do
+    let(:operation) { 'update_patient' }
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'primary-1' } }
+    let(:appointment) do
+      attributes = { 'medelement_patient_code' => 'relative-2', Integrations::Medelement::PatientContactBinding::CARD_KEY => true }
+      if patient_primary.nil?
+        attributes.merge!('secondary_phones' => [contact.phone_number],
+                          Integrations::Medelement::PatientContactBinding::SHARED_OWNER_KEY => contact.id,
+                          Integrations::Medelement::PatientContactBinding::SHARED_PHONE_KEY => contact.phone_number)
+      end
+      card = create(:contact, account: account, name: 'Relative', last_name: 'Patient', phone_number: patient_primary, custom_attributes: attributes)
+      conversation = create(:conversation, account: account, contact: contact)
+      policy = Integrations::Medelement::AppointmentPatientIdentity
+      create(:scheduling_appointment, account: account, contact: contact, conversation: conversation, patient_contact: card,
+                                      resource: resource, client_name: 'Relative Patient', client_first_name: 'Relative', client_last_name: 'Patient',
+                                      client_middle_name: nil, client_identifier: nil, client_phone: contact.phone_number,
+                                      custom_attributes: { policy::OWNED_IDENTITY_KEY => true, policy::EXPLICIT_IDENTIFIER_KEY => true,
+                                                           'medelement_patient_code' => 'relative-2' })
+    end
+    let(:command_attributes) { { provider_patient_code: 'relative-2' } }
+
+    def patient_primary = '+77000000002'
+
+    def patient_card = appointment.patient_contact
+
+    def remote_patient
+      { 'PROFILE_CODE' => 'relative-2', 'COMPANY_CODE' => hook_settings.fetch('organization_id'),
+        'NAME' => 'Relative', 'LASTNAME' => 'Patient', 'PATIENT_PHONE_2' => patient_primary || contact.phone_number }
+    end
+
+    before do
+      allow(client).to receive(:get_patient).with(patient_code: 'relative-2').and_return(remote_patient)
+      allow(client).to receive(:update_patient).and_return({})
+    end
+
+    it 'writes the patient own primary and leaves the first patient and communication route intact' do
+      owner_attributes = contact.reload.attributes
+      perform
+
+      expect(client).to have_received(:update_patient).once.with(params: hash_including('profile_code' => 'relative-2',
+                                                                                        'patient_phone_2[0]' => '7',
+                                                                                        'patient_phone_2[1]' => '700',
+                                                                                        'patient_phone_2[2]' => '0000002'))
+      expect(command.reload).to be_succeeded
+      expect(contact.reload.attributes).to eq(owner_attributes)
+      expect(appointment.reload).to have_attributes(contact_id: contact.id, conversation_id: command.request_snapshot['conversation_id'],
+                                                    client_phone: contact.phone_number)
+      expect(Array(patient_card.reload.custom_attributes['secondary_phones'])).not_to include(contact.phone_number)
+    end
+
+    context 'when an own primary appears after capture and before the write' do
+      def patient_primary = nil
+
+      it 'fails before updating the provider and preserves the captured phone tuple' do
+        allow(client).to receive(:get_patient) do
+          patient_card.update!(phone_number: '+77000000002')
+          remote_patient
+        end
+        perform
+
+        expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'appointment_superseded')
+        expect(client).not_to have_received(:update_patient)
+        expect(command.request_snapshot['patient_phone_numbers']).to eq([contact.phone_number])
+        expect(Array(patient_card.reload.custom_attributes['secondary_phones'])).not_to include(contact.phone_number)
+        expect(appointment.reload).to have_attributes(contact_id: contact.id, conversation_id: command.request_snapshot['conversation_id'])
+      end
+    end
+
+    it 'requires reconciliation rather than applying a late write after the patient primary changes during the write' do
+      allow(client).to receive(:update_patient) do
+        patient_card.update!(phone_number: '+77000000003')
+        {}
+      end
+      perform
+
+      expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'executor_error')
+      expect(client).to have_received(:update_patient).once.with(params: hash_including('patient_phone_2[0]' => '7', 'patient_phone_2[1]' => '700',
+                                                                                        'patient_phone_2[2]' => '0000002'))
+      expect(command.request_snapshot['patient_phone_numbers']).to eq(['+77000000002'])
+      expect(patient_card.reload.phone_number).to eq('+77000000003')
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('primary-1')
+      expect(appointment.reload).to have_attributes(contact_id: contact.id, conversation_id: command.request_snapshot['conversation_id'])
+    end
+
+    it 'refuses the captured write if the patient primary was cleared while queued' do
+      command
+      patient_card.update!(phone_number: nil)
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'appointment_superseded')
+      expect(client).not_to have_received(:update_patient)
+      expect(command.request_snapshot['patient_phone_numbers']).to eq(['+77000000002'])
+      expect(appointment.reload).to have_attributes(contact_id: contact.id, conversation_id: command.request_snapshot['conversation_id'])
+    end
+  end
+
   context 'when updating a patient' do
     let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
     let(:operation) { 'update_patient' }
@@ -1242,6 +1338,123 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       )
       expect(command.reload).to be_succeeded
       expect(appointment.reload).to have_attributes(starts_at: new_starts_at, ends_at: new_ends_at)
+    end
+  end
+
+  context 'when moving a legacy owned reception whose chat contact still holds the patient code' do
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
+    let(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        source: 'medelement',
+        client_name: 'Relative Patient', client_first_name: 'Relative', client_last_name: 'Patient',
+        client_phone: contact.phone_number,
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_patient_code' => 'patient-1',
+                             Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true }
+      )
+    end
+    let(:operation) { 'move_reception' }
+    let(:new_starts_at) { appointment.starts_at + 1.day }
+    let(:new_ends_at) { appointment.ends_at + 1.day }
+    let(:command_attributes) do
+      {
+        provider_patient_code: 'patient-1',
+        provider_reception_code: 'reception-1',
+        company_cabinet_code: 'cabinet-1',
+        desired_starts_at: new_starts_at,
+        desired_ends_at: new_ends_at
+      }
+    end
+
+    before do
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
+        'PROFILE_CODE' => 'patient-1',
+        'PATIENT_PHONE_2' => contact.phone_number
+      )
+      allow(client).to receive(:get_reception).and_return(
+        {
+          'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'specialist-1',
+          'STARTTIME' => provider_time(appointment.starts_at), 'ENDTIME' => provider_time(appointment.ends_at), 'REMOVED' => 0
+        },
+        {
+          'RECEPTION_CODE' => 'reception-1', 'PROFILE_CODE' => 'patient-1', 'SPECIALIST_CODE' => 'specialist-1',
+          'COMPANY_CABINET_CODE' => 'cabinet-1',
+          'STARTTIME' => provider_time(new_starts_at), 'ENDTIME' => provider_time(new_ends_at), 'REMOVED' => 0
+        }
+      )
+      allow_available_destination(starts_at: new_starts_at, ends_at: new_ends_at)
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }],
+        []
+      )
+      allow(client).to receive(:move_reception).and_return({})
+    end
+
+    it 'keeps the chat contact as the patient owner and moves the reception' do
+      expect(command.request_snapshot.dig('appointment_patient_identity', 'owned')).to be(true)
+      expect(appointment.patient_contact_id).to be_nil
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(client).to have_received(:move_reception).once.with(
+        params: hash_including(patient_code: 'patient-1', reception_code: 'reception-1')
+      )
+      expect(appointment.reload).to have_attributes(starts_at: new_starts_at, patient_contact_id: nil)
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-1')
+    end
+
+    it 'still refuses a patient reference held by a different contact' do
+      contact.update!(custom_attributes: {})
+      create(:contact, account: account, custom_attributes: { 'medelement_patient_code' => 'patient-1' })
+
+      perform
+
+      expect(command.reload.last_error_code).to eq('patient_ref_conflict')
+      expect(client).not_to have_received(:move_reception)
+    end
+  end
+
+  context 'when an operator merges a bound patient card during a started provider write' do
+    let(:card) do
+      create(:contact, account: account, name: 'Relative', last_name: 'Patient', phone_number: nil,
+                       custom_attributes: { Integrations::Medelement::PatientContactBinding::CARD_KEY => true, 'iin' => '940720300129' })
+    end
+    let(:appointment) do
+      policy = Integrations::Medelement::AppointmentPatientIdentity
+      create(:scheduling_appointment, account: account, contact: contact, patient_contact: card, resource: resource,
+                                      client_name: 'Relative Patient', client_first_name: 'Relative', client_last_name: 'Patient',
+                                      client_identifier: '940720300129', client_phone: contact.phone_number,
+                                      custom_attributes: { policy::OWNED_IDENTITY_KEY => true, policy::EXPLICIT_IDENTIFIER_KEY => true })
+    end
+    let(:operation) { 'create_reception' }
+    let(:command_attributes) do
+      { company_cabinet_code: 'cabinet-1', desired_starts_at: appointment.starts_at, desired_ends_at: appointment.ends_at }
+    end
+    let(:duplicate) { create(:contact, account: account, name: 'Relative', phone_number: nil, identifier: '940720300129') }
+
+    it 'refuses the merge and keeps the captured binding current' do
+      command.update!(status: 'processing', execution_state: command.execution_state.merge('write_phase' => 'reception_create'))
+
+      expect do
+        ContactMergeAction.new(account: account, base_contact: duplicate, mergee_contact: card).perform
+      end.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError, /in progress or awaits verification/)
+
+      expect(appointment.reload.patient_contact_id).to eq(card.id)
+      expect(Contact.exists?(card.id)).to be(true)
+      expect(Integrations::Medelement::AppointmentPatientIdentity.current?(command.reload)).to be(true)
+    end
+
+    it 'allows the same merge once the provider write is finished' do
+      command.update!(status: 'succeeded', execution_state: command.execution_state.merge('write_phase' => 'reception_create'))
+
+      ContactMergeAction.new(account: account, base_contact: duplicate, mergee_contact: card).perform
+
+      expect(appointment.reload.patient_contact_id).to eq(duplicate.id)
     end
   end
   # rubocop:enable RSpec/MultipleMemoizedHelpers

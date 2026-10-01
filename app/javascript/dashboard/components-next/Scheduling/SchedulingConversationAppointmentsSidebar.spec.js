@@ -93,6 +93,10 @@ vi.mock('dashboard/composables', () => ({
   useAlert: mocks.alert,
 }));
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ params: { accountId: '1' } }),
+}));
+
 vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: mocks.dispatch }),
 }));
@@ -162,6 +166,12 @@ const mountComponent = (currentChat = defaultCurrentChat()) =>
     },
     global: {
       stubs: {
+        RouterLink: {
+          name: 'RouterLink',
+          props: ['to'],
+          template:
+            '<a :data-contact-id="to.params.contactId" :data-account-id="to.params.accountId"><slot /></a>',
+        },
         SidebarActionsHeader: {
           name: 'SidebarActionsHeader',
           props: ['buttons'],
@@ -175,6 +185,56 @@ const mountComponent = (currentChat = defaultCurrentChat()) =>
   });
 
 describe('SchedulingConversationAppointmentsSidebar', () => {
+  it('links a separate patient card without replacing the chat contact', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            clientName: 'Relative Patient',
+            patientContactId: 84,
+            patientContactName: 'Relative',
+          },
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    const link = wrapper.find('[data-testid="appointment-patient-card"]');
+    expect(link.text()).toContain('Relative');
+    expect(link.text()).toContain('#84');
+    expect(link.attributes('data-contact-id')).toBe('84');
+    expect(link.attributes('data-account-id')).toBe('1');
+    expect(wrapper.vm.appointments[0].contactId).toBe(42);
+    expect(wrapper.props('currentChat').meta.sender.id).toBe(42);
+  });
+
+  it('removes the old patient card when the conversation changes', async () => {
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            ...existingAppointment,
+            patientContactId: 84,
+            patientContactName: 'Relative',
+          },
+        ],
+      },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="appointment-patient-card"]').exists()
+    ).toBe(true);
+    SchedulingAppointmentsAPI.get.mockResolvedValue({ data: { payload: [] } });
+    await wrapper.setProps({
+      currentChat: { id: 456, meta: { sender: { id: 99, name: 'Other' } } },
+    });
+    await flushPromises();
+    expect(
+      wrapper.find('[data-testid="appointment-patient-card"]').exists()
+    ).toBe(false);
+  });
   const openManualReview = async () => {
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: {
@@ -1390,12 +1450,25 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     ]);
 
     pending.forEach(resolve =>
-      resolve({ data: { payload: [existingAppointment] } })
+      resolve({
+        data: {
+          payload: [
+            {
+              ...existingAppointment,
+              patientContactId: 84,
+              patientContactName: 'Stale relative',
+            },
+          ],
+        },
+      })
     );
     await flushPromises();
     expect(wrapper.vm.appointments.map(appointment => appointment.id)).toEqual([
       902,
     ]);
+    expect(
+      wrapper.find('[data-testid="appointment-patient-card"]').exists()
+    ).toBe(false);
     wrapper.unmount();
   });
 

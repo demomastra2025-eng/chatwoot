@@ -132,16 +132,35 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(scoped_service.sync_patient!(patient_code)).to be_persisted
   end
 
-  it 'links the patient to the local Contact that already owns the provider phone' do
+  it 'preserves the first phone owner and creates a separate patient card when identity is unverified' do
     local_contact = create(:contact, account: account, phone_number: primary_phone, name: 'Local contact')
     allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
 
     contact = service.sync_patient!(patient_code)
 
-    expect(contact.id).to eq(local_contact.id)
-    expect(contact.reload.phone_number).to eq(primary_phone)
+    expect(contact.id).not_to eq(local_contact.id)
+    expect(contact.reload.phone_number).to be_nil
     expect(contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(account.contacts.count).to eq(1)
+    expect(contact.custom_attributes['secondary_phones']).to include(primary_phone)
+    expect(local_contact.reload).to have_attributes(name: 'Local contact', phone_number: primary_phone)
+    expect(local_contact.custom_attributes['medelement_patient_code']).to be_nil
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'does not open a mergeable phone conflict for a relative sharing the phone of a chat contact' do
+    chat = create(:contact, account: account, phone_number: primary_phone, name: 'Chat')
+    run = Integrations::Medelement::SyncRun.create!(account: account, trigger: 'manual', status: 'running')
+    resolver = described_class.new(account: account, client: client, organization_id: 'company-1',
+                                   conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: run))
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    card = resolver.sync_patient!(patient_code)
+
+    expect(card.custom_attributes).to include(Integrations::Medelement::PatientContactBinding::SHARED_OWNER_KEY => chat.id,
+                                              Integrations::Medelement::PatientContactBinding::CARD_KEY => true)
+    expect(card.custom_attributes).not_to have_key('phone_conflict_comment')
+    expect(run.observed_conflicts.where(conflict_type: %w[phone_owned_by_another_contact phone_mismatch])).to be_empty
+    expect(chat.reload.custom_attributes).not_to have_key('medelement_patient_code')
   end
 
   it 'creates a stable phone-less conflict Contact when the phone belongs to another MedElement patient' do
@@ -284,7 +303,7 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(account.contacts.count).to eq(2)
   end
 
-  it 'assigns the primary provider phone to the first local Contact even when another provider phone has a Contact' do
+  it 'creates a separate card when matching demographics do not uniquely identify the phone owner' do
     matching_attributes = {
       account: account,
       name: 'Светлана',
@@ -300,14 +319,14 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient!(patient_code)
 
-    expect(resolved_contact.id).to eq(matching_contacts.first.id)
-    expect(resolved_contact.phone_number).to eq(primary_phone)
+    expect(resolved_contact.id).not_to be_in(matching_contacts.map(&:id))
+    expect(resolved_contact.phone_number).to be_nil
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(matching_contacts.last.reload.custom_attributes['medelement_patient_code']).to be_blank
-    expect(account.contacts.count).to eq(2)
+    expect(account.contacts.count).to eq(3)
   end
 
-  it 'keeps the local phone Contact primary and replaces stale local identity with provider identity' do
+  it 'preserves a conflicting local IIN and creates a separate patient card' do
     existing_contact = create(
       :contact,
       account: account,
@@ -322,13 +341,14 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient!(patient_code)
 
-    expect(resolved_contact.id).to eq(existing_contact.id)
-    expect(resolved_contact.reload).to have_attributes(phone_number: primary_phone, identifier: patient_payload['IIN'])
-    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(account.contacts.count).to eq(1)
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.reload).to have_attributes(phone_number: nil, identifier: patient_payload['IIN'])
+    expect(existing_contact.reload).to have_attributes(phone_number: primary_phone, identifier: '940720300129')
+    expect(existing_contact.custom_attributes['medelement_patient_code']).to be_nil
+    expect(account.contacts.count).to eq(2)
   end
 
-  it 'links the local phone Contact when the provider IIN is missing' do
+  it 'keeps a distinct card when the provider IIN is missing' do
     existing_contact = create(
       :contact,
       account: account,
@@ -344,13 +364,14 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient!(patient_code)
 
-    expect(resolved_contact.id).to eq(existing_contact.id)
-    expect(resolved_contact.phone_number).to eq(primary_phone)
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.phone_number).to be_nil
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(account.contacts.count).to eq(1)
+    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to be_nil
+    expect(account.contacts.count).to eq(2)
   end
 
-  it 'links the local phone Contact when the provider identifier is not a valid IIN' do
+  it 'keeps a distinct card when the provider identifier is not a valid IIN' do
     existing_contact = create(
       :contact,
       account: account,
@@ -368,13 +389,14 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient!(patient_code)
 
-    expect(resolved_contact.id).to eq(existing_contact.id)
-    expect(resolved_contact.phone_number).to eq(primary_phone)
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.phone_number).to be_nil
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(account.contacts.count).to eq(1)
+    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to be_nil
+    expect(account.contacts.count).to eq(2)
   end
 
-  it 'moves a linked patient and business data to a new free phone while preserving old channel identity', :aggregate_failures do
+  it 'keeps the channel phone of a linked chat contact and records a new provider phone as secondary', :aggregate_failures do
     contact_phone = ['+7', '700', '111', '2233'].join
     contact = create(
       :contact,
@@ -398,18 +420,30 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient_payload!(patient_payload, preferred_contact: contact)
 
-    expect(resolved_contact.id).not_to eq(contact.id)
-    expect(resolved_contact.reload.phone_number).to eq(primary_phone)
+    expect(resolved_contact.id).to eq(contact.id)
+    expect(resolved_contact.reload.phone_number).to eq(contact_phone)
+    expect(resolved_contact.custom_attributes['secondary_phones']).to include(primary_phone)
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(appointment.reload.contact_id).to eq(resolved_contact.id)
-    expect(deal.deal_contacts.reload.pluck(:contact_id)).to contain_exactly(resolved_contact.id)
+    expect(account.contacts.where(phone_number: primary_phone)).to be_empty
+    expect(appointment.reload.contact_id).to eq(contact.id)
+    expect(deal.deal_contacts.reload.pluck(:contact_id)).to contain_exactly(contact.id)
     expect(conversation.reload.contact_id).to eq(contact.id)
-    expect(contact_inbox.reload.contact_id).to eq(contact.id)
-    expect(contact.reload).to have_attributes(name: 'Messenger name', phone_number: contact_phone, email: nil, identifier: nil)
-    expect(contact.custom_attributes).to eq({})
+    expect(contact_inbox.reload).to have_attributes(contact_id: contact.id, source_id: 'messenger-source')
   end
 
-  it 'moves a linked patient into an existing local Contact when the provider phone changes' do
+  it 'moves a patient card without channel identity to a new free provider phone' do
+    card = create(:contact, account: account, name: 'Provider name', phone_number: ['+7', '700', '111', '2233'].join,
+                            custom_attributes: { 'medelement_patient_code' => patient_code })
+
+    resolved_contact = service.sync_patient_payload!(patient_payload, preferred_contact: card)
+
+    expect(resolved_contact.id).to eq(card.id)
+    expect(card.reload.phone_number).to eq(primary_phone)
+    expect(card.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(Array(card.custom_attributes['secondary_phones'])).not_to include(primary_phone)
+  end
+
+  it 'does not transfer a linked patient or its appointments into a different phone owner' do
     old_phone = ['+7', '700', '111', '2233'].join
     linked_contact = create(
       :contact,
@@ -422,14 +456,16 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient_payload!(patient_payload, preferred_contact: linked_contact)
 
-    expect(resolved_contact.id).to eq(local_contact.id)
-    expect(appointment.reload.contact_id).to eq(local_contact.id)
-    expect(local_contact.reload.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(resolved_contact.id).to eq(linked_contact.id)
+    expect(appointment.reload.contact_id).to eq(linked_contact.id)
+    expect(local_contact.reload).to have_attributes(name: 'Local primary', phone_number: primary_phone)
+    expect(local_contact.custom_attributes['medelement_patient_code']).to be_nil
     expect(linked_contact.reload.phone_number).to eq(old_phone)
-    expect(linked_contact.custom_attributes['medelement_patient_code']).to be_blank
+    expect(linked_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
+    expect(Array(linked_contact.custom_attributes['secondary_phones'])).not_to include(primary_phone)
   end
 
-  it 'moves a changed patient to a phone-less Contact when the new phone belongs to another patient' do
+  it 'keeps a linked patient card and its own primary when a provider phone belongs to another patient' do
     old_phone = ['+7', '700', '111', '2233'].join
     linked_contact = create(
       :contact,
@@ -447,12 +483,12 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     resolved_contact = service.sync_patient_payload!(patient_payload, preferred_contact: linked_contact)
 
-    expect(resolved_contact.id).not_to be_in([linked_contact.id, current_owner.id])
-    expect(resolved_contact.reload.phone_number).to be_blank
+    expect(resolved_contact.id).to eq(linked_contact.id)
+    expect(resolved_contact.reload.phone_number).to eq(old_phone)
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(appointment.reload.contact_id).to eq(resolved_contact.id)
     expect(linked_contact.reload.phone_number).to eq(old_phone)
-    expect(linked_contact.custom_attributes['medelement_patient_code']).to be_blank
+    expect(linked_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(current_owner.reload.custom_attributes['medelement_patient_code']).to eq('other-patient')
   end
 

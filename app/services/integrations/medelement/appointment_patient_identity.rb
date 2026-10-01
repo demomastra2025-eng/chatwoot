@@ -2,6 +2,7 @@ module Integrations::Medelement::AppointmentPatientIdentity
   EXPLICIT_IDENTIFIER_KEY = 'medelement_client_identifier_explicit'.freeze
   OWNED_IDENTITY_KEY = 'medelement_appointment_patient_identity'.freeze
   SNAPSHOT_KEY = 'appointment_patient_identity'.freeze
+  BINDING_KEY = 'patient_contact_id'.freeze
   NAME_KEYS = %w[first_name last_name middle_name].freeze
   FIELDS = %w[client_first_name client_last_name client_middle_name client_identifier client_birth_date client_gender client_phone].freeze
 
@@ -21,7 +22,8 @@ module Integrations::Medelement::AppointmentPatientIdentity
 
   def provider_code(appointment:, contact:)
     attributes = appointment&.custom_attributes.to_h
-    own_code = attributes['medelement_patient_code'].presence
+    own_code = attributes['medelement_patient_code'].presence ||
+               appointment&.patient_contact&.custom_attributes.to_h['medelement_patient_code'].presence
     return own_code if owned?(attributes)
 
     contact&.custom_attributes.to_h['medelement_patient_code'].presence || own_code
@@ -44,6 +46,7 @@ module Integrations::Medelement::AppointmentPatientIdentity
   end
 
   def current?(command)
+    return false unless binding_current?(command)
     return !marked?(command.appointment&.custom_attributes) unless frozen?(command.request_snapshot)
     return false unless command.appointment
 
@@ -55,7 +58,7 @@ module Integrations::Medelement::AppointmentPatientIdentity
 
     previous = snapshot(attributes: appointment.custom_attributes_in_database,
                         values: FIELDS.index_with { |key| appointment.attribute_in_database(key) })
-    return if current_snapshot(appointment) == previous
+    return if current_snapshot(appointment) == previous && appointment.patient_contact_id == appointment.attribute_in_database('patient_contact_id')
 
     commands = Integrations::Medelement::ProviderCommand.where(account_id: appointment.account_id, appointment_id: appointment.id)
                                                         .where("NULLIF(execution_state ->> 'write_phase', '') IS NOT NULL")
@@ -70,6 +73,7 @@ module Integrations::Medelement::AppointmentPatientIdentity
   end
 
   def compatible_write_target?(command, appointment, previous)
+    return false unless binding_current?(command, appointment)
     unless frozen?(command.request_snapshot)
       return !marked?(appointment.custom_attributes) || completed_legacy_marker_adoption?(command, previous, current_snapshot(appointment))
     end
@@ -82,6 +86,10 @@ module Integrations::Medelement::AppointmentPatientIdentity
     return false if previous['owned'] || previous['explicit_identifier']
 
     previous['fields'] == current['fields']
+  end
+
+  def binding_current?(command, appointment = command.appointment)
+    Integrations::Medelement::AppointmentPatientBindingSnapshot.current?(command, appointment: appointment)
   end
 
   def validate_source_attributes!(appointment, attributes)

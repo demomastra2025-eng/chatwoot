@@ -1,28 +1,30 @@
 class Contacts::ReferenceMergeService
   class UnsafeMergeError < StandardError; end
 
-  REFERENCE_COLUMNS = {
-    'assignment_client_ownerships' => 'contact_id',
-    'assignment_quota_usages' => 'contact_id',
-    'calls' => 'contact_id',
-    'campaign_audience_recipients' => 'contact_id',
-    'campaign_deliveries' => 'contact_id',
-    'communication_threads' => 'contact_id',
-    'confirmation_requests' => 'contact_id',
-    'contact_channel_profiles' => 'contact_id',
-    'contact_inboxes' => 'contact_id',
-    'conversations' => 'contact_id',
-    'crm_deal_contacts' => 'contact_id',
-    'csat_survey_responses' => 'contact_id',
-    'lead_submissions' => 'contact_id',
-    'medelement_provider_commands' => 'contact_id',
-    'meta_ad_referrals' => 'contact_id',
-    'notes' => 'contact_id',
-    'reminders' => 'target_contact_id',
-    'scheduling_appointments' => 'contact_id',
-    'telephony_call_sessions' => 'contact_id',
-    'telephony_contact_endpoints' => 'contact_id'
-  }.freeze
+  # [table, column] pairs: one table may reference contacts through several columns.
+  REFERENCE_COLUMNS = [
+    %w[assignment_client_ownerships contact_id],
+    %w[assignment_quota_usages contact_id],
+    %w[calls contact_id],
+    %w[campaign_audience_recipients contact_id],
+    %w[campaign_deliveries contact_id],
+    %w[communication_threads contact_id],
+    %w[confirmation_requests contact_id],
+    %w[contact_channel_profiles contact_id],
+    %w[contact_inboxes contact_id],
+    %w[conversations contact_id],
+    %w[crm_deal_contacts contact_id],
+    %w[csat_survey_responses contact_id],
+    %w[lead_submissions contact_id],
+    %w[medelement_provider_commands contact_id],
+    %w[meta_ad_referrals contact_id],
+    %w[notes contact_id],
+    %w[reminders target_contact_id],
+    %w[scheduling_appointments contact_id],
+    %w[scheduling_appointments patient_contact_id],
+    %w[telephony_call_sessions contact_id],
+    %w[telephony_contact_endpoints contact_id]
+  ].freeze
 
   HANDLED_BY_CONTACT_MERGE = %w[
     communication_threads contact_channel_profiles contact_inboxes conversations crm_deal_contacts notes
@@ -35,6 +37,7 @@ class Contacts::ReferenceMergeService
   end
 
   def perform
+    ensure_patient_bindings_are_settled!
     ensure_provider_commands_do_not_collide!
     ensure_assignment_ownerships_do_not_collide!
     deduplicate_assignment_quota_usages!
@@ -47,8 +50,19 @@ class Contacts::ReferenceMergeService
   def self.merge_reminder_references!(base_contact:, mergee_contact:)
     raise UnsafeMergeError, 'Reminder contacts must belong to the same account.' unless base_contact.account_id == mergee_contact.account_id
 
+    # An open appointment touch re-derives its target from its appointment when saved, so the appointment chat and
+    # patient contacts move first; otherwise the touch would point back at the mergee that is about to be deleted.
+    merge_appointment_references!(base_contact: base_contact, mergee_contact: mergee_contact)
     Reminder.where(account_id: base_contact.account_id, target_contact_id: mergee_contact.id).find_each do |reminder|
       reminder.update!(target_contact: base_contact)
+    end
+  end
+
+  def self.merge_appointment_references!(base_contact:, mergee_contact:)
+    now = Time.current
+    %w[contact_id patient_contact_id].each do |column|
+      Scheduling::Appointment.where(account_id: base_contact.account_id).where(column => mergee_contact.id)
+                             .update_all(column => base_contact.id, 'updated_at' => now) # rubocop:disable Rails/SkipsModelValidations
     end
   end
 
@@ -80,7 +94,14 @@ class Contacts::ReferenceMergeService
   attr_reader :account, :base_contact, :mergee_contact
 
   def remaining_references
-    REFERENCE_COLUMNS.except(*HANDLED_BY_CONTACT_MERGE, 'reminders')
+    REFERENCE_COLUMNS.reject { |table, _column| table.in?(HANDLED_BY_CONTACT_MERGE) || table == 'reminders' }
+  end
+
+  def ensure_patient_bindings_are_settled!
+    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(base_contact, mergee_contact)
+    return unless Contacts::PatientIdentityMergeGuard.patient_binding_write_in_flight?(base_contact, mergee_contact)
+
+    raise UnsafeMergeError, 'A MedElement write for this patient card is in progress or awaits verification. Finish it before merging.'
   end
 
   def ensure_provider_commands_do_not_collide!

@@ -26,6 +26,8 @@
       "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Пациент картасы",
+      "PATIENT_CARD_LINK": "Науқас картасы: {patientName} №{contactId}",
       "CHECK_PROVIDER_BOOKING": "MedElement жүйесінде тексеру",
       "CHECK_STARTED": "MedElement тексеруі басталды. Аяқталған соң жазбаны жаңартып, расталған ID болса, бөлек болдырмаңыз.",
       "CHECK_CANCELLED_STARTED": "MedElement тексеруі басталды. Қашықтағы қабылдау өшірілмейді; кейін қолмен шешу қажет.",

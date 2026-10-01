@@ -55,6 +55,24 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 
+  it 'exposes an account-scoped separate patient card while ignoring a supplied foreign binding ID' do
+    patient = create(:contact, account: account, name: 'Relative', last_name: 'Patient', phone_number: nil)
+    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, patient_contact: patient,
+                                                  client_name: 'Relative Patient', starts_at: booking_day, ends_at: booking_day + 30.minutes)
+    foreign_card = create(:contact)
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload')).to include('patient_contact_id' => patient.id, 'patient_contact_name' => 'Relative Patient',
+                                                      'contact_id' => contact.id)
+    patch "#{path}/#{appointment.id}", params: { client_comment: 'Comment only', patient_contact_id: foreign_card.id }, headers: headers, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload).to have_attributes(patient_contact_id: patient.id, contact_id: contact.id)
+    foreign_account_path = "/api/v1/accounts/#{foreign_card.account_id}/scheduling/appointments/#{appointment.id}"
+    get foreign_account_path, headers: headers, as: :json
+    expect(response).not_to have_http_status(:ok)
+    expect(response_body.to_s).not_to include('Relative Patient')
+  end
+
   it 'preserves manually entered first name, surname and IIN after creation and readback' do
     post path,
          params: base_params.merge(

@@ -17,6 +17,72 @@ RSpec.describe TelegramPersonal::ContactSyncService do
   let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
   let(:channel) { create(:channel_telegram_personal, account: account, phone_number: '+77066318623') }
 
+  it 'never absorbs a communication owner without a phone into the patient card that took the booking phone', :aggregate_failures do
+    account.enable_features!('scheduling')
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    owner = create(:contact, account: account, name: 'Mother', phone_number: nil, identifier: 'telegram_personal:55555')
+    owner_source = create(:contact_inbox, contact: owner, inbox: channel.inbox, source_id: '55555')
+    conversation = create(:conversation, account: account, inbox: channel.inbox, contact: owner, contact_inbox: owner_source)
+    create(:message, account: account, inbox: channel.inbox, conversation: conversation, sender: owner, message_type: :incoming)
+    appointment = create(:scheduling_appointment, account: account, contact: owner, conversation: conversation,
+                                                  client_first_name: 'Child', client_last_name: 'Patient', client_middle_name: nil,
+                                                  client_name: 'Child Patient', client_phone: '+77000000009', client_identifier: nil,
+                                                  custom_attributes: { policy::OWNED_IDENTITY_KEY => true, policy::EXPLICIT_IDENTIFIER_KEY => true })
+    appointment.with_lock do
+      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(patient_code: 'child-2')
+      appointment.save!
+    end
+    card = appointment.reload.patient_contact
+    # Owner model 2026-09-29 (M2): the card has the family number only as доп. номер shared from the booking chat.
+    expect(card).to have_attributes(phone_number: nil)
+    expect(card.custom_attributes['secondary_phones']).to eq(['+77000000009'])
+
+    described_class.new(inbox: channel.inbox, params: { peer_user_id: '55555', chat_id: '55555', first_name: 'Mother',
+                                                        phone_number: '77000000009', sync_source: 'saved_contact' }).perform
+
+    expect(Contact.exists?(owner.id)).to be(true)
+    expect(owner.reload.phone_number).to eq('+77000000009')
+    expect(card.reload.phone_number).to be_nil
+    expect(conversation.reload.contact_id).to eq(owner.id)
+    expect(owner_source.reload.contact_id).to eq(owner.id)
+    expect(appointment.reload).to have_attributes(contact_id: owner.id, patient_contact_id: card.id)
+    expect(card.reload.custom_attributes['medelement_patient_code']).to eq('child-2')
+  end
+
+  it 'preserves separate patient cards and existing inbound authorship on a shared-phone collision' do
+    owner = create(:contact, account: account, name: 'Primary', phone_number: '+77000000001',
+                             custom_attributes: { 'medelement_patient_code' => 'primary-1' })
+    patient = create(:contact, account: account, name: 'Relative', phone_number: nil, identifier: 'telegram_personal:99999',
+                               custom_attributes: { 'medelement_patient_code' => 'relative-2', 'medelement_patient_card' => true })
+    source = create(:contact_inbox, inbox: channel.inbox, contact: patient, source_id: '99999')
+    conversation = create(:conversation, account: account, inbox: channel.inbox, contact: patient, contact_inbox: source)
+    message = create(:message, account: account, inbox: channel.inbox, conversation: conversation, sender: patient, message_type: :incoming)
+    result = described_class.new(inbox: channel.inbox, params: { peer_user_id: '99999', chat_id: '99999',
+                                                                 first_name: 'Relative', phone_number: '77000000001',
+                                                                 sync_source: 'saved_contact' }).perform
+    expect(result.contact_id).to eq(patient.id)
+    expect(source.reload).to have_attributes(contact_id: patient.id, source_id: '99999')
+    expect(message.reload.sender_id).to eq(patient.id)
+    expect(owner.reload).to have_attributes(name: 'Primary', phone_number: '+77000000001')
+    expect(patient.reload).to have_attributes(phone_number: nil)
+    expect(patient.custom_attributes['medelement_patient_code']).to eq('relative-2')
+  end
+
+  it 'locks bound patient appointments before a channel merge re-checks the patient guard' do
+    source = create(:contact, account: channel.account, phone_number: nil)
+    target = create(:contact, account: channel.account, phone_number: '+77000000009')
+    guard = Contacts::PatientIdentityMergeGuard
+    allow(guard).to receive(:lock_patient_bindings!).and_call_original
+    allow(guard).to receive(:allowed?).and_return(false)
+    service = described_class.new(inbox: channel.inbox, params: { peer_user_id: '99998', chat_id: '99998', first_name: 'Duplicate' })
+
+    ActiveRecord::Base.transaction { service.send(:merge_contact_records!, source_contact: source, target_contact: target) }
+
+    expect(guard).to have_received(:lock_patient_bindings!).with(source, target).ordered
+    expect(guard).to have_received(:allowed?).with(source_contact: source, target_contact: target).ordered
+    expect(Contact.exists?(source.id)).to be(true)
+  end
+
   def create_reminder_for_contact_inbox(contact_inbox)
     conversation = create(
       :conversation, account: contact_inbox.contact.account, inbox: contact_inbox.inbox,

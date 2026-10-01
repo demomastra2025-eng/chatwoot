@@ -91,7 +91,9 @@
         "LOCAL_UNLINKED_COUNT": "Тек One Link жүйесінде"
       },
       "CONFLICT_TYPE": {
-        "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады"
+        "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады",
+        "PATIENT_CARD_REPAIR_REQUIRED": "Пациент картасын чат контактісінен бөлу қажет",
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement жазбаны басқа пациентке ауыстырды"
       },
       "IMPORT": {
         "TITLE": "Каталогты импорттау",

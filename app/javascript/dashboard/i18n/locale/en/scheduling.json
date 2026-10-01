@@ -168,6 +168,8 @@
       "TITLE": "No dialog created yet"
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Patient card",
+      "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
       "APPOINTMENT_TITLE": "Appointment details",
       "APPOINTMENT_TYPE": "Appointment type",

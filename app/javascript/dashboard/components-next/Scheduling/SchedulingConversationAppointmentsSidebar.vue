@@ -9,6 +9,7 @@ import {
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
@@ -76,6 +77,7 @@ const NEW_APPOINTMENT_KEY = 'new-appointment';
 
 const { t, locale } = useI18n();
 const store = useStore();
+const route = useRoute();
 const schedulingReferencesStore = useSchedulingReferencesStore();
 
 const appointments = ref([]);
@@ -1658,6 +1660,30 @@ watch(
               />
             </span>
           </button>
+
+          <RouterLink
+            v-if="
+              appointment.patientContactId &&
+              appointment.patientContactId !== appointment.contactId
+            "
+            class="mx-3 mb-2.5 block text-xs text-n-blue-11"
+            :to="{
+              name: 'contacts_edit',
+              params: {
+                accountId: route.params.accountId,
+                contactId: appointment.patientContactId,
+              },
+            }"
+            data-testid="appointment-patient-card"
+          >
+            {{
+              $t('SCHEDULING.APPOINTMENT_FORM.PATIENT_CARD_LINK', {
+                patientName:
+                  appointment.patientContactName || appointment.clientName,
+                contactId: appointment.patientContactId,
+              })
+            }}
+          </RouterLink>
 
           <div
             v-if="

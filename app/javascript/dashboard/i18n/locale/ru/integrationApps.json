@@ -148,6 +148,8 @@
         "PHONE_MISMATCH": "Телефон отличается от данных контакта",
         "INVALID_RECEPTION": "Запись не удалось импортировать",
         "PATIENT_UNRESOLVED": "Пациент не связан с контактом",
+        "PATIENT_CARD_REPAIR_REQUIRED": "Карточку пациента нужно отделить от контакта чата",
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement перенёс запись на другого пациента",
         "APPOINTMENT_AMOUNT_MISMATCH": "Сумма записи расходится с MedElement",
         "LOCAL_PAYMENT_PRESERVED": "Локальный платёж сохранён"
       },

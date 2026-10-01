@@ -136,6 +136,8 @@ class Campaigns::AudienceImportService
     existing = matches.first
     raise Error, 'identity_conflict' if conflicting_identity?(row, existing)
     return [existing, false] if existing.present?
+    # A family number reserved for a hidden-number share (M2) is not given to a new imported contact.
+    raise Error, 'phone_reserved' if reserved_phone?(phone_number)
 
     contact = @account.contacts.create!(
       name: phone_number,
@@ -145,6 +147,10 @@ class Campaigns::AudienceImportService
       additional_attributes: { country_code: @default_country }
     )
     [contact, true]
+  end
+
+  def reserved_phone?(phone_number)
+    Contacts::ServerOwnedAttributes.reserved_for_other?(account_id: @account.id, phone: phone_number, contact_id: nil)
   end
 
   def conflicting_identity?(row, expected_contact)

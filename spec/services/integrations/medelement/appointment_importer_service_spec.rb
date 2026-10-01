@@ -19,6 +19,247 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     }
   end
 
+  it 'imports the separate subject while retaining the shared communication owner and subsequent route' do
+    owner = create(:contact, account: account, name: 'Primary', phone_number: '+77000000001')
+    patient = create(:contact, account: account, name: 'Relative', last_name: 'Patient', phone_number: nil,
+                               custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'],
+                                                    'medelement_patient_card' => true,
+                                                    'medelement_shared_phone_owner_contact_id' => owner.id,
+                                                    'secondary_phones' => [owner.phone_number] })
+    result = service.upsert!(resource: resource, contact: patient, reception: reception, import_context: import_context)
+    expect(result).to have_attributes(contact_id: owner.id, patient_contact_id: patient.id,
+                                      client_name: 'Relative Patient', client_phone: owner.phone_number)
+    conversation = create(:conversation, account: account, contact: owner)
+    result.update!(conversation: conversation)
+    patient.update!(phone_number: '+77000000002')
+    service.upsert!(resource: resource, contact: patient, reception: reception,
+                    import_context: import_context.merge(starts_at: import_context[:starts_at] + 1.hour, ends_at: import_context[:ends_at] + 1.hour))
+    expect(result.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: patient.id,
+                                             client_name: 'Relative Patient', client_phone: '+77000000002')
+    expect(owner.reload).to have_attributes(name: 'Primary', phone_number: '+77000000001')
+  end
+
+  describe 'provider-side patient change of a bound MedElement reception' do
+    let(:policy) { Integrations::Medelement::AppointmentPatientIdentity }
+    let(:run) { Integrations::Medelement::SyncRun.create!(account: account, trigger: 'manual', status: 'running') }
+    let(:service) { described_class.new(account: account, conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: run)) }
+    let(:owner) { create(:contact, account: account, name: 'Primary', phone_number: '+77000000001') }
+    let(:conversation) { create(:conversation, account: account, contact: owner) }
+    let(:moved) { import_context.merge(starts_at: import_context[:starts_at] + 1.hour, ends_at: import_context[:ends_at] + 1.hour) }
+    let(:sibling) do
+      create(:contact, account: account, name: 'Sibling', last_name: 'Patient', phone_number: '+77000000003',
+                       custom_attributes: { 'medelement_patient_code' => 'sibling-3' })
+    end
+    let!(:card) { shared_phone_card('Relative', reception['PATIENT_CODE']) }
+    let!(:appointment) do
+      service.upsert!(resource: resource, contact: card, reception: reception, import_context: import_context).tap do |record|
+        record.update!(conversation: conversation)
+      end
+    end
+
+    def shared_phone_card(name, code)
+      create(:contact, account: account, name: name, last_name: 'Patient', phone_number: nil,
+                       custom_attributes: { 'medelement_patient_code' => code, 'medelement_patient_card' => true,
+                                            'medelement_shared_phone_owner_contact_id' => owner.id,
+                                            'secondary_phones' => [owner.phone_number] })
+    end
+
+    def reimport!(contact, patient_code, extra = {})
+      service.upsert!(resource: resource, contact: contact, reception: reception.merge('PATIENT_CODE' => patient_code).merge(extra),
+                      import_context: moved)
+    end
+
+    it 'follows the new provider patient and then applies the time move and the removal' do
+      expect(appointment).to have_attributes(source: 'medelement', contact_id: owner.id, patient_contact_id: card.id)
+
+      reimport!(sibling, 'sibling-3')
+
+      expect(appointment.reload).to have_attributes(contact_id: sibling.id, patient_contact_id: nil, conversation_id: nil,
+                                                    client_name: 'Sibling Patient', client_phone: sibling.phone_number,
+                                                    starts_at: moved[:starts_at], status: 'scheduled')
+      expect(appointment.custom_attributes).not_to include(policy::OWNED_IDENTITY_KEY, 'medelement_patient_code')
+      expect(run.observed_conflicts.find_by(conflict_type: 'patient_changed_by_provider')).to have_attributes(
+        status: 'open', entity_type: 'appointment',
+        details: hash_including('appointment_id' => appointment.id, 'previous_patient_contact_id' => card.id,
+                                'new_patient_contact_id' => sibling.id)
+      )
+
+      reimport!(sibling, 'sibling-3', 'REMOVED' => 1)
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', contact_id: sibling.id, starts_at: moved[:starts_at])
+      expect(card.reload.custom_attributes).to include('medelement_patient_code' => reception['PATIENT_CODE'])
+      expect(owner.reload).to have_attributes(name: 'Primary', phone_number: '+77000000001')
+    end
+
+    it 'keeps the chat route and conversation when the new provider patient shares the number' do
+      relative = shared_phone_card('Second', 'second-4')
+
+      reimport!(relative, 'second-4')
+
+      expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: relative.id,
+                                                    client_name: 'Second Patient', client_phone: owner.phone_number,
+                                                    starts_at: moved[:starts_at])
+      expect(appointment.custom_attributes).to include(policy::OWNED_IDENTITY_KEY => true, 'medelement_patient_code' => 'second-4')
+
+      reimport!(relative, 'second-4', 'REMOVED' => 1)
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', patient_contact_id: relative.id, conversation_id: conversation.id)
+      expect(run.observed_conflicts.where(conflict_type: 'patient_changed_by_provider').count).to eq(1)
+    end
+
+    it 'clears the patient card when MedElement moves the reception to the chat contact itself' do
+      owner.update!(custom_attributes: { 'medelement_patient_code' => 'primary-1' })
+
+      reimport!(owner, 'primary-1')
+
+      expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: nil,
+                                                    client_name: 'Primary', starts_at: moved[:starts_at])
+      expect(appointment.custom_attributes).not_to include(policy::OWNED_IDENTITY_KEY, 'medelement_patient_code')
+      expect(owner.reload.custom_attributes).to eq('medelement_patient_code' => 'primary-1')
+    end
+
+    it 'keeps the binding and the chat route when MedElement only re-codes the bound patient card' do
+      card.update!(phone_number: '+77000000004', custom_attributes: card.custom_attributes.merge('medelement_patient_code' => 'recoded-5'))
+
+      reimport!(card, 'recoded-5')
+
+      expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: card.id,
+                                                    starts_at: moved[:starts_at])
+      expect(appointment.custom_attributes).to include(policy::OWNED_IDENTITY_KEY => true, 'medelement_patient_code' => 'recoded-5')
+      expect(run.observed_conflicts.where(conflict_type: 'patient_changed_by_provider')).to be_empty
+    end
+
+    it 'keeps the captured binding only while a local provider write for the appointment is in flight' do
+      in_flight = create_command(status: 'processing', write_phase: 'reception_move')
+
+      expect { reimport!(sibling, 'sibling-3') }.to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION')
+      end
+      expect(appointment.reload).to have_attributes(contact_id: owner.id, patient_contact_id: card.id, starts_at: import_context[:starts_at])
+
+      in_flight.update_columns(status: 'failed') # rubocop:disable Rails/SkipsModelValidations
+      create_command(status: 'queued')
+      reimport!(sibling, 'sibling-3')
+
+      expect(appointment.reload).to have_attributes(contact_id: sibling.id, patient_contact_id: nil, starts_at: moved[:starts_at])
+    end
+
+    def create_command(status:, write_phase: nil)
+      Integrations::Medelement::ProviderCommand.new(
+        account: account, appointment: appointment, contact: owner, operation: 'move_reception', status: status,
+        idempotency_key: SecureRandom.uuid, execution_state: { 'write_phase' => write_phase }.compact
+      ).tap { |command| command.save!(validate: false) }
+    end
+  end
+
+  describe 'owned appointments created before separate patient cards' do
+    let(:policy) { Integrations::Medelement::AppointmentPatientIdentity }
+    let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
+    let(:resource) do
+      create(:scheduling_resource, account: account,
+                                   custom_attributes: { 'medelement_specialist_code' => 'specialist-1',
+                                                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }] })
+    end
+    let(:owner_code) { 'primary-1' }
+    let(:owner) do
+      create(:contact, account: account, name: 'Primary', phone_number: '+77000000001',
+                       custom_attributes: { 'medelement_patient_code' => owner_code })
+    end
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, contact: owner, resource: resource, service: nil,
+                                      client_first_name: 'Relative', client_last_name: 'Patient', client_middle_name: nil,
+                                      client_name: 'Relative Patient', client_phone: owner.phone_number, client_identifier: '940720300129',
+                                      custom_attributes: { policy::EXPLICIT_IDENTIFIER_KEY => true, policy::OWNED_IDENTITY_KEY => true,
+                                                           'medelement_cabinet_code' => 'cabinet-1' }).tap do |record|
+        record.update_columns(external_ref: 'medelement:reception:reception-2', # rubocop:disable Rails/SkipsModelValidations
+                              custom_attributes: record.custom_attributes.merge('medelement_patient_code' => 'relative-2',
+                                                                                'medelement_reception_code' => 'reception-2',
+                                                                                'medelement_provider_sync_status' => 'succeeded'))
+        record.reload
+      end
+    end
+    let(:run) { Integrations::Medelement::SyncRun.create!(account: account, trigger: 'manual', status: 'running') }
+    let(:service) { described_class.new(account: account, conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: run)) }
+
+    before do
+      Integrations::Medelement::ProviderCommand.create!(
+        account: account, appointment: appointment, contact: owner, operation: 'create_reception', status: 'succeeded',
+        company_cabinet_code: 'cabinet-1', provider_patient_code: 'relative-2', idempotency_key: SecureRandom.uuid,
+        execution_state: { 'write_phase' => 'reception_create',
+                           'request_snapshot' => { 'provider_patient_code' => 'relative-2',
+                                                   policy::SNAPSHOT_KEY => policy.current_snapshot(appointment) } }
+      )
+    end
+
+    def import!(patient_code, contact: nil)
+      service.upsert!(
+        resource: resource, contact: contact,
+        reception: { 'RECEPTION_CODE' => 'reception-2', 'PATIENT_CODE' => patient_code, 'ACTIVE' => 1 },
+        import_context: { starts_at: appointment.starts_at + 1.hour, ends_at: appointment.ends_at + 1.hour, specialist_code: 'specialist-1' }
+      )
+    end
+
+    it 'rejects a reception that now carries another patient code before any card or contact write' do
+      other = create(:contact, account: account, name: 'Other', phone_number: nil,
+                               custom_attributes: { 'medelement_patient_code' => 'other-3' })
+      contacts_before = account.contacts.count
+      starts_at = appointment.starts_at
+
+      [other, nil].each do |contact|
+        expect { import!('other-3', contact: contact) }.to raise_error(Scheduling::Error) do |error|
+          expect(error.code).to eq('MEDELEMENT_PATIENT_IDENTITY_CONFLICT')
+        end
+      end
+
+      expect(appointment.reload).to have_attributes(patient_contact_id: nil, starts_at: starts_at)
+      expect(appointment.custom_attributes['medelement_patient_code']).to eq('relative-2')
+      expect(other.reload.custom_attributes).not_to include('iin', 'medelement_patient_card')
+      expect(account.contacts.count).to eq(contacts_before)
+    end
+
+    # Owner decision 2026-09-30: with the shipped switches (all off) no entry point promotes a доп. номер.
+    it 'never makes the card доп. номер its primary on a reimport after the holder released the number', :aggregate_failures do
+      expect(Contacts::SharedPhoneSwitches.states.values).to all(be(false))
+      import!('relative-2')
+      card = appointment.reload.patient_contact
+      expect(card.phone_number).to be_nil
+      expect(Contacts::SharedPhone.share_of(card)).to have_attributes(phone: '+77000000001', owner_id: owner.id)
+
+      owner.update!(phone_number: '+77000000004')
+      import!('relative-2')
+
+      expect(appointment.reload.patient_contact_id).to eq(card.id)
+      expect(card.reload.phone_number).to be_nil
+      expect(Contacts::SharedPhone.share_of(card)).to have_attributes(phone: '+77000000001', owner_id: owner.id)
+      expect(account.contacts.where(phone_number: '+77000000001')).to be_empty
+    end
+
+    context 'when the chat contact already holds the appointment patient code' do
+      let(:owner_code) { 'relative-2' }
+
+      it 'keeps the unbound import behaviour and records a repair conflict instead of failing' do
+        owner_attributes = owner.reload.attributes
+        starts_at = appointment.starts_at
+
+        import!('relative-2', contact: owner)
+
+        expect(appointment.reload).to have_attributes(patient_contact_id: nil, contact_id: owner.id, starts_at: starts_at + 1.hour)
+        expect(owner.reload.attributes.except('updated_at', 'last_activity_at')).to eq(owner_attributes.except('updated_at', 'last_activity_at'))
+        expect(run.observed_conflicts.find_by(conflict_type: 'patient_card_repair_required')).to have_attributes(
+          status: 'open', entity_type: 'appointment', details: hash_including('appointment_id' => appointment.id)
+        )
+      end
+
+      it 'keeps comment-only edits available until the repair runs' do
+        Scheduling::Appointments::UpsertService.new(account: account, appointment: appointment.reload,
+                                                    params: { client_comment: 'Comment only' }).perform
+
+        expect(appointment.reload).to have_attributes(client_comment: 'Comment only', patient_contact_id: nil)
+        expect(owner.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
+      end
+    end
+  end
+
   it 'uses a normalized secondary patient phone when the contact main phone is unavailable' do
     secondary_phone = ['+7', '700', '101', '3034'].join
     contact = create(

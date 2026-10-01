@@ -107,6 +107,66 @@ describe ContactIdentifyAction do
       end
     end
 
+    context 'when the matching contact is a separate MedElement patient card' do
+      let!(:card) do
+        create(:contact, account: account, name: 'Relative', email: 'relative-card@example.com', phone_number: '+77000000002',
+                         identifier: 'relative-card-id',
+                         custom_attributes: { 'medelement_patient_card' => true, 'medelement_patient_code' => 'relative-2' })
+      end
+      let!(:visitor_conversation) { create(:conversation, account: account, contact: contact) }
+
+      def expect_card_untouched
+        expect(card.reload).to have_attributes(name: 'Relative', email: 'relative-card@example.com', phone_number: '+77000000002',
+                                               identifier: 'relative-card-id')
+        expect(card.custom_attributes['medelement_patient_code']).to eq('relative-2')
+        expect(Conversation.where(contact_id: card.id)).to be_empty
+      end
+
+      it 'keeps the visitor separate when the email belongs to the card' do
+        result = described_class.new(contact: contact, params: { name: 'Visitor', email: 'relative-card@example.com' }).perform
+
+        expect(result.id).to eq(contact.id)
+        expect(contact.reload.name).to eq('Visitor')
+        expect(contact.email).not_to eq('relative-card@example.com')
+        expect(visitor_conversation.reload.contact_id).to eq(contact.id)
+        expect_card_untouched
+      end
+
+      it 'keeps the visitor separate when the phone number belongs to the card' do
+        result = described_class.new(contact: contact, params: { phone_number: '+77000000002' }).perform
+
+        expect(result.id).to eq(contact.id)
+        expect(contact.reload.phone_number).not_to eq('+77000000002')
+        expect(visitor_conversation.reload.contact_id).to eq(contact.id)
+        expect_card_untouched
+      end
+
+      it 'keeps the visitor separate when the identifier belongs to the card' do
+        result = described_class.new(contact: contact, params: { identifier: 'relative-card-id', name: 'Visitor' }).perform
+
+        expect(result.id).to eq(contact.id)
+        expect(contact.reload.name).to eq('Visitor')
+        expect(contact.identifier).not_to eq('relative-card-id')
+        expect_card_untouched
+      end
+    end
+
+    context 'when a merge is refused after references were already moved' do
+      it 'rolls the partial merge back and keeps the visitor separate' do
+        existing = create(:contact, account: account, email: 'owner@example.com')
+        create(:assignment_client_ownership, account: account, contact: existing)
+        create(:assignment_client_ownership, account: account, contact: contact)
+        visitor_conversation = create(:conversation, account: account, contact: contact)
+
+        result = described_class.new(contact: contact, params: { email: 'owner@example.com' }).perform
+
+        expect(result.id).to eq(contact.id)
+        expect(visitor_conversation.reload.contact_id).to eq(contact.id)
+        expect(contact.reload.email).not_to eq('owner@example.com')
+        expect(existing.reload.email).to eq('owner@example.com')
+      end
+    end
+
     context 'when contacts with blank identifiers exist and identify action is called with blank identifier' do
       it 'updates the attributes of contact passed in to identify action' do
         create(:contact, account: account, identifier: '')

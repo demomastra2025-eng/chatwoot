@@ -10,6 +10,8 @@ class Reminders::TargetRouteResolver
   end
 
   def perform
+    return clear_unroutable_patient_route if unroutable_patient_route?
+
     hydrate_source_context
     normalize_delivery_target
     reminder
@@ -17,7 +19,21 @@ class Reminders::TargetRouteResolver
 
   private
 
+  # A separate patient's appointment without a booking chat whose доп. номер has no verified phone chat (H2c): the
+  # touch keeps no contact, ContactInbox or conversation and stays a visible draft that needs a route (staff choose a
+  # phone inbox, or the patient gets an own number). No other chat of the holder or share owner is used.
+  def unroutable_patient_route?
+    reminder.remindable.is_a?(Scheduling::Appointment) && !reminder.delivery_route_settled? && reminder.notification_route.unroutable?
+  end
+
+  def clear_unroutable_patient_route
+    reminder.target_contact = nil
+    mark_route_reassignment_required
+    reminder
+  end
+
   def hydrate_source_context
+    reminder.align_notification_contact if reminder.target_contact.present?
     reminder.conversation ||= source_conversation if source_conversation_matches_contact?
     reminder.target_contact ||= source_contact
     reminder.target_inbox ||= source_conversation&.inbox
@@ -45,12 +61,31 @@ class Reminders::TargetRouteResolver
     source_id = resolved_source_id
     return if source_id.blank? && current_identity_required?
     return latest_unversioned_contact_inbox if source_id.blank?
+    return patient_own_contact_inbox(source_id) if Reminders::PatientSubjectGuard.no_steal_route?(reminder)
 
+    contact_inbox_for(source_id)
+  end
+
+  def contact_inbox_for(source_id)
     Outbound::ContactInboxResolver.new(
       inbox: reminder.target_inbox,
       contact: reminder.target_contact,
       source_id: source_id
     ).perform
+  end
+
+  # Every route of a separate patient's appointment gets a ContactInbox of its own contact, but never one that is
+  # already another contact's chat identity in this inbox (that touch needs reassignment instead). The insert runs in a
+  # savepoint and a lost race with the same contact's ContactInbox reuses the winner (see
+  # PatientSubjectGuard.own_contact_inbox); other database errors propagate, so the per-touch sync savepoint rolls the
+  # touch back instead of saving a reassignment draft.
+  def patient_own_contact_inbox(source_id)
+    Reminders::PatientSubjectGuard.own_contact_inbox(inbox: reminder.target_inbox, contact: reminder.target_contact, source_id: source_id) do
+      contact_inbox_for(source_id)
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    Rails.logger.warn({ event: 'reminder_patient_contact_inbox_unavailable', reminder_id: reminder.id, error: e.class.name }.to_json)
+    nil
   end
 
   def latest_unversioned_contact_inbox
@@ -162,7 +197,8 @@ class Reminders::TargetRouteResolver
                       when Conversation
                         [entity.contact, entity]
                       when Scheduling::Appointment
-                        [entity.contact, entity.conversation]
+                        route = Reminders::PatientSubjectGuard.notification_route(entity, inbox: reminder.target_inbox)
+                        [route.contact, route.conversation || entity.conversation]
                       when Crm::Deal
                         [deal_contact(entity), entity.originating_conversation]
                       when Crm::Task

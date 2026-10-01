@@ -254,6 +254,11 @@ en:
       delivery_status:
         error_code: 'Error code: %{error_code}'
     activity:
+      number_history_transfer:
+        medelement: 'Chat history of %{phone} was moved from contact "%{from}" to contact "%{to}". Basis: MedElement (automatic). %{time}.'
+        administrator: 'Chat history of %{phone} was moved from contact "%{from}" to contact "%{to}". Basis: administrator %{user_name}. %{time}.'
+        reverted: 'The chat history transfer of %{phone} was reverted: the chat moved back from contact "%{from}" to contact "%{to}". By: %{user_name}. %{time}.'
+        whatsapp_account: 'WhatsApp confirmed that this chat is the same account as %{phone}: it was moved from contact "%{from}" to contact "%{to}" (the contacts were not merged). %{time}.'
       captain:
         resolved: 'Conversation was marked resolved by %{user_name} due to inactivity'
         resolved_with_reason: 'Conversation was marked resolved by %{user_name} (%{reason})'

@@ -13,6 +13,7 @@ class Integrations::Medelement::AppointmentImporterService
     medelement_removed_at
     medelement_detail_retry_at
   ].freeze
+  ImportSubject = Data.define(:patient_contact, :contact, :preserve_identity)
 
   def initialize(account:, conflict_tracker: nil)
     @account = account
@@ -56,7 +57,8 @@ class Integrations::Medelement::AppointmentImporterService
       snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
     ).validate!
     provider_binding(appointment, reception).validate!
-    contact = preserved_identity_contact(appointment, reception, contact)
+    subject = import_subject(appointment, contact, reception)
+    contact = subject.contact
     record_unresolved_patient_conflict(reception) if contact.blank?
     attributes = appointment_attributes(
       appointment: appointment,
@@ -67,6 +69,7 @@ class Integrations::Medelement::AppointmentImporterService
     )
     restore_paid_local_cancellation_expense = restore_paid_local_cancellation_expense?(appointment, attributes)
     appointment.assign_attributes(attributes)
+    assign_import_subject!(appointment, subject)
     persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
     appointment
   end
@@ -85,6 +88,60 @@ class Integrations::Medelement::AppointmentImporterService
 
   def sync_restored_local_cancellation_expense!(appointment)
     Scheduling::Appointments::FinanceSyncService.new(appointment: appointment).sync_expense_only!
+  end
+
+  def import_subject(appointment, contact, reception)
+    return preserved_import_subject(appointment, reception) if preserve_local_patient_identity?(appointment)
+
+    if appointment.patient_contact_id.present?
+      # Same patient, possibly re-coded by MedElement onto the same card: keep the binding and the appointment chat contact.
+      if local_patient_reference?(appointment, reception) || contact&.id == appointment.patient_contact_id
+        return ImportSubject.new(patient_contact: appointment.patient_contact, contact: appointment.contact, preserve_identity: false)
+      end
+
+      release_provider_patient_binding!(appointment, reception, contact)
+    end
+    delivery_contact = Integrations::Medelement::PatientContactBinding.delivery_contact(contact)
+    ImportSubject.new(patient_contact: contact, contact: delivery_contact, preserve_identity: false)
+  end
+
+  # Locally authored appointments keep their recorded patient: the reference is checked before any card lookup or contact write.
+  def preserved_import_subject(appointment, reception)
+    validate_local_patient_reference!(appointment, reception)
+    Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(patient_code: reception['PATIENT_CODE'])
+    record_patient_card_repair_conflict(appointment, reception)
+    ImportSubject.new(patient_contact: appointment.patient_contact || appointment.contact, contact: appointment.contact, preserve_identity: true)
+  end
+
+  # MedElement owns the patient of its own receptions. A provider-side patient change re-resolves the subject like a
+  # fresh import (the appointment chat contact stays when the new patient still shares it; touches pick their route
+  # at send time, see Reminders::PatientSubjectGuard). Only a local provider write that has
+  # started or awaits verification keeps the captured binding until it settles.
+  def release_provider_patient_binding!(appointment, reception, contact)
+    if Integrations::Medelement::AppointmentPatientBindingSnapshot.writes_in_flight(appointment.id).exists?
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_BOOKING_REQUIRES_VERIFICATION', message: 'Patient identity is locked while a provider write requires verification',
+        status: :conflict
+      )
+    end
+
+    record_provider_patient_change_conflict(appointment, reception, contact)
+    appointment.patient_contact = nil
+    appointment.custom_attributes = appointment.custom_attributes.except(
+      Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY, 'medelement_patient_code'
+    )
+  end
+
+  def assign_import_subject!(appointment, subject)
+    patient = subject.patient_contact
+    appointment.assign_attributes(client_attributes(patient)) unless subject.preserve_identity
+    return unless patient && patient.id != subject.contact&.id
+
+    appointment.patient_contact = patient
+    appointment.custom_attributes = appointment.custom_attributes.merge(
+      Integrations::Medelement::AppointmentPatientIdentity::OWNED_IDENTITY_KEY => true,
+      'medelement_patient_code' => patient.custom_attributes['medelement_patient_code']
+    ).compact
   end
 
   # Keep the provider-to-appointment mapping visible as one declarative contract.
@@ -152,13 +209,6 @@ class Integrations::Medelement::AppointmentImporterService
     Integrations::Medelement::LocalCancellation
   end
 
-  def preserved_identity_contact(appointment, reception, contact)
-    return contact unless preserve_local_patient_identity?(appointment)
-
-    validate_local_patient_reference!(appointment, reception)
-    appointment.contact
-  end
-
   def preserve_local_patient_identity?(appointment)
     policy = Integrations::Medelement::AppointmentPatientIdentity
     appointment.persisted? && appointment.source != MEDELEMENT_SOURCE &&
@@ -166,13 +216,17 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def validate_local_patient_reference!(appointment, reception)
-    expected = Integrations::Medelement::AppointmentPatientIdentity.provider_code(appointment: appointment, contact: appointment.contact)
-    actual = [reception['PATIENT_CODE'], reception['PROFILE_CODE']].filter_map { |value| value.to_s.presence }.uniq
-    return if expected.present? && actual == [expected.to_s]
+    return if local_patient_reference?(appointment, reception)
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'Imported reception belongs to another patient', status: :conflict
     )
+  end
+
+  def local_patient_reference?(appointment, reception)
+    expected = Integrations::Medelement::AppointmentPatientIdentity.provider_code(appointment: appointment, contact: appointment.contact)
+    actual = [reception['PATIENT_CODE'], reception['PROFILE_CODE']].filter_map { |value| value.to_s.presence }.uniq
+    expected.present? && actual == [expected.to_s]
   end
 
   # Precedence: an explicit MedElement outcome (no-show, cancelled, completed, removed, inactive) wins over
@@ -240,6 +294,13 @@ class Integrations::Medelement::AppointmentImporterService
   def contact_phone(contact)
     return contact.phone_number if contact&.phone_number.present?
 
+    owner = Integrations::Medelement::PatientContactBinding.delivery_contact(contact)
+    return owner.phone_number if owner && owner.id != contact&.id
+
+    non_conflicting_secondary_phone(contact)
+  end
+
+  def non_conflicting_secondary_phone(contact)
     conflict_comment = contact&.custom_attributes&.dig('phone_conflict_comment').to_s
     Array(contact&.custom_attributes&.dig('secondary_phones')).compact_blank.find do |phone|
       conflict_comment.blank? || conflict_comment.exclude?(phone)
@@ -310,6 +371,39 @@ class Integrations::Medelement::AppointmentImporterService
         reception_code: reception['RECEPTION_CODE'].presence,
         patient_code: reception['PATIENT_CODE'].presence,
         specialist_code: reception['specialistCode'].presence
+      }.compact
+    )
+  end
+
+  def record_patient_card_repair_conflict(appointment, reception)
+    return unless Integrations::Medelement::PatientContactBinding.legacy_owner_holds_code?(appointment)
+
+    conflict_tracker&.record!(
+      phase: 'receptions',
+      entity_type: 'appointment',
+      conflict_type: 'patient_card_repair_required',
+      entity_key: "appointment:#{appointment.id}",
+      details: {
+        reason: 'The chat contact holds the patient code of this appointment; review it with the patient card repair task',
+        appointment_id: appointment.id,
+        contact_id: appointment.contact_id,
+        reception_code: reception['RECEPTION_CODE'].presence
+      }.compact
+    )
+  end
+
+  def record_provider_patient_change_conflict(appointment, reception, contact)
+    conflict_tracker&.record!(
+      phase: 'receptions',
+      entity_type: 'appointment',
+      conflict_type: 'patient_changed_by_provider',
+      entity_key: "appointment:#{appointment.id}",
+      details: {
+        reason: 'MedElement moved this reception to another patient; the appointment now follows the provider patient',
+        appointment_id: appointment.id,
+        previous_patient_contact_id: appointment.patient_contact_id,
+        new_patient_contact_id: contact&.id,
+        reception_code: reception['RECEPTION_CODE'].presence
       }.compact
     )
   end

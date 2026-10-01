@@ -157,6 +157,20 @@ describe ContactMergeAction do
         expect(lead.reload.contact_id).to eq(base_contact.id)
         expect(ownership.reload.contact_id).to eq(base_contact.id)
       end
+
+      it 'moves an open appointment touch together with the appointment chat contact' do
+        conversation = mergee_contact.conversations.first
+        appointment = create(:scheduling_appointment, account: account, contact: mergee_contact, conversation: conversation)
+        touch = create(:reminder, account: account, remindable: appointment, conversation: conversation,
+                                  body: 'Pending visit reminder', scheduled_at: 1.day.from_now)
+        expect(touch.target_contact_id).to eq(mergee_contact.id)
+
+        contact_merge
+
+        expect(Contact.exists?(mergee_contact.id)).to be(false)
+        expect(appointment.reload.contact_id).to eq(base_contact.id)
+        expect(touch.reload).to have_attributes(target_contact_id: base_contact.id, conversation_id: conversation.id)
+      end
     end
 
     context 'when both contacts have the same assignment quota identity' do
@@ -197,6 +211,72 @@ describe ContactMergeAction do
 
         expect(mergee_delivery.reload.contact_id).to eq(mergee_contact.id)
         expect(mergee_contact.reload).to be_present
+      end
+    end
+
+    context 'when a separate MedElement patient card is bound to an appointment' do
+      let(:card) do
+        create(:contact, account: account, name: 'Relative', phone_number: nil, identifier: '940720300129',
+                         custom_attributes: { 'medelement_patient_code' => 'relative-2', 'medelement_patient_card' => true })
+      end
+      let!(:appointment) { create(:scheduling_appointment, account: account, contact: base_contact, patient_contact: card) }
+
+      it 'refuses to absorb the card into a contact without the same patient identity' do
+        expect do
+          described_class.new(account: account, base_contact: base_contact, mergee_contact: card).perform
+        end.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError, /same patient code or IIN/)
+
+        expect(card.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
+        expect(base_contact.reload.custom_attributes).not_to have_key('medelement_patient_code')
+        expect(base_contact.identifier).to eq('base_contact')
+        expect(appointment.reload.patient_contact_id).to eq(card.id)
+      end
+
+      it 'refuses to absorb a communication contact into the bound card' do
+        expect do
+          described_class.new(account: account, base_contact: card, mergee_contact: base_contact).perform
+        end.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError)
+
+        expect(appointment.reload).to have_attributes(contact_id: base_contact.id, patient_contact_id: card.id)
+      end
+
+      it 'moves the patient binding to a duplicate that carries the same patient identity' do
+        duplicate = create(:contact, account: account, name: 'Relative', phone_number: '+77000000009',
+                                     custom_attributes: { 'iin' => '940720300129' })
+
+        described_class.new(account: account, base_contact: duplicate, mergee_contact: card).perform
+
+        expect(Contact.exists?(card.id)).to be(false)
+        expect(appointment.reload).to have_attributes(contact_id: base_contact.id, patient_contact_id: duplicate.id)
+        expect(duplicate.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
+      end
+
+      it 'merges a duplicate card that has its own number and an open touch, which then follows the merged card' do
+        account.update!(limits: { non_web_inboxes: 10 })
+        inbox = create(:channel_whatsapp_web, account: account).inbox
+        owner = create(:contact, account: account, name: 'Owner', phone_number: '+77000000001')
+        owner_contact_inbox = create(:contact_inbox, contact: owner, inbox: inbox, source_id: '77000000001')
+        conversation = create(:conversation, account: account, inbox: inbox, contact: owner, contact_inbox: owner_contact_inbox)
+        duplicate = create(:contact, account: account, name: 'Relative duplicate', phone_number: nil,
+                                     custom_attributes: { 'iin' => '940720300129' })
+        visit = create(:scheduling_appointment, account: account, contact: owner, patient_contact: duplicate, conversation: conversation)
+        touch = create(:reminder, account: account, remindable: visit, conversation: conversation, status: :pending,
+                                  body: 'Pending visit reminder', scheduled_at: 1.day.from_now)
+        duplicate.update!(phone_number: '+77000000002')
+        Reminders::SyncRemindableService.new(remindable: visit.reload).perform
+        expect(touch.reload.target_contact_id).to eq(duplicate.id)
+
+        described_class.new(account: account, base_contact: card, mergee_contact: duplicate).perform
+
+        expect(Contact.exists?(duplicate.id)).to be(false)
+        expect(visit.reload).to have_attributes(contact_id: owner.id, patient_contact_id: card.id, conversation_id: conversation.id)
+        expect(card.reload.phone_number).to eq('+77000000002')
+        expect(touch.reload).to be_pending
+        expect([owner.id, card.id]).to include(touch.target_contact_id)
+
+        Reminders::SyncRemindableService.new(remindable: visit.reload).perform
+        expect(touch.reload).to have_attributes(status: 'pending', target_contact_id: card.id,
+                                                target_contact_inbox_id: card.contact_inboxes.find_by!(inbox: inbox).id)
       end
     end
 

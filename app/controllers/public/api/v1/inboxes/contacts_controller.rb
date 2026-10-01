@@ -6,10 +6,15 @@ class Public::Api::V1::Inboxes::ContactsController < Public::Api::V1::InboxesCon
 
   def create
     source_id = params.permit(:source_id)[:source_id].presence || SecureRandom.uuid
+    # process_hmac already rejected a wrong identifier_hash: a present one means a verified identifier.
+    attributes = Contacts::ServerOwnedAttributes.unverified_create_attributes(
+      account: @inbox_channel.inbox.account, attributes: permitted_params.except(:identifier_hash),
+      verified_identifier: (params[:identifier] if params[:identifier_hash].present?)
+    )
     @contact_inbox = ::ContactInboxWithContactBuilder.new(
       source_id: source_id,
       inbox: @inbox_channel.inbox,
-      contact_attributes: permitted_params.except(:identifier_hash)
+      contact_attributes: attributes
     ).perform
   end
 
