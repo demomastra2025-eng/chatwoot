@@ -36,6 +36,32 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'POST /super_admin/accounts' do
+    it 'creates an account when the limit counter exclusion field is blank' do
+      sign_in(super_admin, scope: :super_admin)
+      created_name = "Created account with blank exclusions #{account.id}"
+
+      expect do
+        post '/super_admin/accounts', params: {
+          account: {
+            name: created_name,
+            locale: account.locale,
+            status: account.status,
+            limit_counter_excluded_user_ids_raw: ''
+          }
+        }
+      end.to change(Account, :count).by(1)
+
+      created_account = Account.find_by!(name: created_name)
+      expect(response).to redirect_to(super_admin_account_path(created_account))
+
+      get response.location
+
+      expect(response).to have_http_status(:success)
+      expect(created_account.reload.custom_attributes).not_to have_key('limit_counter_excluded_user_ids')
+    end
+  end
+
   describe 'POST /super_admin/accounts/{account_id}/reset_cache' do
     before do
       create(:label, account: account)
@@ -88,6 +114,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
       end
 
       it 'stores excluded user ids for limit counters as normalized integers' do
+        account.update!(custom_attributes: { 'existing_workspace_setting' => 'preserve' })
         sign_in(super_admin, scope: :super_admin)
 
         patch "/super_admin/accounts/#{account.id}", params: {
@@ -100,9 +127,10 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         }
 
         expect(response).to have_http_status(:redirect)
-        expect(
-          account.reload.custom_attributes['limit_counter_excluded_user_ids']
-        ).to eq([12, 15, 19])
+        expect(account.reload.custom_attributes).to include(
+          'limit_counter_excluded_user_ids' => [12, 15, 19],
+          'existing_workspace_setting' => 'preserve'
+        )
       end
 
       it 'persists checked and unchecked account features from the form' do
@@ -146,8 +174,9 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(account.reload.feature_enabled?('inbox_view')).to be(true)
       end
 
-      it 'does not preserve an existing account hidden flags when creating with an id param' do
+      it 'does not copy existing account attributes when creating with an id param' do
         account.enable_features!('inbox_view')
+        account.update!(custom_attributes: { 'existing_workspace_setting' => 'keep on source' })
         sign_in(super_admin, scope: :super_admin)
 
         created_name = "Created account #{account.id}"
@@ -157,7 +186,13 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
             account: {
               name: created_name,
               locale: account.locale,
-              status: account.status
+              status: account.status,
+              limits: {
+                agents: '12',
+                conversations: '0',
+                captain_tokens: ''
+              },
+              limit_counter_excluded_user_ids_raw: "12, 15\nabc 19"
             },
             enabled_features: {
               feature_crm: '1'
@@ -165,10 +200,18 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
           }
         end.to change(Account, :count).by(1)
 
-        expect(response).to have_http_status(:redirect)
         created_account = Account.find_by!(name: created_name)
+        expect(response).to redirect_to(super_admin_account_path(created_account))
+        expect(created_account.limits).to eq({ 'agents' => 12, 'conversations' => 0 })
+        expect(created_account.custom_attributes).to eq(
+          'limit_counter_excluded_user_ids' => [12, 15, 19]
+        )
         expect(created_account.feature_enabled?('inbox_view')).to be(false)
         expect(created_account.feature_enabled?('crm')).to be(true)
+
+        get response.location
+
+        expect(response).to have_http_status(:success)
       end
 
       it 'renders a toggle for every visible account feature' do

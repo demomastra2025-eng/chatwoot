@@ -116,7 +116,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     normalized_ids = normalize_limit_counter_excluded_user_ids(
       params[:account][:limit_counter_excluded_user_ids_raw]
     )
-    updated_custom_attributes = (requested_resource.custom_attributes || {}).deep_dup
+    updated_custom_attributes =
+      (limit_counter_exclusion_custom_attributes(permitted_params) || {}).deep_dup
 
     if normalized_ids.present?
       updated_custom_attributes[
@@ -164,6 +165,12 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     requested_resource.selected_feature_flags.map(&:to_s).reject do |feature_name|
       submitted_names.include?(feature_name)
     end
+  end
+
+  def limit_counter_exclusion_custom_attributes(permitted_params)
+    return requested_resource.custom_attributes if action_name == 'update'
+
+    permitted_params[:custom_attributes]
   end
 
   def normalize_limit_counter_excluded_user_ids(value)
