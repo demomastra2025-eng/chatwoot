@@ -58,18 +58,33 @@ class Integrations::Medelement::AppointmentImporterService
     provider_binding(appointment, reception).validate!
     contact = preserved_identity_contact(appointment, reception, contact)
     record_unresolved_patient_conflict(reception) if contact.blank?
-    appointment.assign_attributes(
-      appointment_attributes(
-        appointment: appointment,
-        resource: resource,
-        contact: contact,
-        reception: reception,
-        import_context: import_context
-      )
+    attributes = appointment_attributes(
+      appointment: appointment,
+      resource: resource,
+      contact: contact,
+      reception: reception,
+      import_context: import_context
     )
-
-    appointment.save! if appointment.new_record? || appointment.changed?
+    restore_paid_local_cancellation_expense = restore_paid_local_cancellation_expense?(appointment, attributes)
+    appointment.assign_attributes(attributes)
+    persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
     appointment
+  end
+
+  def persist_imported_appointment!(appointment, restore_paid_local_cancellation_expense)
+    ApplicationRecord.transaction do
+      appointment.save! if appointment.new_record? || appointment.changed?
+      sync_restored_local_cancellation_expense!(appointment) if restore_paid_local_cancellation_expense
+    end
+  end
+
+  def restore_paid_local_cancellation_expense?(appointment, attributes)
+    local_cancellation.marked?(appointment) && appointment.payment_status == 'cancelled' &&
+      attributes[:status] != 'cancelled' && attributes[:payment_status] == 'paid'
+  end
+
+  def sync_restored_local_cancellation_expense!(appointment)
+    Scheduling::Appointments::FinanceSyncService.new(appointment: appointment).sync_expense_only!
   end
 
   # Keep the provider-to-appointment mapping visible as one declarative contract.
@@ -79,7 +94,7 @@ class Integrations::Medelement::AppointmentImporterService
     services, unresolved_service_codes = resolved_services(reception)
     service_binding = Integrations::Medelement::AppointmentServiceBinding.new(appointment: appointment)
     service_identity_authoritative = service_binding.provider_identity_authoritative?(reception)
-    status_resolution = provider_status_resolution(appointment, reception)
+    status_resolution = provider_status_resolution(appointment, reception, starts_at)
 
     base_attributes = {
       account: account,
@@ -107,9 +122,35 @@ class Integrations::Medelement::AppointmentImporterService
     }
 
     identity_attributes = preserve_local_patient_identity?(appointment) ? {} : client_attributes(contact)
-    base_attributes.merge(identity_attributes).merge(financial_attributes(appointment, reception))
+    merge_appointment_attribute_layers(
+      base_attributes: base_attributes,
+      identity_attributes: identity_attributes,
+      appointment: appointment,
+      reception: reception,
+      status_resolution: status_resolution
+    )
+  end
+
+  def merge_appointment_attribute_layers(base_attributes:, identity_attributes:, appointment:, reception:,
+                                         status_resolution:)
+    base_attributes.merge(identity_attributes)
+                   .merge(financial_attributes(appointment, reception))
+                   .merge(local_cancellation_payment_attributes(appointment, status_resolution))
   end
   # rubocop:enable Metrics/MethodLength
+
+  # MedElement re-booked or completed a reception that OneLink cancelled only locally: the local
+  # cancellation no longer applies, so the payment status it cancelled comes back.
+  def local_cancellation_payment_attributes(appointment, status_resolution)
+    return {} unless appointment.persisted? && local_cancellation.marked?(appointment)
+    return {} if status_resolution[:status] == 'cancelled' || appointment.payment_status != 'cancelled'
+
+    { payment_status: local_cancellation.restored_payment_status(appointment) }
+  end
+
+  def local_cancellation
+    Integrations::Medelement::LocalCancellation
+  end
 
   def preserved_identity_contact(appointment, reception, contact)
     return contact unless preserve_local_patient_identity?(appointment)
@@ -134,7 +175,9 @@ class Integrations::Medelement::AppointmentImporterService
     )
   end
 
-  def provider_status_resolution(appointment, reception)
+  # Precedence: an explicit MedElement outcome (no-show, cancelled, completed, removed, inactive) wins over
+  # any local status; a local-only cancellation survives while the reception stays active at the same time.
+  def provider_status_resolution(appointment, reception, provider_starts_at)
     provider_status = provider_status_value(reception)
     return { status: 'no_show', reason: 'provider_explicit_no_show', raw_status: provider_status } if provider_status.in?(NO_SHOW_PROVIDER_STATUSES)
     if provider_status.in?(CANCELLED_PROVIDER_STATUSES)
@@ -145,6 +188,18 @@ class Integrations::Medelement::AppointmentImporterService
     end
     return { status: 'cancelled', reason: 'provider_removed' } if reception['REMOVED'].to_i == 1
     return { status: 'completed', reason: 'provider_inactive' } unless reception['ACTIVE'].to_i == 1
+
+    local_cancellation_resolution(appointment, provider_starts_at) || active_reception_resolution(appointment)
+  end
+
+  def local_cancellation_resolution(appointment, provider_starts_at)
+    return unless appointment.persisted? && appointment.status == 'cancelled' && local_cancellation.marked?(appointment)
+    return { status: 'scheduled', reason: local_cancellation::REBOOKED_REASON } if local_cancellation.rebooked?(appointment, provider_starts_at)
+
+    { status: 'cancelled', reason: local_cancellation::PRESERVED_REASON }
+  end
+
+  def active_reception_resolution(appointment)
     return { status: 'confirmed', reason: 'preserved_local_confirmation' } if appointment.status == 'confirmed'
 
     { status: 'scheduled', reason: 'provider_active' }
@@ -220,6 +275,8 @@ class Integrations::Medelement::AppointmentImporterService
         'observed_at' => import_context[:detail_synced_at] || Time.current.iso8601
       }.compact
     ).compact
+    # The marker lives only while the local cancellation is preserved against an active reception.
+    attributes = attributes.except(local_cancellation::MARKER_KEY) unless status_resolution[:reason] == local_cancellation::PRESERVED_REASON
     service_binding.reconcile_provider_attributes(
       attributes: attributes,
       reception: reception,

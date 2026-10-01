@@ -505,6 +505,9 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
   end
 
   it 'rejects an active provider row for a historically cancelled appointment without a removal command' do
+    removal_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('remove_reception_on_cancel' => true)
+    account.enable_features!('scheduling')
+    create(:integrations_hook, :medelement, account: account, settings: removal_settings)
     contact = create(:contact, account: account)
     appointment = create(
       :scheduling_appointment,

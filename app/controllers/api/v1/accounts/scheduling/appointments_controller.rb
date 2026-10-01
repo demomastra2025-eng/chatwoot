@@ -197,7 +197,8 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   def cancel_and_render
     appointment = Scheduling::Appointments::CancelService.new(
       appointment: @appointment,
-      actor: Current.user
+      actor: Current.user,
+      expected_medelement_cancellation_mode: params[:medelement_cancellation_mode]
     ).perform
 
     render_payload(Scheduling::PayloadBuilder.appointment(appointment))

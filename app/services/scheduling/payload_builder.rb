@@ -1,7 +1,7 @@
 module Scheduling::PayloadBuilder
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil, dialog_context: nil)
+  def appointment(appointment, payments: nil, expense_record: nil, dialog_context: nil, medelement_cancellation_modes: nil)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
     legacy_chat_conversation = conversation || appointment_chat_conversation(appointment, dialog_context)
@@ -74,12 +74,30 @@ module Scheduling::PayloadBuilder
         command: appointment.medelement_provider_command_receipt
       )
       payload[:provider_command_receipt] = receipt if receipt.present?
+      cancellation_mode = medelement_cancellation_mode(appointment, medelement_cancellation_modes)
+      payload[:medelement_cancellation_mode] = cancellation_mode if cancellation_mode
     end
   end
 
   def appointments(records)
     dialog_context = Scheduling::AppointmentDialogContextLoader.new(records).perform
-    records.map { |record| appointment(record, dialog_context: dialog_context) }
+    cancellation_modes = {}
+    records.map do |record|
+      appointment(record, dialog_context: dialog_context, medelement_cancellation_modes: cancellation_modes)
+    end
+  end
+
+  # Tells the UI whether cancelling this MedElement-linked appointment removes the reception there
+  # ('provider_removal') or stays in OneLink ('local_only'); the hook setting is read once per account.
+  def medelement_cancellation_mode(appointment, cache = nil)
+    local_cancellation = Integrations::Medelement::LocalCancellation
+    return unless local_cancellation.linked?(appointment)
+
+    cache ||= {}
+    remove = cache.fetch(appointment.account_id) do
+      cache[appointment.account_id] = local_cancellation.remove_reception_on_cancel?(appointment.account_id)
+    end
+    local_cancellation.cancellation_mode(appointment, remove_reception_on_cancel: remove)
   end
 
   def available_conversation(conversation)

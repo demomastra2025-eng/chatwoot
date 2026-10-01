@@ -11,9 +11,13 @@ import {
   getServicePriceForResource,
   hasMedelementReceptionIdentity,
   isAppointmentProviderOwned,
+  isMedelementCancellationLocalOnly,
+  isMedelementLocalCancellation,
   isMedelementResource,
   providerBookingNeedsReview,
   providerBookingStatusKey,
+  providerBookingStatusMessage,
+  appointmentCancellationAlertMessage,
   providerCancellationPending,
   isServiceAvailableForResource,
   medelementCommandFailureMessage,
@@ -29,6 +33,29 @@ import {
   minuteOfDayFromDate,
   toDateTimeInputValue,
 } from './helpers';
+import enScheduling from 'dashboard/i18n/locale/en/scheduling.json';
+import kkScheduling from 'dashboard/i18n/locale/kk/scheduling.json';
+import ruScheduling from 'dashboard/i18n/locale/ru/scheduling.json';
+
+describe.each([
+  ['en', enScheduling],
+  ['ru', ruScheduling],
+  ['kk', kkScheduling],
+])('%s copy for the local-only MedElement cancellation', (_locale, m) => {
+  it('is present', () => {
+    const copy = [
+      m.SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED,
+      m.SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY,
+      m.SCHEDULING.MEDELEMENT.LOCAL_CANCEL_CONFIRM_TITLE,
+      m.SCHEDULING.MEDELEMENT.LOCAL_CANCEL_CONFIRM_DESCRIPTION,
+      m.SCHEDULING.MEDELEMENT.LOCAL_CANCEL_HINT,
+      m.SCHEDULING.ERRORS.MEDELEMENT_LOCAL_CANCELLATION_PROTECTED,
+      m.SCHEDULING.ERRORS.MEDELEMENT_REMOVAL_DISABLED,
+    ];
+
+    copy.forEach(text => expect(text).toEqual(expect.any(String)));
+  });
+});
 
 // Clinic clock helpers: with the workspace timezone the results must not
 // depend on the process timezone (run with TZ=UTC and TZ=Europe/Berlin).
@@ -184,6 +211,55 @@ describe('scheduling helpers', () => {
         providerConfirmationStatus: 'pending',
       })
     ).toBe('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_PENDING');
+  });
+
+  it('marks an appointment cancelled only in OneLink while its MedElement reception is still active', () => {
+    const t = key => key;
+    const locallyCancelled = {
+      source: 'medelement',
+      status: 'cancelled',
+      providerConfirmationStatus: 'failed',
+      customAttributes: {
+        medelement_local_cancellation: { reception_code: '71' },
+      },
+    };
+
+    expect(isMedelementLocalCancellation(locallyCancelled)).toBe(true);
+    expect(providerBookingStatusKey(locallyCancelled)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
+    );
+    expect(providerBookingStatusMessage(locallyCancelled, t)).toBe(
+      'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
+    );
+    expect(appointmentCancellationAlertKey(locallyCancelled)).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY'
+    );
+    expect(appointmentCancellationAlertMessage(locallyCancelled, t)).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY'
+    );
+
+    const reopened = { ...locallyCancelled, status: 'scheduled' };
+    expect(isMedelementLocalCancellation(reopened)).toBe(false);
+    expect(
+      isMedelementLocalCancellation({
+        status: 'cancelled',
+        customAttributes: {},
+      })
+    ).toBe(false);
+  });
+
+  it('tells whether cancelling stays in OneLink for the integration setting', () => {
+    expect(
+      isMedelementCancellationLocalOnly({
+        medelementCancellationMode: 'local_only',
+      })
+    ).toBe(true);
+    expect(
+      isMedelementCancellationLocalOnly({
+        medelementCancellationMode: 'provider_removal',
+      })
+    ).toBe(false);
+    expect(isMedelementCancellationLocalOnly({ source: 'manual' })).toBe(false);
   });
 
   it('normalizes Medelement cabinets from resource custom attributes', () => {

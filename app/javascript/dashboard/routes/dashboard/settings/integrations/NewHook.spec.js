@@ -145,6 +145,79 @@ describe('NewHook edit form', () => {
     });
   });
 
+  it('shows the MedElement removal toggle localized and off for a hook saved before it existed', async () => {
+    const messages = ruIntegrationApps.INTEGRATION_APPS.MEDELEMENT.SETTINGS;
+    const translations = {
+      'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.LABEL':
+        messages.REMOVE_RECEPTION_ON_CANCEL.LABEL,
+      'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.HINT':
+        messages.REMOVE_RECEPTION_ON_CANCEL.HINT,
+    };
+    testState.integration.settings_form_schema.push({
+      label: 'Remove the MedElement reception',
+      label_i18n:
+        'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.LABEL',
+      help_i18n:
+        'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.HINT',
+      type: 'switch',
+      name: 'remove_reception_on_cancel',
+      value: false,
+    });
+    const wrapper = mount(NewHook, {
+      props: { integrationId: 'medelement', hook },
+      global: {
+        plugins: [[formKitPlugin, defaultConfig()]],
+        mocks: {
+          $store: {
+            getters: {
+              'integrations/getUIFlags': {},
+              'inboxes/dialogFlowEnabledInboxes': [],
+            },
+            dispatch: vi.fn(),
+          },
+          $t: key => translations[key] || key,
+        },
+        stubs: { NextButton: true, WootModalHeader: true },
+      },
+    });
+    await flushPromises();
+
+    const input = wrapper.get('[role="switch"]');
+    expect(input.attributes('aria-checked')).toBe('false');
+    expect(input.attributes('aria-labelledby')).toBe(
+      'integration-setting-label-remove_reception_on_cancel'
+    );
+    expect(wrapper.text()).toContain(
+      'Удалять приём в МедЭлементе при отмене в OneLink'
+    );
+    expect(wrapper.text()).toContain(
+      'Если выключено, отмена меняет статус только в OneLink.'
+    );
+    expect(input.attributes('label_i18n')).toBeUndefined();
+
+    await input.trigger('click');
+    await flushPromises();
+    expect(wrapper.vm.buildHookPayload().settings).toMatchObject({
+      remove_reception_on_cancel: true,
+    });
+  });
+
+  it.each([
+    ['en', enIntegrationApps],
+    ['ru', ruIntegrationApps],
+    ['kk', kkIntegrationApps],
+  ])(
+    'provides real %s copy for the MedElement removal toggle',
+    (_locale, m) => {
+      const copy =
+        m.INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL;
+
+      expect(copy.LABEL).toEqual(expect.any(String));
+      expect(copy.HINT).toEqual(expect.any(String));
+      expect(copy.LABEL).not.toContain('REMOVE_RECEPTION');
+    }
+  );
+
   it.each([
     ['en', enIntegrationApps],
     ['ru', ruIntegrationApps],

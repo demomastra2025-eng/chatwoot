@@ -40,6 +40,7 @@ import {
   fromDateTimeInputValue,
   getServicePriceForResource,
   isAppointmentProviderOwned,
+  isMedelementCancellationLocalOnly,
   providerBookingNeedsReview,
   providerBookingStatusKey,
   providerBookingStatusMessage,
@@ -909,7 +910,12 @@ async function cancelAppointment(appointment) {
   const key = appointmentKey(appointment);
   cancellingAppointmentKey.value = key;
   try {
-    const response = await SchedulingAppointmentsAPI.cancel(appointment.id);
+    const cancellationMode = appointment.medelementCancellationMode;
+    const response = cancellationMode
+      ? await SchedulingAppointmentsAPI.cancel(appointment.id, {
+          medelement_cancellation_mode: cancellationMode,
+        })
+      : await SchedulingAppointmentsAPI.cancel(appointment.id);
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
     refreshSidebarCounters();
@@ -1725,7 +1731,7 @@ watch(
               appointment.status !== 'cancelled' &&
               !isProviderCancellationPending(appointment)
             "
-            class="flex justify-end px-3 pb-2.5"
+            class="flex flex-col items-end gap-1 px-3 pb-2.5"
           >
             <Button
               size="sm"
@@ -1737,6 +1743,12 @@ watch(
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
               @click="cancelAppointment(appointment)"
             />
+            <span
+              v-if="isMedelementCancellationLocalOnly(appointment)"
+              class="text-xs leading-5 text-n-slate-11 text-end"
+            >
+              {{ $t('SCHEDULING.MEDELEMENT.LOCAL_CANCEL_HINT') }}
+            </span>
           </div>
 
           <div

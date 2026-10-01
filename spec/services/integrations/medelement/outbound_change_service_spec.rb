@@ -714,7 +714,27 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.exactly(:once)
   end
 
+  it 'does not create a removal command while the hook keeps receptions on cancel (default)' do
+    appointment.update!(
+      source: 'medelement',
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1'),
+      status: 'cancelled',
+      payment_status: 'cancelled'
+    )
+
+    expect do
+      command = described_class.new(
+        entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_cancelled', actor_id: actor.id,
+        change: { changed_attributes: { 'status' => %w[scheduled cancelled] }, desired_attributes: { 'status' => 'cancelled' } }
+      ).perform
+      expect(command).to be_nil
+    end.not_to change(Integrations::Medelement::ProviderCommand, :count)
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+  end
+
   it 'creates an immediate removal command for a locally cancelled provider reception' do
+    hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => true))
     appointment.update!(
       source: 'medelement',
       external_ref: 'medelement:reception:reception-1',

@@ -2,7 +2,10 @@ require 'rails_helper'
 
 # Owner questions, answered as executable proofs:
 #   1. Setting «Подтвержден» in OneLink changes nothing in MedElement, and the next MedElement sync keeps it.
-#   2. Cancelling in OneLink sends exactly one MedElement reception removal, and later syncs keep the appointment cancelled.
+#   2. With remove_reception_on_cancel on, cancelling in OneLink sends exactly one MedElement reception removal, and later
+#      syncs keep the appointment cancelled.
+#   3. With remove_reception_on_cancel off (the default), cancelling stays in OneLink: nothing reaches MedElement and sync
+#      keeps the local cancellation until MedElement itself completes, removes or moves the reception.
 # End-to-end proofs: each example walks one full owner scenario, so they are intentionally long.
 # rubocop:disable RSpec/DescribeClass, RSpec/MultipleExpectations, Metrics/MethodLength
 RSpec.describe 'MedElement boundary for local appointment statuses' do
@@ -31,6 +34,8 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       :scheduling_resource,
       account: account,
       timezone: 'Asia/Almaty',
+      compensation_type: 'fixed',
+      compensation_value: 6_000,
       custom_attributes: {
         'medelement_specialist_code' => 'specialist-1',
         'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
@@ -40,7 +45,7 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
   let(:client) { instance_double(Integrations::Medelement::Client) }
   # OneLink only writes MedElement-mapped services, so the synced appointment carries one.
   let(:mapped_service) do
-    create(:scheduling_service, account: account, duration_min: 20,
+    create(:scheduling_service, account: account, duration_min: 20, base_price: 20_000,
                                 custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
   end
 
@@ -106,12 +111,12 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
     value.in_time_zone('Asia/Almaty').strftime('%d.%m.%Y %H:%M:%S')
   end
 
-  def listed_reception(active:, removed:)
+  def listed_reception(active:, removed:, shift: 0)
     {
       'RECEPTION_CODE' => 'reception-1',
       'PATIENT_CODE' => 'patient-1',
-      'STARTTIME' => starts_at.strftime('%Y-%m-%d %H:%M:%S'),
-      'ENDTIME' => ends_at.strftime('%Y-%m-%d %H:%M:%S'),
+      'STARTTIME' => (starts_at + shift).strftime('%Y-%m-%d %H:%M:%S'),
+      'ENDTIME' => (ends_at + shift).strftime('%Y-%m-%d %H:%M:%S'),
       'ACTIVE' => active,
       'REMOVED' => removed,
       'COMPANY_CABINET_CODE' => 'cabinet-1'
@@ -239,7 +244,8 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
     end
   end
 
-  describe 'cancelling an appointment' do
+  describe 'cancelling an appointment with remove_reception_on_cancel on (removal flow, unchanged)' do
+    let(:hook_settings) { super().merge('remove_reception_on_cancel' => true) }
     let(:active_reception) do
       {
         'RECEPTION_CODE' => 'reception-1',
@@ -322,6 +328,285 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
       run_reception_sync([listed_reception(active: 1, removed: 0)])
 
       expect(appointment.reload.status).to eq('confirmed')
+    end
+  end
+
+  # Owner decision 01.10.2026: «пока что не удалять в МедЭлементе; пусть тут отменяют, а туда не уходит».
+  describe 'cancelling an appointment with remove_reception_on_cancel off (default)' do
+    let(:marker_key) { Integrations::Medelement::LocalCancellation::MARKER_KEY }
+
+    def cancel_locally(appointment)
+      Scheduling::Appointments::CancelService.new(appointment: appointment, actor: actor).perform
+    end
+
+    def prepare_paid_appointment!(appointment)
+      appointment.update!(
+        service_amount: 20_000,
+        payment_status: 'paid',
+        settlement_amount: 20_000,
+        settlement_payment_method: 'cash',
+        compensation_type_snapshot: 'fixed',
+        compensation_value_snapshot: 6_000,
+        compensation_percent_snapshot: 0
+      )
+      Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
+      appointment.reload
+    end
+
+    def expect_no_provider_traffic(commands_before)
+      expect_no_provider_commands(commands_before)
+      expect_no_provider_jobs
+      expect_no_provider_requests
+    end
+
+    def expect_no_provider_commands(commands_before)
+      expect(Integrations::Medelement::ProviderCommand.count).to eq(commands_before)
+      expect(Integrations::Medelement::ProviderCommand.where(operation: 'remove_reception')).to be_empty
+      expect(ConfirmationRequest.where(account: account)).to be_empty
+    end
+
+    def expect_no_provider_jobs
+      expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
+      expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+      expect(Integrations::Medelement::ProviderCommandJob).not_to have_been_enqueued
+    end
+
+    def expect_no_provider_requests
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+      expect(a_request(:any, /medelement/)).not_to have_been_made
+    end
+
+    it 'defaults to keeping MedElement receptions and persists the toggle in the hook settings' do
+      hook = account.hooks.find_by!(app_id: 'medelement')
+
+      expect(hook.settings).not_to have_key('remove_reception_on_cancel')
+      expect(Integrations::Medelement::Configuration.new(hook: hook).remove_reception_on_cancel?).to be(false)
+
+      hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => true))
+      expect(Integrations::Medelement::Configuration.new(hook: hook.reload).remove_reception_on_cancel?).to be(true)
+
+      hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => false))
+      expect(Integrations::Medelement::Configuration.new(hook: hook.reload).remove_reception_on_cancel?).to be(false)
+    end
+
+    {
+      'OneLink-created' => :synced_onelink_appointment,
+      'imported' => :imported_appointment
+    }.each do |kind, factory_method|
+      it "cancels a #{kind} appointment only in OneLink and records that the reception is still alive" do
+        appointment = send(factory_method, status: 'confirmed')
+        commands_before = Integrations::Medelement::ProviderCommand.count
+
+        result = cancel_locally(appointment)
+
+        expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+        expect(result.medelement_provider_command_receipt).to be_nil
+        expect(result.custom_attributes[marker_key]).to include(
+          'reception_code' => 'reception-1', 'provider_starts_at' => starts_at.utc.iso8601,
+          'previous_status' => 'confirmed', 'actor' => { 'type' => 'User', 'id' => actor.id }
+        )
+        expect(result.custom_attributes).not_to have_key(Integrations::Medelement::AppointmentSnapshotGuard::LOCAL_CANCELLATION_ATTRIBUTE)
+        expect_no_provider_traffic(commands_before)
+      end
+    end
+
+    it 'never turns the cancellation event into a removal, whichever outbound path sees it' do
+      appointment = synced_onelink_appointment
+      cancel_locally(appointment)
+      commands_before = Integrations::Medelement::ProviderCommand.count
+      event = Events::Base.new(
+        'appointment_cancelled', Time.current,
+        appointment: appointment.reload, performed_by: actor, changed_attributes: { 'status' => %w[scheduled cancelled] },
+        medelement_source_updated_at: appointment.updated_at.utc.iso8601(6),
+        medelement_outbound_snapshot: Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(appointment)
+      )
+
+      MedelementOutboundChangeListener.instance.appointment_cancelled(event)
+      direct = Integrations::Medelement::OutboundChangeService.new(
+        entity_type: 'appointment', entity_id: appointment.id, event_name: 'appointment_cancelled', account_id: account.id,
+        actor_id: actor.id, change: { desired_attributes: Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(appointment) }
+      ).perform
+
+      expect(direct).to be_nil
+      expect_no_provider_traffic(commands_before)
+    end
+
+    it 'follows the same local path for a generic status change to cancelled' do
+      appointment = synced_onelink_appointment
+      commands_before = Integrations::Medelement::ProviderCommand.count
+
+      result = Scheduling::Appointments::UpsertService.new(
+        account: account, appointment: appointment, params: { status: 'cancelled' }, actor: actor
+      ).perform
+
+      expect(result.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(result.custom_attributes[marker_key]).to be_present
+      expect_no_provider_traffic(commands_before)
+    end
+
+    it 'refuses to queue a MedElement reception removal while the toggle is off' do
+      appointment = synced_onelink_appointment
+      validator = Integrations::Medelement::ProviderCommands::Validator.new(
+        account: account, hook: account.hooks.find_by!(app_id: 'medelement'), appointment: appointment, contact: contact,
+        operation: 'remove_reception', idempotency_key: 'remove-1', company_cabinet_code: nil
+      )
+
+      expect { validator.validate_runtime! }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_REMOVAL_DISABLED') }
+    end
+
+    it 'keeps the local cancellation across syncs while MedElement still shows the reception active' do
+      appointment = synced_onelink_appointment
+      cancel_locally(appointment)
+      commands_before = Integrations::Medelement::ProviderCommand.count
+
+      run_reception_sync([listed_reception(active: 1, removed: 0)])
+      travel 7.hours
+      run_reception_sync([listed_reception(active: 1, removed: 0)])
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled', source: 'manual')
+      expect(appointment.custom_attributes[marker_key]).to be_present
+      expect(appointment.custom_attributes['provider_status_audit']).to include(
+        'previous_status' => 'cancelled', 'status' => 'cancelled', 'reason' => 'preserved_local_cancellation'
+      )
+      expect(Integrations::Medelement::ProviderCommand.count).to eq(commands_before)
+    end
+
+    it 'keeps an imported appointment cancelled across syncs and does not flap its status' do
+      appointment = imported_appointment
+      cancel_locally(appointment)
+
+      run_reception_sync([listed_reception(active: 1, removed: 0)])
+      travel 7.hours
+      run_reception_sync([listed_reception(active: 1, removed: 0)])
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', source: 'medelement')
+      expect(appointment.custom_attributes[marker_key]).to be_present
+    end
+
+    it 'restores the unpaid expense when MedElement completes a paid local cancellation' do
+      appointment = synced_onelink_appointment
+      prepare_paid_appointment!(appointment)
+      cancel_locally(appointment)
+
+      expect(appointment.reload.expense).to be_nil
+      run_reception_sync([listed_reception(active: 0, removed: 0)])
+
+      expect(appointment.reload).to have_attributes(status: 'completed', payment_status: 'paid')
+      expect(appointment.expense).to have_attributes(status: 'unpaid', amount: 6_000)
+      expect(appointment.custom_attributes).not_to have_key(marker_key)
+      expect(appointment.custom_attributes.dig('provider_status_audit', 'reason')).to eq('provider_inactive')
+    end
+
+    it 'lets MedElement win when the reception is removed there' do
+      appointment = synced_onelink_appointment
+      cancel_locally(appointment)
+
+      run_reception_sync([listed_reception(active: 0, removed: 1)])
+      run_reception_sync([listed_reception(active: 0, removed: 1)])
+
+      expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(appointment.custom_attributes).not_to have_key(marker_key)
+      expect(appointment.custom_attributes['source_mode']).to eq('provider_tombstone')
+    end
+
+    it 'treats a reception moved to another time in MedElement as re-booked' do
+      appointment = synced_onelink_appointment
+      cancel_locally(appointment)
+
+      run_reception_sync([listed_reception(active: 1, removed: 0, shift: 1.hour)])
+
+      expect(appointment.reload).to have_attributes(status: 'scheduled', payment_status: 'awaiting_payment',
+                                                    starts_at: starts_at + 1.hour)
+      expect(appointment.custom_attributes).not_to have_key(marker_key)
+      expect(appointment.custom_attributes.dig('provider_status_audit', 'reason')).to eq('provider_rebooked_after_local_cancellation')
+    end
+
+    it 'restores the unpaid expense when MedElement re-books a paid locally-cancelled appointment' do
+      appointment = synced_onelink_appointment
+      prepare_paid_appointment!(appointment)
+      adjustment_payment_id = appointment.payments.find_by!(payment_kind: 'adjustment').id
+      cancel_locally(appointment)
+
+      expect(appointment.reload.expense).to be_nil
+      run_reception_sync([listed_reception(active: 1, removed: 0, shift: 1.hour)])
+
+      expect(appointment.reload).to have_attributes(status: 'scheduled', payment_status: 'paid')
+      expect(appointment.expense).to have_attributes(status: 'unpaid', amount: 6_000)
+      expect(appointment.payments.find_by!(payment_kind: 'adjustment')).to have_attributes(
+        id: adjustment_payment_id, recorded_by_id: actor.id
+      )
+
+      run_reception_sync([listed_reception(active: 1, removed: 0, shift: 1.hour)])
+      expect(appointment.reload.expense).to have_attributes(status: 'unpaid', amount: 6_000)
+      expect(Scheduling::Expense.where(appointment: appointment).count).to eq(1)
+    end
+
+    it 'restores payment state and expense when staff manually reopens a local cancellation' do
+      appointment = synced_onelink_appointment
+      prepare_paid_appointment!(appointment)
+      cancel_locally(appointment)
+
+      service = Scheduling::Appointments::UpsertService.new(
+        account: account, appointment: appointment, params: { status: 'scheduled' }, actor: actor
+      )
+      # Reopening only exercises payment and expense restoration; this fixture has no working-hours rules.
+      allow(service).to receive(:validate_availability!)
+
+      result = service.perform
+
+      expect(result.reload).to have_attributes(status: 'scheduled', payment_status: 'paid')
+      expect(result.custom_attributes).not_to have_key(marker_key)
+      expect(result.expense).to have_attributes(status: 'unpaid', amount: 6_000)
+    end
+
+    it 'uses only this account integration toggle when cancelling a linked appointment' do
+      other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
+      create(
+        :integrations_hook,
+        :medelement,
+        account: other_account,
+        settings: hook_settings.merge('remove_reception_on_cancel' => true)
+      )
+      appointment = synced_onelink_appointment
+      commands_before = Integrations::Medelement::ProviderCommand.count
+
+      result = cancel_locally(appointment)
+
+      expect(result.reload.status).to eq('cancelled')
+      expect(result.custom_attributes[marker_key]).to be_present
+      expect_no_provider_traffic(commands_before)
+    end
+
+    it 'records a local cancellation even when a provider-linked appointment has no reception code' do
+      appointment = synced_onelink_appointment
+      appointment.update!(
+        external_ref: nil,
+        custom_attributes: appointment.custom_attributes.except('medelement_reception_code')
+      )
+
+      result = cancel_locally(appointment)
+
+      expect(result.reload.status).to eq('cancelled')
+      expect(result.custom_attributes[marker_key]).to be_present
+      expect(result.custom_attributes[marker_key]).not_to have_key('reception_code')
+    end
+
+    it 'keeps the locally cancelled record from being deleted so the next sync cannot import it again' do
+      appointment = synced_onelink_appointment
+      cancel_locally(appointment)
+
+      expect do
+        Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment.reload).ensure_deletable!
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_LOCAL_CANCELLATION_PROTECTED') }
+    end
+
+    it 'tells the UI which cancellation mode applies' do
+      appointment = synced_onelink_appointment
+
+      expect(Scheduling::PayloadBuilder.appointment(appointment)[:medelement_cancellation_mode]).to eq('local_only')
+      hook = account.hooks.find_by!(app_id: 'medelement')
+      hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => true))
+      expect(Scheduling::PayloadBuilder.appointments([appointment]).first[:medelement_cancellation_mode]).to eq('provider_removal')
     end
   end
 end

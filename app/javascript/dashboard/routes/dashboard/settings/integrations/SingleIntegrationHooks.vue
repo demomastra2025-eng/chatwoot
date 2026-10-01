@@ -221,12 +221,29 @@ const visibleProperties = computed(
   () => integration.value?.visible_properties || []
 );
 
+const translatedFormLabel = item => {
+  if (!item.label_i18n) return item.label;
+  // Schema-provided key for a settings label; falls back to the schema label.
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  const translated = t(item.label_i18n);
+  return translated && translated !== item.label_i18n ? translated : item.label;
+};
+
 const formItemLabelMap = computed(() =>
   Object.fromEntries(
     (integration.value?.settings_form_schema || []).map(item => [
       item.name,
-      item.label,
+      translatedFormLabel(item),
     ])
+  )
+);
+
+// A checkbox setting missing from an older hook shows its schema default.
+const formItemCheckboxDefaults = computed(() =>
+  Object.fromEntries(
+    (integration.value?.settings_form_schema || [])
+      .filter(item => ['checkbox', 'switch'].includes(item.type) && !item.store)
+      .map(item => [item.name, Boolean(item.value)])
   )
 );
 
@@ -339,7 +356,11 @@ const hookDetails = computed(() => {
   return visibleProperties.value.map(property => ({
     key: property,
     label: formItemLabelMap.value[property] || humanizeProperty(property),
-    value: formatValue(connectedHook.value.settings?.[property], property),
+    value: formatValue(
+      connectedHook.value.settings?.[property] ??
+        formItemCheckboxDefaults.value[property],
+      property
+    ),
   }));
 });
 

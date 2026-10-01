@@ -2,15 +2,17 @@ class Scheduling::Appointments::CancelService
   PROVIDER_UNAVAILABLE_CODE = 'MEDELEMENT_CANCELLATION_UNAVAILABLE'.freeze
   PROVIDER_SYNC_STATUS_KEY = Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY
 
-  def initialize(appointment:, actor:)
+  def initialize(appointment:, actor:, expected_medelement_cancellation_mode: nil)
     @appointment = appointment
     @actor = actor
+    @expected_medelement_cancellation_mode = expected_medelement_cancellation_mode
   end
 
   def perform
     appointment.with_lock do
+      cancellation_mode = cancellation_mode_for_locked_appointment
       return normalize_cancelled_payment! if appointment.status == 'cancelled'
-      return cancel_provider_appointment! if provider_cancellation_policy.provider_related?
+      return cancel_provider_linked_appointment!(cancellation_mode) if provider_cancellation_policy.provider_related?
 
       Scheduling::Appointments::UpsertService.new(
         account: appointment.account,
@@ -23,10 +25,39 @@ class Scheduling::Appointments::CancelService
 
   private
 
-  attr_reader :actor, :appointment
+  attr_reader :actor, :appointment, :expected_medelement_cancellation_mode
 
   def provider_cancellation_policy
     Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
+  end
+
+  def cancellation_mode_for_locked_appointment
+    current_mode = Integrations::Medelement::LocalCancellation.cancellation_mode(appointment)
+    raise booking_requires_verification_error if unverified_provider_creation?(current_mode)
+
+    resolved_medelement_cancellation_mode(current_mode)
+  end
+
+  def cancellation_mode_changed?(current_mode)
+    expected_medelement_cancellation_mode.present? && current_mode.present? &&
+      current_mode != expected_medelement_cancellation_mode
+  end
+
+  def unverified_provider_creation?(current_mode)
+    return false if appointment.status == 'cancelled' || cancellation_mode_changed?(current_mode)
+
+    policy = provider_cancellation_policy
+    policy.provider_creation_unresolved? && !policy.confirmed_for_removal?
+  end
+
+  def resolved_medelement_cancellation_mode(current_mode)
+    return current_mode if expected_medelement_cancellation_mode.blank? || current_mode == expected_medelement_cancellation_mode
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_CANCELLATION_MODE_CHANGED',
+      message: 'Medelement cancellation settings changed. Review the current cancellation mode before retrying.',
+      status: :conflict
+    )
   end
 
   def normalize_cancelled_payment!
@@ -34,6 +65,18 @@ class Scheduling::Appointments::CancelService
 
     appointment.update!(payment_status: 'cancelled')
     appointment
+  end
+
+  # The hook setting remove_reception_on_cancel decides: off (default) keeps the MedElement reception and
+  # cancels only in OneLink; on removes the reception through the confirmed provider command flow.
+  def cancel_provider_linked_appointment!(cancellation_mode)
+    # Use the mode checked under the appointment lock; a settings change during this request cannot
+    # turn a local-only confirmation into a provider removal.
+    if cancellation_mode == Integrations::Medelement::LocalCancellation::MODE_LOCAL_ONLY
+      return Scheduling::Appointments::ProviderLocalCancellationService.new(appointment: appointment, actor: actor).perform
+    end
+
+    cancel_provider_appointment!
   end
 
   def cancel_provider_appointment!

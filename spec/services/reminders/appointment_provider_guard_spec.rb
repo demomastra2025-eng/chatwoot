@@ -175,6 +175,17 @@ RSpec.describe Reminders::AppointmentProviderGuard do
       expect(reminder.reload).to be_cancelled
       expect(reminder.last_error).to eq('provider_remove_command_mismatch')
     end
+
+    it 'delivers the notification of a cancellation made only in OneLink instead of waiting for a removal forever' do
+      appointment.update!(
+        custom_attributes: appointment.custom_attributes
+          .except(Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY)
+          .merge(Integrations::Medelement::LocalCancellation::MARKER_KEY => { 'reception_code' => 'reception-1' })
+      )
+
+      expect(described_class.new(reminder: reminder, phase: :delivery).perform).to eq(described_class::CONTINUE)
+      expect(Integrations::Medelement::ProviderCommand).not_to have_received(:find_by)
+    end
   end
 
   it 'applies a supplied verification without calling the provider under the caller lock' do

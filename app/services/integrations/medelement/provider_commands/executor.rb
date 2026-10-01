@@ -70,6 +70,15 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def validate_execution_gate!
+    # The hook can change after a removal command is queued or confirmed. Reload before evaluating the final write gate.
+    command.hook.reload
+    if command.operation == 'remove_reception' && !configuration.remove_reception_on_cancel?
+      raise execution_error(
+        'MEDELEMENT_REMOVAL_DISABLED',
+        'Medelement reception removal was turned off before execution'
+      )
+    end
+
     confirmation = command.confirmation_request
     raise execution_error('execution_gate_closed', 'Medelement write confirmation or capability is missing') unless execution_gate_open?(confirmation)
     unless command.confirmation_matches_request_snapshot?(confirmation)
@@ -236,12 +245,27 @@ class Integrations::Medelement::ProviderCommands::Executor
     result = preflight.perform
     return success_applier.reception_removed! if removed_reception_matches?(result.remote_reception)
 
-    mark_write_phase!('reception_remove')
+    begin_reception_removal_write!
     client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
     remote = await_removed_reception(result)
     raise reconciliation_error('reception_remove_pending_materialization') unless remote
 
     success_applier.reception_removed!
+  end
+
+  # Serialize the last capability check and write-phase transition with hook settings saves.
+  # Once write_phase is committed the removal is already processing and may finish if the toggle changes.
+  def begin_reception_removal_write!
+    command.hook.with_lock do
+      unless Integrations::Medelement::Configuration.new(hook: command.hook).remove_reception_on_cancel?
+        raise execution_error(
+          'MEDELEMENT_REMOVAL_DISABLED',
+          'Medelement reception removal was turned off before execution'
+        )
+      end
+
+      mark_write_phase!('reception_remove')
+    end
   end
 
   def patient_resolver

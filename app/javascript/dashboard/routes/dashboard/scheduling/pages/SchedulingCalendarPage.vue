@@ -56,6 +56,8 @@ import {
   formatCalendarTitle,
   formatSchedulingDateTime,
   isAppointmentProviderOwned,
+  isMedelementCancellationLocalOnly,
+  isMedelementLocalCancellation,
   isMedelementResource,
   medelementCommandFailureMessage,
   medelementCabinetsForResource,
@@ -121,6 +123,7 @@ const appointmentFilterDraft = reactive({
 });
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const appointmentDeleteDialogRef = ref(null);
+const appointmentLocalCancelDialogRef = ref(null);
 const providerCommandDialogRef = ref(null);
 const pendingProviderAction = ref(null);
 const patientCandidates = ref([]);
@@ -262,6 +265,17 @@ const isSelectedAppointmentProviderOwned = computed(
   () =>
     formStore.mode === 'edit' &&
     isAppointmentProviderOwned(formStore.selectedAppointment)
+);
+// MedElement-linked and the integration keeps receptions on cancel: the cancel stays in OneLink.
+const isSelectedAppointmentCancelLocalOnly = computed(
+  () =>
+    formStore.mode === 'edit' &&
+    isMedelementCancellationLocalOnly(formStore.selectedAppointment)
+);
+const isSelectedAppointmentLocallyCancelled = computed(
+  () =>
+    formStore.mode === 'edit' &&
+    isMedelementLocalCancellation(formStore.selectedAppointment)
 );
 
 const filterableResources = computed(() =>
@@ -1663,7 +1677,27 @@ const handleAppointmentSubmit = async () => {
   }
 };
 
+const cancelSelectedAppointment = async () => {
+  try {
+    const appointment = await formStore.cancel(calendarStore);
+    useAlert(appointmentCancellationAlertMessage(appointment, t));
+    handleDrawerClose();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const handleLocalOnlyCancelConfirm = async () => {
+  appointmentLocalCancelDialogRef.value?.close();
+  await cancelSelectedAppointment();
+};
+
 const handleAppointmentCancel = async () => {
+  if (isSelectedAppointmentCancelLocalOnly.value) {
+    appointmentLocalCancelDialogRef.value?.open();
+    return;
+  }
+
   if (isSelectedAppointmentProviderOwned.value) {
     stageProviderCommand({
       appointment: formStore.selectedAppointment,
@@ -1676,13 +1710,7 @@ const handleAppointmentCancel = async () => {
     return;
   }
 
-  try {
-    const appointment = await formStore.cancel(calendarStore);
-    useAlert(appointmentCancellationAlertMessage(appointment, t));
-    handleDrawerClose();
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
+  await cancelSelectedAppointment();
 };
 
 const openAppointmentDeleteDialog = () => {
@@ -2443,6 +2471,17 @@ onMounted(async () => {
                   v-if="formStore.mode === 'edit'"
                   class="appointment-drawer-section"
                 >
+                  <p
+                    v-if="isSelectedAppointmentLocallyCancelled"
+                    class="mb-2 text-xs font-medium leading-5 text-n-amber-11"
+                    role="status"
+                  >
+                    {{
+                      $t(
+                        'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED'
+                      )
+                    }}
+                  </p>
                   <div class="flex flex-wrap items-center gap-2">
                     <Button
                       v-if="canCreateMedelementReception"
@@ -2693,6 +2732,21 @@ onMounted(async () => {
       :confirm-button-label="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_CONFIRM')"
       :is-loading="formStore.ui.isSaving"
       @confirm="handleAppointmentDelete"
+    />
+
+    <Dialog
+      ref="appointmentLocalCancelDialogRef"
+      width="md"
+      type="alert"
+      :title="$t('SCHEDULING.MEDELEMENT.LOCAL_CANCEL_CONFIRM_TITLE')"
+      :description="
+        $t('SCHEDULING.MEDELEMENT.LOCAL_CANCEL_CONFIRM_DESCRIPTION')
+      "
+      :confirm-button-label="
+        $t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')
+      "
+      :is-loading="formStore.ui.isSaving"
+      @confirm="handleLocalOnlyCancelConfirm"
     />
   </section>
 </template>

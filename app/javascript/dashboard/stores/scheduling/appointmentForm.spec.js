@@ -11,6 +11,7 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
     createConversation: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
+    cancel: vi.fn(),
   },
 }));
 
@@ -26,6 +27,30 @@ describe('useSchedulingAppointmentFormStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+  });
+
+  it('sends the cancellation mode shown on the appointment to the cancel endpoint', async () => {
+    SchedulingAppointmentsAPI.cancel.mockResolvedValue({
+      data: { payload: { id: 11, status: 'cancelled' } },
+    });
+    const store = useSchedulingAppointmentFormStore();
+    const cancellationMode = 'local_only';
+    store.openEdit({
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      medelementCancellationMode: cancellationMode,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    await store.cancel({
+      currentView: 'day',
+      syncAppointment: vi.fn(),
+    });
+
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(11, {
+      medelement_cancellation_mode: cancellationMode,
+    });
   });
 
   it('keeps the saved price when editing an appointment without changing service/resource', () => {

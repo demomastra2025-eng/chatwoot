@@ -177,13 +177,23 @@ class Scheduling::Appointment < ApplicationRecord
   private
 
   def mark_local_medelement_cancellation
-    return unless source != 'medelement' && status == 'cancelled' && will_save_change_to_status?
+    return clear_medelement_local_only_cancellation if status != 'cancelled'
+    return unless source != 'medelement' && will_save_change_to_status?
     return if medelement_provider_reconciled?
     return if custom_attributes.to_h['medelement_reception_code'].blank?
+    # A local-only cancellation keeps the MedElement reception; sync reconciles it through its own marker.
+    return if Integrations::Medelement::LocalCancellation.marked?(custom_attributes)
 
     self.custom_attributes = custom_attributes.to_h.merge(
       Integrations::Medelement::AppointmentSnapshotGuard::LOCAL_CANCELLATION_ATTRIBUTE => Time.current.iso8601
     )
+  end
+
+  # Re-opening a locally cancelled appointment makes it consistent with the still-active MedElement reception.
+  def clear_medelement_local_only_cancellation
+    return unless will_save_change_to_status? && Integrations::Medelement::LocalCancellation.marked?(custom_attributes)
+
+    self.custom_attributes = custom_attributes.to_h.except(Integrations::Medelement::LocalCancellation::MARKER_KEY)
   end
 
   def sync_deferred_touch_enrollments

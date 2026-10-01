@@ -33,6 +33,7 @@ class Integrations::Medelement::ProviderCommands::Validator
 
   def validate_runtime!
     validate_write_capability!
+    validate_removal_enabled!
     validate_concurrency!
     require_no_existing_reception!
   end
@@ -47,6 +48,18 @@ class Integrations::Medelement::ProviderCommands::Validator
     return if enabled
 
     raise Scheduling::Error.new(code: 'MEDELEMENT_WRITE_DISABLED', message: 'Medelement writes are disabled', status: :forbidden)
+  end
+
+  # New reception removals exist only while the hook opts into remove_reception_on_cancel.
+  def validate_removal_enabled!
+    return unless operation == 'remove_reception'
+    return if Integrations::Medelement::Configuration.new(hook: hook).remove_reception_on_cancel?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_REMOVAL_DISABLED',
+      message: 'Removing Medelement receptions on cancellation is disabled',
+      status: :forbidden
+    )
   end
 
   def validate_operation!

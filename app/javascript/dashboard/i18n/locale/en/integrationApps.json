@@ -63,6 +63,12 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "SETTINGS": {
+        "REMOVE_RECEPTION_ON_CANCEL": {
+          "LABEL": "Remove the reception in MedElement when an appointment is cancelled in OneLink",
+          "HINT": "When off, cancelling changes the status only in OneLink. The reception stays in MedElement — free the doctor's time there manually. A removal already in progress may still finish if you turn this off."
+        }
+      },
       "NEXT_SYNC": "Next scheduled sync",
       "LAST_SYNC": "Last scheduled sync",
       "SCHEDULE": {

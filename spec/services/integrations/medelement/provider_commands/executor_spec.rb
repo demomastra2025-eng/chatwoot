@@ -102,6 +102,67 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     end
   end
 
+  context 'when reception removal is disabled after a command was queued' do
+    let(:operation) { 'remove_reception' }
+    let(:hook_settings) { super().merge('remove_reception_on_cancel' => true) }
+    let(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        source: 'medelement',
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: {
+          'medelement_reception_code' => 'reception-1',
+          'medelement_cabinet_code' => 'cabinet-1'
+        }
+      )
+    end
+    let(:command_attributes) do
+      { provider_patient_code: 'patient-1', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1' }
+    end
+
+    before do
+      allow(client).to receive(:remove_reception)
+    end
+
+    it 'fails the pending command before constructing a provider client' do
+      queued_command = command
+      hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => false))
+
+      perform
+
+      expect(queued_command.reload).to have_attributes(
+        status: 'failed', last_error_code: 'MEDELEMENT_REMOVAL_DISABLED', attempt_count: 1
+      )
+      expect(client).not_to have_received(:remove_reception)
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+
+    it 'rechecks the removal toggle after preflight and fails before the provider delete' do
+      queued_command = command
+      preflight_result = Integrations::Medelement::ProviderCommands::Preflight::Result.new(
+        remote_reception: { 'REMOVED' => 0 }, reception_codes: []
+      )
+      preflight = instance_double(Integrations::Medelement::ProviderCommands::Preflight)
+      allow(Integrations::Medelement::ProviderCommands::Preflight).to receive(:new).and_return(preflight)
+      allow(preflight).to receive(:perform) do
+        hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => false))
+        preflight_result
+      end
+
+      perform
+
+      expect(queued_command.reload).to have_attributes(
+        status: 'failed', last_error_code: 'MEDELEMENT_REMOVAL_DISABLED', attempt_count: 1
+      )
+      expect(queued_command.execution_state.to_h['write_phase']).to be_nil
+      expect(Integrations::Medelement::ProviderCommandReconciliationJob).not_to have_been_enqueued
+      expect(client).not_to have_received(:remove_reception)
+    end
+  end
+
   context 'when the confirmed request snapshot is invalid' do
     it 'fails closed before constructing a provider client' do
       command.execution_state['request_snapshot']['operation'] = 'update_patient'
@@ -1186,6 +1247,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   # rubocop:enable RSpec/MultipleMemoizedHelpers
 
   context 'when removing an already removed reception' do
+    let(:hook_settings) { super().merge('remove_reception_on_cancel' => true) }
     let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
     let(:appointment) do
       create(
@@ -1229,6 +1291,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   end
 
   context 'when removing an active reception' do
+    let(:hook_settings) { super().merge('remove_reception_on_cancel' => true) }
     let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
     let(:appointment) do
       create(

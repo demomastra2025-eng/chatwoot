@@ -487,6 +487,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
   it('keeps provider-owned MedElement appointments read-only', async () => {
     const providerAppointment = {
       ...existingAppointment,
+      medelementCancellationMode: 'local_only',
       source: 'medelement',
     };
     SchedulingAppointmentsAPI.get.mockResolvedValue({
@@ -514,7 +515,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     await wrapper.vm.cancelAppointment(providerAppointment);
 
-    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501, {
+      medelement_cancellation_mode: 'local_only',
+    });
     expect(mocks.alert).toHaveBeenCalledWith('SCHEDULING.MEDELEMENT.QUEUED');
     expect(
       wrapper.vm.isProviderCancellationPending(wrapper.vm.appointments[0])

@@ -282,7 +282,8 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def cleanup_missing_appointments!(desired_external_refs)
     provider_backed_appointments_in_window.find_each do |appointment|
-      next if appointment.status == 'cancelled'
+      # A local-only cancellation still expects the reception in MedElement, so its disappearance is reconciled.
+      next if appointment.status == 'cancelled' && !Integrations::Medelement::LocalCancellation.marked?(appointment)
       next if desired_external_refs.include?(appointment.external_ref)
 
       Integrations::Medelement::MissingAppointmentReconciler.new(

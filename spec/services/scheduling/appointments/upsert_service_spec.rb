@@ -9,6 +9,19 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     described_class.new(account: account, appointment: appointment, params: params).perform
   end
 
+  # Cancellation guards below belong to the removal flow (remove_reception_on_cancel on). The local-only default
+  # is proven in spec/services/integrations/medelement/local_status_provider_boundary_spec.rb.
+  def medelement_hook_settings(write_enabled: false)
+    attributes_for(:integrations_hook, :medelement)[:settings].merge(
+      'write_enabled' => write_enabled, 'remove_reception_on_cancel' => true
+    )
+  end
+
+  def enable_reception_removal!
+    account.enable_features!('scheduling')
+    create(:integrations_hook, :medelement, account: account, settings: medelement_hook_settings)
+  end
+
   it 'dispatches persisted update changes before reloading the appointment' do
     dispatcher = Rails.configuration.dispatcher
     allow(dispatcher).to receive(:dispatch)
@@ -26,6 +39,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   it 'keeps an unconfirmed Medelement booking visible instead of cancelling without a provider ID' do
+    enable_reception_removal!
     status = Integrations::Medelement::AppointmentProviderStatus
     appointment.update!(custom_attributes: appointment.custom_attributes.merge(status::ATTRIBUTE_KEY => status::UNKNOWN))
 
@@ -50,6 +64,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   it 'rejects a zero reception ID even when the provider status says succeeded' do
+    enable_reception_removal!
     status = Integrations::Medelement::AppointmentProviderStatus
     appointment.update!(
       external_ref: 'medelement:reception:0',
@@ -68,8 +83,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     status = Integrations::Medelement::AppointmentProviderStatus
     account.enable_features!('scheduling')
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
-    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
-    hook = create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    hook = create(:integrations_hook, :medelement, account: account, settings: medelement_hook_settings(write_enabled: true))
     hook.update!(settings: hook.settings.merge('write_enabled' => false))
     appointment.update!(
       external_ref: 'medelement:reception:created-1',
@@ -88,6 +102,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   it 'does not cancel a legacy appointment with a MedElement reference but no provider status' do
+    enable_reception_removal!
     appointment.update!(external_ref: 'medelement:reception:created-1')
 
     expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
@@ -97,6 +112,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   it 'blocks cancellation of a previously confirmed reception while a newer provider change is unknown' do
+    enable_reception_removal!
     status = Integrations::Medelement::AppointmentProviderStatus
     appointment.update!(
       external_ref: 'medelement:reception:created-1',
@@ -126,8 +142,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     status = Integrations::Medelement::AppointmentProviderStatus
     account.enable_features!('scheduling')
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
-    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
-    create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    create(:integrations_hook, :medelement, account: account, settings: medelement_hook_settings(write_enabled: true))
     appointment.update!(
       external_ref: 'medelement:reception:created-1',
       custom_attributes: appointment.custom_attributes.merge(
@@ -148,8 +163,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     status = Integrations::Medelement::AppointmentProviderStatus
     account.enable_features!('scheduling')
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
-    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
-    create(:integrations_hook, :medelement, account: account, settings: hook_settings)
+    create(:integrations_hook, :medelement, account: account, settings: medelement_hook_settings(write_enabled: true))
     appointment.update!(
       external_ref: 'medelement:reception:created-1',
       custom_attributes: appointment.custom_attributes.merge(
@@ -165,6 +179,52 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       ).perform
     end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_BOOKING_REQUIRES_VERIFICATION') }
     expect(appointment.reload).to have_attributes(status: 'scheduled', resource_id: resource.id)
+  end
+
+  it 'does not upgrade a local generic cancellation if the integration toggle changes before execution' do
+    account.enable_features!('scheduling')
+    hook = create(
+      :integrations_hook,
+      :medelement,
+      account: account,
+      settings: attributes_for(:integrations_hook, :medelement)[:settings].merge(
+        'write_enabled' => true, 'remove_reception_on_cancel' => false
+      )
+    )
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => 'created-1'
+      )
+    )
+    allow(Integrations::Medelement::LocalCancellation).to receive(:local_only?).with(appointment) do
+      hook.update!(settings: hook.settings.merge('remove_reception_on_cancel' => true))
+      true
+    end
+
+    expect { perform(status: 'cancelled') }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_CANCELLATION_MODE_CHANGED')
+    end
+    expect(appointment.reload.status).to eq('scheduled')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+  end
+
+  it 'cancels a MedElement-linked appointment only locally while the integration keeps receptions' do
+    status = Integrations::Medelement::AppointmentProviderStatus
+    appointment.update!(
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: appointment.custom_attributes.merge(
+        status::ATTRIBUTE_KEY => status::SUCCEEDED, 'medelement_reception_code' => 'created-1'
+      )
+    )
+
+    result = perform(status: 'cancelled', client_comment: 'Not applied, like the cancel endpoint')
+
+    expect(result).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+    expect(result.client_comment).not_to eq('Not applied, like the cancel endpoint')
+    expect(result.custom_attributes[Integrations::Medelement::LocalCancellation::MARKER_KEY]).to include('reception_code' => 'created-1')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
   end
 
   it 'keeps a Captain appointment locally with a red review status when the command receipt is unavailable' do

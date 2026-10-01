@@ -602,6 +602,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
             : {}),
         });
 
+        if (
+          normalizedForm.status === 'cancelled' &&
+          this.selectedAppointment?.medelementCancellationMode
+        ) {
+          payload.medelement_cancellation_mode =
+            this.selectedAppointment.medelementCancellationMode;
+        }
+
         if (!hasSelectedService) {
           payload.service_ids = [];
         }
@@ -715,9 +723,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.ui.error = null;
 
         try {
-          const { data } = await SchedulingAppointmentsAPI.cancel(
-            this.recordId
-          );
+          const cancellationMode =
+            this.selectedAppointment?.medelementCancellationMode;
+          const { data } = cancellationMode
+            ? await SchedulingAppointmentsAPI.cancel(this.recordId, {
+                medelement_cancellation_mode: cancellationMode,
+              })
+            : await SchedulingAppointmentsAPI.cancel(this.recordId);
           const appointment = normalizePayload(data);
           calendarStore.syncAppointment(appointment);
           if (calendarStore.currentView === 'month') {

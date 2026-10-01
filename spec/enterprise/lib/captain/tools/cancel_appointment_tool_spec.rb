@@ -92,7 +92,9 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
   end
 
   it 'returns the exact remove command receipt for a provider-backed appointment' do
-    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge(
+      'write_enabled' => true, 'remove_reception_on_cancel' => true
+    )
     create(:integrations_hook, :medelement, account: account, settings: settings)
     resource = create(:scheduling_resource, account: account, custom_attributes: {
                         'medelement_specialist_code' => 'specialist-1',
@@ -129,8 +131,40 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     expect(other.reload.status).to eq('scheduled')
   end
 
-  it 'does not cancel an unverified provider booking and returns the typed verification error' do
+  it 'cancels a provider-backed appointment only in OneLink while the integration keeps receptions' do
     settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    resource = create(:scheduling_resource, account: account, custom_attributes: {
+                        'medelement_specialist_code' => 'specialist-1',
+                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                      })
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account, resource: resource, contact: contact, conversation: conversation,
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: {
+        'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1',
+        Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY => Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED
+      }
+    )
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+
+    payload = JSON.parse(tool.perform(tool_context, appointment_id: appointment.id))
+
+    expect(payload).to include('appointment_id' => appointment.id, 'status' => 'cancelled')
+    expect(payload['provider_command_receipt']).to be_blank
+    expect(appointment.reload.custom_attributes[Integrations::Medelement::LocalCancellation::MARKER_KEY]).to include(
+      'actor' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
+    )
+    expect(Integrations::Medelement::ProviderCommand.where(appointment_id: appointment.id)).to be_empty
+  end
+
+  it 'does not cancel an unverified provider booking and returns the typed verification error' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge(
+      'write_enabled' => true, 'remove_reception_on_cancel' => true
+    )
     create(:integrations_hook, :medelement, account: account, settings: settings)
     resource = create(:scheduling_resource, account: account, custom_attributes: {
                         'medelement_specialist_code' => 'specialist-1',

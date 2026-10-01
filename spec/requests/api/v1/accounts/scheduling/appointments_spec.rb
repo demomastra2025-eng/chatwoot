@@ -1320,7 +1320,8 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     cancel_service = instance_double(Scheduling::Appointments::CancelService, perform: appointment)
     expect(Scheduling::Appointments::CancelService).to receive(:new).with(
       appointment: appointment,
-      actor: agent
+      actor: agent,
+      expected_medelement_cancellation_mode: nil
     ).and_return(cancel_service)
 
     put "#{path}/#{appointment.id}",
@@ -1333,8 +1334,41 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.client_name).not_to eq('Ignored edit')
   end
 
+  it 'rejects a stale local-only cancellation confirmation after the setting changes', :aggregate_failures do
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('remove_reception_on_cancel' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      source: 'manual',
+      external_ref: 'medelement:reception:created-1',
+      custom_attributes: {
+        provider_status::ATTRIBUTE_KEY => provider_status::SUCCEEDED,
+        'medelement_reception_code' => 'created-1'
+      }
+    )
+
+    post "#{path}/#{appointment.id}/cancel",
+         params: { medelement_cancellation_mode: 'local_only' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('MEDELEMENT_CANCELLATION_MODE_CHANGED')
+    expect(appointment.reload.status).to eq('scheduled')
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+  end
+
   it 'refuses both cancellation routes for an unverified Medelement booking and retains the slot' do
     provider_status = Integrations::Medelement::AppointmentProviderStatus
+    removal_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('remove_reception_on_cancel' => true)
+    create(:integrations_hook, :medelement, account: account, settings: removal_settings)
     appointment = create(
       :scheduling_appointment,
       resource: resource,
@@ -1360,7 +1394,9 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     provider_status = Integrations::Medelement::AppointmentProviderStatus
     account.enable_features!('scheduling')
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
-    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge(
+      'write_enabled' => true, 'remove_reception_on_cancel' => true
+    )
     hook = create(:integrations_hook, :medelement, account: account, settings: hook_settings)
     appointment = create(
       :scheduling_appointment,
@@ -1392,7 +1428,9 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     provider_status = Integrations::Medelement::AppointmentProviderStatus
     account.enable_features!('scheduling')
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
-    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge(
+      'write_enabled' => true, 'remove_reception_on_cancel' => true
+    )
     create(:integrations_hook, :medelement, account: account, settings: settings)
     appointment = create(
       :scheduling_appointment, resource: resource, account: account, contact: contact, service: service,
@@ -1410,6 +1448,43 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.status).to eq('scheduled')
     expect(appointment.custom_attributes[provider_status::ATTRIBUTE_KEY]).to eq(provider_status::PENDING)
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment, operation: 'remove_reception').count).to eq(1)
+  end
+
+  it 'cancels a MedElement-linked appointment only in OneLink by default and keeps the record from deletion' do
+    provider_status = Integrations::Medelement::AppointmentProviderStatus
+    account.enable_features!('scheduling')
+    resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-1'))
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    appointment = create(
+      :scheduling_appointment, resource: resource, account: account, contact: contact, service: service,
+                               starts_at: booking_day, ends_at: booking_day + 30.minutes,
+                               external_ref: 'medelement:reception:created-1',
+                               custom_attributes: {
+                                 provider_status::ATTRIBUTE_KEY => provider_status::SUCCEEDED,
+                                 'medelement_reception_code' => 'created-1'
+                               }
+    )
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+    expect(response_body.dig('payload', 'medelement_cancellation_mode')).to eq('local_only')
+
+    post "#{path}/#{appointment.id}/cancel", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body['payload']).to include(
+      'status' => 'cancelled',
+      'custom_attributes' => hash_including(
+        'medelement_local_cancellation' => hash_including('reception_code' => 'created-1')
+      )
+    )
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+
+    delete "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('MEDELEMENT_LOCAL_CANCELLATION_PROTECTED')
+    expect(Scheduling::Appointment.exists?(appointment.id)).to be(true)
   end
 
   it 'returns a stable calendar payload shape' do
