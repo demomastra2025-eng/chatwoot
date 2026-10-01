@@ -59,6 +59,12 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "SETTINGS": {
+        "REMOVE_RECEPTION_ON_CANCEL": {
+          "LABEL": "OneLink-те болдырмағанда МедЭлементтегі қабылдауды өшіру",
+          "HINT": "Өшірулі болса, болдырмау мәртебені тек OneLink-те өзгертеді. МедЭлементте қабылдау қалады — дәрігердің уақытын сонда қолмен босатыңыз. Егер қабылдауды жою басталып кетсе, бұл параметрді өшіргеннен кейін де аяқталуы мүмкін."
+        }
+      },
       "SCHEDULE": {
         "REALTIME_NEXT": "Жазылуларды келесі жедел синхрондау",
         "REALTIME_LAST": "Жазылуларды соңғы жедел синхрондау",
@@ -85,7 +91,9 @@
         "LOCAL_UNLINKED_COUNT": "Тек One Link жүйесінде"
       },
       "CONFLICT_TYPE": {
-        "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады"
+        "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады",
+        "PATIENT_CARD_REPAIR_REQUIRED": "Пациент картасын чат контактісінен бөлу қажет",
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement жазбаны басқа пациентке ауыстырды"
       },
       "IMPORT": {
         "TITLE": "Каталогты импорттау",

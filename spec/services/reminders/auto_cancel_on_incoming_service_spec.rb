@@ -21,6 +21,76 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
     )
   end
 
+  it 'keeps a separate patient touch open when the shared communication owner sends ordinary text' do
+    patient = create(:contact, account: account, name: 'Relative', phone_number: nil)
+    appointment = create(:scheduling_appointment, account: account, contact: contact, patient_contact: patient, conversation: conversation)
+    touch = create(:reminder, account: account, conversation: conversation, remindable: appointment,
+                              status: :pending, auto_cancel_on_incoming: true,
+                              metadata: { 'auto_cancel_on_incoming_explicit' => true })
+    message = incoming_message
+    expect(described_class.new(message: message).perform).to eq(0)
+    expect(touch.reload).to be_pending
+    expect(message.reload.sender_id).to eq(contact.id)
+    expect(appointment.reload.patient_contact_id).to eq(patient.id)
+  end
+
+  it 'does not skip a deferred separate-patient step after a shared-owner reply' do
+    account.enable_features!('deferred_touch_materialization')
+    patient = create(:contact, account: account, name: 'Relative', phone_number: nil)
+    appointment = create(:scheduling_appointment, account: account, contact: contact, patient_contact: patient, conversation: conversation,
+                                                  starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+    plan = create(:reminder_group, account: account, touches: [{ body: 'Relative visit', timing_mode: 'relative',
+                                                                 relative_anchor: 'appointment.starts_at', relative_offset_seconds: -1.day.to_i,
+                                                                 timezone: 'UTC', auto_cancel_on_incoming: true }])
+    enrollment = Reminders::EnrollGroupService.new(account: account, reminder_group: plan, remindable: appointment, actor: nil).perform
+    expect(described_class.new(message: incoming_message).perform).to eq(0)
+    expect(enrollment.reload).to be_active
+    expect(enrollment.touch_occurrence_claims).to be_empty
+  end
+
+  context 'when the separate patient writes from its own number' do
+    let(:patient) { create(:contact, account: account, name: 'Relative', phone_number: nil) }
+    let(:appointment) do
+      create(:scheduling_appointment, account: account, contact: contact, patient_contact: patient, conversation: conversation,
+                                      starts_at: 2.days.from_now, ends_at: 2.days.from_now + 30.minutes)
+    end
+
+    def patient_own_reply
+      patient.update!(phone_number: '+77000000002')
+      own_contact_inbox = create(:contact_inbox, contact: patient, inbox: inbox)
+      own_conversation = create(:conversation, account: account, inbox: inbox, contact: patient, contact_inbox: own_contact_inbox)
+      create(:message, account: account, inbox: inbox, conversation: own_conversation, sender: patient, message_type: :incoming, private: false)
+    end
+
+    it 'cancels the patient touch scheduled over the shared route, which an owner reply never does' do
+      touch = create(:reminder, account: account, conversation: conversation, remindable: appointment, status: :pending,
+                                auto_cancel_on_incoming: true, metadata: { 'auto_cancel_on_incoming_explicit' => true })
+      expect(touch.target_contact_id).to eq(contact.id)
+
+      expect(described_class.new(message: incoming_message).perform).to eq(0)
+      expect(touch.reload).to be_pending
+
+      reply = patient_own_reply
+      expect(described_class.new(message: reply).perform).to eq(1)
+      expect(touch.reload).to be_cancelled
+      expect(touch.metadata).to include(Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => reply.id)
+    end
+
+    it 'skips the patient deferred auto-cancel step after its own reply only' do
+      account.enable_features!('deferred_touch_materialization')
+      plan = create(:reminder_group, account: account, touches: [{ body: 'Relative visit', timing_mode: 'relative',
+                                                                   relative_anchor: 'appointment.starts_at', relative_offset_seconds: -1.day.to_i,
+                                                                   timezone: 'UTC', auto_cancel_on_incoming: true }])
+      enrollment = Reminders::EnrollGroupService.new(account: account, reminder_group: plan, remindable: appointment, actor: nil).perform
+      expect(described_class.new(message: incoming_message).perform).to eq(0)
+      expect(enrollment.reload.touch_occurrence_claims).to be_empty
+
+      reply = patient_own_reply
+      expect(described_class.new(message: reply).perform).to eq(1)
+      expect(enrollment.reload.touch_occurrence_claims.sole).to have_attributes(status: 'skipped', metadata: { 'incoming_message_id' => reply.id })
+    end
+  end
+
   it 'cancels open auto-cancel touches after an incoming customer reply' do
     touch = create(
       :reminder,

@@ -55,6 +55,38 @@ const invalidateConversationListRequest = commit => {
   commit(types.CLEAR_LIST_LOADING_STATUS);
 };
 
+const isExpectedRouteCurrent = (rootState, expectedRouteFullPath) =>
+  !expectedRouteFullPath ||
+  rootState?.route?.fullPath === expectedRouteFullPath;
+
+const requestContext = request =>
+  request && typeof request === 'object'
+    ? request
+    : { conversationId: request };
+
+const preserveConversationState = (conversation, previousState) => {
+  if (!previousState) return conversation;
+
+  return {
+    ...conversation,
+    ...(previousState.messages ? { messages: previousState.messages } : {}),
+    ...(previousState.allMessagesLoaded !== undefined
+      ? { allMessagesLoaded: previousState.allMessagesLoaded }
+      : {}),
+    ...(previousState.dataFetched !== undefined
+      ? { dataFetched: previousState.dataFetched }
+      : {}),
+    ...(previousState.firstUnreadMessageId !== undefined
+      ? {
+          meta: {
+            ...conversation.meta,
+            first_unread_message_id: previousState.firstUnreadMessageId,
+          },
+        }
+      : {}),
+  };
+};
+
 const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'inboxId',
   'status',
@@ -105,7 +137,11 @@ const findChatByIdAndType = (state, conversationId, conversationType) =>
       conversationStoreType(chat) === conversationType
   );
 
-const findActiveChatById = (state, conversationId) => {
+const findActiveChatById = (state, conversationId, conversationType = null) => {
+  if (conversationType) {
+    return findChatByIdAndType(state, conversationId, conversationType);
+  }
+
   if (
     String(state?.selectedChatId) === String(conversationId) &&
     state?.selectedChatType
@@ -270,12 +306,33 @@ const actions = {
     invalidateConversationListRequest(commit);
   },
 
-  getConversation: async ({ commit, state }, conversationId) => {
+  getConversation: async ({ commit, dispatch, state, rootState }, request) => {
+    const {
+      conversationId,
+      expectedRouteFullPath,
+      preserveConversationState: previousState,
+      resumeActiveConversation = false,
+    } = requestContext(request);
+    if (
+      !conversationId ||
+      !isExpectedRouteCurrent(rootState, expectedRouteFullPath)
+    ) {
+      return null;
+    }
+
     try {
       const response = await ConversationApi.show(conversationId);
-      const conversation = response.data;
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath))
+        return null;
+
+      const conversation = preserveConversationState(
+        response.data,
+        previousState
+      );
       const exists = state.allConversations.some(
-        existingConversation => existingConversation.id === conversation.id
+        existingConversation =>
+          existingConversation.id === conversation.id &&
+          !isCommunicationThread(existingConversation)
       );
 
       if (exists) {
@@ -285,6 +342,13 @@ const actions = {
       }
 
       commit(`contacts/${types.SET_CONTACT_ITEM}`, conversation.meta.sender);
+      if (resumeActiveConversation) {
+        await dispatch('setActiveChat', {
+          data: conversation,
+          expectedRouteFullPath,
+          resumeActiveConversation: true,
+        });
+      }
       return conversation;
     } catch (error) {
       // Ignore error
@@ -292,7 +356,11 @@ const actions = {
     }
   },
 
-  fetchAllConversations: async ({ commit, state, dispatch }) => {
+  fetchAllConversations: async (
+    { commit, state, dispatch, rootState },
+    { expectedRouteFullPath } = {}
+  ) => {
+    if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
     const requestGeneration = startConversationListRequest();
     commit(types.SET_LIST_LOADING_STATUS);
     try {
@@ -301,6 +369,10 @@ const actions = {
         data: { data },
       } = await ConversationApi.get(params);
       if (requestGeneration !== conversationListRequestGeneration) return;
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+        return;
+      }
       buildConversationList(
         { commit, dispatch },
         params,
@@ -315,7 +387,11 @@ const actions = {
     }
   },
 
-  fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
+  fetchCommunicationThreads: async (
+    { commit, state, dispatch, rootState },
+    { expectedRouteFullPath } = {}
+  ) => {
+    if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
     const requestGeneration = startConversationListRequest();
     communicationThreadListUpdates.set(requestGeneration, []);
     commit(types.SET_LIST_LOADING_STATUS);
@@ -329,6 +405,10 @@ const actions = {
         includeMeta: false,
       });
       if (requestGeneration !== conversationListRequestGeneration) return;
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+        return;
+      }
       buildConversationList(
         { commit, dispatch },
         params,
@@ -356,17 +436,41 @@ const actions = {
     }
   },
 
-  getCommunicationThread: async ({ commit }, communicationThreadId) => {
+  getCommunicationThread: async ({ commit, dispatch, rootState }, request) => {
+    const {
+      conversationId,
+      expectedRouteFullPath,
+      preserveConversationState: previousState,
+      resumeActiveConversation = false,
+    } = requestContext(request);
+    if (
+      !conversationId ||
+      !isExpectedRouteCurrent(rootState, expectedRouteFullPath)
+    ) {
+      return null;
+    }
+
     try {
-      const response = await CommunicationThreadApi.show(communicationThreadId);
-      const communicationThread = buildCommunicationThreadConversation(
-        response.data
+      const response = await CommunicationThreadApi.show(conversationId);
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath))
+        return null;
+
+      const communicationThread = preserveConversationState(
+        buildCommunicationThreadConversation(response.data),
+        previousState
       );
       commit(types.SET_ALL_CONVERSATION, [communicationThread]);
       commit(
         `contacts/${types.SET_CONTACT_ITEM}`,
         communicationThread.meta.sender
       );
+      if (resumeActiveConversation) {
+        await dispatch('setActiveChat', {
+          data: communicationThread,
+          expectedRouteFullPath,
+          resumeActiveConversation: true,
+        });
+      }
       return communicationThread;
     } catch (error) {
       return null;
@@ -456,20 +560,30 @@ const actions = {
     }
   },
 
-  fetchFilteredConversations: async ({ commit, state, dispatch }, params) => {
+  fetchFilteredConversations: async (
+    { commit, state, dispatch, rootState },
+    params
+  ) => {
+    const { expectedRouteFullPath, ...requestParams } = params || {};
+    if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
+
     const requestGeneration = startConversationListRequest();
-    if (params?.communicationThreadMode) {
+    if (requestParams?.communicationThreadMode) {
       communicationThreadListUpdates.set(requestGeneration, []);
     }
     commit(types.SET_LIST_LOADING_STATUS);
     try {
-      const isFirstPage = Number(params.page || 1) === 1;
-      const filterApi = params?.communicationThreadMode
+      const isFirstPage = Number(requestParams.page || 1) === 1;
+      const filterApi = requestParams?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
-      const { data } = await filterApi.filter(params);
+      const { data } = await filterApi.filter(requestParams);
       if (requestGeneration !== conversationListRequestGeneration) return;
-      const responseData = params?.communicationThreadMode
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+        return;
+      }
+      const responseData = requestParams?.communicationThreadMode
         ? {
             meta: data.data?.meta || {},
             payload: (data.data?.payload || []).map(
@@ -479,7 +593,7 @@ const actions = {
         : data;
       buildConversationList(
         { commit, dispatch },
-        params,
+        requestParams,
         responseData,
         'appliedFilters',
         isFirstPage
@@ -489,8 +603,8 @@ const actions = {
         { commit, state, dispatch },
         actions.updateCommunicationThreadRealtime
       );
-      if (params?.communicationThreadMode && isFirstPage) {
-        dispatch('fetchSidebarUnreadCounts', params);
+      if (requestParams?.communicationThreadMode && isFirstPage) {
+        dispatch('fetchSidebarUnreadCounts', requestParams);
       }
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
@@ -509,10 +623,15 @@ const actions = {
     commit(types.CLEAR_CURRENT_CHAT_WINDOW);
   },
 
-  fetchPreviousMessages: async ({ commit, state }, data) => {
+  fetchPreviousMessages: async ({ commit, state, rootState }, data) => {
+    if (!isExpectedRouteCurrent(rootState, data.expectedRouteFullPath)) return;
     try {
-      const selectedChat = findActiveChatById(state, data.conversationId);
       const conversationType = activeChatTypeForPayload(state, data);
+      const selectedChat = findActiveChatById(
+        state,
+        data.conversationId,
+        conversationType
+      );
 
       if (selectedChat?.is_communication_thread) {
         const {
@@ -522,6 +641,8 @@ const actions = {
           before: data.before,
           include_history: true,
         });
+        if (!isExpectedRouteCurrent(rootState, data.expectedRouteFullPath))
+          return;
         const messagesPayload = payload;
         selectedChat.channels = meta.channels || selectedChat.channels || [];
         selectedChat.meta = {
@@ -554,6 +675,8 @@ const actions = {
       const {
         data: { meta, payload },
       } = await MessageApi.getPreviousMessages(data);
+      if (!isExpectedRouteCurrent(rootState, data.expectedRouteFullPath))
+        return;
       const messagesPayload = payload;
       if (selectedChat) {
         selectedChat.meta = withFirstUnreadCursor(
@@ -618,14 +741,26 @@ const actions = {
   },
 
   syncActiveConversationMessages: async (
-    { commit, state, dispatch },
-    { conversationId }
+    { commit, state, dispatch, rootState },
+    {
+      conversationId,
+      conversationType: requestedConversationType,
+      expectedRouteFullPath,
+    }
   ) => {
+    if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
     const { syncConversationsMessages } = state;
-    const selectedChat = findActiveChatById(state, conversationId);
+    const selectedChat = findActiveChatById(
+      state,
+      conversationId,
+      requestedConversationType
+    );
     if (!selectedChat) return;
     const conversationType =
-      activeChatTypeForPayload(state, { conversationId }) ||
+      activeChatTypeForPayload(state, {
+        conversationId,
+        conversationType: requestedConversationType,
+      }) ||
       (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
     const syncKey = conversationType
       ? `${conversationType}:${conversationId}`
@@ -647,6 +782,7 @@ const actions = {
       const {
         data: { meta, payload },
       } = await syncMessagesApi;
+      if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
         id: conversationId,
         data: meta,
@@ -690,12 +826,19 @@ const actions = {
 
   setConversationLastMessageId: async (
     { commit, state },
-    { conversationId }
+    { conversationId, conversationType: requestedConversationType }
   ) => {
-    const selectedChat = findActiveChatById(state, conversationId);
+    const selectedChat = findActiveChatById(
+      state,
+      conversationId,
+      requestedConversationType
+    );
     if (!selectedChat) return;
     const conversationType =
-      activeChatTypeForPayload(state, { conversationId }) ||
+      activeChatTypeForPayload(state, {
+        conversationId,
+        conversationType: requestedConversationType,
+      }) ||
       (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
     const { messages } = selectedChat;
     const lastMessage = messages.last();
@@ -707,19 +850,32 @@ const actions = {
     });
   },
 
-  async setActiveChat({ commit, dispatch }, { data, after }) {
-    commit(types.SET_CURRENT_CHAT_WINDOW, data);
+  async setActiveChat(
+    { commit, dispatch, rootState },
+    { data, after, expectedRouteFullPath, resumeActiveConversation = false }
+  ) {
+    if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
+
+    commit(
+      types.SET_CURRENT_CHAT_WINDOW,
+      resumeActiveConversation ? { ...data, preserveUnreadCursor: true } : data
+    );
     const conversationType = conversationStoreType(data);
-    commit(types.CLEAR_ALL_MESSAGES_LOADED, {
-      id: data.id,
-      conversationType,
-    });
+    if (!resumeActiveConversation) {
+      commit(types.CLEAR_ALL_MESSAGES_LOADED, {
+        id: data.id,
+        conversationType,
+      });
+    }
     if (data.dataFetched === undefined) {
       try {
         const fetchParams = {
           after,
           conversationId: data.id,
           conversationType,
+          ...(expectedRouteFullPath !== undefined
+            ? { expectedRouteFullPath }
+            : {}),
         };
 
         if (after) {
@@ -727,6 +883,7 @@ const actions = {
         }
 
         await dispatch('fetchPreviousMessages', fetchParams);
+        if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) return;
         commit(types.SET_CHAT_DATA_FETCHED, {
           id: data.id,
           conversationType,

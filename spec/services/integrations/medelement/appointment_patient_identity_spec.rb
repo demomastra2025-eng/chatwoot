@@ -132,7 +132,7 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
       account: account, hook: hook, operation: 'update_patient', appointment: appointment, contact: contact,
       desired_attributes: { 'client_phone' => nil }
     )
-    expect { builder.build }.to raise_error(ArgumentError)
+    expect { builder.build }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_PATIENT_PHONE_INVALID') }
   end
 
   [{}, { described_class::OWNED_IDENTITY_KEY => false, described_class::EXPLICIT_IDENTIFIER_KEY => false }].each do |attributes|
@@ -413,7 +413,7 @@ RSpec.describe Integrations::Medelement::AppointmentPatientIdentity do
                                                                 .reception_created!(reception_code: 'reception-2', patient_code: 'relative-2')
       appointment.update!(client_identifier: nil)
       before_identity = appointment.reload.attributes.slice(*described_class::FIELDS, 'client_name', 'contact_id', 'conversation_id')
-      relative = create(:contact, account: account, name: 'Imported', last_name: 'Version', identifier: '940720300129') if resolved
+      relative = appointment.reload.patient_contact.tap { |card| card.update!(name: 'Imported', last_name: 'Version') } if resolved
       result = Integrations::Medelement::AppointmentImporterService.new(account: account).upsert!(
         resource: resource, contact: relative, reception: { 'RECEPTION_CODE' => 'reception-2', 'PATIENT_CODE' => 'relative-2', 'ACTIVE' => 1 },
         import_context: { starts_at: appointment.starts_at, ends_at: appointment.ends_at, specialist_code: 'specialist-1' }

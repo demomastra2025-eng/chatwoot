@@ -367,6 +367,34 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(inbox.reload.deleting?).to be(true)
       end
 
+      it 'queues Cloud WhatsApp deletion with a durable generation' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        queued_arguments = nil
+        allow(DeleteObjectJob).to receive(:perform_later) { |*args| queued_arguments = args }
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}",
+               headers: admin.create_new_auth_token,
+               as: :json
+
+        expect(response).to have_http_status(:accepted)
+        expect(queued_arguments.length).to eq(4)
+        expect(queued_arguments.first.id).to eq(whatsapp_inbox.id)
+        expect(queued_arguments.second).to eq(admin)
+        expect(queued_arguments.last).to be_present
+        expect(whatsapp_inbox.reload.deletion_attempt_id).to eq(queued_arguments.last)
+        expect(whatsapp_channel.reload.inbox_deletion_recovery).to include(
+          'attempt_id' => queued_arguments.last,
+          'status' => 'pending'
+        )
+      end
+
       it 'deletes managed Virtual PBX voice inboxes synchronously and releases the phone number' do
         display_phone_number = '+17715550666'
         ingress_number = '056124100666'

@@ -90,9 +90,13 @@ class Contact < ApplicationRecord
   has_many :meta_ad_referrals, dependent: :nullify
   has_many :notes, dependent: :destroy_async
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
+  has_many :patient_scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment',
+                                             foreign_key: :patient_contact_id, inverse_of: :patient_contact
   before_validation :prepare_contact_attributes, :normalize_phone_number, :lock_phone_identity
+  before_save -> { Contacts::PatientSharedPhonePolicy.apply!(self) }
   before_save :sync_contact_attributes
   after_commit :sync_unified_owner, if: :saved_change_to_owner_id?
+  after_commit :enqueue_shared_phone_release, on: [:update, :destroy]
   after_create_commit :dispatch_create_event, :ip_lookup
   after_update_commit :dispatch_update_event
   after_destroy_commit :dispatch_destroy_event
@@ -193,6 +197,12 @@ class Contact < ApplicationRecord
     }
 
     apply_channel_profile_data(data, contact_inbox)
+  end
+
+  # Tells open dashboards that a contact's number routing or history changed (number transfer, promotion hint).
+  def dispatch_shared_phone_update_event
+    Rails.configuration.dispatcher.dispatch(CONTACT_UPDATED, Time.zone.now, contact: self, changed_attributes: {},
+                                                                            performed_by: Current.executed_by)
   end
 
   def webhook_data
@@ -505,6 +515,14 @@ class Contact < ApplicationRecord
 
   def sync_contact_attributes
     ::Contacts::SyncAttributes.new(self).perform
+  end
+
+  # M5(b): a primary number that this contact no longer holds may be promoted for a relative that has it as доп. номер.
+  def enqueue_shared_phone_release
+    released = destroyed? ? phone_number : (phone_number_before_last_save if saved_change_to_phone_number?)
+    return if released.blank?
+
+    Contacts::SharedPhoneReleasedJob.enqueue(account_id: account_id, phone: released, previous_holder_id: id)
   end
 
   def sync_unified_owner

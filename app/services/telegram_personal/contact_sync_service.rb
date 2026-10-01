@@ -30,13 +30,14 @@ class TelegramPersonal::ContactSyncService
   end
 
   def sync_existing_contact!
+    blocked_phone_update ||= false
     current_attributes = (@contact.additional_attributes || {}).deep_stringify_keys
     merged_attributes = merged_additional_attributes(current_attributes)
 
     updates = {}
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
     updates[:identifier] = contact_identifier if should_update_contact_identifier?
-    updates[:phone_number] = normalized_phone_number if @contact.phone_number.blank? && normalized_phone_number.present?
+    updates[:phone_number] = normalized_phone_number if !blocked_phone_update && @contact.phone_number.blank? && normalized_phone_number.present?
 
     if should_replace_contact_name?(@contact, contact_inbox: @contact_inbox)
       updates[:name] = display_name
@@ -66,7 +67,7 @@ class TelegramPersonal::ContactSyncService
   rescue ActiveRecord::RecordInvalid => e
     raise unless phone_number_conflict?(e, updates)
 
-    merge_phone_contact!
+    blocked_phone_update = true unless merge_phone_contact!
     @contact.reload
     @contact_inbox.reload
     remove_instance_variable(:@telegram_primary_contact) if instance_variable_defined?(:@telegram_primary_contact)
@@ -91,6 +92,9 @@ class TelegramPersonal::ContactSyncService
     current_profile = @contact_inbox.channel_profile
     @channel_profile_avatar_refresh_required = should_refresh_channel_profile_avatar?(current_profile)
     profile_data = telegram_channel_profile
+    # Payload-only proof that this peer itself carried the number (Contacts::SharedPhone.telegram_identity_ids). Baseline,
+    # backfill and generic upserts copy the contact phone into profile_data['phone_number'], never into this key.
+    profile_data[Contacts::SharedPhone::TELEGRAM_PEER_PHONE_KEY] = safe_phone_number if safe_phone_number.present?
     profile = Contacts::ChannelProfileUpsertService.new(
       contact_inbox: @contact_inbox,
       provider: 'telegram_personal',
@@ -254,16 +258,28 @@ class TelegramPersonal::ContactSyncService
   def merge_phone_contact!
     target_contact = inbox.account.contacts.find_by(phone_number: normalized_phone_number)
     return if target_contact.blank? || target_contact.id == @contact.id
+    return unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: @contact, target_contact: target_contact)
 
-    ActiveRecord::Base.transaction do
+    merged = ActiveRecord::Base.transaction do
       merge_contact_records!(source_contact: @contact, target_contact: target_contact)
     end
+    return unless merged
 
     @contact = target_contact
   end
 
+  # Returns true only when the records were merged; the locked re-check can still refuse (a provider write that
+  # started after the unlocked pre-check), and the caller then keeps the source contact and blocks the phone update.
   def merge_contact_records!(source_contact:, target_contact:)
+    # Lock order: phone identity lock first, then appointments, contacts and their chats (see the number transfer).
+    Contacts::PhoneIdentityLock.acquire!(account_id: target_contact.account_id)
+    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(source_contact, target_contact)
+    return false unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
+
     now = Time.current
+    # Duplicate merge changes the captured patient ID without dispatching another provider write.
+    Scheduling::Appointment.where(account_id: target_contact.account_id, patient_contact_id: source_contact.id)
+                           .update_all(patient_contact_id: target_contact.id, updated_at: now) # rubocop:disable Rails/SkipsModelValidations
 
     source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
     ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
@@ -310,8 +326,10 @@ class TelegramPersonal::ContactSyncService
 
     source_contact.skip_runtime_events = true
     source_contact.destroy!
+    true
   rescue ActiveRecord::RecordNotDestroyed
     source_contact.update_columns(identifier: nil, updated_at: now) if source_contact.identifier.present?
+    true
   end
 
   def preferred_contact_name(target_contact, source_contact)
@@ -453,6 +471,7 @@ class TelegramPersonal::ContactSyncService
       'last_name',
       'name',
       'phone_number',
+      Contacts::SharedPhone::TELEGRAM_PEER_PHONE_KEY,
       'profile_photo_url',
       'username'
     )

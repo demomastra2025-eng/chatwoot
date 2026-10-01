@@ -36,8 +36,10 @@
         "CHECK": "Check",
         "NEEDS_AUTH": "Needs auth",
         "DELETING": "Deleting",
+        "DELETION_RECOVERY": "Check WhatsApp connection",
         "CHANNEL_MISSING": "Channel broken"
       },
+      "DELETION_RECOVERY_DESCRIPTION": "WhatsApp disconnection could not be confirmed. The inbox and conversation history are preserved. Open settings to reconnect this channel through Meta or try deletion again.",
       "CHANNEL_MISSING_DESCRIPTION": "The channel record of this inbox no longer exists, so it cannot send or receive anything. Delete this inbox in its settings and connect the channel again.",
       "DETAILS": {
         "PHONE": "Phone",

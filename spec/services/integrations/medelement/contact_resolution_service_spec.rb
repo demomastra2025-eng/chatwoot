@@ -151,6 +151,36 @@ describe Integrations::Medelement::ContactResolutionService do
       expect(conflict.reload).to be_open
     end
 
+    context 'when the conflict involves a separate patient card' do
+      let(:primary_contact) do
+        create(:contact, account: account, phone_number: nil,
+                         custom_attributes: { 'medelement_patient_code' => 'relative-9', 'medelement_patient_card' => true })
+      end
+      let(:conflicting_contact) { create(:contact, account: account, name: 'Chat', phone_number: '+77015235543') }
+      let!(:appointment) do
+        create(:scheduling_appointment, account: account, contact: conflicting_contact, patient_contact: primary_contact)
+      end
+
+      it 'refuses the merge in both directions and keeps both identities and the binding' do
+        [[conflicting_contact, primary_contact], [primary_contact, conflicting_contact]].each do |base, mergee|
+          expect do
+            service.merge_contacts!(base_contact_id: base.id, mergee_contact_id: mergee.id)
+          end.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError)
+        end
+
+        expect(conflicting_contact.reload.custom_attributes).not_to have_key('medelement_patient_code')
+        expect(primary_contact.reload.custom_attributes['medelement_patient_code']).to eq('relative-9')
+        expect(appointment.reload).to have_attributes(contact_id: conflicting_contact.id, patient_contact_id: primary_contact.id)
+        expect(conflict.reload).to be_open
+      end
+
+      it 'does not report or delete a card that is bound to an appointment' do
+        expect(described_class.safe_to_delete?(primary_contact)).to be(false)
+        expect { service.delete!(contact_id: primary_contact.id) }.to raise_error(described_class::UnsafeDeletionError)
+        expect(appointment.reload.patient_contact_id).to eq(primary_contact.id)
+      end
+    end
+
     it 'does not follow a changed legacy contact comment' do
       unrelated = create(:contact, account: account)
       conflict.update!(details: { 'contact_id' => primary_contact.id })

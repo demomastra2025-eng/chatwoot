@@ -16,6 +16,8 @@ module Whatsapp::EmbeddedSignupTokenWabaResolution
   end
 
   def required_signup_parameters
+    return %i[code] if @inbox_id.present?
+
     @resolve_waba_from_token ? %i[code] : %i[code waba_id]
   end
 end

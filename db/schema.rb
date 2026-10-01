@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
+ActiveRecord::Schema[7.1].define(version: 2026_10_01_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1698,6 +1698,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
     t.datetime "deleting_at"
+    t.string "deletion_attempt_id"
     t.index ["account_id", "deleting_at"], name: "index_inboxes_on_account_id_and_deleting_at"
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
@@ -2543,6 +2544,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
+    t.bigint "patient_contact_id"
     t.index "account_id, regexp_replace((client_identifier)::text, '[^0-9]'::text, ''::text, 'g'::text)", name: "idx_scheduling_appointments_account_normalized_identifier", where: "(client_identifier IS NOT NULL)"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
@@ -2554,6 +2556,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
     t.index ["conversation_id"], name: "index_scheduling_appointments_on_conversation_id"
     t.index ["created_by_id"], name: "index_scheduling_appointments_on_created_by_id"
     t.index ["owner_id"], name: "index_scheduling_appointments_on_owner_id"
+    t.index ["patient_contact_id"], name: "index_scheduling_appointments_on_patient_contact_id"
     t.index ["resource_id"], name: "index_scheduling_appointments_on_resource_id"
     t.index ["service_id"], name: "index_scheduling_appointments_on_service_id"
   end
@@ -3499,6 +3502,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_16_103000) do
   add_foreign_key "scheduling_appointments", "accounts"
   add_foreign_key "scheduling_appointments", "companies"
   add_foreign_key "scheduling_appointments", "contacts"
+  add_foreign_key "scheduling_appointments", "contacts", column: "patient_contact_id", on_delete: :nullify
   add_foreign_key "scheduling_appointments", "conversations"
   add_foreign_key "scheduling_appointments", "scheduling_resources", column: "resource_id"
   add_foreign_key "scheduling_appointments", "scheduling_services", column: "service_id"

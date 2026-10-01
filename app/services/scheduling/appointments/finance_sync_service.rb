@@ -32,6 +32,13 @@ class Scheduling::Appointments::FinanceSyncService
     sync!
   end
 
+  # Re-booking from a provider sync can restore a paid appointment after local cancellation removed its unpaid expense.
+  # Reconcile only the expense so the import does not rewrite payment audit fields.
+  def sync_expense_only!
+    sync_expense!
+    appointment.reload
+  end
+
   def sync!
     validate_totals!
     upsert_payment_by_kind('prepaid', appointment.prepaid_amount, appointment.prepaid_payment_method)

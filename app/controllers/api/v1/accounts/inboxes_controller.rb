@@ -110,14 +110,16 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       return
     end
 
-    if @inbox.deleting?
-      render status: :accepted, json: pending_deletion_payload(@inbox)
-      return
-    end
-
+    attempt_id = nil
     ActiveRecord::Base.transaction do
-      @inbox.mark_pending_deletion!
-      ::DeleteObjectJob.perform_later(@inbox, Current.user, request.ip)
+      @inbox.lock!
+      unless @inbox.deleting?
+        attempt_id = SecureRandom.uuid if @inbox.whatsapp_cloud_channel?
+        @inbox.mark_pending_deletion!(attempt_id: attempt_id)
+        job_arguments = [@inbox, Current.user, request.ip]
+        job_arguments << attempt_id if attempt_id.present?
+        ::DeleteObjectJob.perform_later(*job_arguments)
+      end
     end
 
     render status: :accepted, json: pending_deletion_payload(@inbox)
@@ -416,7 +418,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       deleting_at: inbox.deleting_at&.iso8601,
       channel_type: inbox.display_channel_type,
       lifecycle_state: channel.try(:lifecycle_state),
-      connection_state: channel.try(:connection_state)
+      connection_state: channel.try(:connection_state),
+      deletion_recovery: inbox.deletion_recovery_payload
     }.compact
   end
 

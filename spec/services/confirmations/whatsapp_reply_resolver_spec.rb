@@ -44,6 +44,26 @@ RSpec.describe Confirmations::WhatsappReplyResolver do
     )
   end
 
+  it 'keeps shared-owner plain text separate from a relative and confirms only the signed appointment subject' do
+    first_request.destroy!
+    second_request.destroy!
+    relative_request = create_button_only_request(delivery: first_delivery)
+    patient = create(:contact, account: account, name: 'Relative', phone_number: nil)
+    relative_request.subject.update!(patient_contact: patient, client_name: 'Relative Patient')
+    owner_request = create_button_only_request(delivery: second_delivery)
+    plain = create(:message, account: account, inbox: inbox, conversation: conversation, sender: contact,
+                             message_type: :incoming, content: 'Подтвердить')
+    expect(described_class.new(account: account, conversation: conversation, message: plain).perform).to include(handled: false)
+    expect(relative_request.reload).to be_pending
+    expect(relative_request.subject.reload.status).to eq('scheduled')
+    reply = incoming_button('interactive_reply_id' => "confirmation:#{relative_request.token}:confirmed", 'button_text' => 'Подтвердить')
+    expect(described_class.new(account: account, conversation: conversation, message: reply).perform)
+      .to include(handled: true, confirmation_request_id: relative_request.id)
+    expect(relative_request.subject.reload.status).to eq('confirmed')
+    expect(owner_request.reload).to be_pending
+    expect(owner_request.subject.reload.status).to eq('scheduled')
+  end
+
   it 'resolves only the request named by the signed button payload when several are pending' do
     reply = incoming_button(
       'interactive_reply_id' => "confirmation:#{first_request.token}:confirmed",

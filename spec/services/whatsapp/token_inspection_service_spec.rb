@@ -49,6 +49,150 @@ RSpec.describe Whatsapp::TokenInspectionService do
       )
     end
 
+    it 'honors explicit per-WABA targets even when the bare scopes list both permissions' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging],
+          'granular_scopes' => [
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => [waba_id] },
+            { 'scope' => 'whatsapp_business_messaging', 'target_ids' => ['waba-elsewhere'] }
+          ]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      service = described_class.new(
+        access_token: access_token,
+        waba_id: waba_id,
+        phone_number_id: phone_number_id,
+        api_client: api_client
+      )
+      result = service.perform
+
+      expect(result['status']).to eq('permission_missing')
+      expect(result['required_permissions']).to include(
+        'whatsapp_business_management' => true,
+        'whatsapp_business_messaging' => false
+      )
+      expect(service.reauthorization_required?).to be(true)
+    end
+
+    it 'does not treat an empty explicit grant as global when the bare scope is present' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging],
+          'granular_scopes' => [
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => [] },
+            { 'scope' => 'whatsapp_business_messaging', 'target_ids' => [waba_id] }
+          ]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      result = described_class.new(
+        access_token: access_token,
+        waba_id: waba_id,
+        phone_number_id: phone_number_id,
+        api_client: api_client
+      ).perform
+
+      expect(result['status']).to eq('permission_missing')
+      expect(result['required_permissions']).to include(
+        'whatsapp_business_management' => false,
+        'whatsapp_business_messaging' => true
+      )
+    end
+
+    it 'does not treat malformed explicit targets as global when the bare scope is present' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging],
+          'granular_scopes' => [
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => 'not-a-list' },
+            { 'scope' => 'whatsapp_business_messaging', 'target_ids' => [waba_id] }
+          ]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      result = described_class.new(
+        access_token: access_token,
+        waba_id: waba_id,
+        phone_number_id: phone_number_id,
+        api_client: api_client
+      ).perform
+
+      expect(result['status']).to eq('permission_missing')
+      expect(result['required_permissions']).to include(
+        'whatsapp_business_management' => false,
+        'whatsapp_business_messaging' => true
+      )
+    end
+
+    it 'does not treat an invalid target member as a global grant' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'scopes' => %w[whatsapp_business_management whatsapp_business_messaging],
+          'granular_scopes' => [
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => [waba_id, { 'id' => 'other' }] },
+            { 'scope' => 'whatsapp_business_messaging', 'target_ids' => [waba_id] }
+          ]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      result = described_class.new(
+        access_token: access_token,
+        waba_id: waba_id,
+        phone_number_id: phone_number_id,
+        api_client: api_client
+      ).perform
+
+      expect(result['status']).to eq('permission_missing')
+      expect(result['required_permissions']).to include(
+        'whatsapp_business_management' => false,
+        'whatsapp_business_messaging' => true
+      )
+    end
+
+    it 'accepts a requested WABA granted by a later duplicate granular row' do
+      allow(api_client).to receive(:debug_token).and_return(
+        'data' => {
+          'is_valid' => true,
+          'granular_scopes' => [
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => ['waba-elsewhere'] },
+            { 'scope' => 'whatsapp_business_management', 'target_ids' => [waba_id] },
+            { 'scope' => 'whatsapp_business_messaging', 'target_ids' => [waba_id] }
+          ]
+        }
+      )
+      allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(
+        'data' => [{ 'id' => phone_number_id }]
+      )
+
+      result = described_class.new(
+        access_token: access_token,
+        waba_id: waba_id,
+        phone_number_id: phone_number_id,
+        api_client: api_client
+      ).perform
+
+      expect(result['status']).to eq('healthy')
+      expect(result['required_permissions']).to include('whatsapp_business_management' => true)
+    end
+
     it 'records expiring user tokens without requiring reauthorization before expiry' do
       allow(api_client).to receive(:debug_token).and_return(
         'data' => {

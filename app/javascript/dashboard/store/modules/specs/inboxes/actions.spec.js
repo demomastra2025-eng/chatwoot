@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { actions, state as inboxState } from '../../inboxes';
 import * as types from '../../../mutation-types';
+import InboxesAPI from 'dashboard/api/inboxes';
 import inboxList from './fixtures';
 
 const commit = vi.fn();
@@ -265,6 +266,67 @@ describe('#actions', () => {
         [types.default.DELETE_INBOXES, inboxList[0].id],
         [types.default.SET_INBOXES_UI_FLAG, { isDeleting: false }],
       ]);
+    });
+    it('reconciles a fast-restored inbox after an accepted asynchronous delete', async () => {
+      window.history.pushState({}, '', '/app/accounts/64/settings/inboxes');
+      const restoredInbox = {
+        ...inboxList[0],
+        account_id: 64,
+        deletion_recovery: { status: 'failed' },
+      };
+      axios.delete.mockResolvedValue({
+        status: 202,
+        data: { deleting: true },
+      });
+      const refetch = vi
+        .spyOn(InboxesAPI, 'refetchAndCommit')
+        .mockResolvedValue({ data: { payload: [restoredInbox] } });
+
+      await actions.delete(
+        { commit, getters: { getInbox: () => null } },
+        inboxList[0].id
+      );
+
+      expect(refetch).toHaveBeenCalledWith(null, 64);
+      expect(commit).toHaveBeenCalledWith(
+        types.default.DELETE_INBOXES,
+        inboxList[0].id
+      );
+      expect(commit).toHaveBeenCalledWith(types.default.SET_INBOXES, [
+        restoredInbox,
+      ]);
+      refetch.mockRestore();
+    });
+
+    it('keeps a recovery already restored in Vuex if post-202 refetch fails', async () => {
+      window.history.pushState({}, '', '/app/accounts/64/settings/inboxes');
+      const restoredInbox = {
+        ...inboxList[0],
+        account_id: 64,
+        deletion_recovery: { status: 'failed' },
+      };
+      axios.delete.mockResolvedValue({
+        status: 202,
+        data: { deleting: true },
+      });
+      const refetch = vi
+        .spyOn(InboxesAPI, 'refetchAndCommit')
+        .mockRejectedValue(new Error('temporary list failure'));
+
+      await actions.delete(
+        {
+          commit,
+          getters: { getInbox: () => restoredInbox },
+        },
+        inboxList[0].id
+      );
+
+      expect(refetch).toHaveBeenCalledWith(null, 64);
+      expect(commit).not.toHaveBeenCalledWith(
+        types.default.DELETE_INBOXES,
+        inboxList[0].id
+      );
+      refetch.mockRestore();
     });
     it('treats a missing inbox as already deleted', async () => {
       commit.mockClear();

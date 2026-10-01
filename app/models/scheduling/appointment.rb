@@ -41,6 +41,7 @@
 #  conversation_id               :bigint
 #  created_by_id                 :bigint
 #  owner_id                      :bigint
+#  patient_contact_id            :bigint
 #  resource_id                   :bigint           not null
 #  service_id                    :bigint
 #
@@ -56,6 +57,7 @@
 #  index_scheduling_appointments_on_conversation_id        (conversation_id)
 #  index_scheduling_appointments_on_created_by_id          (created_by_id)
 #  index_scheduling_appointments_on_owner_id               (owner_id)
+#  index_scheduling_appointments_on_patient_contact_id     (patient_contact_id)
 #  index_scheduling_appointments_on_resource_id            (resource_id)
 #  index_scheduling_appointments_on_service_id             (service_id)
 #
@@ -67,6 +69,7 @@
 #  fk_rails_...  (conversation_id => conversations.id)
 #  fk_rails_...  (created_by_id => users.id)
 #  fk_rails_...  (owner_id => users.id)
+#  fk_rails_...  (patient_contact_id => contacts.id) ON DELETE => nullify
 #  fk_rails_...  (resource_id => scheduling_resources.id)
 #  fk_rails_...  (service_id => scheduling_services.id)
 #
@@ -79,6 +82,7 @@ class Scheduling::Appointment < ApplicationRecord
   belongs_to :account
   belongs_to :company, optional: true
   belongs_to :contact, optional: true
+  belongs_to :patient_contact, class_name: 'Contact', optional: true
   belongs_to :conversation, optional: true
   belongs_to :created_by, class_name: 'User', optional: true
   belongs_to :owner, class_name: 'User', optional: true
@@ -146,6 +150,7 @@ class Scheduling::Appointment < ApplicationRecord
         prepaid_amount: prepaid_amount,
         settlement_amount: settlement_amount,
         contact_id: contact_id,
+        patient_contact_id: patient_contact_id,
         company_id: company_id,
         conversation_id: conversation_id,
         resource_id: resource_id,
@@ -177,13 +182,23 @@ class Scheduling::Appointment < ApplicationRecord
   private
 
   def mark_local_medelement_cancellation
-    return unless source != 'medelement' && status == 'cancelled' && will_save_change_to_status?
+    return clear_medelement_local_only_cancellation if status != 'cancelled'
+    return unless source != 'medelement' && will_save_change_to_status?
     return if medelement_provider_reconciled?
     return if custom_attributes.to_h['medelement_reception_code'].blank?
+    # A local-only cancellation keeps the MedElement reception; sync reconciles it through its own marker.
+    return if Integrations::Medelement::LocalCancellation.marked?(custom_attributes)
 
     self.custom_attributes = custom_attributes.to_h.merge(
       Integrations::Medelement::AppointmentSnapshotGuard::LOCAL_CANCELLATION_ATTRIBUTE => Time.current.iso8601
     )
+  end
+
+  # Re-opening a locally cancelled appointment makes it consistent with the still-active MedElement reception.
+  def clear_medelement_local_only_cancellation
+    return unless will_save_change_to_status? && Integrations::Medelement::LocalCancellation.marked?(custom_attributes)
+
+    self.custom_attributes = custom_attributes.to_h.except(Integrations::Medelement::LocalCancellation::MARKER_KEY)
   end
 
   def sync_deferred_touch_enrollments
@@ -290,6 +305,7 @@ class Scheduling::Appointment < ApplicationRecord
     {
       company: company,
       contact: contact,
+      patient_contact: patient_contact,
       conversation: conversation,
       created_by: created_by,
       owner: owner,

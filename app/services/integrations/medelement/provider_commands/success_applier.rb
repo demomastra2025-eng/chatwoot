@@ -166,6 +166,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def link_contact_patient_ref!(patient_code)
     if appointment_patient_owned?
+      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(patient_code: patient_code)
       appointment.update!(custom_attributes: appointment.custom_attributes.to_h.merge(appointment_patient_attributes(patient_code)))
       return
     end

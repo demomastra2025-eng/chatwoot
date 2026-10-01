@@ -33,7 +33,7 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
       end
 
-      it 'preserves WhatsApp inbox data when fail-closed webhook teardown aborts deletion' do
+      it 'preserves WhatsApp inbox data when fail-closed webhook teardown aborts deletion', :aggregate_failures do
         whatsapp_channel = create(
           :channel_whatsapp,
           provider: 'whatsapp_cloud',
@@ -44,14 +44,31 @@ RSpec.describe DeleteObjectJob, type: :job do
         conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
         teardown_service = instance_double(Whatsapp::WebhookTeardownService)
         allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
-        allow(teardown_service).to receive(:perform).and_raise(Whatsapp::WebhookTeardownService::WebhookTeardownError, 'unsubscribe failed')
+        allow(teardown_service).to receive(:perform).and_raise(
+          Whatsapp::WebhookTeardownService::WebhookTeardownError,
+          'Meta unsubscribe failed (100/33)'
+        )
+        attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: attempt_id)
 
-        expect { described_class.perform_now(whatsapp_inbox) }
-          .to raise_error(Whatsapp::WebhookTeardownService::WebhookTeardownError)
+        expect { described_class.perform_now(whatsapp_inbox, nil, nil, attempt_id) }
+          .not_to raise_error
+        expect(teardown_service).to have_received(:perform).once
 
-        expect(Inbox.exists?(whatsapp_inbox.id)).to be(true)
+        expect(whatsapp_inbox.reload).not_to be_deleting
+        expect(whatsapp_inbox.deletion_attempt_id).to be_nil
+        expect(whatsapp_inbox.deletion_recovery_payload).to include(
+          status: 'failed',
+          remote_outcome: 'unknown',
+          error_code: 'remote_teardown_failed'
+        )
         expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(true)
         expect(Conversation.exists?(conversation.id)).to be(true)
+        expect(whatsapp_channel.reload.inbox_deletion_recovery).to include(
+          'attempt_id' => attempt_id,
+          'status' => 'failed',
+          'remote_outcome' => 'unknown'
+        )
       end
 
       it 'destroys the WhatsApp channel before purging its inbox data' do
@@ -65,10 +82,182 @@ RSpec.describe DeleteObjectJob, type: :job do
         conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
         teardown_service = instance_double(Whatsapp::WebhookTeardownService, perform: true)
         allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+        attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: attempt_id)
+
+        described_class.perform_now(whatsapp_inbox, nil, nil, attempt_id)
+
+        expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(false)
+        expect(Inbox.exists?(whatsapp_inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
+      end
+
+      it 'preserves the legacy three-argument deletion path for non-Cloud WhatsApp' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'default',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
 
         described_class.perform_now(whatsapp_inbox)
 
         expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(false)
+        expect(Inbox.exists?(whatsapp_inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
+      end
+
+      it 'does not let a stale legacy or older generation retry delete a recovered inbox' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
+        teardown_service = instance_double(Whatsapp::WebhookTeardownService)
+        allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+        allow(teardown_service).to receive(:perform).and_raise(
+          Whatsapp::WebhookTeardownService::WebhookTeardownError,
+          'unsubscribe failed'
+        )
+        failed_attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: failed_attempt_id)
+        expect do
+          described_class.perform_now(whatsapp_inbox, nil, nil, failed_attempt_id)
+        end.not_to raise_error
+        expect(teardown_service).to have_received(:perform).once
+
+        expect do
+          described_class.perform_now(whatsapp_inbox)
+          described_class.perform_now(whatsapp_inbox, nil, nil, failed_attempt_id)
+        end.not_to(change { Conversation.exists?(conversation.id) })
+        expect(whatsapp_inbox.reload).not_to be_deleting
+        expect(whatsapp_inbox.deletion_attempt_id).to be_nil
+        expect(whatsapp_channel.reload.inbox_deletion_failed?).to be(true)
+      end
+
+      it 'does not restore a failed teardown while its account is pending deletion' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: attempt_id)
+        whatsapp_inbox.account.update!(
+          custom_attributes: whatsapp_inbox.account.custom_attributes.to_h.merge(
+            'marked_for_deletion_at' => Time.current.iso8601
+          )
+        )
+        teardown_service = instance_double(Whatsapp::WebhookTeardownService)
+        allow(teardown_service).to receive(:perform)
+          .and_raise(Whatsapp::WebhookTeardownService::WebhookTeardownError, 'unsubscribe failed')
+        allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+
+        expect do
+          described_class.perform_now(whatsapp_inbox, nil, nil, attempt_id)
+        end.to raise_error(Whatsapp::WebhookTeardownService::WebhookTeardownError)
+
+        expect(whatsapp_inbox.reload).to be_deleting
+        expect(whatsapp_inbox.deletion_attempt_id).to eq(attempt_id)
+        expect(whatsapp_channel.reload.inbox_deletion_recovery).to include(
+          'attempt_id' => attempt_id,
+          'status' => 'pending'
+        )
+      end
+
+      it 'keeps a failed recovery visible until an explicit successful reauthorization resolves it' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: attempt_id)
+        whatsapp_channel.mark_inbox_deletion_failed!(attempt_id: attempt_id, failed_at: Time.current)
+        whatsapp_inbox.update!(deleting_at: nil, deletion_attempt_id: nil)
+
+        expect(whatsapp_inbox.deletion_recovery_failed?).to be(true)
+        expect(whatsapp_inbox.resolve_failed_whatsapp_deletion_recovery!).to be(true)
+        expect(whatsapp_channel.reload.inbox_deletion_recovery).to include(
+          'status' => 'resolved',
+          'attempt_id' => attempt_id,
+          'remote_outcome' => 'subscription_restored',
+          'last_failure' => hash_including(
+            'attempt_id' => attempt_id,
+            'error_code' => 'remote_teardown_failed'
+          )
+        )
+        expect(whatsapp_inbox.deletion_recovery_failed?).to be(false)
+
+        expect do
+          described_class.perform_now(whatsapp_inbox)
+        end.not_to(change { Inbox.exists?(whatsapp_inbox.id) })
+        expect(whatsapp_inbox.reload).not_to be_deleting
+      end
+
+      it 'does not resolve a newer pending deletion after a reauthorization callback' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        first_attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: first_attempt_id)
+        whatsapp_channel.mark_inbox_deletion_failed!(attempt_id: first_attempt_id, failed_at: Time.current)
+        whatsapp_inbox.update!(deleting_at: nil, deletion_attempt_id: nil)
+        expect(whatsapp_inbox.resolve_failed_whatsapp_deletion_recovery!).to be(true)
+
+        next_attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: next_attempt_id)
+
+        expect(whatsapp_inbox.resolve_failed_whatsapp_deletion_recovery!).to be(false)
+        expect(whatsapp_channel.reload.inbox_deletion_recovery).to include(
+          'status' => 'pending',
+          'attempt_id' => next_attempt_id
+        )
+      end
+
+      it 'leaves a deletion resumable after channel teardown succeeds but inbox purge fails' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
+        teardown_service = instance_double(Whatsapp::WebhookTeardownService, perform: true)
+        allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+        attempt_id = SecureRandom.uuid
+        whatsapp_inbox.mark_pending_deletion!(attempt_id: attempt_id)
+        first_delivery = described_class.new
+        allow(first_delivery).to receive(:destroy_with_prepared_dependencies).and_raise(
+          StandardError,
+          'injected purge interruption'
+        )
+
+        expect do
+          first_delivery.perform(whatsapp_inbox, nil, nil, attempt_id)
+        end.to raise_error(StandardError, 'injected purge interruption')
+
+        expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(false)
+        expect(whatsapp_inbox.reload).to be_deleting
+        expect(whatsapp_inbox.deletion_attempt_id).to eq(attempt_id)
+        expect(Conversation.exists?(conversation.id)).to be(true)
+
+        described_class.perform_now(whatsapp_inbox, nil, nil, attempt_id)
+
         expect(Inbox.exists?(whatsapp_inbox.id)).to be(false)
         expect(Conversation.exists?(conversation.id)).to be(false)
       end
@@ -340,6 +529,7 @@ RSpec.describe DeleteObjectJob, type: :job do
       let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_whatsapp_web, account: account) }
       let!(:inbox) { channel.inbox }
+      let!(:conversation) { create(:conversation, account: account, inbox: inbox) }
 
       around do |example|
         with_modified_env(
@@ -353,15 +543,22 @@ RSpec.describe DeleteObjectJob, type: :job do
 
       it 'tears down the remote instance before destroying local records' do
         teardown_started = false
-        allow(channel).to receive(:teardown_provider_instance!) do
-          teardown_started = true
-        end
-        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+        stub_request(:delete, "https://evolution.example.com/instance/delete/#{channel.instance_name}")
+          .with(headers: { 'Apikey' => 'test-api-key' }).to_return do
+            expect(Conversation.exists?(conversation.id)).to be(true) unless teardown_started
+            teardown_started = true
+            { status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' } }
+          end
+        expect(inbox).to receive(:destroy!).and_wrap_original do |method, *args|
           expect(teardown_started).to be(true)
           method.call(*args)
         end
 
         described_class.perform_now(inbox)
+
+        expect(Channel::WhatsappWeb.exists?(channel.id)).to be(false)
+        expect(Inbox.exists?(inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
       end
     end
 
@@ -369,18 +566,35 @@ RSpec.describe DeleteObjectJob, type: :job do
       let!(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let!(:channel) { create(:channel_telegram_personal, account: account) }
       let!(:inbox) { channel.inbox }
+      let!(:conversation) { create(:conversation, account: account, inbox: inbox) }
+
+      around do |example|
+        with_modified_env(
+          'TELEGRAM_PERSONAL_GATEWAY_URL' => 'http://telegram-personal-gateway.test',
+          'TELEGRAM_PERSONAL_GATEWAY_TOKEN' => 'test-gateway-token'
+        ) do
+          example.run
+        end
+      end
 
       it 'tears down the gateway runtime before destroying local records' do
         teardown_started = false
-        allow(channel).to receive(:teardown_runtime!) do
-          teardown_started = true
-        end
-        expect(channel).to receive(:destroy).and_wrap_original do |method, *args|
+        stub_request(:delete, "http://telegram-personal-gateway.test/internal/channels/#{channel.id}")
+          .with(headers: { 'Authorization' => 'Bearer test-gateway-token' }).to_return do
+            expect(Conversation.exists?(conversation.id)).to be(true)
+            teardown_started = true
+            { status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' } }
+          end
+        expect(inbox).to receive(:destroy!).and_wrap_original do |method, *args|
           expect(teardown_started).to be(true)
           method.call(*args)
         end
 
         described_class.perform_now(inbox)
+
+        expect(Channel::TelegramPersonal.exists?(channel.id)).to be(false)
+        expect(Inbox.exists?(inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
       end
     end
 

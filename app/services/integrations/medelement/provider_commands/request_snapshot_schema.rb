@@ -13,6 +13,9 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotSchema
 
     def validate!(snapshot)
       version = snapshot_version(snapshot)
+      binding = snapshot[Integrations::Medelement::AppointmentPatientIdentity::BINDING_KEY]
+      raise Error, 'patient contact binding must be a positive ID' unless binding.nil? || (binding.is_a?(Integer) && binding.positive?)
+
       validate_appointment_identity!(snapshot)
       validate_phone_numbers!(snapshot['patient_phone_numbers'], field: 'patient_phone_numbers') if snapshot.key?('patient_phone_numbers')
       validate_patient!(snapshot['patient'])

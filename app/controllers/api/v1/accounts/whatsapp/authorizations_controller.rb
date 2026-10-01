@@ -76,7 +76,9 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   end
 
   def validate_reauthorization_required
-    return if @inbox.channel.reauthorization_required? || can_upgrade_to_embedded_signup? || token_expiring?
+    deletion_recovery_failed = @inbox.respond_to?(:deletion_recovery_failed?) && @inbox.deletion_recovery_failed?
+    return if @inbox.channel.reauthorization_required? || can_upgrade_to_embedded_signup? || token_expiring? ||
+              deletion_recovery_failed
 
     render json: {
       success: false,
@@ -143,14 +145,19 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   end
 
   def error_response_details(error)
-    signup_attempt_details = signup_attempt_error_details(error)
-    return signup_attempt_details if signup_attempt_details
+    signup_attempt_error_details(error) || classified_error_response_details(error)
+  end
 
+  def classified_error_response_details(error)
     case error
     when MissingRequiredParametersError
       { error_code: 'missing_required_parameters', details: { missing_parameters: error.missing_parameters } }
     when Whatsapp::ReauthorizationService::PhoneNumberMismatchError
       { error_code: 'phone_number_mismatch' }
+    when Whatsapp::ReauthorizationService::CallbackAuthorizationStateChangedError
+      { error_code: 'reauthorization_state_changed' }
+    when Whatsapp::ReauthorizationIdentityResolver::ResolutionError
+      { error_code: error.error_code }
     when Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError
       { error_code: 'reauthorization_flow_mismatch' }
     when Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError
@@ -167,11 +174,17 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   end
 
   def client_authorization_error(error)
-    safe_error = error.is_a?(MissingRequiredParametersError) ||
-                 error.is_a?(Whatsapp::ReauthorizationService::PhoneNumberMismatchError) ||
-                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError) ||
-                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError) ||
-                 signup_attempt_client_safe_error?(error)
+    safe_error = case error
+                 when MissingRequiredParametersError,
+                      Whatsapp::ReauthorizationService::PhoneNumberMismatchError,
+                      Whatsapp::ReauthorizationService::CallbackAuthorizationStateChangedError,
+                      Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError,
+                      Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError,
+                      Whatsapp::ReauthorizationIdentityResolver::ResolutionError
+                   true
+                 else
+                   signup_attempt_client_safe_error?(error)
+                 end
     return sanitized_authorization_error(error.message) if safe_error
 
     'WhatsApp authorization failed. Please check the connection details and try again.'

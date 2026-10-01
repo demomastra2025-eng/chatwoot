@@ -48,6 +48,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  clampSelectedLabel: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['open', 'search', 'update:modelValue']);
@@ -80,6 +84,7 @@ defineOptions({
       :disabled="disabled"
       :use-api-results="useApiResults"
       :wrap-label="wrapLabel"
+      :clamp-selected-label="clampSelectedLabel"
       input-like
       @open="emit('open')"
       @search="emit('search', $event)"

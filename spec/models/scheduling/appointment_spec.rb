@@ -169,6 +169,20 @@ RSpec.describe Scheduling::Appointment do
       Current.reset
     end
 
+    it 'keeps a local-only MedElement cancellation apart from the removal marker and drops it when re-opened' do
+      marker_key = Integrations::Medelement::LocalCancellation::MARKER_KEY
+      appointment.update!(custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1'))
+
+      appointment.update!(
+        status: 'cancelled',
+        custom_attributes: appointment.custom_attributes.merge(marker_key => { 'reception_code' => 'reception-1' })
+      )
+      expect(appointment.custom_attributes).not_to have_key('medelement_local_cancelled_at')
+
+      appointment.update!(status: 'scheduled')
+      expect(appointment.reload.custom_attributes).not_to have_key(marker_key)
+    end
+
     it 'dispatches appointment.completed when status changes to completed' do
       captured_events = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|

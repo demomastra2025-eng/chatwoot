@@ -12,8 +12,14 @@ class Reminders::SyncRemindableService
     end
   end
 
+  # Each touch syncs in its own savepoint: a failed route write (e.g. a lost ContactInbox insert) is rolled back for
+  # that touch only and cannot abort the appointment or plan transaction that triggered the sync.
   def perform_for(touch, lock: true, raise_errors: false)
-    lock ? touch.with_lock { sync_locked_touch!(touch) } : sync_locked_touch!(touch)
+    if lock
+      touch.with_lock(requires_new: true) { sync_locked_touch!(touch) }
+    else
+      touch.transaction(requires_new: true) { sync_locked_touch!(touch) }
+    end
   rescue StandardError => e
     raise if raise_errors
 
@@ -64,8 +70,8 @@ class Reminders::SyncRemindableService
     attrs = {}
 
     owner = desired_owner
-    contact = desired_contact
-    entity_conversation = desired_entity_conversation
+    contact = desired_contact(touch)
+    entity_conversation = desired_entity_conversation(touch)
 
     attrs[:owner] = owner if touch.owner_id != owner&.id
     attrs[:conversation] = entity_conversation if touch.conversation_id != entity_conversation&.id
@@ -96,10 +102,10 @@ class Reminders::SyncRemindableService
     end
   end
 
-  def desired_contact
+  def desired_contact(touch)
     case remindable
     when Conversation, Scheduling::Appointment
-      remindable.contact
+      notification_route_for(touch).contact
     when Crm::Deal
       remindable.primary_contact || remindable.contacts.first
     when Crm::Task
@@ -107,22 +113,29 @@ class Reminders::SyncRemindableService
     end
   end
 
-  def desired_entity_conversation
+  def desired_entity_conversation(touch)
     case remindable
     when Conversation
       remindable
     when Crm::Deal
-      matching_conversation(remindable.originating_conversation)
+      matching_conversation(remindable.originating_conversation, touch)
     when Crm::Task
       remindable.originating_conversation
     when Scheduling::Appointment
-      matching_conversation(remindable.conversation)
+      route = notification_route_for(touch)
+      matching_conversation(route.conversation, touch) || matching_conversation(remindable.conversation, touch)
     end
   end
 
-  def matching_conversation(conversation)
+  def notification_route_for(touch)
+    @notification_routes ||= {}
+    @notification_routes[[touch.id, touch.target_inbox_id]] ||=
+      Reminders::PatientSubjectGuard.notification_route(remindable, inbox: touch.target_inbox)
+  end
+
+  def matching_conversation(conversation, touch)
     return if conversation.blank?
 
-    conversation if conversation.contact_id == desired_contact&.id
+    conversation if conversation.contact_id == desired_contact(touch)&.id
   end
 end

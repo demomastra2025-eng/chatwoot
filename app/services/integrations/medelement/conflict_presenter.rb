@@ -35,7 +35,7 @@ class Integrations::Medelement::ConflictPresenter
       primary_contact: contact_payload(primary_contact),
       conflicting_contact: contact_payload(conflicting_contact),
       field_comparisons: field_comparisons(primary_contact),
-      can_merge: immutable_conflicting_contact? && both_contacts?(primary_contact, conflicting_contact),
+      can_merge: immutable_conflicting_contact? && mergeable_contacts?(primary_contact, conflicting_contact),
       can_sync_fields: conflict.open? && conflict.conflict_type == 'phone_mismatch' && primary_contact.present?,
       can_delete_primary: deletable?(primary_contact),
       can_delete_conflicting: immutable_conflicting_contact? && deletable?(conflicting_contact)
@@ -140,8 +140,12 @@ class Integrations::Medelement::ConflictPresenter
     conflict.entity_type == 'contact' || conflict.conflict_type.in?(CONTACT_CONFLICT_TYPES)
   end
 
-  def both_contacts?(primary_contact, conflicting_contact)
-    primary_contact.present? && conflicting_contact.present?
+  def mergeable_contacts?(primary_contact, conflicting_contact)
+    return false if primary_contact.blank? || conflicting_contact.blank?
+
+    guard = Contacts::PatientIdentityMergeGuard
+    guard.explicit_merge_allowed?(base_contact: primary_contact, mergee_contact: conflicting_contact) ||
+      guard.explicit_merge_allowed?(base_contact: conflicting_contact, mergee_contact: primary_contact)
   end
 
   def immutable_conflicting_contact?

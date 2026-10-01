@@ -1,4 +1,6 @@
 class Reminders::ConversationResolver
+  PATIENT_NUMBER_TAKEN = 'Patient number already belongs to another contact in this inbox'.freeze
+
   attr_reader :reminder
 
   def initialize(reminder:)
@@ -42,15 +44,36 @@ class Reminders::ConversationResolver
       raise Reminders::UndeliverableTargetError, 'Touch target is not deliverable for this inbox'
     end
 
-    contact_inbox = Outbound::ContactInboxResolver.new(
-      inbox: inbox,
-      contact: contact,
-      source_id: current_source_id
-    ).perform
+    contact_inbox = resolve_contact_inbox(inbox, contact)
 
     raise Reminders::UndeliverableTargetError, 'Touch target is not deliverable for this inbox' if contact_inbox.blank?
 
     contact_inbox
+  end
+
+  def resolve_contact_inbox(inbox, contact)
+    resolver = Outbound::ContactInboxResolver.new(
+      inbox: inbox,
+      contact: contact,
+      source_id: current_source_id
+    )
+    return resolver.perform if current_source_id.blank? || !Reminders::PatientSubjectGuard.no_steal_route?(reminder)
+
+    patient_contact_inbox!(resolver, inbox, contact)
+  end
+
+  # A route of a separate patient's appointment never claims (or renames) a ContactInbox that is another contact's chat
+  # identity in this inbox; such a touch fails visibly instead of being re-sent over any other route. A concurrent insert
+  # of the same contact's ContactInbox is reused (see PatientSubjectGuard.own_contact_inbox).
+  def patient_contact_inbox!(resolver, inbox, contact)
+    contact_inbox = Reminders::PatientSubjectGuard.own_contact_inbox(inbox: inbox, contact: contact, source_id: current_source_id) do
+      resolver.perform
+    end
+    raise Reminders::UndeliverableTargetError, PATIENT_NUMBER_TAKEN if contact_inbox.blank?
+
+    contact_inbox
+  rescue ActiveRecord::RecordInvalid => e
+    raise Reminders::UndeliverableTargetError, "Patient number is not deliverable in this inbox (#{e.class.name})"
   end
 
   def base_additional_attributes(contact_inbox)

@@ -466,6 +466,7 @@ medelement:
       'sync_receptions',
       'sync_patients',
       'write_enabled',
+      'remove_reception_on_cancel',
     ]
   settings_json_schema:
     {
@@ -479,6 +480,7 @@ medelement:
           'sync_receptions': { 'type': 'boolean' },
           'sync_patients': { 'type': 'boolean' },
           'write_enabled': { 'type': 'boolean' },
+          'remove_reception_on_cancel': { 'type': 'boolean' },
           'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
           'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
@@ -555,6 +557,15 @@ medelement:
         'name': 'write_enabled',
         'value': false,
         'help': 'Sends patient and reception changes to MedElement automatically. User action is requested only for conflicts or ambiguous patient data. Imported records remain protected from unsupported generic edits.',
+      },
+      {
+        'label': 'Remove the MedElement reception when an appointment is cancelled in OneLink',
+        'label_i18n': 'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.LABEL',
+        'type': 'switch',
+        'name': 'remove_reception_on_cancel',
+        'value': false,
+        'help': 'When off, cancelling changes the status only in OneLink. The reception stays in MedElement: free the doctor time there manually. A removal already in progress may still finish if you turn this off.',
+        'help_i18n': 'INTEGRATION_APPS.MEDELEMENT.SETTINGS.REMOVE_RECEPTION_ON_CANCEL.HINT',
       },
       {
         'label': 'Sync frequency',

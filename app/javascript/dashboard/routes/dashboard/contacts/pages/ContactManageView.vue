@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, computed, ref } from 'vue';
+import { onMounted, computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
@@ -13,6 +13,14 @@ import ContactNotes from 'dashboard/components-next/Contacts/ContactsSidebar/Con
 import ContactHistory from 'dashboard/components-next/Contacts/ContactsSidebar/ContactHistory.vue';
 import ContactMerge from 'dashboard/components-next/Contacts/ContactsSidebar/ContactMerge.vue';
 import ContactCustomAttributes from 'dashboard/components-next/Contacts/ContactsSidebar/ContactCustomAttributes.vue';
+import ContactSharedPhoneHint from 'dashboard/components-next/Contacts/ContactsSidebar/ContactSharedPhoneHint.vue';
+import SharedPhonePromotionDialog from 'dashboard/components-next/Contacts/ContactsSidebar/SharedPhonePromotionDialog.vue';
+import ContactSharedPhoneAPI from 'dashboard/api/contactSharedPhone';
+import {
+  isManualPromotionEnabled,
+  sharedPhoneErrorReason,
+  visibleSharedPhoneHint,
+} from 'dashboard/components-next/Contacts/ContactsSidebar/sharedPhoneState';
 
 const store = useStore();
 const route = useRoute();
@@ -23,6 +31,18 @@ const uiFlags = useMapGetter('contacts/getUIFlags');
 
 const activeTab = ref('attributes');
 const contactMergeRef = ref(null);
+const sharedPhone = ref(null);
+const promotionDialogRef = ref(null);
+const isPromotingSharedPhone = ref(false);
+
+// Manual promotion ships switched off (ONELINK_SHARED_PHONE_MANUAL_PROMOTION): no hint, button or dialog until the
+// server reports it enabled.
+const manualPromotionEnabled = computed(() =>
+  isManualPromotionEnabled(sharedPhone.value)
+);
+const sharedPhoneHint = computed(() =>
+  visibleSharedPhoneHint(sharedPhone.value)
+);
 
 const isFetchingItem = computed(() => uiFlags.value.isFetchingItem);
 const isMergingContact = computed(() => uiFlags.value.isMerging);
@@ -90,6 +110,80 @@ const fetchAttributes = () => {
   store.dispatch('attributes/get');
 };
 
+const fetchSharedPhone = async () => {
+  const { contactId } = route.params;
+  if (!contactId) return;
+
+  try {
+    const { data } = await ContactSharedPhoneAPI.get(contactId);
+    sharedPhone.value = data;
+  } catch (error) {
+    sharedPhone.value = null;
+  }
+};
+
+const openSharedPhonePromotion = () => {
+  promotionDialogRef.value?.open();
+};
+
+const sharedPhoneErrorMessage = code => {
+  const reason = sharedPhoneErrorReason(code);
+  if (reason === 'taken') {
+    return t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.TAKEN');
+  }
+  if (reason === 'state_changed') {
+    return t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.STATE_CHANGED');
+  }
+  if (reason === 'disabled') {
+    return t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.PROMOTION_DISABLED');
+  }
+  return t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.FAILED');
+};
+
+const promoteSharedPhone = async () => {
+  const { contactId } = route.params;
+  const fingerprint = sharedPhone.value?.promotion_preview?.fingerprint;
+  if (!contactId || !fingerprint) return;
+
+  isPromotingSharedPhone.value = true;
+  try {
+    await ContactSharedPhoneAPI.promote(contactId, fingerprint);
+    useAlert(t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.PROMOTED'));
+    promotionDialogRef.value?.close();
+    await store.dispatch('contacts/show', { id: contactId });
+    store.dispatch('contactConversations/get', contactId);
+  } catch (error) {
+    useAlert(sharedPhoneErrorMessage(error?.response?.data?.code));
+  } finally {
+    isPromotingSharedPhone.value = false;
+    fetchSharedPhone();
+  }
+};
+
+const dismissSharedPhoneHint = async () => {
+  const { contactId } = route.params;
+  if (!contactId) return;
+
+  try {
+    await ContactSharedPhoneAPI.dismissHint(contactId);
+  } catch (error) {
+    useAlert(t('CONTACTS_LAYOUT.SIDEBAR.SHARED_PHONE.FAILED'));
+  } finally {
+    fetchSharedPhone();
+  }
+};
+
+// A number transfer or a new hint arrives as a contact update event (the getter returns camelCased keys): refresh the
+// route and the hint.
+watch(
+  () => [
+    selectedContact.value?.phoneNumber,
+    selectedContact.value?.customAttributes,
+  ],
+  () => fetchSharedPhone(),
+  { deep: true }
+);
+
 const toggleContactBlock = async isBlocked => {
   const ALERT_MESSAGES = {
     success: {
@@ -122,6 +216,7 @@ onMounted(() => {
   fetchContactNotes();
   fetchContactConversations();
   fetchAttributes();
+  fetchSharedPhone();
 });
 </script>
 
@@ -150,6 +245,22 @@ onMounted(() => {
         @go-to-contacts-list="goToContactsList"
       />
       <template #sidebar>
+        <div v-if="sharedPhoneHint" class="px-6 pb-3">
+          <ContactSharedPhoneHint
+            :hint="sharedPhoneHint"
+            :patient-name="selectedContact?.name || ''"
+            @promote="openSharedPhonePromotion"
+            @dismiss="dismissSharedPhoneHint"
+          />
+        </div>
+        <SharedPhonePromotionDialog
+          v-if="manualPromotionEnabled"
+          ref="promotionDialogRef"
+          :preview="sharedPhone?.promotion_preview || null"
+          :patient-name="selectedContact?.name || ''"
+          :is-loading="isPromotingSharedPhone"
+          @confirm="promoteSharedPhone"
+        />
         <div class="px-6">
           <TabBar
             :tabs="tabs"
@@ -170,7 +281,10 @@ onMounted(() => {
             :selected-contact="selectedContact"
           />
           <ContactNotes v-if="activeTab === 'notes'" />
-          <ContactHistory v-if="activeTab === 'history'" />
+          <ContactHistory
+            v-if="activeTab === 'history'"
+            :shared-phone="sharedPhone"
+          />
           <ContactMerge
             v-if="activeTab === 'merge'"
             ref="contactMergeRef"

@@ -489,6 +489,29 @@ class Reminder < ApplicationRecord
     self.target_conversation = nil unless attributes.key?(:target_conversation_id)
   end
 
+  # Re-applies the appointment's current delivery contact in memory (a separate patient's own primary number wins over
+  # the shared owner's route) before a route is resolved or a touch is sent; routes of the previous contact are dropped.
+  # A touch whose route is already settled (sent, delivering or finished) keeps it.
+  def align_notification_contact
+    return self unless remindable.is_a?(Scheduling::Appointment)
+
+    route = notification_route
+    hydrate_from_appointment(remindable, route: route) if route.contact.present? && target_contact_id != route.contact.id
+    self
+  end
+
+  # The appointment's current notification route (Reminders::PatientSubjectGuard.notification_route) for this touch's
+  # delivery inbox.
+  def notification_route
+    Reminders::PatientSubjectGuard.notification_route(remindable, inbox: target_inbox)
+  end
+
+  # The route of a touch that was materialized, delivered, failed or cancelled is history: later saves (delivery
+  # receipts, dispatch marks, completion, merges) keep it even when the appointment notification contact changes.
+  def delivery_route_settled?
+    persisted? && target_contact.present? && (completed? || failed? || cancelled? || delivery_materialized?)
+  end
+
   def destroy_if_allowed!
     destroyed = false
     with_lock do
@@ -863,11 +886,12 @@ class Reminder < ApplicationRecord
     end
   end
 
-  def hydrate_from_appointment(appointment)
-    hydrate_from_current_entity_contact(
-      contact: appointment.contact,
-      conversation: appointment.conversation
-    )
+  def hydrate_from_appointment(appointment, route: nil)
+    # A settled route keeps its contact; only associations that no longer belong to that contact are dropped.
+    return clear_stale_contact_routes(target_contact) if delivery_route_settled?
+
+    route ||= Reminders::PatientSubjectGuard.notification_route(appointment, inbox: target_inbox)
+    hydrate_from_current_entity_contact(contact: route.contact, conversation: route.conversation || appointment.conversation)
   end
 
   def hydrate_from_conversation(record)

@@ -57,6 +57,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   # rubocop:enable Metrics/ParameterLists
 
   def build
+    validate_patient_binding_source!
     {
       'version' => VERSION,
       'account_id' => account.id,
@@ -81,9 +82,18 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   private
 
+  def validate_patient_binding_source!
+    return unless appointment&.patient_contact_id
+    return unless desired_attributes.key?('patient_contact_id') || desired_attributes.key?('custom_attributes')
+    return if desired_attributes['patient_contact_id'] == appointment.patient_contact_id
+
+    raise Scheduling::Error.new(code: 'MEDELEMENT_PATIENT_IDENTITY_CONFLICT', message: 'The captured patient card has changed', status: :conflict)
+  end
+
   def metadata_snapshot
     {
       'requested_by_id' => actor&.id, 'actor' => actor_descriptor,
+      Integrations::Medelement::AppointmentPatientIdentity::BINDING_KEY => appointment&.patient_contact_id,
       Integrations::Medelement::AppointmentPatientIdentity::SNAPSHOT_KEY => appointment_identity_snapshot
     }.compact
   end
@@ -119,7 +129,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   def patient_phone_number
     if appointment_patient_owned? && operation.in?(PATIENT_PHONE_OPERATIONS)
-      return Integrations::Medelement::PhoneNumber.new(appointment_attribute('client_phone')).e164
+      return Integrations::Medelement::PatientContactBinding.provider_phone(appointment, authored_phone: appointment_attribute('client_phone'))
     end
 
     raw_phone = operation == 'create_reception' ? appointment_attribute('client_phone').presence : nil
@@ -284,7 +294,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def appointment_patient_code
-    appointment_snapshot_custom_attributes['medelement_patient_code'].presence
+    appointment_snapshot_custom_attributes['medelement_patient_code'].presence ||
+      appointment&.patient_contact&.custom_attributes.to_h['medelement_patient_code'].presence
   end
 
   def reception_code

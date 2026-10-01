@@ -107,6 +107,11 @@ class Integrations::Medelement::Configuration
     boolean_setting('write_enabled', false)
   end
 
+  # Off by default: a OneLink cancellation keeps the MedElement reception (owner decision 01.10.2026).
+  def remove_reception_on_cancel?
+    boolean_setting('remove_reception_on_cancel', false)
+  end
+
   private
 
   attr_reader :hook

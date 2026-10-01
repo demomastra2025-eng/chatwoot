@@ -387,6 +387,10 @@ Rails.application.routes.draw do
               resources :conversations, only: [:index]
               resources :communication_threads, only: [:index]
               resources :contact_inboxes, only: [:create]
+              resource :shared_phone, only: [:show] do
+                post :promote
+                post :dismiss_hint
+              end
               resources :labels, only: [:create, :index]
               resources :notes
               get :attachments, to: 'attachments#index'

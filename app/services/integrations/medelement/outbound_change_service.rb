@@ -2,7 +2,7 @@
 class Integrations::Medelement::OutboundChangeService
   APPOINTMENT_MOVE_KEYS = %w[starts_at ends_at resource_id].freeze
   APPOINTMENT_SNAPSHOT_KEYS = %w[
-    status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name
+    status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name patient_contact_id
     client_birth_date client_gender client_identifier client_comment service_amount duration_min custom_attributes
     external_ref resource_id service_id service_name_snapshot
   ].freeze
@@ -225,14 +225,15 @@ class Integrations::Medelement::OutboundChangeService
   end
 
   def appointment_operation(appointment)
-    if normalized_event_name == 'appointment_cancelled'
-      return 'remove_reception' if cancelled?(appointment) && provider_reception_code(appointment).present?
-
-      return
-    end
+    return cancellation_operation(appointment) if normalized_event_name == 'appointment_cancelled'
     return if cancelled?(appointment)
     return 'create_reception' if provider_reception_code(appointment).blank?
     return 'move_reception' if provider_move_changed?
+  end
+
+  def cancellation_operation(appointment)
+    return unless provider_removal_allowed?(appointment)
+    return 'remove_reception' if cancelled?(appointment) && provider_reception_code(appointment).present?
   end
 
   def contact_operation(contact)
@@ -322,6 +323,15 @@ class Integrations::Medelement::OutboundChangeService
     return unless Integrations::Medelement::Configuration.new(hook: candidate).write_enabled?
 
     candidate
+  end
+
+  # A local-only cancellation (marker present) or a hook with remove_reception_on_cancel off never removes
+  # the MedElement reception, whichever event path reaches this service.
+  def provider_removal_allowed?(appointment)
+    return false if Integrations::Medelement::LocalCancellation.marked?(appointment_snapshot_custom_attributes(appointment))
+    return false if Integrations::Medelement::LocalCancellation.marked?(appointment)
+
+    Integrations::Medelement::Configuration.new(hook: hook).remove_reception_on_cancel?
   end
 
   def matching_appointment_command(appointment, operation, expected_snapshot)

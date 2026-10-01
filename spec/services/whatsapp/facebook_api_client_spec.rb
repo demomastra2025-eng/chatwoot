@@ -122,6 +122,33 @@ describe Whatsapp::FacebookApiClient do
     end
   end
 
+  describe '#validate_waba_message_templates_access' do
+    let(:waba_id) { '123456' }
+
+    it 'checks the selected WABA with the fresh token without provider-side bookkeeping' do
+      stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/message_templates")
+        .with(headers: { 'Authorization' => "Bearer #{access_token}" })
+        .to_return(status: 200, body: { data: [] }.to_json,
+                   headers: { 'Content-Type' => 'application/json' })
+
+      expect(api_client.validate_waba_message_templates_access(waba_id)).to be(true)
+    end
+
+    it 'raises a sanitized Graph API error on access failure' do
+      stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/message_templates")
+        .to_return(status: 403, body: { error: { message: "Denied #{access_token}" } }.to_json)
+
+      expect { api_client.validate_waba_message_templates_access(waba_id) }
+        .to raise_error(Whatsapp::FacebookApiClient::Error) do |error|
+          expect(error.message).not_to include(access_token)
+        end
+    end
+
+    it 'rejects malformed WABA identifiers without making a request' do
+      expect(api_client.validate_waba_message_templates_access('not-a-meta-id')).to be(false)
+    end
+  end
+
   describe '#debug_token' do
     let(:input_token) { 'test_input_token' }
     let(:app_access_token) { "#{app_id}|#{app_secret}" }

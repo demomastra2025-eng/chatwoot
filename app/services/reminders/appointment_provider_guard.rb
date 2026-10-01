@@ -69,6 +69,8 @@ class Reminders::AppointmentProviderGuard
 
   def cancellation_verification(appointment)
     return cancellation_result('cancelled', 'cancellation_event_superseded') unless appointment.status == 'cancelled'
+    # A local-only cancellation is final in OneLink by design (no MedElement removal will ever confirm it).
+    return cancellation_result('fresh', 'medelement_local_only_cancellation') if Integrations::Medelement::LocalCancellation.marked?(appointment)
 
     command = cancellation_command(appointment)
     return cancellation_result('blocked', 'provider_remove_command_missing') if command.blank?

@@ -9,6 +9,7 @@ import {
   watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRoute } from 'vue-router';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingProviderCommandsAPI from 'dashboard/api/scheduling/providerCommands';
@@ -40,6 +41,7 @@ import {
   fromDateTimeInputValue,
   getServicePriceForResource,
   isAppointmentProviderOwned,
+  isMedelementCancellationLocalOnly,
   providerBookingNeedsReview,
   providerBookingStatusKey,
   providerBookingStatusMessage,
@@ -75,6 +77,7 @@ const NEW_APPOINTMENT_KEY = 'new-appointment';
 
 const { t, locale } = useI18n();
 const store = useStore();
+const route = useRoute();
 const schedulingReferencesStore = useSchedulingReferencesStore();
 
 const appointments = ref([]);
@@ -909,7 +912,12 @@ async function cancelAppointment(appointment) {
   const key = appointmentKey(appointment);
   cancellingAppointmentKey.value = key;
   try {
-    const response = await SchedulingAppointmentsAPI.cancel(appointment.id);
+    const cancellationMode = appointment.medelementCancellationMode;
+    const response = cancellationMode
+      ? await SchedulingAppointmentsAPI.cancel(appointment.id, {
+          medelement_cancellation_mode: cancellationMode,
+        })
+      : await SchedulingAppointmentsAPI.cancel(appointment.id);
     const savedAppointment = normalizePayload(response.data);
     upsertAppointment(savedAppointment);
     refreshSidebarCounters();
@@ -1485,6 +1493,7 @@ watch(
                       "
                       dropdown-placement="auto"
                       wrap-label
+                      clamp-selected-label
                       @update:model-value="handleCreateServiceChange"
                     />
                     <Input
@@ -1652,6 +1661,30 @@ watch(
             </span>
           </button>
 
+          <RouterLink
+            v-if="
+              appointment.patientContactId &&
+              appointment.patientContactId !== appointment.contactId
+            "
+            class="mx-3 mb-2.5 block text-xs text-n-blue-11"
+            :to="{
+              name: 'contacts_edit',
+              params: {
+                accountId: route.params.accountId,
+                contactId: appointment.patientContactId,
+              },
+            }"
+            data-testid="appointment-patient-card"
+          >
+            {{
+              $t('SCHEDULING.APPOINTMENT_FORM.PATIENT_CARD_LINK', {
+                patientName:
+                  appointment.patientContactName || appointment.clientName,
+                contactId: appointment.patientContactId,
+              })
+            }}
+          </RouterLink>
+
           <div
             v-if="
               providerBookingNeedsReview(appointment) &&
@@ -1724,7 +1757,7 @@ watch(
               appointment.status !== 'cancelled' &&
               !isProviderCancellationPending(appointment)
             "
-            class="flex justify-end px-3 pb-2.5"
+            class="flex flex-col items-end gap-1 px-3 pb-2.5"
           >
             <Button
               size="sm"
@@ -1736,6 +1769,12 @@ watch(
               :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
               @click="cancelAppointment(appointment)"
             />
+            <span
+              v-if="isMedelementCancellationLocalOnly(appointment)"
+              class="text-xs leading-5 text-n-slate-11 text-end"
+            >
+              {{ $t('SCHEDULING.MEDELEMENT.LOCAL_CANCEL_HINT') }}
+            </span>
           </div>
 
           <div
@@ -2069,6 +2108,7 @@ watch(
                       "
                       dropdown-placement="auto"
                       wrap-label
+                      clamp-selected-label
                       @update:model-value="
                         handleFormServiceChange(
                           appointmentForms[appointmentKey(appointment)],
@@ -2274,6 +2314,13 @@ watch(
 .scheduling-appointment-drawer-form
   :deep(.scheduling-appointment-drawer-select-control button) {
   height: 2rem !important;
+}
+
+.scheduling-appointment-drawer-form
+  :deep(
+    .scheduling-appointment-drawer-select-control.combobox-label-preview button
+  ) {
+  height: auto !important;
 }
 
 .scheduling-appointment-drawer-form

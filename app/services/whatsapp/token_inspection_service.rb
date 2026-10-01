@@ -172,13 +172,42 @@ class Whatsapp::TokenInspectionService
   end
 
   def permission_granted?(data, permission)
-    return true if Array(data['scopes']).map(&:to_s).include?(permission)
+    granular_scopes = granular_scope_rows(data)
+    return false unless granular_scopes
 
-    granular_scope = Array(data['granular_scopes']).find { |scope| scope['scope'].to_s == permission }
-    return false if granular_scope.blank?
+    permission_granted_from_rows(data, granular_scopes, permission)
+  end
 
-    target_ids = Array(granular_scope['target_ids']).map(&:to_s)
-    target_ids.blank? || target_ids.include?(@waba_id)
+  def permission_granted_from_rows(data, granular_scopes, permission)
+    matching_scopes = granular_scopes.select { |scope| scope['scope'].to_s == permission }
+    return bare_scope_granted?(data, permission) if matching_scopes.empty?
+
+    scoped_permission_granted?(matching_scopes)
+  end
+
+  def scoped_permission_granted?(matching_scopes)
+    return false unless matching_scopes.all? { |scope| valid_granular_target_ids?(scope['target_ids']) }
+
+    matching_scopes.flat_map { |scope| scope['target_ids'].map(&:to_s) }.include?(@waba_id)
+  end
+
+  def granular_scope_rows(data)
+    granular_scopes = data['granular_scopes']
+    return [] if granular_scopes.nil?
+    return unless granular_scopes.is_a?(Array) && granular_scopes.all?(Hash)
+
+    granular_scopes
+  end
+
+  def bare_scope_granted?(data, permission)
+    Array(data['scopes']).map(&:to_s).include?(permission)
+  end
+
+  def valid_granular_target_ids?(target_ids)
+    return false unless target_ids.is_a?(Array) && target_ids.present?
+    return false unless target_ids.all? { |target_id| target_id.is_a?(String) || target_id.is_a?(Numeric) }
+
+    target_ids.none? { |target_id| target_id.to_s.blank? }
   end
 
   def token_granular_scope_summary(data)

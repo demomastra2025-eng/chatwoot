@@ -76,6 +76,24 @@ RSpec.describe '/api/v1/widget/conversations/toggle_typing', type: :request do
       expect(json_response['contact']['name']).to eq 'contact-name'
     end
 
+    it 'keeps the visitor separate when the prechat email belongs to a MedElement patient card' do
+      card = create(:contact, account: account, name: 'Relative', phone_number: nil, email: 'relative-card@example.com',
+                              custom_attributes: { 'medelement_patient_card' => true, 'medelement_patient_code' => 'relative-2' })
+
+      expect do
+        post '/api/v1/widget/conversations',
+             headers: { 'X-Auth-Token' => token },
+             params: { website_token: web_widget.website_token, contact: { name: 'Visitor', email: 'relative-card@example.com' },
+                       message: { content: 'hello' } },
+             as: :json
+      end.to change(Conversation.where(contact_id: contact.id), :count).by(1)
+
+      expect(response).to have_http_status(:success)
+      expect(Conversation.where(contact_id: card.id)).to be_empty
+      expect(card.reload).to have_attributes(name: 'Relative', email: 'relative-card@example.com')
+      expect(card.custom_attributes['medelement_patient_code']).to eq('relative-2')
+    end
+
     it 'creates a conversation with correct message and custom attributes' do
       post '/api/v1/widget/conversations',
            headers: { 'X-Auth-Token' => token },

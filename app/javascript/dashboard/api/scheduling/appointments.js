@@ -22,8 +22,8 @@ class SchedulingAppointmentsAPI extends ApiClient {
     return axios.delete(`${this.url}/${id}`);
   }
 
-  cancel(id) {
-    return axios.post(`${this.url}/${id}/cancel`);
+  cancel(id, payload = {}) {
+    return axios.post(`${this.url}/${id}/cancel`, payload);
   }
 
   createConversation(id, data) {

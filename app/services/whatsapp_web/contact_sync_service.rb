@@ -15,6 +15,7 @@ class WhatsappWeb::ContactSyncService
     return if contact_inbox.blank?
 
     @contact_inbox = contact_inbox
+    amend_number_transfer(contact_inbox)
     resolved_contact = sync_existing_contact(contact_inbox.contact, contact_inbox: contact_inbox)
     contact_inbox.reload if resolved_contact.present? && resolved_contact.id != contact_inbox.contact_id
     sync_channel_profile(contact_inbox)
@@ -27,6 +28,15 @@ class WhatsappWeb::ContactSyncService
 
   def raw_remote_jid
     @raw_remote_jid ||= contact_payload[:remoteJid].to_s.presence
+  end
+
+  # A resolved payload (phone JID + LID) proves the LID chat belongs to this phone-JID chat: when the phone-JID chat was
+  # moved to a card by a recorded number transfer, the LID chat still with the previous holder joins that transfer.
+  def amend_number_transfer(contact_inbox)
+    return unless resolved_lid_identity?
+
+    Contacts::NumberHistoryTransferService.amend_tied_lid!(contact_inbox: contact_inbox, lid_source_id: lid_jid)
+    contact_inbox.reload
   end
 
   def find_or_create_contact_inbox
@@ -53,12 +63,15 @@ class WhatsappWeb::ContactSyncService
   end
 
   def source_id
-    @source_id ||= begin
-      return canonical_remote_jid if lid_only_identity?
+    @source_id ||= payload_source_id
+  end
 
-      candidate = canonical_remote_jid.to_s.split('@').first.to_s.gsub(/\D/, '')
-      candidate.presence if candidate.present? && candidate != '0'
-    end
+  # LID-only payloads keep the full LID JID as their source; phone JIDs use the digits of the number.
+  def payload_source_id
+    return canonical_remote_jid if lid_only_identity?
+
+    candidate = canonical_remote_jid.to_s.split('@').first.to_s.gsub(/\D/, '')
+    candidate.presence if candidate.present? && candidate != '0'
   end
 
   def phone_number
@@ -106,6 +119,7 @@ class WhatsappWeb::ContactSyncService
   end
 
   def sync_existing_contact(contact, contact_inbox: nil)
+    blocked_identity_updates ||= []
     updates = {}
     current_attributes = (contact.additional_attributes || {}).deep_stringify_keys
     merged_attributes = merged_additional_attributes(contact, current_attributes)
@@ -133,6 +147,7 @@ class WhatsappWeb::ContactSyncService
 
     updates[:additional_attributes] = merged_attributes if merged_attributes != current_attributes
 
+    updates.except!(*blocked_identity_updates)
     return contact if updates.blank?
 
     contact.skip_runtime_events = true
@@ -140,14 +155,15 @@ class WhatsappWeb::ContactSyncService
     contact
   rescue ActiveRecord::RecordInvalid => e
     if identifier_conflict?(e, updates)
-      merge_identifier_contact!(target_contact: contact)
+      blocked_identity_updates << :identifier unless merge_identifier_contact!(target_contact: contact)
       contact.reload
       retry
     end
 
     if phone_number_conflict?(e, updates)
-      contact = merge_phone_contact!(source_contact: contact, phone_number: updates[:phone_number])
-      raise e if contact.blank?
+      merged_contact = merge_phone_contact!(source_contact: contact, phone_number: updates[:phone_number])
+      blocked_identity_updates << :phone_number if merged_contact.blank?
+      contact = merged_contact || contact
 
       contact.reload
       retry
@@ -540,10 +556,59 @@ class WhatsappWeb::ContactSyncService
   def merge_identifier_contact!(target_contact:)
     source_contact = channel.inbox.account.contacts.find_by(identifier: contact_identifier)
     return if source_contact.blank? || source_contact.id == target_contact.id
+    unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
+      return link_proven_lid_chat!(source_contact, target_contact)
+    end
 
     ActiveRecord::Base.transaction do
       merge_contact_records!(source_contact: source_contact, target_contact: target_contact)
     end
+  end
+
+  # M7 refuses to merge a patient card (MedElement code, IIN, card flag) with the LID-only duplicate of its own WhatsApp
+  # account. A resolved payload (phone JID + LID) proves that the LID chat is the same WhatsApp account as the phone-JID
+  # chat the card owns in this inbox, so that one chat (conversations, the contact's messages, the whatsapp_web
+  # identifier) moves to the card as a logged, revertible transfer with basis whatsapp_account, like
+  # NumberHistoryTransferService.amend_tied_lid!. The contacts are never merged. A LID contact that is itself a patient
+  # card, or a provider write in flight, keeps everything.
+  def link_proven_lid_chat!(source_contact, target_contact)
+    lid_contact_inbox = proven_lid_contact_inbox(source_contact, target_contact)
+    return if lid_contact_inbox.blank?
+
+    Contacts::NumberHistoryTransferService.new(account: channel.inbox.account, phone: phone_number, from: source_contact, to: target_contact,
+                                               basis: 'whatsapp_account', contact_inbox_ids: [lid_contact_inbox.id]).perform!
+    target_contact.reload.identifier == contact_identifier
+  rescue Contacts::NumberHistoryTransferService::Error => e
+    # The inbound payload is still processed; both contacts keep their chats.
+    Rails.logger.warn({ event: 'whatsapp_web_proven_lid_move_skipped', contact_id: target_contact.id, error: e.message }.to_json)
+    false
+  end
+
+  # The phone-JID ContactInbox alone is not proof that the card owns the number: a card keeps its own-route chat after
+  # staff change its phone, and the number may be someone else's primary or nobody's. Only a card that holds the number
+  # as its PRIMARY (M1, M7) takes the proven LID chat, and only while ONELINK_SHARED_PHONE_HISTORY_TRANSFER is on (it
+  # covers every history move, not only promotion). Otherwise both contacts stay unchanged.
+  def proven_lid_contact_inbox(source_contact, target_contact)
+    return unless proven_phone_jid_owner?(target_contact)
+    return if Contacts::SharedPhone.card?(source_contact) ||
+              Contacts::PatientIdentityMergeGuard.patient_binding_write_in_flight?(source_contact, target_contact)
+
+    channel.inbox.contact_inboxes.find_by(source_id: lid_jid, contact_id: source_contact.id)
+  end
+
+  def proven_phone_jid_owner?(contact)
+    return false unless resolved_lid_identity? && phone_jid_contact_inbox_of?(contact)
+
+    primary_number_of?(contact) && Contacts::NumberHistoryTransferService.enabled?
+  end
+
+  def phone_jid_contact_inbox_of?(contact)
+    @contact_inbox.present? && @contact_inbox.contact_id == contact.id && @contact_inbox.source_id == source_id
+  end
+
+  def primary_number_of?(contact)
+    phone_number.present? && contact.phone_number == phone_number &&
+      Contacts::SharedPhone.primary_holder(account_id: contact.account_id, phone: phone_number, excluding: [contact.id]).blank?
   end
 
   def merge_phone_contact!(source_contact:, phone_number:)
@@ -552,12 +617,13 @@ class WhatsappWeb::ContactSyncService
       excluding_contact_id: source_contact.id
     )
     return if target_contact.blank?
+    return unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
 
-    ActiveRecord::Base.transaction do
+    merged = ActiveRecord::Base.transaction do
       merge_contact_records!(source_contact: source_contact, target_contact: target_contact)
     end
 
-    target_contact
+    target_contact if merged
   end
 
   def conflicting_phone_contact(phone_number:, excluding_contact_id:)
@@ -568,8 +634,18 @@ class WhatsappWeb::ContactSyncService
            .find_by(phone_number: phone_number)
   end
 
+  # Returns true only when the records were merged; the locked re-check can still refuse (a provider write that
+  # started after the unlocked pre-check), and callers then keep the source contact and block the identity update.
   def merge_contact_records!(source_contact:, target_contact:)
+    # Lock order: phone identity lock first, then appointments, contacts and their chats (see the number transfer).
+    Contacts::PhoneIdentityLock.acquire!(account_id: target_contact.account_id)
+    Contacts::PatientIdentityMergeGuard.lock_patient_bindings!(source_contact, target_contact)
+    return false unless Contacts::PatientIdentityMergeGuard.allowed?(source_contact: source_contact, target_contact: target_contact)
+
     now = Time.current
+    # Duplicate merge changes the captured patient ID without dispatching another provider write.
+    Scheduling::Appointment.where(account_id: target_contact.account_id, patient_contact_id: source_contact.id)
+                           .update_all(patient_contact_id: target_contact.id, updated_at: now) # rubocop:disable Rails/SkipsModelValidations
 
     source_contact.contact_inboxes.update_all(contact_id: target_contact.id, updated_at: now)
     ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
@@ -617,8 +693,10 @@ class WhatsappWeb::ContactSyncService
 
     source_contact.skip_runtime_events = true
     source_contact.destroy!
+    true
   rescue ActiveRecord::RecordNotDestroyed
     source_contact.update_columns(identifier: nil, updated_at: now)
+    true
   end
 
   def preferred_contact_name(target_contact, source_contact)

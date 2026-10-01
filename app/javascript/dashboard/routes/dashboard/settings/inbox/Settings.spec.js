@@ -51,6 +51,22 @@ describe('WhatsApp reauthorization visibility', () => {
     ).toBe(true);
   });
 
+  it('offers WhatsApp reauthorization for a failed deletion recovery', () => {
+    expect(
+      Settings.computed.whatsappUnauthorized.call({
+        isAWhatsAppCloudChannel: true,
+        inbox: {
+          reauthorization_required: false,
+          requires_reauthorization: false,
+          deletion_recovery: { status: 'failed' },
+          provider_config: { token_health: { status: 'healthy' } },
+        },
+        whatsappTokenExpiring: false,
+        whatsappRegistrationIncomplete: false,
+      })
+    ).toBe(true);
+  });
+
   it('shows registration recovery independently of the Meta token lifecycle', () => {
     const context = {
       isAWhatsAppCloudChannel: true,

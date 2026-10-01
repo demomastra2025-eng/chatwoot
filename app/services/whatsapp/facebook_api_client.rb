@@ -75,6 +75,31 @@ class Whatsapp::FacebookApiClient
     handle_response(response, 'WABA phone numbers fetch failed')
   end
 
+  def fetch_waba_info(waba_id, fields:)
+    response = HTTParty.get(
+      "#{BASE_URI}/#{@api_version}/#{waba_id}",
+      headers: request_headers,
+      query: appsecret_proof_query.merge(fields: Array(fields).join(','))
+    )
+
+    handle_response(response, 'WABA information fetch failed')
+  end
+
+  def validate_waba_message_templates_access(waba_id)
+    return false unless waba_id.to_s.match?(/\A\d{1,32}\z/)
+
+    base_uri = ENV.fetch('WHATSAPP_CLOUD_BASE_URL', BASE_URI).delete_suffix('/')
+    response = HTTParty.get(
+      "#{base_uri}/#{@api_version}/#{waba_id}/message_templates",
+      headers: request_headers,
+      query: appsecret_proof_query,
+      timeout: ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
+    )
+
+    handle_response(response, 'WABA message templates access check failed')
+    true
+  end
+
   def request_smb_app_data(phone_number_id, sync_type)
     response = HTTParty.post(
       "#{BASE_URI}/#{@api_version}/#{phone_number_id}/smb_app_data",

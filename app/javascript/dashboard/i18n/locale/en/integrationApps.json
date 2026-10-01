@@ -63,6 +63,12 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "SETTINGS": {
+        "REMOVE_RECEPTION_ON_CANCEL": {
+          "LABEL": "Remove the reception in MedElement when an appointment is cancelled in OneLink",
+          "HINT": "When off, cancelling changes the status only in OneLink. The reception stays in MedElement — free the doctor's time there manually. A removal already in progress may still finish if you turn this off."
+        }
+      },
       "NEXT_SYNC": "Next scheduled sync",
       "LAST_SYNC": "Last scheduled sync",
       "SCHEDULE": {
@@ -142,6 +148,8 @@
         "PHONE_MISMATCH": "Phone differs from contact data",
         "INVALID_RECEPTION": "Appointment could not be imported",
         "PATIENT_UNRESOLVED": "Patient is not linked to a contact",
+        "PATIENT_CARD_REPAIR_REQUIRED": "Patient card needs separation from the chat contact",
+        "PATIENT_CHANGED_BY_PROVIDER": "MedElement moved the appointment to another patient",
         "APPOINTMENT_AMOUNT_MISMATCH": "Appointment amount differs from MedElement",
         "LOCAL_PAYMENT_PRESERVED": "Local payment was preserved"
       },

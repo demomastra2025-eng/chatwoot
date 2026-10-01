@@ -116,7 +116,8 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     normalized_ids = normalize_limit_counter_excluded_user_ids(
       params[:account][:limit_counter_excluded_user_ids_raw]
     )
-    updated_custom_attributes = (requested_resource.custom_attributes || {}).deep_dup
+    updated_custom_attributes =
+      (limit_counter_exclusion_custom_attributes(permitted_params) || {}).deep_dup
 
     if normalized_ids.present?
       updated_custom_attributes[
@@ -166,6 +167,12 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
+  def limit_counter_exclusion_custom_attributes(permitted_params)
+    return requested_resource.custom_attributes if action_name == 'update'
+
+    permitted_params[:custom_attributes]
+  end
+
   def normalize_limit_counter_excluded_user_ids(value)
     raw_values = value.is_a?(String) ? value.split(/[,\s]+/) : value
 
@@ -185,9 +192,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     options[:notice] = notice if notice.present?
     options[:alert] = alert if alert.present?
 
-    # rubocop:disable Rails/I18nLocaleTexts
     redirect_back(**options)
-    # rubocop:enable Rails/I18nLocaleTexts
   end
 end
 

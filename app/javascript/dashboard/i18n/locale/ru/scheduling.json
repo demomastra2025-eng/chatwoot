@@ -51,6 +51,9 @@
       "QUEUED": "Команда MedElement подтверждена и поставлена в очередь",
       "RECONCILING": "MedElement ещё сверяет результат операции. Календарь обновится после завершения сверки.",
       "REMOVE_CONFIRM_TITLE": "Отменить запись в MedElement?",
+      "LOCAL_CANCEL_CONFIRM_TITLE": "Отменить запись только в OneLink?",
+      "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "Статус изменится только в OneLink. Приём в МедЭлементе не удаляется — освободите время врача там вручную.",
+      "LOCAL_CANCEL_HINT": "Отмена только в OneLink — в МедЭлементе приём останется.",
       "RESOURCE_CHANGE_UNSUPPORTED": "Смена специалиста для записи MedElement пока не поддерживается. Измените только дату или время.",
       "SUCCESS": "Изменение успешно применено в MedElement"
     },
@@ -165,6 +168,8 @@
       "TITLE": "Диалог ещё не создан"
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Карточка пациента",
+      "PATIENT_CARD_LINK": "Карточка пациента: {patientName} №{contactId}",
       "APPOINTMENT_DESCRIPTION": "Выберите специалиста, услугу и временной слот для приёма.",
       "APPOINTMENT_TITLE": "Детали записи",
       "APPOINTMENT_TYPE": "Тип записи",
@@ -212,6 +217,7 @@
       "STARTS_AT": "Начало",
       "STATUS": "Статус",
       "SUCCESS_CANCEL": "Запись отменена",
+      "SUCCESS_CANCEL_LOCAL_ONLY": "Запись отменена в OneLink. В МедЭлементе приём остался — освободите время врача там вручную.",
       "CANCELLATION_PENDING": "Запрос на отмену отправлен. Отмена в MedElement ещё не подтверждена.",
       "CHECK_PROVIDER_BOOKING": "Проверить в MedElement",
       "CHECK_STARTED": "Проверка MedElement запущена. После её завершения обновите запись и при подтверждённом ID отмените её отдельно.",
@@ -244,7 +250,8 @@
       "no_show": "Не пришёл",
       "PROVIDER_REVIEW": "Не подтверждена в MedElement — требуется проверка",
       "CANCELLATION_PENDING": "Ожидаем подтверждения отмены в MedElement",
-      "CANCELLATION_REVIEW": "Отмена в MedElement не подтверждена — требуется ручная проверка"
+      "CANCELLATION_REVIEW": "Отмена в MedElement не подтверждена — требуется ручная проверка",
+      "MEDELEMENT_NOT_CANCELLED": "В МедЭлементе не отменён"
     },
     "PAYMENT_STATUS": {
       "awaiting_payment": "Ожидает оплаты",
@@ -411,6 +418,8 @@
       "MEDELEMENT_CANCELLATION_NOT_VERIFIED": "Удаление именно этого приёма в MedElement не подтверждено. Запись в OneLink сохранена без изменений.",
       "MEDELEMENT_CANCELLATION_CHECK_FAILED": "Не удалось проверить удаление в MedElement. Повторите проверку позже; запись в OneLink сохранена без изменений.",
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "Эту запись об отмене нужно сохранить для проверки и синхронизации с MedElement.",
+      "MEDELEMENT_LOCAL_CANCELLATION_PROTECTED": "Запись нельзя удалить: приём ещё активен в МедЭлементе, и следующая синхронизация создала бы её заново. Удалите приём в МедЭлементе — после синхронизации запись можно будет удалить.",
+      "MEDELEMENT_REMOVAL_DISABLED": "Удаление приёмов в МедЭлементе при отмене выключено в настройках интеграции.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Запись не отменена: сначала проверьте приём в MedElement. Если он подтвердится, отмените запись отдельно.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "Проверка MedElement сейчас недоступна или уже запущена. Не отменяйте запись без подтверждения.",
       "MEDELEMENT_RECEPTION_ALREADY_LINKED": "Запись уже связана с приёмом в MedElement или её результат требует проверки. Проверьте приём в MedElement вместо создания нового.",
@@ -438,7 +447,8 @@
       "SINGLE_DAY_REQUIRED": "Запись должна укладываться в один локальный день.",
       "SLOT_CONFLICT": "Этот слот уже занят.",
       "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Общая сумма полученных оплат не может превышать стоимость услуги.",
-      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Данные пациента противоречат связанной карточке MedElement. Выберите карточку пациента или создайте отдельную запись."
+      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Данные пациента противоречат связанной карточке MedElement. Выберите карточку пациента или создайте отдельную запись.",
+      "MEDELEMENT_CANCELLATION_MODE_CHANGED": "Настройка отмены MedElement изменилась. Обновите запись и проверьте режим отмены перед повторной попыткой."
     },
     "WEEKDAYS": {
       "0": "Воскресенье",

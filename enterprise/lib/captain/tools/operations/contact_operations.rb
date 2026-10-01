@@ -33,11 +33,12 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
       phone_number: phone_number,
       identifier: identifier
     )
+    update_attributes.delete(:phone_number) if reserved_phone?(update_attributes[:phone_number])
 
     if custom_attributes.present?
       update_attributes[:custom_attributes] = CustomAttributes::MutationService.merge(
         current_contact.custom_attributes,
-        parsed_hash(custom_attributes, field_name: 'custom_attributes')
+        Contacts::ServerOwnedAttributes.strip(parsed_hash(custom_attributes, field_name: 'custom_attributes'))
       )
     end
 
@@ -72,6 +73,10 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
 
   private
 
+  def reserved_phone?(phone_number)
+    Contacts::ServerOwnedAttributes.reserved_for_other?(account_id: account.id, phone: phone_number, contact_id: current_contact.id)
+  end
+
   def compact_update_attributes(attributes)
     attributes.each_with_object({}) do |(key, value), memo|
       next if value.nil?
@@ -104,7 +109,7 @@ class Captain::Tools::Operations::ContactOperations < Captain::Tools::Operations
       phone_number: params[:phone_number],
       identifier: params[:identifier],
       company_id: resolved_company_id(params[:company_id]),
-      custom_attributes: parsed_hash(params[:custom_attributes], field_name: 'custom_attributes'),
+      custom_attributes: Contacts::ServerOwnedAttributes.strip(parsed_hash(params[:custom_attributes], field_name: 'custom_attributes')),
       additional_attributes: parsed_hash(params[:additional_attributes], field_name: 'additional_attributes')
     )
   end

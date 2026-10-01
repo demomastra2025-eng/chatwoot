@@ -38,13 +38,24 @@ class Reminders::AutoCancelOnIncomingService
                conversation_id = :conversation_id OR
                target_conversation_id = :conversation_id OR
                (remindable_type = :conversation_type AND remindable_id = :conversation_id) OR
-               (target_contact_id = :contact_id AND remindable_type IN (:live_entity_types))
+               (target_contact_id = :contact_id AND remindable_type IN (:live_entity_types)) OR
+               (remindable_type = :appointment_type AND remindable_id IN (:patient_appointment_ids))
              SQL
-             conversation_id: conversation.id,
-             conversation_type: 'Conversation',
-             contact_id: message.sender_id,
-             live_entity_types: TouchPlanEnrollment::SUPPORTED_REMINDABLE_TYPES
+             cancellable_scope_bindings(conversation)
            )
+  end
+
+  # A separate patient's own reply also reaches its touches that are still stored on the shared owner's route.
+  def cancellable_scope_bindings(conversation)
+    {
+      conversation_id: conversation.id,
+      conversation_type: 'Conversation',
+      contact_id: message.sender_id,
+      live_entity_types: TouchPlanEnrollment::SUPPORTED_REMINDABLE_TYPES,
+      appointment_type: 'Scheduling::Appointment',
+      patient_appointment_ids: Scheduling::Appointment.where(account_id: message.account_id, patient_contact_id: message.sender_id)
+                                                      .select(:id)
+    }
   end
 
   def cancel_deferred_steps!
@@ -52,7 +63,7 @@ class Reminders::AutoCancelOnIncomingService
     deferred_enrollment_scope.find_each do |enrollment|
       enrollment.with_lock do
         enrollment.reload
-        next if enrollment.cancelled?
+        next if incoming_reply_ineligible?(enrollment)
 
         skipped_count += cancel_materialized_enrollment_reminders!(enrollment)
         next unless enrollment.active? || enrollment.paused?
@@ -81,6 +92,10 @@ class Reminders::AutoCancelOnIncomingService
     end
   end
 
+  def incoming_reply_ineligible?(enrollment)
+    enrollment.cancelled? || Reminders::PatientSubjectGuard.foreign_reply?(enrollment.remindable, message)
+  end
+
   def cancellable_reminder?(reminder)
     reminder.present? &&
       Reminder::OPEN_STATUSES.include?(reminder.status) &&
@@ -106,7 +121,9 @@ class Reminders::AutoCancelOnIncomingService
   end
 
   def deferred_enrollment_scope
-    appointment_ids = Scheduling::Appointment.where(account_id: message.account_id, contact_id: message.sender_id).select(:id)
+    appointment_ids = Scheduling::Appointment.where(account_id: message.account_id)
+                                             .where('contact_id = :sender_id OR patient_contact_id = :sender_id', sender_id: message.sender_id)
+                                             .select(:id)
     deal_ids = Crm::Deal.joins(:deal_contacts)
                         .where(account_id: message.account_id, crm_deal_contacts: { contact_id: message.sender_id })
                         .select(:id)

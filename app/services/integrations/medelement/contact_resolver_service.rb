@@ -103,7 +103,7 @@ class Integrations::Medelement::ContactResolverService
     iin_contact, identity_known = contact_by_iin(iin, patient_code)
     return iin_contact if identity_known
 
-    find_verified_demographic_candidate(patient_code: patient_code, iin: iin, email: email, patient: patient)
+    find_verified_demographic_candidate(patient_code: patient_code, iin: iin, email: email, patient: patient, automatic: true)
   end
 
   def contact_by_iin(iin, patient_code)
@@ -116,6 +116,9 @@ class Integrations::Medelement::ContactResolverService
     [nil, true]
   end
 
+  # A contact whose IIN only an unauthenticated widget visitor or public API client could have written (no recorded
+  # patient identity, an unverified widget/API chat) is never adopted as the patient: the import would give it the
+  # patient's code, name, phone and MedElement data, which the widget then shows to that visitor.
   def contacts_by_iin(iin)
     return [] if iin.blank?
 
@@ -124,20 +127,28 @@ class Integrations::Medelement::ContactResolverService
              "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin",
              iin: iin
            )
-           .limit(2)
-           .to_a
+           .order(:id).limit(10).to_a
+           .reject { |contact| Contacts::SharedPhone.self_declared_identity?(contact, iin) }
+           .first(2)
   end
 
-  def find_verified_demographic_candidate(patient_code:, iin:, email:, patient:)
+  # automatic: the import's own lookup (no staff choice); self-declared public contacts are not candidates there.
+  def find_verified_demographic_candidate(patient_code:, iin:, email:, patient:, automatic: false)
     return if iin.blank?
 
     candidates = demographic_candidates(email: email, phones: provider_phones(patient)).select do |candidate|
-      patient_code_available_for?(candidate, patient_code) &&
-        contact_iin_compatible?(candidate, iin) &&
-        contact_name_matches?(candidate, patient) &&
-        contact_birth_date_matches?(candidate, patient)
+      next false if automatic && Contacts::SharedPhone.self_declared_identity?(candidate, iin)
+
+      demographic_match?(candidate, patient_code, iin, patient)
     end
     candidates.one? ? candidates.first : nil
+  end
+
+  def demographic_match?(candidate, patient_code, iin, patient)
+    patient_code_available_for?(candidate, patient_code) &&
+      contact_iin_compatible?(candidate, iin) &&
+      contact_name_matches?(candidate, patient) &&
+      contact_birth_date_matches?(candidate, patient)
   end
 
   def demographic_candidates(email:, phones:)
@@ -262,7 +273,7 @@ class Integrations::Medelement::ContactResolverService
   def secondary_phones(contact, patient, primary_phone)
     existing = Integrations::Medelement::PhoneNumber.contact_phones(contact)
     (existing + provider_phones(patient)).uniq.reject do |phone|
-      phone == primary_phone || account.contacts.where(phone_number: phone).where.not(id: contact.id).exists?
+      phone == primary_phone || (primary_phone.present? && account.contacts.where(phone_number: phone).where.not(id: contact.id).exists?)
     end
   end
 
@@ -302,15 +313,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def persist_patient_contact!(contact:, patient:, identity:, phone_conflict_comment:)
-    provider_phone = provider_phones(patient).first
-    current_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
-    assigned_phone = if phone_conflict_comment.present?
-                       nil
-                     elsif provider_phones(patient).include?(current_phone)
-                       current_phone
-                     else
-                       provider_phone
-                     end
+    assigned_phone = assignable_provider_phone(contact, patient)
     primary_phone = Integrations::Medelement::PhoneNumber.normalize(assigned_phone.presence || contact.phone_number)
 
     contact.skip_runtime_events = true
@@ -335,9 +338,59 @@ class Integrations::Medelement::ContactResolverService
       'phone_conflict_comment' => phone_conflict_comment,
       'secondary_phones' => secondary_phones(contact, patient, primary_phone)
     ).compact
+    update_shared_phone_owner!(contact, patient)
     contact.save!
     record_phone_conflict(identity[:patient_code], contact, phone_conflict_comment) if phone_conflict_comment.present?
+    enqueue_shared_phone_promotion(contact)
     contact
+  end
+
+  # M5(a): event driven, after this patient's sync commits; the job re-checks everything under the phone lock.
+  def enqueue_shared_phone_promotion(contact)
+    return unless Contacts::SharedPhonePromotionPolicy.auto_candidate?(contact)
+
+    contact_id = contact.id
+    ActiveRecord.after_all_transactions_commit { Contacts::SharedPhonePromotionJob.perform_later(contact_id) }
+  end
+
+  # A contact that owns a channel identity (ContactInbox) keeps its primary phone and gets a new provider phone as
+  # secondary. A card without channel identity follows the provider phone only when it is free (M1): nobody holds it,
+  # nobody chats from it, and it is not reserved for an unresolved hidden share. The card's own recorded доп. номер is
+  # never taken here; it becomes primary only through Contacts::SharedPhonePromotionService.
+  def assignable_provider_phone(contact, patient)
+    current_phone = Integrations::Medelement::PhoneNumber.normalize(contact.phone_number)
+    return current_phone if current_phone.present? && channel_identity_owner?(contact)
+
+    share_phone = Contacts::SharedPhone.share_of(contact)&.phone
+    available_phones = provider_phones(patient).select do |phone|
+      phone != share_phone && Contacts::SharedPhone.assignable_primary?(account_id: account.id, phone: phone, contact_id: contact.id)
+    end
+    return current_phone if available_phones.include?(current_phone)
+
+    provider_phones(patient).first if available_phones.include?(provider_phones(patient).first)
+  end
+
+  def channel_identity_owner?(contact)
+    contact.persisted? && ContactInbox.exists?(contact_id: contact.id)
+  end
+
+  # The MedElement phone of a card without its own primary is recorded as a share with whoever holds it (primary
+  # holder, the single contact chatting from it, or the owner of an unresolved hidden share). A recorded share whose
+  # number nobody holds any more is kept: the number stays the card's доп. номер until it is promoted.
+  def update_shared_phone_owner!(contact, patient)
+    return Contacts::SharedPhone.clear_share!(contact.custom_attributes) if contact.phone_number.present?
+
+    phone = provider_phones(patient).first
+    return if phone.blank?
+
+    current = Contacts::SharedPhone.share_of(contact)
+    share = Contacts::SharedPhone.existing_share_for(account_id: account.id, phone: phone, excluding: [contact.id],
+                                                     preferred_owner_id: current&.owner_id)
+    return if share.blank?
+
+    conversation_id = share[:conversation_id] || (current.conversation_id if current&.owner_id == share[:owner_id])
+    Contacts::SharedPhone.record_share!(contact.custom_attributes, phone: phone, owner_id: share[:owner_id], via: share[:via],
+                                                                   conversation_id: conversation_id)
   end
 
   def provider_profile_attributes(patient, first_name, middle_name, iin)
@@ -353,7 +406,9 @@ class Integrations::Medelement::ContactResolverService
       'medelement_gender' => gender_value(patient),
       'medelement_iin' => iin,
       'medelement_last_name' => patient['LASTNAME'].to_s.presence,
-      'medelement_middle_name' => middle_name
+      'medelement_middle_name' => middle_name,
+      # '' records "synced, MedElement has no phone" so the M9 report can complete (a missing key means not synced yet).
+      Contacts::SharedPhone::MEDELEMENT_PHONE_KEY => provider_phones(patient).first.to_s
     }.compact
   end
 
@@ -374,7 +429,7 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def record_phone_conflict(patient_code, contact, comment)
-    conflict_type = comment.include?('already belongs') ? 'phone_owned_by_another_contact' : 'phone_mismatch'
+    conflict_type = comment.include?('belongs to') ? 'phone_owned_by_another_contact' : 'phone_mismatch'
     conflicting_contact_id = comment[/contact #(\d+)/, 1]&.to_i
     conflict_tracker&.record!(
       phase: 'contacts',

@@ -7,11 +7,13 @@ import { FormKit } from '@formkit/vue';
 import { useBranding } from 'shared/composables/useBranding';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import SettingSwitch from 'dashboard/components-next/switch/Switch.vue';
 
 export default {
   components: {
     FormKit,
     NextButton,
+    SettingSwitch,
   },
   props: {
     integrationId: {
@@ -64,7 +66,8 @@ export default {
       return !!this.hook?.id;
     },
     formItems() {
-      return (this.integration.settings_form_schema || []).map(item => {
+      return (this.integration.settings_form_schema || []).map(schemaItem => {
+        const item = this.localizeFormItem(schemaItem);
         const normalizedItem = {
           ...item,
           placeholder:
@@ -121,6 +124,20 @@ export default {
     onClose() {
       this.$emit('close');
     },
+    // Schema items may name dashboard i18n keys for their label and help text.
+    localizeFormItem(schemaItem) {
+      const { label_i18n: labelKey, help_i18n: helpKey, ...item } = schemaItem;
+      item.label = this.translatedOr(labelKey, item.label);
+      item.help = this.translatedOr(helpKey, item.help);
+      if (item.help === undefined) delete item.help;
+      return item;
+    },
+    translatedOr(key, fallback) {
+      if (!key) return fallback;
+      // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+      const translated = this.$t(key);
+      return translated && translated !== key ? translated : fallback;
+    },
     defaultValueForItem(item) {
       if (this.isEditing) {
         if (item.store === 'status') {
@@ -149,7 +166,7 @@ export default {
         return item.value;
       }
 
-      return item.type === 'checkbox' ? false : '';
+      return ['checkbox', 'switch'].includes(item.type) ? false : '';
     },
     setInitialValues() {
       if (!this.integration?.id) {
@@ -294,7 +311,35 @@ export default {
       :incomplete-message="false"
       @submit="submitForm"
     >
-      <FormKit v-for="item in formItems" :key="item.name" v-bind="item" />
+      <template v-for="item in formItems" :key="item.name">
+        <div v-if="item.type === 'switch'" class="flex flex-col gap-2">
+          <div class="flex items-center justify-between gap-4">
+            <span :id="'integration-setting-label-' + item.name">
+              {{ item.label }}
+            </span>
+            <SettingSwitch
+              v-model="values[item.name]"
+              :aria-labelledby="'integration-setting-label-' + item.name"
+              :aria-describedby="
+                item.help ? 'integration-setting-help-' + item.name : undefined
+              "
+            />
+          </div>
+          <p
+            v-if="item.help"
+            :id="'integration-setting-help-' + item.name"
+            class="text-n-slate-10 text-sm font-normal"
+          >
+            {{ item.help }}
+          </p>
+          <FormKit
+            v-model="values[item.name]"
+            type="hidden"
+            :name="item.name"
+          />
+        </div>
+        <FormKit v-else v-bind="item" />
+      </template>
       <FormKit
         v-if="isHookTypeInbox"
         :options="inboxes"

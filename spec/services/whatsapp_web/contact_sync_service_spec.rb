@@ -13,6 +13,199 @@ RSpec.describe WhatsappWeb::ContactSyncService do
 
   let(:channel) { create(:channel_whatsapp_web) }
 
+  it 'never absorbs a LID-only communication owner into the patient card that took the booking phone', :aggregate_failures do
+    account = channel.account.tap { |record| record.enable_features!('scheduling') }
+    policy = Integrations::Medelement::AppointmentPatientIdentity
+    owner = create(:contact, account: account, name: 'Mother', phone_number: nil, identifier: 'whatsapp_web:55555@lid')
+    owner_source = create(:contact_inbox, contact: owner, inbox: channel.inbox, source_id: '55555@lid')
+    conversation = create(:conversation, account: account, inbox: channel.inbox, contact: owner, contact_inbox: owner_source)
+    create(:message, account: account, inbox: channel.inbox, conversation: conversation, sender: owner, message_type: :incoming)
+    appointment = create(:scheduling_appointment, account: account, contact: owner, conversation: conversation,
+                                                  client_first_name: 'Child', client_last_name: 'Patient', client_middle_name: nil,
+                                                  client_name: 'Child Patient', client_phone: '+77000000009', client_identifier: nil,
+                                                  custom_attributes: { policy::OWNED_IDENTITY_KEY => true, policy::EXPLICIT_IDENTIFIER_KEY => true })
+    appointment.with_lock do
+      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(patient_code: 'child-2')
+      appointment.save!
+    end
+    card = appointment.reload.patient_contact
+    # Owner model 2026-09-29 (M2): the card has the family number only as доп. номер shared from the booking chat.
+    expect(card).to have_attributes(phone_number: nil)
+    expect(card.custom_attributes['secondary_phones']).to eq(['+77000000009'])
+    expect(card.id).not_to eq(owner.id)
+
+    described_class.new(channel: channel, contact_payload: { remoteJid: '77000000009@s.whatsapp.net', remoteLid: '55555@lid',
+                                                             pushName: 'Mother' }).perform
+
+    expect(Contact.exists?(owner.id)).to be(true)
+    expect(owner.reload.phone_number).to eq('+77000000009')
+    expect(conversation.reload.contact_id).to eq(owner.id)
+    expect(owner_source.reload.contact_id).to eq(owner.id)
+    expect(appointment.reload).to have_attributes(contact_id: owner.id, patient_contact_id: card.id)
+    expect(card.reload).to have_attributes(phone_number: nil)
+    expect(card.custom_attributes).to include('medelement_patient_code' => 'child-2', 'secondary_phones' => ['+77000000009'],
+                                              Contacts::SharedPhone::SHARED_OWNER_KEY => owner.id)
+  end
+
+  context 'with a patient card that owns the phone-JID chat and a LID-only duplicate of the same WhatsApp account' do
+    let(:account) { channel.account.tap { |record| record.update!(locale: 'ru') } }
+    let(:mother) do
+      create(:contact, account: account, name: 'Mother', phone_number: '+77000000009', custom_attributes: { 'medelement_patient_code' => 'mother-1' })
+    end
+    let(:lid_contact) { create(:contact, account: account, name: 'Mother LID', phone_number: nil, identifier: 'whatsapp_web:66666@lid') }
+    let!(:phone_source) { create(:contact_inbox, contact: mother, inbox: channel.inbox, source_id: '77000000009') }
+    let!(:lid_source) { create(:contact_inbox, contact: lid_contact, inbox: channel.inbox, source_id: '66666@lid') }
+    let!(:lid_conversation) { create(:conversation, account: account, inbox: channel.inbox, contact: lid_contact, contact_inbox: lid_source) }
+
+    before do
+      # The M7x move with history transfer switched on (it ships off, see Contacts::SharedPhoneSwitches).
+      enable_shared_phone_switches!
+      create(:message, account: account, inbox: channel.inbox, conversation: lid_conversation, sender: lid_contact, message_type: :incoming)
+    end
+
+    def resolved_payload!
+      payload = { remoteJid: '77000000009@s.whatsapp.net', remoteLid: '66666@lid', pushName: 'Mother' }
+      described_class.new(channel: channel, contact_payload: payload).perform
+    end
+
+    it 'M7x moves the proven LID chat to the card as a logged transfer and never merges the contacts', :aggregate_failures do
+      resolved_payload!
+      later = described_class.new(channel: channel, contact_payload: { remoteJid: '66666@lid', pushName: 'Mother' }).perform
+
+      expect([lid_source.reload.contact_id, lid_conversation.reload.contact_id, later.contact_id]).to all(eq(mother.id))
+      expect(lid_conversation.messages.incoming.pluck(:sender_id)).to eq([mother.id])
+      expect(phone_source.reload.contact_id).to eq(mother.id)
+      expect(mother.reload.identifier).to eq('whatsapp_web:66666@lid')
+      expect(Contact.exists?(lid_contact.id)).to be(true)
+      expect(lid_contact.reload.identifier).to be_nil
+      entry = mother.custom_attributes[Contacts::SharedPhone::TRANSFERS_KEY].first
+      expect(entry).to include('basis' => 'whatsapp_account', 'direction' => 'in', 'contact_inbox_ids' => [lid_source.id])
+      expect(entry['counterpart_contact_id']).to eq(lid_contact.id)
+      expect(lid_conversation.messages.activity.last.content).to include('WhatsApp', 'Mother LID', '+7 *** ***-**-09')
+    end
+
+    it 'keeps a LID contact that is itself a patient card separate', :aggregate_failures do
+      lid_contact.update!(custom_attributes: { 'medelement_patient_code' => 'other-1' })
+      resolved_payload!
+
+      expect([lid_source.reload.contact_id, lid_conversation.reload.contact_id]).to all(eq(lid_contact.id))
+      expect(lid_contact.reload.identifier).to eq('whatsapp_web:66666@lid')
+      expect(mother.reload.custom_attributes).not_to have_key(Contacts::SharedPhone::TRANSFERS_KEY)
+    end
+
+    def lid_chat_state
+      { chat: [lid_source.reload.contact_id, lid_conversation.reload.contact_id], senders: lid_conversation.messages.incoming.pluck(:sender_id),
+        lid_identifier: lid_contact.reload.identifier, card_identifier: mother.reload.identifier,
+        card_log: mother.custom_attributes.key?(Contacts::SharedPhone::TRANSFERS_KEY) }
+    end
+
+    def expect_lid_chat_untouched
+      expect(lid_chat_state).to eq(chat: [lid_contact.id, lid_contact.id], senders: [lid_contact.id], lid_identifier: 'whatsapp_web:66666@lid',
+                                   card_identifier: nil, card_log: false)
+    end
+
+    # sc8rv1 M7x-a / M7x-b: staff changed the card's phone; it only keeps its old own-route phone-JID chat.
+    it 'M7x-a keeps both contacts when the number is now another contact primary number', :aggregate_failures do
+      mother.update!(phone_number: '+77000000061')
+      lid_contact.update!(phone_number: '+77000000009')
+      resolved_payload!
+
+      expect_lid_chat_untouched
+    end
+
+    it 'M7x-b keeps both contacts when nobody holds the number as primary any more', :aggregate_failures do
+      mother.update!(phone_number: '+77000000061')
+      resolved_payload!
+
+      expect_lid_chat_untouched
+    end
+
+    it 'M7x-k moves nothing while history transfer is switched off, and still stores the payload', :aggregate_failures do
+      disable_shared_phone_switches!(Contacts::SharedPhoneSwitches::HISTORY_TRANSFER)
+      contact_inbox = resolved_payload!
+
+      expect_lid_chat_untouched
+      expect(contact_inbox).to eq(phone_source)
+    end
+
+    it 'moves nothing with the shipped defaults (every switch off)', :aggregate_failures do
+      disable_shared_phone_switches!
+      resolved_payload!
+
+      expect_lid_chat_untouched
+      expect(Contact.exists?(lid_contact.id)).to be(true)
+    end
+  end
+
+  it 'keeps the identity update on the source contact when the locked merge re-check refuses', :aggregate_failures do
+    account = channel.account
+    source_contact = create(:contact, account: account, name: 'Mother', phone_number: nil, identifier: 'whatsapp_web:55555@lid')
+    source_inbox = create(:contact_inbox, contact: source_contact, inbox: channel.inbox, source_id: '55555@lid')
+    phone_holder = create(:contact, account: account, name: 'Phone Holder', phone_number: '+77000000009')
+    # A provider write starts between the unlocked pre-check and the re-check under the binding locks.
+    allow(Contacts::PatientIdentityMergeGuard).to receive(:allowed?).and_return(true, false)
+
+    result = described_class.new(channel: channel, contact_payload: { remoteJid: '77000000009@s.whatsapp.net', remoteLid: '55555@lid',
+                                                                      pushName: 'Mother' }).perform
+
+    expect(Contact.exists?(source_contact.id)).to be(true)
+    expect(result.contact_id).to eq(source_contact.id)
+    expect(source_inbox.reload.contact_id).to eq(source_contact.id)
+    expect(source_contact.reload.phone_number).to be_nil
+    expect(phone_holder.reload).to have_attributes(name: 'Phone Holder', phone_number: '+77000000009')
+    expect(phone_holder.additional_attributes.to_h.dig('channel_profiles', 'whatsapp_web')).to be_blank
+  end
+
+  it 'keeps the existing shared source on the first patient and does not merge a second patient identity' do
+    owner = create(:contact, account: channel.account, name: 'Primary', phone_number: '+77000000001',
+                             custom_attributes: { 'medelement_patient_code' => 'primary-1' })
+    patient = create(:contact, account: channel.account, name: 'Relative', phone_number: nil,
+                               identifier: 'whatsapp_web:99999@lid',
+                               custom_attributes: { 'medelement_patient_code' => 'relative-2', 'medelement_patient_card' => true })
+    source = create(:contact_inbox, inbox: channel.inbox, contact: owner, source_id: '77000000001')
+    conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: owner, contact_inbox: source)
+    message = create(:message, account: channel.account, inbox: channel.inbox, conversation: conversation, sender: owner, message_type: :incoming)
+    result = described_class.new(channel: channel, contact_payload: { remoteJid: '77000000001@s.whatsapp.net', remoteLid: '99999@lid',
+                                                                      pushName: 'Primary' }).perform
+    expect(result.contact_id).to eq(owner.id)
+    expect(source.reload).to have_attributes(contact_id: owner.id, source_id: '77000000001')
+    expect(message.reload.sender_id).to eq(owner.id)
+    expect(patient.reload.custom_attributes['medelement_patient_code']).to eq('relative-2')
+    expect(owner.reload.phone_number).to eq('+77000000001')
+  end
+
+  it 'locks bound patient appointments before a channel merge re-checks the patient guard' do
+    source = create(:contact, account: channel.account, phone_number: nil)
+    target = create(:contact, account: channel.account, phone_number: '+77000000009')
+    guard = Contacts::PatientIdentityMergeGuard
+    allow(guard).to receive(:lock_patient_bindings!).and_call_original
+    allow(guard).to receive(:allowed?).and_return(false)
+    service = described_class.new(channel: channel, contact_payload: { remoteJid: '77000000009@s.whatsapp.net', pushName: 'Duplicate' })
+
+    ActiveRecord::Base.transaction { service.send(:merge_contact_records!, source_contact: source, target_contact: target) }
+
+    expect(guard).to have_received(:lock_patient_bindings!).with(source, target).ordered
+    expect(guard).to have_received(:allowed?).with(source_contact: source, target_contact: target).ordered
+    expect(Contact.exists?(source.id)).to be(true)
+  end
+
+  it 'moves an open appointment touch with its appointment when a channel merge absorbs the chat contact' do
+    source = create(:contact, account: channel.account, phone_number: nil)
+    target = create(:contact, account: channel.account, phone_number: '+77000000009')
+    source_inbox = create(:contact_inbox, inbox: channel.inbox, contact: source, source_id: '77000000005')
+    conversation = create(:conversation, account: channel.account, inbox: channel.inbox, contact: source, contact_inbox: source_inbox)
+    appointment = create(:scheduling_appointment, account: channel.account, contact: source, conversation: conversation)
+    touch = create(:reminder, account: channel.account, remindable: appointment, conversation: conversation,
+                              body: 'Pending visit reminder', scheduled_at: 1.day.from_now)
+    service = described_class.new(channel: channel, contact_payload: { remoteJid: '77000000009@s.whatsapp.net', pushName: 'Duplicate' })
+
+    ActiveRecord::Base.transaction { service.send(:merge_contact_records!, source_contact: source, target_contact: target) }
+
+    expect(Contact.exists?(source.id)).to be(false)
+    expect(appointment.reload).to have_attributes(contact_id: target.id, conversation_id: conversation.id)
+    expect(touch.reload).to have_attributes(target_contact_id: target.id, conversation_id: conversation.id)
+  end
+
   def create_reminder_for_contact_inbox(contact_inbox)
     conversation = create(
       :conversation, account: contact_inbox.contact.account, inbox: contact_inbox.inbox,

@@ -9,6 +9,8 @@ class Api::V1::Accounts::Actions::ContactMergesController < Api::V1::Accounts::B
       mergee_contact: @mergee_contact
     )
     contact_merge_action.perform
+  rescue Contacts::ReferenceMergeService::UnsafeMergeError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   private

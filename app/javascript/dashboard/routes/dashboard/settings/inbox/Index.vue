@@ -411,6 +411,13 @@ const getStatus = inbox => {
     };
   }
 
+  if (inbox.deletion_recovery?.status === 'failed') {
+    return {
+      label: t('INBOX_MGMT.LIST.STATUS.DELETION_RECOVERY'),
+      class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
+    };
+  }
+
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {
       label: t('INBOX_MGMT.LIST.STATUS.NEEDS_AUTH'),
@@ -614,6 +621,13 @@ const uiFlags = computed(() => getters['inboxes/getUIFlags'].value);
               data-test-id="inbox-channel-missing"
             >
               {{ $t('INBOX_MGMT.LIST.CHANNEL_MISSING_DESCRIPTION') }}
+            </p>
+            <p
+              v-if="inbox.deletion_recovery?.status === 'failed'"
+              class="rounded-lg bg-n-amber-3 px-3 py-2 text-xs text-n-amber-11"
+              data-test-id="inbox-deletion-recovery"
+            >
+              {{ $t('INBOX_MGMT.LIST.DELETION_RECOVERY_DESCRIPTION') }}
             </p>
             <p
               v-if="inbox.last_error"

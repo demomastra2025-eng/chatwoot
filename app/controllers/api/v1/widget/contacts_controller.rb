@@ -28,7 +28,7 @@ class Api::V1::Widget::ContactsController < Api::V1::Widget::BaseController
   def destroy_custom_attributes
     @contact.custom_attributes = CustomAttributes::MutationService.destroy(
       @contact.custom_attributes,
-      params.permit(custom_attributes: [])[:custom_attributes]
+      Contacts::ServerOwnedAttributes.strip_keys(params.permit(custom_attributes: [])[:custom_attributes])
     )
     @contact.save!
     render json: @contact
@@ -40,7 +40,8 @@ class Api::V1::Widget::ContactsController < Api::V1::Widget::BaseController
     contact_identify_action = ContactIdentifyAction.new(
       contact: contact,
       params: permitted_params.to_h.deep_symbolize_keys,
-      discard_invalid_attrs: true
+      discard_invalid_attrs: true,
+      hmac_verified: action_name == 'set_user' && @contact_inbox&.hmac_verified? == true
     )
     @contact = contact_identify_action.perform
   end

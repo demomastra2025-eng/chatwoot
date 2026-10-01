@@ -708,6 +708,7 @@ RSpec.describe Channel::Whatsapp do
         'message' => include('Error validating access token'),
         'fbtrace_id' => 'trace-190'
       )
+      expect(error['occurrence_id']).to match(/\A[0-9a-f-]{36}\z/)
     end
 
     it 'does not treat unrelated OAuth errors as reauthorization errors' do

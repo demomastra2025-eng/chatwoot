@@ -68,7 +68,18 @@ export const providerCancellationPending = appointment =>
     appointment?.customAttributes?.medelement_provider_sync_status) ===
     'pending';
 
+// Cancelled in OneLink only: the reception is still active in MedElement.
+export const isMedelementLocalCancellation = appointment =>
+  appointment?.status === 'cancelled' &&
+  Boolean(appointment?.customAttributes?.medelement_local_cancellation);
+
+// Cancelling will stay in OneLink (hook setting remove_reception_on_cancel is off).
+export const isMedelementCancellationLocalOnly = appointment =>
+  appointment?.medelementCancellationMode === 'local_only';
+
 export const providerBookingStatusKey = appointment => {
+  if (isMedelementLocalCancellation(appointment))
+    return 'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED';
   if (providerBookingNeedsReview(appointment))
     return providerCancellationCommandId(appointment) ||
       appointment?.status === 'cancelled'
@@ -89,6 +100,8 @@ export const providerBookingStatusKey = appointment => {
 
 export const providerBookingStatusMessage = (appointment, t) => {
   const key = providerBookingStatusKey(appointment);
+  if (key === 'SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED')
+    return t('SCHEDULING.APPOINTMENT_STATUS.MEDELEMENT_NOT_CANCELLED');
   if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
     return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
   if (key === 'SCHEDULING.APPOINTMENT_STATUS.PROVIDER_REVIEW')
@@ -100,6 +113,8 @@ export const providerBookingStatusMessage = (appointment, t) => {
 };
 
 export const appointmentCancellationAlertKey = appointment => {
+  if (isMedelementLocalCancellation(appointment))
+    return 'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY';
   const providerStatus =
     appointment?.providerConfirmationStatus ||
     appointment?.customAttributes?.medelement_provider_sync_status;
@@ -122,6 +137,8 @@ export const appointmentCancellationAlertKey = appointment => {
 
 export const appointmentCancellationAlertMessage = (appointment, t) => {
   const key = appointmentCancellationAlertKey(appointment);
+  if (key === 'SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY')
+    return t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL_LOCAL_ONLY');
   if (key === 'SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW')
     return t('SCHEDULING.APPOINTMENT_STATUS.CANCELLATION_REVIEW');
   if (key === 'SCHEDULING.APPOINTMENT_FORM.CANCELLATION_PENDING')

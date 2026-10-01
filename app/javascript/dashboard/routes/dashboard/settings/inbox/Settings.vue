@@ -856,6 +856,7 @@ export default {
         this.isAWhatsAppCloudChannel &&
         (this.inbox.reauthorization_required ||
           this.inbox.requires_reauthorization ||
+          this.inbox.deletion_recovery?.status === 'failed' ||
           hardAuthorizationFailure ||
           this.whatsappTokenExpiring ||
           this.whatsappRegistrationIncomplete)

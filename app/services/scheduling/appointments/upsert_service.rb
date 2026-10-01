@@ -18,6 +18,7 @@ class Scheduling::Appointments::UpsertService
   def perform
     Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
     Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
+    return @persisted_appointment = cancel_linked_appointment_locally! if local_only_provider_cancellation?
 
     with_actor_context { persist_appointment! }
 
@@ -81,6 +82,7 @@ class Scheduling::Appointments::UpsertService
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
       apply_attributes!
+      Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
@@ -123,6 +125,22 @@ class Scheduling::Appointments::UpsertService
 
   def provider_cancellation_policy
     Scheduling::Appointments::ProviderCancellationPolicy.new(appointment: appointment)
+  end
+
+  # A status change to cancelled of a MedElement-linked appointment while remove_reception_on_cancel is off
+  # (automation actions and other generic status paths) follows the same local-only cancellation as the
+  # cancel endpoint; the remaining params of such a request are not applied, exactly like the endpoint.
+  def local_only_provider_cancellation?
+    appointment.persisted? && params[:status].to_s.strip == 'cancelled' && appointment.status != 'cancelled' &&
+      provider_cancellation_policy.provider_related? && Integrations::Medelement::LocalCancellation.local_only?(appointment)
+  end
+
+  def cancel_linked_appointment_locally!
+    Scheduling::Appointments::CancelService.new(
+      appointment: appointment,
+      actor: actor,
+      expected_medelement_cancellation_mode: Integrations::Medelement::LocalCancellation::MODE_LOCAL_ONLY
+    ).perform
   end
 
   def provider_cancellation_unavailable!
@@ -174,9 +192,14 @@ class Scheduling::Appointments::UpsertService
     client_identity = resolve_client_identity(contact, resource)
     resolve_appointment_patient_identity!(contact, resource, client_identity)
 
+    requested_status = resolve_string(:status, current: appointment.status.presence || 'scheduled')
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
-    requested_payment_status = 'cancelled' if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled' &&
-                                              !params.key?(:payment_status)
+    if requested_status == 'cancelled' && !params.key?(:payment_status)
+      requested_payment_status = 'cancelled'
+    elsif requested_status != 'cancelled' && appointment.status == 'cancelled' &&
+          !params.key?(:payment_status) && Integrations::Medelement::LocalCancellation.marked?(appointment)
+      requested_payment_status = Integrations::Medelement::LocalCancellation.restored_payment_status(appointment)
+    end
 
     appointment.assign_attributes(
       account: account,

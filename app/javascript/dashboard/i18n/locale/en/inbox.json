@@ -96,6 +96,7 @@
       "STANDARD_FLOW_BUTTON": "Cloud API only",
       "COEXISTENCE_FLOW_BUTTON": "WhatsApp Business app + Cloud API",
       "PRESERVE_DATA_DESCRIPTION": "WhatsApp authorization expired. Reconnect the same phone number via Meta; the inbox, conversations, messages, and settings will stay in place.",
+      "DELETION_RECOVERY_DESCRIPTION": "WhatsApp disconnection could not be confirmed. Your inbox and conversation history are preserved. Reconnect this existing channel through Meta to keep using it.",
       "EXPIRING_DESCRIPTION": "Your WhatsApp authorization expires soon. Reconnect the same number through Meta now; the inbox, conversations, messages, and settings will stay in place.",
       "LOADING_FACEBOOK": "Loading Facebook SDK...",
       "SUCCESS": "WhatsApp reconnected successfully",

@@ -13,15 +13,21 @@
     "APPOINTMENT_STATUS": {
       "PROVIDER_REVIEW": "MedElement жүйесінде расталмады — тексеру қажет",
       "CANCELLATION_PENDING": "MedElement жүйесінде болдырмаудың расталуын күтеміз",
-      "CANCELLATION_REVIEW": "MedElement жүйесінде болдырмау расталмады — қолмен тексеру қажет"
+      "CANCELLATION_REVIEW": "MedElement жүйесінде болдырмау расталмады — қолмен тексеру қажет",
+      "MEDELEMENT_NOT_CANCELLED": "МедЭлементте болдырылмаған"
     },
     "MEDELEMENT": {
       "APPOINTMENT_UNBOOKABLE": "Жазба аяқталған, болдырылмаған немесе келмеді деп белгіленген. Оны MedElement жүйесінде жасау бұғатталды.",
       "AUTHENTICATION_FAILED": "MedElement авторизациядан бас тартты (HTTP 401). Компания логинін, құпиясөзін және интеграторға қолжетімділігін тексеріңіз.",
       "NO_SPECIALIST_SERVICES": "Таңдалған маманға MedElement қызметтері байланыстырылмаған. Маман–қызмет каталогының байланыстарын жаңартыңыз.",
-      "QUEUED": "MedElement пәрмені расталып, кезекке қойылды"
+      "QUEUED": "MedElement пәрмені расталып, кезекке қойылды",
+      "LOCAL_CANCEL_CONFIRM_TITLE": "Жазбаны тек OneLink-те болдырмау керек пе?",
+      "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "Мәртебе тек OneLink-те өзгереді. МедЭлементтегі қабылдау өшірілмейді — дәрігердің уақытын сонда қолмен босатыңыз.",
+      "LOCAL_CANCEL_HINT": "Тек OneLink-те болдырмау — МедЭлементте қабылдау қалады."
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Пациент картасы",
+      "PATIENT_CARD_LINK": "Науқас картасы: {patientName} №{contactId}",
       "CHECK_PROVIDER_BOOKING": "MedElement жүйесінде тексеру",
       "CHECK_STARTED": "MedElement тексеруі басталды. Аяқталған соң жазбаны жаңартып, расталған ID болса, бөлек болдырмаңыз.",
       "CHECK_CANCELLED_STARTED": "MedElement тексеруі басталды. Қашықтағы қабылдау өшірілмейді; кейін қолмен шешу қажет.",
@@ -32,6 +38,7 @@
       "CANCELLATION_CANDIDATES": "MedElement жүйесіндегі ықтимал қабылдау №{codes}. Жергілікті жазба болдырылмаған, бірақ қашықтағы қабылдауды өшіру расталмады. Науқасты, дәрігерді, кабинетті, уақытты және қызметті тексеріп, қолмен шешіңіз.",
       "CANCELLATION_PENDING": "Болдырмау сұрауы жіберілді. MedElement оны әлі растаған жоқ.",
       "SUCCESS_CANCEL": "Жазба болдырылмады",
+      "SUCCESS_CANCEL_LOCAL_ONLY": "Жазба OneLink-те болдырылмады. МедЭлементте қабылдау қалды — дәрігердің уақытын сонда қолмен босатыңыз.",
       "ERRORS": {
         "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
         "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
@@ -54,11 +61,14 @@
       "MEDELEMENT_CANCELLATION_NOT_VERIFIED": "MedElement жүйесінде дәл осы қабылдаудың өшірілгені расталмады. OneLink жазбасы өзгеріссіз сақталды.",
       "MEDELEMENT_CANCELLATION_CHECK_FAILED": "MedElement жүйесінде өшірілгенін тексеру мүмкін болмады. Кейін қайта тексеріңіз; OneLink жазбасы өзгеріссіз сақталды.",
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "Бұл болдырмау жазбасын MedElement тексеруі мен синхрондауы үшін сақтау қажет.",
+      "MEDELEMENT_LOCAL_CANCELLATION_PROTECTED": "Жазбаны өшіруге болмайды: қабылдау МедЭлементте әлі белсенді, келесі синхрондау оны қайта жасайды. Қабылдауды МедЭлементте өшіріңіз — синхрондаудан кейін жазбаны өшіруге болады.",
+      "MEDELEMENT_REMOVAL_DISABLED": "Болдырмау кезінде МедЭлементтегі қабылдауларды өшіру интеграция баптауларында өшірулі.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Жазба болдырылмады: алдымен MedElement жүйесіндегі қабылдауды тексеріңіз, расталса бөлек болдырмаңыз.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "MedElement тексеруі қолжетімсіз немесе әлдеқашан басталған. Растаусыз жазбаны болдырмаңыз.",
       "MEDELEMENT_RECEPTION_ALREADY_LINKED": "Жазба MedElement жүйесіндегі қабылдаумен әлдеқашан байланыстырылған немесе оның нәтижесін тексеру қажет. Жаңасын жасаудың орнына MedElement жүйесіндегі қабылдауды тексеріңіз.",
       "INVALID_IIN": "ЖСН дұрыс емес",
-      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Пациент деректері байланыстырылған MedElement картасына сәйкес келмейді. Пациент картасын таңдаңыз немесе бөлек жазба жасаңыз."
+      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Пациент деректері байланыстырылған MedElement картасына сәйкес келмейді. Пациент картасын таңдаңыз немесе бөлек жазба жасаңыз.",
+      "MEDELEMENT_CANCELLATION_MODE_CHANGED": "MedElement жүйесіндегі болдырмау параметрі өзгерді. Қайта әрекеттенбес бұрын жазбаны жаңартып, болдырмау режимін тексеріңіз."
     }
   }
 }

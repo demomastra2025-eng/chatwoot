@@ -1,11 +1,12 @@
-class DeleteObjectJob < ApplicationJob
+class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- keep this job's deletion lifecycle and retry contract together
   queue_as :low
 
   BATCH_SIZE = 5_000
 
-  def perform(object, user = nil, ip = nil)
-    deletion_context = build_post_deletion_context(object)
+  def perform(object, user = nil, ip = nil, deletion_attempt_id = nil)
+    return perform_inbox_deletion(object, user, ip, deletion_attempt_id) if object.is_a?(Inbox)
 
+    deletion_context = build_post_deletion_context(object)
     mark_pending_deletion(object)
     teardown_remote_dependencies(object)
     destroy_with_prepared_dependencies(object)
@@ -17,6 +18,114 @@ class DeleteObjectJob < ApplicationJob
   end
 
   private
+
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity -- keep generation checks adjacent to the destructive boundary.
+  def perform_inbox_deletion(inbox, user, ip, requested_attempt_id)
+    # Serialize each inbox's lifecycle without adding an enclosing transaction.
+    # A waiting duplicate must re-read state after acquiring the advisory lock.
+    Whatsapp::WabaLock.new("inbox-deletion-#{inbox.id}").with_lock do
+      begin
+        inbox.reload
+      rescue ActiveRecord::RecordNotFound
+        next nil
+      end
+      attempt_id = prepare_inbox_deletion_attempt(inbox, requested_attempt_id)
+      tracked_attempt = whatsapp_deletion_attempt_tracked?(inbox)
+      return if tracked_attempt && (attempt_id.blank? || !inbox.deletion_intent_active?(attempt_id))
+      return if requested_attempt_id.present? && !inbox.deleting?
+
+      deletion_context = build_post_deletion_context(inbox)
+      mark_pending_deletion(inbox, attempt_id: attempt_id)
+
+      if inbox.whatsapp_cloud_channel?
+        teardown_result = teardown_whatsapp_inbox(inbox, attempt_id)
+        return unless teardown_result == :success
+      else
+        teardown_remote_dependencies(inbox)
+      end
+
+      destroy_with_prepared_dependencies(inbox)
+      process_post_deletion_tasks(inbox, user, ip, deletion_context)
+    end
+  end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity -- one transition handles current, legacy, and stale attempts.
+  def prepare_inbox_deletion_attempt(inbox, requested_attempt_id)
+    tracked_attempt = whatsapp_deletion_attempt_tracked?(inbox)
+    return requested_attempt_id unless tracked_attempt
+
+    current_attempt_id = inbox.deletion_attempt_id
+    expected_attempt_id = requested_attempt_id.presence || job_id
+
+    if inbox.deleting?
+      if current_attempt_id.present?
+        return if current_attempt_id != expected_attempt_id
+
+        return expected_attempt_id
+      end
+
+      # A legacy three-argument job can adopt only the still-active old marker.
+      # An explicit stale generation must never attach itself to a new intent.
+      return if requested_attempt_id.present?
+
+      if inbox.channel_missing?
+        inbox.assign_attributes(deletion_attempt_id: expected_attempt_id)
+        inbox.save!(validate: false)
+      else
+        inbox.mark_pending_deletion!(attempt_id: expected_attempt_id)
+      end
+      return expected_attempt_id if inbox.deletion_intent_active?(expected_attempt_id)
+
+      return
+    end
+
+    # WhatsApp jobs queued before the generation column existed may adopt only
+    # an already-marked deletion. An active inbox, including one whose prior
+    # recovery was resolved, must not be deleted by a stale nil-arg retry.
+    nil
+  end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  def whatsapp_deletion_attempt_tracked?(inbox)
+    inbox.deletion_attempt_id.present? ||
+      inbox.whatsapp_cloud_channel? ||
+      (inbox.channel_type == 'Channel::Whatsapp' && inbox.deleting? && inbox.channel_missing?)
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength -- validate the generation under the WABA lock before one teardown attempt.
+  def teardown_whatsapp_inbox(inbox, attempt_id)
+    channel = inbox.channel
+    waba_id = channel.provider_config.to_h['business_account_id']
+    teardown = lambda do
+      inbox.reload
+      next :stale unless inbox.pending_deletion_attempt?(attempt_id)
+
+      current_channel = inbox.channel
+      next :stale unless current_channel.is_a?(Channel::Whatsapp) &&
+                         current_channel.provider == 'whatsapp_cloud' &&
+                         current_channel.provider_config.to_h['business_account_id'] == waba_id
+
+      begin
+        teardown_remote_dependencies(inbox)
+      rescue Whatsapp::WebhookTeardownService::WebhookHandoffError,
+             Whatsapp::WebhookTeardownService::WebhookTeardownError => e
+        if inbox.restore_after_whatsapp_deletion_failure!(attempt_id: attempt_id)
+          Rails.logger.warn("[INBOX DELETE] WhatsApp teardown failed before inbox data purge; recovery state recorded (#{e.class.name})")
+          next :restored
+        end
+
+        raise
+      end
+
+      :success
+    end
+
+    return teardown.call if waba_id.blank?
+
+    Whatsapp::WabaLock.new(waba_id).with_lock(&teardown)
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
 
   def destroy_with_prepared_dependencies(object)
     if object.is_a?(Conversation)
@@ -187,10 +296,14 @@ class DeleteObjectJob < ApplicationJob
     end
   end
 
-  def mark_pending_deletion(object)
+  def mark_pending_deletion(object, attempt_id: nil)
     return unless object.respond_to?(:mark_pending_deletion!)
 
-    object.mark_pending_deletion!
+    if object.is_a?(Inbox)
+      object.mark_pending_deletion!(attempt_id: attempt_id)
+    else
+      object.mark_pending_deletion!
+    end
   end
 
   def batch_destroy(relation)

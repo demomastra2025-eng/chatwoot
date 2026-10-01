@@ -13,6 +13,28 @@
 # type: The type of the config. Default is text, select and boolean are also supported
 # options: For select types, its required to have options for the select in the following pattern: "option_value":"Human readable option"
 
+# ------- OneLink shared-number patients (пациенты с общим номером) ------- #
+# Off by default (owner decision 2026-09-30). Only an explicit true enables a capability; a super admin can switch it in
+# Super Admin -> Installation configs without a deploy or restart. See Contacts::SharedPhoneSwitches.
+- name: ONELINK_SHARED_PHONE_AUTO_PROMOTION
+  value: false
+  display_title: 'Shared-number patients: automatic promotion'
+  description: 'When a MedElement sync confirms that a patient card доп. номер is the patient own number and nobody else holds it, make it the card primary number (default off). Moving the chat history of that number additionally needs ONELINK_SHARED_PHONE_HISTORY_TRANSFER; without it such a promotion is blocked.'
+  locked: false
+  type: boolean
+- name: ONELINK_SHARED_PHONE_MANUAL_PROMOTION
+  value: false
+  display_title: 'Shared-number patients: manual promotion'
+  description: 'Show the hint, button and confirmation dialog "Сделать основным" in the patient card and allow the promote API (default off). Moving the chat history of that number additionally needs ONELINK_SHARED_PHONE_HISTORY_TRANSFER.'
+  locked: false
+  type: boolean
+- name: ONELINK_SHARED_PHONE_HISTORY_TRANSFER
+  value: false
+  display_title: 'Shared-number patients: chat history transfer'
+  description: 'Allow moving the chats, messages, telephony endpoints and touches of a number between contacts: on promotion, WhatsApp Web LID amendments, the follow-up sweep and the manual revert (default off). While off nothing is moved.'
+  locked: false
+  type: boolean
+
 # ------- Branding Related Config ------- #
 - name: INSTALLATION_NAME
   value: 'OneLink'

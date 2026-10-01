@@ -51,6 +51,9 @@
       "QUEUED": "The MedElement command was confirmed and queued",
       "RECONCILING": "MedElement is still reconciling the provider result. The calendar will update after reconciliation.",
       "REMOVE_CONFIRM_TITLE": "Cancel the appointment in MedElement?",
+      "LOCAL_CANCEL_CONFIRM_TITLE": "Cancel the appointment only in OneLink?",
+      "LOCAL_CANCEL_CONFIRM_DESCRIPTION": "The status changes only in OneLink. The reception is not removed from MedElement — free the doctor's time there manually.",
+      "LOCAL_CANCEL_HINT": "Cancels only in OneLink — the reception stays in MedElement.",
       "RESOURCE_CHANGE_UNSUPPORTED": "Changing the specialist for a MedElement appointment is not supported yet. Change only the date or time.",
       "SUCCESS": "The change was successfully applied in MedElement"
     },
@@ -165,6 +168,8 @@
       "TITLE": "No dialog created yet"
     },
     "APPOINTMENT_FORM": {
+      "PATIENT_CARD": "Patient card",
+      "PATIENT_CARD_LINK": "Patient card: {patientName} #{contactId}",
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
       "APPOINTMENT_TITLE": "Appointment details",
       "APPOINTMENT_TYPE": "Appointment type",
@@ -212,6 +217,7 @@
       "STARTS_AT": "Starts at",
       "STATUS": "Status",
       "SUCCESS_CANCEL": "Appointment cancelled",
+      "SUCCESS_CANCEL_LOCAL_ONLY": "Appointment cancelled in OneLink. The reception is still in MedElement — free the doctor's time there manually.",
       "CANCELLATION_PENDING": "Cancellation requested. MedElement has not confirmed it yet.",
       "CHECK_PROVIDER_BOOKING": "Check in MedElement",
       "CHECK_STARTED": "MedElement verification started. Refresh the appointment after it finishes and cancel separately if the reception ID is confirmed.",
@@ -244,7 +250,8 @@
       "no_show": "No show",
       "PROVIDER_REVIEW": "Not confirmed in MedElement — review required",
       "CANCELLATION_PENDING": "Awaiting MedElement cancellation confirmation",
-      "CANCELLATION_REVIEW": "MedElement cancellation is not confirmed — manual review required"
+      "CANCELLATION_REVIEW": "MedElement cancellation is not confirmed — manual review required",
+      "MEDELEMENT_NOT_CANCELLED": "Not cancelled in MedElement"
     },
     "PAYMENT_STATUS": {
       "awaiting_payment": "Awaiting payment",
@@ -411,6 +418,8 @@
       "MEDELEMENT_CANCELLATION_NOT_VERIFIED": "Removal of this exact reception is not confirmed in MedElement. The OneLink appointment remains unchanged.",
       "MEDELEMENT_CANCELLATION_CHECK_FAILED": "MedElement could not be reached for verification. Try checking again later; the OneLink appointment remains unchanged.",
       "MEDELEMENT_CANCELLATION_RECORD_PROTECTED": "This cancellation record must be kept for MedElement verification and synchronization.",
+      "MEDELEMENT_LOCAL_CANCELLATION_PROTECTED": "This appointment cannot be deleted: the reception is still active in MedElement and the next sync would create it again. Remove the reception in MedElement — after the sync the appointment can be deleted.",
+      "MEDELEMENT_REMOVAL_DISABLED": "Removing MedElement receptions on cancellation is turned off in the integration settings.",
       "MEDELEMENT_BOOKING_REQUIRES_VERIFICATION": "Appointment not cancelled: verify the reception in MedElement first. If confirmed, cancel it separately.",
       "MEDELEMENT_RECEPTION_CHECK_UNAVAILABLE": "MedElement verification is unavailable or already running. Do not cancel without confirmation.",
       "MEDELEMENT_RECEPTION_ALREADY_LINKED": "This appointment is already linked to a MedElement reception or its result needs verification. Check the reception in MedElement instead of creating a new one.",
@@ -438,7 +447,8 @@
       "SINGLE_DAY_REQUIRED": "Appointment must stay within one local day.",
       "SLOT_CONFLICT": "This slot is already occupied.",
       "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Total received amount cannot exceed the service amount.",
-      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "The patient identity conflicts with a linked MedElement patient. Select the patient card or create a separate appointment."
+      "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "The patient identity conflicts with a linked MedElement patient. Select the patient card or create a separate appointment.",
+      "MEDELEMENT_CANCELLATION_MODE_CHANGED": "The MedElement cancellation setting changed. Refresh this appointment and review the cancellation mode before trying again."
     },
     "WEEKDAYS": {
       "0": "Sunday",

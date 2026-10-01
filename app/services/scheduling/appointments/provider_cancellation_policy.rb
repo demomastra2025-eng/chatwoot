@@ -22,6 +22,10 @@ class Scheduling::Appointments::ProviderCancellationPolicy
     true
   end
 
+  def provider_creation_unresolved?
+    unfinished_create_command? || create_write_started?
+  end
+
   def removal_unresolved?
     return unfinished_create_command? || unfinished_remove_command? if appointment.status == 'cancelled'
 
@@ -37,13 +41,7 @@ class Scheduling::Appointments::ProviderCancellationPolicy
   end
 
   def ensure_deletable!
-    if removal_unresolved? || manually_resolved?
-      raise Scheduling::Error.new(
-        code: 'MEDELEMENT_CANCELLATION_RECORD_PROTECTED',
-        message: 'The Medelement cancellation record must be retained for verification and synchronization',
-        status: :conflict
-      )
-    end
+    ensure_provider_cancellation_resolved!
     return if appointment.status == 'cancelled'
 
     raise Scheduling::Error.new(
@@ -56,6 +54,24 @@ class Scheduling::Appointments::ProviderCancellationPolicy
   private
 
   attr_reader :appointment
+
+  # The reception is still active in MedElement, so keep the cancelled record for synchronization.
+  def ensure_provider_cancellation_resolved!
+    if Integrations::Medelement::LocalCancellation.marked?(appointment)
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_LOCAL_CANCELLATION_PROTECTED',
+        message: 'The reception is still active in Medelement; the cancelled appointment must be kept for synchronization',
+        status: :conflict
+      )
+    end
+    return unless removal_unresolved? || manually_resolved?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_CANCELLATION_RECORD_PROTECTED',
+      message: 'The Medelement cancellation record must be retained for verification and synchronization',
+      status: :conflict
+    )
+  end
 
   def imported?
     appointment.source == Scheduling::Appointments::MutationGuard::PROVIDER_SOURCE

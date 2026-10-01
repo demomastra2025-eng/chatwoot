@@ -1,6 +1,8 @@
+# verified_identifier: set only by the widget identify path after HMAC verification; a patient card may then absorb the
+# visitor when that verified identifier is the card's own identifier.
 class ContactMergeAction
   include Events::Types
-  pattr_initialize [:account!, :base_contact!, :mergee_contact!]
+  pattr_initialize [:account!, :base_contact!, :mergee_contact!, { verified_identifier: nil }]
 
   def perform
     # This case happens when an agent updates a contact email in dashboard,
@@ -8,6 +10,8 @@ class ContactMergeAction
     return @base_contact if base_contact.id == mergee_contact.id
 
     ActiveRecord::Base.transaction do
+      # Lock order: phone identity lock first (the base update re-takes it), then the bulk reassignments.
+      Contacts::PhoneIdentityLock.acquire!(account_id: @account.id)
       validate_contacts
       merge_conversations
       merge_communication_threads
@@ -25,9 +29,12 @@ class ContactMergeAction
   private
 
   def validate_contacts
-    return if belongs_to_account?(@base_contact) && belongs_to_account?(@mergee_contact)
+    raise StandardError, 'contact does not belong to the account' unless belongs_to_account?(@base_contact) && belongs_to_account?(@mergee_contact)
+    return if Contacts::PatientIdentityMergeGuard.explicit_merge_allowed?(base_contact: @base_contact, mergee_contact: @mergee_contact)
+    return if verified_identifier.present? && @base_contact.identifier == verified_identifier.to_s
 
-    raise StandardError, 'contact does not belong to the account'
+    raise Contacts::ReferenceMergeService::UnsafeMergeError,
+          'A separate MedElement patient card can only be merged with a contact that has the same patient code or IIN.'
   end
 
   def belongs_to_account?(contact)
