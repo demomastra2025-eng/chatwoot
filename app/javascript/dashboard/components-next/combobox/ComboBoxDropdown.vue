@@ -29,6 +29,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  selectedLabelPreview: {
+    type: String,
+    default: '',
+  },
   multiple: {
     type: Boolean,
     default: false,
@@ -78,7 +82,15 @@ defineExpose({
       @mouseup.stop
       @click.stop
     >
-      <div class="border-b border-n-weak pb-2">
+      <div
+        v-if="selectedLabelPreview"
+        tabindex="0"
+        class="combobox-selected-label-preview mb-2 shrink-0 overflow-y-auto overscroll-contain break-words rounded-md bg-n-alpha-black2 px-3 text-sm leading-5 text-n-slate-12"
+        :title="selectedLabelPreview"
+      >
+        {{ selectedLabelPreview }}
+      </div>
+      <div class="shrink-0 border-b border-n-weak pb-2">
         <div class="relative flex items-center">
           <span
             class="pointer-events-none absolute inset-y-0 right-3 left-auto my-auto inline-flex size-4 items-center justify-center i-lucide-search text-n-slate-10 rtl:right-auto rtl:left-3"
@@ -170,3 +182,12 @@ defineExpose({
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+.combobox-selected-label-preview {
+  max-height: max(
+    20px,
+    min(128px, calc(var(--combobox-dropdown-max-height, 320px) - 124px))
+  );
+}
+</style>

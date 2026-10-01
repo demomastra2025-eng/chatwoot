@@ -39,6 +39,7 @@ const props = defineProps({
   dropdownMinWidth: { type: Number, default: 0 },
   triggerIcon: { type: String, default: '' },
   wrapLabel: { type: Boolean, default: false },
+  clampSelectedLabel: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['open', 'update:modelValue', 'search']);
@@ -110,6 +111,7 @@ const updateDropdownPosition = () => {
         : 'auto',
     left: `${Math.round(left)}px`,
     maxHeight: `${Math.round(maxHeight)}px`,
+    '--combobox-dropdown-max-height': `${Math.round(maxHeight)}px`,
     top:
       placement === 'bottom'
         ? `${Math.round(rect.bottom + dropdownGap)}px`
@@ -139,6 +141,9 @@ const selectedOption = computed(() =>
 const selectedLabel = computed(() => {
   return selectedOption.value?.label ?? selectPlaceholder.value;
 });
+const selectedLabelPreview = computed(() =>
+  props.clampSelectedLabel && selectedOption.value ? selectedLabel.value : ''
+);
 const selectedIcon = computed(
   () => selectedOption.value?.icon || props.triggerIcon
 );
@@ -169,7 +174,7 @@ const hasAppendSlot = computed(() => !!slots.append);
 const triggerClass = computed(() => [
   'w-full !px-2 text-n-slate-12 font-normal focus:outline-n-brand',
   props.inputLike
-    ? `${props.wrapLabel ? '!h-auto min-h-10' : '!h-10'} !rounded-lg !bg-n-alpha-black2 !py-2.5 !outline-n-weak hover:!outline-n-slate-6 dark:hover:!outline-n-slate-6`
+    ? `${props.wrapLabel || props.clampSelectedLabel ? '!h-auto min-h-10' : '!h-10'} !rounded-lg !bg-n-alpha-black2 !py-2.5 !outline-n-weak hover:!outline-n-slate-6 dark:hover:!outline-n-slate-6`
     : '!py-2.5 group-hover/combobox:border-n-slate-6',
   hasAppendSlot.value ? '!pr-[4.25rem]' : '!pr-2',
   {
@@ -248,6 +253,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
       {
         'cursor-not-allowed': disabled,
         'group/combobox': !disabled,
+        'combobox-label-preview': clampSelectedLabel,
       },
     ]"
     :style="attrs.style"
@@ -296,7 +302,11 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
               class="min-w-0 flex-1 text-left"
               :class="[
                 selectedLabelClass,
-                wrapLabel ? 'whitespace-normal break-words' : 'truncate',
+                clampSelectedLabel
+                  ? 'line-clamp-2 leading-5 whitespace-normal break-words'
+                  : wrapLabel
+                    ? 'whitespace-normal break-words'
+                    : 'truncate',
               ]"
               :title="selectedLabel"
             >
@@ -332,6 +342,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :empty-state="emptyState"
         :selected-values="selectedValue"
         :dropdown-style="dropdownStyle"
+        :selected-label-preview="selectedLabelPreview"
         @search="emit('search', $event)"
         @select="selectOption"
       />

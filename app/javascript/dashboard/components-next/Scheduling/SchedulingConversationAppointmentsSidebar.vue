@@ -1485,6 +1485,7 @@ watch(
                       "
                       dropdown-placement="auto"
                       wrap-label
+                      clamp-selected-label
                       @update:model-value="handleCreateServiceChange"
                     />
                     <Input
@@ -2069,6 +2070,7 @@ watch(
                       "
                       dropdown-placement="auto"
                       wrap-label
+                      clamp-selected-label
                       @update:model-value="
                         handleFormServiceChange(
                           appointmentForms[appointmentKey(appointment)],
@@ -2274,6 +2276,13 @@ watch(
 .scheduling-appointment-drawer-form
   :deep(.scheduling-appointment-drawer-select-control button) {
   height: 2rem !important;
+}
+
+.scheduling-appointment-drawer-form
+  :deep(
+    .scheduling-appointment-drawer-select-control.combobox-label-preview button
+  ) {
+  height: auto !important;
 }
 
 .scheduling-appointment-drawer-form
