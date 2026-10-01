@@ -63,6 +63,21 @@ describe('ReconnectService', () => {
       writable: true,
       value: false,
     });
+    isAConversationRoute.mockReset();
+    isAInboxViewRoute.mockReset();
+    isNotificationRoute.mockReset();
+    routerMock.currentRoute.value = {
+      name: '',
+      fullPath: undefined,
+      params: { conversation_id: null },
+    };
+    storeMock.getters.getAppliedConversationFiltersQuery = [];
+    storeMock.getters.getChatListFilters = {};
+    storeMock.getters.getAllConversations = [];
+    storeMock.getters.getSelectedChat = null;
+    storeMock.getters['customViews/getActiveConversationFolder'] = {
+      query: null,
+    };
     reconnectService = new ReconnectService(storeMock, routerMock);
   });
 
@@ -161,47 +176,69 @@ describe('ReconnectService', () => {
   });
 
   describe('fetchConversations', () => {
-    it('should update the filters with disconnected time and the threshold', async () => {
-      reconnectService.getSecondsSinceDisconnect = vi.fn().mockReturnValue(100);
+    it('should refresh the full current list instead of sending a delta window', async () => {
       await reconnectService.fetchConversations();
       expect(storeMock.dispatch).toHaveBeenCalledWith('updateChatListFilters', {
         page: null,
-        updatedWithin: 115,
-      });
-    });
-
-    it('should dispatch updateChatListFilters and fetchAllConversations', async () => {
-      reconnectService.getSecondsSinceDisconnect = vi.fn().mockReturnValue(100);
-      await reconnectService.fetchConversations();
-      expect(storeMock.dispatch).toHaveBeenCalledWith('updateChatListFilters', {
-        page: null,
-        updatedWithin: 115,
-      });
-      expect(storeMock.dispatch).toHaveBeenCalledWith('fetchAllConversations');
-    });
-
-    it('should dispatch updateChatListFilters and reset updatedWithin', async () => {
-      reconnectService.getSecondsSinceDisconnect = vi.fn().mockReturnValue(100);
-      await reconnectService.fetchConversations();
-      expect(storeMock.dispatch).toHaveBeenCalledWith('updateChatListFilters', {
         updatedWithin: null,
+        communicationThreadMode: false,
       });
+      expect(storeMock.dispatch).toHaveBeenCalledWith('fetchAllConversations', {
+        expectedRouteFullPath: undefined,
+      });
+    });
+
+    it('should use the communication thread list on communication thread routes', async () => {
+      routerMock.currentRoute.value = {
+        name: 'communication_threads_dashboard',
+        fullPath: '/accounts/1/communication_threads',
+        params: { accountId: '1' },
+      };
+
+      await reconnectService.fetchConversations();
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith('updateChatListFilters', {
+        page: null,
+        updatedWithin: null,
+        communicationThreadMode: true,
+      });
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'fetchCommunicationThreads',
+        {
+          expectedRouteFullPath: '/accounts/1/communication_threads',
+        }
+      );
     });
   });
 
   describe('fetchFilteredOrSavedConversations', () => {
-    it('should dispatch fetchFilteredConversations', async () => {
+    it('should dispatch the current query and communication thread mode', async () => {
       const payload = { test: 'data' };
+      routerMock.currentRoute.value = {
+        name: 'communication_thread_conversation',
+        fullPath: '/accounts/1/communication_threads/42',
+        params: {
+          accountId: '1',
+          communication_thread_id: '42',
+        },
+      };
+
       await reconnectService.fetchFilteredOrSavedConversations(payload);
+
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'fetchFilteredConversations',
-        { queryData: payload, page: 1 }
+        {
+          queryData: payload,
+          page: 1,
+          communicationThreadMode: true,
+          expectedRouteFullPath: '/accounts/1/communication_threads/42',
+        }
       );
     });
   });
 
   describe('fetchConversationsOnReconnect', () => {
-    it('should fetch filtered or saved conversations if query exists', async () => {
+    it('should refresh filtered conversations for the current route', async () => {
       storeMock.getters.getAppliedConversationFiltersQuery = {
         payload: [
           {
@@ -219,11 +256,15 @@ describe('ReconnectService', () => {
       await reconnectService.fetchConversationsOnReconnect();
 
       expect(spy).toHaveBeenCalledWith(
-        storeMock.getters.getAppliedConversationFiltersQuery
+        storeMock.getters.getAppliedConversationFiltersQuery,
+        expect.objectContaining({
+          name: '',
+          communicationThreadMode: false,
+        })
       );
     });
 
-    it('should fetch all conversations if no query exists', async () => {
+    it('should refresh the plain list if there is no applied or saved query', async () => {
       storeMock.getters.getAppliedConversationFiltersQuery = [];
       storeMock.getters['customViews/getActiveConversationFolder'] = {
         query: null,
@@ -233,13 +274,26 @@ describe('ReconnectService', () => {
 
       await reconnectService.fetchConversationsOnReconnect();
 
-      expect(spy).toHaveBeenCalled();
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: '',
+          communicationThreadMode: false,
+        })
+      );
     });
 
-    it('should fetch filtered or saved conversations if active folder query exists and no applied query', async () => {
+    it('should preserve a saved-folder query and mark thread mode for thread routes', async () => {
       storeMock.getters.getAppliedConversationFiltersQuery = [];
       storeMock.getters['customViews/getActiveConversationFolder'] = {
         query: { test: 'activeFolderQuery' },
+      };
+      routerMock.currentRoute.value = {
+        name: 'communication_thread_conversation',
+        fullPath: '/accounts/1/communication_threads/42',
+        params: {
+          accountId: '1',
+          communication_thread_id: '42',
+        },
       };
 
       const spy = vi.spyOn(
@@ -249,21 +303,31 @@ describe('ReconnectService', () => {
 
       await reconnectService.fetchConversationsOnReconnect();
 
-      expect(spy).toHaveBeenCalledWith({ test: 'activeFolderQuery' });
+      expect(spy).toHaveBeenCalledWith(
+        { test: 'activeFolderQuery' },
+        expect.objectContaining({
+          name: 'communication_thread_conversation',
+          communicationThreadMode: true,
+        })
+      );
     });
   });
 
   describe('fetchConversationMessagesOnReconnect', () => {
-    it('should dispatch syncActiveConversationMessages if conversationId exists', async () => {
+    it('should dispatch a type-aware message sync if a conversation ID exists', async () => {
       routerMock.currentRoute.value.params.conversation_id = 1;
       await reconnectService.fetchConversationMessagesOnReconnect();
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'syncActiveConversationMessages',
-        { conversationId: 1 }
+        {
+          conversationId: 1,
+          conversationType: 'conversation',
+          expectedRouteFullPath: undefined,
+        }
       );
     });
 
-    it('should not dispatch syncActiveConversationMessages if conversationId does not exist', async () => {
+    it('should not dispatch a message sync if no conversation ID exists', async () => {
       routerMock.currentRoute.value.params.conversation_id = null;
       await reconnectService.fetchConversationMessagesOnReconnect();
       expect(storeMock.dispatch).not.toHaveBeenCalledWith(
@@ -294,7 +358,11 @@ describe('ReconnectService', () => {
 
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'syncActiveConversationMessages',
-        { conversationId: 42 }
+        {
+          conversationId: 42,
+          conversationType: 'conversation',
+          expectedRouteFullPath: undefined,
+        }
       );
       expect(storeMock.dispatch).not.toHaveBeenCalledWith(
         'fetchAllConversations'
@@ -315,7 +383,11 @@ describe('ReconnectService', () => {
 
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'syncActiveConversationMessages',
-        { conversationId: 42 }
+        {
+          conversationId: 42,
+          conversationType: 'conversation',
+          expectedRouteFullPath: undefined,
+        }
       );
     });
 
@@ -359,7 +431,14 @@ describe('ReconnectService', () => {
         ([action]) => action === 'syncActiveConversationMessages'
       );
       expect(activeMessageSyncCalls).toEqual([
-        ['syncActiveConversationMessages', { conversationId: 42 }],
+        [
+          'syncActiveConversationMessages',
+          {
+            conversationId: 42,
+            conversationType: 'conversation',
+            expectedRouteFullPath: undefined,
+          },
+        ],
       ]);
     });
   });
@@ -388,17 +467,32 @@ describe('ReconnectService', () => {
   describe('handleRouteSpecificFetch', () => {
     it('should fetch conversations and messages if current route is a conversation route', async () => {
       isAConversationRoute.mockReturnValue(true);
-      const spyConversations = vi.spyOn(
-        reconnectService,
-        'fetchConversationsOnReconnect'
-      );
-      const spyMessages = vi.spyOn(
-        reconnectService,
-        'fetchConversationMessagesOnReconnect'
-      );
+      routerMock.currentRoute.value = {
+        name: 'conversation_through_inbox',
+        fullPath: '/accounts/1/inbox/2/conversations/42',
+        params: {
+          accountId: '1',
+          inbox_id: '2',
+          conversation_id: '42',
+        },
+      };
+      reconnectService.fetchConversationsOnReconnect = vi.fn();
+      reconnectService.restoreActiveConversationOnReconnect = vi
+        .fn()
+        .mockResolvedValue({ id: 42, is_communication_thread: false });
+      reconnectService.fetchConversationMessagesOnReconnect = vi.fn();
+
       await reconnectService.handleRouteSpecificFetch();
-      expect(spyConversations).toHaveBeenCalled();
-      expect(spyMessages).toHaveBeenCalled();
+
+      expect(reconnectService.fetchConversationsOnReconnect).toHaveBeenCalled();
+      expect(storeMock.dispatch).toHaveBeenCalledWith('setActiveChat', {
+        data: { id: 42, is_communication_thread: false },
+        expectedRouteFullPath: '/accounts/1/inbox/2/conversations/42',
+        resumeActiveConversation: true,
+      });
+      expect(
+        reconnectService.fetchConversationMessagesOnReconnect
+      ).toHaveBeenCalled();
     });
 
     it('should fetch notifications if current route is an inbox view route', async () => {
@@ -417,16 +511,16 @@ describe('ReconnectService', () => {
   });
 
   describe('setConversationLastMessageId', () => {
-    it('should dispatch setConversationLastMessageId if conversationId exists', async () => {
+    it('should pass the current conversation type when a route ID exists', async () => {
       routerMock.currentRoute.value.params.conversation_id = 1;
       await reconnectService.setConversationLastMessageId();
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'setConversationLastMessageId',
-        { conversationId: 1 }
+        { conversationId: 1, conversationType: 'conversation' }
       );
     });
 
-    it('should not dispatch setConversationLastMessageId if conversationId does not exist', async () => {
+    it('should not dispatch when no conversation ID exists', async () => {
       routerMock.currentRoute.value.params.conversation_id = null;
       await reconnectService.setConversationLastMessageId();
       expect(storeMock.dispatch).not.toHaveBeenCalledWith(

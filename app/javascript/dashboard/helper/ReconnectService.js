@@ -1,6 +1,7 @@
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { differenceInSeconds } from 'date-fns';
+import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import {
   isAConversationRoute,
   isAInboxViewRoute,
@@ -10,11 +11,6 @@ import {
 const MAX_DISCONNECT_SECONDS = 10800;
 const ACTIVE_CONVERSATION_RESYNC_DEBOUNCE = 3000;
 const VISIBLE_RECONCILIATION_INTERVAL = 30000;
-
-// The disconnect delay threshold is added to account for delays in identifying
-// disconnections (for example, the websocket disconnection takes up to 3 seconds)
-// while fetching the latest updated conversations or messages.
-const DISCONNECT_DELAY_THRESHOLD = 15;
 
 class ReconnectService {
   constructor(store, router) {
@@ -81,6 +77,55 @@ class ReconnectService {
     return conversationId || threadId;
   };
 
+  getConversationRouteContext = () => {
+    const { name, fullPath, params = {} } = this.router.currentRoute.value;
+    const communicationThreadMode = [
+      'communication_threads_dashboard',
+      'communication_thread_conversation',
+    ].includes(name);
+
+    const conversationId =
+      params.conversation_id || params.communication_thread_id;
+    const selectedChat = this.store.getters.getSelectedChat;
+    const preserveConversationState =
+      selectedChat &&
+      String(selectedChat.id) === String(conversationId) &&
+      isCommunicationThread(selectedChat) === communicationThreadMode
+        ? {
+            messages: selectedChat.messages,
+            allMessagesLoaded: selectedChat.allMessagesLoaded,
+            dataFetched: selectedChat.dataFetched,
+            firstUnreadMessageId: selectedChat.meta?.first_unread_message_id,
+          }
+        : undefined;
+
+    return {
+      name,
+      fullPath,
+      accountId: params.accountId,
+      conversationId,
+      communicationThreadMode,
+      conversationType: communicationThreadMode
+        ? 'communication_thread'
+        : 'conversation',
+      preserveConversationState,
+    };
+  };
+
+  isConversationRouteContextCurrent = routeContext => {
+    const route = this.router.currentRoute.value;
+    const params = route.params || {};
+    const conversationId =
+      params.conversation_id || params.communication_thread_id;
+
+    return (
+      route.name === routeContext.name &&
+      route.fullPath === routeContext.fullPath &&
+      String(params.accountId || '') === String(routeContext.accountId || '') &&
+      String(conversationId || '') === String(routeContext.conversationId || '')
+    );
+  };
+
   // Force reload if the user is disconnected for more than 3 hours
   handleOnlineEvent = () => {
     if (this.getSecondsSinceDisconnect() >= MAX_DISCONNECT_SECONDS) {
@@ -128,33 +173,75 @@ class ReconnectService {
 
     this.lastActiveConversationSyncAt = now;
 
+    const routeContext = this.getConversationRouteContext();
     await this.store.dispatch('syncActiveConversationMessages', {
       conversationId: Number(conversationId),
+      conversationType: routeContext.conversationType,
+      expectedRouteFullPath: routeContext.fullPath,
     });
   };
 
-  fetchConversations = async updatedWithin => {
+  fetchConversations = async (
+    routeContext = this.getConversationRouteContext()
+  ) => {
+    if (!this.isConversationRouteContextCurrent(routeContext)) return;
+
     await this.store.dispatch('updateChatListFilters', {
       page: null,
-      updatedWithin:
-        updatedWithin ??
-        this.getSecondsSinceDisconnect() + DISCONNECT_DELAY_THRESHOLD,
-    });
-    await this.store.dispatch('fetchAllConversations');
-    // Reset the updatedWithin in the store chat list filter after fetching conversations when the user is reconnected
-    await this.store.dispatch('updateChatListFilters', {
       updatedWithin: null,
+      communicationThreadMode: routeContext.communicationThreadMode,
     });
+    if (!this.isConversationRouteContextCurrent(routeContext)) return;
+
+    await this.store.dispatch(
+      routeContext.communicationThreadMode
+        ? 'fetchCommunicationThreads'
+        : 'fetchAllConversations',
+      { expectedRouteFullPath: routeContext.fullPath }
+    );
   };
 
-  fetchFilteredOrSavedConversations = async queryData => {
+  fetchFilteredOrSavedConversations = async (
+    queryData,
+    routeContext = this.getConversationRouteContext()
+  ) => {
+    if (!this.isConversationRouteContextCurrent(routeContext)) return;
+
+    const {
+      crmPipelineId,
+      crmStageId,
+      appointmentStatus,
+      labelsScope,
+      teamScope,
+      unread,
+      sortBy,
+    } = this.store.getters.getChatListFilters || {};
+    const routeFilters = Object.fromEntries(
+      Object.entries({
+        crmPipelineId,
+        crmStageId,
+        appointmentStatus,
+        labelsScope,
+        teamScope,
+        unread,
+        sortBy,
+      }).filter(([, value]) => value !== undefined)
+    );
+
     await this.store.dispatch('fetchFilteredConversations', {
+      ...routeFilters,
       queryData,
       page: 1,
+      communicationThreadMode: routeContext.communicationThreadMode,
+      expectedRouteFullPath: routeContext.fullPath,
     });
   };
 
-  fetchConversationsOnReconnect = async updatedWithin => {
+  fetchConversationsOnReconnect = async (
+    routeContext = this.getConversationRouteContext()
+  ) => {
+    if (!this.isConversationRouteContextCurrent(routeContext)) return;
+
     const {
       getAppliedConversationFiltersQuery,
       'customViews/getActiveConversationFolder': activeFolder,
@@ -163,17 +250,52 @@ class ReconnectService {
       ? getAppliedConversationFiltersQuery
       : activeFolder?.query;
     if (query) {
-      await this.fetchFilteredOrSavedConversations(query);
+      await this.fetchFilteredOrSavedConversations(query, routeContext);
     } else {
-      await this.fetchConversations(updatedWithin);
+      await this.fetchConversations(routeContext);
     }
   };
 
-  fetchConversationMessagesOnReconnect = async () => {
-    const conversationId = this.activeConversationRouteId();
-    if (conversationId) {
+  restoreActiveConversationOnReconnect = async routeContext => {
+    const { conversationId, communicationThreadMode, fullPath } = routeContext;
+    if (
+      !conversationId ||
+      !this.isConversationRouteContextCurrent(routeContext)
+    ) {
+      return null;
+    }
+
+    const conversations = this.store.getters.getAllConversations || [];
+    const activeConversation = conversations.find(
+      conversation =>
+        String(conversation.id) === String(conversationId) &&
+        isCommunicationThread(conversation) === communicationThreadMode
+    );
+    if (activeConversation) return activeConversation;
+
+    return this.store.dispatch(
+      communicationThreadMode ? 'getCommunicationThread' : 'getConversation',
+      {
+        conversationId,
+        expectedRouteFullPath: fullPath,
+        preserveConversationState: routeContext.preserveConversationState,
+        resumeActiveConversation: true,
+      }
+    );
+  };
+
+  fetchConversationMessagesOnReconnect = async (
+    routeContext = this.getConversationRouteContext()
+  ) => {
+    const { conversationId, conversationType, fullPath } = routeContext;
+    if (
+      conversationId &&
+      this.isConversationRouteContextCurrent(routeContext)
+    ) {
       await this.store.dispatch('syncActiveConversationMessages', {
         conversationId: Number(conversationId),
+        conversationType,
+        expectedRouteFullPath: fullPath,
       });
     }
   };
@@ -196,8 +318,31 @@ class ReconnectService {
   handleRouteSpecificFetch = async () => {
     const currentRoute = this.router.currentRoute.value.name;
     if (isAConversationRoute(currentRoute, true)) {
-      await this.fetchConversationsOnReconnect();
-      await this.fetchConversationMessagesOnReconnect();
+      const routeContext = this.getConversationRouteContext();
+      await this.fetchConversationsOnReconnect(routeContext);
+      if (!this.isConversationRouteContextCurrent(routeContext)) return;
+      const activeConversation =
+        await this.restoreActiveConversationOnReconnect(routeContext);
+      if (
+        !activeConversation ||
+        !this.isConversationRouteContextCurrent(routeContext)
+      ) {
+        return;
+      }
+      const selectedChat = this.store.getters.getSelectedChat;
+      const isAlreadyActive =
+        selectedChat &&
+        String(selectedChat.id) === String(routeContext.conversationId) &&
+        isCommunicationThread(selectedChat) ===
+          routeContext.communicationThreadMode;
+      if (!isAlreadyActive) {
+        await this.store.dispatch('setActiveChat', {
+          data: activeConversation,
+          expectedRouteFullPath: routeContext.fullPath,
+          resumeActiveConversation: true,
+        });
+      }
+      await this.fetchConversationMessagesOnReconnect(routeContext);
     } else if (isAInboxViewRoute(currentRoute, true)) {
       await this.fetchNotificationsOnReconnect(
         this.store.getters['notifications/getNotificationFilters']
@@ -210,8 +355,10 @@ class ReconnectService {
   setConversationLastMessageId = async () => {
     const conversationId = this.activeConversationRouteId();
     if (conversationId) {
+      const routeContext = this.getConversationRouteContext();
       await this.store.dispatch('setConversationLastMessageId', {
         conversationId: Number(conversationId),
+        conversationType: routeContext.conversationType,
       });
     }
   };

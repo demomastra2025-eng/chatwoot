@@ -40,6 +40,29 @@ describe('#mutations', () => {
       expect(state.allConversations[0].meta.first_unread_message_id).toBe(5);
     });
 
+    it('preserves the unread cursor when resuming an already open chat', () => {
+      const chat = {
+        id: 7,
+        is_communication_thread: true,
+        messages: [{ id: 150 }],
+        meta: { sender: { id: 3 }, first_unread_message_id: 77 },
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [chat],
+      };
+
+      mutations[types.SET_CURRENT_CHAT_WINDOW](state, {
+        ...chat,
+        preserveUnreadCursor: true,
+      });
+
+      expect(state.selectedChatId).toBe(7);
+      expect(state.selectedChatType).toBe('communication_thread');
+      expect(chat.meta.first_unread_message_id).toBe(77);
+    });
+
     it('selects a chat without meta', () => {
       const chat = { id: 11, messages: [] };
       const state = { allConversations: [chat] };

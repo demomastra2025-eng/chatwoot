@@ -524,7 +524,10 @@ export const mutations = {
       const chat = _state.allConversations
         ? getConversationById(_state)(activeChat.id, _state.selectedChatType)
         : null;
-      if (chat?.meta?.first_unread_message_id) {
+      if (
+        !activeChat.preserveUnreadCursor &&
+        chat?.meta?.first_unread_message_id
+      ) {
         chat.meta.first_unread_message_id = null;
       }
     }
