@@ -65,6 +65,7 @@ module Enterprise::Message::OrphanPendingHandoff
 
   def orphan_pending_customer_message?
     incoming? &&
+      !preserve_initial_pending_status &&
       sender.is_a?(Contact) &&
       !private? &&
       !voice_call? &&

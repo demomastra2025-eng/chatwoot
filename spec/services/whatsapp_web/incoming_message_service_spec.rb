@@ -69,6 +69,12 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
 
     it 'starts a new conversation as pending when the channel is configured that way' do
       pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+      allow(Rails.configuration.dispatcher).to receive(:dispatch).and_call_original
+      expect(Rails.configuration.dispatcher).to receive(:dispatch).with(
+        Events::Types::MESSAGE_CREATED,
+        anything,
+        hash_including(message: have_attributes(source_id: 'pending-message-1'))
+      ).and_call_original
 
       described_class.new(
         inbox: pending_channel.inbox,
@@ -84,7 +90,132 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
         }.with_indifferent_access
       ).perform
 
-      expect(pending_channel.inbox.conversations.last.status).to eq('pending')
+      conversation = pending_channel.inbox.conversations.order(:id).last
+      expect(conversation.status).to eq('pending')
+      expect(conversation.messages.find_by!(source_id: 'pending-message-1').content).to eq('Need help')
+    end
+
+    it 'starts a new conversation as open when the channel does not request pending' do
+      open_channel = create(:channel_whatsapp_web, conversation_pending: false)
+      described_class.new(
+        inbox: open_channel.inbox,
+        params: {
+          key: { id: 'DEFAULT_OPEN_MESSAGE', remoteJid: '15557654322@s.whatsapp.net' },
+          message: { conversation: 'Default open' }
+        }.with_indifferent_access
+      ).perform
+
+      conversation = open_channel.inbox.conversations.order(:id).last
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.find_by!(source_id: 'DEFAULT_OPEN_MESSAGE').content).to eq('Default open')
+    end
+
+    it 'keeps every message in an initial pending contact batch pending' do
+      pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+      batch_params = {
+        contacts: [{ wa_id: '15557654321@s.whatsapp.net', profile: { name: 'Batch Owner' } }],
+        messages: [{
+          id: 'PENDING_CONTACT_BATCH',
+          type: 'contacts',
+          contacts: [
+            { name: { first_name: 'First' }, phones: [{ phone: '+15557654321' }] },
+            { name: { first_name: 'Second' }, phones: [{ phone: '+15557654322' }] }
+          ]
+        }]
+      }.with_indifferent_access
+      service = described_class.new(
+        inbox: pending_channel.inbox,
+        params: {
+          key: { id: 'PENDING_CONTACT_BATCH', remoteJid: '15557654321@s.whatsapp.net' },
+          message: { conversation: 'contact batch' }
+        }.with_indifferent_access
+      )
+      allow(service).to receive(:processed_params) do
+        service.instance_variable_set(:@processed_params, batch_params)
+        batch_params
+      end
+      allow(Rails.configuration.dispatcher).to receive(:dispatch).and_call_original
+      expect(Rails.configuration.dispatcher).to receive(:dispatch).with(
+        Events::Types::MESSAGE_CREATED,
+        anything,
+        hash_including(:message)
+      ).twice.and_call_original
+
+      service.perform
+
+      conversation = pending_channel.inbox.conversations.order(:id).last
+      expect(conversation.reload.status).to eq('pending')
+      source_ids = conversation.messages.where('source_id LIKE ?', 'PENDING_CONTACT_BATCH:contact:%').pluck(:source_id)
+      expect(source_ids).to match_array(['PENDING_CONTACT_BATCH:contact:0', 'PENDING_CONTACT_BATCH:contact:1'])
+    end
+
+    it 'does not reopen an initial pending conversation when an incoming source id is replayed' do
+      pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+      inbox = pending_channel.inbox
+      payload = {
+        key: { id: 'REPLAYED_PENDING_MESSAGE', remoteJid: '15557654323@s.whatsapp.net' },
+        pushName: 'Pending Author',
+        message: { conversation: 'Initial message' }
+      }.with_indifferent_access
+
+      described_class.new(inbox: inbox, params: payload.deep_dup).perform
+      conversation = inbox.conversations.order(:id).last
+      expect(conversation.reload.status).to eq('pending')
+
+      described_class.new(inbox: inbox, params: payload.deep_dup).perform
+
+      expect(conversation.reload.status).to eq('pending')
+      expect(conversation.messages.where(source_id: 'REPLAYED_PENDING_MESSAGE').count).to eq(1)
+    end
+
+    it 'opens an explicitly pending conversation on a later incoming message' do
+      pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+      inbox = pending_channel.inbox
+      first_payload = {
+        key: { id: 'INITIAL_PENDING_MESSAGE', remoteJid: '15557654321@s.whatsapp.net' },
+        pushName: 'Pending Author',
+        message: { conversation: 'Initial message' }
+      }.with_indifferent_access
+      described_class.new(inbox: inbox, params: first_payload).perform
+      conversation = inbox.conversations.order(:id).last
+      expect(conversation.reload.status).to eq('pending')
+
+      later_payload = first_payload.deep_merge(
+        key: { id: 'LATER_PENDING_MESSAGE' },
+        message: { conversation: 'A later message' }
+      )
+      described_class.new(inbox: inbox, params: later_payload).perform
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.pluck(:source_id)).to include('INITIAL_PENDING_MESSAGE', 'LATER_PENDING_MESSAGE')
+    end
+
+    it 'opens an explicitly pending conversation when a public outgoing echo arrives' do
+      pending_channel = create(:channel_whatsapp_web, conversation_pending: true)
+      inbox = pending_channel.inbox
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'INITIAL_PENDING_FOR_ECHO', remoteJid: '15557654321@s.whatsapp.net' },
+          message: { conversation: 'Initial message' }
+        }.with_indifferent_access
+      ).perform
+      conversation = inbox.conversations.order(:id).last
+      expect(conversation.reload.status).to eq('pending')
+
+      described_class.new(
+        inbox: inbox,
+        params: {
+          key: { id: 'PUBLIC_REPLY_ECHO', remoteJid: '15557654321@s.whatsapp.net', fromMe: true },
+          message: { extendedTextMessage: { text: 'Agent reply' } }
+        }.with_indifferent_access,
+        outgoing_echo: true
+      ).perform
+
+      expect(conversation.reload.status).to eq('open')
+      expect(conversation.messages.find_by!(source_id: 'PUBLIC_REPLY_ECHO')).to have_attributes(
+        message_type: 'outgoing', status: 'delivered'
+      )
     end
 
     it 'creates outgoing echo messages for mobile text sends' do
