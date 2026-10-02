@@ -252,6 +252,50 @@ class Account < ApplicationRecord
     ISO_639.find(account_locale)&.english_name&.downcase || 'english'
   end
 
+  def trial?
+    custom_attributes&.dig('plan_type') == 'trial'
+  end
+
+  def trial_expires_at
+    Time.zone.parse(custom_attributes['trial_expires_at'].to_s) if custom_attributes&.dig('trial_expires_at').present?
+  rescue ArgumentError
+    nil
+  end
+
+  def trial_active?
+    trial? && trial_expires_at.present? && trial_expires_at > Time.current
+  end
+
+  def trial_expired?
+    trial? && (trial_expires_at.blank? || trial_expires_at <= Time.current)
+  end
+
+  def extend_trial!(days = 3)
+    attrs = (custom_attributes || {}).dup
+    now = Time.current
+    current_expiry = if attrs['trial_expires_at'].present?
+                       begin
+                         Time.zone.parse(attrs['trial_expires_at'].to_s)
+                       rescue ArgumentError
+                         nil
+                       end
+                     end
+
+    base_time = (current_expiry && current_expiry > now) ? current_expiry : now
+    attrs['plan_type'] = 'trial'
+    attrs['trial_expires_at'] = (base_time + days.days).iso8601
+    self.custom_attributes = attrs
+    save!
+  end
+
+  def expire_trial!
+    attrs = (custom_attributes || {}).dup
+    attrs['plan_type'] = 'trial'
+    attrs['trial_expires_at'] = 1.minute.ago.iso8601
+    self.custom_attributes = attrs
+    save!
+  end
+
   private
 
   def storage_limit_account

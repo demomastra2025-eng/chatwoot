@@ -131,6 +131,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
     attrs = super + [limits: {}]
+    attrs << :plan_type
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud

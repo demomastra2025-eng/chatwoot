@@ -40,6 +40,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     permitted_params[:limits] = normalize_limits(permitted_params[:limits])
     merge_selected_feature_flags!(permitted_params)
     merge_limit_counter_user_exclusions!(permitted_params)
+    merge_plan_type!(permitted_params)
     permitted_params
   end
 
@@ -79,6 +80,21 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to_account(notice: 'Email usage counter reset')
   end
 
+  def extend_trial
+    requested_resource.extend_trial!(3)
+    redirect_to_account(notice: 'Пробный период продлён на 3 дня')
+  rescue StandardError => e
+    redirect_to_account(alert: "Ошибка продления триала: #{e.message}")
+  end
+
+  def expire_trial
+    requested_resource.expire_trial!
+    redirect_to_account(notice: 'Пробный период завершён')
+  rescue StandardError => e
+    redirect_to_account(alert: "Ошибка завершения триала: #{e.message}")
+  end
+
+
   def destroy
     account = Account.find(params[:id])
 
@@ -108,6 +124,24 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def gb_to_bytes(value)
     (BigDecimal(value.to_s) * STORAGE_GB_IN_BYTES).round(0).to_i
+  end
+
+  def merge_plan_type!(permitted_params)
+    return unless params[:account]&.key?(:plan_type)
+
+    plan_type = params[:account][:plan_type].presence
+    updated_custom_attributes = (permitted_params[:custom_attributes] || requested_resource.custom_attributes || {}).deep_dup
+
+    if plan_type.present?
+      updated_custom_attributes['plan_type'] = plan_type
+      if plan_type == 'trial' && updated_custom_attributes['trial_expires_at'].blank?
+        updated_custom_attributes['trial_expires_at'] = 3.days.from_now.iso8601
+      end
+    elsif params[:account][:plan_type] == ''
+      updated_custom_attributes.delete('plan_type')
+    end
+
+    permitted_params[:custom_attributes] = updated_custom_attributes
   end
 
   def merge_limit_counter_user_exclusions!(permitted_params)

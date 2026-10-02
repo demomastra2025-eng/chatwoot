@@ -28,7 +28,95 @@
                                                       end
   %>
 
+    <%
+    is_trial = account.custom_attributes&.dig('plan_type') == 'trial'
+    trial_expires_at = if account.custom_attributes&.dig('trial_expires_at').present?
+                         begin
+                           Time.zone.parse(account.custom_attributes['trial_expires_at'].to_s)
+                         rescue ArgumentError
+                           nil
+                         end
+                       end
+
+    trial_active = is_trial && trial_expires_at.present? && trial_expires_at > Time.current
+    trial_expired = is_trial && (trial_expires_at.blank? || trial_expires_at <= Time.current)
+
+    time_remaining_text = if !is_trial
+                            'Триал не активирован'
+                          elsif trial_expired
+                            'Истёк'
+                          else
+                            seconds_left = (trial_expires_at - Time.current).to_i
+                            days_left = seconds_left / 86400
+                            hours_left = (seconds_left % 86400) / 3600
+                            minutes_left = (seconds_left % 3600) / 60
+                            if days_left > 0
+                              "Осталось: #{days_left} дн. #{hours_left} ч."
+                            elsif hours_left > 0
+                              "Осталось: #{hours_left} ч. #{minutes_left} мин."
+                            else
+                              "Осталось: #{minutes_left} мин."
+                            end
+                          end
+
+    trial_badge_text = if !is_trial
+                         'Неактивен'
+                       elsif trial_active
+                         'Активен'
+                       else
+                         'Истёк'
+                       end
+
+    trial_badge_classes = if !is_trial
+                            'bg-slate-100 text-slate-700 border-slate-300'
+                          elsif trial_active
+                            'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          else
+                            'bg-amber-100 text-amber-800 border-amber-300'
+                          end
+  %>
+
   <div class="space-y-6">
+    <!-- Trial Status Card -->
+    <div class="p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl font-bold shadow-2xs">
+            🎁
+          </div>
+          <div>
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-base font-bold text-slate-900">Пробный период (Trial Status)</h3>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border <%= trial_badge_classes %>">
+                <%= trial_badge_text %>
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              Управление 3-дневным Full Free триалом со всеми функциями, каналами и AI
+            </p>
+          </div>
+        </div>
+
+        <div class="text-left md:text-right">
+          <div class="text-lg font-black text-slate-900 tracking-tight">
+            <%= time_remaining_text %>
+          </div>
+          <div class="text-xs font-medium text-slate-500 mt-0.5">
+            <% if trial_expires_at.present? %>
+              До: <%= trial_expires_at.in_time_zone.strftime("%d.%m.%Y %H:%M") %>
+            <% else %>
+              Срок действия не задан
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center">
+        <%= button_to '➕ Продлить триал на +3 дня', [:extend_trial, :super_admin, account], method: :post, class: 'button mt-2', form_class: 'inline-block mr-2' %>
+        <%= button_to '⏹️ Завершить триал', [:expire_trial, :super_admin, account], method: :post, class: 'button button--danger mt-2', form_class: 'inline-block' %>
+      </div>
+    </div>
+
     <!-- Prominent Storage Card -->
     <div class="p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { usePhoneWidgetStore } from 'dashboard/stores/phoneWidget';
 
+let mockCurrentAccountData = null;
+
 vi.mock('dashboard/composables/useUISettings', async () => {
   const { ref } = await vi.importActual('vue');
   return {
@@ -14,8 +16,13 @@ vi.mock('dashboard/composables/useUISettings', async () => {
   };
 });
 vi.mock('dashboard/composables/useAccount', async () => {
-  const { ref } = await vi.importActual('vue');
-  return { useAccount: () => ({ accountId: ref(1) }) };
+  const { ref, computed } = await vi.importActual('vue');
+  return {
+    useAccount: () => ({
+      accountId: ref(1),
+      currentAccount: computed(() => mockCurrentAccountData),
+    }),
+  };
 });
 vi.mock('dashboard/stores/whatsappCalls', () => ({
   useWhatsappCallsStore: () => ({
@@ -68,13 +75,17 @@ const mountDashboard = () =>
   mount(Dashboard, {
     global: {
       mocks: { $route: { name: 'home' } },
-      stubs: { 'router-view': true },
+      stubs: {
+        'router-view': true,
+        'router-link': { template: '<a><slot /></a>' },
+      },
     },
   });
 
 describe('Dashboard call windows', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+    mockCurrentAccountData = null;
   });
 
   it('shows the standalone call cards only to employees without the phone widget', async () => {
@@ -103,5 +114,58 @@ describe('Dashboard call windows', () => {
     expect(wrapper.find('[data-testid="standalone-call-cards"]').exists()).toBe(
       true
     );
+  });
+});
+
+describe('Dashboard 3-day Full Free trial banner', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockCurrentAccountData = null;
+  });
+
+  it('does not display any trial banner for non-trial accounts', async () => {
+    mockCurrentAccountData = { id: 1, custom_attributes: { plan_type: 'growth' } };
+    const wrapper = mountDashboard();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="trial-active-banner"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="trial-expired-banner"]').exists()).toBe(false);
+  });
+
+  it('displays active trial banner with countdown and upgrade link when trial is active', async () => {
+    const futureDate = new Date(Date.now() + 2 * 86400000 + 14 * 3600000).toISOString();
+    mockCurrentAccountData = {
+      id: 1,
+      custom_attributes: {
+        plan_type: 'trial',
+        trial_expires_at: futureDate,
+      },
+    };
+    const wrapper = mountDashboard();
+    await flushPromises();
+
+    const banner = wrapper.find('[data-testid="trial-active-banner"]');
+    expect(banner.exists()).toBe(true);
+    expect(banner.text()).toContain('🎁 Пробный период (Full Free): осталось 2 дн.');
+    expect(banner.text()).toContain('Доступны все каналы и AI');
+    expect(banner.text()).toContain('Выбрать тариф');
+  });
+
+  it('displays warning banner when trial has expired', async () => {
+    const pastDate = new Date(Date.now() - 3600000).toISOString();
+    mockCurrentAccountData = {
+      id: 1,
+      custom_attributes: {
+        plan_type: 'trial',
+        trial_expires_at: pastDate,
+      },
+    };
+    const wrapper = mountDashboard();
+    await flushPromises();
+
+    const banner = wrapper.find('[data-testid="trial-expired-banner"]');
+    expect(banner.exists()).toBe(true);
+    expect(banner.text()).toContain('⚠️ Пробный период завершён. Выберите тариф для продолжения работы.');
+    expect(banner.text()).toContain('Выбрать тариф');
   });
 });

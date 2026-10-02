@@ -48,7 +48,7 @@ export default {
   setup() {
     const upgradePageRef = ref(null);
     const { uiSettings, updateUISettings } = useUISettings();
-    const { accountId } = useAccount();
+    const { accountId, currentAccount } = useAccount();
     const { width: windowWidth } = useWindowSize();
     const callsStore = useCallsStore();
     const phoneWidgetStore = usePhoneWidgetStore();
@@ -58,6 +58,7 @@ export default {
       uiSettings,
       updateUISettings,
       accountId,
+      currentAccount,
       upgradePageRef,
       windowWidth,
       hasActiveCall: computed(() => callsStore.hasActiveCall),
@@ -77,6 +78,8 @@ export default {
       showCreateAccountModal: false,
       showShortcutModal: false,
       isMobileSidebarOpen: false,
+      currentTime: Date.now(),
+      trialTimer: null,
     };
   },
   computed: {
@@ -93,6 +96,38 @@ export default {
         'general_settings_index',
         'agent_list',
       ].includes(this.$route.name);
+    },
+        isTrialPlan() {
+      return this.currentAccount?.custom_attributes?.plan_type === 'trial';
+    },
+    isTrialExpired() {
+      if (!this.isTrialPlan) return false;
+      const expiry =
+        this.currentAccount?.custom_attributes?.trial_expires_at ||
+        this.currentAccount?.custom_attributes?.trial_ends_at;
+      if (!expiry) return false;
+      return new Date(expiry).getTime() <= this.currentTime;
+    },
+    trialTimeText() {
+      const expiry =
+        this.currentAccount?.custom_attributes?.trial_expires_at ||
+        this.currentAccount?.custom_attributes?.trial_ends_at;
+      if (!expiry) return '3 дн.';
+      const totalSeconds = Math.max(
+        0,
+        Math.floor((new Date(expiry).getTime() - this.currentTime) / 1000)
+      );
+      const days = Math.floor(totalSeconds / 86400);
+      const hours = Math.floor((totalSeconds % 86400) / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+      if (days > 0) {
+        return `${days} дн. ${hours} ч.`;
+      }
+      if (hours > 0) {
+        return `${hours} ч. ${minutes} мин.`;
+      }
+      return `${minutes} мин.`;
     },
     previouslyUsedDisplayType() {
       const {
@@ -117,6 +152,16 @@ export default {
       },
       immediate: true,
     },
+  },
+  mounted() {
+    this.trialTimer = setInterval(() => {
+      this.currentTime = Date.now();
+    }, 30000);
+  },
+  beforeUnmount() {
+    if (this.trialTimer) {
+      clearInterval(this.trialTimer);
+    }
   },
   methods: {
     toggleMobileSidebar() {
@@ -172,7 +217,40 @@ export default {
         />
       </UpgradePage>
       <template v-if="!showUpgradePage">
-        <router-view />
+        <div class="flex flex-col flex-1 h-full w-full min-h-0 overflow-hidden">
+          <!-- Trial Banner -->
+          <div
+            v-if="isTrialPlan && !isTrialExpired"
+            class="flex items-center justify-between px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 text-amber-900 dark:text-amber-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+            data-testid="trial-active-banner"
+          >
+            <div class="flex items-center gap-2 truncate">
+              <span>🎁 Пробный период (Full Free): осталось {{ trialTimeText }} | Доступны все каналы и AI</span>
+            </div>
+            <router-link
+              :to="{ name: 'billing_settings_index', params: { accountId } }"
+              class="ml-3 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
+            >
+              Выбрать тариф
+            </router-link>
+          </div>
+          <div
+            v-else-if="isTrialPlan && isTrialExpired"
+            class="flex items-center justify-between px-4 py-2 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900/50 text-red-900 dark:text-red-100 text-xs sm:text-sm font-medium z-10 flex-shrink-0"
+            data-testid="trial-expired-banner"
+          >
+            <div class="flex items-center gap-2 truncate">
+              <span>⚠️ Пробный период завершён. Выберите тариф для продолжения работы.</span>
+            </div>
+            <router-link
+              :to="{ name: 'billing_settings_index', params: { accountId } }"
+              class="ml-3 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors shrink-0"
+            >
+              Выбрать тариф
+            </router-link>
+          </div>
+          <router-view />
+        </div>
         <CommandBar />
         <MobileSidebarLauncher
           :is-mobile-sidebar-open="isMobileSidebarOpen"

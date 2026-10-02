@@ -978,6 +978,8 @@ Rails.application.routes.draw do
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
+        post :extend_trial, on: :member
+        post :expire_trial, on: :member
         if ChatwootApp.enterprise?
           post :reset_captain_responses_usage, on: :member
           post :reset_captain_tokens_usage, on: :member

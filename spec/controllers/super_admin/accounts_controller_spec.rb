@@ -232,6 +232,52 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'POST /super_admin/accounts/{account_id}/extend_trial' do
+    context 'when authenticated as super admin' do
+      it 'extends active trial by 3 days' do
+        account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 1.day.from_now.iso8601 })
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/extend_trial"
+
+        expect(response).to have_http_status(:redirect)
+        expect(flash[:notice]).to eq('Пробный период продлён на 3 дня')
+        account.reload
+        expect(account.trial?).to be(true)
+        expect(account.trial_expires_at).to be > 3.days.from_now
+      end
+
+      it 'activates trial for 3 days if not currently in trial' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/extend_trial"
+
+        expect(response).to have_http_status(:redirect)
+        expect(flash[:notice]).to eq('Пробный период продлён на 3 дня')
+        account.reload
+        expect(account.trial?).to be(true)
+        expect(account.trial_active?).to be(true)
+      end
+    end
+  end
+
+  describe 'POST /super_admin/accounts/{account_id}/expire_trial' do
+    context 'when authenticated as super admin' do
+      it 'marks trial as expired' do
+        account.update!(custom_attributes: { 'plan_type' => 'trial', 'trial_expires_at' => 2.days.from_now.iso8601 })
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/expire_trial"
+
+        expect(response).to have_http_status(:redirect)
+        expect(flash[:notice]).to eq('Пробный период завершён')
+        account.reload
+        expect(account.trial?).to be(true)
+        expect(account.trial_expired?).to be(true)
+      end
+    end
+  end
+
   describe 'DELETE /super_admin/accounts/{account_id}' do
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
