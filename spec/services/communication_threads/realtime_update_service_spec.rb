@@ -2,6 +2,11 @@ require 'rails_helper'
 
 RSpec.describe CommunicationThreads::RealtimeUpdateService do
   describe '#perform' do
+    def expect_hidden_recipient_excluded(members, payload, hidden_user:, hidden_conversation:)
+      expect(members).not_to include(hidden_user.pubsub_token)
+      expect(payload[:conversation_ids]).not_to include(hidden_conversation.display_id)
+    end
+
     it 'broadcasts the same shared unread state to each authorized operator' do
       account = create(:account).tap { |record| record.enable_features!('communication_threads') }
       inbox = create(:inbox, account: account)
@@ -123,8 +128,9 @@ RSpec.describe CommunicationThreads::RealtimeUpdateService do
       expect(payload[:conversation_ids]).to contain_exactly(source_conversation.display_id)
       channel_conversation_ids = payload.fetch(:channels).map { |channel| channel[:conversation_id] }
       expect(channel_conversation_ids).to contain_exactly(source_conversation.display_id)
-      expect(members).not_to include(hidden_inbox_user.pubsub_token)
-      expect(payload[:conversation_ids]).not_to include(hidden_conversation.display_id)
+      expect_hidden_recipient_excluded(
+        members, payload, hidden_user: hidden_inbox_user, hidden_conversation: hidden_conversation
+      )
     end
   end
 end

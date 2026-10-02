@@ -38,15 +38,17 @@ class CommunicationThreads::RealtimeRecipientGroups
     result = Hash.new { |hash, user| hash[user] = [] }
     preload_team_members
 
-    links.each do |link|
-      members = link.inbox.members.to_a
-      team = link.conversation&.team
-      members.concat(team.members.to_a) if team&.account_id == account.id
-      members.uniq.each { |user| result[user] << link }
-    end
+    links.each { |link| add_link_members_to_visible_users(result, link) }
     account.administrators.each { |user| result[user] = links }
 
     result
+  end
+
+  def add_link_members_to_visible_users(result, link)
+    members = link.inbox.members.to_a
+    team = link.conversation&.team
+    members.concat(team.members.to_a) if team&.account_id == account.id
+    members.uniq.each { |user| result[user] << link }
   end
 
   def preload_team_members
