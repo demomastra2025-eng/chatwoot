@@ -202,7 +202,7 @@ RSpec.describe Conversations::MarkReadService do
     context 'with multiple account users' do
       let(:channel) { create(:channel_api) }
 
-      it 'marks only the current user read and preserves the other user cursor' do
+      it 'marks the shared conversation read for every account member' do
         other_user = create(:user, account: channel.account, role: :agent)
         create(:inbox_member, user: other_user, inbox: channel.inbox)
         conversation = create(:conversation, account: channel.account, inbox: channel.inbox, agent_last_seen_at: nil)
@@ -218,7 +218,9 @@ RSpec.describe Conversations::MarkReadService do
         described_class.new(conversation: conversation, user: user).perform
 
         expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
-        expect(conversation.unread_messages_for(other_user).incoming).to contain_exactly(incoming_message)
+        expect(conversation.unread_messages_for(other_user).incoming).to be_empty
+        expect(conversation.last_seen_at_for(other_user)).to eq(conversation.agent_last_seen_at)
+        expect(incoming_message.reload.created_at).to be <= conversation.agent_last_seen_at
       end
     end
   end

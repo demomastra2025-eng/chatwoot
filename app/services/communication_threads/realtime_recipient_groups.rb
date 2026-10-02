@@ -21,7 +21,14 @@ class CommunicationThreads::RealtimeRecipientGroups
   attr_reader :account, :links, :source_conversation
 
   def visible_source_links(user, visible_links)
-    visible_links = permission_filtered_links(user, visible_links) if custom_role_user?(user)
+    account_user = account_users_by_user_id[user.id]
+    return if account_user.blank?
+
+    user_context = { user: user, account: account, account_user: account_user }
+    visible_links = visible_links.select do |link|
+      conversation = link.conversation
+      conversation&.account_id == account.id && ConversationPolicy.new(user_context, conversation).show?
+    end
     return unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
 
     visible_links
@@ -29,26 +36,28 @@ class CommunicationThreads::RealtimeRecipientGroups
 
   def visible_links_by_user
     result = Hash.new { |hash, user| hash[user] = [] }
-    links.each do |link|
-      link.inbox.members.each { |user| result[user] << link }
-    end
+    preload_team_members
+
+    links.each { |link| add_link_members_to_visible_users(result, link) }
     account.administrators.each { |user| result[user] = links }
 
     result
   end
 
-  def custom_role_user?(user)
-    account_user = account_users_by_user_id[user.id]
-    account_user&.agent? && account_user.custom_role_id.present?
+  def add_link_members_to_visible_users(result, link)
+    members = link.inbox.members.to_a
+    team = link.conversation&.team
+    members.concat(team.members.to_a) if team&.account_id == account.id
+    members.uniq.each { |user| result[user] << link }
   end
 
-  def permission_filtered_links(user, visible_links)
-    accessible_ids = Conversations::PermissionFilterService.new(
-      account.conversations.where(id: visible_links.map(&:conversation_id)),
-      user,
-      account
-    ).perform.pluck(:id)
-    visible_links.select { |link| accessible_ids.include?(link.conversation_id) }
+  def preload_team_members
+    conversations = links.filter_map(&:conversation)
+                         .select { |conversation| conversation.account_id == account.id }
+                         .uniq
+    return if conversations.empty?
+
+    ActiveRecord::Associations::Preloader.new(records: conversations, associations: { team: :members }).call
   end
 
   def account_users_by_user_id

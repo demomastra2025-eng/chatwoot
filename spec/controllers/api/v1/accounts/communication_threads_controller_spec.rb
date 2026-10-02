@@ -7,6 +7,21 @@ RSpec.describe 'Communication Threads API', type: :request do
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:headers) { agent.create_new_auth_token }
 
+  def create_shared_unread_message(conversation, created_at: 5.minutes.ago)
+    message = create(
+      :message,
+      account: conversation.account,
+      conversation: conversation,
+      inbox: conversation.inbox,
+      message_type: :incoming,
+      skip_runtime_events: true,
+      created_at: created_at
+    )
+    conversation.update!(agent_last_seen_at: 1.hour.ago)
+    conversation.reload.refresh_communication_thread!
+    message
+  end
+
   before do
     account.enable_features!('communication_threads')
   end
@@ -365,7 +380,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       other_stage_conversation = create(:conversation, account: account)
       [contact_conversation, direct_thread_conversation, other_stage_conversation].each do |conversation|
         create(:inbox_member, user: agent, inbox: conversation.inbox)
-        conversation.reload.communication_thread.update!(unread_count: 1)
+        create_shared_unread_message(conversation)
       end
 
       contact_deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
@@ -526,7 +541,7 @@ RSpec.describe 'Communication Threads API', type: :request do
         conversation.reload.communication_thread.update!(assignee: agent)
       end
       [first_open, second_open].each do |conversation|
-        conversation.reload.communication_thread.update!(unread_count: 1)
+        create_shared_unread_message(conversation)
       end
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
@@ -727,10 +742,11 @@ RSpec.describe 'Communication Threads API', type: :request do
       accessible_conversation = create(:conversation, account: account, status: :pending)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
       accessible_thread = accessible_conversation.reload.communication_thread
-      accessible_thread.update!(status: :pending, unread_count: 1)
+      accessible_thread.update!(status: :pending)
+      create_shared_unread_message(accessible_conversation)
 
       inaccessible_conversation = create(:conversation, account: account, status: :open)
-      inaccessible_conversation.reload.communication_thread.update!(unread_count: 1)
+      create_shared_unread_message(inaccessible_conversation)
 
       get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts",
           params: { status: 'all', assignee_type: 'all' },
@@ -833,8 +849,8 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
 
     it 'returns only unread facets for lightweight advanced-filter refreshes' do
-      matching_conversation.reload.communication_thread.update!(unread_count: 1)
-      wrong_stage_conversation.reload.communication_thread.update!(unread_count: 1)
+      create_shared_unread_message(matching_conversation)
+      create_shared_unread_message(wrong_stage_conversation)
 
       post "/api/v1/accounts/#{account.id}/communication_threads/filter_sidebar_unread_counts?crm_stage_id=#{matching_stage.id}",
            params: { payload: [advanced_filter_payload.first.merge(query_operator: nil)] },
@@ -850,7 +866,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
     it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
       [matching_conversation, wrong_stage_conversation, wrong_status_conversation].each do |conversation|
-        conversation.reload.communication_thread.update!(unread_count: 1)
+        create_shared_unread_message(conversation)
       end
 
       post "/api/v1/accounts/#{account.id}/communication_threads/filter?crm_stage_id=#{matching_stage.id}",
@@ -1216,17 +1232,37 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
       create(:message, account: account, conversation: first_conversation, inbox: first_conversation.inbox, created_at: 2.minutes.ago)
       create(:message, account: account, conversation: second_conversation, inbox: second_inbox, created_at: 1.minute.ago)
+      first_public_message = first_conversation.messages.incoming.where(private: false).last
+      create(
+        :message,
+        account: account,
+        conversation: first_conversation,
+        inbox: first_conversation.inbox,
+        message_type: :incoming,
+        content_attributes: { imported_history: true },
+        created_at: 10.minutes.from_now
+      )
+      create(
+        :message,
+        account: account,
+        conversation: first_conversation,
+        inbox: first_conversation.inbox,
+        message_type: :incoming,
+        private: true,
+        created_at: 20.minutes.from_now
+      )
+      second_public_message = second_conversation.messages.incoming.where(private: false).last
       create(:inbox_member, user: agent, inbox: first_conversation.inbox)
       create(:inbox_member, user: agent, inbox: second_inbox)
       thread = first_conversation.reload.communication_thread
       other_agent = create(:user, account: account, role: :agent)
-      Conversations::RecordUserReadStateService.new(conversation: first_conversation, user: agent).perform
-      Conversations::RecordUserReadStateService.new(conversation: second_conversation, user: agent).perform
-      other_cursors = [first_conversation, second_conversation].to_h do |conversation|
-        [conversation.id, conversation.last_seen_at_for(other_agent)]
+      [first_conversation, second_conversation].each do |conversation|
+        create(:conversation_user_read_state, account: account, conversation: conversation, user: agent, last_seen_at: Time.current)
+        create(:conversation_user_read_state, account: account, conversation: conversation, user: other_agent, last_seen_at: 1.day.ago)
       end
 
       expect(thread.reload.unread_count).to eq(0)
+      allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
 
       post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/unread",
            headers: headers,
@@ -1237,10 +1273,11 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(1)
       expect(thread.reload.unread_count).to eq(2)
       expect(response.parsed_body['unread_count']).to eq(2)
-      expect(first_conversation.last_seen_at_for(agent)).to be < first_conversation.messages.incoming.last.created_at
-      expect(second_conversation.last_seen_at_for(agent)).to be < second_conversation.messages.incoming.last.created_at
-      expect(first_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[first_conversation.id])
-      expect(second_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[second_conversation.id])
+      expect(first_conversation.last_seen_at_for(agent)).to eq(first_public_message.created_at - 1.second)
+      expect(second_conversation.last_seen_at_for(agent)).to eq(second_public_message.created_at - 1.second)
+      expect(first_conversation.last_seen_at_for(other_agent)).to eq(first_conversation.agent_last_seen_at)
+      expect(second_conversation.last_seen_at_for(other_agent)).to eq(second_conversation.agent_last_seen_at)
+      expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
     end
   end
 

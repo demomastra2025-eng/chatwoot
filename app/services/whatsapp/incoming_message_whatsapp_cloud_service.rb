@@ -74,6 +74,7 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
 
   def update_message_with_status(message, status)
     metadata_changed = persist_delivery_metadata(message, status)
+    Whatsapp::RecordUsageDeliveryService.new(inbox: inbox, message: message, status: status).perform
     if lower_delivery_status?(message.status, status[:status])
       message.save! if metadata_changed
       return
@@ -83,15 +84,31 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
   end
 
   def persist_delivery_metadata(message, status)
-    delivery_metadata = status.to_h.with_indifferent_access.slice(:conversation, :pricing).deep_stringify_keys
+    status = status.to_h.with_indifferent_access
+    delivery_metadata = normalized_delivery_metadata(status)
     return false if delivery_metadata.empty?
 
     content_attributes = message.content_attributes.to_h.deep_stringify_keys
-    updated_attributes = content_attributes.merge('whatsapp_delivery' => delivery_metadata)
+    existing_delivery_metadata = content_attributes['whatsapp_delivery'].to_h.deep_stringify_keys
+    updated_delivery_metadata = existing_delivery_metadata.merge(delivery_metadata)
+    updated_attributes = content_attributes.merge('whatsapp_delivery' => updated_delivery_metadata)
     return false if updated_attributes == content_attributes
 
     message.content_attributes = updated_attributes
     true
+  end
+
+  def normalized_delivery_metadata(status)
+    metadata = { 'status' => status[:status], 'timestamp' => status[:timestamp] }.compact
+    timestamp = status[:timestamp]
+    metadata['delivered_timestamp'] = timestamp if status[:status].to_s == 'delivered' && timestamp.present?
+
+    pricing = status[:pricing].to_h.with_indifferent_access.slice(:billable, :category, :type, :pricing_model)
+    metadata['pricing'] = pricing.deep_stringify_keys if pricing.present?
+
+    origin_type = status.dig(:conversation, :origin, :type)
+    metadata['conversation_origin_type'] = origin_type if origin_type.present?
+    metadata
   end
 
   def lower_delivery_status?(current_status, incoming_status)

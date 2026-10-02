@@ -1,0 +1,271 @@
+require 'rails_helper'
+
+RSpec.describe Whatsapp::MonthlyUsageService do
+  let(:account) { create(:account) }
+  let(:exchange_rate) do
+    instance_double(WhatsappUsageExchangeRate, rate_per_usd: BigDecimal(500), effective_date: Date.new(2026, 10, 1),
+                                               source_url: 'https://nationalbank.kz/rss/get_rates.cfm?fdate=01.10.2026')
+  end
+  let(:exchange_rate_service) { instance_double(Whatsapp::MonthlyExchangeRateService, perform: exchange_rate) }
+  let!(:first_channel) do
+    create(:channel_whatsapp, account: account, phone_number: '+77010000001', provider: 'whatsapp_cloud',
+                              sync_templates: false, validate_provider_config: false)
+  end
+  let!(:second_channel) do
+    create(:channel_whatsapp, account: account, phone_number: '+77010000002', provider: 'whatsapp_cloud',
+                              sync_templates: false, validate_provider_config: false)
+  end
+
+  before do
+    allow(Whatsapp::MonthlyExchangeRateService).to receive(:new).and_return(exchange_rate_service)
+    tracking_state = WhatsappUsageTrackingState.current_or_create!
+    tracking_state.update!(tracking_started_at: Time.utc(2026, 9, 1))
+  end
+
+  def record_delivery(channel:, provider_message_id:, delivered_at:, category:, **attributes)
+    WhatsappUsageDelivery.create!(
+      account_id: account.id,
+      phone_number: WhatsappUsageDelivery.canonical_phone_number(channel.phone_number),
+      provider_message_id: provider_message_id,
+      inbox_id: channel.inbox.id,
+      delivered_at: delivered_at,
+      received_at: delivered_at,
+      category: category,
+      billable: attributes.fetch(:billable),
+      recipient_country: attributes.fetch(:recipient_country, 'KZ')
+    )
+  end
+
+  def create_legacy_delivered_message(source_id:, created_at:, content_attributes: nil, serialized: false)
+    message = create(
+      :message,
+      account: account,
+      inbox: first_channel.inbox,
+      message_type: :outgoing,
+      status: :delivered,
+      source_id: source_id,
+      content_attributes: content_attributes || {},
+      created_at: created_at
+    )
+    return message if content_attributes.nil?
+
+    json_value = JSON.generate(content_attributes)
+    json_value = JSON.generate(json_value) if serialized
+    write_content_attributes_json(message, json_value)
+    message
+  end
+
+  def write_content_attributes_json(message, json_value)
+    sql = Message.sanitize_sql_array(
+      ['UPDATE messages SET content_attributes = ?::json WHERE id = ?', json_value, message.id]
+    )
+    Message.connection.execute(sql)
+  end
+
+  def content_attributes_json_type(message)
+    sql = Message.sanitize_sql_array(
+      ['SELECT json_typeof(content_attributes) FROM messages WHERE id = ?', message.id]
+    )
+    Message.connection.select_value(sql)
+  end
+
+  def legacy_exclusion_messages(created_at)
+    records = {}
+    representations = [false, true]
+    [[:echo, :external_echo], [:history, :whatsapp_history_import], [:import, :imported_history]].each do |kind, flag|
+      representations.each do |serialized|
+        representation = serialized ? 'serialized' : 'object'
+        key = "#{representation}_#{kind}".to_sym
+        records[key] = create_legacy_delivered_message(
+          source_id: "wamid.legacy-#{representation}-#{kind}",
+          created_at: created_at,
+          content_attributes: { flag => true },
+          serialized: serialized
+        )
+      end
+    end
+    records
+  end
+
+  def verify_legacy_exclusions(created_at)
+    records = legacy_exclusion_messages(created_at)
+    expect(records.transform_values { |message| content_attributes_json_type(message) }).to eq(
+      object_echo: 'object', serialized_echo: 'string',
+      object_history: 'object', serialized_history: 'string',
+      object_import: 'object', serialized_import: 'string'
+    )
+    expect(records.fetch(:serialized_echo).reload.content_attributes['external_echo']).to be(true)
+  end
+
+  it 'uses UTC month bounds and trusts Meta billable status instead of applying the allowance again' do
+    november_start = Time.utc(2026, 11, 1)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.october',
+                    delivered_at: november_start - 1.second, category: 'service', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.service-billable',
+                    delivered_at: november_start, category: 'service', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.service-billable-2',
+                    delivered_at: november_start + 1.second, category: 'service', billable: true)
+    record_delivery(channel: second_channel, provider_message_id: 'wamid.service-free',
+                    delivered_at: november_start + 2.seconds, category: 'service', billable: false)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.utility',
+                    delivered_at: november_start + 3.seconds, category: 'utility', billable: true)
+
+    usage = described_class.new(account: account, now: november_start + 30.minutes).perform
+
+    expect(usage).to include(
+      month: '2026-11',
+      period_start: '2026-11-01T00:00:00.000000Z',
+      period_end: '2026-12-01T00:00:00.000000Z',
+      official_cloud_phone_count: 2,
+      eligible: true,
+      delivered_count: 4,
+      service_delivered_count: 3,
+      non_billable_service_count: 1,
+      template_delivered_count: 1,
+      chargeable_service_count: 2,
+      chargeable_template_count: 1,
+      estimated_amount_kzt: BigDecimal(27),
+      estimated_service_amount_kzt: BigDecimal(18),
+      estimated_template_amount_kzt: BigDecimal(9),
+      free_service_allowance_per_phone: 1_000,
+      service_allowance_applied: false,
+      coverage_complete: true,
+      service_estimate_complete: true,
+      estimate_complete: true,
+      template_costs_included: true,
+      estimated_amount_scope: 'billable_message_base_rates',
+      volume_discounts_included: false
+    )
+    expect(usage[:phones]).to contain_exactly(
+      include(phone_number: '+77010000001', delivered_count: 3, chargeable_service_count: 2, estimated_amount_kzt: BigDecimal(27)),
+      include(phone_number: '+77010000002', delivered_count: 1, non_billable_service_count: 1, chargeable_service_count: 0, estimated_amount_kzt: 0)
+    )
+  end
+
+  it 'marks the estimate incomplete when a service delivery has no billable status' do
+    at = Time.utc(2026, 10, 5)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.unknown-billable',
+                    delivered_at: at, category: 'service', billable: nil)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      service_delivered_count: 1,
+      unknown_service_billable_count: 1,
+      chargeable_service_count: 0,
+      estimated_amount_kzt: nil,
+      estimate_complete: false
+    )
+  end
+
+  it 'reports referral conversion separately from template deliveries and the service estimate' do
+    at = Time.utc(2026, 10, 6)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.referral-conversion',
+                    delivered_at: at, category: 'referral_conversion', billable: true)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      delivered_count: 1,
+      service_delivered_count: 0,
+      template_delivered_count: 0,
+      other_category_delivered_count: 1,
+      unknown_category_delivered_count: 0,
+      estimated_amount_kzt: nil,
+      service_estimate_complete: true,
+      estimate_complete: false
+    )
+  end
+
+  it 'treats an unrecognized pricing category as unknown rather than a template or other known category' do
+    at = Time.utc(2026, 10, 7)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.unrecognized-category',
+                    delivered_at: at, category: 'future_category', billable: true)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      delivered_count: 1,
+      template_delivered_count: 0,
+      other_category_delivered_count: 0,
+      unknown_category_delivered_count: 1,
+      estimated_amount_kzt: nil,
+      estimate_complete: false
+    )
+  end
+
+  it 'reports a partial month when tracking began after the UTC period started' do
+    state = WhatsappUsageTrackingState.current_or_create!
+    state.update!(tracking_started_at: Time.utc(2026, 10, 2, 12))
+
+    usage = described_class.new(account: account, now: Time.utc(2026, 10, 8)).perform
+
+    expect(usage).to include(
+      month: '2026-10',
+      period_start: '2026-10-01T00:00:00.000000Z',
+      coverage_complete: false,
+      estimate_complete: false
+    )
+  end
+
+  it 'keeps a delivered message unpriced when its recipient country is unavailable' do
+    at = Time.utc(2026, 10, 5)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.no-country',
+                    delivered_at: at, category: 'marketing', billable: true, recipient_country: nil)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(chargeable_template_count: 1, unpriced_billable_count: 1,
+                             estimated_amount_kzt: nil, estimate_complete: false)
+  end
+
+  it 'reports no amount when the monthly exchange rate cannot be obtained' do
+    allow(exchange_rate_service).to receive(:perform).and_return(nil)
+    at = Time.utc(2026, 10, 5)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.no-fx',
+                    delivered_at: at, category: 'utility', billable: true)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(estimated_amount_kzt: nil, estimate_complete: false,
+                             exchange_rate: include(available: false, requested_date: '2026-10-01', rate_per_usd: nil))
+  end
+
+  it 'rounds the workspace total once rather than summing rounded phone subtotals' do
+    allow(exchange_rate).to receive(:rate_per_usd).and_return(BigDecimal(1))
+    at = Time.utc(2026, 10, 5)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.round-first',
+                    delivered_at: at, category: 'service', billable: true)
+    record_delivery(channel: second_channel, provider_message_id: 'wamid.round-second',
+                    delivered_at: at, category: 'service', billable: true)
+    record_delivery(channel: second_channel, provider_message_id: 'wamid.round-third',
+                    delivered_at: at, category: 'service', billable: true)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage[:estimated_amount_kzt]).to eq(BigDecimal('0.05'))
+    expect(usage[:phones].sum { |phone| phone[:estimated_amount_kzt] }).to eq(BigDecimal('0.06'))
+  end
+
+  it 'counts existing delivered Cloud messages without a provider timestamp as unassigned history' do
+    created_at = Time.utc(2026, 10, 3, 10)
+    create_legacy_delivered_message(source_id: 'wamid.legacy-delivered', created_at: created_at)
+    verify_legacy_exclusions(created_at)
+    create_legacy_delivered_message(source_id: 'wamid.legacy-recorded', created_at: created_at)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.legacy-recorded',
+                    delivered_at: created_at, category: 'service', billable: true)
+
+    usage = described_class.new(account: account, now: Time.utc(2026, 10, 5)).perform
+
+    expect(usage).to include(
+      delivered_count: 1,
+      unknown_delivery_timestamp_count: 1,
+      unknown_existing_delivery_count: 1,
+      coverage_complete: false,
+      estimate_complete: false
+    )
+    expect(usage[:phones]).to include(
+      include(phone_number: first_channel.phone_number, unknown_existing_delivery_count: 1)
+    )
+  end
+end

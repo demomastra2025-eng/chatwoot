@@ -8,35 +8,27 @@ class Conversations::UnreadScopeBuilder
         AND unread_messages.message_type = :incoming_message_type
         AND unread_messages.private = FALSE
         AND #{Message.not_imported_history_sql('unread_messages')}
-        AND unread_messages.created_at > COALESCE(
-          (
-            SELECT COALESCE(conversation_user_read_states.last_seen_at, '-infinity'::timestamp)
-            FROM conversation_user_read_states
-            WHERE conversation_user_read_states.conversation_id = conversations.id
-              AND conversation_user_read_states.user_id = :user_id
-          ),
-          conversations.agent_last_seen_at,
-          '-infinity'::timestamp
-        )
+    AND unread_messages.created_at > COALESCE(
+      conversations.agent_last_seen_at,
+      '-infinity'::timestamp
+    )
     )
   SQL
 
-  def initialize(scope:, account:, user:)
+  def initialize(scope:, account:)
     @scope = scope
     @account = account
-    @user = user
   end
 
   def perform
     scope.where(
       UNREAD_EXISTS_SQL,
       account_id: account.id,
-      user_id: user.id,
       incoming_message_type: Message.message_types[:incoming]
     )
   end
 
   private
 
-  attr_reader :scope, :account, :user
+  attr_reader :scope, :account
 end

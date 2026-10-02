@@ -1,0 +1,13 @@
+{
+  "WHATSAPP_USAGE": {
+    "BANNER_TITLE": "WhatsApp Cloud · this UTC month: {deliveredCount} · total ≈ {amount}",
+    "BANNER_DETAILS": "Templates: {templateCount} · unpriced: {unpricedCount} · unknown: {unknownCount}",
+    "BANNER_TOOLTIP": "Approximate total for {month}: service messages {serviceAmount} plus templates {templateAmount}. It uses Meta's published base prices and the USD/KZT rate for {rateMonth}, requested for {requestedDate} and effective {effectiveDate} ({rate} KZT per USD). Volume discounts are not included, so your invoice may differ. Billable messages without a price: {unpricedCount}; messages with unknown billability: {unknownCount}.",
+    "ESTIMATE_UNAVAILABLE": "unavailable",
+    "COUNT_UNAVAILABLE": "—",
+    "VALUE_UNAVAILABLE": "unavailable",
+    "RATE_UNAVAILABLE": "unavailable",
+    "ESTIMATE_INCOMPLETE": "Estimate incomplete",
+    "DISMISS": "Dismiss WhatsApp usage banner"
+  }
+}

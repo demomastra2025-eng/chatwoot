@@ -162,6 +162,7 @@ Rails.application.routes.draw do
           end
           resources :assignable_agents, only: [:index]
           resource :audit_logs, only: [:show]
+          resource :whatsapp_usage, only: [:show], controller: 'whatsapp_usage'
           resources :callbacks, only: [] do
             collection do
               post :register_facebook_page

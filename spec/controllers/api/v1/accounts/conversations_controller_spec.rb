@@ -1450,7 +1450,7 @@ RSpec.describe 'Conversations API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/unread' do
-    let(:conversation) { create(:conversation, account: account) }
+    let(:conversation) { create(:conversation, account: account, agent_last_seen_at: Time.current) }
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -1470,8 +1470,8 @@ RSpec.describe 'Conversations API', type: :request do
 
       it 'updates last seen' do
         other_agent = create(:user, account: account, role: :agent)
-        Conversations::RecordUserReadStateService.new(conversation: conversation, user: agent).perform
-        other_cursor = conversation.last_seen_at_for(other_agent)
+        create(:conversation_user_read_state, account: account, conversation: conversation, user: agent, last_seen_at: Time.current)
+        create(:conversation_user_read_state, account: account, conversation: conversation, user: other_agent, last_seen_at: 1.day.ago)
 
         post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/unread",
              headers: agent.create_new_auth_token,
@@ -1482,7 +1482,37 @@ RSpec.describe 'Conversations API', type: :request do
         expect(conversation.reload.agent_last_seen_at).to eq(last_seen_at)
         expect(conversation.reload.assignee_last_seen_at).to eq(last_seen_at)
         expect(conversation.last_seen_at_for(agent)).to eq(last_seen_at)
-        expect(conversation.last_seen_at_for(other_agent)).to eq(other_cursor)
+        expect(conversation.last_seen_at_for(other_agent)).to eq(last_seen_at)
+      end
+
+      it 'chooses the latest public non-imported message when marking unread' do
+        public_message = conversation.messages.incoming.where(private: false).last
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          content_attributes: { imported_history: true },
+          created_at: 10.minutes.from_now
+        )
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          private: true,
+          created_at: 20.minutes.from_now
+        )
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/unread",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.agent_last_seen_at).to eq(public_message.created_at - 1.second)
+        expect(conversation.unread_incoming_messages_count).to eq(1)
       end
 
       it 'refreshes the communication thread unread count' do

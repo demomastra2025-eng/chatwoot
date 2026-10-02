@@ -1,0 +1,13 @@
+{
+  "WHATSAPP_USAGE": {
+    "BANNER_TITLE": "WhatsApp Cloud · за месяц: {deliveredCount} · всего ≈ {amount}",
+    "BANNER_DETAILS": "Шаблоны: {templateCount} · без цены: {unpricedCount} · платность неизвестна: {unknownCount}",
+    "BANNER_TOOLTIP": "Приблизительная сумма за {month}: сервисные сообщения {serviceAmount} и шаблоны {templateAmount}. Расчёт использует опубликованные базовые цены Meta и курс USD/KZT за {rateMonth}, запрошенный на {requestedDate} и действовавший с {effectiveDate} ({rate} KZT за USD). Объёмные скидки не учтены, поэтому сумма в счёте может отличаться. Платные сообщения без цены: {unpricedCount}; сообщения с неизвестной платностью: {unknownCount}.",
+    "ESTIMATE_UNAVAILABLE": "нет данных",
+    "COUNT_UNAVAILABLE": "—",
+    "VALUE_UNAVAILABLE": "нет данных",
+    "RATE_UNAVAILABLE": "нет данных",
+    "ESTIMATE_INCOMPLETE": "Оценка неполная",
+    "DISMISS": "Закрыть баннер использования WhatsApp"
+  }
+}

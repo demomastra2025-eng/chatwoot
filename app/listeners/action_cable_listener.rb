@@ -93,7 +93,7 @@ class ActionCableListener < BaseListener
 
   def conversation_read(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_read_tokens(account, conversation)
 
     broadcast(account, tokens, CONVERSATION_READ, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_READ)
@@ -228,6 +228,19 @@ class ActionCableListener < BaseListener
     return true if setting.blank?
 
     setting.public_send("inbox_#{notification.notification_type}?")
+  end
+
+  def conversation_read_tokens(account, conversation)
+    candidates = conversation.inbox.members.to_a + Array(conversation.team&.members&.to_a) + account.administrators.to_a
+    account_users = account.account_users.where(user_id: candidates.map(&:id)).index_by(&:user_id)
+
+    candidates.uniq.filter_map do |user|
+      account_user = account_users[user.id]
+      next if account_user.blank?
+
+      user_context = { user: user, account: account, account_user: account_user }
+      user.pubsub_token if ConversationPolicy.new(user_context, conversation).show?
+    end
   end
 
   def account_token(account)

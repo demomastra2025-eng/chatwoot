@@ -161,14 +161,24 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def unread
-    last_incoming_message = @conversation.messages.incoming.last
+    last_incoming_message = Message.without_imported_history
+                                  .where(
+                                    account_id: @conversation.account_id,
+                                    conversation_id: @conversation.id,
+                                    private: false
+                                  )
+                                  .incoming
+                                  .reorder(created_at: :desc, id: :desc)
+                                  .first
     return head :ok if last_incoming_message.blank?
 
     last_seen_at = last_incoming_message.created_at - 1.second
-    Conversations::RecordUserReadStateService.new(conversation: @conversation, user: Current.user).perform(last_seen_at: last_seen_at)
     Conversations::LastSeenUpdater.new(conversation: @conversation).perform(
       last_seen_at: last_seen_at,
-      update_assignee: true
+      update_assignee: true,
+      broadcast_read_state: true,
+      allow_regression: true,
+      actor: Current.user
     )
     head :ok
   end
@@ -203,8 +213,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   def preload_list_presence
     @conversation_list_preloader = Conversations::ListPreloader.new(
       account: Current.account,
-      conversations: @conversations,
-      user: Current.user
+      conversations: @conversations
     ).perform
     ActiveRecord::Associations::Preloader.new(records: @conversations, associations: [:assignee, { contact: :owner }]).call
     contacts = @conversations.map(&:contact)

@@ -111,8 +111,8 @@ describe('ActionCableConnector', () => {
       ([actionName]) => actionName === 'fetchRealtimeSidebarUnreadCounts'
     );
 
-  describe('personal read state', () => {
-    it('does not overwrite personal unread fields from a shared conversation update', () => {
+  describe('shared read state', () => {
+    it('applies shared unread fields from conversation updates', () => {
       actionCable.onConversationUpdated({
         id: 42,
         status: 'open',
@@ -123,10 +123,12 @@ describe('ActionCableConnector', () => {
       expect(mockDispatch).toHaveBeenCalledWith('updateConversation', {
         id: 42,
         status: 'open',
+        unread_count: 0,
+        agent_last_seen_at: 1712345678,
       });
     });
 
-    it('accepts read fields only when the current user performed the read', () => {
+    it('accepts shared read fields when any authorized user reads the conversation', () => {
       actionCable.onConversationRead({
         id: 42,
         unread_count: 0,
@@ -150,10 +152,14 @@ describe('ActionCableConnector', () => {
         performer: { id: 8 },
       });
 
-      expect(mockDispatch).toHaveBeenCalledWith('updateConversation', {
-        id: 42,
-        performer: { id: 8 },
-      });
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'updateConversation',
+        expect.objectContaining({
+          unread_count: 0,
+          agent_last_seen_at: 1712345678,
+          performer: { id: 8 },
+        })
+      );
     });
   });
 

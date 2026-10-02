@@ -215,11 +215,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                         private: false
                       )
     messages = messages.where(
-      'messages.created_at > COALESCE(' \
-      "(SELECT COALESCE(last_seen_at, '-infinity'::timestamp) FROM conversation_user_read_states " \
-      'WHERE conversation_id = conversations.id AND user_id = ?), ' \
-      "conversations.agent_last_seen_at, '-infinity'::timestamp)",
-      Current.user.id
+      "messages.created_at > COALESCE(conversations.agent_last_seen_at, '-infinity'::timestamp)"
     )
     messages = messages.where('messages.created_at >= ?', communication_thread.session_started_at) if communication_thread.session_started_at?
 
@@ -500,13 +496,12 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
     incoming_messages = incoming_channel_messages(conversation_ids)
     @last_incoming_message_timestamps_by_conversation_id = incoming_messages.group(:conversation_id).maximum(:created_at)
-    user_read_state = Conversations::UserReadStatePreloader.new(
+    shared_unread_state = Conversations::SharedUnreadStatePreloader.new(
       account: Current.account,
-      conversation_ids: conversation_ids,
-      user: Current.user
+      conversation_ids: conversation_ids
     ).perform
-    @channel_last_seen_timestamps_by_conversation_id = user_read_state.last_seen_timestamps
-    @channel_unread_counts_by_conversation_id = user_read_state.unread_counts
+    @channel_last_seen_timestamps_by_conversation_id = shared_unread_state.last_seen_timestamps
+    @channel_unread_counts_by_conversation_id = shared_unread_state.unread_counts
   end
 
   def reset_channel_message_state
