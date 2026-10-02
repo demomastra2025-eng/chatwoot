@@ -1,26 +1,71 @@
 # frozen_string_literal: true
 
 class SuperAdmin::HealthMatrixService
-  def self.build
-    new.build
+  CACHE_KEY = 'super_admin:health_matrix'
+  CACHE_TTL = 90.seconds
+
+  def self.build(force_refresh: false)
+    new.build(force_refresh: force_refresh)
   end
 
-  def build
-    accounts = Account.order(id: :asc).map { |account| build_account_health(account) }
-    summary = calculate_summary(accounts)
-    [accounts, summary]
+  def build(force_refresh: false)
+    Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL, force: force_refresh) do
+      compute_matrix
+    end
   rescue StandardError => e
-    Rails.logger.error "Health matrix error: #{e.message}"
+    Rails.logger.error "Health matrix error: #{e.message}\n#{e.backtrace&.first(5)&.join("\n")}"
     [[], {}]
   end
 
   private
 
-  def build_account_health(account)
+  def compute_matrix
+    accounts = Account.order(id: :asc).includes(inboxes: :channel)
+    context = load_batch_context(accounts.map(&:id))
+
+    matrix = accounts.map { |account| build_account_health(account, context) }
+    summary = calculate_summary(matrix)
+    [matrix, summary]
+  end
+
+  def load_batch_context(account_ids)
+    {
+      failed_messages: fetch_failed_messages_map(account_ids),
+      sip_profiles: fetch_grouped(Telephony::SipProfile, account_ids),
+      bindings: fetch_grouped(Telephony::NumberBinding, account_ids),
+      connections: fetch_grouped(Telephony::ProviderConnection, account_ids),
+      med_conflicts: fetch_med_conflicts_map(account_ids),
+      med_runs: fetch_grouped(Integrations::Medelement::SyncRun, account_ids)
+    }
+  end
+
+  def fetch_grouped(model_class, account_ids)
+    return {} unless defined?(model_class) && model_class.respond_to?(:where)
+
+    model_class.where(account_id: account_ids).group_by(&:account_id)
+  rescue StandardError
+    {}
+  end
+
+  def fetch_failed_messages_map(account_ids)
+    Message.where(account_id: account_ids, status: :failed).group(:account_id).count
+  rescue StandardError
+    {}
+  end
+
+  def fetch_med_conflicts_map(account_ids)
+    return {} unless defined?(Integrations::Medelement::SyncConflict)
+
+    Integrations::Medelement::SyncConflict.where(account_id: account_ids, resolved: false).group(:account_id).count
+  rescue StandardError
+    {}
+  end
+
+  def build_account_health(account, context)
     wa_status = calculate_whatsapp_status(account)
-    tel_status = calculate_telephony_status(account)
-    med_status = calculate_medelement_status(account)
-    failed_count = count_failed_messages(account)
+    tel_status = calculate_telephony_status(account, context)
+    med_status = calculate_medelement_status(account, context)
+    failed_count = context[:failed_messages][account.id] || 0
     attention = wa_status[:state] == 'error' ||
                 tel_status[:state] == 'error' ||
                 med_status[:state] == 'error' ||
@@ -38,91 +83,64 @@ class SuperAdmin::HealthMatrixService
     }
   end
 
-  def count_failed_messages(account)
-    account.messages.where(status: :failed).count
-  rescue StandardError
-    0
-  end
-
   def calculate_whatsapp_status(account)
     wa_inboxes = begin
       account.inboxes.select { |i| i.channel_type.to_s.include?('Whatsapp') }
     rescue StandardError
       []
     end
-    return { state: 'none', label: '???? ????????????????', count: 0 } if wa_inboxes.empty?
+    return { state: 'none', label: 'Не подключен', count: 0 } if wa_inboxes.empty?
 
     active = wa_inboxes.any? do |i|
       !i.channel.try(:reauthorization_required?)
     end
     {
       state: active ? 'healthy' : 'error',
-      label: active ? "#{wa_inboxes.size} ??????????????" : '???????? ????????????',
+      label: active ? "#{wa_inboxes.size} подключено" : 'Требует авторизации',
       count: wa_inboxes.size
     }
   end
 
-  def calculate_telephony_status(account)
-    phone_inboxes = begin
-      account.inboxes.select { |i| i.channel_type.to_s.include?('Phone') }
-    rescue StandardError
-      []
-    end
-    sip_profiles = begin
-      Telephony::SipProfile.where(account_id: account.id)
-    rescue StandardError
-      []
-    end
-    bindings = begin
-      Telephony::NumberBinding.where(account_id: account.id)
-    rescue StandardError
-      []
-    end
-    connections = begin
-      Telephony::ProviderConnection.where(account_id: account.id)
-    rescue StandardError
-      []
-    end
+  def calculate_telephony_status(account, context)
+    phone_inboxes = safe_phone_inboxes(account)
+    sip_profiles = context[:sip_profiles][account.id] || []
+    bindings = context[:bindings][account.id] || []
+    connections = context[:connections][account.id] || []
 
-    missing_janus = begin
-      connections.any? { |c| c.remote_janus_url.blank? }
-    rescue StandardError
-      false
-    end
-    unbound_lines = phone_inboxes.any? && bindings.empty?
+    return { state: 'none', label: 'Нет линий', profiles_count: 0 } if phone_inboxes.empty? && sip_profiles.empty?
 
-    if phone_inboxes.empty? && sip_profiles.empty?
-      { state: 'none', label: '?????? ??????????', profiles_count: 0 }
-    elsif missing_janus
-      { state: 'error', label: 'Janus URL ????????', profiles_count: sip_profiles.size }
-    elsif unbound_lines
-      { state: 'warning', label: '?????????? ?????? ????????????????', profiles_count: sip_profiles.size }
+    evaluate_telephony_diagnostics(sip_profiles, bindings, connections, phone_inboxes)
+  end
+
+  def safe_phone_inboxes(account)
+    account.inboxes.select { |i| i.channel_type.to_s.include?('Phone') }
+  rescue StandardError
+    []
+  end
+
+  def evaluate_telephony_diagnostics(sip_profiles, bindings, connections, phone_inboxes)
+    if connections.any? { |c| c.remote_janus_url.blank? }
+      { state: 'error', label: 'Janus URL не задан', profiles_count: sip_profiles.size }
+    elsif phone_inboxes.any? && bindings.empty?
+      { state: 'warning', label: 'Линии не привязаны', profiles_count: sip_profiles.size }
     else
-      { state: 'healthy', label: "#{sip_profiles.size} ???????????????? OK", profiles_count: sip_profiles.size }
+      { state: 'healthy', label: "#{sip_profiles.size} профилей OK", profiles_count: sip_profiles.size }
     end
   end
 
-  def calculate_medelement_status(account)
-    med_runs = begin
-      Integrations::Medelement::SyncRun.where(account_id: account.id).order(created_at: :desc).limit(5)
-    rescue StandardError
-      []
-    end
-    med_conflicts = begin
-      Integrations::Medelement::SyncConflict.where(account_id: account.id, resolved: false).count
-    rescue StandardError
-      0
-    end
+  def calculate_medelement_status(account, context)
+    conflicts = context[:med_conflicts][account.id] || 0
+    return { state: 'warning', label: "#{conflicts} конфликтов" } if conflicts.positive?
 
-    if med_conflicts.positive?
-      { state: 'warning', label: "#{med_conflicts} ????????????????????" }
-    elsif med_runs.any? { |r| r.status.to_s.include?('fail') || r.status.to_s.include?('error') }
-      { state: 'error', label: '???????????? ??????????????????????????' }
-    elsif med_runs.any?
-      { state: 'healthy', label: '?? ??????????' }
-    else
-      { state: 'none', label: '???? ??????????????????' }
-    end
+    evaluate_medelement_runs(context[:med_runs][account.id] || [])
+  end
+
+  def evaluate_medelement_runs(runs)
+    recent_runs = runs.sort_by { |r| r.created_at || Time.zone.at(0) }.last(5).reverse
+    return { state: 'none', label: 'Не настроен' } if recent_runs.empty?
+
+    has_error = recent_runs.any? { |r| r.status.to_s.include?('fail') || r.status.to_s.include?('error') }
+    has_error ? { state: 'error', label: 'Ошибка синхронизации' } : { state: 'healthy', label: 'В норме' }
   end
 
   def calculate_summary(accounts)
@@ -131,7 +149,8 @@ class SuperAdmin::HealthMatrixService
       needs_attention: accounts.count { |a| a[:needs_attention] },
       whatsapp_healthy: accounts.count { |a| a[:whatsapp][:state] == 'healthy' },
       telephony_healthy: accounts.count { |a| a[:telephony][:state] == 'healthy' },
-      git_sha: (defined?(GIT_HASH) ? GIT_HASH : '93611c276e3b')
+      git_sha: (defined?(GIT_HASH) ? GIT_HASH : '93611c276e3b'),
+      updated_at: Time.current.strftime('%H:%M:%S')
     }
   end
 end

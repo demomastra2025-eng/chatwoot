@@ -14,6 +14,7 @@ class SuperAdmin::DashboardController < SuperAdmin::ApplicationController
     @inboxes_count = number_with_delimiter(Inbox.count)
     @conversations_count = number_with_delimiter(Conversation.count)
 
-    @health_accounts, @health_summary = SuperAdmin::HealthMatrixService.build
+    force_refresh = params[:refresh].present? || params[:force_refresh].present?
+    @health_accounts, @health_summary = SuperAdmin::HealthMatrixService.build(force_refresh: force_refresh)
   end
 end

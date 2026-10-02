@@ -20,9 +20,23 @@ class SuperAdmin::AuditsController < SuperAdmin::ApplicationController
 
   def filter_audits
     scope = Audited::Audit.order(created_at: :desc)
+    scope = filter_by_model(scope)
+    filter_by_account(scope)
+  end
+
+  def filter_by_model(scope)
     scope = scope.where(auditable_type: params[:auditable_type]) if params[:auditable_type].present?
     scope = scope.where(action: params[:audit_action]) if params[:audit_action].present?
-    scope = scope.where(user_id: params[:user_id]) if params[:user_id].present?
-    scope
+    params[:user_id].present? ? scope.where(user_id: params[:user_id]) : scope
+  end
+
+  def filter_by_account(scope)
+    return scope if params[:account_id].blank?
+
+    acc_id = params[:account_id].to_i
+    scope.where(
+      "(auditable_type = 'Account' AND auditable_id = :acc_id) OR (associated_type = 'Account' AND associated_id = :acc_id)",
+      acc_id: acc_id
+    )
   end
 end
