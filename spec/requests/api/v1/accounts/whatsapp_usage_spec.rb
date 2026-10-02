@@ -5,6 +5,11 @@ RSpec.describe 'WhatsApp usage API', type: :request do
   let(:administrator) { create(:user, account: account, role: :administrator) }
   let(:path) { "/api/v1/accounts/#{account.id}/whatsapp_usage" }
 
+  before do
+    exchange_rate_service = instance_double(Whatsapp::MonthlyExchangeRateService, perform: nil)
+    allow(Whatsapp::MonthlyExchangeRateService).to receive(:new).and_return(exchange_rate_service)
+  end
+
   it 'returns usage for administrators and includes the official Cloud phone scope' do
     channel = create(:channel_whatsapp, account: account, phone_number: '+77010000004', provider: 'whatsapp_cloud',
                                         sync_templates: false, validate_provider_config: false)

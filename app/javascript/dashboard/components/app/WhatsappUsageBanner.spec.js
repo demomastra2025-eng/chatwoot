@@ -39,14 +39,16 @@ vi.mock('vue-i18n', () => ({
         (message, [name, value]) => message.replace(`{${name}}`, value),
         {
           'WHATSAPP_USAGE.BANNER_TITLE':
-            'WhatsApp Cloud · this UTC month: {deliveredCount} · service ≈ {amount}',
+            'WhatsApp Cloud · this UTC month: {deliveredCount} · total ≈ {amount}',
           'WHATSAPP_USAGE.BANNER_DETAILS':
-            'Templates: {templateCount} · unknown: {unknownCount} · UTC',
-          'WHATSAPP_USAGE.TEMPLATE_COSTS_SEPARATE': 'Template cost separate',
+            'Templates: {templateCount} · unpriced: {unpricedCount} · unknown: {unknownCount}',
           'WHATSAPP_USAGE.BANNER_TOOLTIP':
-            'Delivered count includes all messages this UTC month. The approximate amount is only the service-message subtotal; template prices and unknown-category message costs are excluded. Missing timestamps or billing data may make it incomplete. Meta free allowance is not subtracted again.',
+            'Service messages {serviceAmount}; templates {templateAmount}; rate month {rateMonth}; requested {requestedDate}; effective {effectiveDate}; {rate} KZT per USD; before volume discounts. Unpriced: {unpricedCount}; unknown: {unknownCount}.',
           'WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE': 'unavailable',
-          'WHATSAPP_USAGE.ESTIMATE_INCOMPLETE': 'Monthly data incomplete',
+          'WHATSAPP_USAGE.COUNT_UNAVAILABLE': '—',
+          'WHATSAPP_USAGE.VALUE_UNAVAILABLE': 'unavailable',
+          'WHATSAPP_USAGE.RATE_UNAVAILABLE': 'unavailable',
+          'WHATSAPP_USAGE.ESTIMATE_INCOMPLETE': 'Estimate incomplete',
           'WHATSAPP_USAGE.DISMISS': 'Dismiss WhatsApp usage banner',
         }[key] || key
       ),
@@ -62,10 +64,26 @@ const monthlyUsage = overrides => ({
   delivered_count: 12,
   service_delivered_count: 8,
   template_delivered_count: 3,
-  unknown_category_delivered_count: 1,
-  unknown_delivery_timestamp_count: 0,
-  chargeable_service_count: 0,
-  estimated_amount_kzt: 0,
+  chargeable_service_count: 6,
+  chargeable_template_count: 2,
+  chargeable_message_count: 8,
+  unpriced_billable_count: 0,
+  unknown_billable_count: 0,
+  estimated_service_amount_kzt: 800,
+  estimated_template_amount_kzt: 300,
+  estimated_amount_kzt: 1100,
+  estimated_amount_scope: 'billable_message_base_rates',
+  template_costs_included: true,
+  volume_discounts_included: false,
+  exchange_rate: {
+    month: '2026-10',
+    requested_date: '2026-10-01',
+    effective_date: '2026-10-01',
+    rate_per_usd: 500.25,
+    source_url: 'https://www.nationalbank.kz/',
+    available: true,
+  },
+  coverage_complete: true,
   estimate_complete: true,
   ...overrides,
 });
@@ -84,15 +102,22 @@ describe('WhatsappUsageBanner', () => {
     vi.useRealTimers();
   });
 
-  it('shows total delivered volume and labels the estimate as service-only', async () => {
+  it('shows the non-integer total including service messages and templates', async () => {
     mocks.getMonthlyUsage = vi.fn(async () =>
       response(
         monthlyUsage({
           service_delivered_count: 1008,
+          template_delivered_count: 3,
           chargeable_service_count: 8,
-          estimated_amount_kzt: 64,
+          chargeable_template_count: 2,
+          chargeable_message_count: 10,
+          estimated_service_amount_kzt: 64.25,
+          estimated_template_amount_kzt: 10.5,
+          estimated_amount_kzt: 74.75,
+          unpriced_billable_count: 2,
+          unknown_billable_count: 1,
           coverage_complete: false,
-          service_estimate_complete: false,
+          estimate_complete: false,
         })
       )
     );
@@ -102,15 +127,18 @@ describe('WhatsappUsageBanner', () => {
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledWith(11);
     expect(wrapper.text()).toContain('this UTC month: 12');
-    expect(wrapper.text()).toContain('64');
-    expect(wrapper.text()).toContain('Templates: 3 · unknown: 1 · UTC');
-    expect(wrapper.text()).toContain('Template cost separate');
-    expect(wrapper.text()).toContain('Monthly data incomplete');
-    expect(wrapper.get('[title]').attributes('title')).toContain(
-      'template prices and unknown-category message costs are excluded'
-    );
-    expect(wrapper.get('[title]').attributes('title')).toContain(
-      'Meta free allowance is not subtracted again'
+    expect(wrapper.get('p').text()).toContain('total ≈');
+    expect(wrapper.get('p').text()).toContain('74.75');
+    expect(wrapper.text()).toContain('Templates: 3 · unpriced: 2 · unknown: 1');
+    expect(wrapper.text()).toContain('Estimate incomplete');
+    expect(wrapper.text()).not.toContain('Template cost separate');
+    const tooltip = wrapper
+      .get('[title]')
+      .attributes('title')
+      .replace(/\s+/g, ' ');
+    expect(tooltip).toContain('Service messages KZT 64.25; templates KZT 10.5');
+    expect(tooltip).toContain(
+      'rate month 2026-10; requested 2026-10-01; effective 2026-10-01; 500.25 KZT per USD; before volume discounts'
     );
     expect(wrapper.find('section[role="status"]').exists()).toBe(true);
     expect(
@@ -119,6 +147,30 @@ describe('WhatsappUsageBanner', () => {
         .exists()
     ).toBe(true);
 
+    wrapper.unmount();
+  });
+
+  it('shows a confirmed free total without requiring an exchange rate', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          chargeable_service_count: 0,
+          chargeable_template_count: 0,
+          chargeable_message_count: 0,
+          estimated_service_amount_kzt: 0,
+          estimated_template_amount_kzt: 0,
+          estimated_amount_kzt: 0,
+          exchange_rate: { available: false },
+        })
+      )
+    );
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(wrapper.get('p').text().replace(/\s+/g, ' ')).toContain(
+      'total ≈ KZT 0'
+    );
+    expect(wrapper.text()).not.toContain('Estimate incomplete');
     wrapper.unmount();
   });
 
@@ -134,7 +186,81 @@ describe('WhatsappUsageBanner', () => {
     wrapper.unmount();
   });
 
+  it('does not show an unconfirmed zero while paid messages lack an exchange rate', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          estimated_service_amount_kzt: 0,
+          estimated_template_amount_kzt: 0,
+          estimated_amount_kzt: 0,
+          exchange_rate: { available: false },
+          estimate_complete: false,
+        })
+      )
+    );
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(wrapper.get('p').text()).toContain('total ≈ unavailable');
+    expect(wrapper.text()).toContain('Estimate incomplete');
+    wrapper.unmount();
+  });
+
+  it('retries a temporary initial failure while visible and clears stale usage', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'));
+    const visibilityDescriptor = Object.getOwnPropertyDescriptor(
+      document,
+      'visibilityState'
+    );
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible',
+    });
+    mocks.getMonthlyUsage = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce(response(monthlyUsage()));
+
+    const wrapper = mountBanner();
+    await flushPromises();
+    expect(wrapper.find('section').exists()).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await flushPromises();
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('section').exists()).toBe(true);
+
+    wrapper.unmount();
+    if (visibilityDescriptor)
+      Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
+    else delete document.visibilityState;
+    vi.useRealTimers();
+  });
+
+  it('stops automatic retries after access is denied', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'));
+    mocks.getMonthlyUsage = vi
+      .fn()
+      .mockRejectedValue({ response: { status: 403 } });
+
+    const wrapper = mountBanner();
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(120_000);
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await flushPromises();
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
+    expect(wrapper.find('section').exists()).toBe(false);
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it('hides accounts without an eligible official Cloud WhatsApp phone', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'));
     mocks.getMonthlyUsage = vi.fn(async () =>
       response(monthlyUsage({ eligible: false, official_cloud_phone_count: 0 }))
     );
@@ -143,18 +269,57 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(wrapper.find('section').exists()).toBe(false);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
 
     wrapper.unmount();
+    vi.useRealTimers();
   });
 
-  it('does not mark complete service coverage incomplete only for template costs', async () => {
+  it('keeps a complete estimate when priced template costs are included', async () => {
     mocks.getMonthlyUsage = vi.fn(async () =>
       response(
         monthlyUsage({
           template_delivered_count: 3,
-          unknown_category_delivered_count: 0,
           coverage_complete: true,
-          service_estimate_complete: true,
+          chargeable_template_count: 3,
+          chargeable_message_count: 9,
+          estimated_service_amount_kzt: 800,
+          estimated_template_amount_kzt: 350,
+          estimated_amount_kzt: 1150,
+          template_costs_included: true,
+          estimate_complete: true,
+        })
+      )
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(
+      wrapper.get('[title]').attributes('title').replace(/\s+/g, ' ')
+    ).toContain('templates KZT 350');
+    expect(wrapper.text()).not.toContain('Estimate incomplete');
+    expect(wrapper.find('section').exists()).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it('shows an unavailable estimate when the monthly FX rate is missing', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          estimated_service_amount_kzt: null,
+          estimated_template_amount_kzt: null,
+          estimated_amount_kzt: null,
+          exchange_rate: {
+            month: '2026-10',
+            requested_date: '2026-10-01',
+            effective_date: null,
+            rate_per_usd: null,
+            source_url: null,
+            available: false,
+          },
           estimate_complete: false,
         })
       )
@@ -163,9 +328,29 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('Template cost separate');
-    expect(wrapper.text()).not.toContain('Monthly data incomplete');
-    expect(wrapper.find('section').exists()).toBe(true);
+    expect(wrapper.get('p').text()).toContain('total ≈ unavailable');
+    expect(wrapper.get('p').text()).not.toContain('KZT 0');
+    expect(wrapper.text()).toContain('Estimate incomplete');
+    expect(wrapper.get('[title]').attributes('title')).toContain(
+      'effective unavailable; unavailable KZT per USD'
+    );
+
+    wrapper.unmount();
+  });
+
+  it('does not display absent billing counts as known zeroes', async () => {
+    const payload = monthlyUsage({
+      unpriced_billable_count: undefined,
+      unknown_billable_count: undefined,
+      estimate_complete: true,
+    });
+    mocks.getMonthlyUsage = vi.fn(async () => response(payload));
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('unpriced: — · unknown: —');
+    expect(wrapper.text()).toContain('Estimate incomplete');
 
     wrapper.unmount();
   });

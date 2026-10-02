@@ -13,6 +13,7 @@ RSpec.describe Whatsapp::RecordUsageDeliveryService do
   let(:status) do
     {
       id: 'wamid.usage-1', status: 'delivered', timestamp: Time.current.to_i.to_s,
+      recipient_id: '+77011234567',
       pricing: { category: 'service', type: 'regular', pricing_model: 'PMP', billable: false },
       conversation: { origin: { type: 'service' } }
     }.with_indifferent_access
@@ -32,7 +33,8 @@ RSpec.describe Whatsapp::RecordUsageDeliveryService do
       pricing_type: 'regular',
       pricing_model: 'PMP',
       billable: false,
-      conversation_origin_type: 'service'
+      conversation_origin_type: 'service',
+      recipient_country: 'KZ'
     )
     expect(record.delivered_at.to_i).to eq(status[:timestamp].to_i)
   end
@@ -47,6 +49,30 @@ RSpec.describe Whatsapp::RecordUsageDeliveryService do
 
     expect(WhatsappUsageDelivery.count).to eq(1)
     expect(first_record.reload.delivered_at.to_i).to eq(status[:timestamp].to_i)
+  end
+
+  it 'fills a missing recipient country from a later status retry without creating a duplicate' do
+    described_class.new(inbox: channel.inbox, message: message, status: status.except(:recipient_id)).perform
+    record = WhatsappUsageDelivery.find_by!(phone_number: '77010000003', provider_message_id: 'wamid.usage-1')
+    expect(record.recipient_country).to be_nil
+
+    described_class.new(inbox: channel.inbox, message: message, status: status).perform
+
+    expect(WhatsappUsageDelivery.count).to eq(1)
+    expect(record.reload.recipient_country).to eq('KZ')
+  end
+
+  it 'normalizes Meta authentication international webhook category to the canonical catalog category' do
+    international_status = status.deep_dup
+    international_status[:pricing][:category] = 'authentication_international'
+    international_status[:pricing][:billable] = true
+
+    described_class.new(inbox: channel.inbox, message: message, status: international_status).perform
+
+    expect(WhatsappUsageDelivery.find_by!(provider_message_id: 'wamid.usage-1')).to have_attributes(
+      category: 'authentication-international',
+      billable: true
+    )
   end
 
   it 'treats read-before-delivered as delivery evidence without using the read time as the delivery time' do

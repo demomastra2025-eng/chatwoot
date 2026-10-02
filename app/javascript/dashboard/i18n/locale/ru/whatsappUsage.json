@@ -1,11 +1,13 @@
 {
   "WHATSAPP_USAGE": {
-    "BANNER_TITLE": "WhatsApp Cloud · за месяц: {deliveredCount} · сервисные ≈ {amount}",
-    "BANNER_DETAILS": "Шаблоны: {templateCount} · неизвестно: {unknownCount} · UTC",
-    "TEMPLATE_COSTS_SEPARATE": "Цена шаблонов отдельно",
-    "BANNER_TOOLTIP": "Счётчик включает все сообщения, доставленные за месяц по UTC, в том числе шаблоны и сообщения с неизвестной категорией. Сумма — приблизительная оценка только сервисных сообщений: стоимость шаблонов и сообщений неизвестной категории в неё не входит. Отсутствие временных отметок или данных о тарификации может сделать оценку неполной. Бесплатная квота Meta повторно не вычитается.",
+    "BANNER_TITLE": "WhatsApp Cloud · за месяц: {deliveredCount} · всего ≈ {amount}",
+    "BANNER_DETAILS": "Шаблоны: {templateCount} · без цены: {unpricedCount} · платность неизвестна: {unknownCount}",
+    "BANNER_TOOLTIP": "Приблизительная сумма за {month}: сервисные сообщения {serviceAmount} и шаблоны {templateAmount}. Расчёт использует опубликованные базовые цены Meta и курс USD/KZT за {rateMonth}, запрошенный на {requestedDate} и действовавший с {effectiveDate} ({rate} KZT за USD). Объёмные скидки не учтены, поэтому сумма в счёте может отличаться. Платные сообщения без цены: {unpricedCount}; сообщения с неизвестной платностью: {unknownCount}.",
     "ESTIMATE_UNAVAILABLE": "нет данных",
-    "ESTIMATE_INCOMPLETE": "Данные за месяц неполные",
+    "COUNT_UNAVAILABLE": "—",
+    "VALUE_UNAVAILABLE": "нет данных",
+    "RATE_UNAVAILABLE": "нет данных",
+    "ESTIMATE_INCOMPLETE": "Оценка неполная",
     "DISMISS": "Закрыть баннер использования WhatsApp"
   }
 }

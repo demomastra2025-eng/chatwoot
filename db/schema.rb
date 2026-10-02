@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_10_02_093000) do
+ActiveRecord::Schema[7.1].define(version: 2026_10_02_193100) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3333,9 +3333,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_10_02_093000) do
     t.string "conversation_origin_type"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "recipient_country", limit: 2
     t.index ["account_id", "delivered_at"], name: "index_whatsapp_usage_deliveries_on_account_and_delivery_time"
     t.index ["account_id", "received_at"], name: "index_whatsapp_usage_deliveries_on_account_and_received_time"
     t.index ["phone_number", "provider_message_id"], name: "index_whatsapp_usage_deliveries_on_phone_and_provider_id", unique: true
+  end
+
+  create_table "whatsapp_usage_exchange_rates", force: :cascade do |t|
+    t.date "month_start", null: false
+    t.date "requested_date", null: false
+    t.date "effective_date"
+    t.decimal "rate_per_usd", precision: 20, scale: 10
+    t.decimal "nominal_rate", precision: 20, scale: 10
+    t.integer "nominal_units"
+    t.string "status", default: "unavailable", null: false
+    t.string "source_url"
+    t.datetime "fetched_at", precision: 6
+    t.datetime "retry_after", precision: 6
+    t.string "error_code", limit: 64
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["month_start"], name: "index_whatsapp_usage_exchange_rates_on_month_start", unique: true
   end
 
   create_table "whatsapp_usage_tracking_states", force: :cascade do |t|

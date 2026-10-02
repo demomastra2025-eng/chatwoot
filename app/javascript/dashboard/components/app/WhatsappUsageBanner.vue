@@ -15,6 +15,8 @@ const { isAdmin } = useAdmin();
 const usage = ref(null);
 const isDismissed = ref(false);
 const requestInProgress = ref(false);
+const accessDenied = ref(false);
+const hasNoCloudPhones = ref(false);
 let requestGeneration = 0;
 let lastFetchedAt = 0;
 let monthBoundaryTimeout = null;
@@ -31,54 +33,142 @@ const shouldShowBanner = computed(
     !isDismissed.value
 );
 
-const deliveredCount = computed(() =>
-  Number(usage.value?.delivered_count || 0)
-);
-const templateDeliveredCount = computed(() =>
-  Number(usage.value?.template_delivered_count || 0)
-);
-const unknownCategoryCount = computed(() =>
-  Number(usage.value?.unknown_category_delivered_count || 0)
-);
-
 const MAX_TIMEOUT_DELAY = 2 ** 31 - 1;
 
 const formatLocale = computed(() =>
   String(locale.value || 'en').replace(/_/g, '-')
 );
 
-const numberFormatter = computed(
-  () =>
-    new Intl.NumberFormat(formatLocale.value, {
-      maximumFractionDigits: 0,
-    })
-);
+const toFiniteNumber = value => {
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
 
-const formattedAmount = computed(() => {
-  const rawAmount = usage.value?.estimated_amount_kzt;
-  if (rawAmount === null || rawAmount === undefined || rawAmount === '') {
-    return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const formatCount = value => {
+  const count = toFiniteNumber(value);
+  if (count === null) return t('WHATSAPP_USAGE.COUNT_UNAVAILABLE');
+
+  return new Intl.NumberFormat(formatLocale.value, {
+    maximumFractionDigits: 0,
+  }).format(count);
+};
+
+const formatKztAmount = value => {
+  const amount = toFiniteNumber(value);
+  if (amount === null) return null;
+  // An explicit zero from the backend does not require currency conversion.
+  // Missing amounts remain unavailable rather than being converted to zero.
+  if (usage.value?.exchange_rate?.available !== true) {
+    const isConfirmedFree =
+      amount === 0 &&
+      toFiniteNumber(usage.value?.chargeable_message_count) === 0;
+    if (!isConfirmedFree) return null;
   }
-
-  const amount = Number(rawAmount);
-  if (!Number.isFinite(amount)) return null;
 
   return new Intl.NumberFormat(formatLocale.value, {
     style: 'currency',
-    currency: usage.value?.currency || 'KZT',
-    maximumFractionDigits: 0,
+    currency: 'KZT',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(amount);
-});
+};
 
+const formattedAmount = computed(() =>
+  formatKztAmount(usage.value?.estimated_amount_kzt)
+);
+const formattedServiceAmount = computed(
+  () =>
+    formatKztAmount(usage.value?.estimated_service_amount_kzt) ||
+    t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE')
+);
+const formattedTemplateAmount = computed(
+  () =>
+    formatKztAmount(usage.value?.estimated_template_amount_kzt) ||
+    t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE')
+);
 const formattedDeliveredCount = computed(() =>
-  numberFormatter.value.format(deliveredCount.value)
+  formatCount(usage.value?.delivered_count)
 );
 const formattedTemplateCount = computed(() =>
-  numberFormatter.value.format(templateDeliveredCount.value)
+  formatCount(usage.value?.template_delivered_count)
 );
-const formattedUnknownCategoryCount = computed(() =>
-  numberFormatter.value.format(unknownCategoryCount.value)
+const formattedUnpricedCount = computed(() =>
+  formatCount(usage.value?.unpriced_billable_count)
 );
+const formattedUnknownBillableCount = computed(() =>
+  formatCount(usage.value?.unknown_billable_count)
+);
+const formattedRate = computed(() => {
+  if (usage.value?.exchange_rate?.available !== true) {
+    return t('WHATSAPP_USAGE.RATE_UNAVAILABLE');
+  }
+
+  const rate = toFiniteNumber(usage.value.exchange_rate.rate_per_usd);
+  if (rate === null) return t('WHATSAPP_USAGE.RATE_UNAVAILABLE');
+
+  return new Intl.NumberFormat(formatLocale.value, {
+    maximumFractionDigits: 4,
+  }).format(rate);
+});
+
+const isEstimateIncomplete = computed(() => {
+  const data = usage.value;
+  if (!data) return true;
+  const requiresExchangeRate =
+    toFiniteNumber(data.chargeable_message_count) !== 0;
+  const hasExchangeRate =
+    data.exchange_rate?.available === true &&
+    Boolean(data.exchange_rate?.month) &&
+    Boolean(data.exchange_rate?.requested_date) &&
+    Boolean(data.exchange_rate?.effective_date) &&
+    toFiniteNumber(data.exchange_rate?.rate_per_usd) !== null;
+
+  return (
+    data.estimate_complete !== true ||
+    data.coverage_complete === false ||
+    data.template_costs_included !== true ||
+    data.estimated_amount_scope !== 'billable_message_base_rates' ||
+    data.volume_discounts_included !== false ||
+    (requiresExchangeRate && !hasExchangeRate) ||
+    toFiniteNumber(data.delivered_count) === null ||
+    toFiniteNumber(data.template_delivered_count) === null ||
+    toFiniteNumber(data.chargeable_service_count) === null ||
+    toFiniteNumber(data.chargeable_template_count) === null ||
+    toFiniteNumber(data.chargeable_message_count) === null ||
+    toFiniteNumber(data.unpriced_billable_count) === null ||
+    toFiniteNumber(data.unpriced_billable_count) > 0 ||
+    toFiniteNumber(data.unknown_billable_count) === null ||
+    toFiniteNumber(data.unknown_billable_count) > 0 ||
+    formattedServiceAmount.value === t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE') ||
+    formattedTemplateAmount.value ===
+      t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE') ||
+    formattedAmount.value === null
+  );
+});
+
+const bannerTooltip = computed(() => {
+  const rate = usage.value?.exchange_rate;
+
+  return t('WHATSAPP_USAGE.BANNER_TOOLTIP', {
+    month: usage.value?.month || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
+    rateMonth:
+      rate?.month ||
+      usage.value?.month ||
+      t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
+    serviceAmount: formattedServiceAmount.value,
+    templateAmount: formattedTemplateAmount.value,
+    requestedDate:
+      rate?.requested_date || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
+    effectiveDate:
+      rate?.effective_date || t('WHATSAPP_USAGE.VALUE_UNAVAILABLE'),
+    rate: formattedRate.value,
+    unpricedCount: formattedUnpricedCount.value,
+    unknownCount: formattedUnknownBillableCount.value,
+  });
+});
 
 const currentUtcMonth = () => new Date().toISOString().slice(0, 7);
 const isUsageMonthStale = () =>
@@ -104,6 +194,7 @@ const fetchUsage = async ({ force = false } = {}) => {
 
   const usageMonthChanged = isUsageMonthStale();
 
+  if (accessDenied.value) return;
   if (isDismissed.value && !force && !usageMonthChanged) return;
   if (requestInProgress.value) return;
   if (!force && !usageMonthChanged && Date.now() - lastFetchedAt < 30_000) {
@@ -133,15 +224,18 @@ const fetchUsage = async ({ force = false } = {}) => {
     ) {
       setUsage(null);
       isDismissed.value = false;
+      hasNoCloudPhones.value = true;
       return;
     }
 
+    hasNoCloudPhones.value = false;
     setUsage(payload);
-  } catch {
+  } catch (error) {
     if (generation === requestGeneration) {
       // Keep endpoint failures and authorization changes from exposing stale data.
       usage.value = null;
       isDismissed.value = false;
+      accessDenied.value = [401, 403].includes(error?.response?.status);
     }
   } finally {
     if (generation === requestGeneration) requestInProgress.value = false;
@@ -156,9 +250,15 @@ const { pause: pauseUsagePolling, resume: resumeUsagePolling } = useIntervalFn(
 );
 
 watch(
-  [shouldShowBanner, isAdmin, documentVisibility],
-  ([isVisible, isCurrentAdmin, visibility]) => {
-    if (isVisible && isCurrentAdmin && visibility === 'visible') {
+  [isDismissed, isAdmin, documentVisibility, accessDenied, hasNoCloudPhones],
+  ([dismissed, isCurrentAdmin, visibility, denied, noCloudPhones]) => {
+    if (
+      !dismissed &&
+      isCurrentAdmin &&
+      visibility === 'visible' &&
+      !denied &&
+      !noCloudPhones
+    ) {
       resumeUsagePolling();
     } else {
       pauseUsagePolling();
@@ -220,6 +320,8 @@ watch(
     usage.value = null;
     isDismissed.value = false;
 
+    accessDenied.value = false;
+    hasNoCloudPhones.value = false;
     if (nextAccountId && nextIsAdmin) fetchUsage({ force: true });
   },
   { immediate: true, flush: 'sync' }
@@ -246,7 +348,7 @@ onUnmounted(() => {
     aria-live="polite"
     class="flex items-start justify-between gap-3 border-y border-n-ruby-5 bg-n-ruby-3 px-4 py-2 text-n-ruby-12"
   >
-    <div class="min-w-0 flex-1" :title="t('WHATSAPP_USAGE.BANNER_TOOLTIP')">
+    <div class="min-w-0 flex-1" :title="bannerTooltip">
       <p
         class="m-0 break-words text-xs font-medium leading-4 sm:text-sm sm:leading-5"
       >
@@ -257,35 +359,26 @@ onUnmounted(() => {
           })
         }}
       </p>
-      <div class="mt-0.5 text-[11px] leading-4 sm:text-xs">
+      <div
+        class="mt-0.5 flex min-w-0 items-baseline gap-2 text-[11px] leading-4 sm:text-xs"
+      >
         <p
-          class="m-0 truncate whitespace-nowrap text-[10px] leading-4 sm:text-xs"
+          class="m-0 min-w-0 flex-1 truncate whitespace-nowrap text-[10px] leading-4 sm:text-xs"
         >
           {{
             t('WHATSAPP_USAGE.BANNER_DETAILS', {
               templateCount: formattedTemplateCount,
-              unknownCount: formattedUnknownCategoryCount,
+              unpricedCount: formattedUnpricedCount,
+              unknownCount: formattedUnknownBillableCount,
             })
           }}
         </p>
-        <p
-          class="m-0 flex items-center justify-between gap-2 whitespace-nowrap text-[10px] leading-4 sm:text-[11px]"
+        <span
+          v-if="isEstimateIncomplete"
+          class="shrink-0 whitespace-nowrap text-[10px] font-medium leading-4 sm:text-[11px]"
         >
-          <span>{{ t('WHATSAPP_USAGE.TEMPLATE_COSTS_SEPARATE') }}</span>
-          <span
-            v-if="
-              usage.unknown_delivery_timestamp_count > 0 ||
-              usage.unknown_category_delivered_count > 0 ||
-              usage.unknown_service_billability_count > 0 ||
-              usage.coverage_complete === false ||
-              usage.service_estimate_complete === false
-            "
-            class="shrink-0 font-medium"
-            :title="t('WHATSAPP_USAGE.BANNER_TOOLTIP')"
-          >
-            {{ t('WHATSAPP_USAGE.ESTIMATE_INCOMPLETE') }}
-          </span>
-        </p>
+          {{ t('WHATSAPP_USAGE.ESTIMATE_INCOMPLETE') }}
+        </span>
       </div>
     </div>
     <button

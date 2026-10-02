@@ -15,7 +15,7 @@ class WhatsappUsageDelivery < ApplicationRecord
     return if phone_number.blank? || provider_message_id.blank?
 
     delivery = find_or_create_by!(phone_number: phone_number, provider_message_id: provider_message_id) do |record|
-      assign_initial_delivery_attributes(record, inbox:, message:, status:)
+      assign_initial_delivery_attributes(record, inbox: inbox, message: message, status: status)
     end
 
     fill_missing_delivery_metadata(delivery, status)
@@ -33,7 +33,8 @@ class WhatsappUsageDelivery < ApplicationRecord
       category: metadata[:category],
       pricing_type: metadata[:pricing_type],
       pricing_model: metadata[:pricing_model],
-      conversation_origin_type: metadata[:conversation_origin_type]
+      conversation_origin_type: metadata[:conversation_origin_type],
+      recipient_country: metadata[:recipient_country]
     )
     record.billable = metadata[:billable] if metadata[:billable_present]
   end
@@ -50,7 +51,7 @@ class WhatsappUsageDelivery < ApplicationRecord
   private_class_method :fill_missing_delivery_metadata
 
   def self.missing_delivery_attributes(delivery, metadata)
-    %i[delivered_at category pricing_type pricing_model conversation_origin_type].each_with_object({}) do |attribute, updates|
+    %i[delivered_at category pricing_type pricing_model conversation_origin_type recipient_country].each_with_object({}) do |attribute, updates|
       value = metadata[attribute]
       updates[attribute] = value if delivery.public_send(attribute).blank? && value.present?
     end
@@ -66,7 +67,8 @@ class WhatsappUsageDelivery < ApplicationRecord
       pricing_model: safe_metadata_value(pricing[:pricing_model]),
       billable: boolean_value(pricing[:billable]),
       billable_present: pricing.key?(:billable),
-      conversation_origin_type: status.dig(:conversation, :origin, :type).to_s.presence
+      conversation_origin_type: status.dig(:conversation, :origin, :type).to_s.presence,
+      recipient_country: Whatsapp::UsageRecipientCountry.resolve(status[:recipient_id])
     }
   end
   private_class_method :provider_metadata
@@ -80,6 +82,7 @@ class WhatsappUsageDelivery < ApplicationRecord
 
   def self.normalized_category(value)
     category = value.to_s.downcase.strip
+    category = 'authentication-international' if category == 'authentication_international'
     category if CATEGORY_VALUES.include?(category)
   end
   private_class_method :normalized_category

@@ -1,11 +1,13 @@
 {
   "WHATSAPP_USAGE": {
-    "BANNER_TITLE": "WhatsApp Cloud · this UTC month: {deliveredCount} · service ≈ {amount}",
-    "BANNER_DETAILS": "Templates: {templateCount} · unknown: {unknownCount} · UTC",
-    "TEMPLATE_COSTS_SEPARATE": "Template cost separate",
-    "BANNER_TOOLTIP": "Delivered count includes all messages delivered in this UTC month, including templates and messages with unknown categories. The approximate amount is a service-message subtotal only: template prices and unknown-category message costs are excluded. Missing timestamps or billing data can make the subtotal incomplete. Meta's free allowance is not subtracted again.",
+    "BANNER_TITLE": "WhatsApp Cloud · this UTC month: {deliveredCount} · total ≈ {amount}",
+    "BANNER_DETAILS": "Templates: {templateCount} · unpriced: {unpricedCount} · unknown: {unknownCount}",
+    "BANNER_TOOLTIP": "Approximate total for {month}: service messages {serviceAmount} plus templates {templateAmount}. It uses Meta's published base prices and the USD/KZT rate for {rateMonth}, requested for {requestedDate} and effective {effectiveDate} ({rate} KZT per USD). Volume discounts are not included, so your invoice may differ. Billable messages without a price: {unpricedCount}; messages with unknown billability: {unknownCount}.",
     "ESTIMATE_UNAVAILABLE": "unavailable",
-    "ESTIMATE_INCOMPLETE": "Monthly data incomplete",
+    "COUNT_UNAVAILABLE": "—",
+    "VALUE_UNAVAILABLE": "unavailable",
+    "RATE_UNAVAILABLE": "unavailable",
+    "ESTIMATE_INCOMPLETE": "Estimate incomplete",
     "DISMISS": "Dismiss WhatsApp usage banner"
   }
 }

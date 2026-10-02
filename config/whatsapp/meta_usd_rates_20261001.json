@@ -1,0 +1,1081 @@
+{
+  "effective_from": "2026-10-01",
+  "effective_until_exclusive": "2027-01-01",
+  "currency": "USD",
+  "rate_basis": "published_base_rate",
+  "volume_tier": "base",
+  "source": {
+    "page": "https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing/",
+    "rate_card_sha256": "3e996b56a86d9e7f70a9cfded896c8f39a19cb0e88683ed06b28f191856c9260",
+    "rate_card_effective_date": "2026-10-01",
+    "sheet": "List rates",
+    "sheet_row_count": 1017,
+    "market_count": 47
+  },
+  "country_to_market": {
+    "AR": "Argentina",
+    "BD": "Bangladesh",
+    "BR": "Brazil",
+    "CL": "Chile",
+    "CO": "Colombia",
+    "EG": "Egypt",
+    "FR": "France",
+    "DE": "Germany",
+    "HK": "Hong Kong",
+    "HU": "Hungary",
+    "IN": "India",
+    "ID": "Indonesia",
+    "IL": "Israel",
+    "IQ": "Iraq",
+    "IT": "Italy",
+    "KZ": "Kazakhstan",
+    "KW": "Kuwait",
+    "MY": "Malaysia",
+    "MX": "Mexico",
+    "MA": "Morocco",
+    "NP": "Nepal",
+    "NL": "Netherlands",
+    "NG": "Nigeria",
+    "OM": "Oman",
+    "PK": "Pakistan",
+    "PE": "Peru",
+    "PL": "Poland",
+    "QA": "Qatar",
+    "RO": "Romania",
+    "RU": "Russia",
+    "SA": "Saudi Arabia",
+    "SG": "Singapore",
+    "LK": "Sri Lanka",
+    "ZA": "South Africa",
+    "ES": "Spain",
+    "TR": "Turkey",
+    "UA": "Ukraine",
+    "AE": "United Arab Emirates",
+    "GB": "United Kingdom",
+    "CA": "North America",
+    "US": "North America",
+    "DZ": "Rest of Africa",
+    "AO": "Rest of Africa",
+    "BJ": "Rest of Africa",
+    "BW": "Rest of Africa",
+    "BF": "Rest of Africa",
+    "BI": "Rest of Africa",
+    "CM": "Rest of Africa",
+    "TD": "Rest of Africa",
+    "CG": "Rest of Africa",
+    "ER": "Rest of Africa",
+    "ET": "Rest of Africa",
+    "GA": "Rest of Africa",
+    "GM": "Rest of Africa",
+    "GH": "Rest of Africa",
+    "GW": "Rest of Africa",
+    "CI": "Rest of Africa",
+    "KE": "Rest of Africa",
+    "LS": "Rest of Africa",
+    "LR": "Rest of Africa",
+    "LY": "Rest of Africa",
+    "MG": "Rest of Africa",
+    "MW": "Rest of Africa",
+    "ML": "Rest of Africa",
+    "MR": "Rest of Africa",
+    "MZ": "Rest of Africa",
+    "NA": "Rest of Africa",
+    "NE": "Rest of Africa",
+    "RW": "Rest of Africa",
+    "SN": "Rest of Africa",
+    "SL": "Rest of Africa",
+    "SO": "Rest of Africa",
+    "SS": "Rest of Africa",
+    "SD": "Rest of Africa",
+    "SZ": "Rest of Africa",
+    "TZ": "Rest of Africa",
+    "TG": "Rest of Africa",
+    "TN": "Rest of Africa",
+    "UG": "Rest of Africa",
+    "ZM": "Rest of Africa",
+    "ZW": "Rest of Africa",
+    "AF": "Rest of Asia Pacific",
+    "AU": "Rest of Asia Pacific",
+    "KH": "Rest of Asia Pacific",
+    "CN": "Rest of Asia Pacific",
+    "JP": "Rest of Asia Pacific",
+    "LA": "Rest of Asia Pacific",
+    "MN": "Rest of Asia Pacific",
+    "NZ": "Rest of Asia Pacific",
+    "PG": "Rest of Asia Pacific",
+    "PH": "Rest of Asia Pacific",
+    "TW": "Rest of Asia Pacific",
+    "TJ": "Rest of Asia Pacific",
+    "TH": "Rest of Asia Pacific",
+    "TM": "Rest of Asia Pacific",
+    "UZ": "Rest of Asia Pacific",
+    "VN": "Rest of Asia Pacific",
+    "AL": "Rest of Central & Eastern Europe",
+    "AM": "Rest of Central & Eastern Europe",
+    "AZ": "Rest of Central & Eastern Europe",
+    "BY": "Rest of Central & Eastern Europe",
+    "BG": "Rest of Central & Eastern Europe",
+    "HR": "Rest of Central & Eastern Europe",
+    "CZ": "Rest of Central & Eastern Europe",
+    "GE": "Rest of Central & Eastern Europe",
+    "GR": "Rest of Central & Eastern Europe",
+    "LV": "Rest of Central & Eastern Europe",
+    "LT": "Rest of Central & Eastern Europe",
+    "MD": "Rest of Central & Eastern Europe",
+    "MK": "Rest of Central & Eastern Europe",
+    "RS": "Rest of Central & Eastern Europe",
+    "SK": "Rest of Central & Eastern Europe",
+    "SI": "Rest of Central & Eastern Europe",
+    "AT": "Rest of Western Europe",
+    "BE": "Rest of Western Europe",
+    "DK": "Rest of Western Europe",
+    "FI": "Rest of Western Europe",
+    "IE": "Rest of Western Europe",
+    "NO": "Rest of Western Europe",
+    "PT": "Rest of Western Europe",
+    "SE": "Rest of Western Europe",
+    "CH": "Rest of Western Europe",
+    "BO": "Rest of Latin America",
+    "CR": "Rest of Latin America",
+    "DO": "Rest of Latin America",
+    "EC": "Rest of Latin America",
+    "SV": "Rest of Latin America",
+    "GT": "Rest of Latin America",
+    "HT": "Rest of Latin America",
+    "HN": "Rest of Latin America",
+    "JM": "Rest of Latin America",
+    "NI": "Rest of Latin America",
+    "PA": "Rest of Latin America",
+    "PY": "Rest of Latin America",
+    "PR": "Rest of Latin America",
+    "UY": "Rest of Latin America",
+    "VE": "Rest of Latin America",
+    "BH": "Rest of Middle East",
+    "JO": "Rest of Middle East",
+    "LB": "Rest of Middle East",
+    "YE": "Rest of Middle East",
+    "AD": "Other",
+    "AG": "Other",
+    "AI": "Other",
+    "AQ": "Other",
+    "AS": "Other",
+    "AW": "Other",
+    "AX": "Other",
+    "BA": "Other",
+    "BB": "Other",
+    "BL": "Other",
+    "BM": "Other",
+    "BN": "Other",
+    "BQ": "Other",
+    "BS": "Other",
+    "BT": "Other",
+    "BZ": "Other",
+    "CC": "Other",
+    "CD": "Other",
+    "CF": "Other",
+    "CK": "Other",
+    "CU": "Other",
+    "CV": "Other",
+    "CW": "Other",
+    "CX": "Other",
+    "CY": "Other",
+    "DJ": "Other",
+    "DM": "Other",
+    "EE": "Other",
+    "EH": "Other",
+    "FJ": "Other",
+    "FK": "Other",
+    "FM": "Other",
+    "FO": "Other",
+    "GD": "Other",
+    "GF": "Other",
+    "GG": "Other",
+    "GI": "Other",
+    "GL": "Other",
+    "GN": "Other",
+    "GP": "Other",
+    "GQ": "Other",
+    "GS": "Other",
+    "GU": "Other",
+    "GY": "Other",
+    "HM": "Other",
+    "IM": "Other",
+    "IO": "Other",
+    "IR": "Other",
+    "IS": "Other",
+    "JE": "Other",
+    "KG": "Other",
+    "KI": "Other",
+    "KM": "Other",
+    "KN": "Other",
+    "KP": "Other",
+    "KR": "Other",
+    "KY": "Other",
+    "LC": "Other",
+    "LI": "Other",
+    "LU": "Other",
+    "MC": "Other",
+    "ME": "Other",
+    "MF": "Other",
+    "MH": "Other",
+    "MM": "Other",
+    "MO": "Other",
+    "MP": "Other",
+    "MQ": "Other",
+    "MS": "Other",
+    "MT": "Other",
+    "MU": "Other",
+    "MV": "Other",
+    "NC": "Other",
+    "NF": "Other",
+    "NR": "Other",
+    "NU": "Other",
+    "PF": "Other",
+    "PM": "Other",
+    "PN": "Other",
+    "PS": "Other",
+    "PW": "Other",
+    "RE": "Other",
+    "SB": "Other",
+    "SC": "Other",
+    "SH": "Other",
+    "SJ": "Other",
+    "SM": "Other",
+    "SR": "Other",
+    "ST": "Other",
+    "SX": "Other",
+    "SY": "Other",
+    "TC": "Other",
+    "TF": "Other",
+    "TK": "Other",
+    "TL": "Other",
+    "TO": "Other",
+    "TT": "Other",
+    "TV": "Other",
+    "UM": "Other",
+    "VA": "Other",
+    "VC": "Other",
+    "VG": "Other",
+    "VI": "Other",
+    "VU": "Other",
+    "WF": "Other",
+    "WS": "Other",
+    "YT": "Other",
+    "BV": "Other"
+  },
+  "markets": {
+    "Argentina": {
+      "country_codes": [
+        "AR"
+      ],
+      "rates": {
+        "marketing": "0.0618",
+        "utility": "0.026",
+        "authentication": "0.026",
+        "authentication-international": null,
+        "service": "0.026",
+        "referral_conversion": null
+      }
+    },
+    "Bangladesh": {
+      "country_codes": [
+        "BD"
+      ],
+      "rates": {
+        "marketing": "0.0732",
+        "utility": "0.0037",
+        "authentication": "0.0037",
+        "authentication-international": "0.096",
+        "service": "0.0037",
+        "referral_conversion": null
+      }
+    },
+    "Brazil": {
+      "country_codes": [
+        "BR"
+      ],
+      "rates": {
+        "marketing": "0.0625",
+        "utility": "0.0068",
+        "authentication": "0.0068",
+        "authentication-international": null,
+        "service": "0.0068",
+        "referral_conversion": null
+      }
+    },
+    "Chile": {
+      "country_codes": [
+        "CL"
+      ],
+      "rates": {
+        "marketing": "0.0889",
+        "utility": "0.02",
+        "authentication": "0.02",
+        "authentication-international": null,
+        "service": "0.02",
+        "referral_conversion": null
+      }
+    },
+    "Colombia": {
+      "country_codes": [
+        "CO"
+      ],
+      "rates": {
+        "marketing": "0.0125",
+        "utility": "0.0008",
+        "authentication": "0.0008",
+        "authentication-international": null,
+        "service": "0.0008",
+        "referral_conversion": null
+      }
+    },
+    "Egypt": {
+      "country_codes": [
+        "EG"
+      ],
+      "rates": {
+        "marketing": "0.0644",
+        "utility": "0.0036",
+        "authentication": "0.0036",
+        "authentication-international": "0.065",
+        "service": "0.0036",
+        "referral_conversion": null
+      }
+    },
+    "France": {
+      "country_codes": [
+        "FR"
+      ],
+      "rates": {
+        "marketing": "0.0859",
+        "utility": "0.03",
+        "authentication": "0.03",
+        "authentication-international": null,
+        "service": "0.03",
+        "referral_conversion": null
+      }
+    },
+    "Germany": {
+      "country_codes": [
+        "DE"
+      ],
+      "rates": {
+        "marketing": "0.1365",
+        "utility": "0.055",
+        "authentication": "0.055",
+        "authentication-international": null,
+        "service": "0.055",
+        "referral_conversion": null
+      }
+    },
+    "Hong Kong": {
+      "country_codes": [
+        "HK"
+      ],
+      "rates": {
+        "marketing": "0.0732",
+        "utility": "0.026",
+        "authentication": "0.026",
+        "authentication-international": null,
+        "service": "0.026",
+        "referral_conversion": null
+      }
+    },
+    "Hungary": {
+      "country_codes": [
+        "HU"
+      ],
+      "rates": {
+        "marketing": "0.086",
+        "utility": "0.035",
+        "authentication": "0.035",
+        "authentication-international": null,
+        "service": "0.035",
+        "referral_conversion": null
+      }
+    },
+    "India": {
+      "country_codes": [
+        "IN"
+      ],
+      "rates": {
+        "marketing": "0.0118",
+        "utility": "0.0014",
+        "authentication": "0.0014",
+        "authentication-international": "0.0304",
+        "service": "0.0014",
+        "referral_conversion": null
+      }
+    },
+    "Indonesia": {
+      "country_codes": [
+        "ID"
+      ],
+      "rates": {
+        "marketing": "0.0411",
+        "utility": "0.025",
+        "authentication": "0.025",
+        "authentication-international": "0.136",
+        "service": "0.025",
+        "referral_conversion": null
+      }
+    },
+    "Israel": {
+      "country_codes": [
+        "IL"
+      ],
+      "rates": {
+        "marketing": "0.0353",
+        "utility": "0.0053",
+        "authentication": "0.0053",
+        "authentication-international": null,
+        "service": "0.0053",
+        "referral_conversion": null
+      }
+    },
+    "Iraq": {
+      "country_codes": [
+        "IQ"
+      ],
+      "rates": {
+        "marketing": "0.0341",
+        "utility": "0.0079",
+        "authentication": "0.0079",
+        "authentication-international": "0.128",
+        "service": "0.0079",
+        "referral_conversion": null
+      }
+    },
+    "Italy": {
+      "country_codes": [
+        "IT"
+      ],
+      "rates": {
+        "marketing": "0.0795",
+        "utility": "0.03",
+        "authentication": "0.03",
+        "authentication-international": null,
+        "service": "0.03",
+        "referral_conversion": null
+      }
+    },
+    "Kazakhstan": {
+      "country_codes": [
+        "KZ"
+      ],
+      "rates": {
+        "marketing": "0.0604",
+        "utility": "0.018",
+        "authentication": "0.018",
+        "authentication-international": "0.16",
+        "service": "0.018",
+        "referral_conversion": null
+      }
+    },
+    "Kuwait": {
+      "country_codes": [
+        "KW"
+      ],
+      "rates": {
+        "marketing": "0.0792",
+        "utility": "0.044",
+        "authentication": "0.044",
+        "authentication-international": "0.12",
+        "service": "0.044",
+        "referral_conversion": null
+      }
+    },
+    "Malaysia": {
+      "country_codes": [
+        "MY"
+      ],
+      "rates": {
+        "marketing": "0.086",
+        "utility": "0.014",
+        "authentication": "0.014",
+        "authentication-international": "0.0418",
+        "service": "0.014",
+        "referral_conversion": null
+      }
+    },
+    "Mexico": {
+      "country_codes": [
+        "MX"
+      ],
+      "rates": {
+        "marketing": "0.0397",
+        "utility": "0.0085",
+        "authentication": "0.0085",
+        "authentication-international": null,
+        "service": "0.0085",
+        "referral_conversion": null
+      }
+    },
+    "Morocco": {
+      "country_codes": [
+        "MA"
+      ],
+      "rates": {
+        "marketing": "0.0414",
+        "utility": "0.023",
+        "authentication": "0.023",
+        "authentication-international": "0.0811",
+        "service": "0.023",
+        "referral_conversion": null
+      }
+    },
+    "Nepal": {
+      "country_codes": [
+        "NP"
+      ],
+      "rates": {
+        "marketing": "0.0732",
+        "utility": "0.0034",
+        "authentication": "0.0034",
+        "authentication-international": "0.112",
+        "service": "0.0034",
+        "referral_conversion": null
+      }
+    },
+    "Netherlands": {
+      "country_codes": [
+        "NL"
+      ],
+      "rates": {
+        "marketing": "0.1597",
+        "utility": "0.05",
+        "authentication": "0.05",
+        "authentication-international": null,
+        "service": "0.05",
+        "referral_conversion": null
+      }
+    },
+    "Nigeria": {
+      "country_codes": [
+        "NG"
+      ],
+      "rates": {
+        "marketing": "0.0516",
+        "utility": "0.0067",
+        "authentication": "0.0067",
+        "authentication-international": "0.075",
+        "service": "0.0067",
+        "referral_conversion": null
+      }
+    },
+    "Oman": {
+      "country_codes": [
+        "OM"
+      ],
+      "rates": {
+        "marketing": "0.0341",
+        "utility": "0.0247",
+        "authentication": "0.0247",
+        "authentication-international": "0.06",
+        "service": "0.0247",
+        "referral_conversion": null
+      }
+    },
+    "Pakistan": {
+      "country_codes": [
+        "PK"
+      ],
+      "rates": {
+        "marketing": "0.0473",
+        "utility": "0.015",
+        "authentication": "0.015",
+        "authentication-international": "0.075",
+        "service": "0.015",
+        "referral_conversion": null
+      }
+    },
+    "Peru": {
+      "country_codes": [
+        "PE"
+      ],
+      "rates": {
+        "marketing": "0.0703",
+        "utility": "0.03",
+        "authentication": "0.03",
+        "authentication-international": null,
+        "service": "0.03",
+        "referral_conversion": null
+      }
+    },
+    "Poland": {
+      "country_codes": [
+        "PL"
+      ],
+      "rates": {
+        "marketing": "0.0366",
+        "utility": "0.0122",
+        "authentication": "0.0122",
+        "authentication-international": null,
+        "service": "0.0122",
+        "referral_conversion": null
+      }
+    },
+    "Qatar": {
+      "country_codes": [
+        "QA"
+      ],
+      "rates": {
+        "marketing": "0.0341",
+        "utility": "0.012",
+        "authentication": "0.012",
+        "authentication-international": null,
+        "service": "0.012",
+        "referral_conversion": null
+      }
+    },
+    "Romania": {
+      "country_codes": [
+        "RO"
+      ],
+      "rates": {
+        "marketing": "0.086",
+        "utility": "0.029",
+        "authentication": "0.029",
+        "authentication-international": null,
+        "service": "0.029",
+        "referral_conversion": null
+      }
+    },
+    "Russia": {
+      "country_codes": [
+        "RU"
+      ],
+      "rates": {
+        "marketing": "0.0802",
+        "utility": "0.04",
+        "authentication": "0.04",
+        "authentication-international": null,
+        "service": "0.04",
+        "referral_conversion": null
+      }
+    },
+    "Saudi Arabia": {
+      "country_codes": [
+        "SA"
+      ],
+      "rates": {
+        "marketing": "0.0576",
+        "utility": "0.0107",
+        "authentication": "0.0107",
+        "authentication-international": "0.0598",
+        "service": "0.0107",
+        "referral_conversion": null
+      }
+    },
+    "Singapore": {
+      "country_codes": [
+        "SG"
+      ],
+      "rates": {
+        "marketing": "0.0732",
+        "utility": "0.016",
+        "authentication": "0.016",
+        "authentication-international": null,
+        "service": "0.016",
+        "referral_conversion": null
+      }
+    },
+    "Sri Lanka": {
+      "country_codes": [
+        "LK"
+      ],
+      "rates": {
+        "marketing": "0.0732",
+        "utility": "0.002",
+        "authentication": "0.002",
+        "authentication-international": "0.144",
+        "service": "0.002",
+        "referral_conversion": null
+      }
+    },
+    "South Africa": {
+      "country_codes": [
+        "ZA"
+      ],
+      "rates": {
+        "marketing": "0.0379",
+        "utility": "0.0095",
+        "authentication": "0.0095",
+        "authentication-international": "0.02",
+        "service": "0.0095",
+        "referral_conversion": null
+      }
+    },
+    "Spain": {
+      "country_codes": [
+        "ES"
+      ],
+      "rates": {
+        "marketing": "0.0707",
+        "utility": "0.02",
+        "authentication": "0.02",
+        "authentication-international": null,
+        "service": "0.02",
+        "referral_conversion": null
+      }
+    },
+    "Turkey": {
+      "country_codes": [
+        "TR"
+      ],
+      "rates": {
+        "marketing": "0.0109",
+        "utility": "0.0009",
+        "authentication": "0.0009",
+        "authentication-international": null,
+        "service": "0.0009",
+        "referral_conversion": null
+      }
+    },
+    "Ukraine": {
+      "country_codes": [
+        "UA"
+      ],
+      "rates": {
+        "marketing": "0.086",
+        "utility": "0.0298",
+        "authentication": "0.0298",
+        "authentication-international": "0.0746",
+        "service": "0.0298",
+        "referral_conversion": null
+      }
+    },
+    "United Arab Emirates": {
+      "country_codes": [
+        "AE"
+      ],
+      "rates": {
+        "marketing": "0.0576",
+        "utility": "0.0157",
+        "authentication": "0.0157",
+        "authentication-international": "0.051",
+        "service": "0.0157",
+        "referral_conversion": null
+      }
+    },
+    "United Kingdom": {
+      "country_codes": [
+        "GB"
+      ],
+      "rates": {
+        "marketing": "0.0635",
+        "utility": "0.022",
+        "authentication": "0.022",
+        "authentication-international": null,
+        "service": "0.022",
+        "referral_conversion": null
+      }
+    },
+    "North America": {
+      "country_codes": [
+        "CA",
+        "US"
+      ],
+      "rates": {
+        "marketing": "0.025",
+        "utility": "0.0034",
+        "authentication": "0.0034",
+        "authentication-international": null,
+        "service": "0.0034",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Africa": {
+      "country_codes": [
+        "AO",
+        "BF",
+        "BI",
+        "BJ",
+        "BW",
+        "CG",
+        "CI",
+        "CM",
+        "DZ",
+        "ER",
+        "ET",
+        "GA",
+        "GH",
+        "GM",
+        "GW",
+        "KE",
+        "LR",
+        "LS",
+        "LY",
+        "MG",
+        "ML",
+        "MR",
+        "MW",
+        "MZ",
+        "NA",
+        "NE",
+        "RW",
+        "SD",
+        "SL",
+        "SN",
+        "SO",
+        "SS",
+        "SZ",
+        "TD",
+        "TG",
+        "TN",
+        "TZ",
+        "UG",
+        "ZM",
+        "ZW"
+      ],
+      "rates": {
+        "marketing": "0.0225",
+        "utility": "0.004",
+        "authentication": "0.004",
+        "authentication-international": null,
+        "service": "0.004",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Asia Pacific": {
+      "country_codes": [
+        "AF",
+        "AU",
+        "CN",
+        "JP",
+        "KH",
+        "LA",
+        "MN",
+        "NZ",
+        "PG",
+        "PH",
+        "TH",
+        "TJ",
+        "TM",
+        "TW",
+        "UZ",
+        "VN"
+      ],
+      "rates": {
+        "marketing": "0.0842",
+        "utility": "0.0113",
+        "authentication": "0.0113",
+        "authentication-international": null,
+        "service": "0.0113",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Central & Eastern Europe": {
+      "country_codes": [
+        "AL",
+        "AM",
+        "AZ",
+        "BG",
+        "BY",
+        "CZ",
+        "GE",
+        "GR",
+        "HR",
+        "LT",
+        "LV",
+        "MD",
+        "MK",
+        "RS",
+        "SI",
+        "SK"
+      ],
+      "rates": {
+        "marketing": "0.086",
+        "utility": "0.0212",
+        "authentication": "0.0212",
+        "authentication-international": null,
+        "service": "0.0212",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Western Europe": {
+      "country_codes": [
+        "AT",
+        "BE",
+        "CH",
+        "DK",
+        "FI",
+        "IE",
+        "NO",
+        "PT",
+        "SE"
+      ],
+      "rates": {
+        "marketing": "0.0592",
+        "utility": "0.0171",
+        "authentication": "0.0171",
+        "authentication-international": null,
+        "service": "0.0171",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Latin America": {
+      "country_codes": [
+        "BO",
+        "CR",
+        "DO",
+        "EC",
+        "GT",
+        "HN",
+        "HT",
+        "JM",
+        "NI",
+        "PA",
+        "PR",
+        "PY",
+        "SV",
+        "UY",
+        "VE"
+      ],
+      "rates": {
+        "marketing": "0.074",
+        "utility": "0.0113",
+        "authentication": "0.0113",
+        "authentication-international": null,
+        "service": "0.0113",
+        "referral_conversion": null
+      }
+    },
+    "Rest of Middle East": {
+      "country_codes": [
+        "BH",
+        "JO",
+        "LB",
+        "YE"
+      ],
+      "rates": {
+        "marketing": "0.0392",
+        "utility": "0.0091",
+        "authentication": "0.0091",
+        "authentication-international": null,
+        "service": "0.0091",
+        "referral_conversion": null
+      }
+    },
+    "Other": {
+      "country_codes": [
+        "AD",
+        "AG",
+        "AI",
+        "AQ",
+        "AS",
+        "AW",
+        "AX",
+        "BA",
+        "BB",
+        "BL",
+        "BM",
+        "BN",
+        "BQ",
+        "BS",
+        "BT",
+        "BV",
+        "BZ",
+        "CC",
+        "CD",
+        "CF",
+        "CK",
+        "CU",
+        "CV",
+        "CW",
+        "CX",
+        "CY",
+        "DJ",
+        "DM",
+        "EE",
+        "EH",
+        "FJ",
+        "FK",
+        "FM",
+        "FO",
+        "GD",
+        "GF",
+        "GG",
+        "GI",
+        "GL",
+        "GN",
+        "GP",
+        "GQ",
+        "GS",
+        "GU",
+        "GY",
+        "HM",
+        "IM",
+        "IO",
+        "IR",
+        "IS",
+        "JE",
+        "KG",
+        "KI",
+        "KM",
+        "KN",
+        "KP",
+        "KR",
+        "KY",
+        "LC",
+        "LI",
+        "LU",
+        "MC",
+        "ME",
+        "MF",
+        "MH",
+        "MM",
+        "MO",
+        "MP",
+        "MQ",
+        "MS",
+        "MT",
+        "MU",
+        "MV",
+        "NC",
+        "NF",
+        "NR",
+        "NU",
+        "PF",
+        "PM",
+        "PN",
+        "PS",
+        "PW",
+        "RE",
+        "SB",
+        "SC",
+        "SH",
+        "SJ",
+        "SM",
+        "SR",
+        "ST",
+        "SX",
+        "SY",
+        "TC",
+        "TF",
+        "TK",
+        "TL",
+        "TO",
+        "TT",
+        "TV",
+        "UM",
+        "VA",
+        "VC",
+        "VG",
+        "VI",
+        "VU",
+        "WF",
+        "WS",
+        "YT"
+      ],
+      "rates": {
+        "marketing": "0.0604",
+        "utility": "0.0077",
+        "authentication": "0.0077",
+        "authentication-international": null,
+        "service": "0.0077",
+        "referral_conversion": null
+      }
+    }
+  }
+}
