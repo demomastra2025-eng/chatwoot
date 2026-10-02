@@ -288,11 +288,23 @@ class Account < ApplicationRecord
     save!
   end
 
+  def activate_trial!(days = 3)
+    extend_trial!(days)
+    trial_features = %w[
+      channel_website channel_whatsapp channel_voice voice_recorder
+      captain_integration agent_bots crm help_center macros canned_responses
+      inbox_management team_management custom_attributes automations
+    ]
+    enable_features(*trial_features)
+    save!
+  end
+
   def expire_trial!
     attrs = (custom_attributes || {}).dup
     attrs['plan_type'] = 'trial'
     attrs['trial_expires_at'] = 1.minute.ago.iso8601
     self.custom_attributes = attrs
+    self.limits = (limits || {}).merge('agents' => 0, 'inboxes' => 0)
     save!
   end
 
