@@ -538,8 +538,12 @@ RSpec.describe Message do
   describe '#mark_pending_conversation_as_open_for_human_response' do
     let(:conversation) { create(:conversation, status: :pending) }
 
-    it 'does not mark the conversation open when pending is used without captain' do
+    it 'keeps the conversation pending when an active agent bot handles the inbox' do
+      create(:agent_bot_inbox, inbox: conversation.inbox, status: 'active')
+      conversation.inbox.reload
+
       create(:message, message_type: :outgoing, conversation: conversation)
+
       expect(conversation.reload.pending?).to be true
     end
   end
