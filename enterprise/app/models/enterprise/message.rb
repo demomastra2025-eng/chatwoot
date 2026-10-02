@@ -1,16 +1,7 @@
 module Enterprise::Message
+  include Enterprise::Message::OrphanPendingHandoff
+
   private
-
-  def activate_captain_human_control_for_human_response
-    return unless captain_public_human_reply?
-    return unless captain_inbox_involved?
-
-    conversation.activate_captain_human_control!(source: 'agent_reply', actor: sender) do |generation|
-      services = captain_takeover_cancellation_services
-      @captain_takeover_cancellations = capture_captain_takeover_cancellations(services, generation)
-      services.any?
-    end
-  end
 
   # Most public replies never involve Captain; they must not lock the
   # conversation. Plain SQL keeps the conversation's thread association
@@ -23,7 +14,13 @@ module Enterprise::Message
     ::CaptainInbox.where(inbox_id: conversation.inbox_id).or(::CaptainInbox.where(inbox_id: thread_inbox_ids)).exists?
   end
 
-  def mark_pending_conversation_as_open_for_human_response
+  def mark_pending_conversation_as_open_for_human_response(runtime_events: true)
+    orphan_handoff_triggered = false
+    orphan_handoff_triggered = orphan_pending_handoff_trigger?
+    if orphan_handoff_triggered
+      return if activate_orphan_pending_human_control_after_commit
+    end
+    return unless runtime_events
     return unless captain_auto_open_candidate?
 
     without_current_actor do
@@ -37,7 +34,7 @@ module Enterprise::Message
       create_captain_auto_open_activity_message
     end
   ensure
-    publish_captain_takeover_cancellations
+    publish_captain_takeover_cancellations if runtime_events || orphan_handoff_triggered
   end
 
   def captain_takeover_cancellation_services

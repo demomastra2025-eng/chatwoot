@@ -122,7 +122,12 @@ RSpec.describe Captain::Conversation::ControlService do
 
   context 'when an employee replies from a non-Captain channel' do
     let(:assistant) { create(:captain_assistant, account: account) }
-    let!(:incoming) { create(:message, conversation: second_conversation, message_type: :incoming) }
+    let!(:incoming) do
+      message = build(:message, conversation: second_conversation, message_type: :incoming)
+      message.skip_runtime_events = true
+      message.save!
+      message
+    end
     let(:key) { format(Redis::Alfred::CAPTAIN_RESPONSE_CANCELLATION_STATE, conversation_id: second_conversation.id) }
 
     before do
@@ -180,15 +185,17 @@ RSpec.describe Captain::Conversation::ControlService do
 
   context 'without an eligible pending Captain target' do
     %i[open pending resolved snoozed].each do |status|
-      it "keeps a non-Captain #{status} source unchanged after a public reply" do
+      it "routes a non-Captain #{status} source after a public reply" do
         first_conversation.update!(status: status)
         generation = thread.reload.captain_control_generation
+        expected_status = status == :pending ? 'open' : status.to_s
+        expected_generation = generation + (status == :pending ? 1 : 0)
         expect(Captain::Conversation::ResponseCancellationService).not_to receive(:new)
 
         create(:message, conversation: first_conversation, message_type: :outgoing, sender: create(:user, account: account))
 
-        expect(thread.reload.captain_control_generation).to eq(generation)
-        expect(first_conversation.reload.status).to eq(status.to_s)
+        expect(thread.reload.captain_control_generation).to eq(expected_generation)
+        expect(first_conversation.reload.status).to eq(expected_status)
         expect(second_conversation.reload).to be_pending
       end
     end

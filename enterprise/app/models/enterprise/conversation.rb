@@ -29,8 +29,13 @@ module Enterprise::Conversation
     captain_control_service.stamp_generation!(message)
   end
 
-  def activate_captain_human_control!(source:, actor: nil, &)
-    captain_control_service.activate_human!(source: source, actor: actor, &)
+  def activate_captain_human_control!(source:, actor: nil, before_control_save: nil, previously_activated_owner: nil,
+                                      previously_activated_generation: nil, fresh_control_owner: false, &)
+    captain_control_service(fresh_control_owner: fresh_control_owner).activate_human!(
+      source: source, actor: actor, before_control_save: before_control_save,
+      previously_activated_owner: previously_activated_owner,
+      previously_activated_generation: previously_activated_generation, &
+    )
   end
 
   def prepare_captain_ai_control!
@@ -88,8 +93,8 @@ module Enterprise::Conversation
 
   private
 
-  def captain_control_service
-    Captain::Conversation::ControlService.new(self)
+  def captain_control_service(fresh_control_owner: false)
+    Captain::Conversation::ControlService.new(self, fresh_control_owner: fresh_control_owner)
   end
 
   def dispatch_captain_inference_event(event_name)

@@ -18,8 +18,9 @@ class Captain::Conversation::ControlService
     Message.where(account_id: conversation.account_id, conversation_id: conversations.select(:id))
   end
 
-  def initialize(conversation)
+  def initialize(conversation, fresh_control_owner: false)
     @conversation = conversation
+    @fresh_control_owner = fresh_control_owner
   end
 
   def stamp_generation!(message)
@@ -38,22 +39,30 @@ class Captain::Conversation::ControlService
     generation
   end
 
-  def activate_human!(source:, actor: nil)
+  def activate_human!(source:, actor: nil, before_control_save: nil, previously_activated_owner: nil,
+                      previously_activated_generation: nil)
     changed = false
+    publish_activation = false
     with_locked_conversation_preserving_changes do
       persist_control_owner!
       with_control_owner_lock do
         # Public reply callbacks require a pending Captain target in any channel.
         next if block_given? ? !yield(control_owner.captain_control_generation) : human_active?
 
+        already_activated = previously_activated_owner == control_owner_identity &&
+                            previously_activated_generation.to_i == control_owner.captain_control_generation.to_i
         mirror_legacy_control_state(HUMAN_CONTROL)
-        control_owner.captain_control_generation += 1
-        control_owner.save!
+        unless already_activated
+          control_owner.captain_control_generation += 1
+          publish_activation = true
+        end
+        before_control_save&.call
+        control_owner.save! if control_owner.has_changes_to_save?
         changed = true
       end
     end
 
-    publish('captain.control.human_activated', source: source, actor: actor) if changed
+    publish('captain.control.human_activated', source: source, actor: actor) if changed && publish_activation
     changed
   end
 
@@ -97,7 +106,28 @@ class Captain::Conversation::ControlService
   attr_reader :conversation
 
   def control_owner
-    @control_owner ||= conversation.captain_control_owner
+    @control_owner ||= @fresh_control_owner ? current_control_owner : conversation.captain_control_owner
+  end
+
+  def current_control_owner
+    thread_id = CommunicationThreadConversation
+                .joins(:communication_thread)
+                .where(
+                  account_id: conversation.account_id, conversation_id: conversation.id,
+                  communication_threads: { account_id: conversation.account_id, contact_id: conversation.contact_id }
+                )
+                .pick(:communication_thread_id)
+    return conversation if thread_id.blank?
+
+    association = conversation.association(:communication_thread)
+    cached_thread = association.target if association.loaded?
+    return cached_thread if cached_thread&.id == thread_id
+
+    CommunicationThread.find_by(id: thread_id, account_id: conversation.account_id, contact_id: conversation.contact_id) || conversation
+  end
+
+  def control_owner_identity
+    [control_owner.class.name, control_owner.id]
   end
 
   def persist_control_owner!
@@ -231,6 +261,13 @@ class Captain::Conversation::ControlService
     ).perform
   end
 
+  def event_communication_thread_id
+    return control_owner.id if @fresh_control_owner && !control_owner.equal?(conversation)
+    return if @fresh_control_owner
+
+    conversation.communication_thread&.id
+  end
+
   def publish(event_name, source:, actor: nil, error_class: nil)
     Llm::EventBus.publish(
       event_name,
@@ -238,7 +275,7 @@ class Captain::Conversation::ControlService
       runtime_mode: 'captain_runtime',
       account_id: conversation.account_id,
       conversation_id: conversation.id,
-      communication_thread_id: conversation.communication_thread&.id,
+      communication_thread_id: event_communication_thread_id,
       source: source,
       actor_type: actor&.class&.name,
       actor_id: actor&.id,

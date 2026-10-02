@@ -391,6 +391,7 @@ class Message < ApplicationRecord
 
   def execute_after_create_commit_callbacks
     if runtime_events_suppressed?
+      mark_pending_conversation_as_open_for_human_response(runtime_events: false)
       set_conversation_activity
       update_contact_activity(runtime_events: false)
       refresh_communication_thread
@@ -452,10 +453,22 @@ class Message < ApplicationRecord
     # if automation rule id is present, it's not a human response
     # if campaign id is present, it's not a human response
     # external echo messages are responses sent from the native app (WhatsApp Business, Instagram)
+    content_metadata = message_attributes_hash(content_attributes)
+    additional_metadata = message_attributes_hash(additional_attributes)
+
     outgoing? &&
-      content_attributes['automation_rule_id'].blank? &&
-      additional_attributes['campaign_id'].blank? &&
-      (sender.is_a?(User) || content_attributes['external_echo'].present?)
+      content_metadata['automation_rule_id'].blank? &&
+      additional_metadata['campaign_id'].blank? &&
+      (sender.is_a?(User) || content_metadata['external_echo'].present?)
+  end
+
+  def message_attributes_hash(attributes)
+    attributes = JSON.parse(attributes) if attributes.is_a?(String)
+    return attributes.with_indifferent_access if attributes.respond_to?(:with_indifferent_access)
+
+    {}.with_indifferent_access
+  rescue JSON::ParserError
+    {}.with_indifferent_access
   end
 
   def bot_response?
@@ -501,7 +514,8 @@ class Message < ApplicationRecord
     reopen_resolved_conversation if communication_threads_enabled? || conversation.resolved?
   end
 
-  def mark_pending_conversation_as_open_for_human_response
+  def mark_pending_conversation_as_open_for_human_response(runtime_events: true)
+    return unless runtime_events
     return unless captain_pending_conversation?
     return unless human_response?
     return if private?
