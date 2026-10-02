@@ -4,9 +4,18 @@ describe Integrations::Dialogflow::ProcessorService do
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:hook) { create(:integrations_hook, :dialogflow, inbox: inbox, account: account) }
-  let(:conversation) { create(:conversation, account: account, status: :pending) }
-  let(:message) { create(:message, account: account, conversation: conversation) }
-  let(:template_message) { create(:message, account: account, conversation: conversation, message_type: :template, content: 'Bot message') }
+  let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :pending) }
+  let(:message) { create(:message, account: account, conversation: conversation, skip_runtime_events: true) }
+  let(:template_message) do
+    create(
+      :message,
+      account: account,
+      conversation: conversation,
+      message_type: :template,
+      content: 'Bot message',
+      skip_runtime_events: true
+    )
+  end
   let(:event_name) { 'message.created' }
   let(:event_data) { { message: message } }
   let(:dialogflow_text_double) { double }

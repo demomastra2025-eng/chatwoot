@@ -14,8 +14,16 @@ class WhatsappWeb::IncomingMessageService < Whatsapp::IncomingMessageBaseService
     enqueue_media_attachment_backfill(message)
   end
 
+  def create_message(message, source_id: nil)
+    super.tap do |created_message|
+      created_message.preserve_initial_pending_status = true if @preserve_initial_pending_status
+    end
+  end
+
   def conversation_params
-    super.merge(status: inbox.channel.conversation_pending? ? :pending : :open)
+    pending = inbox.channel.conversation_pending?
+    @preserve_initial_pending_status = pending && !outgoing_echo
+    super.merge(status: pending ? :pending : :open)
   end
 
   def processed_params

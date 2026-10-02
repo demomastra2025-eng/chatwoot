@@ -146,10 +146,19 @@ RSpec.describe 'Conversations API', type: :request do
           2,
           conversation: conversation,
           account: account,
-          created_at: 10.minutes.ago
+          created_at: 10.minutes.ago,
+          skip_runtime_events: true
         )
         create(:message, conversation: conversation, account: account, private: true, created_at: 10.minutes.ago)
-        create(:message, conversation: conversation, account: account, message_type: :outgoing, created_at: 10.minutes.ago)
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          message_type: :outgoing,
+          sender: create(:agent_bot, account: account),
+          skip_runtime_events: true,
+          created_at: 10.minutes.ago
+        )
 
         other_unread_conversation = create(
           :conversation,
@@ -161,7 +170,13 @@ RSpec.describe 'Conversations API', type: :request do
         )
         other_unread_conversation.update_labels('vip')
         create_sidebar_appointment(other_unread_conversation, status: 'scheduled')
-        create(:message, conversation: other_unread_conversation, account: account, created_at: 10.minutes.ago)
+        create(
+          :message,
+          conversation: other_unread_conversation,
+          account: account,
+          created_at: 10.minutes.ago,
+          skip_runtime_events: true
+        )
 
         inaccessible_conversation = create(:conversation, account: account, status: :open, agent_last_seen_at: 1.hour.ago)
         inaccessible_conversation.update_labels('vip')

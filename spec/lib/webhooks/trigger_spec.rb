@@ -103,8 +103,15 @@ describe Webhooks::Trigger do
 
     context 'when webhook type is agent bot' do
       let(:webhook_type) { :agent_bot_webhook }
+      let(:agent_bot_url) { 'https://agent-bot.example.test/events' }
+      let!(:agent_bot_inbox) do
+        agent_bot = create(:agent_bot, account: account, outgoing_url: agent_bot_url)
+        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
+      end
       let!(:pending_conversation) { create(:conversation, inbox: inbox, status: :pending, account: account) }
-      let!(:pending_message) { create(:message, account: account, inbox: inbox, conversation: pending_conversation) }
+      let!(:pending_message) do
+        create(:message, account: account, inbox: inbox, conversation: pending_conversation, skip_runtime_events: true)
+      end
 
       it 'raises retryable 500 errors and does not reopen conversation immediately' do
         payload = { event: 'message_created', id: pending_message.id }
@@ -133,6 +140,33 @@ describe Webhooks::Trigger do
       it 'reopens conversation and enqueues activity message for non-retryable failures when pending' do
         payload = { event: 'message_created', id: pending_message.id }
         error = SafeFetch::FetchError.new('network failure')
+        expect(SafeFetch).to receive(:fetch).with(
+          agent_bot_url,
+          method: :post,
+          body: satisfy { |body| JSON.parse(body).fetch('event') == 'conversation_opened' },
+          headers: anything,
+          open_timeout: anything,
+          read_timeout: anything,
+          validate_content_type: false
+        ).and_yield(nil)
+        allow(SafeFetch).to receive(:fetch).with(
+          agent_bot_url,
+          method: :post,
+          body: satisfy { |body| JSON.parse(body).fetch('event') == 'conversation_status_changed' },
+          headers: anything,
+          open_timeout: anything,
+          read_timeout: anything,
+          validate_content_type: false
+        ).and_yield(nil)
+        allow(SafeFetch).to receive(:fetch).with(
+          agent_bot_url,
+          method: :post,
+          body: satisfy { |body| JSON.parse(body).fetch('event') == 'conversation_updated' },
+          headers: anything,
+          open_timeout: anything,
+          read_timeout: anything,
+          validate_content_type: false
+        ).and_yield(nil)
         expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
 
         expect do

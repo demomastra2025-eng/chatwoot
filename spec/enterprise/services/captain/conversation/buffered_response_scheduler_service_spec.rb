@@ -31,11 +31,23 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   end
 
   it 'overwrites the Redis buffer state when a newer incoming message arrives' do
-    first_message = create(:message, conversation: conversation, content: 'First', message_type: :incoming)
+    first_message = create(
+      :message,
+      conversation: conversation,
+      content: 'First',
+      message_type: :incoming,
+      skip_runtime_events: true
+    )
     described_class.new(conversation: conversation, assistant: assistant, message: first_message).perform
     first_state = JSON.parse(Redis::Alfred.get(state_key))
 
-    second_message = create(:message, conversation: conversation, content: 'Second', message_type: :incoming)
+    second_message = create(
+      :message,
+      conversation: conversation,
+      content: 'Second',
+      message_type: :incoming,
+      skip_runtime_events: true
+    )
     described_class.new(conversation: conversation, assistant: assistant, message: second_message).perform
     second_state = JSON.parse(Redis::Alfred.get(state_key))
 
@@ -51,7 +63,13 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   end
 
   it 'uses the longer wait when attachment processing needs more time than the collapse window' do
-    message = create(:message, conversation: conversation, content: 'Image coming', message_type: :incoming)
+    message = create(
+      :message,
+      conversation: conversation,
+      content: 'Image coming',
+      message_type: :incoming,
+      skip_runtime_events: true
+    )
 
     described_class.new(
       conversation: conversation,
@@ -64,7 +82,13 @@ RSpec.describe Captain::Conversation::BufferedResponseSchedulerService do
   end
 
   it 'uses the collapse window when attachments do not need a longer wait' do
-    message = create(:message, conversation: conversation, content: 'Plain text', message_type: :incoming)
+    message = create(
+      :message,
+      conversation: conversation,
+      content: 'Plain text',
+      message_type: :incoming,
+      skip_runtime_events: true
+    )
 
     described_class.new(
       conversation: conversation,

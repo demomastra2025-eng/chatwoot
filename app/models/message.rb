@@ -98,7 +98,7 @@ class Message < ApplicationRecord
   attr_accessor :echo_id
   # Transient flag used to skip waiting_since clearing for specific bot/system messages.
   attr_accessor :preserve_waiting_since
-  attr_accessor :skip_runtime_events, :skip_send_reply
+  attr_accessor :skip_runtime_events, :skip_send_reply, :preserve_initial_pending_status
 
   enum message_type: { incoming: 0, outgoing: 1, activity: 2, template: 3 }
   enum content_type: {
