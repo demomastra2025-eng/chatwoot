@@ -1996,12 +1996,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         'handoff_requires_explicit_consent' => true,
         'handoff_consent_reason' => 'Customer requested a human.'
       ))
+      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
       conversation.update!(status: :pending)
       denied_message = create(
         :message, account: account, inbox: inbox, conversation: conversation,
                   message_type: :incoming, content: 'Не передавайте оператору.'
       )
-      create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
       allow(runner).to receive(:on_tool_complete) do |&block|

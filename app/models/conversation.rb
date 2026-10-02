@@ -267,6 +267,13 @@ class Conversation < ApplicationRecord
     Conversations::CommunicationThreadResolver.new(conversation: self).perform
   end
 
+  def ai_pending_handler_present?(fresh_inbox: false)
+    return assignee_agent_bot_id.present? || inbox_active_bot? || inbox_captain_assistant_present? unless fresh_inbox
+
+    fresh_inbox_record = ::Inbox.find_by(id: inbox_id)
+    assignee_agent_bot_id.present? || fresh_inbox_record&.active_bot? || inbox_captain_assistant_present?
+  end
+
   private
 
   def ensure_communication_thread
@@ -469,10 +476,6 @@ class Conversation < ApplicationRecord
 
   def already_ai_pending_without_agent_bot?
     pending? && (inbox_active_bot? || inbox_captain_assistant_present?)
-  end
-
-  def ai_pending_handler_present?
-    assignee_agent_bot_id.present? || inbox_active_bot? || inbox_captain_assistant_present?
   end
 
   def inbox_active_bot?

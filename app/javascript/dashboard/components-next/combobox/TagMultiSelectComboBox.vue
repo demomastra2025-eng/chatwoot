@@ -55,6 +55,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  clampSelectedLabels: {
+    type: Boolean,
+    default: false,
+  },
+  showSelectedLabelPreview: {
+    type: Boolean,
+    default: false,
+  },
   dropdownPlacement: {
     type: String,
     default: 'bottom',
@@ -160,6 +168,14 @@ const selectedTags = computed(() => {
     const option = props.options.find(opt => opt.value === value);
     return option || { value, label: value };
   });
+});
+const selectedLabelPreview = computed(() => {
+  if (!props.showSelectedLabelPreview) return '';
+
+  return selectedValues.value
+    .map(value => props.options.find(option => option.value === value)?.label)
+    .filter(Boolean)
+    .join('\n');
 });
 
 const toggleOption = option => {
@@ -272,7 +288,10 @@ defineExpose({
           />
           <span
             class="min-w-0 flex-grow text-sm text-n-blue-12"
-            :class="wrapLabels ? 'whitespace-normal break-words' : 'truncate'"
+            :class="[
+              wrapLabels ? 'whitespace-normal break-words' : 'truncate',
+              { 'line-clamp-2 leading-5': clampSelectedLabels },
+            ]"
             :title="tag.label"
           >
             {{ tag.label }}
@@ -309,6 +328,7 @@ defineExpose({
         :options="filteredOptions"
         :search-placeholder="searchPlaceholder"
         :empty-state="emptyState"
+        :selected-label-preview="selectedLabelPreview"
         multiple
         :selected-values="selectedValues"
         :dropdown-style="dropdownStyle"

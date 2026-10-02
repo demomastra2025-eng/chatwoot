@@ -2318,6 +2318,8 @@ onMounted(async () => {
                         :model-value="formStore.form.serviceIds"
                         :options="serviceOptions"
                         wrap-labels
+                        clamp-selected-labels
+                        show-selected-label-preview
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         :search-placeholder="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')

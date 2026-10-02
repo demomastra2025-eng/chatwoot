@@ -154,7 +154,15 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         linked_conversation.association(:communication_thread_conversation).reset
         linked_conversation.association(:communication_thread).reset
       end
-      create(:message, conversation: sibling, content: 'Question from WhatsApp', message_type: :incoming, created_at: 2.minutes.ago)
+      historical_question = build(
+        :message,
+        conversation: sibling,
+        content: 'Question from WhatsApp',
+        message_type: :incoming,
+        created_at: 2.minutes.ago
+      )
+      historical_question.skip_runtime_events = true
+      historical_question.save!
       create(
         :message,
         conversation: sibling,
