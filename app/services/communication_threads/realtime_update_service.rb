@@ -48,11 +48,13 @@ class CommunicationThreads::RealtimeUpdateService
     account = communication_thread.account
     members_by_payload = Hash.new { |hash, key| hash[key] = [] }
     groups = recipient_groups(account, links, source_conversation)
-    read_states = batch_read_states(account, links, groups)
+    return if groups.empty?
+
+    read_states = batch_read_states(account, links)
     groups.each_value do |group|
       shared_payload = shared_realtime_payload(communication_thread, group[:links], source_conversation, message)
       group[:users].each do |user|
-        payload = realtime_payload(communication_thread, group[:links], shared_payload, user, read_states)
+        payload = realtime_payload(communication_thread, group[:links], shared_payload, read_states)
         members_by_payload[payload] << user.pubsub_token
       end
     end
@@ -68,11 +70,10 @@ class CommunicationThreads::RealtimeUpdateService
     ).perform
   end
 
-  def batch_read_states(account, links, groups)
-    Conversations::UserReadStateBatchPreloader.new(
+  def batch_read_states(account, links)
+    Conversations::SharedUnreadStateBatchPreloader.new(
       account: account,
-      conversation_ids: links.map(&:conversation_id),
-      users: groups.values.flat_map { |group| group[:users] }.uniq
+      conversation_ids: links.map(&:conversation_id)
     ).perform
   end
 
@@ -85,8 +86,8 @@ class CommunicationThreads::RealtimeUpdateService
     payload
   end
 
-  def realtime_payload(communication_thread, links, shared_payload, user, read_states)
-    channels = channel_payloads(communication_thread, links, user, read_states)
+  def realtime_payload(communication_thread, links, shared_payload, read_states)
+    channels = channel_payloads(communication_thread, links, read_states)
     shared_payload.merge(user_thread_state_payload(channels))
   end
 
@@ -156,13 +157,13 @@ class CommunicationThreads::RealtimeUpdateService
     }
   end
 
-  def channel_payloads(communication_thread, links, user, read_states)
+  def channel_payloads(communication_thread, links, read_states)
     CommunicationThreads::ChannelCapabilitiesBuilder.new(
       links: links,
       contact: communication_thread.contact,
       deduplicate_linked: false,
-      unread_counts: read_states.unread_counts_for(user),
-      last_seen_timestamps: read_states.last_seen_timestamps_for(user)
+      unread_counts: read_states.unread_counts,
+      last_seen_timestamps: read_states.last_seen_timestamps
     ).perform
   end
 

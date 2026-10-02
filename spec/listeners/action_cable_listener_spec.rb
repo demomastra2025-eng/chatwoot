@@ -305,6 +305,99 @@ describe ActionCableListener do
     end
   end
 
+  describe '#conversation_read' do
+    it 'sends shared unread state only to employees who can view the conversation' do
+      team = create(:team, account: account)
+      team_member = create(:user, account: account, role: :agent)
+      create(:team_member, team: team, user: team_member)
+      create(:team_member, team: team, user: agent)
+      inbox.update!(enable_auto_assignment: false)
+      conversation.update!(team: team, agent_last_seen_at: 1.hour.ago)
+      create(:user, account: account, role: :agent)
+      create(:user, role: :agent)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 5.minutes.ago)
+      Current.user = agent
+      event = Events::Base.new(:'conversation.read', Time.current, conversation: conversation)
+
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token, team_member.pubsub_token),
+        'conversation.read',
+        a_hash_including(
+          account_id: account.id,
+          unread_count: 1,
+          performer: a_hash_including(id: agent.id)
+        )
+      )
+
+      listener.conversation_read(event)
+    ensure
+      Current.user = nil
+    end
+
+    it 'keeps sibling channel details and unread counts scoped to each authorized recipient' do
+      account.enable_features!('communication_threads')
+      conversation.update!(agent_last_seen_at: 1.hour.ago)
+      create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 5.minutes.ago)
+      second_inbox = create(:inbox, account: account)
+      second_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: second_inbox)
+      second_conversation = create(
+        :conversation,
+        account: account,
+        contact: conversation.contact,
+        inbox: second_inbox,
+        contact_inbox: second_contact_inbox,
+        agent_last_seen_at: 1.hour.ago
+      )
+      create(
+        :message,
+        account: account,
+        inbox: second_inbox,
+        conversation: second_conversation,
+        message_type: :incoming,
+        created_at: 5.minutes.ago
+      )
+      second_agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: second_inbox, user: second_agent)
+      communication_thread = conversation.reload.refresh_communication_thread!
+      expect(communication_thread.conversation_ids).to contain_exactly(conversation.id, second_conversation.id)
+      broadcasts = []
+      allow(ActionCableBroadcastJob).to receive(:perform_later) do |members, event_name, payload|
+        broadcasts << [members, event_name, payload]
+      end
+      Current.user = agent
+      event = Events::Base.new(:'conversation.read', Time.current, conversation: conversation)
+
+      perform_communication_thread_realtime { listener.conversation_read(event) }
+
+      inbox_agent_payload = broadcasts.find do |members, event_name, _payload|
+        members == [agent.pubsub_token] && event_name == 'communication_thread.updated'
+      end.last
+      admin_payload = broadcasts.find do |members, event_name, _payload|
+        members == [admin.pubsub_token] && event_name == 'communication_thread.updated'
+      end.last
+      expect(inbox_agent_payload).to include(
+        conversation_ids: [conversation.display_id],
+        unread_count: 1,
+        channels: contain_exactly(a_hash_including(conversation_id: conversation.display_id, unread_count: 1))
+      )
+      expect(inbox_agent_payload.fetch(:conversation_ids)).not_to include(second_conversation.display_id)
+      expect(inbox_agent_payload.fetch(:channels).pluck(:conversation_id)).not_to include(second_conversation.display_id)
+      expect(admin_payload).to include(
+        conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id),
+        unread_count: 2,
+        channels: contain_exactly(
+          a_hash_including(conversation_id: conversation.display_id, unread_count: 1),
+          a_hash_including(conversation_id: second_conversation.display_id, unread_count: 1)
+        )
+      )
+      expect(broadcasts.none? do |members, event_name, _payload|
+        members == [second_agent.pubsub_token] && event_name == 'communication_thread.updated'
+      end).to be(true)
+    ensure
+      Current.user = nil
+    end
+  end
+
   describe '#message_updated' do
     let(:event_name) { :'message.updated' }
     let!(:message) do

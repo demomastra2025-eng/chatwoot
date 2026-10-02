@@ -9,9 +9,8 @@ class Conversations::ListPreloader
     { owner: USER_ASSOCIATIONS }
   ].freeze
 
-  def initialize(account:, conversations:, user:)
+  def initialize(account:, conversations:)
     @account = account
-    @user = user
     @conversations = Array(conversations)
     raise ArgumentError, 'Conversation account mismatch' if @conversations.any? { |conversation| conversation.account_id != account.id }
 
@@ -114,13 +113,12 @@ class Conversations::ListPreloader
   def preload_message_state
     incoming = @account.messages.reorder(nil).where(conversation_id: @conversations_by_id.keys).incoming
     @last_incoming_timestamps = incoming.group(:conversation_id).maximum(:created_at)
-    user_read_state = Conversations::UserReadStatePreloader.new(
+    shared_unread_state = Conversations::SharedUnreadStatePreloader.new(
       account: @account,
-      conversation_ids: @conversations_by_id.keys,
-      user: @user
+      conversation_ids: @conversations_by_id.keys
     ).perform
-    @last_seen_at_by_conversation_id = user_read_state.last_seen_timestamps
-    @unread_counts = user_read_state.unread_counts
+    @last_seen_at_by_conversation_id = shared_unread_state.last_seen_timestamps
+    @unread_counts = shared_unread_state.unread_counts
   end
 
   def preload_labels

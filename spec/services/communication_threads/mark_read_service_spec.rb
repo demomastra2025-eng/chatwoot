@@ -80,9 +80,11 @@ RSpec.describe CommunicationThreads::MarkReadService do
       expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
     end
 
-    it 'does not request sidebar counts when the aggregate remains unread for another reader' do
+    it 'ignores historical personal cursors and clears shared unread for every reader' do
       create(:message, account: account, conversation: conversation, message_type: :incoming, created_at: 1.minute.ago)
-      Conversations::RecordUserReadStateService.new(conversation: conversation, user: user).perform(last_seen_at: Time.current)
+      create(:conversation_user_read_state, account: account, conversation: conversation, user: user, last_seen_at: Time.current)
+      other_user = create(:user, account: account)
+      create(:conversation_user_read_state, account: account, conversation: conversation, user: other_user, last_seen_at: 1.hour.ago)
       allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
 
       service = described_class.new(
@@ -93,9 +95,10 @@ RSpec.describe CommunicationThreads::MarkReadService do
       )
       updated_thread = service.perform
 
-      expect(updated_thread.unread_count).to eq(1)
-      expect(service.read_state_changed).to be(false)
-      expect(service.sidebar_counts_refresh_required).to be(false)
+      expect(updated_thread.unread_count).to eq(0)
+      expect(service.read_state_changed).to be(true)
+      expect(service.sidebar_counts_refresh_required).to be(true)
+      expect(conversation.reload.unread_messages_for(other_user).incoming).to be_empty
       expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once
     end
 

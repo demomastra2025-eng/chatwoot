@@ -304,7 +304,7 @@ RSpec.describe CommunicationThreadFinder do
         stages: { first_stage.id.to_s => 1, second_stage.id.to_s => 1 },
         appointment_statuses: { 'confirmed' => 1, 'scheduled' => 1, 'any' => 2 }
       )
-      expect(sql_queries.grep(/conversation_user_read_states/).size).to eq(1)
+      expect(sql_queries.grep(/conversation_user_read_states/)).to be_empty
       expect(sql_queries.size).to be <= 13
     end
 
@@ -362,6 +362,19 @@ RSpec.describe CommunicationThreadFinder do
       inbox: target_inbox,
       contact_inbox: conversation.contact_inbox
     )
+    if unread_count.positive?
+      unread_count.times do |index|
+        create(
+          :message,
+          account: account,
+          conversation: conversation,
+          inbox: target_inbox,
+          message_type: :incoming,
+          created_at: (index + 1).minutes.ago
+        )
+      end
+      conversation.update!(agent_last_seen_at: 1.hour.ago)
+    end
     [thread, conversation]
   end
 end

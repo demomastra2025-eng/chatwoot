@@ -385,16 +385,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def unread_thread_scope(scope)
     unread_conversations = Conversations::UnreadScopeBuilder.new(
       scope: accessible_conversations,
-      account: current_account,
-      user: current_user
+      account: current_account
     ).perform.select(:id)
     base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
-    base_scope.where(id: thread_ids_for_conversations(unread_conversations)).or(legacy_unread_thread_scope(base_scope))
-  end
-
-  def legacy_unread_thread_scope(scope)
-    user_states = ConversationUserReadState.where(account_id: current_account.id, user_id: current_user.id).select(:conversation_id)
-    scope.where('communication_threads.unread_count > 0').where.not(id: thread_ids_for_conversations(user_states))
+    base_scope.where(id: thread_ids_for_conversations(unread_conversations))
   end
 
   def thread_ids_for_conversations(conversations)

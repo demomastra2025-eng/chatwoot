@@ -11,7 +11,7 @@ class CommunicationThreads::MarkReadService
   def perform
     return communication_thread.reload unless change_or_repair_required?
 
-    mark_personalized_read_state! if read_state_changed
+    mark_read_state! if read_state_changed
 
     refresh_communication_thread!
     updated_thread = communication_thread.reload
@@ -49,7 +49,7 @@ class CommunicationThreads::MarkReadService
     aggregate_was_unread && updated_thread.unread_count.zero?
   end
 
-  def mark_personalized_read_state!
+  def mark_read_state!
     conversations.each do |conversation|
       conversation.skip_communication_thread_realtime = true
       Notification::MarkConversationReadService.new(
@@ -60,7 +60,8 @@ class CommunicationThreads::MarkReadService
       Conversations::MarkReadService.new(
         conversation: conversation,
         user: current_user,
-        refresh_communication_thread: false
+        refresh_communication_thread: false,
+        broadcast_read_state: false
       ).perform
     end
   end
@@ -73,10 +74,9 @@ class CommunicationThreads::MarkReadService
     conversation_ids = conversations.map(&:id)
     return false if conversation_ids.blank?
 
-    Conversations::UserReadStatePreloader.new(
+    Conversations::SharedUnreadStatePreloader.new(
       account: current_account,
-      conversation_ids: conversation_ids,
-      user: current_user
+      conversation_ids: conversation_ids
     ).perform.unread_counts.present?
   end
 

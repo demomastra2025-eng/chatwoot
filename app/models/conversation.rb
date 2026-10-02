@@ -191,15 +191,12 @@ class Conversation < ApplicationRecord
     scope.without_imported_history
   end
 
-  def last_seen_at_for(user)
-    read_state = conversation_user_read_states.find_by(user_id: user.id)
-    read_state ? read_state.last_seen_at : agent_last_seen_at
+  def last_seen_at_for(_user)
+    agent_last_seen_at
   end
 
-  def unread_messages_for(user)
-    last_seen_at = last_seen_at_for(user)
-    scope = last_seen_at.present? ? messages.created_since(last_seen_at) : messages
-    scope.without_imported_history
+  def unread_messages_for(_user)
+    unread_messages
   end
 
   def assignee_unread_messages
@@ -265,6 +262,10 @@ class Conversation < ApplicationRecord
     return unless communication_threads_enabled?
 
     Conversations::CommunicationThreadResolver.new(conversation: self).perform
+  end
+
+  def dispatch_read_state_update(actor: Current.user)
+    dispatcher_dispatch(CONVERSATION_READ, nil, performer: actor)
   end
 
   def ai_pending_handler_present?(fresh_inbox: false)
@@ -492,10 +493,10 @@ class Conversation < ApplicationRecord
     ai_pending_state_entered? ? status_change : previous_changes
   end
 
-  def dispatcher_dispatch(event_name, changed_attributes = nil)
+  def dispatcher_dispatch(event_name, changed_attributes = nil, performer: Current.executed_by)
     Rails.configuration.dispatcher.dispatch(event_name, Time.zone.now, conversation: self, notifiable_assignee_change: notifiable_assignee_change?,
                                                                        changed_attributes: changed_attributes,
-                                                                       performed_by: Current.executed_by)
+                                                                       performed_by: performer)
   end
 
   def conversation_status_changed_to_open?

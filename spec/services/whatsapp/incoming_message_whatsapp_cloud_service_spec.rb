@@ -74,6 +74,39 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       )
     end
 
+    it 'records a delayed delivered webhook once without downgrading an already-read message' do
+      conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)
+      message = create(
+        :message,
+        account: whatsapp_channel.account,
+        inbox: whatsapp_channel.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        status: :read,
+        source_id: 'wamid.delivered-after-read'
+      )
+      delivered_timestamp = Time.current.to_i.to_s
+      status = {
+        id: message.source_id,
+        status: 'delivered',
+        timestamp: delivered_timestamp,
+        pricing: { category: 'service', type: 'regular', pricing_model: 'PMP', billable: false }
+      }
+      webhook = {
+        phone_number: whatsapp_channel.phone_number,
+        entry: [{ changes: [{ value: { statuses: [status] } }] }]
+      }.with_indifferent_access
+
+      2.times do
+        described_class.new(inbox: whatsapp_channel.inbox, params: webhook).perform
+      end
+
+      expect(message.reload.status).to eq('read')
+      expect(message.content_attributes.dig('whatsapp_delivery', 'delivered_timestamp')).to eq(delivered_timestamp)
+      expect(WhatsappUsageDelivery.count).to eq(1)
+      expect(WhatsappUsageDelivery.first).to have_attributes(billable: false, category: 'service')
+    end
+
     it 'uses the provider timestamp for Business App echo messages' do
       contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, source_id: '2423423243')
       create(:conversation, inbox: whatsapp_channel.inbox, contact_inbox: contact_inbox)
@@ -572,25 +605,41 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
 
       it 'does not downgrade a delivered message back to sent' do
-        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :delivered, source_id: 'wamid.DELIVERED_MESSAGE')
+        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :sent, source_id: 'wamid.DELIVERED_MESSAGE')
+        delivery_metadata = {
+          conversation: { id: 'conversation-1', origin: { type: 'marketing' } },
+          pricing: { billable: true, category: 'marketing', pricing_model: 'PMP' }
+        }
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: status_update_params(
+            source_id: message.source_id,
+            status: 'delivered',
+            delivery_metadata: delivery_metadata
+          )
+        ).perform
+
+        delivered_timestamp = message.reload.content_attributes.dig('whatsapp_delivery', 'delivered_timestamp')
 
         described_class.new(
           inbox: whatsapp_channel.inbox,
           params: status_update_params(
             source_id: message.source_id,
             status: 'sent',
-            delivery_metadata: {
-              conversation: { id: 'conversation-1', origin: { type: 'marketing' } },
-              pricing: { billable: true, category: 'marketing', pricing_model: 'PMP' }
-            }
+            delivery_metadata: delivery_metadata
           )
         ).perform
 
         expect(message.reload).to be_delivered
-        expect(message.content_attributes['whatsapp_delivery']).to eq(
-          'conversation' => { 'id' => 'conversation-1', 'origin' => { 'type' => 'marketing' } },
+        expect(message.content_attributes['whatsapp_delivery']).to include(
+          'status' => 'sent',
+          'delivered_timestamp' => delivered_timestamp,
+          'conversation_origin_type' => 'marketing',
           'pricing' => { 'billable' => true, 'category' => 'marketing', 'pricing_model' => 'PMP' }
         )
+        expect(WhatsappUsageDelivery.find_by!(provider_message_id: message.source_id).delivered_at.to_i)
+          .to eq(delivered_timestamp.to_i)
       end
 
       it 'does not downgrade a read message back to delivered' do

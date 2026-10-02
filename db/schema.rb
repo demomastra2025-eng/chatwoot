@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_10_01_140000) do
+ActiveRecord::Schema[7.1].define(version: 2026_10_02_093000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3318,6 +3318,32 @@ ActiveRecord::Schema[7.1].define(version: 2026_10_01_140000) do
     t.index ["whatsapp_channel_id"], name: "index_whatsapp_template_media_sources_on_whatsapp_channel_id"
   end
 
+  create_table "whatsapp_usage_deliveries", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.string "phone_number", null: false
+    t.text "provider_message_id", null: false
+    t.integer "message_id"
+    t.integer "inbox_id"
+    t.datetime "delivered_at", precision: 6
+    t.datetime "received_at", precision: 6, null: false
+    t.string "category"
+    t.string "pricing_type"
+    t.string "pricing_model"
+    t.boolean "billable"
+    t.string "conversation_origin_type"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "delivered_at"], name: "index_whatsapp_usage_deliveries_on_account_and_delivery_time"
+    t.index ["account_id", "received_at"], name: "index_whatsapp_usage_deliveries_on_account_and_received_time"
+    t.index ["phone_number", "provider_message_id"], name: "index_whatsapp_usage_deliveries_on_phone_and_provider_id", unique: true
+  end
+
+  create_table "whatsapp_usage_tracking_states", force: :cascade do |t|
+    t.datetime "tracking_started_at", precision: 6, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false
@@ -3584,6 +3610,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_10_01_140000) do
   add_foreign_key "whatsapp_pending_message_mutations", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
   add_foreign_key "whatsapp_template_media_sources", "channel_whatsapp", column: "whatsapp_channel_id", on_delete: :cascade
+  add_foreign_key "whatsapp_usage_deliveries", "accounts", on_delete: :cascade
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()
