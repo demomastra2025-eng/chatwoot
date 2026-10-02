@@ -2,20 +2,84 @@
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field">
-  <p class="text-xs text-gray-500 mb-4">
-    Leave a field blank to inherit the global or plan value. Use <code>0</code> to block that capability for the account.
+  <p class="text-xs text-slate-500 mb-4">
+    Оставьте поле пустым для наследования глобального лимита. Введите <code>0</code>, чтобы заблокировать возможность.
   </p>
 
-  <div class="space-y-4">
-    <% field.rows.each do |row| %>
-      <div>
-        <label class="block font-medium mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
-        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, class: "w-full" %>
-        <p class="mt-1 text-xs text-gray-500"><%= row[:hint] %></p>
-        <% if row[:bytes] && row[:value].present? %>
-          <p class="mt-1 text-xs text-gray-500">Current override: <%= number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true) %> GB</p>
-        <% end %>
-      </div>
-    <% end %>
+  <%
+    primary_keys = %i[agents storage_bytes inboxes]
+    primary_rows = primary_keys.filter_map { |k| field.rows.find { |r| r[:key].to_sym == k } }
+    secondary_rows = field.rows.reject { |r| primary_keys.include?(r[:key].to_sym) }
+  %>
+
+  <!-- Primary Limits (Highlighted Cards) -->
+  <div class="mb-4">
+    <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Основные лимиты (Primary Limits)</div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <% primary_rows.each do |row| %>
+        <%
+          display_label = case row[:key].to_sym
+                          when :agents then "👥 #{row[:label]} (Операторы)"
+                          when :storage_bytes then "💾 #{row[:label]}"
+                          when :inboxes then "📥 #{row[:label]}"
+                          else row[:label]
+                          end
+        %>
+        <div class="p-4 bg-white rounded-xl border-2 border-emerald-100 shadow-sm hover:border-emerald-300 transition-colors">
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block font-bold text-slate-900 text-sm" for="<%= row[:input_id] %>">
+              <%= display_label %>
+            </label>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              Основной
+            </span>
+          </div>
+
+          <%= number_field_tag "account[limits][#{row[:key]}]",
+                               row[:value],
+                               id: row[:input_id],
+                               min: 0,
+                               step: row[:step] || 1,
+                               class: "w-full text-base font-semibold text-slate-900 rounded-lg border-slate-300 shadow-xs focus:border-emerald-500 focus:ring-emerald-500" %>
+
+          <p class="mt-2 text-xs text-slate-500"><%= row[:hint] %></p>
+
+          <% if row[:bytes] && row[:value].present? %>
+            <div class="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 text-slate-700 text-xs font-medium">
+              <span>Текущая квота:</span>
+              <span class="font-bold text-emerald-700"><%= number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true) %> GB</span>
+            </div>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
   </div>
+
+  <!-- Secondary Technical Limits (Expandable Spoiler) -->
+  <details class="mt-4 p-3 bg-slate-50 border border-slate-200 rounded-lg group">
+    <summary class="font-medium text-slate-700 cursor-pointer select-none flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4 text-slate-500 transition-transform duration-200 group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+        </svg>
+        <span class="text-sm font-semibold text-slate-800">Дополнительные технические лимиты (<%= secondary_rows.size %>)</span>
+      </div>
+      <span class="text-xs text-slate-500 font-normal">Диалоги, AI токены, Captain, email рассылки</span>
+    </summary>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 mt-3 border-t border-slate-200">
+      <% secondary_rows.each do |row| %>
+        <div class="p-3 bg-white border border-slate-200 rounded-lg shadow-2xs">
+          <label class="block font-semibold text-slate-700 text-xs mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
+          <%= number_field_tag "account[limits][#{row[:key]}]",
+                               row[:value],
+                               id: row[:input_id],
+                               min: 0,
+                               step: row[:step] || 1,
+                               class: "w-full text-sm rounded-md border-slate-300 shadow-xs focus:border-emerald-500 focus:ring-emerald-500" %>
+          <p class="mt-1 text-[11px] text-slate-500"><%= row[:hint] %></p>
+        </div>
+      <% end %>
+    </div>
+  </details>
 </div>

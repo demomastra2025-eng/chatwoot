@@ -11,6 +11,10 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  disabledChannels: {
+    type: Array,
+    default: undefined,
+  },
 });
 
 const emit = defineEmits(['channelItemClick']);
@@ -31,8 +35,24 @@ const hasTwitterConfigured = computed(() => {
   return window.chatwootConfig?.twitterConfigured;
 });
 
+const disabledChannels = computed(() => {
+  return (
+    props.disabledChannels ||
+    window.chatwootConfig?.disabledChannels || [
+      'tiktok',
+      'weixin',
+      'line',
+      'vk_community',
+      'twitter',
+    ]
+  );
+});
+
 const isActive = computed(() => {
   const { key } = props.channel;
+  if (disabledChannels.value.includes(key)) {
+    return false;
+  }
   if (Object.keys(props.enabledFeatures).length === 0) {
     return false;
   }

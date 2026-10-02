@@ -11,6 +11,7 @@ const channelSelectorStub = {
 const createWrapper = ({
   channel,
   enabledFeatures = { channel_website: true },
+  disabledChannels,
 }) =>
   shallowMount(ChannelItem, {
     props: {
@@ -21,6 +22,7 @@ const createWrapper = ({
         ...channel,
       },
       enabledFeatures,
+      ...(disabledChannels !== undefined ? { disabledChannels } : {}),
     },
     global: {
       stubs: {
@@ -30,17 +32,43 @@ const createWrapper = ({
   });
 
 describe('ChannelItem.vue', () => {
-  it.each(['whatsapp', 'weixin'])(
-    'keeps %s channel available in the inbox channel list',
-    channelKey => {
+  it('keeps whatsapp channel available in the inbox channel list', () => {
+    const wrapper = createWrapper({
+      channel: { key: 'whatsapp' },
+    });
+
+    expect(wrapper.vm.isActive).toBe(true);
+    expect(wrapper.findComponent(channelSelectorStub).props('disabled')).toBe(
+      false
+    );
+  });
+
+  it.each(['tiktok', 'weixin', 'line', 'vk_community', 'twitter'])(
+    'disables %s channel by default and prevents click',
+    async channelKey => {
       const wrapper = createWrapper({
         channel: { key: channelKey },
       });
 
-      expect(wrapper.vm.isActive).toBe(true);
+      expect(wrapper.vm.isActive).toBe(false);
       expect(wrapper.findComponent(channelSelectorStub).props('disabled')).toBe(
-        false
+        true
       );
+
+      await wrapper.findComponent(channelSelectorStub).trigger('click');
+      expect(wrapper.emitted('channelItemClick')).toBeUndefined();
     }
   );
+
+  it('keeps weixin channel available when not in disabledChannels', () => {
+    const wrapper = createWrapper({
+      channel: { key: 'weixin' },
+      disabledChannels: [],
+    });
+
+    expect(wrapper.vm.isActive).toBe(true);
+    expect(wrapper.findComponent(channelSelectorStub).props('disabled')).toBe(
+      false
+    );
+  });
 });

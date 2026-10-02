@@ -22,6 +22,18 @@ const hasTiktokConfigured = computed(() => {
   return window.chatwootConfig?.tiktokAppId;
 });
 
+const disabledChannels = computed(() => {
+  return (
+    window.chatwootConfig?.disabledChannels || [
+      'tiktok',
+      'weixin',
+      'line',
+      'vk_community',
+      'twitter',
+    ]
+  );
+});
+
 const channelList = computed(() => {
   const { apiChannelName } = globalConfig.value;
   const channels = [
@@ -116,7 +128,9 @@ const channelList = computed(() => {
     icon: 'i-woot-voice',
   });
 
-  return channels;
+  return channels.filter(
+    channel => !disabledChannels.value.includes(channel.key)
+  );
 });
 
 const initializeEnabledFeatures = async () => {

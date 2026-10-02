@@ -2,33 +2,412 @@
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field feature-container">
+  <!-- Tariff Presets Selector Block -->
+  <div class="mb-6 p-5 bg-gradient-to-r from-slate-50 to-emerald-50/30 border border-slate-200 rounded-2xl shadow-sm">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+      <div>
+        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <span>🚀</span>
+          <span>Тарифные планы OneLink</span>
+        </h3>
+        <p class="text-xs text-slate-500 mt-0.5">
+          Выберите тариф для быстрой установки квот и модулей или настройте конфигурацию вручную
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="active-tariff-badge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+          Текущий: Кастомный
+        </span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3" id="tariff-presets-container">
+      <!-- Starter -->
+      <div data-preset="starter" class="tariff-card relative cursor-pointer rounded-xl p-4 border-2 transition-all duration-200 bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm">
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-slate-900 text-sm">Starter</span>
+          <span class="text-[10px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">Старт</span>
+        </div>
+        <div class="text-base font-extrabold text-emerald-600 mb-2">60 000 ₸<span class="text-xs font-normal text-slate-500">/мес</span></div>
+        <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>5</b> операторов</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>10 GB</b> хранилища</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>CRM & База знаний</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-400">
+            <span class="text-slate-300">✕</span> <span>Voice и AI выкл.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Growth (Популярный) -->
+      <div data-preset="growth" class="tariff-card relative cursor-pointer rounded-xl p-4 border-2 transition-all duration-200 bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm">
+        <div class="absolute -top-2.5 right-3">
+          <span class="bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs tracking-wide uppercase">
+            🔥 Популярный
+          </span>
+        </div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-slate-900 text-sm">Growth</span>
+        </div>
+        <div class="text-base font-extrabold text-emerald-600 mb-2">160 000 ₸<span class="text-xs font-normal text-slate-500">/мес</span></div>
+        <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>10</b> операторов</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>50 GB</b> хранилища</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>Voice/SIP + Запись</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>AI Captain & CRM</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced -->
+      <div data-preset="advanced" class="tariff-card relative cursor-pointer rounded-xl p-4 border-2 transition-all duration-200 bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm">
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-slate-900 text-sm">Advanced</span>
+          <span class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">ПРО</span>
+        </div>
+        <div class="text-base font-extrabold text-emerald-600 mb-2">300 000 ₸<span class="text-xs font-normal text-slate-500">/мес</span></div>
+        <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>20</b> операторов</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>200 GB</b> хранилища</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>Voice + Запись + AI</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>CRM & SLA гарантия</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Enterprise -->
+      <div data-preset="enterprise" class="tariff-card relative cursor-pointer rounded-xl p-4 border-2 transition-all duration-200 bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm">
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-slate-900 text-sm">Enterprise</span>
+          <span class="text-[10px] font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">Все опции</span>
+        </div>
+        <div class="text-base font-extrabold text-emerald-600 mb-2">Индивидуально</div>
+        <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>50+</b> операторов</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span><b>500 GB</b> хранилища</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>Все модули включены</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-emerald-500 font-bold">✓</span> <span>VIP поддержка & SLA</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom -->
+      <div data-preset="custom" class="tariff-card relative cursor-pointer rounded-xl p-4 border-2 transition-all duration-200 bg-white border-slate-200 hover:border-emerald-300 hover:shadow-sm">
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-slate-900 text-sm">Кастомный</span>
+          <span class="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">Ручной</span>
+        </div>
+        <div class="text-base font-extrabold text-slate-700 mb-2">Custom</div>
+        <div class="space-y-1.5 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">⚙</span> <span>Любые лимиты</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">⚙</span> <span>Свой объем GB</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-slate-500 font-bold">⚙</span> <span>Ручные тумблеры</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-slate-500">
+            <span>Гибкая настройка</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <% regular_features, premium_features = SuperAdmin::AccountFeaturesHelper.filtered_features(field.data).partition { |key_array, _val| !SuperAdmin::AccountFeaturesHelper.account_premium_features.include?(key_array.first) } %>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    <% regular_features.each do |key_array, val| %>
-      <% feature_key, display_name = key_array %>
-      <div class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm outline outline-1 outline-n-container">
-        <span class="text-sm text-slate-700"><%= display_name %></span>
-        <span><%= check_box "enabled_features", "feature_#{feature_key}", { checked: val, class: "h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-600" }, true, false %></span>
-      </div>
-    <% end %>
+  <!-- Standard Features -->
+  <div class="mb-6">
+    <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Базовые модули и функции</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <% regular_features.each do |key_array, val| %>
+        <% feature_key, display_name = key_array %>
+        <div class="flex items-center justify-between p-3.5 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-slate-300 transition-colors">
+          <span class="text-sm font-medium text-slate-800"><%= display_name %></span>
+          <label class="relative inline-flex items-center cursor-pointer select-none">
+            <%= check_box "enabled_features", "feature_#{feature_key}", {
+                  checked: val,
+                  class: "peer sr-only feature-toggle-input",
+                  id: "enabled_features_feature_#{feature_key}",
+                  data: { feature_key: feature_key }
+                }, true, false %>
+            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+          </label>
+        </div>
+      <% end %>
+    </div>
   </div>
 
-  <hr class="my-8 boshadow-sm outline outline-1 outline-n-container">
+  <hr class="my-6 border-slate-200">
 
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-    <% premium_features.each do |key_array, val| %>
-      <% feature_key, display_name = key_array %>
-      <div class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm outline outline-1 outline-n-container">
-        <div class="flex items-center gap-2">
-          <span class="text-amber-500">
-            <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M480 224l-186.828 7.487L401.688 64l-59.247-32L256 208 169.824 32l-59.496 32 108.5 167.487L32 224v64l185.537-10.066L113.65 448l55.969 32L256 304l86.381 176 55.949-32-103.867-170.066L480 288z" fill="currentColor"/></svg>
-          </span>
-          <span class="text-sm text-slate-700"><%= display_name %></span>
+  <!-- Premium Features -->
+  <div>
+    <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+      <span class="text-amber-500">⭐</span> Премиум-модули и расширенные опции
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <% premium_features.each do |key_array, val| %>
+        <% feature_key, display_name = key_array %>
+        <div class="flex items-center justify-between p-3.5 bg-white rounded-xl shadow-xs border border-slate-200 hover:border-slate-300 transition-colors">
+          <div class="flex items-center gap-2">
+            <span class="text-amber-500">
+              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M480 224l-186.828 7.487L401.688 64l-59.247-32L256 208 169.824 32l-59.496 32 108.5 167.487L32 224v64l185.537-10.066L113.65 448l55.969 32L256 304l86.381 176 55.949-32-103.867-170.066L480 288z" fill="currentColor"/></svg>
+            </span>
+            <span class="text-sm font-medium text-slate-800"><%= display_name %></span>
+          </div>
+          <% should_disable = ChatwootHub.pricing_plan == 'community' %>
+          <label class="relative inline-flex items-center cursor-pointer select-none">
+            <%= check_box "enabled_features", "feature_#{feature_key}", {
+                  checked: val,
+                  disabled: should_disable,
+                  class: "peer sr-only feature-toggle-input",
+                  id: "enabled_features_feature_#{feature_key}",
+                  data: { feature_key: feature_key }
+                }, true, false %>
+            <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500 peer-disabled:opacity-50 peer-disabled:cursor-not-allowed"></div>
+          </label>
         </div>
-        <% should_disable = ChatwootHub.pricing_plan == 'community' %>
-        <span><%= check_box "enabled_features", "feature_#{feature_key}", { checked: val, disabled: should_disable, class: "h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-600" }, true, false %></span>
-      </div>
-    <% end %>
+      <% end %>
+    </div>
   </div>
 </div>
+
+<script>
+(function() {
+  const PRESET_CONFIGS = {
+    starter: {
+      name: 'Starter (60 000 ₸/мес)',
+      agents: 5,
+      storage_gb: 10,
+      enableFeatures: [
+        'inbound_emails', 'channel_email', 'channel_facebook', 'channel_website',
+        'channel_instagram', 'channel_tiktok', 'agent_management', 'team_management',
+        'inbox_management', 'labels', 'custom_attributes', 'automations',
+        'canned_responses', 'integrations', 'reports', 'auto_resolve_conversations',
+        'companies', 'scheduling', 'scheduling_finance', 'crm', 'crm_deals',
+        'crm_tasks', 'help_center'
+      ],
+      disableFeatures: [
+        'channel_voice', 'whatsapp_call', 'voice_recorder',
+        'captain_integration', 'captain_integration_v2', 'captain_tasks',
+        'captain_scheduling_grounding_guard', 'sla', 'disable_branding',
+        'audit_logs', 'custom_roles', 'saml', 'csat_review_notes',
+        'conversation_required_attributes', 'advanced_assignment', 'custom_tools',
+        'crm_integration'
+      ]
+    },
+    growth: {
+      name: 'Growth (160 000 ₸/мес - Популярный)',
+      agents: 10,
+      storage_gb: 50,
+      enableFeatures: [
+        'inbound_emails', 'channel_email', 'channel_facebook', 'channel_website',
+        'channel_instagram', 'channel_tiktok', 'agent_management', 'team_management',
+        'inbox_management', 'labels', 'custom_attributes', 'automations',
+        'canned_responses', 'integrations', 'reports', 'auto_resolve_conversations',
+        'companies', 'scheduling', 'scheduling_finance', 'crm', 'crm_deals',
+        'crm_tasks', 'help_center', 'channel_voice', 'whatsapp_call',
+        'voice_recorder', 'captain_integration', 'captain_integration_v2',
+        'captain_tasks', 'captain_scheduling_grounding_guard'
+      ],
+      disableFeatures: [
+        'sla', 'disable_branding', 'audit_logs', 'custom_roles', 'saml',
+        'csat_review_notes', 'conversation_required_attributes',
+        'advanced_assignment', 'custom_tools', 'crm_integration'
+      ]
+    },
+    advanced: {
+      name: 'Advanced (300 000 ₸/мес)',
+      agents: 20,
+      storage_gb: 200,
+      enableFeatures: [
+        'inbound_emails', 'channel_email', 'channel_facebook', 'channel_website',
+        'channel_instagram', 'channel_tiktok', 'agent_management', 'team_management',
+        'inbox_management', 'labels', 'custom_attributes', 'automations',
+        'canned_responses', 'integrations', 'reports', 'auto_resolve_conversations',
+        'companies', 'scheduling', 'scheduling_finance', 'crm', 'crm_deals',
+        'crm_tasks', 'help_center', 'channel_voice', 'whatsapp_call',
+        'voice_recorder', 'captain_integration', 'captain_integration_v2',
+        'captain_tasks', 'captain_scheduling_grounding_guard', 'sla',
+        'audit_logs', 'csat_review_notes', 'crm_integration'
+      ],
+      disableFeatures: [
+        'disable_branding', 'custom_roles', 'saml',
+        'conversation_required_attributes', 'advanced_assignment', 'custom_tools'
+      ]
+    },
+    enterprise: {
+      name: 'Enterprise (Индивидуально)',
+      agents: 50,
+      storage_gb: 500,
+      allFeaturesOn: true
+    },
+    custom: {
+      name: 'Кастомный'
+    }
+  };
+
+  function setToggle(featureKey, state) {
+    const el = document.getElementById('enabled_features_feature_' + featureKey) ||
+               document.querySelector('input[data-feature-key="' + featureKey + '"]');
+    if (el && !el.disabled) {
+      if (el.checked !== state) {
+        el.checked = state;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  }
+
+  function setActiveCard(presetKey) {
+    document.querySelectorAll('#tariff-presets-container .tariff-card').forEach(function(card) {
+      const isTarget = card.getAttribute('data-preset') === presetKey;
+      if (isTarget) {
+        card.classList.add('border-emerald-500', 'bg-emerald-50/60', 'ring-2', 'ring-emerald-500/20', 'shadow-md');
+        card.classList.remove('border-slate-200', 'bg-white');
+      } else {
+        card.classList.remove('border-emerald-500', 'bg-emerald-50/60', 'ring-2', 'ring-emerald-500/20', 'shadow-md');
+        card.classList.add('border-slate-200', 'bg-white');
+      }
+    });
+
+    const badge = document.getElementById('active-tariff-badge');
+    if (badge) {
+      const cfg = PRESET_CONFIGS[presetKey];
+      badge.textContent = 'Текущий: ' + (cfg ? cfg.name : 'Кастомный');
+      if (presetKey === 'growth') {
+        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300';
+      } else if (presetKey === 'enterprise') {
+        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-300';
+      } else if (presetKey === 'advanced') {
+        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-300';
+      } else {
+        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-300';
+      }
+    }
+  }
+
+  function applyPreset(presetKey) {
+    const config = PRESET_CONFIGS[presetKey];
+    if (!config) return;
+
+    if (presetKey === 'custom') {
+      setActiveCard('custom');
+      return;
+    }
+
+    // 1. Update limits inputs
+    const agentsInput = document.getElementById('account_limits_agents');
+    if (agentsInput && config.agents !== undefined) {
+      agentsInput.value = config.agents;
+      agentsInput.dispatchEvent(new Event('input', { bubbles: true }));
+      agentsInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    const storageInput = document.getElementById('account_limits_storage_bytes');
+    if (storageInput && config.storage_gb !== undefined) {
+      storageInput.value = config.storage_gb;
+      storageInput.dispatchEvent(new Event('input', { bubbles: true }));
+      storageInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    // 2. Update feature toggles
+    if (config.allFeaturesOn) {
+      document.querySelectorAll('input.feature-toggle-input').forEach(function(input) {
+        if (!input.disabled && !input.checked) {
+          input.checked = true;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      });
+    } else {
+      if (config.enableFeatures) {
+        config.enableFeatures.forEach(function(k) { setToggle(k, true); });
+      }
+      if (config.disableFeatures) {
+        config.disableFeatures.forEach(function(k) { setToggle(k, false); });
+      }
+    }
+
+    setActiveCard(presetKey);
+  }
+
+  function detectPreset() {
+    const agentsEl = document.getElementById('account_limits_agents');
+    const storageEl = document.getElementById('account_limits_storage_bytes');
+    const agents = agentsEl ? parseInt(agentsEl.value || '0', 10) : 0;
+    const storage = storageEl ? parseFloat(storageEl.value || '0') : 0;
+
+    if (agents === 5 && storage === 10) return 'starter';
+    if (agents === 10 && storage === 50) return 'growth';
+    if (agents === 20 && storage === 200) return 'advanced';
+    if (agents >= 50 && storage >= 500) return 'enterprise';
+    return 'custom';
+  }
+
+  function initTariffPresets() {
+    // Attach click listeners to cards
+    document.querySelectorAll('#tariff-presets-container .tariff-card').forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        e.preventDefault();
+        const preset = this.getAttribute('data-preset');
+        applyPreset(preset);
+      });
+    });
+
+    // Detect manual edits on limits
+    ['account_limits_agents', 'account_limits_storage_bytes'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.addEventListener('input', function() { setActiveCard('custom'); });
+      }
+    });
+
+    // Detect manual edits on feature toggles
+    document.querySelectorAll('input.feature-toggle-input').forEach(function(input) {
+      input.addEventListener('change', function(e) {
+        if (e.isTrusted) {
+          setActiveCard('custom');
+        }
+      });
+    });
+
+    // Initial detection on load
+    const detected = detectPreset();
+    setActiveCard(detected);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTariffPresets);
+  } else {
+    initTariffPresets();
+  }
+})();
+</script>
