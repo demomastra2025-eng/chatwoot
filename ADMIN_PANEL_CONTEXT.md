@@ -29,16 +29,65 @@
     * Nginx / Gateway: `crafty-prod-gateway-1`
   * **Репозиторий для push / gh:** `/root/crafty/onelink/chatwoot` *(сам каталог не изменять, работать исключительно через shared clone в `/tmp`)*.
   * **Конфиги деплоя:** `/root/crafty/deploy/**` *(не менять без явного «да» владельца)*.
-  * **Режим работы:** **Строго Read-Only.** Любое изменение — только после явного «да» владельца на конкретное действие.
-
 * **KZ (`188.241.217.162`)**:
   * **Назначение:** Телефония Wazo KZ + Janus Билайна.
   * **Каталог:** `/opt/onelink/janus-beeline-remote`
   * **Контейнеры:** `onelink-janus-beeline-caddy-1`, `onelink-janus-beeline-janus_beeline-1`.
 
----
+### 1.2 SSH-ключи и перенос доступа на новый компьютер
 
-### 1.2 SSH-подключение и выполнение команд (с Windows)
+#### Публичный ключ (Public Key)
+Этот публичный ключ авторизован на серверах DEV, PROD и KZ в `/root/.ssh/authorized_keys`:
+```text
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6lZUIvtwRMODgkGCIjWirmgjVlUVccxaJygaBN6cL3 khamz-ssh
+```
+
+#### Инструкция по переносу на новый компьютер
+
+> [!CAUTION]
+> **Приватный ключ (`id_ed25519`) — это главный секрет.** Ни при каких обстоятельствах не загружайте его в публичные репозитории, чаты или открытые диски.
+
+##### Вариант А: Перенос текущего ключа (Рекомендуемый)
+1. На старом компьютере скопируйте файлы из `C:\Users\khamz\.ssh\`:
+   - `id_ed25519` (секретный ключ)
+   - `id_ed25519.pub` (публичный ключ)
+   на зашифрованную флешку или через безопасный канал.
+2. На новом компьютере создайте папку `.ssh` в профиле пользователя:
+   ```powershell
+   New-Item -ItemType Directory -Path "$HOME\.ssh" -Force
+   ```
+3. Положите скопированные файлы в `$HOME\.ssh\`.
+4. Настройте корректные права на файл ключа в Windows (чтобы SSH не ругался на `Permissions are too open`):
+   ```powershell
+   icacls "$HOME\.ssh\id_ed25519" /inheritance:r
+   icacls "$HOME\.ssh\id_ed25519" /grant:r "$($env:USERNAME):(R)"
+   ```
+5. Проверьте подключение:
+   ```powershell
+   ssh -i "$HOME\.ssh\id_ed25519" -o BatchMode=yes root@5.189.148.163 "hostname"
+   ```
+
+##### Вариант Б: Генерация нового ключа на новом компьютере
+Если вы решили сгенерировать новую пару ключей:
+1. На новом компьютере выполните:
+   ```powershell
+   ssh-keygen -t ed25519 -C "khamz-new-laptop"
+   ```
+2. Скопируйте строку из `$HOME\.ssh\id_ed25519.pub`.
+3. **СО СТАРОГО КОМПЬЮТЕРА (пока есть доступ)** добавьте новый публичный ключ на все 3 сервера одной командой:
+   ```powershell
+   $newKey = "<ВСТАВЬТЕ_СТРОКУ_ИЗ_НОВОГО_PUB_ФАЙЛА>"
+   
+   # DEV
+   ssh -i C:\Users\khamz\.ssh\id_ed25519 root@5.189.148.163 "echo '$newKey' >> /root/.ssh/authorized_keys"
+   
+   # PROD
+   ssh -i C:\Users\khamz\.ssh\id_ed25519 root@173.249.51.242 "echo '$newKey' >> /root/.ssh/authorized_keys"
+   
+   # KZ
+   ssh -i C:\Users\khamz\.ssh\id_ed25519 root@188.241.217.162 "echo '$newKey' >> /root/.ssh/authorized_keys"
+   ```
+
 
 * **Стандартный вход:**
   ```powershell
