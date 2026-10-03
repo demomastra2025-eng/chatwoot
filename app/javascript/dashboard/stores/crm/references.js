@@ -196,6 +196,38 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       }
     },
 
+    async saveStageDraft(pipelineId, payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.saveStageDraft(
+          pipelineId,
+          payload
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async checkStageDeletion(stageId) {
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.checkStageDeletion(stageId);
+        return normalizePayload(response.data);
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      }
+    },
+
     async deleteStage(stage) {
       this.ui.isSaving = true;
       this.ui.error = null;

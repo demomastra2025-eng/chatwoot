@@ -88,7 +88,7 @@ const MANUAL_BOARD_SORT_KEY = 'position';
 
 const tasks = ref([]);
 const dealOptions = ref([]);
-const currentPresentation = ref('list');
+const currentPresentation = ref('board');
 const currentTaskScope = ref('mine');
 const currentCalendarView = ref('week');
 const calendarAnchorDate = ref(new Date());
@@ -242,13 +242,7 @@ const taskStatusCategoryMeta = {
   },
 };
 
-const hasBoardStatuses = computed(
-  () => referencesStore.taskStatuses.length > 0
-);
-
-const shouldRenderBoard = computed(
-  () => currentPresentation.value === 'board' && hasBoardStatuses.value
-);
+const shouldRenderBoard = computed(() => currentPresentation.value === 'board');
 
 const assigneeOptions = computed(() =>
   agents.value.map(agent => ({
@@ -731,7 +725,7 @@ const defaultTasksPreferences = () => ({
   },
   boardSortDirections: {},
   currentCalendarView: 'week',
-  currentPresentation: 'list',
+  currentPresentation: 'board',
   currentTaskScope: 'mine',
   filters: {
     activityType: '',
@@ -1493,30 +1487,12 @@ watch(filteredListTasks, rows => {
   }
 });
 
-const openCreateTaskStatusSetup = () => {
-  if (!canManageTasks.value) return;
-
-  router.push({
-    name: 'crm_task_settings_index',
-    params: { accountId: accountId.value },
-    query: {
-      action: 'create-task-status',
-    },
-  });
-};
-
 const openTaskSettings = () => {
   if (!canAccessTaskSettings.value) return;
 
   router.push({
     name: 'crm_task_settings_index',
     params: { accountId: accountId.value },
-  });
-};
-
-const handleBoardCreateTask = async ({ statusId }) => {
-  await openCreateDrawer({
-    statusId,
   });
 };
 
@@ -2052,14 +2028,12 @@ watch(
         />
 
         <SchedulingEmptyState
-          v-else-if="currentPresentation === 'board' && !hasBoardStatuses"
-          icon="i-lucide-columns-3"
-          :title="$t('CRM.TASKS.BOARD.EMPTY_STATUS_TITLE')"
-          :description="$t('CRM.TASKS.BOARD.EMPTY_STATUS_DESCRIPTION')"
-          :action-label="
-            canManageTasks ? $t('CRM.TASKS.BOARD.CREATE_STATUS') : ''
-          "
-          @action="openCreateTaskStatusSetup"
+          v-else-if="tasks.length === 0 && currentPresentation === 'board'"
+          icon="i-lucide-calendar-clock"
+          title=""
+          :description="$t('CRM.TASKS.EMPTY_DESCRIPTION')"
+          :action-label="canManageTasks ? $t('CRM.TASKS.NEW_TASK') : ''"
+          @action="openCreateDrawer"
         />
 
         <SchedulingEmptyState
@@ -2364,10 +2338,9 @@ watch(
           :sort-directions="boardSortDirections"
           :sort-key="boardSort.key"
           :sort-value-resolver="resolveTaskBoardSortValue"
+          :status-names="statusNameById"
           :tasks="tasks"
           @change-assignee="handleTaskAssigneeChange"
-          @change-status="handleTaskStatusChange"
-          @create-task="handleBoardCreateTask"
           @select-task="openEditDrawer"
           @toggle-sort-direction="toggleBoardSortDirection"
         />

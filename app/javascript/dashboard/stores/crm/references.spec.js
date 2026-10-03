@@ -9,6 +9,8 @@ const {
   getFieldDefinitionsMock,
   getPipelinesMock,
   getTaskStatusesMock,
+  saveStageDraftMock,
+  checkStageDeletionMock,
   savePipelineMock,
   saveTaskStatusMock,
   updateStageMock,
@@ -18,6 +20,8 @@ const {
   getFieldDefinitionsMock: vi.fn(),
   getPipelinesMock: vi.fn(),
   getTaskStatusesMock: vi.fn(),
+  saveStageDraftMock: vi.fn(),
+  checkStageDeletionMock: vi.fn(),
   savePipelineMock: vi.fn(),
   saveTaskStatusMock: vi.fn(),
   updateStageMock: vi.fn(),
@@ -36,6 +40,8 @@ vi.mock('dashboard/api/crm/pipelines', () => ({
     delete: vi.fn(),
     deletePipeline: vi.fn(),
     deleteStage: deleteStageMock,
+    saveStageDraft: saveStageDraftMock,
+    checkStageDeletion: checkStageDeletionMock,
     get: getPipelinesMock,
     update: savePipelineMock,
     updateStage: updateStageMock,
@@ -103,5 +109,70 @@ describe('useCrmReferencesStore', () => {
       'won',
       'lost',
     ]);
+  });
+
+  it('saves a stage draft as one pipeline update and keeps stage settings', async () => {
+    const store = useCrmReferencesStore();
+    store.pipelines = [{ id: 7, name: 'Sales', stages: [] }];
+    const draft = {
+      deleted_stage_ids: [],
+      stages: [
+        { id: 2, name: 'Qualified', transition_reason_required: true },
+        { id: 1, name: 'New', default: true },
+      ],
+      terminal_stages: [{ id: 3, name: 'Won', closing_reason_options: [] }],
+    };
+    const pipeline = {
+      id: 7,
+      name: 'Sales',
+      stages: [
+        {
+          id: 2,
+          name: 'Qualified',
+          outcome: 'open',
+          position: 0,
+          transitionReasonRequired: true,
+          transitionReasonOptions: ['Qualified'],
+        },
+        { id: 1, name: 'New', outcome: 'open', position: 1, default: true },
+        { id: 3, name: 'Won', outcome: 'won', position: 3 },
+      ],
+    };
+    saveStageDraftMock.mockResolvedValue({ data: { payload: pipeline } });
+
+    await store.saveStageDraft(7, draft);
+
+    expect(saveStageDraftMock).toHaveBeenCalledWith(7, draft);
+    expect(store.pipelines[0].stages[0]).toMatchObject({
+      id: 2,
+      transitionReasonRequired: true,
+      transitionReasonOptions: ['Qualified'],
+    });
+    expect(store.pipelines[0].stages[1]).toMatchObject({
+      id: 1,
+      default: true,
+    });
+  });
+
+  it('normalizes the stage deletion preflight response', async () => {
+    const store = useCrmReferencesStore();
+    checkStageDeletionMock.mockResolvedValue({
+      data: {
+        payload: {
+          stage_id: 12,
+          can_delete: false,
+          deal_count: 3,
+          block_reason: 'STAGE_HAS_DEALS',
+        },
+      },
+    });
+
+    await expect(store.checkStageDeletion(12)).resolves.toEqual({
+      stageId: 12,
+      canDelete: false,
+      dealCount: 3,
+      blockReason: 'STAGE_HAS_DEALS',
+    });
+    expect(checkStageDeletionMock).toHaveBeenCalledWith(12);
   });
 });

@@ -7,7 +7,7 @@ import { required, minLength } from '@vuelidate/validators';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import AssistantUsageModeSelector from '../AssistantUsageModeSelector.vue';
 import {
@@ -455,48 +455,103 @@ defineExpose({
       </div>
     </template>
 
-    <div v-if="showFeatureFlags" class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-n-slate-12">
+    <section
+      v-if="showFeatureFlags"
+      class="rounded-2xl border border-n-weak bg-n-solid-1 px-4 py-3"
+    >
+      <h3 class="mb-2 text-sm font-semibold text-n-slate-12">
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
-      </label>
-      <div class="flex flex-col gap-2">
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="state.features.conversationFaqs" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
-        </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="state.features.memories" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
-        </label>
-        <label class="flex items-center gap-2">
-          <Checkbox v-model="notesEnabled" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES') }}
-        </label>
-        <label class="flex items-center gap-2">
-          <Checkbox v-model="state.features.citations" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
-        </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="webAccessEnabled" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_WEB_ACCESS') }}
-        </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox
-            v-model="state.features.useAudioTranscriptions"
-            :disabled="!audioTranscriptionsAvailable"
-          />
-          <span>{{ audioTranscriptionsLabel }}</span>
-        </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="faqLookupEnabled" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
-        </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="handoffToHumanEnabled" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
-        </label>
+      </h3>
+      <div class="grid gap-3 sm:grid-cols-2">
+        <section
+          v-if="isExternalAgent"
+          class="rounded-xl bg-n-slate-1 px-3 py-2.5"
+        >
+          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT') }}
+          </h4>
+          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
+            <label class="flex items-center justify-between gap-3">
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS')
+              }}</span>
+              <Switch v-model="state.features.conversationFaqs" />
+            </label>
+            <label class="flex items-center justify-between gap-3">
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES')
+              }}</span>
+              <Switch v-model="state.features.memories" />
+            </label>
+          </div>
+        </section>
+
+        <section class="rounded-xl bg-n-slate-1 px-3 py-2.5">
+          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS') }}
+          </h4>
+          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
+            <label class="flex items-center justify-between gap-3">
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES')
+              }}</span>
+              <Switch v-model="notesEnabled" />
+            </label>
+            <label class="flex items-center justify-between gap-3">
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS')
+              }}</span>
+              <Switch v-model="state.features.citations" />
+            </label>
+            <label
+              v-if="isExternalAgent"
+              class="flex items-center justify-between gap-3"
+            >
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_WEB_ACCESS')
+              }}</span>
+              <Switch v-model="webAccessEnabled" />
+            </label>
+            <label
+              v-if="isExternalAgent"
+              class="flex items-center justify-between gap-3"
+            >
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP')
+              }}</span>
+              <Switch v-model="faqLookupEnabled" />
+            </label>
+            <label
+              v-if="isExternalAgent"
+              class="flex items-center justify-between gap-3"
+            >
+              <span>{{
+                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF')
+              }}</span>
+              <Switch v-model="handoffToHumanEnabled" />
+            </label>
+          </div>
+        </section>
+
+        <section
+          v-if="isExternalAgent"
+          class="rounded-xl bg-n-slate-1 px-3 py-2.5 sm:col-span-2"
+        >
+          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE') }}
+          </h4>
+          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
+            <label class="flex items-center justify-between gap-3">
+              <span>{{ audioTranscriptionsLabel }}</span>
+              <Switch
+                v-model="state.features.useAudioTranscriptions"
+                :disabled="!audioTranscriptionsAvailable"
+              />
+            </label>
+          </div>
+        </section>
       </div>
-    </div>
+    </section>
 
     <div v-if="showSubmitButton">
       <Button

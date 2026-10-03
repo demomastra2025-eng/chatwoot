@@ -14,6 +14,13 @@ class CrmPipelinesAPI extends ApiClient {
     return axios.post(`${this.url}/${pipelineId}/stages`, data);
   }
 
+  saveStageDraft(pipelineId, payload) {
+    return axios.patch(
+      `${this.url}/${pipelineId}/stages/batch_update`,
+      payload
+    );
+  }
+
   updateStage(stageId, data) {
     return axios.patch(`${this.baseUrl()}/crm/stages/${stageId}`, data);
   }
@@ -24,6 +31,10 @@ class CrmPipelinesAPI extends ApiClient {
 
   deleteStage(stageId) {
     return axios.delete(`${this.baseUrl()}/crm/stages/${stageId}`);
+  }
+
+  checkStageDeletion(stageId) {
+    return axios.get(`${this.baseUrl()}/crm/stages/${stageId}/deletion_check`);
   }
 }
 

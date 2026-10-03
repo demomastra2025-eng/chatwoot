@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import Draggable from 'vuedraggable';
@@ -63,9 +63,14 @@ const pipelineSearchQuery = ref('');
 const pipelineRows = ref([]);
 const draggingPipelines = ref(false);
 const pipelineOrderSaving = ref(false);
-const stageRowsByPipeline = reactive({});
-const draggingStagePipelineIds = reactive({});
-const stageOrderSavingPipelineIds = reactive({});
+const selectedStagePipelineId = ref('');
+const selectedStageOrderRows = ref([]);
+const selectedTerminalStageRows = ref([]);
+const selectedStageDeletedIds = ref([]);
+const selectedStageOrderBaseline = ref('');
+const selectedStageOrderSaving = ref(false);
+const stageDeletionInfo = ref(null);
+const stageDeletionChecking = ref(false);
 const newPipelineDraft = ref(null);
 const pipelineCreateSaving = ref(false);
 
@@ -108,7 +113,9 @@ const stageForm = reactive({
   closingReasonRequired: false,
   color: DEFAULT_STAGE_COLOR,
   default: false,
+  draftKey: '',
   id: null,
+  isNew: false,
   name: '',
   outcome: 'open',
   pipelineId: '',
@@ -206,6 +213,76 @@ const pipelineOptions = computed(() =>
     value: pipeline.id,
   }))
 );
+const activePipelineOptions = computed(() =>
+  sortPipelinesForSettings(
+    referencesStore.pipelines.filter(pipeline => pipeline.active)
+  ).map(pipeline => ({
+    label: pipeline.name,
+    value: String(pipeline.id),
+  }))
+);
+const selectedStagePipeline = computed(
+  () =>
+    referencesStore.pipelines.find(
+      pipeline => Number(pipeline.id) === Number(selectedStagePipelineId.value)
+    ) || null
+);
+const normalizedTextValues = values => [
+  ...new Set(
+    (Array.isArray(values) ? values : [values])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ),
+];
+const stageDraftSnapshot = () =>
+  JSON.stringify({
+    deletedIds: [...selectedStageDeletedIds.value].sort(
+      (left, right) => left - right
+    ),
+    open: selectedStageOrderRows.value.map(stage => ({
+      active: Boolean(stage.active),
+      color: stage.color,
+      default: Boolean(stage.default),
+      id: stage.id,
+      isNew: Boolean(stage.isNew),
+      name: stage.name,
+      transitionReasonOptions: normalizedTextValues(
+        stage.transitionReasonOptions
+      ),
+      transitionReasonRequired: Boolean(stage.transitionReasonRequired),
+    })),
+    terminal: selectedTerminalStageRows.value.map(stage => ({
+      closingReasonOptions: normalizedTextValues(stage.closingReasonOptions),
+      closingReasonRequired: Boolean(stage.closingReasonRequired),
+      id: stage.id,
+      name: stage.name,
+    })),
+  });
+
+const selectedStageOrderIsDirty = computed(
+  () => stageDraftSnapshot() !== selectedStageOrderBaseline.value
+);
+const selectedStageDraftCanSave = computed(() => {
+  const activeStages = selectedStageOrderRows.value.filter(
+    stage => stage.active
+  );
+  const openStagesAreValid = selectedStageOrderRows.value.every(
+    stage =>
+      stage.name.trim() &&
+      (!stage.transitionReasonRequired ||
+        normalizedTextValues(stage.transitionReasonOptions).length > 0)
+  );
+  const terminalStagesAreValid = selectedTerminalStageRows.value.every(
+    stage =>
+      stage.name.trim() &&
+      (!stage.closingReasonRequired ||
+        normalizedTextValues(stage.closingReasonOptions).length > 0)
+  );
+
+  return (
+    activeStages.length > 0 && openStagesAreValid && terminalStagesAreValid
+  );
+});
 const dealTouchPlanOptions = computed(() =>
   touchPlanOptionsForEntityKind('deal')
 );
@@ -223,14 +300,6 @@ const stageFormCanBeDefault = computed(
     stageForm.active &&
     stageForm.outcome === 'open'
 );
-
-const normalizedTextValues = values => [
-  ...new Set(
-    (Array.isArray(values) ? values : [values])
-      .map(value => String(value || '').trim())
-      .filter(Boolean)
-  ),
-];
 
 const stageFormClosingReasonOptions = computed(() =>
   normalizedTextValues(stageForm.closingReasonOptions)
@@ -291,8 +360,60 @@ function sortStages(stages) {
 }
 
 function cloneStages(stages) {
-  return sortStages(stages).map(stage => ({ ...stage }));
+  return sortStages(stages).map(stage => ({
+    ...stage,
+    closingReasonOptions: [...(stage.closingReasonOptions || [])],
+    draftKey: String(stage.id),
+    isNew: false,
+    transitionReasonOptions: [...(stage.transitionReasonOptions || [])],
+  }));
 }
+
+const syncSelectedStageOrderDraft = () => {
+  const stages = cloneStages(selectedStagePipeline.value?.stages);
+  selectedStageOrderRows.value = stages.filter(
+    stage => !isTerminalStage(stage)
+  );
+  selectedTerminalStageRows.value = stages.filter(isTerminalStage);
+  selectedStageDeletedIds.value = [];
+  selectedStageOrderBaseline.value = stageDraftSnapshot();
+};
+
+watch(
+  activePipelineOptions,
+  options => {
+    if (!options.length) {
+      selectedStagePipelineId.value = '';
+      return;
+    }
+
+    if (
+      !options.some(
+        option => String(option.value) === String(selectedStagePipelineId.value)
+      )
+    ) {
+      const defaultPipeline = referencesStore.pipelines.find(
+        pipeline => pipeline.active && pipeline.default
+      );
+      selectedStagePipelineId.value = String(
+        defaultPipeline?.id || options[0].value
+      );
+    }
+  },
+  { deep: true, immediate: true }
+);
+
+watch(selectedStagePipelineId, syncSelectedStageOrderDraft, {
+  immediate: true,
+});
+
+watch(
+  selectedStagePipeline,
+  () => {
+    if (!selectedStageOrderIsDirty.value) syncSelectedStageOrderDraft();
+  },
+  { deep: true }
+);
 
 watch(
   () =>
@@ -343,45 +464,6 @@ watch(
     pipelineRows.value = [...pipelines];
   },
   { immediate: true }
-);
-
-watch(
-  visiblePipelines,
-  pipelines => {
-    const nextIds = new Set(pipelines.map(pipeline => String(pipeline.id)));
-
-    pipelines.forEach(pipeline => {
-      const pipelineId = String(pipeline.id);
-
-      if (
-        draggingStagePipelineIds[pipelineId] ||
-        stageOrderSavingPipelineIds[pipelineId]
-      ) {
-        return;
-      }
-
-      stageRowsByPipeline[pipelineId] = cloneStages(pipeline.stages);
-    });
-
-    Object.keys(stageRowsByPipeline).forEach(id => {
-      if (!nextIds.has(id)) {
-        delete stageRowsByPipeline[id];
-      }
-    });
-
-    Object.keys(draggingStagePipelineIds).forEach(id => {
-      if (!nextIds.has(id)) {
-        delete draggingStagePipelineIds[id];
-      }
-    });
-
-    Object.keys(stageOrderSavingPipelineIds).forEach(id => {
-      if (!nextIds.has(id)) {
-        delete stageOrderSavingPipelineIds[id];
-      }
-    });
-  },
-  { deep: true, immediate: true }
 );
 
 const pipelineRowClass = pipeline =>
@@ -626,51 +708,69 @@ const pipelineStagesById = pipelineId => {
 };
 
 const pipelineHasDefaultStage = pipelineId =>
-  pipelineStagesById(pipelineId).some(stage => stage.default && stage.active);
+  String(pipelineId) === String(selectedStagePipelineId.value)
+    ? selectedStageOrderRows.value.some(stage => stage.default && stage.active)
+    : pipelineStagesById(pipelineId).some(
+        stage => stage.default && stage.active
+      );
 
-const getStageRows = pipelineId => {
-  return stageRowsByPipeline[String(pipelineId)] || [];
-};
+const getStageRows = pipelineId => sortStages(pipelineStagesById(pipelineId));
 
-const setStageRows = (pipelineId, rows) => {
-  stageRowsByPipeline[String(pipelineId)] = [...rows];
-};
-
-const isStageOrderSaving = pipelineId =>
-  Boolean(stageOrderSavingPipelineIds[String(pipelineId)]);
-
-const setStageOrderSaving = (pipelineId, isSaving) => {
-  const key = String(pipelineId);
-
-  if (isSaving) {
-    stageOrderSavingPipelineIds[key] = true;
+const selectStagePipeline = nextPipelineId => {
+  if (
+    selectedStageOrderIsDirty.value &&
+    String(nextPipelineId) !== String(selectedStagePipelineId.value)
+  ) {
+    useAlert(t('CRM.SETTINGS.STAGES.SAVE_OR_DISCARD_ORDER_FIRST'));
     return;
   }
 
-  delete stageOrderSavingPipelineIds[key];
+  selectedStagePipelineId.value = String(nextPipelineId || '');
 };
 
-const setDraggingStagePipeline = (pipelineId, isDragging) => {
-  const key = String(pipelineId);
+const cancelSelectedStageOrder = () => syncSelectedStageOrderDraft();
 
-  if (isDragging) {
-    draggingStagePipelineIds[key] = true;
+const saveSelectedStageOrder = async () => {
+  const pipelineId = Number(selectedStagePipeline.value?.id);
+  if (
+    !pipelineId ||
+    !selectedStageOrderIsDirty.value ||
+    !selectedStageDraftCanSave.value
+  )
     return;
+
+  selectedStageOrderSaving.value = true;
+
+  try {
+    await referencesStore.saveStageDraft(pipelineId, {
+      deleted_stage_ids: selectedStageDeletedIds.value,
+      stages: selectedStageOrderRows.value.map(stage => ({
+        id: stage.isNew ? undefined : Number(stage.id),
+        name: stage.name.trim(),
+        color: stage.color,
+        active: Boolean(stage.active),
+        default: Boolean(stage.default),
+        transition_reason_options: normalizedTextValues(
+          stage.transitionReasonOptions
+        ),
+        transition_reason_required: Boolean(stage.transitionReasonRequired),
+      })),
+      terminal_stages: selectedTerminalStageRows.value.map(stage => ({
+        id: Number(stage.id),
+        name: stage.name.trim(),
+        closing_reason_options: normalizedTextValues(
+          stage.closingReasonOptions
+        ),
+        closing_reason_required: Boolean(stage.closingReasonRequired),
+      })),
+    });
+    syncSelectedStageOrderDraft();
+    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    selectedStageOrderSaving.value = false;
   }
-
-  delete draggingStagePipelineIds[key];
-};
-
-const syncStageRowsForPipeline = pipelineId => {
-  const pipeline =
-    visiblePipelines.value.find(
-      item => Number(item.id) === Number(pipelineId)
-    ) ||
-    referencesStore.pipelines.find(
-      item => Number(item.id) === Number(pipelineId)
-    );
-
-  stageRowsByPipeline[String(pipelineId)] = cloneStages(pipeline?.stages);
 };
 
 const stageOrderBadgeStyle = color => {
@@ -687,7 +787,9 @@ const defaultStageColor = ({
   pipelineId = stageForm.pipelineId,
 } = {}) => {
   return pickStageColor(
-    pipelineStagesById(pipelineId),
+    String(pipelineId) === String(selectedStagePipelineId.value)
+      ? [...selectedStageOrderRows.value, ...selectedTerminalStageRows.value]
+      : pipelineStagesById(pipelineId),
     STAGE_STANDARD_COLORS,
     currentStageId
   );
@@ -747,7 +849,9 @@ const resetStageForm = () => {
       pipelineId: firstPipelineId,
     }),
     default: false,
+    draftKey: '',
     id: null,
+    isNew: false,
     name: '',
     outcome: 'open',
     pipelineId: firstPipelineId,
@@ -771,7 +875,9 @@ const cancelNewPipelineRow = () => {
   newPipelineDraft.value = null;
 };
 
-const openStageDrawer = ({ pipeline, stage } = {}) => {
+function openStageDrawer({ pipeline, stage } = {}) {
+  if (!canManage.value) return;
+
   if (stage) {
     Object.assign(stageForm, {
       active: stage.active,
@@ -784,7 +890,9 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
           pipelineId: stage.pipelineId,
         }),
       default: Boolean(stage.default),
+      draftKey: stage.draftKey || String(stage.id),
       id: stage.id,
+      isNew: Boolean(stage.isNew),
       name: stage.name,
       outcome: stage.outcome || 'open',
       pipelineId: stage.pipelineId,
@@ -803,9 +911,32 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
       pipelineId: stageForm.pipelineId,
     });
     stageForm.default = !pipelineHasDefaultStage(stageForm.pipelineId);
+    stageForm.draftKey = `new-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    stageForm.isNew = true;
   }
 
   stageDrawerOpen.value = true;
+}
+
+const openSelectedStageEditor = async (pipelineId, stageOrCreate = null) => {
+  selectStagePipeline(pipelineId);
+  if (String(pipelineId) !== String(selectedStagePipelineId.value)) return;
+
+  await nextTick();
+  document
+    .getElementById('crm-stage-order-editor')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  if (stageOrCreate === 'create') {
+    openStageDrawer({ pipeline: selectedStagePipeline.value });
+  } else if (stageOrCreate) {
+    const requestedId = Number(stageOrCreate.id || stageOrCreate);
+    const stage = [
+      ...selectedStageOrderRows.value,
+      ...selectedTerminalStageRows.value,
+    ].find(item => Number(item.id) === requestedId);
+    if (stage) openStageDrawer({ stage });
+  }
 };
 
 const handleStagePipelineSelection = pipelineId => {
@@ -863,8 +994,11 @@ const saveNewPipeline = async () => {
 
 const buildStageSavePayload = () => {
   const basePayload = {
+    draftKey: stageForm.draftKey,
     id: stageForm.id,
+    isNew: stageForm.isNew,
     name: stageForm.name.trim(),
+    pipelineId: Number(stageForm.pipelineId),
   };
 
   if (stageFormIsTerminal.value) {
@@ -881,16 +1015,81 @@ const buildStageSavePayload = () => {
     color: stageForm.color,
     default: Boolean(stageForm.default && stageFormCanBeDefault.value),
     outcome: 'open',
-    pipelineId: Number(stageForm.pipelineId),
     transition_reason_options: stageFormTransitionReasonOptions.value,
     transition_reason_required: Boolean(stageForm.transitionReasonRequired),
   };
 };
 
+const applyStageFormToDraft = payload => {
+  if (String(payload.pipelineId) !== String(selectedStagePipelineId.value)) {
+    useAlert(t('CRM.SETTINGS.STAGES.SELECTED_PIPELINE_ONLY'));
+    return false;
+  }
+
+  if (stageFormIsTerminal.value) {
+    const index = selectedTerminalStageRows.value.findIndex(
+      stage => Number(stage.id) === Number(payload.id)
+    );
+    if (index < 0) return false;
+
+    selectedTerminalStageRows.value[index] = {
+      ...selectedTerminalStageRows.value[index],
+      closingReasonOptions: payload.closing_reason_options,
+      closingReasonRequired: payload.closing_reason_required,
+      name: payload.name,
+    };
+    return true;
+  }
+
+  const existingIndex = selectedStageOrderRows.value.findIndex(stage =>
+    stage.isNew
+      ? stage.draftKey === payload.draftKey
+      : Number(stage.id) === Number(payload.id)
+  );
+  const currentStage =
+    existingIndex >= 0 ? selectedStageOrderRows.value[existingIndex] : null;
+  const nextStage = {
+    ...(currentStage || {}),
+    active: Boolean(payload.active),
+    color: payload.color,
+    default: Boolean(payload.default),
+    draftKey: payload.draftKey,
+    id: payload.isNew ? null : payload.id,
+    isNew: Boolean(payload.isNew),
+    name: payload.name,
+    outcome: 'open',
+    pipelineId: Number(payload.pipelineId),
+    transitionReasonOptions: payload.transition_reason_options,
+    transitionReasonRequired: payload.transition_reason_required,
+  };
+
+  if (existingIndex < 0) {
+    selectedStageOrderRows.value.push(nextStage);
+  } else {
+    selectedStageOrderRows.value[existingIndex] = nextStage;
+  }
+
+  if (nextStage.default) {
+    selectedStageOrderRows.value.forEach(stage => {
+      if (stage.draftKey !== nextStage.draftKey) stage.default = false;
+    });
+  }
+
+  const activeDefault = selectedStageOrderRows.value.some(
+    stage => stage.active && stage.default
+  );
+  if (!activeDefault) {
+    const fallback = selectedStageOrderRows.value.find(stage => stage.active);
+    if (fallback) fallback.default = true;
+  }
+
+  return true;
+};
+
 const saveStage = async () => {
   try {
-    await referencesStore.saveStage(buildStageSavePayload());
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+    if (!applyStageFormToDraft(buildStageSavePayload())) return;
+    useAlert(t('CRM.SETTINGS.STAGES.DRAFT_UPDATED'));
     stageDrawerOpen.value = false;
     resetStageForm();
   } catch (error) {
@@ -898,101 +1097,88 @@ const saveStage = async () => {
   }
 };
 
-const persistInlineStageOrder = async pipelineId => {
-  if (!pipelineId || isStageOrderSaving(pipelineId)) return;
-
-  setStageOrderSaving(pipelineId, true);
-
-  try {
-    const stageUpdates = getStageRows(pipelineId)
-      .map((stage, index) => ({
-        ...stage,
-        nextPosition: index,
-      }))
-      .filter(
-        stage =>
-          !isTerminalStage(stage) &&
-          Number(stage.position ?? 0) !== stage.nextPosition
-      );
-
-    await Promise.all(
-      stageUpdates.map(stage =>
-        referencesStore.saveStage({
-          active: stage.active,
-          color:
-            stage.color ||
-            defaultStageColor({
-              currentStageId: stage.id,
-              pipelineId: stage.pipelineId || pipelineId,
-            }),
-          id: stage.id,
-          name: stage.name,
-          outcome: stage.outcome || 'open',
-          pipelineId: Number(stage.pipelineId || pipelineId),
-          position: stage.nextPosition,
-        })
-      )
-    );
-
-    await loadSettingsPipelines();
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_REORDER'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-    await loadSettingsPipelines();
-  } finally {
-    setStageOrderSaving(pipelineId, false);
-    setDraggingStagePipeline(pipelineId, false);
-    syncStageRowsForPipeline(pipelineId);
-  }
-};
-
-const handleStageDragStart = pipelineId => {
-  setDraggingStagePipeline(pipelineId, true);
-};
-
-const handleStageDragEnd = async (pipelineId, event) => {
-  if (event.oldIndex === event.newIndex) {
-    setDraggingStagePipeline(pipelineId, false);
-    syncStageRowsForPipeline(pipelineId);
-    return;
-  }
-
-  await persistInlineStageOrder(pipelineId);
-};
-
-const openDeleteStageDialog = stage => {
+const openDeleteStageDialog = async stage => {
   const targetStage =
     stage ||
     (stageForm.id
       ? {
+          draftKey: stageForm.draftKey,
           id: stageForm.id,
+          isNew: stageForm.isNew,
           name: stageForm.name,
           pipelineId: stageForm.pipelineId,
         }
       : null);
 
-  if (!targetStage) return;
+  if (!targetStage || stageDeletionChecking.value) return;
 
   stagePendingDelete.value = targetStage;
+  stageDeletionInfo.value = null;
+  if (targetStage.isNew) {
+    stageDeletionInfo.value = { canDelete: true, dealCount: 0 };
+    stageDeleteDialogRef.value?.open();
+    return;
+  }
+
+  stageDeletionChecking.value = true;
+
+  try {
+    const deletionInfo = await referencesStore.checkStageDeletion(
+      targetStage.id
+    );
+    const activeDraftFallbackExists = selectedStageOrderRows.value.some(
+      draftStage =>
+        draftStage.active && draftStage.draftKey !== targetStage.draftKey
+    );
+    stageDeletionInfo.value =
+      deletionInfo.blockReason === 'DEFAULT_STAGE_REQUIRES_FALLBACK' &&
+      activeDraftFallbackExists
+        ? { ...deletionInfo, blockReason: null, canDelete: true }
+        : deletionInfo;
+  } catch (error) {
+    stagePendingDelete.value = null;
+    stageDeletionInfo.value = null;
+    useAlert(formatErrorMessage(error));
+    return;
+  } finally {
+    stageDeletionChecking.value = false;
+  }
+
   stageDeleteDialogRef.value?.open();
 };
 
 const closeDeleteStageDialog = () => {
   stagePendingDelete.value = null;
+  stageDeletionInfo.value = null;
 };
 
 const deleteStage = async () => {
-  if (!stagePendingDelete.value) return;
+  if (!stagePendingDelete.value || !stageDeletionInfo.value?.canDelete) return;
 
-  try {
-    await referencesStore.deleteStage(stagePendingDelete.value);
-    stageDeleteDialogRef.value?.close();
-    stageDrawerOpen.value = false;
-    resetStageForm();
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_DELETE'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
+  const deletedStage = stagePendingDelete.value;
+  selectedStageOrderRows.value = selectedStageOrderRows.value.filter(
+    stage => stage.draftKey !== deletedStage.draftKey
+  );
+  if (!deletedStage.isNew) {
+    selectedStageDeletedIds.value = [
+      ...new Set([...selectedStageDeletedIds.value, Number(deletedStage.id)]),
+    ];
   }
+
+  const defaultStillActive = selectedStageOrderRows.value.some(
+    stage => stage.active && stage.default
+  );
+  if (!defaultStillActive) {
+    const fallback = selectedStageOrderRows.value.find(stage => stage.active);
+    if (fallback) fallback.default = true;
+  }
+
+  stageDeleteDialogRef.value?.close();
+  stageDrawerOpen.value = false;
+  stagePendingDelete.value = null;
+  stageDeletionInfo.value = null;
+  resetStageForm();
+  useAlert(t('CRM.SETTINGS.STAGES.DRAFT_UPDATED'));
 };
 
 const routeQueryValue = key => {
@@ -1025,6 +1211,8 @@ const consumeRouteAction = async () => {
       ) || referencesStore.pipelines[0];
 
     if (pipeline) {
+      selectedStagePipelineId.value = String(pipeline.id);
+      await nextTick();
       openStageDrawer({ pipeline });
     }
 
@@ -1258,80 +1446,47 @@ onMounted(async () => {
 
                   <div class="min-w-0 pl-4">
                     <div class="flex min-w-0 flex-wrap items-center gap-2">
-                      <Draggable
-                        v-if="getStageRows(row.id).length"
-                        :model-value="getStageRows(row.id)"
-                        item-key="id"
-                        handle=".pipeline-stage-drag-handle"
-                        animation="200"
-                        ghost-class="pipeline-ghost"
-                        class="inline-flex min-w-0 flex-wrap items-center gap-2"
-                        :disabled="
-                          !canManage ||
-                          !row.active ||
-                          isStageOrderSaving(row.id)
-                        "
-                        @update:model-value="setStageRows(row.id, $event)"
-                        @start="handleStageDragStart(row.id)"
-                        @end="handleStageDragEnd(row.id, $event)"
+                      <span
+                        v-for="(stage, index) in getStageRows(row.id)"
+                        :key="stage.id"
+                        class="inline-flex min-w-0 max-w-full items-center rounded-full bg-n-alpha-black2 px-0.5 py-0.5 text-xs text-n-slate-12 outline outline-1 outline-n-weak"
                       >
-                        <template #item="{ element: stage, index }">
-                          <div
-                            class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full px-0.5 py-0.5 text-xs outline outline-1"
-                            :class="
-                              row.active
-                                ? 'bg-n-alpha-black2 text-n-slate-12 outline-n-weak'
-                                : 'bg-n-slate-2 text-n-slate-10 outline-n-container'
-                            "
+                        <button
+                          type="button"
+                          class="inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border-0 bg-transparent px-2 py-1 text-left"
+                          :disabled="!canManage || !row.active"
+                          @click="openSelectedStageEditor(row.id, stage.id)"
+                        >
+                          <span
+                            class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border border-black/10 px-1 text-[9px] font-semibold tabular-nums dark:border-white/10"
+                            :style="stageOrderBadgeStyle(stage.color)"
                           >
-                            <button
-                              type="button"
-                              class="inline-flex min-w-0 max-w-full items-center gap-2 rounded-full border-0 bg-transparent px-2 py-1 text-left"
-                              :disabled="
-                                !row.active || isStageOrderSaving(row.id)
-                              "
-                              @click="openStageDrawer({ stage })"
-                            >
-                              <span
-                                class="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[9px] font-semibold tabular-nums border border-black/10 dark:border-white/10"
-                                :style="stageOrderBadgeStyle(stage.color)"
-                              >
-                                {{ index + 1 }}
-                              </span>
-                              <span class="truncate">{{ stage.name }}</span>
-                              <span
-                                v-if="stage.default"
-                                class="inline-flex shrink-0 rounded-full bg-n-brand/10 px-2 py-0.5 text-[10px] font-semibold text-n-brand"
-                              >
-                                {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
-                              </span>
-                            </button>
-                            <button
-                              v-if="
-                                canManage &&
-                                row.active &&
-                                !isTerminalStage(stage)
-                              "
-                              type="button"
-                              class="pipeline-stage-drag-handle inline-flex size-7 shrink-0 items-center justify-center rounded-full text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
-                              :disabled="isStageOrderSaving(row.id)"
-                              :title="$t('CRM.SETTINGS.STAGES.REORDER')"
-                            >
-                              <span
-                                class="i-lucide-grip-vertical size-4"
-                                aria-hidden="true"
-                              />
-                            </button>
-                          </div>
-                        </template>
-                      </Draggable>
+                            {{ index + 1 }}
+                          </span>
+                          <span class="truncate">{{ stage.name }}</span>
+                          <span
+                            v-if="stage.default"
+                            class="inline-flex shrink-0 rounded-full bg-n-brand/10 px-2 py-0.5 text-[10px] font-semibold text-n-brand"
+                          >
+                            {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
+                          </span>
+                        </button>
+                      </span>
+
+                      <Button
+                        v-if="canManage && row.active"
+                        size="sm"
+                        color="slate"
+                        variant="ghost"
+                        :label="$t('CRM.SETTINGS.STAGES.REORDER_TITLE')"
+                        @click="openSelectedStageEditor(row.id)"
+                      />
 
                       <button
                         v-if="canManage && row.active"
                         type="button"
                         class="inline-flex min-w-0 items-center gap-2 rounded-full border border-dashed border-n-container bg-transparent px-3 py-1.5 text-xs font-medium text-n-slate-10 transition-colors hover:border-n-slate-8 hover:bg-n-alpha-black2 hover:text-n-slate-12"
-                        :disabled="isStageOrderSaving(row.id)"
-                        @click="openStageDrawer({ pipeline: row })"
+                        @click="openSelectedStageEditor(row.id, 'create')"
                       >
                         <span
                           class="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-n-alpha-black2"
@@ -1492,12 +1647,232 @@ onMounted(async () => {
             </div>
           </template>
         </SchedulingFormFieldGroup>
+
+        <div id="crm-stage-order-editor">
+          <SchedulingFormFieldGroup
+            v-if="dealsEnabled"
+            :framed="false"
+            :title="$t('CRM.SETTINGS.STAGES.REORDER_TITLE')"
+            :description="
+              $t('CRM.SETTINGS.STAGES.REORDER_DESCRIPTION', {
+                name: selectedStagePipeline?.name || '',
+              })
+            "
+          >
+            <div
+              class="mt-3 grid gap-4 rounded-2xl bg-n-surface-2 p-5 outline outline-1 outline-n-container shadow-sm"
+            >
+              <div
+                class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+              >
+                <SchedulingSelectField
+                  :label="$t('CRM.SETTINGS.STAGES.FORM.PIPELINE')"
+                  :model-value="selectedStagePipelineId"
+                  :options="activePipelineOptions"
+                  :disabled="
+                    !activePipelineOptions.length || selectedStageOrderSaving
+                  "
+                  @update:model-value="selectStagePipeline"
+                />
+                <Button
+                  v-if="canManage && selectedStagePipeline"
+                  size="sm"
+                  icon="i-lucide-plus"
+                  data-test="add-stage-draft"
+                  :label="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
+                  :disabled="selectedStageOrderSaving"
+                  @click="openStageDrawer({ pipeline: selectedStagePipeline })"
+                />
+              </div>
+
+              <p
+                v-if="selectedStageOrderIsDirty"
+                class="mb-0 rounded-lg bg-n-amber-9/10 px-3 py-2 text-xs text-n-amber-11"
+              >
+                {{ $t('CRM.SETTINGS.STAGES.ORDER_DRAFT_NOTICE') }}
+              </p>
+
+              <template v-if="selectedStagePipeline">
+                <Draggable
+                  v-model="selectedStageOrderRows"
+                  item-key="draftKey"
+                  handle=".stage-order-drag-handle"
+                  animation="180"
+                  ghost-class="pipeline-ghost"
+                  class="grid gap-2"
+                  :disabled="
+                    !canManage ||
+                    selectedStageOrderSaving ||
+                    !selectedStagePipeline.active
+                  "
+                >
+                  <template #item="{ element: stage, index }">
+                    <article
+                      class="flex items-center gap-3 rounded-xl border border-n-weak bg-n-surface-1 px-3 py-2.5"
+                    >
+                      <button
+                        type="button"
+                        class="stage-order-drag-handle inline-flex size-8 shrink-0 items-center justify-center rounded-md text-n-slate-10 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12 disabled:cursor-default disabled:opacity-50"
+                        :disabled="
+                          !canManage ||
+                          selectedStageOrderSaving ||
+                          !selectedStagePipeline.active
+                        "
+                        :title="$t('CRM.SETTINGS.STAGES.REORDER')"
+                        :aria-label="
+                          $t('CRM.SETTINGS.STAGES.REORDER_STAGE', {
+                            name: stage.name,
+                          })
+                        "
+                      >
+                        <span
+                          class="i-lucide-grip-vertical size-4"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      <span
+                        class="inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 text-xs font-semibold tabular-nums dark:border-white/10"
+                        :style="stageOrderBadgeStyle(stage.color)"
+                      >
+                        {{ index + 1 }}
+                      </span>
+                      <button
+                        type="button"
+                        data-test="edit-stage"
+                        class="min-w-0 flex-1 rounded-md border-0 bg-transparent py-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-weak"
+                        :disabled="!canManage || selectedStageOrderSaving"
+                        @click="openStageDrawer({ stage })"
+                      >
+                        <span
+                          class="block truncate text-sm font-medium text-n-slate-12"
+                        >
+                          {{ stage.name }}
+                        </span>
+                        <span
+                          v-if="!stage.active"
+                          class="mt-0.5 inline-flex rounded-full bg-n-alpha-black2 px-2 py-0.5 text-[10px] font-medium text-n-slate-10"
+                        >
+                          {{ $t('CRM.GENERAL.INACTIVE') }}
+                        </span>
+                        <span
+                          v-if="stage.transitionReasonRequired"
+                          class="mt-0.5 inline-flex rounded-full bg-n-amber-9/10 px-2 py-0.5 text-[10px] font-medium text-n-amber-11"
+                        >
+                          {{
+                            $t('CRM.SETTINGS.STAGES.TRANSITION_REASON_REQUIRED')
+                          }}
+                        </span>
+                      </button>
+                      <span
+                        v-if="stage.default"
+                        class="shrink-0 rounded-full bg-n-brand/10 px-2 py-1 text-[10px] font-semibold text-n-brand"
+                      >
+                        {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
+                      </span>
+                      <button
+                        type="button"
+                        data-test="delete-stage-draft"
+                        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-ruby-9/10 hover:text-n-ruby-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-weak disabled:cursor-default disabled:opacity-50"
+                        :disabled="
+                          !canManage ||
+                          selectedStageOrderSaving ||
+                          !selectedStagePipeline.active
+                        "
+                        :title="$t('CRM.SETTINGS.STAGES.DELETE')"
+                        :aria-label="
+                          $t('CRM.SETTINGS.STAGES.DELETE_STAGE', {
+                            name: stage.name,
+                          })
+                        "
+                        @click="openDeleteStageDialog(stage)"
+                      >
+                        <span
+                          class="i-lucide-trash-2 size-4"
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </article>
+                  </template>
+                </Draggable>
+
+                <div
+                  v-if="selectedTerminalStageRows.length"
+                  class="grid gap-2 border-t border-n-weak pt-3"
+                >
+                  <p class="mb-0 text-xs font-semibold text-n-slate-10">
+                    {{ $t('CRM.SETTINGS.STAGES.LOCKED_TERMINAL_STAGES') }}
+                  </p>
+                  <button
+                    v-for="stage in selectedTerminalStageRows"
+                    :key="stage.id"
+                    type="button"
+                    class="flex w-full items-center justify-between gap-3 rounded-xl border border-n-weak bg-n-surface-1 px-3 py-2.5 text-left"
+                    :disabled="!canManage || selectedStageOrderSaving"
+                    @click="openStageDrawer({ stage })"
+                  >
+                    <span
+                      class="min-w-0 truncate text-sm font-medium text-n-slate-12"
+                    >
+                      {{ stage.name }}
+                    </span>
+                    <span class="shrink-0 text-xs text-n-slate-10">
+                      {{
+                        stage.outcome === 'won'
+                          ? $t('CRM.SETTINGS.STAGES.OUTCOMES.won')
+                          : $t('CRM.SETTINGS.STAGES.OUTCOMES.lost')
+                      }}
+                    </span>
+                    <span
+                      v-if="stage.closingReasonRequired"
+                      class="shrink-0 rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
+                    >
+                      {{ $t('CRM.SETTINGS.STAGES.CLOSING_REASON_REQUIRED') }}
+                    </span>
+                  </button>
+                </div>
+
+                <div
+                  class="flex flex-wrap justify-end gap-2 border-t border-n-weak pt-3"
+                >
+                  <Button
+                    v-if="selectedStageOrderIsDirty"
+                    size="sm"
+                    color="slate"
+                    variant="faded"
+                    data-test="cancel-stage-draft"
+                    :label="$t('SCHEDULING.GENERAL.CANCEL')"
+                    :disabled="selectedStageOrderSaving"
+                    @click="cancelSelectedStageOrder"
+                  />
+                  <Button
+                    v-if="canManage"
+                    size="sm"
+                    data-test="save-stage-draft"
+                    :label="$t('CRM.SETTINGS.STAGES.SAVE_ORDER')"
+                    :is-loading="selectedStageOrderSaving"
+                    :disabled="
+                      !selectedStageOrderIsDirty ||
+                      !selectedStageDraftCanSave ||
+                      selectedStageOrderSaving
+                    "
+                    @click="saveSelectedStageOrder"
+                  />
+                </div>
+              </template>
+
+              <p v-else class="mb-0 text-sm text-n-slate-11">
+                {{ $t('CRM.SETTINGS.STAGES.NO_ACTIVE_PIPELINES') }}
+              </p>
+            </div>
+          </SchedulingFormFieldGroup>
+        </div>
       </div>
     </template>
 
     <SchedulingDrawer
       v-model="stageDrawerOpen"
       width="sm"
+      data-test="stage-editor-drawer"
       :title="
         stageForm.id
           ? $t('CRM.SETTINGS.STAGES.EDIT_TITLE')
@@ -1513,7 +1888,7 @@ onMounted(async () => {
           :label="$t('CRM.SETTINGS.STAGES.FORM.PIPELINE')"
           :model-value="stageForm.pipelineId"
           :options="pipelineOptions"
-          :disabled="Boolean(stageForm.id)"
+          :disabled="Boolean(stageForm.id) || stageForm.isNew"
           @update:model-value="handleStagePipelineSelection($event)"
         />
         <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
@@ -1524,7 +1899,7 @@ onMounted(async () => {
             @update:model-value="stageForm.name = $event"
           />
           <label
-            v-if="stageForm.id && !stageFormIsTerminal"
+            v-if="!stageFormIsTerminal"
             class="mb-0 flex h-10 cursor-pointer items-center gap-2 rounded-lg px-3 text-sm text-n-slate-12 outline outline-1 outline-n-weak"
           >
             <Checkbox
@@ -1708,6 +2083,7 @@ onMounted(async () => {
               size="sm"
               :is-loading="referencesStore.ui.isSaving"
               :disabled="stageFormDisableConfirm || referencesStore.ui.isSaving"
+              data-test="apply-stage-edit"
               :label="$t('CRM.GENERAL.SAVE')"
               @click="saveStage"
             />
@@ -1734,16 +2110,24 @@ onMounted(async () => {
 
     <Dialog
       ref="stageDeleteDialogRef"
+      data-test="stage-delete-dialog"
       width="md"
       type="alert"
       :title="$t('CRM.SETTINGS.STAGES.DELETE_TITLE')"
       :description="
-        $t('CRM.SETTINGS.STAGES.DELETE_DESCRIPTION', {
-          name: stagePendingDelete?.name || '',
-        })
+        stageDeletionInfo?.canDelete
+          ? $t('CRM.SETTINGS.STAGES.DELETE_DESCRIPTION', {
+              name: stagePendingDelete?.name || '',
+            })
+          : stageDeletionInfo?.blockReason === 'DEFAULT_STAGE_REQUIRES_FALLBACK'
+            ? $t('CRM.ERRORS.DEFAULT_STAGE_REQUIRES_FALLBACK')
+            : stageDeletionInfo?.blockReason === 'STANDARD_STAGE_LOCKED'
+              ? $t('CRM.ERRORS.STANDARD_STAGE_LOCKED')
+              : $t('CRM.ERRORS.STAGE_HAS_DEALS')
       "
       :confirm-button-label="$t('CRM.SETTINGS.STAGES.DELETE_CONFIRM')"
-      :is-loading="referencesStore.ui.isSaving"
+      :is-loading="referencesStore.ui.isSaving || stageDeletionChecking"
+      :disable-confirm-button="!stageDeletionInfo?.canDelete"
       @close="closeDeleteStageDialog"
       @confirm="deleteStage"
     />

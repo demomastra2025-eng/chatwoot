@@ -1,12 +1,14 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmTaskAssigneeMenu from './CrmTaskAssigneeMenu.vue';
 import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
-import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
+import {
+  groupTasksByTime,
+  visibleTaskTimeBuckets,
+} from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const props = defineProps({
   assignees: {
@@ -17,9 +19,9 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  fieldDefinitions: {
-    type: Array,
-    default: () => [],
+  dealNames: {
+    type: Object,
+    default: () => ({}),
   },
   showSortToggle: {
     type: Boolean,
@@ -27,10 +29,7 @@ const props = defineProps({
   },
   sortDirectionLabels: {
     type: Object,
-    default: () => ({
-      asc: '',
-      desc: '',
-    }),
+    default: () => ({}),
   },
   sortDirections: {
     type: Object,
@@ -38,13 +37,17 @@ const props = defineProps({
   },
   sortKey: {
     type: String,
-    default: '',
+    default: 'position',
   },
-  dealNames: {
+  sortValueResolver: {
+    type: Function,
+    default: null,
+  },
+  statusNames: {
     type: Object,
     default: () => ({}),
   },
-  statuses: {
+  fieldDefinitions: {
     type: Array,
     default: () => [],
   },
@@ -52,128 +55,80 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  sortValueResolver: {
-    type: Function,
-    default: null,
-  },
 });
 
 const emit = defineEmits([
   'changeAssignee',
-  'changeStatus',
-  'createTask',
   'selectTask',
   'toggleSortDirection',
 ]);
 const { locale, t } = useI18n();
 
-const boardColumns = ref({});
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
+const now = ref(new Date());
+let clockIntervalId;
+onMounted(() => {
+  clockIntervalId = window.setInterval(() => {
+    now.value = new Date();
+  }, 60_000);
+});
+onUnmounted(() => window.clearInterval(clockIntervalId));
 
-const createBoardState = () =>
-  props.statuses.reduce((result, status) => {
-    result[Number(status.id)] = [];
-    return result;
-  }, {});
+const groupedTasks = computed(() => groupTasksByTime(props.tasks, now.value));
 
-const columnSortDirection = columnId => {
-  if (props.sortKey === 'position') {
-    return 'asc';
-  }
-
-  return props.sortDirections?.[columnId] === 'desc' ? 'desc' : 'asc';
-};
-
-const sortDirectionIcon = columnId =>
-  columnSortDirection(columnId) === 'asc'
-    ? 'i-lucide-arrow-up'
-    : 'i-lucide-arrow-down';
-
-const sortDirectionLabel = columnId =>
-  props.sortDirectionLabels?.[columnSortDirection(columnId)] || '';
-
-const resolveBoardPosition = index =>
-  props.sortKey === 'position' ? index + 1 : null;
-
-const sortColumnTasks = (items, columnId) => {
-  if (!props.sortKey || !props.sortValueResolver) {
-    return items;
-  }
-
-  return sortListRecords(
-    items,
-    {
-      direction: columnSortDirection(columnId),
-      key: props.sortKey,
-    },
-    props.sortValueResolver
-  );
-};
-
-const syncBoardColumns = () => {
-  const nextColumns = createBoardState();
-  const fallbackStatusId = Number(props.statuses[0]?.id);
-
-  props.tasks.forEach(task => {
-    const taskStatusId = Number(task.statusId);
-    const statusId = nextColumns[taskStatusId]
-      ? taskStatusId
-      : fallbackStatusId;
-
-    if (!statusId) return;
-
-    nextColumns[statusId].push({ ...task, statusId });
-  });
-
-  Object.keys(nextColumns).forEach(statusId => {
-    nextColumns[statusId] = sortColumnTasks(nextColumns[statusId], statusId);
-  });
-
-  boardColumns.value = nextColumns;
-};
-
-watch(
-  [
-    () => props.tasks,
-    () => props.statuses,
-    () => props.sortDirections,
-    () => props.sortKey,
-  ],
-  () => syncBoardColumns(),
-  {
-    deep: true,
-    immediate: true,
-  }
-);
-
-const kanbanColumns = computed(() =>
-  props.statuses.map(status => ({
-    color: status.color,
-    label: status.name,
-    statusId: Number(status.id),
-    tasks: boardColumns.value[Number(status.id)] || [],
-  }))
-);
-
-const formatDateLabel = value => {
-  if (!value) return t('CRM.GENERAL.EMPTY_VALUE');
-
-  return new Intl.DateTimeFormat(localeCode.value, {
-    day: 'numeric',
-    month: 'short',
-    weekday: 'short',
-  }).format(new Date(value));
-};
-
-const priorityLabelByValue = computed(() => ({
-  high: t('CRM.TASKS.PRIORITY.high'),
-  low: t('CRM.TASKS.PRIORITY.low'),
-  medium: t('CRM.TASKS.PRIORITY.medium'),
-  none: t('CRM.TASKS.PRIORITY.none'),
-  urgent: t('CRM.TASKS.PRIORITY.urgent'),
+const bucketMeta = computed(() => ({
+  future: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.FUTURE'),
+  },
+  nextWeek: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.NEXT_WEEK'),
+  },
+  overdue: {
+    color: '#FF8F93',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.OVERDUE'),
+  },
+  today: {
+    color: '#87F1C0',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TODAY'),
+  },
+  tomorrow: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TOMORROW'),
+  },
+  thisMonth: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.THIS_MONTH'),
+  },
+  unscheduled: {
+    color: '#F2F3F5',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.UNSCHEDULED'),
+  },
 }));
+
+const boardColumns = computed(() =>
+  visibleTaskTimeBuckets(groupedTasks.value).map(key => {
+    const direction =
+      props.sortKey === 'position' ? 'asc' : props.sortDirections[key] || 'asc';
+    const tasks = props.sortValueResolver
+      ? sortListRecords(
+          groupedTasks.value[key],
+          { direction, key: props.sortKey },
+          props.sortValueResolver
+        )
+      : groupedTasks.value[key];
+
+    return {
+      ...bucketMeta.value[key],
+      direction,
+      key,
+      tasks,
+    };
+  })
+);
 
 const activityTypeMetaByValue = computed(() => ({
   call: {
@@ -198,70 +153,24 @@ const activityTypeMetaByValue = computed(() => ({
   },
 }));
 
-const formatActivityTypeLabel = activityType => {
-  return (
-    activityTypeMetaByValue.value[activityType || 'task']?.label || activityType
-  );
+const formatDateLabel = value => {
+  if (!value) return t('CRM.TASKS.BOARD.TIME_BUCKETS.UNSCHEDULED');
+
+  return new Intl.DateTimeFormat(localeCode.value, {
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+  }).format(new Date(value));
 };
 
-const activityTypeIcon = activityType =>
-  activityTypeMetaByValue.value[activityType || 'task']?.icon ||
-  'i-lucide-list-todo';
-
-const formatPriorityLabel = priority => {
-  if (!priority) return t('CRM.GENERAL.EMPTY_VALUE');
-
-  return priorityLabelByValue.value[priority] || priority;
-};
-
-const taskSubtitle = task => {
-  return props.dealNames[task.dealId] || '';
-};
-
-const emitStatusChange = (task, statusId, position) => {
-  const nextStatusId = Number(statusId);
-  const nextPosition = Number(position);
-
-  if (
-    !task ||
-    (Number(task.statusId) === nextStatusId &&
-      (!nextPosition || Number(task.position) === nextPosition))
-  ) {
-    return;
-  }
-
-  task.statusId = nextStatusId;
-  task.position = nextPosition || task.position;
-  emit('changeStatus', {
-    position: nextPosition || null,
-    statusId: nextStatusId,
-    task,
-  });
-};
-
-const handleColumnChange = (event, statusId) => {
-  if (event.moved) {
-    const task = boardColumns.value[Number(statusId)][event.moved.newIndex];
-    emitStatusChange(
-      task,
-      statusId,
-      resolveBoardPosition(event.moved.newIndex)
-    );
-    return;
-  }
-
-  if (!event.added) return;
-
-  const task = boardColumns.value[Number(statusId)][event.added.newIndex];
-  emitStatusChange(task, statusId, resolveBoardPosition(event.added.newIndex));
-};
+const activityTypeMeta = task =>
+  activityTypeMetaByValue.value[task.activityType || 'task'] ||
+  activityTypeMetaByValue.value.task;
 
 const handleAssigneeChange = (task, assigneeId) => {
   const nextAssigneeId = Number(assigneeId);
-
-  if (!nextAssigneeId || Number(task.assigneeId) === nextAssigneeId) {
-    return;
-  }
+  if (!nextAssigneeId || Number(task.assigneeId) === nextAssigneeId) return;
 
   emit('changeAssignee', { assigneeId: nextAssigneeId, task });
 };
@@ -269,184 +178,128 @@ const handleAssigneeChange = (task, assigneeId) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2">
-    <div class="mx-auto flex w-max min-h-full items-start gap-2 py-1">
+    <p
+      class="sticky left-0 z-10 mx-3 my-1 w-max max-w-[calc(100vw-2rem)] rounded-md bg-n-surface-1 px-2 py-1 text-xs text-n-slate-11 shadow-sm"
+      data-test="planning-only-note"
+    >
+      {{ t('CRM.TASKS.BOARD.PLANNING_ONLY') }}
+    </p>
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 py-1">
       <section
-        v-for="column in kanbanColumns"
-        :key="column.statusId"
-        class="crm-task-board-column group/crm-column flex min-h-full w-[17rem] shrink-0 self-start flex-col overflow-visible"
+        v-for="column in boardColumns"
+        :key="column.key"
+        :data-test="`bucket-${column.key}`"
+        class="crm-task-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
-          class="sticky top-0 z-10 rounded-t-xl bg-n-slate-2/95 px-4 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
+          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
         >
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex min-w-0 items-center gap-2">
               <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
                 {{ column.label }}
               </h3>
-            </div>
-            <div class="flex items-center gap-2">
               <span
                 class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
               >
                 {{ column.tasks.length }}
               </span>
-              <button
-                v-if="showSortToggle"
-                type="button"
-                class="flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-slate-12"
-                :aria-label="sortDirectionLabel(column.statusId)"
-                :title="sortDirectionLabel(column.statusId)"
-                @click.stop="emit('toggleSortDirection', column.statusId)"
-              >
-                <i
-                  class="text-base"
-                  :class="sortDirectionIcon(column.statusId)"
-                  aria-hidden="true"
-                />
-              </button>
             </div>
+            <button
+              v-if="showSortToggle"
+              type="button"
+              class="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-n-slate-11 hover:bg-n-alpha-black2 hover:text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-weak"
+              :aria-label="sortDirectionLabels[column.direction]"
+              :title="sortDirectionLabels[column.direction]"
+              @click="emit('toggleSortDirection', column.key)"
+            >
+              <span
+                class="size-4"
+                :class="
+                  column.direction === 'desc'
+                    ? 'i-lucide-arrow-down-wide-narrow'
+                    : 'i-lucide-arrow-up-narrow-wide'
+                "
+                aria-hidden="true"
+              />
+            </button>
           </div>
-          <div class="mt-3 h-1 overflow-hidden rounded-full bg-n-alpha-black2">
-            <div
-              class="h-full rounded-full"
-              :style="{
-                backgroundColor: column.color || DEFAULT_TASK_STATUS_COLOR,
-              }"
-            />
-          </div>
+          <div
+            class="crm-task-board-bucket-color mt-3 h-1 overflow-hidden rounded-full"
+            :style="{ backgroundColor: column.color }"
+          />
         </header>
 
-        <Draggable
-          :list="boardColumns[column.statusId]"
-          :disabled="!canManage"
-          :sort="sortKey === 'position'"
-          animation="180"
-          class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
-          ghost-class="crm-task-board-card-ghost"
-          group="crm-task-board"
-          item-key="id"
-          @change="handleColumnChange($event, column.statusId)"
-        >
-          <template #item="{ element }">
-            <article
-              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
-              @click="emit('selectTask', element)"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <h4
-                    class="mb-0 truncate text-xs font-semibold text-n-slate-12"
-                  >
-                    {{ element.title }}
-                  </h4>
-                  <p
-                    v-if="taskSubtitle(element)"
-                    class="mb-0 mt-0.5 text-[10px] text-n-slate-11"
-                  >
-                    {{ taskSubtitle(element) }}
-                  </p>
-                </div>
-
-                <CrmTaskAssigneeMenu
-                  :assignees="assignees"
-                  :disabled="!canManage"
-                  :model-value="element.assigneeId"
-                  @update:model-value="handleAssigneeChange(element, $event)"
-                />
-              </div>
-
-              <div class="mt-2 flex items-center justify-between gap-2">
-                <div class="flex min-w-0 items-center gap-1.5">
-                  <span
-                    class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
-                  >
-                    <span
-                      class="size-3"
-                      :class="activityTypeIcon(element.activityType)"
-                      aria-hidden="true"
-                    />
-                    {{ formatActivityTypeLabel(element.activityType) }}
-                  </span>
-                  <span
-                    v-if="element.archivedAt"
-                    class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
-                  >
-                    {{ $t('CRM.GENERAL.ARCHIVED') }}
-                  </span>
-                  <span
-                    v-else
-                    class="text-[10px] font-medium leading-none tracking-normal text-n-slate-10"
-                  >
-                    {{ formatPriorityLabel(element.priority) }}
-                  </span>
-                </div>
-
-                <span class="text-[9px] text-n-slate-10/90">
-                  {{ formatDateLabel(element.dueAt || element.updatedAt) }}
-                </span>
-              </div>
-
-              <CrmCustomFieldsSummary
-                class="mt-2"
-                :definitions="fieldDefinitions"
-                :values="element.customAttributes"
-              />
-            </article>
-          </template>
-
-          <template #footer>
-            <template v-if="!column.tasks.length">
-              <div v-if="canManage" class="block">
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                  @click.stop="
-                    emit('createTask', {
-                      statusId: column.statusId,
-                    })
-                  "
-                >
-                  <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                  <span>{{ $t('CRM.TASKS.NEW_TASK') }}</span>
-                </button>
-              </div>
-            </template>
-
-            <div
-              v-else-if="canManage"
-              class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
-            >
+        <div class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5">
+          <article
+            v-for="task in column.tasks"
+            :key="task.id"
+            class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
+            @click="emit('selectTask', task)"
+          >
+            <div class="flex items-start justify-between gap-2">
               <button
                 type="button"
-                class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                @click.stop="
-                  emit('createTask', {
-                    statusId: column.statusId,
-                  })
-                "
+                data-test="open-task"
+                class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                @click.stop="emit('selectTask', task)"
               >
-                <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                <span>{{ $t('CRM.TASKS.NEW_TASK') }}</span>
+                <h4 class="mb-0 truncate text-xs font-semibold text-n-slate-12">
+                  {{ task.title }}
+                </h4>
+                <p
+                  v-if="dealNames[task.dealId]"
+                  class="mb-0 mt-0.5 text-[10px] text-n-slate-11"
+                >
+                  {{ dealNames[task.dealId] }}
+                </p>
               </button>
+
+              <CrmTaskAssigneeMenu
+                :assignees="assignees"
+                :disabled="!canManage"
+                :model-value="task.assigneeId"
+                @update:model-value="handleAssigneeChange(task, $event)"
+              />
             </div>
-          </template>
-        </Draggable>
+
+            <div class="mt-2 flex items-center justify-between gap-2">
+              <span
+                class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
+              >
+                <span
+                  class="size-3"
+                  :class="activityTypeMeta(task).icon"
+                  aria-hidden="true"
+                />
+                {{ activityTypeMeta(task).label }}
+              </span>
+              <span
+                v-if="column.key === 'overdue'"
+                class="rounded-full bg-n-ruby-9/10 px-2 py-0.5 text-[10px] font-semibold text-n-ruby-11"
+              >
+                {{ $t('CRM.TASKS.BOARD.OVERDUE_BADGE') }}
+              </span>
+              <span v-else class="text-[9px] text-n-slate-10/90">
+                {{ formatDateLabel(task.dueAt) }}
+              </span>
+            </div>
+
+            <p
+              v-if="statusNames[task.statusId]"
+              class="mb-0 mt-2 text-[10px] text-n-slate-11"
+            >
+              {{ statusNames[task.statusId] }}
+            </p>
+
+            <CrmCustomFieldsSummary
+              class="mt-2"
+              :definitions="fieldDefinitions"
+              :values="task.customAttributes"
+            />
+          </article>
+        </div>
       </section>
     </div>
   </div>
 </template>
-
-<style scoped lang="scss">
-.crm-task-board-card-ghost {
-  @apply opacity-40;
-}
-
-.crm-task-board-column {
-  @apply relative;
-}
-
-.crm-task-board-column + .crm-task-board-column::before {
-  content: '';
-  @apply absolute -left-1 top-1/2 h-1/3 w-px -translate-y-1/2 bg-n-weak;
-}
-</style>

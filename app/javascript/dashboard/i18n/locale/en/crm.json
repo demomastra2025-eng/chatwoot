@@ -88,6 +88,7 @@
       "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
       "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
+      "DEFAULT_STAGE_REQUIRES_FALLBACK": "Keep another active open stage before deactivating or deleting the default stage.",
       "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed and configured with closing reasons.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
@@ -276,9 +277,20 @@
       "BOARD": {
         "CREATE_STATUS": "Create status",
         "EMPTY_COLUMN": "No tasks in this status",
+        "PLANNING_ONLY": "Planning board · completed and archived tasks are hidden",
         "EMPTY_COLUMN_DESCRIPTION": "New tasks moved to this status will appear here.",
         "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
         "EMPTY_STATUS_TITLE": "No task statuses yet",
+        "OVERDUE_BADGE": "Overdue",
+        "TIME_BUCKETS": {
+          "FUTURE": "Future",
+          "NEXT_WEEK": "Upcoming days",
+          "OVERDUE": "Overdue",
+          "THIS_MONTH": "Within a month",
+          "TODAY": "Today",
+          "TOMORROW": "Tomorrow",
+          "UNSCHEDULED": "No due date"
+        },
         "SORT": {
           "LABEL": "Sort by",
           "ORDER": "Order",
@@ -496,6 +508,7 @@
         "CREATE_TITLE": "Create stage",
         "DEFAULT_BADGE": "Default",
         "DELETE": "Delete stage",
+        "DELETE_STAGE": "Delete {name}",
         "DELETE_CONFIRM": "Delete",
         "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
         "DELETE_TITLE": "Delete stage?",
@@ -529,12 +542,22 @@
           "open": "Open",
           "won": "Won"
         },
+        "LOCKED_TERMINAL_STAGES": "Won and lost stages",
+        "NO_ACTIVE_PIPELINES": "Create or restore an active pipeline to manage its stages.",
+        "ORDER_DRAFT_NOTICE": "This pipeline has unsaved stage changes. Save or cancel the draft before switching pipelines.",
         "REORDER": "Reorder stages",
-        "REORDER_DESCRIPTION": "Drag stages to change their order inside the “{name}” pipeline.",
+        "REORDER_STAGE": "Reorder {name}",
+        "REORDER_DESCRIPTION": "Edit stage details, add or remove stages, and drag cards to change their order. Save the draft once to apply all changes to “{name}”.",
         "REORDER_TITLE": "Stage order",
+        "SAVE_ORDER": "Save changes",
+        "SAVE_OR_DISCARD_ORDER_FIRST": "Save or cancel the stage draft before switching pipelines.",
+        "SELECTED_PIPELINE_ONLY": "Edit stages from the selected pipeline card editor.",
+        "DRAFT_UPDATED": "Stage draft updated",
+        "CLOSING_REASON_REQUIRED": "Closing reason required",
+        "TRANSITION_REASON_REQUIRED": "Transition reason required",
         "SUCCESS_DELETE": "Stage deleted",
         "SUCCESS_REORDER": "Stage order saved",
-        "SUCCESS_SAVE": "Stage saved"
+        "SUCCESS_SAVE": "Stage changes saved"
       },
       "TASK_STATUSES": {
         "ADD": "Add status",

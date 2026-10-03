@@ -29,9 +29,9 @@ const buildWrapper = props =>
         Avatar: true,
         AssistantUsageModeSelector: true,
         Button: true,
-        Checkbox: true,
         Editor: true,
         Input: true,
+        Switch: true,
       },
     },
   });
@@ -84,6 +84,38 @@ describe('AssistantBasicSettingsForm', () => {
         },
       },
     });
+  });
+
+  it('groups capabilities while keeping mode-specific controls visible', () => {
+    const externalAgent = buildWrapper({
+      assistant: { usage_mode: 'external_agent', config: {} },
+      showSubmitButton: false,
+    });
+
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
+    );
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
+    );
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
+    );
+
+    const internalAssistant = buildWrapper({
+      assistant: { usage_mode: 'internal_assistant', config: {} },
+      showSubmitButton: false,
+    });
+
+    expect(internalAssistant.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
+    );
+    expect(internalAssistant.text()).not.toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
+    );
+    expect(internalAssistant.text()).not.toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
+    );
   });
 
   it('persists an explicit empty agent scope when all default capability checkboxes are disabled', async () => {
