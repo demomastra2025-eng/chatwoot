@@ -189,4 +189,77 @@ describe('Audio chip playback', () => {
     expect(waveSurfer.destroy).not.toHaveBeenCalled();
     expect(playSpy).not.toHaveBeenCalled();
   });
+
+  it('renders fallback equalizer waveform when in native fallback mode', async () => {
+    withContainerWidth(0);
+    const chip = mountChip();
+    await flushPromises();
+
+    expect(chip.find('[data-testid="audio-fallback-waveform"]').exists()).toBe(
+      true
+    );
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(chip.find('[data-testid="audio-fallback-waveform"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('cycles playback speeds including 1.25x and supports seek buttons', async () => {
+    withContainerWidth(300);
+    const chip = mountChip();
+    await flushPromises();
+
+    const [waveSurfer] = waveSurferState.instances;
+    waveSurfer.setTime = vi.fn();
+    waveSurfer.handlers.ready(30);
+    await flushPromises();
+
+    // Start playing
+    await playButton(chip).trigger('click');
+    waveSurfer.handlers.play?.();
+    await flushPromises();
+
+    // Speed button is shown while playing
+    const speedButton = chip
+      .findAll('button')
+      .find(btn => btn.text().includes('x'));
+    expect(speedButton.text()).toBe('1x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1.25);
+    expect(speedButton.text()).toBe('1.25x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1.5);
+    expect(speedButton.text()).toBe('1.5x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(2);
+    expect(speedButton.text()).toBe('2x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1);
+    expect(speedButton.text()).toBe('1x');
+
+    // Seek buttons
+    const seekForwardBtn = chip
+      .findAll('button')
+      .find(btn => btn.text() === '+10s');
+    const seekBackwardBtn = chip
+      .findAll('button')
+      .find(btn => btn.text() === '-10s');
+    expect(seekForwardBtn.exists()).toBe(true);
+    expect(seekBackwardBtn.exists()).toBe(true);
+
+    await seekForwardBtn.trigger('click');
+    expect(waveSurfer.setTime).toHaveBeenCalledWith(10);
+
+    waveSurfer.handlers.timeupdate?.(15);
+    await flushPromises();
+    await seekBackwardBtn.trigger('click');
+    expect(waveSurfer.setTime).toHaveBeenCalledWith(5);
+  });
 });
