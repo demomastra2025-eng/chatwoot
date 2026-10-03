@@ -155,6 +155,19 @@ const freeQuotaSummary = computed(() => {
     limit: formattedFreeQuotaLimit.value,
   });
 });
+const compactSummary = computed(
+  () =>
+    `${t('WHATSAPP_USAGE.BANNER_TITLE', {
+      deliveredCount: formattedDeliveredCount.value,
+      amount: formattedAmount.value || t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE'),
+    })} · ${freeQuotaSummary.value}`
+);
+const breakdownTriggerLabel = computed(
+  () =>
+    `${compactSummary.value}. ${t('WHATSAPP_USAGE.BREAKDOWN_TRIGGER', {
+      count: formattedDeliveredCount.value,
+    })}`
+);
 const formattedFreeQuotaByPhone = computed(() => {
   return (
     connectedPhones.value
@@ -564,7 +577,7 @@ onUnmounted(() => {
     v-if="shouldShowBanner"
     role="status"
     aria-live="polite"
-    class="flex items-center justify-between gap-3 border-y border-[#ffd9d9] bg-[#fff1f1] px-4 py-1.5 text-n-ruby-12 dark:border-[#704040] dark:bg-[#3b2222]"
+    class="flex items-center justify-between gap-2 border-y border-[#f0c8c1] bg-[#fff2ef] px-3 py-0 text-[#783a34] dark:border-[#70443f] dark:bg-[#332421] dark:text-[#f4c3bb]"
     @keydown.esc.stop.prevent="closeCategoryBreakdown"
   >
     <div class="min-w-0 flex-1">
@@ -579,12 +592,8 @@ onUnmounted(() => {
       >
         <button
           type="button"
-          class="flex w-full min-w-0 items-center gap-1 rounded text-left text-[11px] font-medium leading-4 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-9 sm:text-xs"
-          :aria-label="
-            t('WHATSAPP_USAGE.BREAKDOWN_TRIGGER', {
-              count: formattedDeliveredCount,
-            })
-          "
+          class="flex w-full min-w-0 items-center gap-1 rounded text-left text-[11px] font-medium leading-4 hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#bd6e63] sm:text-xs"
+          :aria-label="breakdownTriggerLabel"
           :aria-expanded="isCategoryBreakdownOpen"
           aria-controls="whatsapp-usage-breakdown"
           data-testid="whatsapp-usage-breakdown-trigger"
@@ -594,16 +603,10 @@ onUnmounted(() => {
             class="min-w-0 flex-1 break-words"
             data-testid="whatsapp-usage-title"
           >
-            {{
-              t('WHATSAPP_USAGE.BANNER_TITLE', {
-                deliveredCount: formattedDeliveredCount,
-                amount:
-                  formattedAmount || t('WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE'),
-              })
-            }}
+            {{ compactSummary }}
           </span>
           <i
-            class="i-lucide-info size-3.5 shrink-0 text-n-ruby-11"
+            class="i-lucide-info mt-0.5 size-3.5 shrink-0 self-start text-[#a34840] dark:text-[#f0aaa1]"
             aria-hidden="true"
           />
         </button>
@@ -656,28 +659,22 @@ onUnmounted(() => {
           >
             {{ t('WHATSAPP_USAGE.CATEGORY_BREAKDOWN_NOTE') }}
           </p>
+          <p
+            v-if="isEstimateIncomplete"
+            class="m-0 mt-2 text-[11px] font-medium leading-4 text-n-ruby-11"
+            data-testid="whatsapp-usage-estimate-incomplete"
+          >
+            {{ t('WHATSAPP_USAGE.ESTIMATE_INCOMPLETE') }}
+          </p>
           <p class="m-0 mt-2 text-[11px] leading-4 text-n-slate-11">
             {{ bannerTooltip }}
           </p>
         </div>
       </div>
-      <div
-        class="mt-0.5 flex min-w-0 items-baseline gap-2 text-[10px] leading-[14px] sm:text-[11px]"
-      >
-        <p class="m-0 min-w-0 flex-1 truncate whitespace-nowrap">
-          {{ freeQuotaSummary }}
-        </p>
-        <span
-          v-if="isEstimateIncomplete"
-          class="shrink-0 whitespace-nowrap text-[10px] font-medium leading-[14px] sm:text-[11px]"
-        >
-          {{ t('WHATSAPP_USAGE.ESTIMATE_INCOMPLETE') }}
-        </span>
-      </div>
     </div>
     <button
       type="button"
-      class="grid size-8 shrink-0 place-items-center rounded-md text-n-ruby-11 hover:bg-[#ffd9d9] dark:hover:bg-[#704040] focus-visible:outline focus-visible:outline-2 focus-visible:outline-n-ruby-9"
+      class="grid size-7 shrink-0 place-items-center rounded-md text-[#a34840] hover:bg-[#f7ded9] dark:text-[#f0aaa1] dark:hover:bg-[#52312d] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#bd6e63]"
       :aria-label="t('WHATSAPP_USAGE.DISMISS')"
       :title="t('WHATSAPP_USAGE.DISMISS')"
       @click="dismissBanner"

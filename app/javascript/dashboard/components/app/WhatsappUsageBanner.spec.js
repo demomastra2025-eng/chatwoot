@@ -219,17 +219,22 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledWith(11);
-    expect(wrapper.text()).toContain('delivered: 12');
+    const summary = wrapper.get('[data-testid="whatsapp-usage-title"]');
+    expect(summary.text()).toContain('delivered: 12');
+    expect(summary.text()).toContain('total ≈');
+    expect(summary.text()).toContain('74.75');
+    expect(summary.text()).toContain('Free service messages (UTC): 5/1,000');
+    expect(summary.element.childElementCount).toBe(0);
     expect(
-      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
-    ).toContain('total ≈');
-    expect(
-      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
-    ).toContain('74.75');
-    expect(wrapper.text()).toContain('Free service messages (UTC): 5/1,000');
-    expect(wrapper.text()).toContain('Estimate incomplete');
+      wrapper
+        .get('[data-testid="whatsapp-usage-breakdown-trigger"]')
+        .attributes('aria-label')
+    ).toContain('Free service messages (UTC): 5/1,000');
+    expect(summary.text()).not.toContain('Estimate incomplete');
+    expect(wrapper.text()).not.toContain('Estimate incomplete');
     expect(wrapper.text()).not.toContain('Template cost separate');
     const tooltip = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(tooltip).toContain('Estimate incomplete');
     expect(tooltip).toContain(
       'Service messages KZT 64.25; templates KZT 10.5; delivered templates 3'
     );
@@ -383,10 +388,10 @@ describe('WhatsappUsageBanner', () => {
     expect(
       wrapper.get('[data-testid="whatsapp-usage-title"]').text()
     ).toContain('delivered: —');
-    expect(wrapper.text()).toContain('Estimate incomplete');
-    expect(await openBreakdown(wrapper)).toContain(
-      'Category breakdown is not available yet.'
-    );
+    expect(wrapper.text()).not.toContain('Estimate incomplete');
+    const details = await openBreakdown(wrapper);
+    expect(details).toContain('Category breakdown is not available yet.');
+    expect(details).toContain('Estimate incomplete');
     expect(wrapper.text()).not.toContain('Delivered: 0');
 
     mocks.getMonthlyUsage = vi.fn(async () => response(monthlyUsage()));
@@ -462,8 +467,11 @@ describe('WhatsappUsageBanner', () => {
     expect(wrapper.text()).toContain(
       'Free service messages (UTC): 524 · limit 1,000/number'
     );
-    expect(wrapper.text()).toContain('Estimate incomplete');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).not.toContain('Estimate incomplete');
     const tooltip = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(tooltip).toContain('Estimate incomplete');
     expect(tooltip).toContain(
       'by number: number …8558: 512/1,000; number …0002: 12/1,000'
     );
@@ -533,7 +541,10 @@ describe('WhatsappUsageBanner', () => {
     expect(
       wrapper.get('[data-testid="whatsapp-usage-title"]').text()
     ).toContain('total ≈ unavailable');
-    expect(wrapper.text()).toContain('Estimate incomplete');
+    expect(wrapper.text()).not.toContain('Estimate incomplete');
+    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
+      'Estimate incomplete'
+    );
     wrapper.unmount();
   });
 
@@ -665,10 +676,9 @@ describe('WhatsappUsageBanner', () => {
     expect(
       wrapper.get('[data-testid="whatsapp-usage-title"]').text()
     ).not.toContain('KZT 0');
-    expect(wrapper.text()).toContain('Estimate incomplete');
-    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
-      'effective unavailable; unavailable KZT per USD'
-    );
+    const details = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(details).toContain('Estimate incomplete');
+    expect(details).toContain('effective unavailable; unavailable KZT per USD');
 
     wrapper.unmount();
   });
@@ -684,10 +694,9 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
-      'Unpriced: —; unknown: —'
-    );
-    expect(wrapper.text()).toContain('Estimate incomplete');
+    const details = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(details).toContain('Unpriced: —; unknown: —');
+    expect(details).toContain('Estimate incomplete');
 
     wrapper.unmount();
   });
