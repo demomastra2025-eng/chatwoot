@@ -980,6 +980,9 @@ Rails.application.routes.draw do
         post :reset_cache, on: :member
         post :extend_trial, on: :member
         post :expire_trial, on: :member
+        post :impersonate, on: :member
+        post :cleanup_storage, on: :member
+        get :export, on: :collection
         if ChatwootApp.enterprise?
           post :reset_captain_responses_usage, on: :member
           post :reset_captain_tokens_usage, on: :member

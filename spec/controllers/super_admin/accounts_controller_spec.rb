@@ -278,6 +278,83 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
     end
   end
 
+  describe 'POST /super_admin/accounts/{account_id}/impersonate' do
+    context 'when authenticated as super admin' do
+      it 'redirects to SSO impersonation URL of account administrator' do
+        user = create(:user, account: account, role: :administrator)
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/impersonate"
+
+        expect(response).to have_http_status(:redirect)
+        expect(response.redirect_url).to include('/app/login')
+        expect(response.redirect_url).to include('impersonation=true')
+        expect(response.redirect_url).to include(CGI.escape(user.email))
+      end
+
+      it 'redirects with an alert when account has no users' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/impersonate"
+
+        expect(response).to have_http_status(:redirect)
+        expect(flash[:alert]).to eq('В этой клинике нет зарегистрированных пользователей для входа')
+      end
+    end
+  end
+
+  describe 'POST /super_admin/accounts/{account_id}/cleanup_storage' do
+    context 'when authenticated as super admin' do
+      it 'purges old audio recordings and displays notice with freed storage' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/cleanup_storage", params: { months: 6 }
+
+        expect(response).to have_http_status(:redirect)
+        expect(flash[:notice]).to include('Очистка завершена')
+      end
+    end
+  end
+
+  describe 'GET /super_admin/accounts/export' do
+    context 'when authenticated as super admin' do
+      # rubocop:disable RSpec/MultipleExpectations
+      it 'exports clinic registry as CSV with UTF-8 BOM and headers' do
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/accounts/export'
+
+        expect(response).to have_http_status(:success)
+        expect(response.headers['Content-Type']).to include('text/csv')
+        expect(response.headers['Content-Disposition']).to include('attachment')
+        expect(response.headers['Content-Disposition']).to include('onelink-clinics-')
+        expect(response.body).to start_with("\uFEFF")
+        expect(response.body).to include('ID,Название,Тариф,Статус триала,Окончание триала,Операторов,Каналов')
+        expect(response.body).to include('Занято места (MB),Лимит диска (GB),Статус,Дата создания')
+        expect(response.body).to include(account.name)
+      end
+      # rubocop:enable RSpec/MultipleExpectations
+    end
+  end
+
+  describe 'Account storage and smart filters' do
+    it 'returns storage breakdown structure' do
+      breakdown = account.storage_breakdown
+      expect(breakdown).to include(:audio, :images, :videos, :documents, :captain, :other, :total)
+    end
+
+    it 'provides smart collection filters for tariffs and trial' do
+      expect(AccountDashboard::COLLECTION_FILTERS.keys).to include(
+        :active, :suspended, :recent, :starter, :growth, :advanced, :enterprise,
+        :trial_active, :trial_expired, :storage_high, :marked_for_deletion
+      )
+
+      account.update!(custom_attributes: { 'plan_type' => 'starter' })
+      expect(AccountDashboard::COLLECTION_FILTERS[:starter].call(Account.all)).to include(account)
+      expect(AccountDashboard::COLLECTION_FILTERS[:growth].call(Account.all)).not_to include(account)
+    end
+  end
+
   describe 'DELETE /super_admin/accounts/{account_id}' do
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do

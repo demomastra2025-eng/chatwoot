@@ -23,6 +23,7 @@
 #  index_accounts_on_status  (status)
 #
 
+# rubocop:disable Metrics/ClassLength
 class Account < ApplicationRecord
   include Rails.application.routes.url_helpers
   include AccountStorageLimitable
@@ -71,6 +72,7 @@ class Account < ApplicationRecord
   has_many :agent_bots, dependent: :destroy_async
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
+  has_many :attachments, dependent: :destroy_async
   has_many :assignment_policies, dependent: :destroy_async
   has_many :automation_rules, dependent: :destroy_async
   has_many :bulk_action_runs, dependent: :destroy_async
@@ -281,7 +283,7 @@ class Account < ApplicationRecord
                        end
                      end
 
-    base_time = (current_expiry && current_expiry > now) ? current_expiry : now
+    base_time = current_expiry && current_expiry > now ? current_expiry : now
     attrs['plan_type'] = 'trial'
     attrs['trial_expires_at'] = (base_time + days.days).iso8601
     self.custom_attributes = attrs
@@ -306,6 +308,63 @@ class Account < ApplicationRecord
     self.custom_attributes = attrs
     self.limits = (limits || {}).merge('agents' => 0, 'inboxes' => 0)
     save!
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+  def storage_breakdown
+    attachment_usage = ActiveStorage::Attachment.joins(:blob)
+                                                .joins(
+                                                  'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
+                                                  "AND active_storage_attachments.record_type = 'Attachment'"
+                                                )
+                                                .where(attachments: { account_id: id })
+                                                .group('attachments.file_type')
+                                                .sum('active_storage_blobs.byte_size')
+
+    audio_bytes = attachment_usage[1] || attachment_usage['audio'] || 0
+    image_bytes = attachment_usage[0] || attachment_usage['image'] || 0
+    video_bytes = attachment_usage[2] || attachment_usage['video'] || 0
+    doc_bytes = attachment_usage[3] || attachment_usage['file'] || 0
+
+    captain_bytes = if defined?(Captain::Document) && Captain::Document.table_exists?
+                      ActiveStorage::Attachment.joins(:blob)
+                                               .where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
+                                               .where('active_storage_attachments.record_id IN ' \
+                                                      "(SELECT id FROM captain_documents WHERE account_id = #{id.to_i})")
+                                               .sum('active_storage_blobs.byte_size')
+                    else
+                      0
+                    end
+
+    total_bytes = AccountLimits::StorageUsageService.new(account: self).usage_bytes
+    other_bytes = [total_bytes - (audio_bytes + image_bytes + video_bytes + doc_bytes + captain_bytes), 0].max
+
+    {
+      audio: audio_bytes,
+      images: image_bytes,
+      videos: video_bytes,
+      documents: doc_bytes,
+      captain: captain_bytes,
+      other: other_bytes,
+      total: total_bytes
+    }
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+
+  def cleanup_old_recordings!(cutoff = 6.months.ago)
+    old_audio_attachments = attachments.where(file_type: :audio).where('created_at < ?', cutoff)
+    count = old_audio_attachments.count
+    freed_bytes = 0
+
+    old_audio_attachments.find_each do |attachment|
+      if attachment.file.attached?
+        freed_bytes += attachment.file.byte_size.to_i
+        attachment.file.purge
+      end
+      attachment.destroy
+    end
+
+    { deleted_count: count, freed_bytes: freed_bytes }
   end
 
   private
@@ -361,3 +420,5 @@ Account.prepend_mod_with('Account')
 Account.prepend_mod_with('Account::PlanUsageAndLimits')
 Account.include_mod_with('Concerns::Account')
 Account.include_mod_with('Audit::Account')
+
+# rubocop:enable Metrics/ClassLength

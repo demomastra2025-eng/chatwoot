@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   STORAGE_GB_IN_BYTES = 1.gigabyte
 
@@ -94,6 +95,91 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     redirect_to_account(alert: "Ошибка завершения триала: #{e.message}")
   end
 
+  def impersonate
+    target_user = requested_resource.administrators.first || requested_resource.users.first
+    if target_user.present?
+      redirect_to target_user.generate_sso_link_with_impersonation, allow_other_host: true
+    else
+      redirect_to_account(alert: 'В этой клинике нет зарегистрированных пользователей для входа')
+    end
+  end
+
+  def cleanup_storage
+    cutoff_months = (params[:months] || 6).to_i
+    cutoff_date = cutoff_months.months.ago
+    result = requested_resource.cleanup_old_recordings!(cutoff_date)
+    freed_mb = (result[:freed_bytes].to_f / 1.megabyte).round(2)
+    redirect_to_account(notice: "Очистка завершена: удалено аудиозаписей: #{result[:deleted_count]} (освобождено #{freed_mb} MB)")
+  rescue StandardError => e
+    redirect_to_account(alert: "Ошибка очистки хранилища: #{e.message}")
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength
+  def export
+    require 'csv'
+
+    accounts = Account.includes(:users, :inboxes).order(id: :desc)
+
+    csv_data = CSV.generate(headers: true) do |csv|
+      csv << [
+        'ID',
+        'Название',
+        'Тариф',
+        'Статус триала',
+        'Окончание триала',
+        'Операторов',
+        'Каналов',
+        'Занято места (MB)',
+        'Лимит диска (GB)',
+        'Статус',
+        'Дата создания'
+      ]
+
+      accounts.find_each do |acc|
+        plan = acc.custom_attributes&.dig('plan_type').presence || 'custom'
+        trial_status = if plan != 'trial'
+                         'Нет'
+                       elsif acc.trial_active?
+                         'Активен'
+                       else
+                         'Истёк'
+                       end
+
+        trial_exp = if acc.custom_attributes&.dig('trial_expires_at').present?
+                      begin
+                        Time.zone.parse(acc.custom_attributes['trial_expires_at'].to_s).strftime('%d.%m.%Y %H:%M')
+                      rescue StandardError
+                        '-'
+                      end
+                    else
+                      '-'
+                    end
+
+        storage_bytes = acc.limits&.[]('storage_bytes')
+        limit_gb = storage_bytes.present? ? (storage_bytes.to_f / 1.gigabyte).round(1) : 'Безлимит'
+        used_bytes = AccountLimits::StorageUsageService.new(account: acc).usage_bytes
+        used_mb = (used_bytes.to_f / 1.megabyte).round(2)
+
+        csv << [
+          acc.id,
+          acc.name,
+          plan.titleize,
+          trial_status,
+          trial_exp,
+          acc.users.size,
+          acc.inboxes.size,
+          used_mb,
+          limit_gb,
+          acc.status,
+          acc.created_at.strftime('%d.%m.%Y %H:%M')
+        ]
+      end
+    end
+
+    filename = "onelink-clinics-#{Time.current.strftime('%Y%m%d_%H%M%S')}.csv"
+    send_data "\uFEFF#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength
 
   def destroy
     account = Account.find(params[:id])
@@ -126,6 +212,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     (BigDecimal(value.to_s) * STORAGE_GB_IN_BYTES).round(0).to_i
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def merge_plan_type!(permitted_params)
     return unless params[:account]&.key?(:plan_type)
 
@@ -143,6 +230,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
     permitted_params[:custom_attributes] = updated_custom_attributes
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def merge_limit_counter_user_exclusions!(permitted_params)
     return unless params[:account]&.key?(:limit_counter_excluded_user_ids_raw)
@@ -219,10 +307,10 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     options[:notice] = notice if notice.present?
     options[:alert] = alert if alert.present?
 
-    # rubocop:disable Rails/I18nLocaleTexts
     redirect_back(**options)
-    # rubocop:enable Rails/I18nLocaleTexts
   end
 end
 
 SuperAdmin::AccountsController.prepend_mod_with('SuperAdmin::AccountsController')
+
+# rubocop:enable Metrics/ClassLength
