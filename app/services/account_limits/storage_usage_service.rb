@@ -87,6 +87,8 @@ class AccountLimits::StorageUsageService
     model = record_type.safe_constantize
     return if model.blank? || model.column_names.exclude?('account_id')
 
-    model.where(account_id: account.id).select(:id)
+    relation = model.where(account_id: account.id)
+    relation = relation.where("(attachments.meta->'trash') IS NULL") if record_type == 'Attachment'
+    relation.select(:id)
   end
 end

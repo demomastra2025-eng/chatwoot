@@ -1749,6 +1749,60 @@
         "OPEN_CONVERSATION": "Conversation",
         "DOWNLOAD": "Download / Listen"
       }
+    },
+    "TABS": {
+      "OVERVIEW": "Storage Overview",
+      "CLEANER": "Cleaner & Trash"
+    },
+    "CLEANER": {
+      "TITLE": "Smart Storage Cleaner",
+      "SUBTITLE": "Safely move old files to 30-day trash. Storage quota is freed immediately.",
+      "FILE_TYPE": "File type to clean",
+      "ALL_TYPES": "All file types",
+      "OLDER_THAN": "Older than",
+      "OLDER_1_MONTH": "Older than 1 month",
+      "OLDER_3_MONTHS": "Older than 3 months",
+      "OLDER_6_MONTHS": "Older than 6 months",
+      "OLDER_1_YEAR": "Older than 1 year",
+      "PREVIEW_BUTTON": "Preview Cleanup",
+      "PREVIEWING": "Analyzing files...",
+      "PREVIEW_TITLE": "Cleanup Preview",
+      "FOUND_FILES": "Files found:",
+      "SPACE_TO_FREE": "Space to be freed:",
+      "RETENTION_NOTICE": "Files are kept in trash for 30 days and can be restored instantly anytime. After 30 days, they are permanently purged from disk.",
+      "MOVE_BUTTON": "Move to Trash (30 days)",
+      "MOVING": "Moving...",
+      "MOVE_CONFIRM": "Move {count} files ({size}) to trash? You can restore them within 30 days.",
+      "MOVE_SUCCESS": "Successfully moved to trash: {count} files ({size})",
+      "MOVE_ERROR": "Error moving files to trash",
+      "NO_MATCHING_FILES": "No files match the selected criteria"
+    },
+    "TRASH": {
+      "TITLE": "Trash (30-Day Retention)",
+      "SUBTITLE": "Files moved to trash. Permanently purged after 30 days.",
+      "EMPTY": "Trash is empty. Trashed files remain here for 30 days.",
+      "TOTAL_IN_TRASH": "In trash:",
+      "RESTORE_ALL": "Restore All",
+      "EMPTY_TRASH": "Empty Trash Now",
+      "EMPTY_CONFIRM": "Are you sure you want to permanently delete all files from trash now? This cannot be undone.",
+      "RESTORE_CONFIRM": "Restore all files from trash back to storage?",
+      "COLUMNS": {
+        "NAME": "File Name",
+        "TYPE": "Type",
+        "INBOX": "Inbox",
+        "SIZE": "Size",
+        "DELETED_AT": "Moved to Trash",
+        "EXPIRES_IN": "Auto-purge In",
+        "ACTIONS": "Actions"
+      },
+      "DAYS_LEFT": "{days} d",
+      "RESTORE": "Restore",
+      "PURGE": "Purge Now",
+      "PURGE_ITEM_CONFIRM": "Permanently delete this file?",
+      "RESTORE_SUCCESS": "File restored successfully",
+      "RESTORE_ALL_SUCCESS": "All files restored from trash",
+      "PURGE_SUCCESS": "File permanently deleted",
+      "EMPTY_SUCCESS": "Trash emptied successfully"
     }
   }
 }

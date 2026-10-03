@@ -8,6 +8,7 @@ import SettingsLayout from '../SettingsLayout.vue';
 
 const { t } = useI18n();
 
+const activeTab = ref('overview');
 const isLoading = ref(true);
 const isRefreshing = ref(false);
 const storageData = ref(null);
@@ -16,6 +17,20 @@ const isLoadingFiles = ref(false);
 
 const selectedFileType = ref('all');
 const selectedInboxId = ref('');
+
+// Cleaner state
+const cleanerFileType = ref('all');
+const cleanerMonths = ref(6);
+const cleanerInboxId = ref('');
+const isPreviewing = ref(false);
+const previewData = ref(null);
+const isMovingToTrash = ref(false);
+
+// Trash state
+const trashData = ref({ total_count: 0, total_bytes: 0, items: [] });
+const isLoadingTrash = ref(false);
+const isRestoring = ref(false);
+const isPurging = ref(false);
 
 const formatBytes = (bytes, decimals = 2) => {
   if (!bytes || bytes === 0) return '0 B';
@@ -64,12 +79,28 @@ const fetchHeavyFiles = async () => {
 const fetchStorageInfo = async () => {
   try {
     isLoading.value = true;
-    const response = await StorageAPI.get();
+    const response = await StorageAPI.getStorage();
     storageData.value = response.data.storage;
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
   } finally {
     isLoading.value = false;
+  }
+};
+
+const fetchTrash = async () => {
+  try {
+    isLoadingTrash.value = true;
+    const response = await StorageAPI.getTrash();
+    trashData.value = response.data || {
+      total_count: 0,
+      total_bytes: 0,
+      items: [],
+    };
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
+  } finally {
+    isLoadingTrash.value = false;
   }
 };
 
@@ -80,6 +111,7 @@ const refreshStorage = async () => {
     storageData.value = response.data.storage;
     useAlert(t('STORAGE.REFRESH_SUCCESS'));
     await fetchHeavyFiles();
+    await fetchTrash();
   } catch (error) {
     useAlert(error?.response?.data?.message || t('STORAGE.REFRESH_ERROR'));
   } finally {
@@ -91,9 +123,142 @@ const onFilterChange = () => {
   fetchHeavyFiles();
 };
 
+const onCleanerTabClick = async () => {
+  activeTab.value = 'cleaner';
+  await fetchTrash();
+};
+
+const runPreview = async () => {
+  try {
+    isPreviewing.value = true;
+    previewData.value = null;
+    const params = {
+      file_type: cleanerFileType.value,
+      older_than_months: cleanerMonths.value,
+    };
+    if (cleanerInboxId.value) {
+      params.inbox_id = cleanerInboxId.value;
+    }
+    const response = await StorageAPI.previewCleanup(params);
+    previewData.value = response.data;
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.CLEANER.MOVE_ERROR'));
+  } finally {
+    isPreviewing.value = false;
+  }
+};
+
+const executeMoveToTrash = async () => {
+  if (!previewData.value || previewData.value.total_count === 0) return;
+  const count = previewData.value.total_count;
+  const size =
+    previewData.value.total_human || formatBytes(previewData.value.total_bytes);
+  const confirmMsg = t('STORAGE.CLEANER.MOVE_CONFIRM', { count, size });
+
+  // eslint-disable-next-line no-alert
+  if (!window.confirm(confirmMsg)) return;
+
+  try {
+    isMovingToTrash.value = true;
+    const params = {
+      file_type: cleanerFileType.value,
+      older_than_months: cleanerMonths.value,
+    };
+    if (cleanerInboxId.value) {
+      params.inbox_id = cleanerInboxId.value;
+    }
+    const response = await StorageAPI.moveToTrash(params);
+    useAlert(
+      t('STORAGE.CLEANER.MOVE_SUCCESS', {
+        count: response.data.moved_count,
+        size: formatBytes(response.data.freed_bytes),
+      })
+    );
+    previewData.value = null;
+    await fetchStorageInfo();
+    await fetchTrash();
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.CLEANER.MOVE_ERROR'));
+  } finally {
+    isMovingToTrash.value = false;
+  }
+};
+
+const restoreTrashItem = async item => {
+  try {
+    isRestoring.value = true;
+    await StorageAPI.restoreTrash({
+      item_type: item.item_type,
+      item_id: item.id,
+    });
+    useAlert(t('STORAGE.TRASH.RESTORE_SUCCESS'));
+    await fetchTrash();
+    await fetchStorageInfo();
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
+  } finally {
+    isRestoring.value = false;
+  }
+};
+
+const restoreAllTrash = async () => {
+  // eslint-disable-next-line no-alert
+  if (!window.confirm(t('STORAGE.TRASH.RESTORE_CONFIRM'))) return;
+
+  try {
+    isRestoring.value = true;
+    await StorageAPI.restoreTrash({ restore_all: true });
+    useAlert(t('STORAGE.TRASH.RESTORE_ALL_SUCCESS'));
+    await fetchTrash();
+    await fetchStorageInfo();
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
+  } finally {
+    isRestoring.value = false;
+  }
+};
+
+const purgeTrashItem = async item => {
+  // eslint-disable-next-line no-alert
+  if (!window.confirm(t('STORAGE.TRASH.PURGE_ITEM_CONFIRM'))) return;
+
+  try {
+    isPurging.value = true;
+    await StorageAPI.emptyTrash({
+      item_type: item.item_type,
+      item_id: item.id,
+    });
+    useAlert(t('STORAGE.TRASH.PURGE_SUCCESS'));
+    await fetchTrash();
+    await fetchStorageInfo();
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
+  } finally {
+    isPurging.value = false;
+  }
+};
+
+const emptyAllTrash = async () => {
+  // eslint-disable-next-line no-alert
+  if (!window.confirm(t('STORAGE.TRASH.EMPTY_CONFIRM'))) return;
+
+  try {
+    isPurging.value = true;
+    await StorageAPI.emptyTrash();
+    useAlert(t('STORAGE.TRASH.EMPTY_SUCCESS'));
+    await fetchTrash();
+    await fetchStorageInfo();
+  } catch (error) {
+    useAlert(error?.response?.data?.message || t('STORAGE.FETCH_ERROR'));
+  } finally {
+    isPurging.value = false;
+  }
+};
+
 onMounted(async () => {
   await fetchStorageInfo();
   await fetchHeavyFiles();
+  await fetchTrash();
 });
 
 const isUnlimited = computed(() => !!storageData.value?.unlimited);
@@ -125,6 +290,8 @@ const breakdown = computed(() => storageData.value?.breakdown || {});
 const inboxesList = computed(
   () => storageData.value?.breakdown?.by_inbox || []
 );
+const trashTotalCount = computed(() => trashData.value?.total_count || 0);
+const trashTotalBytes = computed(() => trashData.value?.total_bytes || 0);
 
 const typeCards = computed(() => {
   const bd = breakdown.value;
@@ -150,16 +317,16 @@ const typeCards = computed(() => {
       bytes: bd.images || 0,
     },
     {
-      key: 'documents',
-      title: t('STORAGE.TYPES.DOCUMENTS'),
-      icon: '📄',
-      bytes: bd.documents || 0,
-    },
-    {
       key: 'videos',
       title: t('STORAGE.TYPES.VIDEOS'),
       icon: '🎥',
       bytes: bd.videos || 0,
+    },
+    {
+      key: 'documents',
+      title: t('STORAGE.TYPES.DOCUMENTS'),
+      icon: '📄',
+      bytes: bd.documents || 0,
     },
     {
       key: 'captain',
@@ -177,42 +344,38 @@ const typeCards = computed(() => {
 
   return items.map(item => ({
     ...item,
-    formattedSize: formatBytes(item.bytes),
+    formatted: formatBytes(item.bytes),
     percent: Math.min(100, Math.round((item.bytes / total) * 100)),
   }));
 });
 
-const getFileTypeIcon = fileType => {
-  switch (fileType) {
-    case 'recording':
-      return '📞';
+const getFileTypeIcon = type => {
+  switch (type) {
     case 'audio':
       return '🎙️';
     case 'image':
       return '🖼️';
     case 'video':
       return '🎥';
-    case 'document':
+    case 'file':
       return '📄';
     default:
-      return '📁';
+      return '📎';
   }
 };
 
-const getFileTypeName = fileType => {
-  switch (fileType) {
-    case 'recording':
-      return t('STORAGE.TYPES.RECORDINGS');
+const getFileTypeName = type => {
+  switch (type) {
     case 'audio':
       return t('STORAGE.TYPES.AUDIO');
     case 'image':
       return t('STORAGE.TYPES.IMAGES');
     case 'video':
       return t('STORAGE.TYPES.VIDEOS');
-    case 'document':
+    case 'file':
       return t('STORAGE.TYPES.DOCUMENTS');
     default:
-      return fileType;
+      return t('STORAGE.TYPES.OTHER');
   }
 };
 </script>
@@ -221,7 +384,6 @@ const getFileTypeName = fileType => {
   <SettingsLayout
     :is-loading="isLoading"
     :loading-message="$t('STORAGE.LOADING')"
-    :no-records-found="false"
   >
     <template #header>
       <BaseSettingsHeader
@@ -231,14 +393,12 @@ const getFileTypeName = fileType => {
         <template #actions>
           <button
             type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition shadow-sm disabled:opacity-50"
+            class="button button--secondary button--sm flex items-center gap-1.5"
             :disabled="isRefreshing"
             @click="refreshStorage"
           >
-            <span
-              class="i-lucide-refresh-cw w-3.5 h-3.5 inline-block"
-              :class="{ 'animate-spin': isRefreshing }"
-            />
+            <span v-if="isRefreshing" class="animate-spin">{{ '🔄' }}</span>
+            <span v-else>{{ '↻' }}</span>
             <span>{{
               isRefreshing ? $t('STORAGE.REFRESHING') : $t('STORAGE.REFRESH')
             }}</span>
@@ -248,329 +408,713 @@ const getFileTypeName = fileType => {
     </template>
 
     <template #body>
-      <div v-if="storageData" class="space-y-6 pb-12">
-        <!-- Main Overview Card -->
-        <div class="p-6 bg-white rounded-xl border border-slate-200 shadow-sm">
+      <div v-if="!isLoading && storageData" class="space-y-6">
+        <!-- Storage Quota Bar Card -->
+        <div
+          class="p-5 sm:p-6 bg-white rounded-xl border border-slate-200 shadow-sm"
+        >
           <div
-            class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4"
+            class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4"
           >
             <div>
-              <div class="flex items-center gap-3">
-                <h3 class="text-lg font-bold text-slate-900">
-                  {{ $t('STORAGE.OVERVIEW.TITLE') }}
-                </h3>
-                <span
-                  class="px-2.5 py-0.5 text-xs font-semibold rounded-full border"
-                  :class="badgeClass"
-                >
-                  {{ statusText }}
-                </span>
-              </div>
-              <p class="text-xs text-slate-500 mt-1">
+              <h3 class="text-base font-bold text-slate-900">
+                {{ $t('STORAGE.OVERVIEW.TITLE') }}
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
                 {{
-                  `${$t('STORAGE.OVERVIEW.LAST_UPDATED')}: ${formatDate(
-                    storageData.last_updated_at
-                  )}`
+                  `${$t('STORAGE.OVERVIEW.LAST_UPDATED')}: ${formatDate(storageData.last_updated_at)}`
                 }}
               </p>
             </div>
-
-            <div class="text-left sm:text-right">
-              <div class="text-2xl font-black text-slate-900">
-                {{ formatBytes(storageData.consumed_bytes) }}
-                <span
-                  v-if="!isUnlimited"
-                  class="text-sm font-normal text-slate-500"
-                >
-                  {{ `/ ${formatBytes(storageData.total_limit_bytes)}` }}
-                </span>
-              </div>
-              <p v-if="!isUnlimited" class="text-xs text-slate-500">
-                {{
-                  `${$t('STORAGE.OVERVIEW.AVAILABLE')}: ${formatBytes(
-                    storageData.available_bytes
-                  )} (${(100 - usagePercent).toFixed(1)}%)`
-                }}
-              </p>
+            <div class="flex items-center gap-2">
+              <span
+                class="px-2.5 py-1 text-xs font-semibold rounded-full border"
+                :class="badgeClass"
+              >
+                {{ statusText }}
+              </span>
             </div>
           </div>
 
-          <!-- Progress bar -->
+          <div class="flex items-baseline justify-between text-sm mb-2">
+            <span class="font-bold text-slate-900 text-lg">
+              {{ formatBytes(storageData.consumed_bytes) }}
+            </span>
+            <span class="text-slate-500 font-medium text-xs">
+              {{
+                isUnlimited
+                  ? $t('STORAGE.OVERVIEW.UNLIMITED')
+                  : `${formatBytes(storageData.total_limit_bytes)} (${$t('STORAGE.OVERVIEW.AVAILABLE')}: ${formatBytes(storageData.available_bytes)})`
+              }}
+            </span>
+          </div>
+
+          <!-- Progress Bar -->
           <div
-            class="w-full bg-slate-100 rounded-full h-3.5 overflow-hidden p-0.5 border border-slate-200"
+            class="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200"
           >
             <div
-              class="h-2.5 rounded-full transition-all duration-500"
+              class="h-2 rounded-full transition-all duration-500"
               :class="progressBarClass"
               :style="{
-                width: isUnlimited ? '100%' : `${Math.max(usagePercent, 2)}%`,
+                width: `${isUnlimited ? 100 : Math.max(usagePercent, 2)}%`,
               }"
             />
           </div>
 
           <div
-            class="flex items-center justify-between text-[11px] text-slate-400 mt-2"
+            class="flex items-center justify-between text-[11px] text-slate-400 mt-2 font-mono"
           >
-            <span>{{ formatBytes(0) }}</span>
-            <span>
-              {{
-                isUnlimited
-                  ? $t('STORAGE.OVERVIEW.UNLIMITED')
-                  : `${usagePercent}% (${formatBytes(
-                      storageData.consumed_bytes
-                    )})`
-              }}
-            </span>
+            <span>{{ '0%' }}</span>
+            <span>{{ isUnlimited ? '∞' : `${usagePercent}%` }}</span>
           </div>
         </div>
 
-        <!-- Breakdown by Data Type -->
-        <div>
-          <h4
-            class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
+        <!-- Navigation Tabs -->
+        <div class="flex items-center gap-2 border-b border-slate-200">
+          <button
+            class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-1.5"
+            :class="
+              activeTab === 'overview'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            "
+            @click="activeTab = 'overview'"
           >
-            {{ $t('STORAGE.TYPES.TITLE') }}
-          </h4>
-          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <span>{{ '📊' }}</span>
+            <span>{{ $t('STORAGE.TABS.OVERVIEW') }}</span>
+          </button>
+          <button
+            class="px-4 py-2.5 text-sm font-semibold border-b-2 transition -mb-px flex items-center gap-2"
+            :class="
+              activeTab === 'cleaner'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-slate-500 hover:text-slate-700'
+            "
+            @click="onCleanerTabClick"
+          >
+            <span>{{ '🧹' }}</span>
+            <span>{{ $t('STORAGE.TABS.CLEANER') }}</span>
+            <span
+              v-if="trashTotalCount > 0"
+              class="px-2 py-0.5 text-[10px] rounded-full bg-amber-100 text-amber-800 font-bold"
+            >
+              {{ trashTotalCount }}
+            </span>
+          </button>
+        </div>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div v-if="activeTab === 'overview'" class="space-y-6">
+          <!-- File Types Breakdown Grid -->
+          <div>
+            <h4
+              class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
+            >
+              {{ $t('STORAGE.TYPES.TITLE') }}
+            </h4>
             <div
-              v-for="item in typeCards"
-              :key="item.key"
-              class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between"
+              class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3"
+            >
+              <div
+                v-for="card in typeCards"
+                :key="card.key"
+                class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between"
+              >
+                <div>
+                  <div
+                    class="flex items-center justify-between text-slate-500 text-xs"
+                  >
+                    <span class="text-base">{{ card.icon }}</span>
+                    <span class="font-mono text-[10px]">{{
+                      `${card.percent}%`
+                    }}</span>
+                  </div>
+                  <p class="text-xs font-medium text-slate-600 mt-2 truncate">
+                    {{ card.title }}
+                  </p>
+                </div>
+                <div class="mt-2">
+                  <span class="text-sm font-bold text-slate-900 block truncate">
+                    {{ card.formatted }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Inboxes Storage Consumption Grid -->
+          <div v-if="inboxesList.length > 0">
+            <h4
+              class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
+            >
+              {{ $t('STORAGE.INBOXES.TITLE') }}
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div
+                v-for="inbox in inboxesList"
+                :key="inbox.id"
+                class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"
+              >
+                <div class="min-w-0 pr-3">
+                  <p class="text-sm font-semibold text-slate-900 truncate">
+                    {{ inbox.name }}
+                  </p>
+                  <p class="text-xs text-slate-500 mt-0.5">
+                    {{
+                      `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
+                    }}
+                  </p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <span class="text-sm font-bold text-slate-900">
+                    {{ formatBytes(inbox.bytes) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Heavy Files Table -->
+          <div
+            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div
+              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
               <div>
-                <div
-                  class="flex items-center gap-2 text-xs font-semibold text-slate-600"
-                >
-                  <span class="text-base">{{ item.icon }}</span>
-                  <span class="truncate">{{ item.title }}</span>
-                </div>
-                <div class="text-lg font-bold text-slate-900 mt-2">
-                  {{ item.formattedSize }}
-                </div>
-              </div>
-              <div class="mt-3">
-                <div
-                  class="flex items-center justify-between text-[10px] text-slate-400 mb-1"
-                >
-                  <span>{{ $t('STORAGE.TYPES.SHARE') }}</span>
-                  <span>{{ `${item.percent}%` }}</span>
-                </div>
-                <div
-                  class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden"
-                >
-                  <div
-                    class="bg-blue-500 h-1.5 rounded-full"
-                    :style="{ width: `${item.percent}%` }"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Breakdown by Inboxes (Channels) -->
-        <div v-if="inboxesList.length > 0">
-          <h4
-            class="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3"
-          >
-            {{ $t('STORAGE.INBOXES.TITLE') }}
-          </h4>
-          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div
-              v-for="inbox in inboxesList"
-              :key="inbox.id"
-              class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm flex items-center justify-between"
-            >
-              <div class="min-w-0 pr-3">
-                <p class="text-sm font-semibold text-slate-900 truncate">
-                  {{ inbox.name }}
-                </p>
+                <h4 class="text-base font-bold text-slate-900">
+                  {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
+                </h4>
                 <p class="text-xs text-slate-500 mt-0.5">
-                  {{
-                    `${inbox.files_count} ${$t('STORAGE.INBOXES.FILES_COUNT')}`
-                  }}
+                  {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
                 </p>
               </div>
-              <div class="text-right flex-shrink-0">
-                <span class="text-sm font-bold text-slate-900">
-                  {{ formatBytes(inbox.bytes) }}
-                </span>
+
+              <!-- Filters -->
+              <div class="flex items-center gap-2.5">
+                <select
+                  v-model="selectedFileType"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  @change="onFilterChange"
+                >
+                  <option value="all">
+                    {{ $t('STORAGE.HEAVY_FILES.ALL_TYPES') }}
+                  </option>
+                  <option value="recordings">
+                    {{ $t('STORAGE.TYPES.RECORDINGS') }}
+                  </option>
+                  <option value="audio">
+                    {{ $t('STORAGE.TYPES.AUDIO') }}
+                  </option>
+                  <option value="images">
+                    {{ $t('STORAGE.TYPES.IMAGES') }}
+                  </option>
+                  <option value="documents">
+                    {{ $t('STORAGE.TYPES.DOCUMENTS') }}
+                  </option>
+                  <option value="videos">
+                    {{ $t('STORAGE.TYPES.VIDEOS') }}
+                  </option>
+                </select>
+
+                <select
+                  v-if="inboxesList.length > 0"
+                  v-model="selectedInboxId"
+                  class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[160px] truncate"
+                  @change="onFilterChange"
+                >
+                  <option value="">
+                    {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
+                  </option>
+                  <option
+                    v-for="inbox in inboxesList"
+                    :key="inbox.id"
+                    :value="inbox.id"
+                  >
+                    {{ inbox.name }}
+                  </option>
+                </select>
               </div>
+            </div>
+
+            <!-- Files list table -->
+            <div
+              v-if="isLoadingFiles"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.LOADING') }}
+            </div>
+            <div
+              v-else-if="heavyFiles.length === 0"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.HEAVY_FILES.EMPTY') }}
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead
+                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
+                >
+                  <tr>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.NAME') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.TYPE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.SIZE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.DATE') }}
+                    </th>
+                    <th class="px-4 py-3 text-right">
+                      {{ $t('STORAGE.HEAVY_FILES.COLUMNS.ACTIONS') }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr
+                    v-for="file in heavyFiles"
+                    :key="file.id"
+                    class="hover:bg-slate-50/80 transition"
+                  >
+                    <td class="px-4 py-3">
+                      <div
+                        class="flex items-center gap-2 max-w-[280px] sm:max-w-[360px]"
+                      >
+                        <span class="text-base flex-shrink-0">{{
+                          getFileTypeIcon(file.file_type)
+                        }}</span>
+                        <span
+                          class="font-medium text-slate-900 truncate"
+                          :title="file.name"
+                        >
+                          {{ file.name }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <span
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
+                      >
+                        {{ getFileTypeName(file.file_type) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {{ file.inbox_name }}
+                    </td>
+                    <td
+                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                    >
+                      {{ file.human_size }}
+                    </td>
+                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {{ formatDate(file.created_at) }}
+                    </td>
+                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-2">
+                        <router-link
+                          v-if="file.conversation_id"
+                          :to="{
+                            name: 'inbox_conversation',
+                            params: {
+                              conversation_id: file.conversation_id,
+                            },
+                          }"
+                          class="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                        >
+                          {{
+                            $t('STORAGE.HEAVY_FILES.ACTIONS.OPEN_CONVERSATION')
+                          }}
+                        </router-link>
+                        <a
+                          v-if="file.download_url"
+                          :href="file.download_url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-slate-500 hover:text-slate-700 font-medium hover:underline"
+                        >
+                          {{ $t('STORAGE.HEAVY_FILES.ACTIONS.DOWNLOAD') }}
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
 
-        <!-- Heavy Files Table -->
-        <div
-          class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-        >
+        <!-- TAB 2: CLEANER & TRASH -->
+        <div v-else-if="activeTab === 'cleaner'" class="space-y-6">
+          <!-- Smart Cleaner Form Card -->
           <div
-            class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
+            class="p-5 sm:p-6 bg-white rounded-xl border border-slate-200 shadow-sm"
           >
-            <div>
-              <h4 class="text-base font-bold text-slate-900">
-                {{ $t('STORAGE.HEAVY_FILES.TITLE') }}
-              </h4>
-              <p class="text-xs text-slate-500 mt-0.5">
-                {{ $t('STORAGE.HEAVY_FILES.SUBTITLE') }}
+            <div class="border-b border-slate-100 pb-4 mb-4">
+              <h3
+                class="text-base font-bold text-slate-900 flex items-center gap-2"
+              >
+                <span>{{ '🧹' }}</span>
+                <span>{{ $t('STORAGE.CLEANER.TITLE') }}</span>
+              </h3>
+              <p class="text-xs text-slate-500 mt-1">
+                {{ $t('STORAGE.CLEANER.SUBTITLE') }}
               </p>
             </div>
 
-            <!-- Filters -->
-            <div class="flex items-center gap-2.5">
-              <select
-                v-model="selectedFileType"
-                class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                @change="onFilterChange"
-              >
-                <option value="all">
-                  {{ $t('STORAGE.HEAVY_FILES.ALL_TYPES') }}
-                </option>
-                <option value="recordings">
-                  {{ $t('STORAGE.TYPES.RECORDINGS') }}
-                </option>
-                <option value="audio">
-                  {{ $t('STORAGE.TYPES.AUDIO') }}
-                </option>
-                <option value="images">
-                  {{ $t('STORAGE.TYPES.IMAGES') }}
-                </option>
-                <option value="documents">
-                  {{ $t('STORAGE.TYPES.DOCUMENTS') }}
-                </option>
-                <option value="videos">
-                  {{ $t('STORAGE.TYPES.VIDEOS') }}
-                </option>
-              </select>
-
-              <select
-                v-if="inboxesList.length > 0"
-                v-model="selectedInboxId"
-                class="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 max-w-[160px] truncate"
-                @change="onFilterChange"
-              >
-                <option value="">
-                  {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
-                </option>
-                <option
-                  v-for="inbox in inboxesList"
-                  :key="inbox.id"
-                  :value="inbox.id"
+            <!-- Cleaner Filters Form -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                  {{ $t('STORAGE.CLEANER.FILE_TYPE') }}
+                </label>
+                <select
+                  v-model="cleanerFileType"
+                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
-                  {{ inbox.name }}
-                </option>
-              </select>
+                  <option value="all">
+                    {{ $t('STORAGE.CLEANER.ALL_TYPES') }}
+                  </option>
+                  <option value="recordings">
+                    {{ $t('STORAGE.TYPES.RECORDINGS') }}
+                  </option>
+                  <option value="audio">
+                    {{ $t('STORAGE.TYPES.AUDIO') }}
+                  </option>
+                  <option value="image">
+                    {{ $t('STORAGE.TYPES.IMAGES') }}
+                  </option>
+                  <option value="video">
+                    {{ $t('STORAGE.TYPES.VIDEOS') }}
+                  </option>
+                  <option value="file">
+                    {{ $t('STORAGE.TYPES.DOCUMENTS') }}
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                  {{ $t('STORAGE.CLEANER.OLDER_THAN') }}
+                </label>
+                <select
+                  v-model="cleanerMonths"
+                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                >
+                  <option :value="1">
+                    {{ $t('STORAGE.CLEANER.OLDER_1_MONTH') }}
+                  </option>
+                  <option :value="3">
+                    {{ $t('STORAGE.CLEANER.OLDER_3_MONTHS') }}
+                  </option>
+                  <option :value="6">
+                    {{ $t('STORAGE.CLEANER.OLDER_6_MONTHS') }}
+                  </option>
+                  <option :value="12">
+                    {{ $t('STORAGE.CLEANER.OLDER_1_YEAR') }}
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">
+                  {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
+                </label>
+                <select
+                  v-model="cleanerInboxId"
+                  class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-500 truncate"
+                >
+                  <option value="">
+                    {{ $t('STORAGE.HEAVY_FILES.ALL_INBOXES') }}
+                  </option>
+                  <option
+                    v-for="inbox in inboxesList"
+                    :key="inbox.id"
+                    :value="inbox.id"
+                  >
+                    {{ inbox.name }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Preview action button -->
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                class="button button--primary button--sm flex items-center gap-1.5"
+                :disabled="isPreviewing"
+                @click="runPreview"
+              >
+                <span v-if="isPreviewing" class="animate-spin">{{ '🔄' }}</span>
+                <span>{{
+                  isPreviewing
+                    ? $t('STORAGE.CLEANER.PREVIEWING')
+                    : $t('STORAGE.CLEANER.PREVIEW_BUTTON')
+                }}</span>
+              </button>
+            </div>
+
+            <!-- Preview Results Box -->
+            <div
+              v-if="previewData"
+              class="mt-5 p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-4"
+            >
+              <div class="flex items-center justify-between">
+                <h4 class="text-sm font-bold text-blue-900">
+                  {{ $t('STORAGE.CLEANER.PREVIEW_TITLE') }}
+                </h4>
+                <span class="text-xs font-mono font-bold text-blue-700">
+                  {{
+                    previewData.total_human ||
+                    formatBytes(previewData.total_bytes)
+                  }}
+                </span>
+              </div>
+
+              <div
+                v-if="previewData.total_count === 0"
+                class="text-xs text-slate-600"
+              >
+                {{ $t('STORAGE.CLEANER.NO_MATCHING_FILES') }}
+              </div>
+              <div v-else class="space-y-3">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
+                    <span class="text-slate-500 block">{{
+                      $t('STORAGE.CLEANER.FOUND_FILES')
+                    }}</span>
+                    <strong class="text-slate-900 text-sm">{{
+                      previewData.total_count
+                    }}</strong>
+                  </div>
+                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
+                    <span class="text-slate-500 block">{{
+                      $t('STORAGE.CLEANER.SPACE_TO_FREE')
+                    }}</span>
+                    <strong class="text-slate-900 text-sm">{{
+                      previewData.total_human ||
+                      formatBytes(previewData.total_bytes)
+                    }}</strong>
+                  </div>
+                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
+                    <span class="text-slate-500 block">{{
+                      $t('STORAGE.TYPES.RECORDINGS')
+                    }}</span>
+                    <strong class="text-slate-900 text-sm">{{
+                      `${previewData.recordings_count} (${formatBytes(previewData.recordings_bytes)})`
+                    }}</strong>
+                  </div>
+                  <div class="bg-white p-2.5 rounded-lg border border-blue-100">
+                    <span class="text-slate-500 block">{{
+                      $t('STORAGE.TYPES.DOCUMENTS')
+                    }}</span>
+                    <strong class="text-slate-900 text-sm">{{
+                      `${previewData.attachments_count} (${formatBytes(previewData.attachments_bytes)})`
+                    }}</strong>
+                  </div>
+                </div>
+
+                <!-- Retention notice -->
+                <p
+                  class="text-xs text-blue-800 bg-blue-100/60 p-2.5 rounded-lg border border-blue-200"
+                >
+                  {{ 'ℹ️ ' + $t('STORAGE.CLEANER.RETENTION_NOTICE') }}
+                </p>
+
+                <!-- Move to trash confirm button -->
+                <button
+                  type="button"
+                  class="button button--alert button--sm flex items-center gap-1.5"
+                  :disabled="isMovingToTrash"
+                  @click="executeMoveToTrash"
+                >
+                  <span v-if="isMovingToTrash" class="animate-spin">{{
+                    '🔄'
+                  }}</span>
+                  <span>{{
+                    isMovingToTrash
+                      ? $t('STORAGE.CLEANER.MOVING')
+                      : $t('STORAGE.CLEANER.MOVE_BUTTON')
+                  }}</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- Files list table -->
+          <!-- Trash List Card -->
           <div
-            v-if="isLoadingFiles"
-            class="p-8 text-center text-xs text-slate-400"
+            class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
           >
-            {{ $t('STORAGE.LOADING') }}
-          </div>
-          <div
-            v-else-if="heavyFiles.length === 0"
-            class="p-8 text-center text-xs text-slate-400"
-          >
-            {{ $t('STORAGE.HEAVY_FILES.EMPTY') }}
-          </div>
-          <div v-else class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead
-                class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
-              >
-                <tr>
-                  <th class="px-4 py-3">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.NAME') }}
-                  </th>
-                  <th class="px-4 py-3">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.TYPE') }}
-                  </th>
-                  <th class="px-4 py-3">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.INBOX') }}
-                  </th>
-                  <th class="px-4 py-3">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.SIZE') }}
-                  </th>
-                  <th class="px-4 py-3">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.DATE') }}
-                  </th>
-                  <th class="px-4 py-3 text-right">
-                    {{ $t('STORAGE.HEAVY_FILES.COLUMNS.ACTIONS') }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr
-                  v-for="file in heavyFiles"
-                  :key="file.id"
-                  class="hover:bg-slate-50/80 transition"
+            <div
+              class="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4"
+            >
+              <div>
+                <h4
+                  class="text-base font-bold text-slate-900 flex items-center gap-2"
                 >
-                  <td class="px-4 py-3">
-                    <div
-                      class="flex items-center gap-2 max-w-[280px] sm:max-w-[360px]"
-                    >
-                      <span class="text-base flex-shrink-0">{{
-                        getFileTypeIcon(file.file_type)
-                      }}</span>
-                      <span
-                        class="font-medium text-slate-900 truncate"
-                        :title="file.name"
-                      >
-                        {{ file.name }}
-                      </span>
-                    </div>
-                  </td>
-                  <td class="px-4 py-3 whitespace-nowrap">
-                    <span
-                      class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
-                    >
-                      {{ getFileTypeName(file.file_type) }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
-                    {{ file.inbox_name }}
-                  </td>
-                  <td
-                    class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                  <span>{{ '🗑️' }}</span>
+                  <span>{{ $t('STORAGE.TRASH.TITLE') }}</span>
+                </h4>
+                <p class="text-xs text-slate-500 mt-0.5">
+                  {{
+                    `${$t('STORAGE.TRASH.TOTAL_IN_TRASH')} ${trashTotalCount} (${formatBytes(trashTotalBytes)})`
+                  }}
+                </p>
+              </div>
+
+              <!-- Trash Bulk Actions -->
+              <div v-if="trashTotalCount > 0" class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="button button--secondary button--xs"
+                  :disabled="isRestoring || isPurging"
+                  @click="restoreAllTrash"
+                >
+                  <span>{{ '🔄' }}</span>
+                  <span>{{ $t('STORAGE.TRASH.RESTORE_ALL') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="button button--alert button--xs"
+                  :disabled="isRestoring || isPurging"
+                  @click="emptyAllTrash"
+                >
+                  <span>{{ '🔥' }}</span>
+                  <span>{{ $t('STORAGE.TRASH.EMPTY_TRASH') }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Trash items list -->
+            <div
+              v-if="isLoadingTrash"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.LOADING') }}
+            </div>
+            <div
+              v-else-if="trashData.items.length === 0"
+              class="p-8 text-center text-xs text-slate-400"
+            >
+              {{ $t('STORAGE.TRASH.EMPTY') }}
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead
+                  class="bg-slate-50 text-slate-500 uppercase font-semibold border-b border-slate-200"
+                >
+                  <tr>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.NAME') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.TYPE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.INBOX') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.SIZE') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.DELETED_AT') }}
+                    </th>
+                    <th class="px-4 py-3">
+                      {{ $t('STORAGE.TRASH.COLUMNS.EXPIRES_IN') }}
+                    </th>
+                    <th class="px-4 py-3 text-right">
+                      {{ $t('STORAGE.TRASH.COLUMNS.ACTIONS') }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr
+                    v-for="item in trashData.items"
+                    :key="`${item.item_type}_${item.id}`"
+                    class="hover:bg-slate-50/80 transition"
                   >
-                    {{ file.human_size }}
-                  </td>
-                  <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
-                    {{ formatDate(file.created_at) }}
-                  </td>
-                  <td class="px-4 py-3 text-right whitespace-nowrap">
-                    <div class="inline-flex items-center gap-2">
-                      <router-link
-                        v-if="file.conversation_id"
-                        :to="{
-                          name: 'inbox_conversation',
-                          params: {
-                            conversation_id: file.conversation_id,
-                          },
-                        }"
-                        class="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                    <td class="px-4 py-3">
+                      <div
+                        class="flex items-center gap-2 max-w-[240px] sm:max-w-[320px]"
+                      >
+                        <span class="text-base flex-shrink-0">{{
+                          getFileTypeIcon(item.file_type)
+                        }}</span>
+                        <span
+                          class="font-medium text-slate-900 truncate"
+                          :title="item.file_name"
+                        >
+                          {{ item.file_name }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <span
+                        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-100 text-slate-700"
+                      >
+                        {{ getFileTypeName(item.file_type) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {{ item.inbox_name || '—' }}
+                    </td>
+                    <td
+                      class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap"
+                    >
+                      {{ formatBytes(item.byte_size) }}
+                    </td>
+                    <td class="px-4 py-3 text-slate-500 whitespace-nowrap">
+                      {{ formatDate(item.deleted_at) }}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <span
+                        class="px-2 py-0.5 text-[10px] font-bold rounded"
+                        :class="
+                          item.days_remaining <= 3
+                            ? 'bg-red-100 text-red-700'
+                            : item.days_remaining <= 7
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-700'
+                        "
                       >
                         {{
-                          $t('STORAGE.HEAVY_FILES.ACTIONS.OPEN_CONVERSATION')
+                          $t('STORAGE.TRASH.DAYS_LEFT', {
+                            days: item.days_remaining,
+                          })
                         }}
-                      </router-link>
-                      <a
-                        v-if="file.download_url"
-                        :href="file.download_url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="text-slate-500 hover:text-slate-700 font-medium hover:underline"
-                      >
-                        {{ $t('STORAGE.HEAVY_FILES.ACTIONS.DOWNLOAD') }}
-                      </a>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          class="text-blue-600 hover:text-blue-800 font-semibold"
+                          :disabled="isRestoring || isPurging"
+                          @click="restoreTrashItem(item)"
+                        >
+                          {{ $t('STORAGE.TRASH.RESTORE') }}
+                        </button>
+                        <button
+                          type="button"
+                          class="text-red-500 hover:text-red-700 font-semibold"
+                          :disabled="isRestoring || isPurging"
+                          @click="purgeTrashItem(item)"
+                        >
+                          {{ $t('STORAGE.TRASH.PURGE') }}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

@@ -46,6 +46,55 @@ class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
     }
   end
 
+  def preview_cleanup
+    service = Storage::TrashService.new(account: current_account)
+    result = service.preview(
+      file_type: params[:file_type] || 'all',
+      older_than_months: (params[:older_than_months] || 6).to_i,
+      inbox_id: params[:inbox_id].presence
+    )
+    render json: result
+  end
+
+  def move_to_trash
+    service = Storage::TrashService.new(account: current_account)
+    result = service.move_to_trash!(
+      file_type: params[:file_type] || 'all',
+      older_than_months: (params[:older_than_months] || 6).to_i,
+      inbox_id: params[:inbox_id].presence
+    )
+    render json: result
+  end
+
+  def trash
+    service = Storage::TrashService.new(account: current_account)
+    result = service.list_trash(
+      page: (params[:page] || 1).to_i,
+      limit: (params[:limit] || 50).to_i
+    )
+    render json: result
+  end
+
+  def restore_trash
+    service = Storage::TrashService.new(account: current_account)
+    result = service.restore!(
+      item_type: params[:item_type],
+      item_id: params[:item_id],
+      restore_all: ActiveModel::Type::Boolean.new.cast(params[:restore_all])
+    )
+    render json: result
+  end
+
+  def empty_trash
+    service = Storage::TrashService.new(account: current_account)
+    result = service.empty_trash!(
+      item_type: params[:item_type],
+      item_id: params[:item_id],
+      purge_all: params[:item_id].blank?
+    )
+    render json: result
+  end
+
   private
 
   def calculate_percentage(consumed, total, unlimited)

@@ -1,5 +1,4 @@
 /* global axios */
-
 import ApiClient from './ApiClient';
 
 class StorageAPI extends ApiClient {
@@ -7,7 +6,7 @@ class StorageAPI extends ApiClient {
     super('storage', { accountScoped: true });
   }
 
-  get() {
+  getStorage() {
     return axios.get(this.url);
   }
 
@@ -17,6 +16,26 @@ class StorageAPI extends ApiClient {
 
   refresh() {
     return axios.post(`${this.url}/refresh`);
+  }
+
+  previewCleanup(params = {}) {
+    return axios.post(`${this.url}/preview_cleanup`, params);
+  }
+
+  moveToTrash(params = {}) {
+    return axios.post(`${this.url}/move_to_trash`, params);
+  }
+
+  getTrash(params = {}) {
+    return axios.get(`${this.url}/trash`, { params });
+  }
+
+  restoreTrash(params = {}) {
+    return axios.post(`${this.url}/restore_trash`, params);
+  }
+
+  emptyTrash(params = {}) {
+    return axios.delete(`${this.url}/empty_trash`, { params });
   }
 }
 

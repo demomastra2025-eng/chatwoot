@@ -165,6 +165,11 @@ Rails.application.routes.draw do
           resource :storage, only: [:show], controller: 'storage' do
             get :heavy_files
             post :refresh
+            post :preview_cleanup
+            post :move_to_trash
+            get :trash
+            post :restore_trash
+            delete :empty_trash
           end
           resources :callbacks, only: [] do
             collection do

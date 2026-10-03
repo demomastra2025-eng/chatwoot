@@ -355,6 +355,7 @@ class Account < ApplicationRecord
                                                   "AND active_storage_attachments.record_type = 'Attachment'"
                                                 )
                                                 .where(attachments: { account_id: id })
+                                                .where("(attachments.meta->'trash') IS NULL")
                                                 .group('attachments.file_type')
                                                 .sum('active_storage_blobs.byte_size')
 
@@ -378,6 +379,19 @@ class Account < ApplicationRecord
     active_storage_known = audio_bytes + image_bytes + video_bytes + doc_bytes + captain_bytes
     other_bytes = [total_bytes - rec_bytes - active_storage_known, 0].max
 
+    trash_rec_bytes = if defined?(Telephony::CallSession) && Telephony::CallSession.table_exists?
+                        Telephony::CallSession.where(account_id: id)
+                                              .where("metadata->'trash' IS NOT NULL")
+                                              .sum(Arel.sql("COALESCE((metadata->'trash'->>'bytes')::bigint, 0)")).to_i
+                      else
+                        0
+                      end
+    trash_att_bytes = Attachment.where(account_id: id)
+                                .where("meta->'trash' IS NOT NULL")
+                                .joins(:file_blob)
+                                .sum('active_storage_blobs.byte_size').to_i
+    trash_bytes = trash_rec_bytes + trash_att_bytes
+
     inbox_breakdown = calculate_inbox_storage_breakdown
 
     {
@@ -388,6 +402,7 @@ class Account < ApplicationRecord
       documents: doc_bytes,
       captain: captain_bytes,
       other: other_bytes,
+      trash: trash_bytes,
       total: total_bytes,
       by_inbox: inbox_breakdown,
       last_updated_at: Time.current.iso8601
@@ -404,6 +419,7 @@ class Account < ApplicationRecord
                                            )
                                            .joins('INNER JOIN messages ON messages.id = attachments.message_id')
                                            .where(attachments: { account_id: id })
+                                           .where("(attachments.meta->'trash') IS NULL")
                                            .group('messages.inbox_id')
                                            .pluck(
                                              'messages.inbox_id',
@@ -415,6 +431,7 @@ class Account < ApplicationRecord
     call_sessions_by_inbox = if defined?(Telephony::CallSession) && Telephony::CallSession.table_exists?
                                Telephony::CallSession.where(account_id: id)
                                                      .where.not(recording_ref: [nil, ''])
+                                                     .where("(metadata->'trash') IS NULL")
                                                      .group(:inbox_id)
                                                      .count
                              else
@@ -441,19 +458,10 @@ class Account < ApplicationRecord
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
 
   def cleanup_old_recordings!(cutoff = 6.months.ago)
-    old_audio_attachments = attachments.where(file_type: :audio).where('created_at < ?', cutoff)
-    count = old_audio_attachments.count
-    freed_bytes = 0
-
-    old_audio_attachments.find_each do |attachment|
-      if attachment.file.attached?
-        freed_bytes += attachment.file.byte_size.to_i
-        attachment.file.purge
-      end
-      attachment.destroy
-    end
-
-    { deleted_count: count, freed_bytes: freed_bytes }
+    cutoff_months = [((Time.current - cutoff) / 1.month).round, 1].max
+    service = Storage::TrashService.new(account: self)
+    res = service.move_to_trash!(older_than_months: cutoff_months)
+    { deleted_count: res[:moved_count], freed_bytes: res[:freed_bytes] }
   end
 
   private

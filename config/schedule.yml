@@ -184,3 +184,9 @@ accounts_storage_breakdown_refresh_job:
   cron: '0 * * * *'
   class: 'Accounts::StorageBreakdownRefreshJob'
   queue: scheduled_jobs
+
+# executed daily at 03:30 UTC to purge trashed files older than 30 days
+storage_purge_expired_trash_job:
+  cron: '30 3 * * *'
+  class: 'Storage::PurgeExpiredTrashJob'
+  queue: scheduled_jobs

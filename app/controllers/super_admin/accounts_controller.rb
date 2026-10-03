@@ -104,15 +104,23 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     end
   end
 
+  # rubocop:disable Metrics/AbcSize
   def cleanup_storage
-    cutoff_months = (params[:months] || 6).to_i
-    cutoff_date = cutoff_months.months.ago
-    result = requested_resource.cleanup_old_recordings!(cutoff_date)
-    freed_mb = (result[:freed_bytes].to_f / 1.megabyte).round(2)
-    redirect_to_account(notice: "Очистка завершена: удалено аудиозаписей: #{result[:deleted_count]} (освобождено #{freed_mb} MB)")
+    service = Storage::TrashService.new(account: requested_resource)
+    if params[:empty_trash].present?
+      result = service.empty_trash!(purge_all: true)
+      freed_mb = (result[:purged_bytes].to_f / 1.megabyte).round(2)
+      redirect_to_account(notice: "Корзина очищена: удалено файлов: #{result[:purged_count]} (освобождено #{freed_mb} MB)")
+    else
+      cutoff_months = (params[:months] || 6).to_i
+      result = service.move_to_trash!(file_type: params[:file_type] || 'all', older_than_months: cutoff_months)
+      freed_mb = (result[:freed_bytes].to_f / 1.megabyte).round(2)
+      redirect_to_account(notice: "Перемещено в корзину: #{result[:moved_count]} файлов (освобождено #{freed_mb} MB). Срок хранения 30 дней.")
+    end
   rescue StandardError => e
     redirect_to_account(alert: "Ошибка очистки хранилища: #{e.message}")
   end
+  # rubocop:enable Metrics/AbcSize
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength
   def export

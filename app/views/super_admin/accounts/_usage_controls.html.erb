@@ -218,15 +218,19 @@
       <div class="mt-4 pt-4 border-t border-slate-100 flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-amber-50/60 p-3 rounded-lg border border-amber-200/60">
         <div>
           <h4 class="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-            <span>🧹</span> Умная очистка диска (Storage Cleaner)
+            <span>🧹</span> Умная очистка диска (30-дневная корзина)
           </h4>
           <p class="text-xs text-slate-600 mt-0.5">
-            Безопасное удаление устаревших аудиозаписей звонков для освобождения места в хранилище. Сами сообщения и переписка сохраняются.
+            Безопасное перемещение файлов и аудиозаписей в корзину. Файлы хранятся 30 дней и могут быть восстановлены.
+            <span class="inline-block font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded text-[11px] ml-1">
+              🗑️ В корзине: <%= (breakdown[:trash].to_f / 1.megabyte).round(2) %> MB
+            </span>
           </p>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <%= button_to "🗑️ Удалить аудио >6 мес.", [:cleanup_storage, :super_admin, account], params: { months: 6 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 6 месяцев для этого аккаунта?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
-          <%= button_to "🗑️ Удалить аудио >3 мес.", [:cleanup_storage, :super_admin, account], params: { months: 3 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 3 месяцев для этого аккаунта?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
+          <%= button_to "🗑️ В корзину >6 мес.", [:cleanup_storage, :super_admin, account], params: { months: 6 }, method: :post, data: { confirm: "Переместить файлы старше 6 месяцев в корзину на 30 дней?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
+          <%= button_to "🗑️ В корзину >3 мес.", [:cleanup_storage, :super_admin, account], params: { months: 3 }, method: :post, data: { confirm: "Переместить файлы старше 3 месяцев в корзину на 30 дней?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
+          <%= button_to "🔥 Очистить корзину", [:cleanup_storage, :super_admin, account], params: { empty_trash: true }, method: :post, data: { confirm: "Безвозвратно удалить все файлы из корзины прямо сейчас?" }, class: "button button--alert !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
         </div>
       </div>
     </div>
