@@ -982,6 +982,11 @@
         "CATALOG_ITEM_USED": "Used",
         "FEATURES": {
           "TITLE": "Features",
+          "GROUPS": {
+            "CUSTOMER_CONTEXT": "Customer context",
+            "TOOLS": "Tools and actions",
+            "VOICE": "Voice messages"
+          },
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
           "ALLOW_NOTES": "Allow creating contact notes and private conversation notes",

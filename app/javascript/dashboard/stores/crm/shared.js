@@ -70,6 +70,8 @@ export const formatCrmErrorMessage = (error, t) => {
         payload.message,
         { fields: missingFields }
       );
+    case 'DEFAULT_STAGE_REQUIRES_FALLBACK':
+      return t('CRM.ERRORS.DEFAULT_STAGE_REQUIRES_FALLBACK');
     case 'FEATURE_DISABLED':
       return t('CRM.ERRORS.FEATURE_DISABLED');
     case 'NOT_FOUND':
