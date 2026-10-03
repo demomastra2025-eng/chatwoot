@@ -6,9 +6,7 @@ import { VueCal } from 'vue-cal';
 import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import {
-  APPOINTMENT_STATUS_CALENDAR_TONES,
   APPOINTMENT_STATUS_ICONS,
-  APPOINTMENT_STATUS_VALUES,
   MINUTE_STEP,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 import {
@@ -75,7 +73,7 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
-  // 'status': appointment cards are coloured by status (with a status legend);
+  // 'status': appointment cards are coloured by status;
   // 'resource': cards use each item's resourceColor (CRM tasks by priority).
   colorBy: {
     type: String,
@@ -1215,19 +1213,6 @@ const eventCardStyle = event => ({
   '--appointment-resource': event.resourceColor || 'transparent',
 });
 
-// Status legend: only for appointment calendars coloured by status.
-const statusLegendItems = computed(() => {
-  if (props.colorBy !== 'status') return [];
-
-  return APPOINTMENT_STATUS_VALUES.map(status => ({
-    color: APPOINTMENT_STATUS_CALENDAR_TONES[status].color,
-    icon: APPOINTMENT_STATUS_ICONS[status],
-    label: appointmentStatusLabel(status),
-    status,
-    variant: APPOINTMENT_STATUS_CALENDAR_TONES[status].variant,
-  }));
-});
-
 const monthEventClasses = event => ({
   'scheduling-vue-cal__month-event--muted': event.tone === 'muted',
   'scheduling-vue-cal__month-event--cancelled': event.tone === 'ghost',
@@ -1945,29 +1930,6 @@ onMounted(() => {
         </VueCal>
       </div>
     </div>
-
-    <ul
-      v-if="statusLegendItems.length"
-      class="scheduling-vue-cal__legend"
-      :aria-label="t('SCHEDULING.CALENDAR.STATUS_LEGEND')"
-    >
-      <li
-        v-for="item in statusLegendItems"
-        :key="item.status"
-        class="scheduling-vue-cal__legend-item"
-        :data-status="item.status"
-      >
-        <span
-          class="scheduling-vue-cal__legend-swatch"
-          :class="`scheduling-vue-cal__legend-swatch--${item.variant}`"
-          :style="{ '--appointment-accent': item.color }"
-          aria-hidden="true"
-        >
-          <span class="scheduling-vue-cal__legend-glyph" :class="item.icon" />
-        </span>
-        {{ item.label }}
-      </li>
-    </ul>
   </div>
 </template>
 
@@ -2932,62 +2894,5 @@ onMounted(() => {
   color: rgb(var(--ruby-11));
   text-decoration: line-through;
   text-decoration-color: rgb(var(--ruby-11) / 0.45);
-}
-
-.scheduling-vue-cal__legend {
-  display: flex;
-  flex: 0 0 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.875rem;
-  margin: 0;
-  padding: 0.4375rem 0.75rem;
-  border-top: 1px solid rgb(var(--slate-7) / 0.7);
-  list-style: none;
-  color: rgb(var(--slate-11));
-  font-size: 0.6875rem;
-  line-height: 1rem;
-}
-
-.scheduling-vue-cal__legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  white-space: nowrap;
-}
-
-.scheduling-vue-cal__legend-swatch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 0.875rem;
-  border: 1px solid color-mix(in srgb, var(--appointment-accent) 78%, black);
-  border-radius: 0.25rem;
-  background: var(--appointment-accent);
-  color: white;
-}
-
-.scheduling-vue-cal__legend-swatch--muted {
-  border-color: rgb(var(--slate-6));
-  background: rgb(var(--slate-3));
-  color: rgb(var(--slate-10));
-}
-
-.scheduling-vue-cal__legend-swatch--ghost {
-  border-style: dashed;
-  border-color: rgb(var(--ruby-8) / 0.6);
-  background: rgb(var(--ruby-3) / 0.55);
-  color: rgb(var(--ruby-11));
-}
-
-.scheduling-vue-cal__legend-item[data-status='no_show']
-  .scheduling-vue-cal__legend-swatch {
-  color: rgb(var(--amber-11));
-}
-
-.scheduling-vue-cal__legend-glyph {
-  width: 0.5625rem;
-  height: 0.5625rem;
 }
 </style>

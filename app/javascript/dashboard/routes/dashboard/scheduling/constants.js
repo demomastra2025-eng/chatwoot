@@ -40,12 +40,11 @@ export const APPOINTMENT_STATUS_ICONS = {
 // Status colours. Confirmed is green everywhere (owner request 2026-09-30).
 // The design tokens have no dedicated green scale, so teal (n-teal-*,
 // #12A594) is the green used for confirmed: the calendar card's `color`
-// below, its legend swatch, and the icon/accent/pill/sticker classes
-// further down all resolve to the same teal-9.
+// below and its icon/accent/pill/sticker classes further down share teal-9.
 //
 // Calendar cards: `solid` = filled with `color` and white text, `muted` =
 // neutral surface (finished visits), `ghost` = outlined and faded (cancelled).
-// `color` is also the legend swatch and the month-view chip tint.
+// `color` is also the month-view chip tint.
 export const APPOINTMENT_STATUS_CALENDAR_TONES = {
   scheduled: { variant: 'solid', color: '#2563EB' },
   confirmed: { variant: 'solid', color: '#12A594' },

@@ -912,31 +912,6 @@ describe('SchedulingVueCalCalendar', () => {
     expect(card.attributes('title')).toContain('Consultation · Dr. Sam');
   });
 
-  it('shows a status legend for appointments but not for resource-coloured calendars', async () => {
-    const byStatus = mountCalendar({ view: 'day' });
-    const byResource = mountCalendar({ colorBy: 'resource', view: 'day' });
-
-    await nextTick();
-
-    const legendStatuses = byStatus
-      .findAll('.scheduling-vue-cal__legend-item')
-      .map(item => item.attributes('data-status'));
-
-    expect(legendStatuses).toEqual([
-      'scheduled',
-      'confirmed',
-      'completed',
-      'cancelled',
-      'no_show',
-    ]);
-    expect(
-      byStatus
-        .find('[data-status="confirmed"] .scheduling-vue-cal__legend-swatch')
-        .element.style.getPropertyValue('--appointment-accent')
-    ).toBe('#12A594');
-    expect(byResource.find('.scheduling-vue-cal__legend').exists()).toBe(false);
-  });
-
   it('keeps resource colours when the calendar is coloured by resource', async () => {
     const wrapper = mountCalendar({
       colorBy: 'resource',
