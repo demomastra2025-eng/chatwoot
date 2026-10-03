@@ -220,8 +220,8 @@
           </p>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-          <%= button_to "🗑️ Удалить аудио >6 мес.", [:cleanup_storage, :super_admin, account], params: { months: 6 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 6 месяцев для этой клиники?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
-          <%= button_to "🗑️ Удалить аудио >3 мес.", [:cleanup_storage, :super_admin, account], params: { months: 3 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 3 месяцев для этой клиники?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
+          <%= button_to "🗑️ Удалить аудио >6 мес.", [:cleanup_storage, :super_admin, account], params: { months: 6 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 6 месяцев для этого аккаунта?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
+          <%= button_to "🗑️ Удалить аудио >3 мес.", [:cleanup_storage, :super_admin, account], params: { months: 3 }, method: :post, data: { confirm: "Удалить аудиозаписи звонков старше 3 месяцев для этого аккаунта?" }, class: "button button--secondary !text-xs !py-1 !px-2.5", form_class: "inline-block" %>
         </div>
       </div>
     </div>

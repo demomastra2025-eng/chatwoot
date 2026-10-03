@@ -100,7 +100,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     if target_user.present?
       redirect_to target_user.generate_sso_link_with_impersonation, allow_other_host: true
     else
-      redirect_to_account(alert: 'В этой клинике нет зарегистрированных пользователей для входа')
+      redirect_to_account(alert: 'В этом аккаунте нет зарегистрированных пользователей для входа')
     end
   end
 
@@ -176,7 +176,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
       end
     end
 
-    filename = "onelink-clinics-#{Time.current.strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = "onelink-accounts-#{Time.current.strftime('%Y%m%d_%H%M%S')}.csv"
     send_data "\uFEFF#{csv_data}", filename: filename, type: 'text/csv; charset=utf-8; header=present', disposition: 'attachment'
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength, Metrics/BlockLength

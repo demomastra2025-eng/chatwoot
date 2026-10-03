@@ -298,7 +298,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/impersonate"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:alert]).to eq('В этой клинике нет зарегистрированных пользователей для входа')
+        expect(flash[:alert]).to eq('В этом аккаунте нет зарегистрированных пользователей для входа')
       end
     end
   end
@@ -327,7 +327,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(response).to have_http_status(:success)
         expect(response.headers['Content-Type']).to include('text/csv')
         expect(response.headers['Content-Disposition']).to include('attachment')
-        expect(response.headers['Content-Disposition']).to include('onelink-clinics-')
+        expect(response.headers['Content-Disposition']).to include('onelink-accounts-')
         expect(response.body).to start_with("\uFEFF")
         expect(response.body).to include('ID,Название,Тариф,Статус триала,Окончание триала,Операторов,Каналов')
         expect(response.body).to include('Занято места (MB),Лимит диска (GB),Статус,Дата создания')

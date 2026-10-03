@@ -27,7 +27,7 @@ as well as a link to its edit page.
     <div class="flex items-center gap-2">
       <% target_user = page.resource.administrators.first || page.resource.users.first %>
       <% if target_user.present? %>
-        <%= link_to("🔑 Войти в аккаунт", target_user.generate_sso_link_with_impersonation, target: "_blank", rel: "noopener noreferrer", class: "button button--secondary", title: "Беспарольный вход в кабинет клиента глазами врача/администратора клиники") %>
+        <%= link_to("🔑 Войти в аккаунт", target_user.generate_sso_link_with_impersonation, target: "_blank", rel: "noopener noreferrer", class: "button button--secondary", title: "Беспарольный вход в кабинет клиента глазами администратора аккаунта") %>
       <% end %>
       <%= if accessible_action?(page.resource, :edit)
         link_to("Edit", [:edit, namespace, page.resource], class: "button")
