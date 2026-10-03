@@ -24,6 +24,7 @@ import security from './security/security.routes';
 import conversationWorkflow from './conversationWorkflow/conversationWorkflow.routes';
 import captain from './captain/captain.routes';
 import crm from './crm/crm.routes';
+import storage from './storage/storage.routes';
 
 export default {
   routes: [
@@ -67,5 +68,6 @@ export default {
     ...conversationWorkflow.routes,
     ...captain.routes,
     ...crm.routes,
+    ...storage.routes,
   ],
 };

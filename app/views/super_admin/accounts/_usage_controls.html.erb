@@ -29,12 +29,13 @@
 
     breakdown = account.storage_breakdown
     bytes_mb = 1.megabyte.to_f
-    audio_mb = (breakdown[:audio] / bytes_mb).round(2)
-    image_mb = (breakdown[:images] / bytes_mb).round(2)
-    video_mb = (breakdown[:videos] / bytes_mb).round(2)
-    docs_mb = (breakdown[:documents] / bytes_mb).round(2)
-    captain_mb = (breakdown[:captain] / bytes_mb).round(2)
-    other_mb = (breakdown[:other] / bytes_mb).round(2)
+    recordings_mb = (breakdown[:recordings].to_f / bytes_mb).round(2)
+    audio_mb = (breakdown[:audio].to_f / bytes_mb).round(2)
+    image_mb = (breakdown[:images].to_f / bytes_mb).round(2)
+    video_mb = (breakdown[:videos].to_f / bytes_mb).round(2)
+    docs_mb = (breakdown[:documents].to_f / bytes_mb).round(2)
+    captain_mb = (breakdown[:captain].to_f / bytes_mb).round(2)
+    other_mb = (breakdown[:other].to_f / bytes_mb).round(2)
   %>
 
   <%
@@ -181,9 +182,13 @@
         <div class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5">
           Детализация по типам файлов (Breakdown)
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 text-xs">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2.5 text-xs">
           <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
-            <div class="text-slate-500 flex items-center gap-1">🎙️ Аудио / Звонки</div>
+            <div class="text-slate-500 flex items-center gap-1">📞 Записи звонков</div>
+            <div class="font-bold text-slate-900 mt-1"><%= recordings_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🎙️ Аудио в чатах</div>
             <div class="font-bold text-slate-900 mt-1"><%= audio_mb %> MB</div>
           </div>
           <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">

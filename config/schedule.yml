@@ -180,3 +180,7 @@ campaign_audience_import_cleanup_job:
   cron: '17 * * * *'
   class: 'Campaigns::AudienceImportCleanupJob'
   queue: housekeeping
+accounts_storage_breakdown_refresh_job:
+  cron: '0 * * * *'
+  class: 'Accounts::StorageBreakdownRefreshJob'
+  queue: scheduled_jobs

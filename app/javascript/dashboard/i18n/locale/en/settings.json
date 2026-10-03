@@ -548,7 +548,8 @@
       "DATA": "Data",
       "AI": "AI"
     },
-    "VISIBILITY": "Navigation"
+    "VISIBILITY": "Navigation",
+    "STORAGE": "Storage"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1694,6 +1695,60 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "STORAGE": {
+    "TITLE": "Storage & Disk",
+    "DESCRIPTION": "Monitor account disk usage, file breakdowns and channel storage distribution.",
+    "LOADING": "Loading storage data...",
+    "REFRESH": "Refresh Data",
+    "REFRESHING": "Refreshing...",
+    "REFRESH_SUCCESS": "Storage data refreshed successfully",
+    "REFRESH_ERROR": "Failed to refresh storage data",
+    "FETCH_ERROR": "Error loading storage information",
+    "HEAVY_FILES_ERROR": "Failed to load heavy files list",
+    "OVERVIEW": {
+      "TITLE": "Disk Quota",
+      "AVAILABLE": "Available",
+      "UNLIMITED": "Unlimited Plan",
+      "NORMAL": "Normal",
+      "WARNING": "Warning (>80%)",
+      "CRITICAL": "Critical (>95%)",
+      "LAST_UPDATED": "Last updated"
+    },
+    "TYPES": {
+      "TITLE": "Breakdown by Data Type",
+      "RECORDINGS": "Call Recordings",
+      "AUDIO": "Chat Voice Notes",
+      "IMAGES": "Images & Photos",
+      "DOCUMENTS": "Documents & Files",
+      "VIDEOS": "Video Files",
+      "CAPTAIN": "AI Knowledge Base (Captain)",
+      "OTHER": "Other Data",
+      "SHARE": "Share"
+    },
+    "INBOXES": {
+      "TITLE": "Storage by Communication Channel",
+      "FILES_COUNT": "files"
+    },
+    "HEAVY_FILES": {
+      "TITLE": "Top 50 Heaviest Files",
+      "SUBTITLE": "Files consuming the largest amount of disk space",
+      "ALL_TYPES": "All types",
+      "ALL_INBOXES": "All channels",
+      "EMPTY": "No files found",
+      "COLUMNS": {
+        "NAME": "File",
+        "TYPE": "Type",
+        "INBOX": "Channel",
+        "SIZE": "Size",
+        "DATE": "Date",
+        "ACTIONS": "Actions"
+      },
+      "ACTIONS": {
+        "OPEN_CONVERSATION": "Conversation",
+        "DOWNLOAD": "Download / Listen"
+      }
     }
   }
 }

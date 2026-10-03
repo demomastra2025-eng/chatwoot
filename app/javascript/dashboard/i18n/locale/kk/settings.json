@@ -531,7 +531,8 @@
       "DATA": "Деректер",
       "AI": "AI"
     },
-    "VISIBILITY": "Навигация"
+    "VISIBILITY": "Навигация",
+    "STORAGE": "Қойма"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1648,6 +1649,60 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "STORAGE": {
+    "TITLE": "Қойма және диск",
+    "DESCRIPTION": "Аккаунттың дискілік кеңістігін, файлдар мен байланыс арналарын бақылау.",
+    "LOADING": "Қойма деректері жүктелуде...",
+    "REFRESH": "Деректерді жаңарту",
+    "REFRESHING": "Жаңартылуда...",
+    "REFRESH_SUCCESS": "Қойма деректері сәтті жаңартылды",
+    "REFRESH_ERROR": "Қойма деректерін жаңарту сәтсіз аяқталды",
+    "FETCH_ERROR": "Қойма ақпаратын жүктеу қатесі",
+    "HEAVY_FILES_ERROR": "Ауыр файлдар тізімін жүктеу сәтсіз аяқталды",
+    "OVERVIEW": {
+      "TITLE": "Дискілік квота",
+      "AVAILABLE": "Бос орын",
+      "UNLIMITED": "Шектеусіз тариф",
+      "NORMAL": "Қалыпты",
+      "WARNING": "Назар аударыңыз (>80%)",
+      "CRITICAL": "Қауіпті (>95%)",
+      "LAST_UPDATED": "Соңғы жаңарту"
+    },
+    "TYPES": {
+      "TITLE": "Деректер түрлері бойынша есеп",
+      "RECORDINGS": "Қоңырау жазбалары",
+      "AUDIO": "Чаттағы дауыстық хабарламалар",
+      "IMAGES": "Суреттер мен фотолар",
+      "DOCUMENTS": "Құжаттар мен файлдар",
+      "VIDEOS": "Бейнефайлдар",
+      "CAPTAIN": "AI білім базасы (Captain)",
+      "OTHER": "Басқа деректер",
+      "SHARE": "Үлесі"
+    },
+    "INBOXES": {
+      "TITLE": "Байланыс арналары бойынша көлем",
+      "FILES_COUNT": "файл"
+    },
+    "HEAVY_FILES": {
+      "TITLE": "Ең ауыр 50 файл",
+      "SUBTITLE": "Дискіде ең көп орын алатын файлдар",
+      "ALL_TYPES": "Барлық түрлері",
+      "ALL_INBOXES": "Барлық арналар",
+      "EMPTY": "Файлдар табылмады",
+      "COLUMNS": {
+        "NAME": "Файл",
+        "TYPE": "Түрі",
+        "INBOX": "Арна",
+        "SIZE": "Көлемі",
+        "DATE": "Күні",
+        "ACTIONS": "Әрекеттер"
+      },
+      "ACTIONS": {
+        "OPEN_CONVERSATION": "Сұхбат",
+        "DOWNLOAD": "Жүктеу / Тыңдау"
+      }
     }
   }
 }

@@ -22,7 +22,7 @@ class AccountLimits::StorageUsageService
     @account = account
   end
 
-  def usage_bytes
+  def active_storage_bytes
     RECORD_TYPE_SCOPES.sum do |record_type, attachment_names|
       relation = scoped_relation(record_type)
       next 0 if relation.nil?
@@ -33,6 +33,14 @@ class AccountLimits::StorageUsageService
       attachments = attachments.where(name: attachment_names) if attachment_names.present?
       attachments.sum('active_storage_blobs.byte_size')
     end
+  end
+
+  def local_recordings_bytes
+    account.respond_to?(:local_recordings_bytes) ? account.local_recordings_bytes.to_i : 0
+  end
+
+  def usage_bytes
+    active_storage_bytes + local_recordings_bytes
   end
 
   def within_limit?(extra_bytes: 0, released_bytes: 0)
@@ -77,7 +85,7 @@ class AccountLimits::StorageUsageService
 
   def scoped_relation(record_type)
     model = record_type.safe_constantize
-    return if model.blank? || !model.column_names.include?('account_id')
+    return if model.blank? || model.column_names.exclude?('account_id')
 
     model.where(account_id: account.id).select(:id)
   end

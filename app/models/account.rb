@@ -310,8 +310,45 @@ class Account < ApplicationRecord
     save!
   end
 
+  # rubocop:disable Metrics/MethodLength
+  def local_recordings_bytes
+    root = Rails.root.join('storage/voice-recordings')
+    return 0 unless root.directory?
+
+    patterns = [
+      root.join('janus', id.to_s, '**', '*'),
+      root.join('sipuni', id.to_s, '**', '*'),
+      root.join(id.to_s, '**', '*')
+    ]
+
+    total = 0
+    patterns.each do |pattern|
+      Dir.glob(pattern.to_s).each do |file_path|
+        next unless File.file?(file_path)
+
+        total += File.size(file_path)
+      rescue Errno::ENOENT
+        next
+      end
+    end
+    total
+  rescue StandardError => e
+    Rails.logger.warn("[Account#local_recordings_bytes] Failed for account #{id}: #{e.message}")
+    0
+  end
+  # rubocop:enable Metrics/MethodLength
+
+  def storage_breakdown(force_refresh: false)
+    cache_key = "account:#{id}:storage_breakdown_v2"
+    Rails.cache.delete(cache_key) if force_refresh
+
+    Rails.cache.fetch(cache_key, expires_in: 1.hour) do
+      calculate_storage_breakdown
+    end
+  end
+
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
-  def storage_breakdown
+  def calculate_storage_breakdown
     attachment_usage = ActiveStorage::Attachment.joins(:blob)
                                                 .joins(
                                                   'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
@@ -321,33 +358,85 @@ class Account < ApplicationRecord
                                                 .group('attachments.file_type')
                                                 .sum('active_storage_blobs.byte_size')
 
-    audio_bytes = attachment_usage[1] || attachment_usage['audio'] || 0
-    image_bytes = attachment_usage[0] || attachment_usage['image'] || 0
-    video_bytes = attachment_usage[2] || attachment_usage['video'] || 0
-    doc_bytes = attachment_usage[3] || attachment_usage['file'] || 0
+    audio_bytes = (attachment_usage[1] || attachment_usage['audio'] || 0).to_i
+    image_bytes = (attachment_usage[0] || attachment_usage['image'] || 0).to_i
+    video_bytes = (attachment_usage[2] || attachment_usage['video'] || 0).to_i
+    doc_bytes = (attachment_usage[3] || attachment_usage['file'] || 0).to_i
 
     captain_bytes = if defined?(Captain::Document) && Captain::Document.table_exists?
                       ActiveStorage::Attachment.joins(:blob)
                                                .where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
                                                .where('active_storage_attachments.record_id IN ' \
                                                       "(SELECT id FROM captain_documents WHERE account_id = #{id.to_i})")
-                                               .sum('active_storage_blobs.byte_size')
+                                               .sum('active_storage_blobs.byte_size').to_i
                     else
                       0
                     end
 
+    rec_bytes = local_recordings_bytes
     total_bytes = AccountLimits::StorageUsageService.new(account: self).usage_bytes
-    other_bytes = [total_bytes - (audio_bytes + image_bytes + video_bytes + doc_bytes + captain_bytes), 0].max
+    active_storage_known = audio_bytes + image_bytes + video_bytes + doc_bytes + captain_bytes
+    other_bytes = [total_bytes - rec_bytes - active_storage_known, 0].max
+
+    inbox_breakdown = calculate_inbox_storage_breakdown
 
     {
+      recordings: rec_bytes,
       audio: audio_bytes,
       images: image_bytes,
       videos: video_bytes,
       documents: doc_bytes,
       captain: captain_bytes,
       other: other_bytes,
-      total: total_bytes
+      total: total_bytes,
+      by_inbox: inbox_breakdown,
+      last_updated_at: Time.current.iso8601
     }
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+  def calculate_inbox_storage_breakdown
+    inbox_usage = ActiveStorage::Attachment.joins(:blob)
+                                           .joins(
+                                             'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
+                                             "AND active_storage_attachments.record_type = 'Attachment'"
+                                           )
+                                           .joins('INNER JOIN messages ON messages.id = attachments.message_id')
+                                           .where(attachments: { account_id: id })
+                                           .group('messages.inbox_id')
+                                           .pluck(
+                                             'messages.inbox_id',
+                                             Arel.sql('SUM(active_storage_blobs.byte_size)'),
+                                             Arel.sql('COUNT(attachments.id)')
+                                           )
+                                           .to_h { |inbox_id, bytes, count| [inbox_id, { bytes: bytes.to_i, count: count.to_i }] }
+
+    call_sessions_by_inbox = if defined?(Telephony::CallSession) && Telephony::CallSession.table_exists?
+                               Telephony::CallSession.where(account_id: id)
+                                                     .where.not(recording_ref: [nil, ''])
+                                                     .group(:inbox_id)
+                                                     .count
+                             else
+                               {}
+                             end
+
+    all_inboxes = inboxes.select(:id, :name, :channel_type)
+    all_inboxes.map do |inbox|
+      data = inbox_usage[inbox.id] || { bytes: 0, count: 0 }
+      recordings_count = call_sessions_by_inbox[inbox.id] || 0
+
+      {
+        id: inbox.id,
+        name: inbox.name,
+        channel_type: inbox.channel_type,
+        bytes: data[:bytes],
+        files_count: data[:count] + recordings_count
+      }
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[Account#calculate_inbox_storage_breakdown] #{e.message}")
+    []
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
 
