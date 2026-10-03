@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { shallowMount } from '@vue/test-utils';
-import { ref } from 'vue';
+import { computed, ref, unref } from 'vue';
 
 import MessageMeta from './MessageMeta.vue';
 import { MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
@@ -28,7 +28,7 @@ vi.mock('shared/helpers/timeHelper', () => ({
 
 const useInboxMock = vi.fn();
 vi.mock('dashboard/composables/useInbox', () => ({
-  useInbox: () => useInboxMock(),
+  useInbox: (...args) => useInboxMock(...args),
 }));
 
 const useMessageContextMock = vi.fn();
@@ -53,6 +53,8 @@ const baseInboxState = () => ({
 });
 
 const baseMessageContext = status => ({
+  inboxId: ref(234),
+  contentType: ref('text'),
   status: ref(status),
   isPrivate: ref(false),
   createdAt: ref(1774504297),
@@ -81,6 +83,7 @@ const mountComponent = () =>
 describe('MessageMeta', () => {
   beforeEach(() => {
     routerMocks.push.mockClear();
+    useInboxMock.mockReset();
     routerMocks.route.params = {
       accountId: '530',
       conversation_id: '5',
@@ -104,6 +107,52 @@ describe('MessageMeta', () => {
       ).toBe(expectedStatus);
     }
   );
+
+  it.each([MESSAGE_STATUS.SENT, MESSAGE_STATUS.DELIVERED, MESSAGE_STATUS.READ])(
+    'uses the message WhatsApp inbox for %s in a thread whose primary inbox is Voice',
+    messageStatus => {
+      // No explicit inbox would fall back to the thread's Voice channel.
+      useInboxMock.mockImplementation(inboxId => ({
+        ...baseInboxState(),
+        isAWhatsAppWebChannel: ref(false),
+        isAWhatsAppChannel: computed(() => unref(inboxId) === 234),
+      }));
+      useMessageContextMock.mockReturnValue(baseMessageContext(messageStatus));
+
+      const wrapper = mountComponent();
+
+      expect(
+        wrapper.findComponent({ name: 'MessageStatus' }).props('status')
+      ).toBe(messageStatus);
+    }
+  );
+
+  it('keeps the sending indicator until WhatsApp assigns a provider id', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      sourceId: ref(null),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.findComponent({ name: 'MessageStatus' }).props('status')
+    ).toBe(MESSAGE_STATUS.PROGRESS);
+  });
+
+  it('does not show a message sending indicator on a completed call card', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      contentType: ref('voice_call'),
+      contentAttributes: ref({ data: { status: 'completed' } }),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'MessageStatus' }).exists()).toBe(
+      false
+    );
+  });
 
   it('shows read status for Telegram Personal outgoing messages', () => {
     useInboxMock.mockReturnValue({
