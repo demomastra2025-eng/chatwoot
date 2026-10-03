@@ -185,7 +185,6 @@ const openBreakdown = async wrapper => {
     .trigger('click');
   return wrapper.get('[data-testid="whatsapp-usage-breakdown"]').text();
 };
-const MAX_TIMEOUT_DELAY = 2 ** 31 - 1;
 
 describe('WhatsappUsageBanner', () => {
   beforeEach(() => {
@@ -693,14 +692,18 @@ describe('WhatsappUsageBanner', () => {
     wrapper.unmount();
   });
 
-  it('stores dismissal by account and month and shows another account', async () => {
+  it('stores dismissal by account and UTC day and shows another account', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-03T12:00:00.000Z'));
     const wrapper = mountBanner();
     await flushPromises();
 
     await wrapper
       .get('button[aria-label="Dismiss WhatsApp usage banner"]')
       .trigger('click');
-    expect(mocks.storage.get('dismissedWhatsappUsage::11:2026-10')).toBe(true);
+    expect(
+      mocks.storage.get('dismissedWhatsappUsage::daily::11:2026-10-03')
+    ).toBe(true);
     expect(wrapper.find('section').exists()).toBe(false);
 
     mocks.getMonthlyUsage = vi.fn(async accountId =>
@@ -714,9 +717,139 @@ describe('WhatsappUsageBanner', () => {
     expect(wrapper.find('section').exists()).toBe(true);
 
     wrapper.unmount();
+    vi.useRealTimers();
   });
 
-  it('reappears after the UTC month boundary', async () => {
+  it('ignores a legacy monthly dismissal and keeps a daily dismissal after reload', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-03T12:00:00.000Z'));
+    mocks.storage.set('dismissedWhatsappUsage::11:2026-10', true);
+
+    const firstWrapper = mountBanner();
+    await flushPromises();
+    expect(firstWrapper.find('section').exists()).toBe(true);
+
+    await firstWrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
+    firstWrapper.unmount();
+
+    const reloadedWrapper = mountBanner();
+    await flushPromises();
+    expect(reloadedWrapper.find('section').exists()).toBe(false);
+    expect(
+      mocks.storage.get('dismissedWhatsappUsage::daily::11:2026-10-03')
+    ).toBe(true);
+
+    reloadedWrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('reappears at the next UTC day within the same month with fresh usage', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T23:59:59.900Z'));
+    mocks.getMonthlyUsage = vi
+      .fn()
+      .mockResolvedValueOnce(response(monthlyUsage({ month: '2026-10' })))
+      .mockResolvedValueOnce(
+        response(monthlyUsage({ month: '2026-10', delivered_count: 2 }))
+      );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+    await wrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
+
+    await vi.advanceTimersByTimeAsync(150);
+    await flushPromises();
+
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('section').exists()).toBe(true);
+    expect(wrapper.text()).toContain('delivered: 2');
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('ignores a pending old-day response after focus catches up the UTC boundary', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-02T23:58:00.000Z'));
+    let resolveOldDay;
+    let resolveNextDay;
+    mocks.getMonthlyUsage = vi
+      .fn()
+      .mockResolvedValueOnce(response(monthlyUsage({ delivered_count: 12 })))
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveOldDay = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveNextDay = resolve;
+          })
+      );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    vi.setSystemTime(new Date('2026-10-02T23:58:31.000Z'));
+    window.dispatchEvent(new Event('focus'));
+    await nextTick();
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
+
+    await wrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
+
+    vi.setSystemTime(new Date('2026-10-03T00:00:02.000Z'));
+    window.dispatchEvent(new Event('focus'));
+    await nextTick();
+
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(3);
+    expect(wrapper.find('section').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('delivered: 12');
+
+    resolveOldDay(response(monthlyUsage({ delivered_count: 99 })));
+    await flushPromises();
+    expect(wrapper.find('section').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('delivered: 99');
+
+    resolveNextDay(response(monthlyUsage({ delivered_count: 18 })));
+    await flushPromises();
+    expect(wrapper.find('section').exists()).toBe(true);
+    expect(wrapper.text()).toContain('delivered: 18');
+
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('preserves a dismissal for one account without suppressing another account', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-03T12:00:00.000Z'));
+    mocks.storage.set('dismissedWhatsappUsage::daily::11:2026-10-03', true);
+    mocks.getMonthlyUsage = vi.fn(async accountId =>
+      response(monthlyUsage({ delivered_count: accountId === 12 ? 28 : 12 }))
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+    expect(wrapper.find('section').exists()).toBe(false);
+
+    mocks.accountId.value = 12;
+    await nextTick();
+    await flushPromises();
+
+    expect(wrapper.find('section').exists()).toBe(true);
+    expect(wrapper.text()).toContain('delivered: 28');
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it('reappears with fresh monthly usage at the UTC month boundary', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-31T23:59:59.900Z'));
     mocks.getMonthlyUsage = vi
@@ -743,54 +876,28 @@ describe('WhatsappUsageBanner', () => {
     vi.useRealTimers();
   });
 
-  it('chunks a long wait for the UTC month boundary without refreshing early', async () => {
+  it('clears its UTC day timer on unmount', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-10-02T00:00:00.000Z'));
-    const visibilityDescriptor = Object.getOwnPropertyDescriptor(
-      document,
-      'visibilityState'
-    );
-    Object.defineProperty(document, 'visibilityState', {
-      configurable: true,
-      value: 'hidden',
-    });
+    vi.setSystemTime(new Date('2026-10-02T23:59:59.000Z'));
     const setTimeoutSpy = vi.spyOn(window, 'setTimeout');
-    mocks.getMonthlyUsage = vi
-      .fn()
-      .mockResolvedValueOnce(response(monthlyUsage({ month: '2026-10' })))
-      .mockResolvedValueOnce(
-        response(monthlyUsage({ month: '2026-11', delivered_count: 2 }))
-      );
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
 
     const wrapper = mountBanner();
     await flushPromises();
-
-    expect(setTimeoutSpy).toHaveBeenCalledWith(
-      expect.any(Function),
-      MAX_TIMEOUT_DELAY
+    const boundaryTimeoutIndex = setTimeoutSpy.mock.calls.findIndex(
+      ([, delay]) => delay === 1000
     );
-    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(MAX_TIMEOUT_DELAY);
-    await flushPromises();
-
-    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain('delivered: 12');
-
-    const untilNextMonth = Date.UTC(2026, 10, 1) - Date.now();
-    await vi.advanceTimersByTimeAsync(untilNextMonth);
-    await flushPromises();
-
-    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain('delivered: 2');
+    expect(boundaryTimeoutIndex).not.toBe(-1);
+    const boundaryTimeout =
+      setTimeoutSpy.mock.results[boundaryTimeoutIndex].value;
 
     wrapper.unmount();
-    if (visibilityDescriptor) {
-      Object.defineProperty(document, 'visibilityState', visibilityDescriptor);
-    } else {
-      delete document.visibilityState;
-    }
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(boundaryTimeout);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
+
     setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
     vi.useRealTimers();
   });
 

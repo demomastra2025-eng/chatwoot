@@ -24,11 +24,13 @@ const isCategoryBreakdownHovered = ref(false);
 const isCategoryBreakdownFocused = ref(false);
 let requestGeneration = 0;
 let lastFetchedAt = 0;
-let monthBoundaryTimeout = null;
+let utcDayBoundaryTimeout = null;
+const currentUtcDay = () => new Date().toISOString().slice(0, 10);
+const utcDay = ref(currentUtcDay());
 
 const storageKey = computed(() => {
-  if (!accountId.value || !usage.value?.month) return null;
-  return `${LOCAL_STORAGE_KEYS.DISMISSED_WHATSAPP_USAGE}::${accountId.value}:${usage.value.month}`;
+  if (!accountId.value || !utcDay.value) return null;
+  return `${LOCAL_STORAGE_KEYS.DISMISSED_WHATSAPP_USAGE}::daily::${accountId.value}:${utcDay.value}`;
 });
 
 const shouldShowBanner = computed(
@@ -361,6 +363,40 @@ const currentUtcMonth = () => new Date().toISOString().slice(0, 7);
 const isUsageMonthStale = () =>
   Boolean(usage.value?.month) && usage.value.month !== currentUtcMonth();
 
+const syncUtcDay = () => {
+  const today = currentUtcDay();
+  if (today === utcDay.value) return false;
+
+  utcDay.value = today;
+  requestGeneration += 1;
+  requestInProgress.value = false;
+  lastFetchedAt = 0;
+  usage.value = null;
+  isDismissed.value = false;
+  closeCategoryBreakdown();
+  return true;
+};
+
+function scheduleUtcDayBoundaryRefresh(refresh) {
+  if (utcDayBoundaryTimeout) clearTimeout(utcDayBoundaryTimeout);
+
+  const now = new Date();
+  const nextUtcDayStart = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1
+  );
+  const delay = Math.min(
+    Math.max(0, nextUtcDayStart - now.getTime()),
+    MAX_TIMEOUT_DELAY
+  );
+  utcDayBoundaryTimeout = setTimeout(() => {
+    utcDayBoundaryTimeout = null;
+    if (syncUtcDay()) refresh();
+    scheduleUtcDayBoundaryRefresh(refresh);
+  }, delay);
+}
+
 const setUsage = payload => {
   usage.value = payload;
   const key = storageKey.value;
@@ -368,6 +404,11 @@ const setUsage = payload => {
 };
 
 const fetchUsage = async ({ force = false } = {}) => {
+  const utcDayChanged = syncUtcDay();
+  if (utcDayChanged) {
+    scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
+  }
+
   const requestedAccountId = Number(accountId.value);
   if (
     !isAdmin.value ||
@@ -381,16 +422,22 @@ const fetchUsage = async ({ force = false } = {}) => {
   }
 
   const usageMonthChanged = isUsageMonthStale();
+  const shouldForce = force || utcDayChanged;
 
   if (accessDenied.value) return;
-  if (isDismissed.value && !force && !usageMonthChanged) return;
+  if (isDismissed.value && !shouldForce && !usageMonthChanged) return;
   if (requestInProgress.value) return;
-  if (!force && !usageMonthChanged && Date.now() - lastFetchedAt < 30_000) {
+  if (
+    !shouldForce &&
+    !usageMonthChanged &&
+    Date.now() - lastFetchedAt < 30_000
+  ) {
     return;
   }
 
   requestGeneration += 1;
   const generation = requestGeneration;
+  const requestedUtcDay = utcDay.value;
   requestInProgress.value = true;
   lastFetchedAt = Date.now();
 
@@ -401,6 +448,12 @@ const fetchUsage = async ({ force = false } = {}) => {
       Number(accountId.value) !== requestedAccountId ||
       !isAdmin.value
     ) {
+      return;
+    }
+    if (currentUtcDay() !== requestedUtcDay) {
+      syncUtcDay();
+      scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
+      fetchUsage({ force: true });
       return;
     }
 
@@ -473,36 +526,6 @@ const onVisibilityChange = () => {
   }
 };
 
-const scheduleMonthBoundaryRefresh = () => {
-  if (monthBoundaryTimeout) clearTimeout(monthBoundaryTimeout);
-
-  const now = new Date();
-  const nextMonthStart = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth() + 1,
-    1
-  );
-  const delay = Math.min(
-    Math.max(0, nextMonthStart - now.getTime()),
-    MAX_TIMEOUT_DELAY
-  );
-  monthBoundaryTimeout = setTimeout(() => {
-    if (Date.now() < nextMonthStart) {
-      scheduleMonthBoundaryRefresh();
-      return;
-    }
-
-    requestGeneration += 1;
-    requestInProgress.value = false;
-    lastFetchedAt = 0;
-    usage.value = null;
-    isDismissed.value = false;
-    closeCategoryBreakdown();
-    fetchUsage({ force: true });
-    scheduleMonthBoundaryRefresh();
-  }, delay);
-};
-
 watch(
   [accountId, isAdmin],
   ([nextAccountId, nextIsAdmin]) => {
@@ -524,7 +547,7 @@ onMounted(() => {
   window.addEventListener('focus', onWindowFocus);
   document.addEventListener('visibilitychange', onVisibilityChange);
   document.addEventListener('keydown', handleDocumentKeydown);
-  scheduleMonthBoundaryRefresh();
+  scheduleUtcDayBoundaryRefresh(() => fetchUsage({ force: true }));
 });
 
 onUnmounted(() => {
@@ -532,7 +555,7 @@ onUnmounted(() => {
   window.removeEventListener('focus', onWindowFocus);
   document.removeEventListener('visibilitychange', onVisibilityChange);
   document.removeEventListener('keydown', handleDocumentKeydown);
-  if (monthBoundaryTimeout) clearTimeout(monthBoundaryTimeout);
+  if (utcDayBoundaryTimeout) clearTimeout(utcDayBoundaryTimeout);
 });
 </script>
 
