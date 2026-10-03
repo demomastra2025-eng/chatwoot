@@ -39,11 +39,35 @@ vi.mock('vue-i18n', () => ({
         (message, [name, value]) => message.replace(`{${name}}`, value),
         {
           'WHATSAPP_USAGE.BANNER_TITLE':
-            'WhatsApp Cloud · this UTC month: {deliveredCount} · total ≈ {amount}',
-          'WHATSAPP_USAGE.BANNER_DETAILS':
-            'Templates: {templateCount} · unpriced: {unpricedCount} · unknown: {unknownCount}',
+            'OneLink · delivered: {deliveredCount} · total ≈ {amount}',
           'WHATSAPP_USAGE.BANNER_TOOLTIP':
-            'Service messages {serviceAmount}; templates {templateAmount}; rate month {rateMonth}; requested {requestedDate}; effective {effectiveDate}; {rate} KZT per USD; before volume discounts. Unpriced: {unpricedCount}; unknown: {unknownCount}.',
+            'Only OneLink WhatsApp Cloud messages are counted; app and Web messages are excluded. Service messages {serviceAmount}; templates {templateAmount}; delivered templates {templateCount}; rate month {rateMonth}; requested {requestedDate}; effective {effectiveDate}; {rate} KZT per USD; before volume discounts. Unpriced: {unpricedCount}; unknown: {unknownCount}. Free services {freeQuotaCount}; by number: {freeQuotaByPhone}; coverage: {freeQuotaHistoryStatus}. Per-category non-billable messages are separate from the monthly free allowance. Meta time zone period may differ; exact remaining unavailable.',
+          'WHATSAPP_USAGE.BREAKDOWN_TRIGGER':
+            'Message breakdown; {count} delivered',
+          'WHATSAPP_USAGE.BREAKDOWN_TITLE': 'Messages sent from OneLink',
+          'WHATSAPP_USAGE.CATEGORY_SERVICE': 'Ordinary service',
+          'WHATSAPP_USAGE.CATEGORY_UTILITY': 'Utility notifications',
+          'WHATSAPP_USAGE.CATEGORY_MARKETING': 'Marketing',
+          'WHATSAPP_USAGE.CATEGORY_AUTH': 'Authentication',
+          'WHATSAPP_USAGE.CATEGORY_AUTH_INTERNATIONAL':
+            'International authentication',
+          'WHATSAPP_USAGE.CATEGORY_REFERRAL_CONVERSION': 'Referral conversion',
+          'WHATSAPP_USAGE.CATEGORY_UNKNOWN': 'Unknown category',
+          'WHATSAPP_USAGE.CATEGORY_DELIVERED': 'Delivered: {count}',
+          'WHATSAPP_USAGE.CATEGORY_BILLABILITY':
+            'Chargeable: {chargeable} · non-billable: {free} · billability unknown: {unknown}',
+          'WHATSAPP_USAGE.CATEGORY_BREAKDOWN_UNAVAILABLE':
+            'Category breakdown is not available yet.',
+          'WHATSAPP_USAGE.CATEGORY_BREAKDOWN_NOTE':
+            'Other categories may contribute to the overall delivered count. Non-billable is separate from the monthly service allowance.',
+          'WHATSAPP_USAGE.FREE_QUOTA_SINGLE_SUMMARY':
+            'Free service messages (UTC): {count}/{limit}',
+          'WHATSAPP_USAGE.FREE_QUOTA_MULTI_SUMMARY':
+            'Free service messages (UTC): {count} · limit {limit}/number',
+          'WHATSAPP_USAGE.FREE_QUOTA_BY_PHONE':
+            'number {phone}: {count}/{limit}',
+          'WHATSAPP_USAGE.HISTORY_INCOMPLETE': 'history incomplete',
+          'WHATSAPP_USAGE.HISTORY_COMPLETE': 'UTC-month history complete',
           'WHATSAPP_USAGE.ESTIMATE_UNAVAILABLE': 'unavailable',
           'WHATSAPP_USAGE.COUNT_UNAVAILABLE': '—',
           'WHATSAPP_USAGE.VALUE_UNAVAILABLE': 'unavailable',
@@ -62,6 +86,19 @@ const monthlyUsage = overrides => ({
   official_cloud_phone_count: 1,
   eligible: true,
   delivered_count: 12,
+  free_service_quota_count: 5,
+  free_service_quota_unknown_count: 0,
+  free_service_quota_limit: 1000,
+  free_service_quota_limit_per_phone: 1000,
+  free_service_quota_complete: true,
+  phones: [
+    {
+      phone_number: '+77010000001',
+      connected: true,
+      free_service_quota_count: 5,
+      free_service_quota_limit: 1000,
+    },
+  ],
   service_delivered_count: 8,
   template_delivered_count: 3,
   chargeable_service_count: 6,
@@ -69,6 +106,57 @@ const monthlyUsage = overrides => ({
   chargeable_message_count: 8,
   unpriced_billable_count: 0,
   unknown_billable_count: 0,
+  category_breakdown: [
+    {
+      category: 'service',
+      delivered_count: 8,
+      chargeable_count: 6,
+      free_count: 2,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'utility',
+      delivered_count: 1,
+      chargeable_count: 1,
+      free_count: 0,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'marketing',
+      delivered_count: 2,
+      chargeable_count: 1,
+      free_count: 1,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'authentication',
+      delivered_count: 1,
+      chargeable_count: 0,
+      free_count: 1,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'authentication-international',
+      delivered_count: 0,
+      chargeable_count: 0,
+      free_count: 0,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'referral_conversion',
+      delivered_count: 0,
+      chargeable_count: 0,
+      free_count: 0,
+      unknown_billable_count: 0,
+    },
+    {
+      category: 'unknown',
+      delivered_count: 0,
+      chargeable_count: 0,
+      free_count: 0,
+      unknown_billable_count: 0,
+    },
+  ],
   estimated_service_amount_kzt: 800,
   estimated_template_amount_kzt: 300,
   estimated_amount_kzt: 1100,
@@ -91,6 +179,12 @@ const monthlyUsage = overrides => ({
 const response = payload => ({ data: { whatsapp_usage: payload } });
 
 const mountBanner = () => mount(WhatsappUsageBanner);
+const openBreakdown = async wrapper => {
+  await wrapper
+    .get('[data-testid="whatsapp-usage-breakdown-trigger"]')
+    .trigger('click');
+  return wrapper.get('[data-testid="whatsapp-usage-breakdown"]').text();
+};
 const MAX_TIMEOUT_DELAY = 2 ** 31 - 1;
 
 describe('WhatsappUsageBanner', () => {
@@ -126,17 +220,21 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledWith(11);
-    expect(wrapper.text()).toContain('this UTC month: 12');
-    expect(wrapper.get('p').text()).toContain('total ≈');
-    expect(wrapper.get('p').text()).toContain('74.75');
-    expect(wrapper.text()).toContain('Templates: 3 · unpriced: 2 · unknown: 1');
+    expect(wrapper.text()).toContain('delivered: 12');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('total ≈');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('74.75');
+    expect(wrapper.text()).toContain('Free service messages (UTC): 5/1,000');
     expect(wrapper.text()).toContain('Estimate incomplete');
     expect(wrapper.text()).not.toContain('Template cost separate');
-    const tooltip = wrapper
-      .get('[title]')
-      .attributes('title')
-      .replace(/\s+/g, ' ');
-    expect(tooltip).toContain('Service messages KZT 64.25; templates KZT 10.5');
+    const tooltip = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(tooltip).toContain(
+      'Service messages KZT 64.25; templates KZT 10.5; delivered templates 3'
+    );
+    expect(tooltip).toContain('Unpriced: 2; unknown: 1');
     expect(tooltip).toContain(
       'rate month 2026-10; requested 2026-10-01; effective 2026-10-01; 500.25 KZT per USD; before volume discounts'
     );
@@ -146,6 +244,235 @@ describe('WhatsappUsageBanner', () => {
         .find('button[aria-label="Dismiss WhatsApp usage banner"]')
         .exists()
     ).toBe(true);
+
+    wrapper.unmount();
+  });
+
+  it('shows OneLink category counts on hover, focus and click, and closes with Escape', async () => {
+    const categoryBreakdown = monthlyUsage({}).category_breakdown.map(row => {
+      if (row.category === 'authentication') {
+        return { ...row, delivered_count: 0, free_count: 0 };
+      }
+      if (row.category === 'unknown') {
+        return { ...row, delivered_count: 1, unknown_billable_count: 1 };
+      }
+      return row;
+    });
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          category_breakdown: categoryBreakdown,
+          unknown_billable_count: 1,
+          estimate_complete: false,
+        })
+      )
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    const trigger = wrapper.get(
+      '[data-testid="whatsapp-usage-breakdown-trigger"]'
+    );
+    const interactionArea = wrapper.get(
+      '[data-testid="whatsapp-usage-breakdown-wrapper"]'
+    );
+
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('OneLink');
+
+    await interactionArea.trigger('mouseenter');
+    let details = wrapper.get('[data-testid="whatsapp-usage-breakdown"]');
+    expect(details.text()).toContain('Ordinary service');
+    expect(details.text()).toContain('Utility notifications');
+    expect(details.text()).toContain('Marketing');
+    expect(details.text()).toContain('Unknown category');
+    expect(details.text()).toContain('Delivered: 8');
+    expect(details.text()).toContain('Delivered: 1');
+    expect(details.text()).toContain(
+      'Chargeable: 6 · non-billable: 2 · billability unknown: 0'
+    );
+    expect(details.text()).toContain(
+      'Chargeable: 0 · non-billable: 0 · billability unknown: 1'
+    );
+    expect(details.text()).toContain('Only OneLink WhatsApp Cloud messages');
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    );
+    await nextTick();
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+
+    await interactionArea.trigger('mouseleave');
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+
+    await trigger.trigger('focusin');
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(true);
+    await trigger.trigger('focusout', { relatedTarget: document.body });
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+
+    await trigger.trigger('click');
+    expect(trigger.attributes('aria-expanded')).toBe('true');
+    details = wrapper.get('[data-testid="whatsapp-usage-breakdown"]');
+    expect(details.attributes('tabindex')).toBe('0');
+    expect(details.text()).toContain(
+      'Non-billable is separate from the monthly'
+    );
+
+    await details.trigger('focusin');
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    );
+    await nextTick();
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+    expect(trigger.attributes('aria-expanded')).toBe('false');
+
+    wrapper.unmount();
+  });
+
+  it('shows one number’s observed free service count as a UTC fraction', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          free_service_quota_count: 256,
+          phones: [
+            {
+              phone_number: '+77010000001',
+              connected: true,
+              free_service_quota_count: 256,
+              free_service_quota_limit: 1000,
+            },
+          ],
+        })
+      )
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Free service messages (UTC): 256/1,000');
+    expect(wrapper.text()).not.toContain('256/2,000');
+
+    wrapper.unmount();
+  });
+
+  it('does not replace missing category data with zero and closes details on account switch', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          category_breakdown: undefined,
+          delivered_count: undefined,
+        })
+      )
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('delivered: —');
+    expect(wrapper.text()).toContain('Estimate incomplete');
+    expect(await openBreakdown(wrapper)).toContain(
+      'Category breakdown is not available yet.'
+    );
+    expect(wrapper.text()).not.toContain('Delivered: 0');
+
+    mocks.getMonthlyUsage = vi.fn(async () => response(monthlyUsage()));
+    mocks.accountId.value = 12;
+    await nextTick();
+    await flushPromises();
+
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+    expect(
+      wrapper
+        .get('[data-testid="whatsapp-usage-breakdown-trigger"]')
+        .attributes('aria-expanded')
+    ).toBe('false');
+
+    wrapper.unmount();
+  });
+
+  it('closes pinned category details after a click outside', async () => {
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    await openBreakdown(wrapper);
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(true);
+
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(
+      wrapper.find('[data-testid="whatsapp-usage-breakdown"]').exists()
+    ).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('shows delivered messages and UTC-observed free services separately for each number', async () => {
+    mocks.getMonthlyUsage = vi.fn(async () =>
+      response(
+        monthlyUsage({
+          delivered_count: 560,
+          official_cloud_phone_count: 2,
+          free_service_quota_count: 524,
+          free_service_quota_unknown_count: 2,
+          free_service_quota_limit: 2000,
+          free_service_quota_complete: false,
+          coverage_complete: true,
+          estimate_complete: true,
+          phones: [
+            {
+              phone_number: '+770100008558',
+              connected: true,
+              free_service_quota_count: 512,
+              free_service_quota_limit: 1000,
+            },
+            {
+              phone_number: '+770100000002',
+              connected: true,
+              free_service_quota_count: 12,
+              free_service_quota_limit: 1000,
+            },
+          ],
+        })
+      )
+    );
+
+    const wrapper = mountBanner();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('delivered: 560');
+    expect(wrapper.text()).toContain(
+      'Free service messages (UTC): 524 · limit 1,000/number'
+    );
+    expect(wrapper.text()).toContain('Estimate incomplete');
+    const tooltip = (await openBreakdown(wrapper)).replace(/\s+/g, ' ');
+    expect(tooltip).toContain(
+      'by number: number …8558: 512/1,000; number …0002: 12/1,000'
+    );
+    expect(tooltip).toContain('Meta time zone period may differ');
+    expect(tooltip).toContain('exact remaining unavailable');
+    expect(
+      wrapper.findAll('[data-testid="whatsapp-usage-title"]')
+    ).toHaveLength(1);
 
     wrapper.unmount();
   });
@@ -167,9 +494,12 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(wrapper.get('p').text().replace(/\s+/g, ' ')).toContain(
-      'total ≈ KZT 0'
-    );
+    expect(
+      wrapper
+        .get('[data-testid="whatsapp-usage-title"]')
+        .text()
+        .replace(/\s+/g, ' ')
+    ).toContain('total ≈ KZT 0');
     expect(wrapper.text()).not.toContain('Estimate incomplete');
     wrapper.unmount();
   });
@@ -201,7 +531,9 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(wrapper.get('p').text()).toContain('total ≈ unavailable');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('total ≈ unavailable');
     expect(wrapper.text()).toContain('Estimate incomplete');
     wrapper.unmount();
   });
@@ -296,9 +628,9 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(
-      wrapper.get('[title]').attributes('title').replace(/\s+/g, ' ')
-    ).toContain('templates KZT 350');
+    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
+      'templates KZT 350'
+    );
     expect(wrapper.text()).not.toContain('Estimate incomplete');
     expect(wrapper.find('section').exists()).toBe(true);
 
@@ -328,10 +660,14 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(wrapper.get('p').text()).toContain('total ≈ unavailable');
-    expect(wrapper.get('p').text()).not.toContain('KZT 0');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).toContain('total ≈ unavailable');
+    expect(
+      wrapper.get('[data-testid="whatsapp-usage-title"]').text()
+    ).not.toContain('KZT 0');
     expect(wrapper.text()).toContain('Estimate incomplete');
-    expect(wrapper.get('[title]').attributes('title')).toContain(
+    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
       'effective unavailable; unavailable KZT per USD'
     );
 
@@ -349,7 +685,9 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('unpriced: — · unknown: —');
+    expect((await openBreakdown(wrapper)).replace(/\s+/g, ' ')).toContain(
+      'Unpriced: —; unknown: —'
+    );
     expect(wrapper.text()).toContain('Estimate incomplete');
 
     wrapper.unmount();
@@ -359,7 +697,9 @@ describe('WhatsappUsageBanner', () => {
     const wrapper = mountBanner();
     await flushPromises();
 
-    await wrapper.find('button').trigger('click');
+    await wrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
     expect(mocks.storage.get('dismissedWhatsappUsage::11:2026-10')).toBe(true);
     expect(wrapper.find('section').exists()).toBe(false);
 
@@ -370,7 +710,7 @@ describe('WhatsappUsageBanner', () => {
     await nextTick();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('this UTC month: 28');
+    expect(wrapper.text()).toContain('delivered: 28');
     expect(wrapper.find('section').exists()).toBe(true);
 
     wrapper.unmount();
@@ -388,14 +728,16 @@ describe('WhatsappUsageBanner', () => {
 
     const wrapper = mountBanner();
     await flushPromises();
-    await wrapper.find('button').trigger('click');
+    await wrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
 
     await vi.advanceTimersByTimeAsync(150);
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
     expect(wrapper.find('section').exists()).toBe(true);
-    expect(wrapper.text()).toContain('this UTC month: 2');
+    expect(wrapper.text()).toContain('delivered: 2');
 
     wrapper.unmount();
     vi.useRealTimers();
@@ -433,14 +775,14 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
-    expect(wrapper.text()).toContain('this UTC month: 12');
+    expect(wrapper.text()).toContain('delivered: 12');
 
     const untilNextMonth = Date.UTC(2026, 10, 1) - Date.now();
     await vi.advanceTimersByTimeAsync(untilNextMonth);
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain('this UTC month: 2');
+    expect(wrapper.text()).toContain('delivered: 2');
 
     wrapper.unmount();
     if (visibilityDescriptor) {
@@ -477,9 +819,11 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain('this UTC month: 21');
+    expect(wrapper.text()).toContain('delivered: 21');
 
-    await wrapper.find('button').trigger('click');
+    await wrapper
+      .get('button[aria-label="Dismiss WhatsApp usage banner"]')
+      .trigger('click');
     await vi.advanceTimersByTimeAsync(120_000);
     await flushPromises();
 
@@ -503,7 +847,7 @@ describe('WhatsappUsageBanner', () => {
     await flushPromises();
 
     expect(wrapper.find('section').exists()).toBe(true);
-    expect(wrapper.text()).toContain('this UTC month: 12');
+    expect(wrapper.text()).toContain('delivered: 12');
 
     mocks.getMonthlyUsage = vi.fn(async () => {
       throw Object.assign(new Error('Forbidden'), {
@@ -517,7 +861,7 @@ describe('WhatsappUsageBanner', () => {
     expect(initialRequest).toHaveBeenCalledTimes(1);
     expect(mocks.getMonthlyUsage).toHaveBeenCalledTimes(1);
     expect(wrapper.find('section').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain('this UTC month: 12');
+    expect(wrapper.text()).not.toContain('delivered: 12');
 
     wrapper.unmount();
     vi.useRealTimers();
@@ -541,8 +885,8 @@ describe('WhatsappUsageBanner', () => {
 
     resolveFirstAccount(response(monthlyUsage({ delivered_count: 99 })));
     await flushPromises();
-    expect(wrapper.text()).toContain('this UTC month: 22');
-    expect(wrapper.text()).not.toContain('this UTC month: 99');
+    expect(wrapper.text()).toContain('delivered: 22');
+    expect(wrapper.text()).not.toContain('delivered: 99');
 
     mocks.getMonthlyUsage = vi.fn(async () => {
       throw Object.assign(new Error('Forbidden'), {

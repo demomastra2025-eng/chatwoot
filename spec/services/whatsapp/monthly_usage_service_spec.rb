@@ -15,6 +15,10 @@ RSpec.describe Whatsapp::MonthlyUsageService do
     create(:channel_whatsapp, account: account, phone_number: '+77010000002', provider: 'whatsapp_cloud',
                               sync_templates: false, validate_provider_config: false)
   end
+  let!(:same_phone_channel) do
+    create(:channel_whatsapp, account: account, phone_number: '77010000001', provider: 'whatsapp_cloud',
+                              sync_templates: false, validate_provider_config: false)
+  end
 
   before do
     allow(Whatsapp::MonthlyExchangeRateService).to receive(:new).and_return(exchange_rate_service)
@@ -29,23 +33,30 @@ RSpec.describe Whatsapp::MonthlyUsageService do
       provider_message_id: provider_message_id,
       inbox_id: channel.inbox.id,
       delivered_at: delivered_at,
-      received_at: delivered_at,
+      received_at: attributes.fetch(:received_at, delivered_at || Time.utc(2026, 10, 4)),
       category: category,
+      pricing_type: attributes[:pricing_type],
       billable: attributes.fetch(:billable),
       recipient_country: attributes.fetch(:recipient_country, 'KZ')
     )
   end
 
-  def create_legacy_delivered_message(source_id:, created_at:, content_attributes: nil, serialized: false)
+  def create_legacy_delivered_message(source_id:, created_at:, **attributes)
+    content_attributes = attributes.delete(:content_attributes)
+    serialized = attributes.delete(:serialized) || false
+    channel = attributes.delete(:channel) || first_channel
     message = create(
       :message,
-      account: account,
-      inbox: first_channel.inbox,
-      message_type: :outgoing,
-      status: :delivered,
-      source_id: source_id,
-      content_attributes: content_attributes || {},
-      created_at: created_at
+      {
+        account: account,
+        inbox: channel.inbox,
+        message_type: :outgoing,
+        status: :delivered,
+        private: false,
+        source_id: source_id,
+        content_attributes: content_attributes || {},
+        created_at: created_at
+      }.merge(attributes)
     )
     return message if content_attributes.nil?
 
@@ -95,6 +106,15 @@ RSpec.describe Whatsapp::MonthlyUsageService do
       object_import: 'object', serialized_import: 'string'
     )
     expect(records.fetch(:serialized_echo).reload.content_attributes['external_echo']).to be(true)
+  end
+
+  def whatsapp_delivery_attributes(category:, type:, billable:)
+    {
+      whatsapp_delivery: {
+        status: 'delivered',
+        pricing: { category: category, type: type, billable: billable }
+      }
+    }
   end
 
   it 'uses UTC month bounds and trusts Meta billable status instead of applying the allowance again' do
@@ -156,6 +176,41 @@ RSpec.describe Whatsapp::MonthlyUsageService do
       estimated_amount_kzt: nil,
       estimate_complete: false
     )
+  end
+
+  it 'returns ordered category counts split by Meta billability' do
+    at = Time.utc(2026, 10, 5)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-service',
+                    delivered_at: at, category: 'service', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-utility',
+                    delivered_at: at, category: 'utility', billable: false)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-marketing',
+                    delivered_at: at, category: 'marketing', billable: nil)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-authentication',
+                    delivered_at: at, category: 'authentication', billable: false)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-authentication-international',
+                    delivered_at: at, category: 'authentication-international', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-referral',
+                    delivered_at: at, category: 'referral_conversion', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-future-category',
+                    delivered_at: at, category: 'future_category', billable: true)
+    record_delivery(channel: first_channel, provider_message_id: 'wamid.breakdown-missing-category',
+                    delivered_at: at, category: nil, billable: false)
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage[:category_breakdown]).to eq([
+      { category: 'service', delivered_count: 1, chargeable_count: 1, free_count: 0, unknown_billable_count: 0 },
+      { category: 'utility', delivered_count: 1, chargeable_count: 0, free_count: 1, unknown_billable_count: 0 },
+      { category: 'marketing', delivered_count: 1, chargeable_count: 0, free_count: 0, unknown_billable_count: 1 },
+      { category: 'authentication', delivered_count: 1, chargeable_count: 0, free_count: 1, unknown_billable_count: 0 },
+      { category: 'authentication-international', delivered_count: 1, chargeable_count: 1, free_count: 0,
+        unknown_billable_count: 0 },
+      { category: 'referral_conversion', delivered_count: 1, chargeable_count: 1, free_count: 0,
+        unknown_billable_count: 0 },
+      { category: 'unknown', delivered_count: 2, chargeable_count: 1, free_count: 1, unknown_billable_count: 0 }
+    ])
+    expect(usage[:category_breakdown].sum { |row| row[:delivered_count] }).to eq(usage[:delivered_count])
   end
 
   it 'reports referral conversion separately from template deliveries and the service estimate' do
@@ -247,7 +302,7 @@ RSpec.describe Whatsapp::MonthlyUsageService do
     expect(usage[:phones].sum { |phone| phone[:estimated_amount_kzt] }).to eq(BigDecimal('0.06'))
   end
 
-  it 'counts existing delivered Cloud messages without a provider timestamp as unassigned history' do
+  it 'counts delivered Cloud history alongside ledger deliveries without inventing timestamps' do
     created_at = Time.utc(2026, 10, 3, 10)
     create_legacy_delivered_message(source_id: 'wamid.legacy-delivered', created_at: created_at)
     verify_legacy_exclusions(created_at)
@@ -258,7 +313,7 @@ RSpec.describe Whatsapp::MonthlyUsageService do
     usage = described_class.new(account: account, now: Time.utc(2026, 10, 5)).perform
 
     expect(usage).to include(
-      delivered_count: 1,
+      delivered_count: 2,
       unknown_delivery_timestamp_count: 1,
       unknown_existing_delivery_count: 1,
       coverage_complete: false,
@@ -266,6 +321,117 @@ RSpec.describe Whatsapp::MonthlyUsageService do
     )
     expect(usage[:phones]).to include(
       include(phone_number: first_channel.phone_number, unknown_existing_delivery_count: 1)
+    )
+  end
+
+  it 'keeps scalar legacy delivery metadata unknown without failing the report' do
+    at = Time.utc(2026, 10, 5)
+    create_legacy_delivered_message(
+      source_id: 'wamid.scalar-metadata', created_at: at,
+      content_attributes: [], serialized: true
+    )
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      delivered_count: 1,
+      free_service_quota_count: 0,
+      free_service_quota_unknown_count: 1,
+      free_service_quota_complete: false,
+      estimate_complete: false
+    )
+  end
+
+  it 'deduplicates historical deliveries and merges nil-timestamp journal metadata' do
+    at = Time.utc(2026, 10, 5)
+    free_metadata = whatsapp_delivery_attributes(category: 'service', type: 'free_customer_service', billable: false)
+    create_legacy_delivered_message(
+      source_id: 'wamid.history-free', created_at: Time.utc(2026, 10, 1),
+      content_attributes: free_metadata, serialized: true
+    )
+    create_legacy_delivered_message(
+      source_id: 'wamid.history-free', created_at: Time.utc(2026, 10, 1),
+      content_attributes: free_metadata, channel: same_phone_channel
+    )
+    create_legacy_delivered_message(
+      source_id: 'wamid.nil-timestamp', created_at: Time.utc(2026, 10, 2),
+      status: :read
+    )
+    record_delivery(
+      channel: first_channel, provider_message_id: 'wamid.nil-timestamp', delivered_at: nil,
+      category: 'service', billable: false, pricing_type: 'free_customer_service'
+    )
+    create_legacy_delivered_message(
+      source_id: 'wamid.already-counted', created_at: at,
+      content_attributes: free_metadata, status: :read
+    )
+    record_delivery(
+      channel: first_channel, provider_message_id: 'wamid.already-counted', delivered_at: at,
+      category: 'service', billable: false, pricing_type: 'free_customer_service'
+    )
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      official_cloud_phone_count: 2,
+      delivered_count: 3,
+      free_service_quota_count: 3,
+      free_service_quota_unknown_count: 0,
+      free_service_quota_limit: 2_000,
+      free_service_quota_limit_per_phone: 1_000,
+      free_service_quota_complete: false,
+      unknown_existing_delivery_count: 1,
+      estimate_complete: false
+    )
+    expect(usage[:phones]).to include(
+      include(phone_number: first_channel.phone_number, delivered_count: 3, free_service_quota_count: 3)
+    )
+    expect(usage[:category_breakdown]).to include(
+      { category: 'service', delivered_count: 3, chargeable_count: 0, free_count: 3, unknown_billable_count: 0 }
+    )
+  end
+
+  it 'excludes dated deliveries outside the month and free entry point from free quota' do
+    at = Time.utc(2026, 10, 5)
+    free_metadata = whatsapp_delivery_attributes(category: 'service', type: 'free_customer_service', billable: false)
+    create_legacy_delivered_message(
+      source_id: 'wamid.delivered-in-september', created_at: at, content_attributes: free_metadata
+    )
+    record_delivery(
+      channel: first_channel, provider_message_id: 'wamid.delivered-in-september',
+      delivered_at: Time.utc(2026, 9, 30, 23, 59), category: 'service', billable: false,
+      pricing_type: 'free_customer_service'
+    )
+    create_legacy_delivered_message(
+      source_id: 'wamid.free-entry-point', created_at: at,
+      content_attributes: whatsapp_delivery_attributes(category: 'service', type: 'free_entry_point', billable: false),
+      channel: second_channel
+    )
+    create_legacy_delivered_message(source_id: 'wamid.unknown-pricing', created_at: at, channel: second_channel)
+    create_legacy_delivered_message(
+      source_id: 'wamid.future-created', created_at: at + 1.minute, content_attributes: free_metadata
+    )
+
+    usage = described_class.new(account: account, now: at).perform
+
+    expect(usage).to include(
+      official_cloud_phone_count: 2,
+      delivered_count: 2,
+      free_service_quota_count: 0,
+      free_service_quota_unknown_count: 1,
+      free_service_quota_limit: 2_000,
+      free_service_quota_limit_per_phone: 1_000,
+      free_service_quota_complete: false,
+      unknown_delivery_timestamp_count: 2,
+      unknown_existing_delivery_count: 2,
+      estimate_complete: false
+    )
+    expect(usage[:phones]).to contain_exactly(
+      include(phone_number: first_channel.phone_number, delivered_count: 0, free_service_quota_count: 0,
+              free_service_quota_limit: 1_000, free_service_quota_complete: true),
+      include(phone_number: second_channel.phone_number, delivered_count: 2, free_service_quota_count: 0,
+              free_service_quota_unknown_count: 1, free_service_quota_limit: 1_000,
+              free_service_quota_complete: false)
     )
   end
 end
