@@ -35,9 +35,16 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   def retry
     return if message.blank?
 
-    service = Messages::StatusUpdateService.new(message, 'sent')
-    service.perform
-    message.update!(content_attributes: message.content_attributes.to_h.except('external_error'))
+    retried = message.with_lock do
+      # The outbound job skips messages with a provider id; resetting one would only hide its failure.
+      next false if message.source_id.present?
+
+      Messages::StatusUpdateService.new(message, 'sent').perform
+      message.update!(content_attributes: message.content_attributes.to_h.except('external_error'))
+      true
+    end
+    return render_could_not_create_error(I18n.t('errors.messages.retry_provider_accepted')) unless retried
+
     ::SendReplyJob.perform_later(message.id)
   rescue StandardError => e
     render_could_not_create_error(e.message)

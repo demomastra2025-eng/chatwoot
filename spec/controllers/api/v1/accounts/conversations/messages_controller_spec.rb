@@ -481,6 +481,40 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(message.reload.content_attributes['external_error']).to be_nil
         expect(message.reload.content_attributes['template_params']).to eq('name' => 'approved_template')
       end
+
+      context 'when a failed WhatsApp message already has a provider id' do
+        let(:whatsapp_channel) { create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false) }
+        let(:conversation) { create(:conversation, account: account, inbox: whatsapp_channel.inbox) }
+        let(:message) do
+          create(
+            :message,
+            account: account,
+            inbox: whatsapp_channel.inbox,
+            conversation: conversation,
+            message_type: :outgoing,
+            status: :failed,
+            source_id: 'wamid.provider-accepted',
+            content_attributes: {
+              external_error: '131042: Business eligibility payment issue',
+              whatsapp_delivery: { status: 'failed', timestamp: '1791043034' }
+            }
+          )
+        end
+
+        it 'keeps the provider failure and does not enqueue an impossible resend' do
+          message_id = message.id
+          expect(SendReplyJob).not_to receive(:perform_later).with(message_id)
+
+          post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages/#{message_id}/retry",
+               headers: agent.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(message.reload).to have_attributes(status: 'failed', source_id: 'wamid.provider-accepted')
+          expect(message.content_attributes).to include('external_error' => '131042: Business eligibility payment issue')
+          expect(message.content_attributes.dig('whatsapp_delivery', 'status')).to eq('failed')
+        end
+      end
     end
 
     context 'when the message id is invalid' do

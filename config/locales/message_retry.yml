@@ -1,0 +1,8 @@
+en:
+  errors:
+    messages:
+      retry_provider_accepted: 'The provider has already assigned this message an ID. Create a new message to send it again.'
+ru:
+  errors:
+    messages:
+      retry_provider_accepted: 'Провайдер уже присвоил сообщению ID. Для повторной отправки создайте новое сообщение.'
