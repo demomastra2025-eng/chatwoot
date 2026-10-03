@@ -409,6 +409,64 @@ const getFileTypeName = type => {
 
     <template #body>
       <div v-if="!isLoading && storageData" class="space-y-6">
+        <!-- Storage Threshold Alert Banner (80% / 95%) -->
+        <div
+          v-if="!isUnlimited && usagePercent >= 80"
+          class="rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+          :class="
+            usagePercent >= 95
+              ? 'bg-red-50 border-red-200 text-red-900 shadow-sm'
+              : 'bg-amber-50 border-amber-200 text-amber-900 shadow-sm'
+          "
+        >
+          <div class="flex items-start gap-3.5">
+            <span class="text-2xl flex-shrink-0 mt-0.5">
+              {{ usagePercent >= 95 ? '🚨' : '⚠️' }}
+            </span>
+            <div>
+              <h4 class="text-sm font-bold">
+                {{
+                  usagePercent >= 95
+                    ? $t('STORAGE.ALERTS.CRITICAL_TITLE', {
+                        percentage: usagePercent,
+                      })
+                    : $t('STORAGE.ALERTS.WARNING_TITLE', {
+                        percentage: usagePercent,
+                      })
+                }}
+              </h4>
+              <p
+                class="text-xs mt-1"
+                :class="usagePercent >= 95 ? 'text-red-700' : 'text-amber-800'"
+              >
+                {{
+                  usagePercent >= 95
+                    ? $t('STORAGE.ALERTS.CRITICAL_MESSAGE', {
+                        used: formatBytes(storageData.consumed_bytes),
+                        limit: formatBytes(storageData.total_limit_bytes),
+                      })
+                    : $t('STORAGE.ALERTS.WARNING_MESSAGE', {
+                        used: formatBytes(storageData.consumed_bytes),
+                        limit: formatBytes(storageData.total_limit_bytes),
+                      })
+                }}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="flex-shrink-0 whitespace-nowrap text-xs font-semibold px-4 py-2 rounded-lg transition text-white shadow-sm"
+            :class="
+              usagePercent >= 95
+                ? 'bg-red-600 hover:bg-red-700'
+                : 'bg-amber-600 hover:bg-amber-700'
+            "
+            @click="onCleanerTabClick"
+          >
+            {{ $t('STORAGE.ALERTS.CLEAN_BUTTON') }}
+          </button>
+        </div>
+
         <!-- Storage Quota Bar Card -->
         <div
           class="p-5 sm:p-6 bg-white rounded-xl border border-slate-200 shadow-sm"

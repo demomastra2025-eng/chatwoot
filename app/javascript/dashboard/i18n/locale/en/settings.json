@@ -1803,6 +1803,13 @@
       "RESTORE_ALL_SUCCESS": "All files restored from trash",
       "PURGE_SUCCESS": "File permanently deleted",
       "EMPTY_SUCCESS": "Trash emptied successfully"
+    },
+    "ALERTS": {
+      "WARNING_TITLE": "Warning: storage is {percentage}% full",
+      "WARNING_MESSAGE": "Used {used} of {limit}. We recommend freeing up space to prevent file upload blockage.",
+      "CRITICAL_TITLE": "CRITICAL: storage is almost full ({percentage}%)",
+      "CRITICAL_MESSAGE": "Used {used} of {limit}. When reaching 100%, uploading new media files and call recordings will be blocked.",
+      "CLEAN_BUTTON": "Clean storage"
     }
   }
 }

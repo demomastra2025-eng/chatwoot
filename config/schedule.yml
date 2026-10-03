@@ -190,3 +190,9 @@ storage_purge_expired_trash_job:
   cron: '30 3 * * *'
   class: 'Storage::PurgeExpiredTrashJob'
   queue: scheduled_jobs
+
+# executed every 6 hours to check account storage thresholds (80% warning / 95% critical)
+accounts_storage_threshold_alert_job:
+  cron: '15 */6 * * *'
+  class: 'Accounts::StorageThresholdAlertJob'
+  queue: scheduled_jobs

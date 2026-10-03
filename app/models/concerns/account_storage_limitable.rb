@@ -17,8 +17,7 @@ module AccountStorageLimitable
 
   def validate_storage_limit_for_attachment(attachment_name)
     change = attachment_changes[attachment_name.to_s]
-    return if change.blank?
-    return if respond_to?(:skip_storage_limit_validation?) && skip_storage_limit_validation?
+    return if change.blank? || skip_storage_validation?
 
     extra_bytes = changed_blob_bytes(change)
     return if extra_bytes <= 0
@@ -30,7 +29,18 @@ module AccountStorageLimitable
     storage_service = AccountLimits::StorageUsageService.new(account: account)
     return if storage_service.within_limit?(extra_bytes: extra_bytes, released_bytes: released_bytes)
 
+    trigger_storage_alert(account)
     errors.add(attachment_name, AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+  end
+
+  def skip_storage_validation?
+    respond_to?(:skip_storage_limit_validation?) && skip_storage_limit_validation?
+  end
+
+  def trigger_storage_alert(account)
+    AccountLimits::StorageAlertService.new(account: account).perform
+  rescue StandardError => e
+    Rails.logger.warn("[AccountStorageLimitable] Alert dispatch failed: #{e.message}")
   end
 
   def storage_limit_account

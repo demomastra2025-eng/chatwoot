@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AdministratorNotifications::AccountNotificationMailer < AdministratorNotifications::BaseMailer
   def account_deletion_user_initiated(account, reason)
     subject = 'Your Onelink account deletion has been scheduled'
@@ -54,6 +56,32 @@ class AdministratorNotifications::AccountNotificationMailer < AdministratorNotif
     subject = 'Automation rule disabled due to validation errors.'
     action_url = settings_url('automation/list')
     meta = { 'rule_name' => rule.name }
+
+    send_notification(subject, action_url: action_url, meta: meta)
+  end
+
+  def storage_warning(account, percentage, used_bytes, limit_bytes)
+    subject = "[Onelink] Предупреждение: хранилище аккаунта #{account.name} заполнено на #{percentage}%"
+    action_url = "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/settings/storage"
+    meta = {
+      'account_name' => account.name,
+      'percentage' => percentage,
+      'used_human' => ActiveSupport::NumberHelper.number_to_human_size(used_bytes.to_i),
+      'limit_human' => ActiveSupport::NumberHelper.number_to_human_size(limit_bytes.to_i)
+    }
+
+    send_notification(subject, action_url: action_url, meta: meta)
+  end
+
+  def storage_critical(account, percentage, used_bytes, limit_bytes)
+    subject = "[Onelink] ВНИМАНИЕ: хранилище аккаунта #{account.name} почти заполнено (#{percentage}%)"
+    action_url = "#{ENV.fetch('FRONTEND_URL', nil)}/app/accounts/#{account.id}/settings/storage"
+    meta = {
+      'account_name' => account.name,
+      'percentage' => percentage,
+      'used_human' => ActiveSupport::NumberHelper.number_to_human_size(used_bytes.to_i),
+      'limit_human' => ActiveSupport::NumberHelper.number_to_human_size(limit_bytes.to_i)
+    }
 
     send_notification(subject, action_url: action_url, meta: meta)
   end
