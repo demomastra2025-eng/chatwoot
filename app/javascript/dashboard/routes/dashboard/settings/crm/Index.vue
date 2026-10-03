@@ -1259,7 +1259,7 @@ onMounted(async () => {
     </template>
 
     <template #body>
-      <div class="grid gap-10">
+      <div class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-10">
         <SchedulingErrorState
           v-if="referencesStore.ui.error"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
@@ -1298,6 +1298,7 @@ onMounted(async () => {
 
         <SchedulingFormFieldGroup
           v-if="dealsEnabled"
+          class="crm-pipeline-settings-group"
           :framed="false"
           :title="$t('CRM.SETTINGS.PIPELINES.TITLE')"
           :description="$t('CRM.SETTINGS.PIPELINES.DESCRIPTION')"
@@ -1620,7 +1621,9 @@ onMounted(async () => {
           </div>
 
           <template #headerActions>
-            <div class="flex flex-wrap items-center justify-end gap-3">
+            <div
+              class="flex w-full min-w-0 max-w-full flex-wrap items-center justify-end gap-3"
+            >
               <Input
                 v-model="pipelineSearchQuery"
                 class="w-64 max-w-full"
@@ -1648,7 +1651,7 @@ onMounted(async () => {
           </template>
         </SchedulingFormFieldGroup>
 
-        <div id="crm-stage-order-editor">
+        <div id="crm-stage-order-editor" class="min-w-0">
           <SchedulingFormFieldGroup
             v-if="dealsEnabled"
             :framed="false"
@@ -1660,10 +1663,10 @@ onMounted(async () => {
             "
           >
             <div
-              class="mt-3 grid gap-4 rounded-2xl bg-n-surface-2 p-5 outline outline-1 outline-n-container shadow-sm"
+              class="mt-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4 rounded-2xl bg-n-surface-2 p-5 outline outline-1 outline-n-container shadow-sm"
             >
               <div
-                class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+                class="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
               >
                 <SchedulingSelectField
                   :label="$t('CRM.SETTINGS.STAGES.FORM.PIPELINE')"
@@ -1749,6 +1752,12 @@ onMounted(async () => {
                           {{ stage.name }}
                         </span>
                         <span
+                          v-if="stage.default"
+                          class="mt-1 inline-flex rounded-full bg-n-brand/10 px-2 py-1 text-[10px] font-semibold text-n-brand md:hidden"
+                        >
+                          {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
+                        </span>
+                        <span
                           v-if="!stage.active"
                           class="mt-0.5 inline-flex rounded-full bg-n-alpha-black2 px-2 py-0.5 text-[10px] font-medium text-n-slate-10"
                         >
@@ -1765,7 +1774,7 @@ onMounted(async () => {
                       </button>
                       <span
                         v-if="stage.default"
-                        class="shrink-0 rounded-full bg-n-brand/10 px-2 py-1 text-[10px] font-semibold text-n-brand"
+                        class="hidden shrink-0 rounded-full bg-n-brand/10 px-2 py-1 text-[10px] font-semibold text-n-brand md:inline-flex"
                       >
                         {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
                       </span>
@@ -1806,27 +1815,29 @@ onMounted(async () => {
                     v-for="stage in selectedTerminalStageRows"
                     :key="stage.id"
                     type="button"
-                    class="flex w-full items-center justify-between gap-3 rounded-xl border border-n-weak bg-n-surface-1 px-3 py-2.5 text-left"
+                    class="flex w-full min-w-0 flex-wrap items-center justify-start gap-3 rounded-xl border border-n-weak bg-n-surface-1 px-3 py-2.5 text-left md:flex-nowrap md:justify-between"
                     :disabled="!canManage || selectedStageOrderSaving"
                     @click="openStageDrawer({ stage })"
                   >
                     <span
-                      class="min-w-0 truncate text-sm font-medium text-n-slate-12"
+                      class="min-w-0 basis-full truncate text-sm font-medium text-n-slate-12 md:basis-auto md:flex-1"
                     >
                       {{ stage.name }}
                     </span>
-                    <span class="shrink-0 text-xs text-n-slate-10">
-                      {{
-                        stage.outcome === 'won'
-                          ? $t('CRM.SETTINGS.STAGES.OUTCOMES.won')
-                          : $t('CRM.SETTINGS.STAGES.OUTCOMES.lost')
-                      }}
-                    </span>
-                    <span
-                      v-if="stage.closingReasonRequired"
-                      class="shrink-0 rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
-                    >
-                      {{ $t('CRM.SETTINGS.STAGES.CLOSING_REASON_REQUIRED') }}
+                    <span class="flex min-w-0 flex-wrap items-center gap-3">
+                      <span class="shrink-0 text-xs text-n-slate-10">
+                        {{
+                          stage.outcome === 'won'
+                            ? $t('CRM.SETTINGS.STAGES.OUTCOMES.won')
+                            : $t('CRM.SETTINGS.STAGES.OUTCOMES.lost')
+                        }}
+                      </span>
+                      <span
+                        v-if="stage.closingReasonRequired"
+                        class="shrink-0 rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
+                      >
+                        {{ $t('CRM.SETTINGS.STAGES.CLOSING_REASON_REQUIRED') }}
+                      </span>
                     </span>
                   </button>
                 </div>
@@ -2137,5 +2148,13 @@ onMounted(async () => {
 <style scoped lang="scss">
 .pipeline-ghost {
   @apply opacity-50 bg-n-slate-3 dark:bg-n-slate-9;
+}
+
+@media (max-width: 767px) {
+  :deep(.crm-pipeline-settings-group > div:first-child > div:last-child) {
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
+  }
 }
 </style>
