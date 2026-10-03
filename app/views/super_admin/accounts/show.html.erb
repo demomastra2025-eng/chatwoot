@@ -30,7 +30,7 @@ as well as a link to its edit page.
         <%= link_to("🔑 Войти в аккаунт", target_user.generate_sso_link_with_impersonation, target: "_blank", rel: "noopener noreferrer", class: "button button--secondary", title: "Беспарольный вход в кабинет клиента глазами администратора аккаунта") %>
       <% end %>
       <%= if accessible_action?(page.resource, :edit)
-        link_to("Edit", [:edit, namespace, page.resource], class: "button")
+        link_to(t("administrate.actions.edit"), [:edit, namespace, page.resource], class: "button")
       end %>
     </div>
   </header>

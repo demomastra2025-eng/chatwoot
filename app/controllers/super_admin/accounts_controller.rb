@@ -51,34 +51,34 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def seed
     Internal::SeedAccountJob.perform_later(requested_resource)
     # rubocop:disable Rails/I18nLocaleTexts
-    redirect_back(fallback_location: [namespace, requested_resource], notice: 'Account seeding triggered')
+    redirect_back(fallback_location: [namespace, requested_resource], notice: 'Генерация демо-данных запущена')
     # rubocop:enable Rails/I18nLocaleTexts
   end
 
   def reset_cache
     requested_resource.reset_cache_keys
-    redirect_to_account(notice: 'Cache keys cleared')
+    redirect_to_account(notice: 'Кэш Redis успешно очищен')
   end
 
   def reset_captain_responses_usage
     if requested_resource.reset_response_usage
-      redirect_to_account(notice: 'Captain responses usage reset')
+      redirect_to_account(notice: 'Расход ответов Captain сброшен')
     else
-      redirect_to_account(alert: 'Unable to reset Captain responses usage')
+      redirect_to_account(alert: 'Не удалось сбросить расход ответов Captain')
     end
   end
 
   def reset_captain_tokens_usage
     if requested_resource.reset_token_usage
-      redirect_to_account(notice: 'Captain tokens usage reset')
+      redirect_to_account(notice: 'Расход токенов Captain сброшен')
     else
-      redirect_to_account(alert: 'Unable to reset Captain tokens usage')
+      redirect_to_account(alert: 'Не удалось сбросить расход токенов Captain')
     end
   end
 
   def reset_email_usage
     requested_resource.reset_email_sent_count
-    redirect_to_account(notice: 'Email usage counter reset')
+    redirect_to_account(notice: 'Счетчик отправки email сброшен')
   end
 
   def extend_trial
@@ -186,7 +186,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
     DeleteObjectJob.perform_later(account) if account.present?
     # rubocop:disable Rails/I18nLocaleTexts
-    redirect_back(fallback_location: [namespace, requested_resource], notice: 'Account deletion is in progress.')
+    redirect_back(fallback_location: [namespace, requested_resource], notice: 'Удаление аккаунта выполняется в фоновом режиме')
     # rubocop:enable Rails/I18nLocaleTexts
   end
 

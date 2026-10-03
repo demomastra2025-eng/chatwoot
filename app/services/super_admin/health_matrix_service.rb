@@ -48,7 +48,7 @@ class SuperAdmin::HealthMatrixService
   end
 
   def fetch_failed_messages_map(account_ids)
-    Message.where(account_id: account_ids, status: :failed).group(:account_id).count
+    Message.unscoped.where(account_id: account_ids, status: :failed).group(:account_id).count
   rescue StandardError
     {}
   end
@@ -56,7 +56,7 @@ class SuperAdmin::HealthMatrixService
   def fetch_med_conflicts_map(account_ids)
     return {} unless defined?(Integrations::Medelement::SyncConflict)
 
-    Integrations::Medelement::SyncConflict.where(account_id: account_ids, resolved: false).group(:account_id).count
+    Integrations::Medelement::SyncConflict.where(account_id: account_ids, status: :open).group(:account_id).count
   rescue StandardError
     {}
   end

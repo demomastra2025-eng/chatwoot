@@ -228,7 +228,7 @@
 
     <!-- Usage controls heading -->
     <div>
-      <h2 class="text-base font-semibold text-slate-900">Usage controls (Сброс счетчиков)</h2>
+      <h2 class="text-base font-semibold text-slate-900">Управление расходом (Сброс счетчиков)</h2>
       <p class="mt-1 text-sm text-slate-600">
         Управление динамическими счетчиками использования. Действия ниже сбрасывают только изменяемые счетчики.
       </p>
@@ -241,38 +241,38 @@
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="font-semibold text-sm text-slate-900">Captain responses</span>
+          <span class="font-semibold text-sm text-slate-900">Ответы Captain AI</span>
           <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">AI</span>
         </div>
         <p class="mt-2 text-sm text-slate-600">
           Текущий расход: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:captain, :responses, :consumed).to_i) %></strong>
         </p>
         <p class="mt-1 text-xs text-slate-500">Сбрасывает счетчик ответов в <code>0</code>. Лимит аккаунта не изменяется.</p>
-        <%= button_to 'Reset Captain Responses Usage', [:reset_captain_responses_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
+        <%= button_to 'Сбросить расход ответов Captain', [:reset_captain_responses_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
 
       <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="font-semibold text-sm text-slate-900">Captain tokens</span>
+          <span class="font-semibold text-sm text-slate-900">Токены Captain AI</span>
           <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">Tokens</span>
         </div>
         <p class="mt-2 text-sm text-slate-600">
           Текущий расход: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:captain, :tokens, :consumed).to_i) %></strong>
         </p>
         <p class="mt-1 text-xs text-slate-500">Сбрасывает счетчик токенов в <code>0</code>. Лимит аккаунта не изменяется.</p>
-        <%= button_to 'Reset Captain Tokens Usage', [:reset_captain_tokens_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
+        <%= button_to 'Сбросить расход токенов Captain', [:reset_captain_tokens_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
 
       <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
         <div class="flex items-center justify-between">
-          <span class="font-semibold text-sm text-slate-900">Emails today</span>
+          <span class="font-semibold text-sm text-slate-900">Email за сегодня</span>
           <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">Email</span>
         </div>
         <p class="mt-2 text-sm text-slate-600">
           Отправлено сегодня: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:emails, :consumed).to_i) %></strong>
         </p>
         <p class="mt-1 text-xs text-slate-500">Очищает счетчик отправленных email в Redis за сегодня.</p>
-        <%= button_to 'Reset Email Usage Counter', [:reset_email_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
+        <%= button_to 'Сбросить счетчик отправки Email', [:reset_email_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
     </div>
   </div>

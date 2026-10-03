@@ -19,7 +19,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         sign_in(super_admin, scope: :super_admin)
         get '/super_admin/accounts'
         expect(response).to have_http_status(:success)
-        expect(response.body).to include('New account')
+        expect(response.body).to include('Создать аккаунт')
         expect(response.body).to include(account.name)
       end
     end
@@ -58,7 +58,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         now_timestamp = Time.now.utc.to_i
         post "/super_admin/accounts/#{account.id}/reset_cache"
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Cache keys cleared')
+        expect(flash[:notice]).to eq('Кэш Redis успешно очищен')
 
         range = now_timestamp..(now_timestamp + 10)
         expect(account.reload.cache_keys.values.all? { |v| range.cover?(v.to_i) }).to be(true)
@@ -196,7 +196,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_responses_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain responses usage reset')
+        expect(flash[:notice]).to eq('Расход ответов Captain сброшен')
         expect(account.reload.custom_attributes['captain_responses_usage']).to eq(0)
       end
     end
@@ -211,7 +211,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_tokens_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain tokens usage reset')
+        expect(flash[:notice]).to eq('Расход токенов Captain сброшен')
         expect(account.reload.custom_attributes['captain_tokens_usage']).to eq(0)
       end
     end
@@ -226,7 +226,7 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         post "/super_admin/accounts/#{account.id}/reset_email_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Email usage counter reset')
+        expect(flash[:notice]).to eq('Счетчик отправки email сброшен')
         expect(account.emails_sent_today).to eq(0)
       end
     end

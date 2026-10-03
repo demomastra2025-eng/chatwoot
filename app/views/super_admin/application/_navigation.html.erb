@@ -52,7 +52,7 @@ This partial is used to display the navigation in Administrate.
         <%= link_to image_tag('/brand-assets/logo_thumbnail.svg', alt: 'Onelink Admin Dashboard', class: 'h-8'), super_admin_root_url %>
         <div class="flex flex-col ml-2.5">
           <div class="text-sm font-bold text-slate-900 leading-tight">OneLink Admin</div>
-          <div class="text-[11px] text-slate-500">Super Admin Console</div>
+          <div class="text-[11px] text-slate-500" title="Super Admin Console">Панель супер-админа</div>
         </div>
       </div>
       
@@ -91,14 +91,14 @@ This partial is used to display the navigation in Administrate.
   <!-- Bottom Navigation -->
   <div class="border-t border-slate-200 pt-2 bg-slate-50/50">
     <ul class="my-2">
-      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Monitoring (Grafana)' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Push Diagnostics' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI Observability' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Logs' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Sidekiq' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Instance Status' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: app_path, label: 'Agent App' } %>
-      <%= render partial: "nav_item", locals: { icon: 'icon-logout-circle-r-line', url: super_admin_logout_url, label: 'Logout' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-line-chart-line', url: super_admin_monitoring_url, label: 'Мониторинг (Grafana)' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-mail-send-fill', url: super_admin_push_diagnostics_url, label: 'Диагностика Push' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-robot-line', url: super_admin_captain_observability_url, label: 'AI-аналитика' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-file-list-3-line', url: super_admin_logs_url, label: 'Системные логи' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-mist-fill', url: sidekiq_web_url, label: 'Очереди Sidekiq' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-health-book-line', url: super_admin_instance_status_url, label: 'Статус инстанса' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-dashboard-line', url: app_path, label: 'Кабинет оператора', title: 'Agent Dashboard' } %>
+      <%= render partial: "nav_item", locals: { icon: 'icon-logout-circle-r-line', url: super_admin_logout_url, label: 'Выйти' } %>
     </ul>
   </div>
 </div>
