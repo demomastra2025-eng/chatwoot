@@ -8,7 +8,7 @@ class Telephony::RecordingCompressionService
   CompressionError = Class.new(StandardError)
   DurationDriftError = Class.new(StandardError)
 
-  TARGET_BITRATE = '48k'
+  TARGET_BITRATE = '64k'
   TARGET_SAMPLE_RATE = 32_000
   MAX_DURATION_DRIFT_SECONDS = 1.0
   TIMEOUT_SECONDS = 120
@@ -91,7 +91,6 @@ class Telephony::RecordingCompressionService
       'ffmpeg', '-y',
       '-i', source_path.to_s,
       '-vn',
-      '-ac', '1',
       '-ar', TARGET_SAMPLE_RATE.to_s,
       '-b:a', TARGET_BITRATE,
       temp_path.to_s
@@ -161,7 +160,7 @@ class Telephony::RecordingCompressionService
     rec_meta['storage_key'] = target_key
     rec_meta['byte_size'] = comp_size
     rec_meta['compressed'] = true
-    rec_meta['codec'] = 'mp3_48k'
+    rec_meta['codec'] = 'mp3_64k'
     rec_meta['duration_seconds'] = comp_duration.round if comp_duration.positive?
     meta['recording'] = rec_meta
     session.metadata = meta

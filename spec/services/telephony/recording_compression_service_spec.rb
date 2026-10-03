@@ -38,7 +38,7 @@ RSpec.describe Telephony::RecordingCompressionService do
     it 'compresses a valid WAV file to MP3 and updates CallSession' do
       FileUtils.mkdir_p(storage_dir)
       wav_path = storage_dir.join('sample_call.wav')
-      Open3.capture3('ffmpeg', '-y', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=2', '-ar', '48000', wav_path.to_s)
+      Open3.capture3('ffmpeg', '-y', '-f', 'lavfi', '-i', 'sine=frequency=1000:duration=2', '-ac', '2', '-ar', '48000', wav_path.to_s)
 
       call_session = create(
         :telephony_call_session,
@@ -56,7 +56,18 @@ RSpec.describe Telephony::RecordingCompressionService do
 
       call_session.reload
       expect(call_session.recording_ref).to eq('voice-recordings/test_suite/sample_call.mp3')
-      expect(call_session.metadata['recording']).to include('compressed' => true, 'codec' => 'mp3_48k')
+      expect(call_session.metadata['recording']).to include('compressed' => true, 'codec' => 'mp3_64k')
+
+      comp_file = storage_dir.join('sample_call.mp3')
+      probe_cmd = [
+        'ffprobe', '-v', 'error',
+        '-select_streams', 'a:0',
+        '-show_entries', 'stream=channels',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        comp_file.to_s
+      ]
+      channels, = Open3.capture3(*probe_cmd)
+      expect(channels.strip).to eq('2')
     end
   end
 end

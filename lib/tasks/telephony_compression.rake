@@ -2,7 +2,7 @@
 
 # rubocop:disable Metrics/BlockLength
 namespace :telephony do
-  desc 'Compress uncompressed WAV call recordings to MP3 48k mono'
+  desc 'Compress uncompressed WAV call recordings to MP3 64k stereo'
   task :compress_recordings, %i[account_id dry_run limit] => :environment do |_t, args|
     account_id = args[:account_id].presence&.to_i
     dry_run = args[:dry_run].to_s == 'true'
