@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, nextTick, ref } from 'vue';
 import { createStore } from 'vuex';
 import { mount } from '@vue/test-utils';
 import { useInbox } from '../useInbox';
@@ -114,6 +114,21 @@ describe('useInbox', () => {
   });
 
   describe('with explicit inboxId provided', () => {
+    it('follows a reactive message inbox instead of the selected thread inbox', async () => {
+      const inboxId = ref(1);
+      const wrapper = mount(createTestComponent(inboxId), {
+        global: { plugins: [mockStore] },
+      });
+
+      expect(wrapper.vm.isAWhatsAppChannel).toBe(true);
+
+      inboxId.value = 14;
+      await nextTick();
+
+      expect(wrapper.vm.isAVoiceChannel).toBe(true);
+      expect(wrapper.vm.isAWhatsAppChannel).toBe(false);
+    });
+
     it('identifies Facebook inbox correctly', () => {
       const wrapper = mount(createTestComponent(2), {
         global: { plugins: [mockStore] },

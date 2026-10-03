@@ -1,4 +1,4 @@
-import { computed } from 'vue';
+import { computed, unref } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import { API_LIKE_INBOX_TYPES, INBOX_TYPES } from 'dashboard/helper/inbox';
@@ -46,7 +46,7 @@ export const useInbox = (inboxId = null) => {
   const inboxGetter = useMapGetter('inboxes/getInboxById');
 
   const inbox = computed(() => {
-    const targetInboxId = inboxId || currentChat.value?.inbox_id;
+    const targetInboxId = unref(inboxId) || currentChat.value?.inbox_id;
 
     if (!targetInboxId) return null;
 

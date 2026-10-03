@@ -19,6 +19,20 @@ import { isManualDelayedTouchMessage } from './helpers/messageProvenance';
 import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
 const {
+  inboxId,
+  contentType,
+  status,
+  isPrivate,
+  createdAt,
+  sourceId,
+  messageType,
+  additionalAttributes,
+  contentAttributes,
+  attachments,
+  orientation,
+} = useMessageContext();
+
+const {
   isAFacebookInbox,
   isALineChannel,
   isAPIInbox,
@@ -32,19 +46,7 @@ const {
   isAnEmailChannel,
   isAnInstagramChannel,
   isATiktokChannel,
-} = useInbox();
-
-const {
-  status,
-  isPrivate,
-  createdAt,
-  sourceId,
-  messageType,
-  additionalAttributes,
-  contentAttributes,
-  attachments,
-  orientation,
-} = useMessageContext();
+} = useInbox(inboxId);
 const { t } = useI18n();
 
 const readableTime = computed(() =>
@@ -99,6 +101,7 @@ const metaAdReferralTooltipText = computed(() =>
 const showStatusIndicator = computed(() => {
   if (isPrivate.value) return false;
   if (isAiVoiceTranscriptTurn.value) return false;
+  if (contentType.value === 'voice_call') return false;
   // Don't show status for failed messages, we already show error message
   if (status.value === MESSAGE_STATUS.FAILED) return false;
   // Don't show status for deleted messages
