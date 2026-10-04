@@ -8,12 +8,15 @@ export const AXIS_BAND = 22;
 export const MAX_BAR_WIDTH = 14;
 export const RAMP_STEPS = 5;
 
-// Round an axis maximum up to 1, 2, 2.5, 5 or 10 times a power of ten.
+// Round an axis maximum up to a clean number whose half is clean too (the
+// grid is drawn at 0, half and max), keeping the headroom small.
 export const niceMax = value => {
   if (!value || value <= 0) return 1;
   const power = 10 ** Math.floor(Math.log10(value));
   const scaled = value / power;
-  const step = [1, 2, 2.5, 5, 10].find(candidate => scaled <= candidate);
+  const step = [1, 1.5, 2, 3, 4, 5, 6, 8, 10].find(
+    candidate => scaled <= candidate
+  );
   return step * power;
 };
 

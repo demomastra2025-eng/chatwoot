@@ -406,7 +406,7 @@ const tableRows = computed(() =>
 
       <div
         v-else-if="isLine"
-        class="relative outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-n-brand"
+        class="relative outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
         tabindex="0"
         role="group"
         :aria-label="title || undefined"
@@ -435,7 +435,7 @@ const tableRows = computed(() =>
                 :x="PAD_LEFT - 8"
                 :y="line.y + 4"
                 text-anchor="end"
-                class="fill-n-slate-11 text-[11px] tabular-nums"
+                class="fill-n-slate-11 text-[12px] tabular-nums"
               >
                 {{ line.label }}
               </text>
@@ -477,7 +477,7 @@ const tableRows = computed(() =>
               :x="tick.x"
               :y="mainHeight - 4"
               text-anchor="middle"
-              class="fill-n-slate-11 text-[11px]"
+              class="fill-n-slate-11 text-[12px]"
             >
               {{ tick.label }}
             </text>
@@ -493,7 +493,7 @@ const tableRows = computed(() =>
           />
         </svg>
 
-        <div v-if="secondary" class="mt-1" data-test-id="ds-chart-secondary">
+        <div v-if="secondary" class="mt-3" data-test-id="ds-chart-secondary">
           <div class="text-ds-caption text-n-slate-11">
             {{ secondary.label }}
           </div>
@@ -506,7 +506,7 @@ const tableRows = computed(() =>
               :x="PAD_LEFT - 8"
               :y="PAD_TOP + 4"
               text-anchor="end"
-              class="fill-n-slate-11 text-[11px] tabular-nums"
+              class="fill-n-slate-11 text-[12px] tabular-nums"
             >
               {{ format(secondaryMax) }}
             </text>
@@ -545,7 +545,7 @@ const tableRows = computed(() =>
               :x="tick.x"
               :y="secondaryBottom + AXIS_BAND - 4"
               text-anchor="middle"
-              class="fill-n-slate-11 text-[11px]"
+              class="fill-n-slate-11 text-[12px]"
             >
               {{ tick.label }}
             </text>

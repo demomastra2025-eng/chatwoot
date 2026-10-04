@@ -10,9 +10,10 @@ import {
 
 describe('chartGeometry', () => {
   it('rounds axis maxima to clean numbers', () => {
-    expect(niceMax(260)).toBe(500);
-    expect(niceMax(240)).toBe(250);
-    expect(niceMax(22)).toBe(25);
+    expect(niceMax(260)).toBe(300);
+    expect(niceMax(140)).toBe(150);
+    expect(niceMax(22)).toBe(30);
+    expect(niceMax(8)).toBe(8);
     expect(niceMax(0)).toBe(1);
   });
 

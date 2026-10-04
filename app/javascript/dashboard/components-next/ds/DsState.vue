@@ -54,13 +54,12 @@ const text = computed(() =>
     <Spinner v-if="state === 'loading'" :size="20" class="text-n-slate-11" />
     <span
       v-else-if="state === 'error'"
-      class="inline-flex items-center gap-1.5 text-sm font-medium text-n-slate-12"
+      class="max-w-sm text-sm font-medium text-n-slate-12"
     >
       <span
-        class="inline-block size-[7px] rounded-full bg-n-status-bad"
+        class="me-1.5 inline-block size-[7px] rounded-full bg-n-status-bad align-middle"
         aria-hidden="true"
-      />
-      {{ heading }}
+      />{{ heading }}
     </span>
     <span
       v-if="state !== 'error'"
