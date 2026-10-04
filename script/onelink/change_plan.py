@@ -81,6 +81,31 @@ DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
     r"\b(remove_column|remove_columns|drop_table|rename_column|change_column|"
     r"change_column_null|change_column_default|remove_index|rename_table)\b"
 )
+# This one guarded SET DEFAULT only repairs a missing UUID generator on an
+# existing CRM table. Keep the exception bound to this migration and its exact
+# nil checks; unmatched default changes remain destructive.
+SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION = "db/migrate/20261004120000_expand_crm_lifecycle_schema.rb"
+SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK = re.compile(
+    r"""
+    correlation_id_column\s*=\s*connection\.columns\(\s*:crm_stage_visits\s*\)\.find\s+do\s*\|\s*column\s*\|\s*
+        column\.name\s*==\s*'correlation_id'\s*
+    end\s*
+    raise\s+'crm_stage_visits\.correlation_id\s+is\s+missing'\s+unless\s+correlation_id_column\s*
+    actual_uuid_defaults\s*=\s*\[\s*
+        correlation_id_column\.default\s*,\s*correlation_id_column\.default_function\s*
+    \]\s*
+    has_expected_uuid_default\s*=\s*actual_uuid_defaults\.include\?\(\s*'gen_random_uuid\(\)'\s*\)\s*
+    has_no_uuid_default\s*=\s*actual_uuid_defaults\.all\?\(\s*&:nil\?\s*\)\s*
+    if\s+has_no_uuid_default\s*
+    change_column_default\s*\(\s*:crm_stage_visits\s*,\s*:correlation_id\s*,
+        \s*->\s*\{\s*'gen_random_uuid\(\)'\s*\}\s*\)\s*
+    elsif\s+!has_expected_uuid_default\s*
+    raise\s+["']Unexpected\s+crm_stage_visits\.correlation_id\s+default:\s*
+        \#\{actual_uuid_defaults\.inspect\}["']\s*
+    end
+    """,
+    re.DOTALL | re.VERBOSE,
+)
 
 
 
@@ -187,6 +212,8 @@ def validate_migrations(paths: Iterable[str]) -> list[str]:
         if not path.is_file():
             continue
         content = path.read_text(encoding="utf-8")
+        if raw_path == SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION:
+            content = SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK.sub("", content)
         if DESTRUCTIVE_MIGRATION_PATTERN.search(content):
             violations.append(raw_path)
     return violations

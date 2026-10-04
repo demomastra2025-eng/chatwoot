@@ -17,6 +17,123 @@ from script.onelink.change_plan import (
 
 
 class ChangePlanTest(unittest.TestCase):
+    def test_only_guarded_uuid_default_restore_is_expand_compatible(self):
+        migration_path = "db/migrate/20261004120000_expand_crm_lifecycle_schema.rb"
+        other_migration_path = "db/migrate/20261004120001_other.rb"
+        guarded_block = """
+            correlation_id_column = connection.columns(:crm_stage_visits).find do |column|
+              column.name == 'correlation_id'
+            end
+            raise 'crm_stage_visits.correlation_id is missing' unless correlation_id_column
+            actual_uuid_defaults = [correlation_id_column.default, correlation_id_column.default_function]
+            has_expected_uuid_default = actual_uuid_defaults.include?('gen_random_uuid()')
+            has_no_uuid_default = actual_uuid_defaults.all?(&:nil?)
+            if has_no_uuid_default
+              change_column_default(:crm_stage_visits, :correlation_id, -> { 'gen_random_uuid()' })
+            elsif !has_expected_uuid_default
+              raise "Unexpected crm_stage_visits.correlation_id default: #{actual_uuid_defaults.inspect}"
+            end
+        """
+        unexpected_default_branch = (
+            '            elsif !has_expected_uuid_default\n'
+            '              raise "Unexpected crm_stage_visits.correlation_id default: '
+            '#{actual_uuid_defaults.inspect}"\n'
+        )
+        missing_column_guard = "            raise 'crm_stage_visits.correlation_id is missing' unless correlation_id_column\n"
+        cases = [
+            (migration_path, guarded_block, []),
+            (
+                migration_path,
+                "change_column_default(:crm_stage_visits, :correlation_id, -> { 'gen_random_uuid()' })\n",
+                [migration_path],
+            ),
+            (
+                migration_path,
+                "change_column_default(:crm_stage_visits, :correlation_id, nil)\n",
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace("connection.columns(:crm_stage_visits)", "connection.columns(:accounts)"),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace("column.name == 'correlation_id'", "column.name == 'id'"),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace(missing_column_guard, ""),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace("correlation_id_column.default_function", ""),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace("has_no_uuid_default = actual_uuid_defaults.all?(&:nil?)", "has_no_uuid_default = false"),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace(
+                    "has_expected_uuid_default = actual_uuid_defaults.include?('gen_random_uuid()')",
+                    "has_expected_uuid_default = false",
+                ),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace(unexpected_default_branch, ""),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace(":crm_stage_visits, :correlation_id", ":accounts, :correlation_id"),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace(
+                    ":crm_stage_visits, :correlation_id",
+                    ":crm_stage_visits, :owner_id_at_terminal",
+                ),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block.replace("'gen_random_uuid()'", "'uuid_generate_v4()'"),
+                [migration_path],
+            ),
+            (
+                migration_path,
+                guarded_block + "\nremove_column :accounts, :legacy\n",
+                [migration_path],
+            ),
+            (other_migration_path, guarded_block, [other_migration_path]),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for migration, content, expected in cases:
+                with self.subTest(migration=migration, content=content):
+                    path = root / migration
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(content, encoding="utf-8")
+                    with chdir(root):
+                        violations = validate_migrations([migration])
+
+                    self.assertEqual(violations, expected)
+
+        repository_root = Path(__file__).resolve().parents[2]
+        with chdir(repository_root):
+            violations = validate_migrations([migration_path])
+
+        self.assertEqual(violations, [])
+
     def test_empty_cli_file_list_has_no_output(self):
         root = Path(__file__).resolve().parents[2]
 
