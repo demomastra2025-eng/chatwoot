@@ -1,7 +1,11 @@
 class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
   param :reason, type: 'string', desc: 'Optional reason for resolving the conversation', required: false
-  param :status_reason, type: 'string', desc: 'Configured conversation outcome reason for resolving', required: false
+  param :status_reason,
+        type: 'string',
+        desc: 'Configured conversation status reason for resolving when status reasons are enabled, ' \
+              'or the exact configured completion outcome reason label',
+        required: false
   param :outcome_reason_id, type: 'string', desc: 'Configured completion outcome reason ID', required: false
 
   def perform(tool_context, reason: nil, status_reason: nil, outcome_reason_id: nil)

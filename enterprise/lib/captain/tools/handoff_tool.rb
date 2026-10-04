@@ -3,7 +3,11 @@ class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
 
   description 'Hand off the current conversation to a human team'
   param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
-  param :status_reason, type: 'string', desc: 'Configured conversation outcome reason for handoff', required: false
+  param :status_reason,
+        type: 'string',
+        desc: 'Configured conversation status reason for opening/handoff when status reasons are enabled, ' \
+              'or the exact configured handoff outcome reason label',
+        required: false
   param :outcome_reason_id, type: 'string', desc: 'Configured handoff outcome reason ID', required: false
   param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
