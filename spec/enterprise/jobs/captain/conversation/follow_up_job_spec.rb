@@ -383,6 +383,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       sent_messages = []
 
       6.times do |index|
+        reminder.mark_processing!
         message = described_class.new.perform_for_reminder(
           reminder: reminder,
           conversation: conversation,
@@ -405,6 +406,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
         )
         expect(retry_result).to eq(message)
 
+        reminder.complete!
         next unless index < 5
 
         described_class.schedule_after_delivery!(reminder: reminder, message: message)
