@@ -67,7 +67,7 @@ RSpec.describe ExpandCrmLifecycleSchema do
       reliable_since: closed_at,
       correlation_id: '96000452-0000-4000-8000-000000000002'
     )
-    existing_rows = [closed_visit, active_visit].map { |visit| visit.attributes }
+    existing_rows = [closed_visit, active_visit].map { |visit| visit.reload.attributes }
 
     connection.remove_check_constraint(:crm_stage_visits, name: 'crm_stage_visits_terminal_attribution_valid')
     %i[owner_id_at_terminal team_id_at_terminal terminal_attribution_version].each do |column|
