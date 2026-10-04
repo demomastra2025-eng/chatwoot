@@ -280,5 +280,46 @@ export const colors = {
       color: 'rgb(var(--label-background) / <alpha-value>)',
       border: 'rgba(var(--label-border))',
     },
+    // Variant A status colours: always rendered as dot + word, never alone
+    status: {
+      good: 'rgb(var(--status-good) / <alpha-value>)',
+      warn: 'rgb(var(--status-warn) / <alpha-value>)',
+      bad: 'rgb(var(--status-bad) / <alpha-value>)',
+    },
+    // Ordinal chart ramp: 1 = earliest stage = strongest step
+    chart: {
+      1: 'rgb(var(--chart-1) / <alpha-value>)',
+      2: 'rgb(var(--chart-2) / <alpha-value>)',
+      3: 'rgb(var(--chart-3) / <alpha-value>)',
+      4: 'rgb(var(--chart-4) / <alpha-value>)',
+      5: 'rgb(var(--chart-5) / <alpha-value>)',
+    },
   },
+};
+
+const compatScale = name =>
+  [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].reduce(
+    (scale, shade) => ({
+      ...scale,
+      [shade]: `rgb(var(--compat-${name}-${shade}) / <alpha-value>)`,
+    }),
+    {}
+  );
+
+// Legacy Tailwind palette names still used by older screens. They resolve to
+// the variant A hues (one accent, three statuses, neutral) instead of a
+// rainbow, and stay theme-invariant like stock Tailwind shades so that
+// existing `dark:` pairs keep working. New code uses the n-* tokens above.
+export const compatColors = {
+  amber: compatScale('warn'),
+  emerald: compatScale('good'),
+  rose: compatScale('bad'),
+  blue: compatScale('accent'),
+  indigo: compatScale('accent'),
+  cyan: compatScale('accent'),
+  gray: compatScale('neutral'),
+  red: { 950: 'rgb(var(--compat-bad-950) / <alpha-value>)' },
+  // `black` is a shade scale above; plain `bg-black/40` overlays need DEFAULT
+  black: { DEFAULT: 'rgb(0 0 0 / <alpha-value>)' },
+  inherit: 'inherit',
 };

@@ -1,0 +1,15 @@
+{
+  "app/javascript/dashboard/components-next/CRM/CrmDealOwnerMenu.vue": 1,
+  "app/javascript/dashboard/components-next/CRM/CrmTaskAssigneeMenu.vue": 1,
+  "app/javascript/dashboard/components-next/CRM/CrmTaskCatalogSettings.vue": 2,
+  "app/javascript/dashboard/components-next/CRM/CrmTaskPriorityMenu.vue": 1,
+  "app/javascript/dashboard/components-next/message/bubbles/Text/Index.vue": 1,
+  "app/javascript/dashboard/components-next/select/Select.vue": 2,
+  "app/javascript/dashboard/components/ui/DateTimePicker.vue": 1,
+  "app/javascript/dashboard/modules/widget-preview/components/WidgetFooter.vue": 1,
+  "app/javascript/dashboard/routes/dashboard/campaigns/pages/OutboundAudiencesPage.vue": 1,
+  "app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.vue": 2,
+  "app/javascript/dashboard/routes/dashboard/captain/observability/Index.vue": 1,
+  "app/javascript/dashboard/routes/dashboard/settings/inbox/channels/emailChannels/EmailInboxFinish.vue": 2,
+  "app/javascript/dashboard/routes/dashboard/settings/reports/DealReports.vue": 2
+}
