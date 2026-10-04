@@ -1,0 +1,248 @@
+// Design variant A "Graphite" building blocks for super admin ERB views.
+// Colours come only from the shared tokens in ../_next-colors.scss, so the
+// same markup follows light and dark (`.dark` on <html> or <body>).
+// Usage rules: app/javascript/dashboard/components-next/ds/README.md
+// scss-lint:disable SelectorFormat
+@layer components {
+  .ds-card {
+    background: rgb(var(--solid-2));
+    border: 1px solid rgb(var(--border-weak));
+    border-radius: 10px;
+    color: rgb(var(--slate-12));
+    min-width: 0;
+  }
+
+  .ds-card__header {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 18px 20px 8px;
+  }
+
+  .ds-card__title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    margin: 0;
+  }
+
+  .ds-card__subtitle,
+  .ds-caption {
+    color: rgb(var(--slate-11));
+    font-size: 12.5px;
+  }
+
+  .ds-card__body {
+    padding: 0 20px 18px;
+  }
+
+  .ds-card__header + .ds-table,
+  .ds-card > .ds-table {
+    margin-bottom: 4px;
+  }
+
+  // Key indicators: one card, thin vertical dividers between the stats.
+  .ds-stat-group {
+    background: rgb(var(--solid-2));
+    border: 1px solid rgb(var(--border-weak));
+    border-radius: 10px;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .ds-stat {
+    border-inline-end: 1px solid rgb(var(--border-weak));
+    min-width: 0;
+    padding: 18px 20px;
+
+    &:last-child {
+      border-inline-end: 0;
+    }
+  }
+
+  .ds-stat__label {
+    color: rgb(var(--slate-11));
+    font-size: 12.5px;
+  }
+
+  .ds-stat__value {
+    color: rgb(var(--slate-12));
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    margin: 6px 0 0;
+  }
+
+  .ds-stat__note {
+    color: rgb(var(--slate-11));
+    font-size: 12.5px;
+    margin: 4px 0 0;
+  }
+
+  @media (max-width: 767px) {
+    .ds-stat-group {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ds-stat:nth-child(even) {
+      border-inline-end: 0;
+    }
+
+    .ds-stat:nth-child(n + 3) {
+      border-top: 1px solid rgb(var(--border-weak));
+    }
+  }
+
+  .ds-table {
+    border-collapse: collapse;
+    color: rgb(var(--slate-12));
+    font-size: 14px;
+    width: 100%;
+
+    th {
+      border-bottom: 1px solid rgb(var(--border-weak));
+      color: rgb(var(--slate-11));
+      font-size: 12px;
+      font-weight: 500;
+      padding: 8px 12px;
+      text-align: start;
+      white-space: nowrap;
+    }
+
+    td {
+      border-bottom: 1px solid rgb(var(--border-weak));
+      padding: 11px 12px;
+      vertical-align: middle;
+    }
+
+    th:first-child,
+    td:first-child {
+      padding-inline-start: 20px;
+    }
+
+    th:last-child,
+    td:last-child {
+      padding-inline-end: 20px;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .ds-num {
+      font-variant-numeric: tabular-nums;
+      text-align: end;
+    }
+  }
+
+  // <span class="ds-meter"><span class="ds-meter__fill" style="width: 42%"></span></span>
+  .ds-meter {
+    background: rgb(var(--brand-color) / 0.15);
+    border-radius: 999px;
+    display: inline-block;
+    height: 4px;
+    overflow: hidden;
+    vertical-align: middle;
+    width: 84px;
+  }
+
+  .ds-meter__fill {
+    background: rgb(var(--brand-color));
+    border-radius: 999px;
+    display: block;
+    height: 100%;
+  }
+
+  .ds-meter--warn {
+    background: rgb(var(--status-warn) / 0.15);
+
+    .ds-meter__fill {
+      background: rgb(var(--status-warn));
+    }
+  }
+
+  .ds-meter--bad {
+    background: rgb(var(--status-bad) / 0.15);
+
+    .ds-meter__fill {
+      background: rgb(var(--status-bad));
+    }
+  }
+
+  // Status is always dot + word: <span class="ds-status ds-status--good">OK</span>
+  .ds-status {
+    align-items: center;
+    color: rgb(var(--slate-12));
+    display: inline-flex;
+    font-size: 12.5px;
+    gap: 6px;
+    white-space: nowrap;
+
+    &::before {
+      background: rgb(var(--slate-9));
+      border-radius: 50%;
+      content: '';
+      flex-shrink: 0;
+      height: 7px;
+      width: 7px;
+    }
+  }
+
+  .ds-status--good::before {
+    background: rgb(var(--status-good));
+  }
+
+  .ds-status--warn::before {
+    background: rgb(var(--status-warn));
+  }
+
+  .ds-status--bad::before {
+    background: rgb(var(--status-bad));
+  }
+
+  // Segmented control built from links or buttons; mark the current one with
+  // aria-current="page" (links) or aria-pressed="true" (buttons).
+  .ds-segmented {
+    background: rgb(var(--solid-2));
+    border: 1px solid rgb(var(--border-weak));
+    border-radius: 7px;
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+
+    > a,
+    > button {
+      background: transparent;
+      border: 0;
+      border-radius: 5px;
+      color: rgb(var(--slate-11));
+      cursor: pointer;
+      font: inherit;
+      font-size: 14px;
+      line-height: 20px;
+      margin: 0;
+      padding: 4px 11px;
+      text-decoration: none;
+
+      &:hover {
+        color: rgb(var(--slate-12));
+      }
+
+      &:focus-visible {
+        outline: 2px solid rgb(var(--brand-color));
+      }
+    }
+
+    > [aria-current='page'],
+    > [aria-pressed='true'] {
+      background: rgb(var(--slate-3));
+      color: rgb(var(--slate-12));
+    }
+  }
+}
