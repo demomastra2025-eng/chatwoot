@@ -52,7 +52,7 @@ const UTILITIES =
 const PALETTE =
   'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|woot|black';
 const COLOUR_UTILITY = new RegExp(
-  `^!?-?(?:${UTILITIES})-(?:n-[a-z0-9-]+|(?:${PALETTE})-\\d{2,3}|white|black|transparent|current|inherit)(?:/(?:\\d{1,3}|\\[[^\\]]+\\]))?$`
+  `^!?-?(?:${UTILITIES})-(?:n-[a-z0-9-]+|(?:${PALETTE})-\\d{2,4}|white|black|transparent|current|inherit)(?:/(?:\\d{1,3}|\\[[^\\]]+\\]))?$`
 );
 const VARIANT =
   /^(?:[a-z0-9@-]+(?:\/[\w-]+)?|[a-z0-9@-]*\[[^\]]+\](?:\/[\w-]+)?)$/;
