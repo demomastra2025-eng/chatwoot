@@ -62,11 +62,12 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
     end
 
     it 'creates a task linked to explicit deal, conversation, assignee, team, and status' do
+      team = create(:team, account: account)
       target_conversation = create(:conversation, account: account)
-      target_deal = create(:crm_deal, account: account, originating_conversation_id: target_conversation.id)
+      target_deal = create(:crm_deal, account: account, team: team, originating_conversation_id: target_conversation.id)
       status = create(:crm_task_status, account: account, name: 'Next', code: 'next', category: 'open')
       assignee = create(:user, account: account)
-      team = create(:team, account: account)
+      create(:team_member, team: team, user: assignee)
 
       service.execute(
         title: 'Prepare proposal',
@@ -84,6 +85,28 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       expect(task.status_id).to eq(status.id)
       expect(task.assignee_id).to eq(assignee.id)
       expect(task.team_id).to eq(team.id)
+    end
+
+    it 'rejects a team that conflicts with the team inherited from the linked deal' do
+      deal_team = create(:team, account: account)
+      other_team = create(:team, account: account)
+      target_deal = create(:crm_deal, account: account, team: deal_team)
+
+      result = service.execute(title: 'Conflicting team', deal_id: target_deal.id, team_id: other_team.id)
+
+      expect(result).to include('team_id is inherited from deal')
+      expect(account.crm_tasks.find_by(title: 'Conflicting team')).to be_nil
+    end
+
+    it 'rejects an assignee who is not a member of the task team' do
+      team = create(:team, account: account)
+      target_deal = create(:crm_deal, account: account, team: team)
+      outsider = create(:user, account: account)
+
+      result = service.execute(title: 'Outsider task', deal_id: target_deal.id, assignee_id: outsider.id, team_id: team.id)
+
+      expect(result).to include('Task assignee or team is outside the account assignment scope')
+      expect(account.crm_tasks.find_by(title: 'Outsider task')).to be_nil
     end
 
     it 'treats zero optional ID placeholders as omitted task selectors' do
