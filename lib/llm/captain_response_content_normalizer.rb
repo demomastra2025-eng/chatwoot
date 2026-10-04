@@ -17,6 +17,7 @@ class Llm::CaptainResponseContentNormalizer
       apply_text_default!(payload, 'handoff_message')
       apply_text_default!(payload, 'handoff_reason')
       apply_text_default!(payload, 'handoff_status_reason')
+      apply_text_default!(payload, 'handoff_outcome_reason_id')
       payload
     end
 
@@ -34,7 +35,8 @@ class Llm::CaptainResponseContentNormalizer
         artifact_ids: [],
         handoff_message: '',
         handoff_reason: '',
-        handoff_status_reason: ''
+        handoff_status_reason: '',
+        handoff_outcome_reason_id: ''
       }
     end
 

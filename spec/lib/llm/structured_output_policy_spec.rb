@@ -70,6 +70,10 @@ RSpec.describe Llm::StructuredOutputPolicy do
     ActiveSupport::Notifications.unsubscribe(subscriber)
   end
 
+  def captain_response_schema_required_keys
+    Llm::StructuredOutputSchema.definition_for(Captain::ResponseSchema).fetch('required')
+  end
+
   describe '.bind!' do
     it 'validates and binds schema metadata to the chat' do
       expect(chat).to receive(:with_schema).with(schema).and_return(chat)
@@ -189,7 +193,8 @@ RSpec.describe Llm::StructuredOutputPolicy do
                                                     'response' => 'Done',
                                                     'reasoning' => 'Checked the tool result before replying.',
                                                     'artifact_ids' => [],
-                                                    'handoff_message' => ''
+                                                    'handoff_message' => '',
+                                                    'handoff_outcome_reason_id' => ''
                                                   ))
 
       described_class.normalize_response!(chat: chat, response: response)
@@ -233,6 +238,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
         'artifact_ids' => [],
         'handoff_message' => ''
       )
+      expect(response.content.keys).to match_array(captain_response_schema_required_keys)
     end
 
     it 'rejects boolean Captain responses instead of stringifying them' do
@@ -412,6 +418,7 @@ RSpec.describe Llm::StructuredOutputPolicy do
         'artifact_ids' => [],
         'handoff_message' => ''
       )
+      expect(result.content.keys).to match_array(captain_response_schema_required_keys)
       expect(retry_chat.messages).to contain_exactly(response_three)
     end
 
