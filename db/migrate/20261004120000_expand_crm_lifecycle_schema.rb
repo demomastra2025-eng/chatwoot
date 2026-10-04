@@ -306,6 +306,29 @@ class ExpandCrmLifecycleSchema < ActiveRecord::Migration[7.1]
       end
     end
 
+    add_column_if_missing(:crm_stage_visits, :owner_id_at_terminal, :bigint)
+    add_column_if_missing(:crm_stage_visits, :team_id_at_terminal, :bigint)
+    add_column_if_missing(:crm_stage_visits, :terminal_attribution_version, :integer)
+
+    correlation_id_column = connection.columns(:crm_stage_visits).find do |column|
+      column.name == 'correlation_id'
+    end
+    correlation_id_default = correlation_id_column&.default
+    if correlation_id_default.nil?
+      change_column_default(:crm_stage_visits, :correlation_id, -> { 'gen_random_uuid()' })
+    elsif correlation_id_default != 'gen_random_uuid()'
+      raise "Unexpected crm_stage_visits.correlation_id default: #{correlation_id_default.inspect}"
+    end
+
+    add_index_if_missing(:crm_stage_visits, :account_id, name: 'index_crm_stage_visits_on_account_id')
+    add_index_if_missing(:crm_stage_visits, :deal_id, name: 'index_crm_stage_visits_on_deal_id')
+    add_index_if_missing(:crm_stage_visits, :pipeline_id, name: 'index_crm_stage_visits_on_pipeline_id')
+    add_index_if_missing(:crm_stage_visits, :stage_id, name: 'index_crm_stage_visits_on_stage_id')
+    add_foreign_key_if_missing(:crm_stage_visits, :accounts, column: :account_id)
+    add_foreign_key_if_missing(:crm_stage_visits, :crm_deals, column: :deal_id)
+    add_foreign_key_if_missing(:crm_stage_visits, :crm_pipelines, column: :pipeline_id)
+    add_foreign_key_if_missing(:crm_stage_visits, :crm_stages, column: :stage_id)
+
     add_index_if_missing(:crm_stage_visits, :deal_id,
                          unique: true,
                          where: 'exited_at IS NULL',
@@ -356,6 +379,10 @@ class ExpandCrmLifecycleSchema < ActiveRecord::Migration[7.1]
 
   def add_index_if_missing(table, columns, **options)
     add_index(table, columns, **options) unless index_exists?(table, columns, name: options[:name])
+  end
+
+  def add_foreign_key_if_missing(from_table, to_table, **options)
+    add_foreign_key(from_table, to_table, **options) unless foreign_key_exists?(from_table, to_table, **options)
   end
 
   def add_check_constraint_if_missing(table, expression, name)
