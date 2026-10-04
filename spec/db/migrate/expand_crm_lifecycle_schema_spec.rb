@@ -2,6 +2,23 @@ require 'rails_helper'
 require Rails.root.join('db/migrate/20261004120000_expand_crm_lifecycle_schema')
 
 RSpec.describe ExpandCrmLifecycleSchema do
+  before(:example, cleanup_stage_visit_schema_change: true) do
+    @stage_visit_ddl_connection = ActiveRecord::Base.connection
+  end
+
+  def after_teardown
+    stage_visit_ddl_connection = @stage_visit_ddl_connection
+    super
+  ensure
+    if stage_visit_ddl_connection
+      # Clear plans after Rails rolls back the table's temporary row type change.
+      stage_visit_ddl_connection.clear_cache!
+      stage_visit_ddl_connection.schema_cache.clear_data_source_cache!('crm_stage_visits')
+      Crm::StageVisit.reset_column_information
+      @stage_visit_ddl_connection = nil
+    end
+  end
+
   it 'backfills legacy task timezones and preserves task state and historical deadlines' do
     start_at = Time.utc(2025, 2, 3, 10, 15)
     due_at = Time.utc(2025, 2, 3, 11, 45)
@@ -43,7 +60,8 @@ RSpec.describe ExpandCrmLifecycleSchema do
     end
   end
 
-  it 'upgrades legacy stage visits without changing history and remains idempotent' do
+  it 'upgrades legacy stage visits without changing history and remains idempotent',
+     cleanup_stage_visit_schema_change: true do
     connection = ActiveRecord::Base.connection
     account = create(:account)
     pipeline = create(:crm_pipeline, account: account)
