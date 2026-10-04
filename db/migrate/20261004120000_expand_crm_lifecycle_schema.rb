@@ -313,11 +313,15 @@ class ExpandCrmLifecycleSchema < ActiveRecord::Migration[7.1]
     correlation_id_column = connection.columns(:crm_stage_visits).find do |column|
       column.name == 'correlation_id'
     end
-    correlation_id_default = correlation_id_column&.default
-    if correlation_id_default.nil?
+    raise 'crm_stage_visits.correlation_id is missing' unless correlation_id_column
+
+    actual_uuid_defaults = [correlation_id_column.default, correlation_id_column.default_function]
+    has_expected_uuid_default = actual_uuid_defaults.include?('gen_random_uuid()')
+    has_no_uuid_default = actual_uuid_defaults.all?(&:nil?)
+    if has_no_uuid_default
       change_column_default(:crm_stage_visits, :correlation_id, -> { 'gen_random_uuid()' })
-    elsif correlation_id_default != 'gen_random_uuid()'
-      raise "Unexpected crm_stage_visits.correlation_id default: #{correlation_id_default.inspect}"
+    elsif !has_expected_uuid_default
+      raise "Unexpected crm_stage_visits.correlation_id default: #{actual_uuid_defaults.inspect}"
     end
 
     add_index_if_missing(:crm_stage_visits, :account_id, name: 'index_crm_stage_visits_on_account_id')

@@ -104,7 +104,8 @@ RSpec.describe ExpandCrmLifecycleSchema do
     expect(attribution_columns.map(&:sql_type)).to eq(%w[bigint bigint integer])
     expect(attribution_columns.map(&:null)).to eq([true, true, true])
     expect(attribution_columns.map(&:default)).to eq([nil, nil, nil])
-    expect(columns['correlation_id'].default).to eq('gen_random_uuid()')
+    correlation_id_column = columns['correlation_id']
+    expect(correlation_id_column.default_function || correlation_id_column.default).to eq('gen_random_uuid()')
     expect(connection.check_constraints(:crm_stage_visits).map(&:name)).to include(
       'crm_stage_visits_valid_interval',
       'crm_stage_visits_terminal_attribution_valid'
