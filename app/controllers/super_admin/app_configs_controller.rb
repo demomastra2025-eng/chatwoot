@@ -68,7 +68,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     else
       expire_openrouter_key_health_cache if @config == 'captain'
       refresh_llm_config if @config == 'captain'
-      redirect_to super_admin_settings_path, notice: "App Configs - #{@config.titleize} updated successfully"
+      redirect_to super_admin_settings_path, notice: "Настройки конфигурации (#{@config}) успешно обновлены"
     end
   end
 

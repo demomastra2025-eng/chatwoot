@@ -106,15 +106,15 @@ RSpec.describe 'Public Inbox Contact Conversation Messages API', type: :request 
       expect(conversation.messages.last.attachments.first.file_type).to eq('image')
     end
 
-    it 'returns payment required when account storage limit is reached for attachments' do
+    it 'accepts attachments when account storage limit is reached' do
       conversation.account.update!(limits: { storage_bytes: 1000 })
       file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
 
       post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{contact_inbox.source_id}/conversations/#{conversation.display_id}/messages",
            params: { content: 'hello', attachments: [file] }
 
-      expect(response).to have_http_status(:payment_required)
-      expect(response.parsed_body['error']).to eq('Account storage limit exceeded')
+      expect(response).to have_http_status(:success)
+      expect(conversation.messages.last.attachments.first.file.present?).to be(true)
     end
   end
 

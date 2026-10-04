@@ -14,6 +14,34 @@ class CrmDealsAPI extends ApiClient {
     return axios.post(`${this.url}/${id}/transition_stage`, data);
   }
 
+  closeWon(id, data) {
+    return axios.post(`${this.url}/${id}/close_won`, data);
+  }
+
+  closeLost(id, data) {
+    return axios.post(`${this.url}/${id}/close_lost`, data);
+  }
+
+  reopen(id, data) {
+    return axios.post(`${this.url}/${id}/reopen`, data);
+  }
+
+  reorder(id, data) {
+    return axios.post(`${this.url}/${id}/reorder`, data);
+  }
+
+  undoTransition(id, data) {
+    return axios.post(`${this.url}/${id}/undo_transition`, data);
+  }
+
+  setWaiting(id, data) {
+    return axios.post(`${this.url}/${id}/set_waiting`, data);
+  }
+
+  clearWaiting(id, data) {
+    return axios.post(`${this.url}/${id}/clear_waiting`, data);
+  }
+
   archive(id, data = {}) {
     return axios.post(`${this.url}/${id}/archive`, data);
   }

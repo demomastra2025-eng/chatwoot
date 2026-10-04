@@ -1,10 +1,5 @@
 class Crm::Bootstrap::AccountService
   DEFAULT_PIPELINE_NAME = 'Sales Pipeline'.freeze
-  DEFAULT_TASK_STATUS_DEFINITIONS = [
-    { code: 'todo', name: 'To do', category: 'open', default: true },
-    { code: 'in_progress', name: 'In progress', category: 'in_progress', default: false },
-    { code: 'done', name: 'Done', category: 'done', default: false }
-  ].freeze
 
   attr_reader :account
 
@@ -46,19 +41,7 @@ class Crm::Bootstrap::AccountService
   end
 
   def bootstrap_task_settings
-    return if account.crm_task_statuses.exists?
-
-    DEFAULT_TASK_STATUS_DEFINITIONS.each_with_index do |definition, index|
-      account.crm_task_statuses.create!(
-        name: definition[:name],
-        code: definition[:code],
-        category: definition[:category],
-        color: Crm::TaskStatus::STANDARD_COLORS[index] || Crm::TaskStatus::DEFAULT_COLOR,
-        position: index + 1,
-        active: true,
-        default: definition[:default]
-      )
-    end
+    Crm::TaskCatalogs::Provisioner.new(account: account).perform
   end
 
   def ensure_system_field_definitions_for(entity_kind)
@@ -104,8 +87,10 @@ class Crm::Bootstrap::AccountService
   def legacy_source_values(entity_kind, key)
     return [] unless entity_kind == 'deal' && key == 'source'
 
-    account.crm_deals.pluck(:custom_attributes).filter_map do |custom_attributes|
-      custom_attributes.to_h[key].presence
-    end.map(&:to_s).uniq
+    account.crm_deals
+           .where("crm_deals.custom_attributes ? 'source'")
+           .where("NULLIF(BTRIM(crm_deals.custom_attributes ->> 'source'), '') IS NOT NULL")
+           .distinct
+           .pluck(Arel.sql("crm_deals.custom_attributes ->> 'source'"))
   end
 end

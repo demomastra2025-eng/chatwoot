@@ -15,7 +15,6 @@
       },
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
     },
-
     "HEADER": "Интеграциялар",
     "DESCRIPTION": "Интеграциялар OneLink-ті сыртқы сервистермен және модульдермен байланыстырады. Қажетті интеграцияларды төменде баптаңыз.",
     "LEARN_MORE": "Интеграциялар туралы толығырақ",
@@ -187,7 +186,8 @@
         "GRAMMAR": "Fix grammar & spelling",
         "SUGGESTION": "Suggest a reply",
         "SUMMARIZE": "Summarize the conversation",
-        "EMPTY_HINT": "AI құралдарын пайдалану үшін хабарлама жаза бастаңыз"
+        "EMPTY_HINT": "AI құралдарын пайдалану үшін хабарлама жаза бастаңыз",
+        "ASK_COPILOT": "Ask Copilot"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -388,6 +388,24 @@
         "MESSAGE": "Deleting this integration will remove access to your Notion workspace and stop all related functionality.",
         "CONFIRM": "Yes, delete",
         "CANCEL": "Cancel"
+      }
+    },
+    "KASPI_PAY": {
+      "SEND_OTP": "Send SMS code",
+      "CONNECT": "Connect Kaspi Pay",
+      "PHONE_LABEL": "Kaspi cashier phone",
+      "OTP_LABEL": "SMS code",
+      "LATITUDE_LABEL": "POS latitude",
+      "LONGITUDE_LABEL": "POS longitude",
+      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
+      "PHONE_REQUIRED": "Enter the phone number",
+      "OTP_REQUIRED": "Enter the SMS code",
+      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
+      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
+      "CONNECTED_TITLE": "Connected merchant",
+      "DELETE": {
+        "TITLE": "Delete Kaspi Pay integration",
+        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
       }
     }
   },
@@ -687,7 +705,8 @@
             "CAPACITY": "Барлық сынақ сессиялары бос емес. Бірнеше секундтан кейін қайталаңыз.",
             "ORIGIN": "Бұл бетке дауысты алдын ала тексеруді іске қосуға рұқсат жоқ.",
             "PROTOCOL": "Дауыстық платформа қате жауап берді. Сөйлесуді қайта бастаңыз."
-          }
+          },
+          "UNMUTE": "Микрофонды қосу"
         },
         "RESOLUTION_MESSAGE": {
           "LABEL": "Resolution Message",
@@ -716,6 +735,11 @@
         },
         "FEATURES": {
           "TITLE": "Мүмкіндіктер",
+          "GROUPS": {
+            "CUSTOMER_CONTEXT": "Клиент контексті",
+            "TOOLS": "Құралдар мен әрекеттер",
+            "VOICE": "Дауыстық хабарламалар"
+          },
           "ALLOW_CONVERSATION_FAQS": "Шешілген диалогтардан FAQ жасау",
           "ALLOW_MEMORIES": "Клиентпен өзара әрекеттесуден негізгі мәліметтерді естеліктер ретінде сақтау.",
           "ALLOW_NOTES": "Контакт жазбаларын және диалогтағы жеке жазбаларды жасауға рұқсат ету",
@@ -725,7 +749,17 @@
           "ALLOW_WEB_ACCESS": "Веб-іздеуге рұқсат ету",
           "USE_AUDIO_TRANSCRIPTIONS": "Дауыстық хабарлама транскрипттерін пайдалану",
           "USE_AUDIO_TRANSCRIPTIONS_DISABLED": "Дауыстық хабарлама транскрипттерін пайдалану (алдымен компания транскрибациясын қосыңыз)",
-          "ALLOW_CONTACT_ATTRIBUTES": "Контакт ақпаратына қол жеткізуге рұқсат ету"
+          "ALLOW_CONTACT_ATTRIBUTES": "Контакт ақпаратына қол жеткізуге рұқсат ету",
+          "DESCRIPTION": "Осы AI-агентке қолжетімді мүмкіндіктер мен құралдарды қосыңыз.",
+          "WEB_SEARCH": "Веб-іздеу",
+          "WEB_SEARCH_DESCRIPTION": "Ашық интернеттен өзекті ақпаратты іздеу.",
+          "WEB_PAGE_READING": "Веб-беттерді оқу",
+          "WEB_PAGE_READING_DESCRIPTION": "Көрсетілген ашық сілтеменің мазмұнын оқу.",
+          "DOCUMENT_READING": "Құжаттарды оқу",
+          "DOCUMENT_READING_DESCRIPTION": "Клиент жіберген файлдардан алынған мәтінді пайдалану.",
+          "IMAGE_UNDERSTANDING": "Клиент суреттерін түсіну",
+          "IMAGE_UNDERSTANDING_DESCRIPTION": "Жауап дайындау кезінде жаңа суреттердің мәтіндік сипаттамасын алу. Негізгі модельге түпнұсқа сурет берілмейді.",
+          "WEB_PROVIDER_REQUIRED": "Бұл мүмкіндіктер үшін әкімші веб-провайдерді баптауы керек."
         },
         "ACCESS_MODES": {
           "TITLE": "AI-ассистент қатынауы",
@@ -792,7 +826,9 @@
           },
           "FIELDS": {
             "APPOINTMENT": {
-              "RESOURCE_NAME": { "TITLE": "Маман аты" }
+              "RESOURCE_NAME": {
+                "TITLE": "Маман аты"
+              }
             }
           }
         },
@@ -928,6 +964,20 @@
         "AUTO_REPLY_ON_LAST_INCOMING": {
           "TITLE": "Соңғы кіріс хабарламаға автожауап",
           "DESCRIPTION": "Агент диалогты AI-агентке қолмен ауыстырғанда, егер соңғы ашық хабарлама клиенттен болса, бірден жауап береді."
+        },
+        "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
+          "LABEL": "Хабарламаларды біріктіру терезесі, секунд",
+          "PLACEHOLDER": "Секунд санын енгізіңіз",
+          "DESCRIPTION": "AI-агент қатар келген хабарламаларды бір жауапқа біріктіру үшін қанша секунд күтетінін көрсетеді. 0 = бірден жауап беру."
+        },
+        "HISTORY_MESSAGE_LIMIT": {
+          "LABEL": "Тарихтағы хабарламалар лимиті",
+          "PLACEHOLDER": "Хабарламалар санын енгізіңіз",
+          "DESCRIPTION": "AI-агент жауап алдында оқи алатын жария диалог хабарламаларының саны. 0 = бүкіл тарих."
+        },
+        "MODEL": {
+          "LABEL": "Жауап беру моделі",
+          "DESCRIPTION": "OneLink әкімшісі рұқсат еткен каталогтан модельді таңдаңыз."
         }
       },
       "SKILLS": {
@@ -1316,6 +1366,79 @@
           "DELETE": {
             "SUCCESS": "Scenarios deleted successfully",
             "ERROR": "There was an error deleting scenarios, please try again."
+          }
+        }
+      },
+      "FOLLOW_UPS": {
+        "HEADER": "Қайта байланыс",
+        "DESCRIPTION": "Клиент жауап бермегенде жіберілетін хабарламалар тізбегі. Әр қадам алдында жүйе жаңа жауапты және диалогтың аяқталғанын тексереді.",
+        "PROMPT_LABEL": "AI қайта байланыс нұсқауы",
+        "PROMPT_DESCRIPTION": "Тек қайта байланыс хабарламаларын жасау үшін қолданылады және негізгі AI-агенттің әдеттегі жауаптарын өзгертпейді.",
+        "PROMPT_PLACEHOLDER": "Қайта байланыстың тонын, шектеулерін және тәсілін сипаттаңыз",
+        "DEFAULT_PROMPT": "Әңгімені табиғи түрде жалғастыр. Өзіңді қайта таныстырма және алдыңғы хабарламаларды қайталама. Аяқталмаған мәселені қысқаша еске салып, қысымсыз бір түсінікті келесі әрекетті ұсын.",
+        "STEP": "{number}-қадам",
+        "DELAY": "Кідіріс",
+        "UNIT": "Кідіріс бірлігі",
+        "MINUTES": "минут",
+        "HOURS": "сағат",
+        "DAYS": "күн",
+        "MINUTES_SHORT": "мин",
+        "HOURS_SHORT": "сағ",
+        "DAYS_SHORT": "күн",
+        "DELAY_SUMMARY": "{delay} {unit} кейін",
+        "MODE": "Хабарлама режимі",
+        "MODE_AI": "AI арқылы жасау",
+        "MODE_STATIC": "Дайын мәтін",
+        "OBJECTIVE_LABEL": "Қадам мақсаты",
+        "OBJECTIVE_PLACEHOLDER": "Мысалы: аяқталмаған мәселені сыпайы еске салу",
+        "STATIC_MESSAGE_LABEL": "Клиентке хабарлама",
+        "MESSAGE_PLACEHOLDER": "Клиентке хабарлама",
+        "EMPTY_STEP_SUMMARY": "Қадам мақсатын қосыңыз",
+        "REMOVE_STEP": "Қадамды жою",
+        "ADD_STEP": "Қадам қосу",
+        "SAVE": "Сақтау",
+        "VALIDATION": "Кідірісі бар кемінде бір толтырылған қадам қосыңыз.",
+        "PROMPT_VALIDATION": "AI қайта байланыс нұсқауын қосыңыз.",
+        "DEFAULT_OBJECTIVE_1": "Клиентке аяқталмаған мәселені қысымсыз сыпайы еске салу.",
+        "DEFAULT_OBJECTIVE_2": "Шешім қабылдау үшін клиентке қосымша ақпарат қажет пе екенін сұрау.",
+        "DEFAULT_OBJECTIVE_3": "Соңғы рет сыпайы хабарласып, әңгімеге оңай оралу жолын қалдыру."
+      },
+      "OUTCOMES": {
+        "HEADER": "Нәтижелер және қызметкерге беру",
+        "DESCRIPTION": "AI-агент диалогты аяқтағанда немесе қызметкерге бергенде қолданатын себептерді баптаңыз.",
+        "ADD": "Қосу",
+        "REMOVE": "Себепті жою",
+        "ACTIVE": "Белсенді себеп",
+        "PLACEHOLDER": "Себеп атауы",
+        "EMPTY": "Себептер бапталмаған",
+        "SAVE": "Сақтау",
+        "VALIDATION": "Бос себептерді толтырыңыз немесе жойыңыз.",
+        "COMPLETION": {
+          "ENABLE_TITLE": "Диалогтарды автоматты түрде аяқтау",
+          "ENABLE_DESCRIPTION": "Клиенттің тапсырмасы шешілгенде AI-агент диалогты аяқтай алады.",
+          "TITLE": "Аяқтау себептері",
+          "DESCRIPTION": "Агент клиент тапсырмасы аяқталды деп есептегенде бір себепті таңдайды."
+        },
+        "HANDOFF": {
+          "TITLE": "Қызметкерге беру себептері",
+          "DESCRIPTION": "Агент диалогты адамға ашқанда бір себепті таңдайды."
+        },
+        "DEFAULTS": {
+          "COMPLETION": {
+            "GOAL_ACHIEVED": "Мақсатқа қол жеткізілді",
+            "QUESTION_RESOLVED": "Сұрақ шешілді",
+            "CUSTOMER_DECLINED": "Клиент бас тартты",
+            "NO_RESPONSE": "Клиент жауап бермейді"
+          },
+          "HANDOFF": {
+            "CUSTOMER_REQUESTED_HUMAN": "Клиент қызметкерді сұрады",
+            "LOW_CONFIDENCE": "AI жауапқа сенімді емес",
+            "MANUAL_ACTION_REQUIRED": "Қолмен әрекет ету қажет",
+            "COMPLAINT_OR_CONFLICT": "Шағым немесе жанжал",
+            "TOOL_OR_POLICY_LIMIT": "Құрал немесе саясат шектеуі"
+          },
+          "COMMON": {
+            "OTHER": "Басқа себеп"
           }
         }
       }
@@ -2249,6 +2372,73 @@
         "OVERVIEW_ERROR": "Лог деректерін жүктеу мүмкін болмады",
         "RELEASE_CHECK_ERROR": "Failed to run release check",
         "PREFERENCES_ERROR": "Лог баптауларын жаңарту мүмкін болмады"
+      },
+      "LOGS": {
+        "TITLE": "Логтар",
+        "TIMELINE_TITLE": "AI-агент сұраулары",
+        "TIMELINE_DESCRIPTION": "Таңдалған кезеңдегі сұраулар саны",
+        "TOTAL_REQUESTS": "Барлық сұраулар: {count}",
+        "REQUESTS": "Сұраулар: {count}",
+        "MILLISECONDS": "мс",
+        "SECONDS": "с",
+        "CUSTOM_RANGE": {
+          "SINCE": "Басталуы",
+          "UNTIL": "Аяқталуы",
+          "APPLY": "Қолдану",
+          "INVALID": "Дұрыс кезеңді көрсетіңіз: басталу күні аяқталу күнінен ертерек болуы керек."
+        },
+        "EMPTY_TITLE": "Таңдалған кезеңде сұраулар жоқ",
+        "EMPTY_DESCRIPTION": "Басқа кезеңді таңдаңыз немесе кейінірек тексеріңіз.",
+        "COLUMNS": {
+          "DATETIME": "Күні мен уақыты",
+          "MODEL": "Модель",
+          "INPUT_TOKENS": "Кіріс токендер",
+          "OUTPUT_TOKENS": "Шығыс токендер",
+          "COST": "Cost, $",
+          "DURATION": "Жауап уақыты"
+        },
+        "RANGES": {
+          "15m": "Соңғы 15 минут",
+          "30m": "Соңғы 30 минут",
+          "1h": "Соңғы сағат",
+          "3h": "Соңғы 3 сағат",
+          "24h": "Соңғы 24 сағат",
+          "48h": "Соңғы 48 сағат",
+          "7d": "Соңғы апта",
+          "30d": "Соңғы ай",
+          "1y": "Соңғы жыл",
+          "CUSTOM": "Ерікті кезең"
+        }
+      },
+      "SIMPLE": {
+        "REFRESH": "Жаңарту",
+        "CLEAR": "Тазалау",
+        "DELETE": "Жою",
+        "EVENT": "AI оқиғасы",
+        "NO_MODEL": "Модель көрсетілмеген",
+        "EMPTY_TITLE": "Логтар әлі жоқ",
+        "EMPTY_DESCRIPTION": "Мұнда AI агенттерінің соңғы оқиғалары көрсетіледі.",
+        "LOAD_ERROR": "Логтарды жүктеу мүмкін болмады",
+        "DELETE_TITLE": "Жазбаны жою керек пе?",
+        "DELETE_DESCRIPTION": "Бұл жазба қалпына келтіру мүмкіндігінсіз жойылады.",
+        "DELETE_SUCCESS": "Жазба жойылды",
+        "DELETE_ERROR": "Жазбаны жою мүмкін болмады",
+        "CLEAR_TITLE": "AI агенттерінің барлық логтарын тазалау керек пе?",
+        "CLEAR_DESCRIPTION": "AI агенттерінің барлық жазбалары қалпына келтіру мүмкіндігінсіз жойылады.",
+        "CLEAR_SUCCESS": "AI агенттерінің логтары тазаланды",
+        "CLEAR_ERROR": "Логтарды тазалау мүмкін болмады",
+        "DETAILS": {
+          "STATUS": "Күй",
+          "MODEL": "Модель",
+          "PROVIDER": "Провайдер",
+          "TOOL": "Құрал",
+          "DURATION": "Орындалу уақыты",
+          "TOKENS": "Токендер",
+          "COST": "Құны",
+          "TIME": "Уақыт",
+          "ERROR": "Орындау қатесі",
+          "DATA": "Оқиға деректері"
+        }
       }
     },
     "RESPONSES": {

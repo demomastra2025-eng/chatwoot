@@ -19,7 +19,7 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      expect(tool.parameters.keys).to include(:reason, :status_reason, :message)
+      expect(tool.parameters.keys).to include(:reason, :status_reason, :outcome_reason_id, :message)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
@@ -52,9 +52,66 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
             config: assistant.config.deep_merge('tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] } })
           )
 
-          expect(tool.execute(tool_context, reason: 'Model tried to transfer')).to eq('ERROR: Handoff tool is not enabled for this assistant')
+          expect { tool.execute(tool_context, reason: 'Model tried to transfer') }
+            .to raise_error(ArgumentError, 'Tool is not available for the current runtime policy')
           expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
+      end
+
+      it 'retains the selected outcome reason ID when configured labels are duplicated' do
+        assistant.update!(
+          config: assistant.config.to_h.deep_merge(
+            'outcome_reason_settings' => {
+              'handoff_reasons' => [
+                { 'id' => 'billing_queue', 'label' => 'Support', 'active' => true },
+                { 'id' => 'technical_queue', 'label' => 'Support', 'active' => true }
+              ]
+            }
+          )
+        )
+
+        result = tool.perform(tool_context, outcome_reason_id: 'technical_queue', reason: 'The issue requires technical review.')
+
+        expect(result).to be_a(RubyLLM::Tool::Halt)
+        expect(run_context.context[:pending_human_handoff]).to include(
+          status_reason: 'Support',
+          outcome_reason_id: 'technical_queue'
+        )
+      end
+
+      it 'requires an explanation for Other and uses configured handoff reasons' do
+        assistant.update!(
+          config: assistant.config.to_h.deep_merge(
+            'outcome_reason_settings' => {
+              'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Other', 'active' => true }]
+            }
+          )
+        )
+
+        expect(tool.execute(tool_context, outcome_reason_id: 'other')).to eq(
+          'ERROR: Provide a specific explanation when choosing Other'
+        )
+        expect(run_context.context).not_to have_key(:pending_human_handoff)
+
+        result = tool.perform(
+          tool_context,
+          outcome_reason_id: 'other',
+          reason: 'The customer described an account-specific policy exception.'
+        )
+
+        expect(result).to be_a(RubyLLM::Tool::Halt)
+        expect(run_context.context[:pending_human_handoff]).to include(
+          reason: 'The customer described an account-specific policy exception.',
+          status_reason: 'Other'
+        )
+      end
+
+      it 'does not hand off when the assistant permission is disabled' do
+        assistant.update!(config: assistant.config.to_h.deep_merge('handoff_enabled' => false))
+
+        expect { tool.execute(tool_context, reason: 'The model tried to transfer') }
+          .to raise_error(ArgumentError, 'Tool is not available for the current runtime policy')
+        expect(run_context.context).not_to have_key(:pending_human_handoff)
       end
 
       context 'with reason provided' do

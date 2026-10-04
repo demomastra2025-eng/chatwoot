@@ -20,6 +20,23 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
     account.enable_features('captain_integration')
   end
 
+  describe '.reading_enabled_for?' do
+    let(:assistant) { build(:captain_assistant, account: account, config: {}) }
+
+    it 'keeps document reading enabled for existing assistants without the new setting' do
+      allow(described_class).to receive(:enabled_for_account?).with(account).and_return(true)
+
+      expect(described_class.reading_enabled_for?(assistant)).to be(true)
+    end
+
+    it 'combines the per-agent flag with the existing account permission' do
+      allow(described_class).to receive(:enabled_for_account?).with(account).and_return(true)
+      assistant.config = { 'feature_document_reading' => false }
+
+      expect(described_class.reading_enabled_for?(assistant)).to be(false)
+    end
+  end
+
   describe '#perform' do
     context 'with a Firecrawl-supported document' do
       let(:attachment) do

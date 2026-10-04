@@ -1,15 +1,16 @@
-class AutomationRules::CrmConditionService
+class AutomationRules::CrmConditionService # rubocop:disable Metrics/ClassLength
   def initialize(rule, record, entity_kind:, options: {})
     @rule = rule
     @record = record
     @entity_kind = entity_kind.to_s
     @changed_attributes = options[:changed_attributes]
+    @snapshot = options[:snapshot]&.with_indifferent_access
   end
 
   def perform
-    groups = grouped_condition_results
-    return false if groups.blank?
+    return true if rule.conditions.blank?
 
+    groups = grouped_condition_results
     groups.any?(&:all?)
   end
 
@@ -31,7 +32,7 @@ class AutomationRules::CrmConditionService
   end
 
   def evaluate_custom_condition(definition, operator, condition)
-    raw_value = record.custom_attributes&.[](definition.key)
+    raw_value = custom_field_value(definition.key)
     return value_present?(raw_value) if operator == 'is_present'
     return !value_present?(raw_value) if operator == 'is_not_present'
 
@@ -39,7 +40,7 @@ class AutomationRules::CrmConditionService
   end
 
   def evaluate_standard_condition(key, operator, condition)
-    raw_value = record.public_send(key)
+    raw_value = standard_field_value(key)
     return value_present?(raw_value) if operator == 'is_present'
     return !value_present?(raw_value) if operator == 'is_not_present'
 
@@ -83,7 +84,7 @@ class AutomationRules::CrmConditionService
     evaluate_comparable_condition(candidate, values, operator)
   end
 
-  def evaluate_discrete_condition(field_type, raw_value, condition, operator)
+  def evaluate_discrete_condition(field_type, raw_value, condition, operator) # rubocop:disable Metrics/CyclomaticComplexity
     values = normalize_discrete_values(field_type, condition['values'])
     return false if values.blank?
 
@@ -111,7 +112,7 @@ class AutomationRules::CrmConditionService
     evaluate_comparable_condition(candidate, values, operator)
   end
 
-  def evaluate_text_condition(raw_value, condition, operator)
+  def evaluate_text_condition(raw_value, condition, operator) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     candidate = text_value(raw_value)
     return false if candidate.blank? && operator != 'not_equal_to'
 
@@ -139,6 +140,18 @@ class AutomationRules::CrmConditionService
     return candidate < values.first if operator == 'is_less_than'
 
     false
+  end
+
+  def custom_field_value(key)
+    return record.custom_attributes&.[](key) if @snapshot.blank?
+
+    @snapshot.dig(:custom_attributes, key)
+  end
+
+  def standard_field_value(key)
+    return record.public_send(key) if @snapshot.blank?
+
+    @snapshot[key]
   end
 
   def field_catalog

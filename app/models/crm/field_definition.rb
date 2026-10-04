@@ -59,7 +59,7 @@ class Crm::FieldDefinition < ApplicationRecord
       external_ref idempotency_key lock_version archived_at
     ],
     'task' => %w[
-      title description deal_id status_id assignee_id creator_id team_id activity_type outcome outcome_note priority
+      title description context_kind deal_id status_id assignee_id creator_id team_id activity_type outcome outcome_note priority
       start_at due_at completed_at external_ref idempotency_key lock_version archived_at
     ],
     'appointment' => %w[
@@ -82,6 +82,10 @@ class Crm::FieldDefinition < ApplicationRecord
   }.freeze
 
   belongs_to :account, class_name: '::Account'
+  has_many :stage_field_requirements,
+           class_name: '::Crm::StageFieldRequirement',
+           dependent: :destroy,
+           inverse_of: :field_definition
 
   enum :entity_kind, {
     deal: 'deal',

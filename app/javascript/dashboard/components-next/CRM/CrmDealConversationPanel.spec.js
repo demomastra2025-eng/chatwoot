@@ -17,6 +17,7 @@ const mountPanel = ({
   communicationThreadDisplayId = '',
   communicationThreadId = '',
   contactableInboxes = [],
+  contextLoadError = null,
   contacts = [],
   conversationId = 11963,
   conversationDisplayId = 185,
@@ -29,6 +30,7 @@ const mountPanel = ({
       communicationThreadDisplayId,
       communicationThreadId,
       contactableInboxes,
+      contextLoadError,
       contacts,
       conversationDisplayId,
       conversationId,
@@ -141,6 +143,24 @@ describe('CrmDealConversationPanel', () => {
 
       return ref(undefined);
     });
+  });
+
+  it('renders a retryable context error instead of the create placeholder', async () => {
+    const wrapper = mountPanel({
+      contacts: [{ id: 9, name: 'Customer' }],
+      contextLoadError: new Error('context unavailable'),
+      conversationDisplayId: '',
+      conversationId: '',
+    });
+    await flushPromises();
+
+    const errorState = wrapper.findComponent({ name: 'SchedulingErrorState' });
+    expect(errorState.exists()).toBe(true);
+    expect(errorState.props('description')).toBe('context unavailable');
+    expect(wrapper.find('select').exists()).toBe(false);
+
+    errorState.vm.$emit('retry');
+    expect(wrapper.emitted('retryContext')).toHaveLength(1);
   });
 
   it('loads and activates the linked conversation by its API display id', async () => {

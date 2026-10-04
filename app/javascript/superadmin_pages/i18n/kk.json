@@ -1,0 +1,43 @@
+{
+  "HEALTH_MATRIX": {
+    "TITLE": "Клиенттердің жұмыс күйі (OneLink Health Matrix)",
+    "SUBTITLE": "WhatsApp, телефония, Janus шлюздері және MedElement интеграциясының ағымдағы диагностикасы",
+    "UPDATED": "Жаңартылды: {time}",
+    "REFRESH": "Жаңарту",
+    "CHART_SHOW": "Әңгімелер графигін көрсету",
+    "CHART_HIDE": "Әңгімелер графигін жасыру",
+    "CHART_TITLE": "Соңғы 30 күндегі әңгімелер",
+    "CHART_LABEL": "Әңгімелер",
+    "INCOMPLETE": "Кейбір деректер қолжетімсіз ({sources}): матрица жолдары толық болмауы мүмкін.",
+    "KPI": {
+      "TOTAL_ACCOUNTS": "Аккаунттар саны",
+      "TOTAL_ACCOUNTS_HINT": "жүйеде тіркелген",
+      "NEEDS_ATTENTION": "Назар аудару қажет",
+      "NEEDS_ATTENTION_HINT": "WhatsApp немесе Janus ақаулары, не өңделмей қалған хабарламалар",
+      "FILTER_ACTIVE_HINT": "Сүзгі қосулы (өшіру үшін басыңыз)",
+      "WHATSAPP_HEALTHY": "WhatsApp жұмыс істеп тұр",
+      "WHATSAPP_HEALTHY_HINT": "жарамды сессиясы бар желілер",
+      "TELEPHONY_HEALTHY": "Телефония қалыпты",
+      "TELEPHONY_HEALTHY_HINT": "байланысы мен Janus шлюзі бар желілер"
+    },
+    "TOOLBAR": {
+      "SEARCH_PLACEHOLDER": "Аккаунтты атауы немесе ID бойынша іздеу...",
+      "FILTER_OFF": "Сүзгі: мәселесі бар аккаунттар",
+      "FILTER_ON": "Мәселесі бар аккаунттар көрсетілуде",
+      "SHOWING": "Көрсетілгені: {shown} / {total}"
+    },
+    "TABLE": {
+      "ACCOUNT": "ID / Аккаунт",
+      "WHATSAPP": "WhatsApp",
+      "TELEPHONY": "Телефония және Janus",
+      "MEDELEMENT": "MedElement (МИС)",
+      "STUCK": "Өңделмей қалған хабарламалар",
+      "ACTIONS": "Әрекеттер",
+      "SUSPENDED": "Тоқтатылған",
+      "STUCK_COUNT": "⚠️ {count} тұрып қалған",
+      "SETTINGS": "Баптаулар →",
+      "EMPTY_TITLE": "Аккаунттар табылмады",
+      "EMPTY_HINT": "Іздеуді өзгертіңіз немесе мәселелер сүзгісін өшіріңіз"
+    }
+  }
+}

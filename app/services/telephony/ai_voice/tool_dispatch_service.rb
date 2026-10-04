@@ -18,6 +18,11 @@ class Telephony::AiVoice::ToolDispatchService
   CAPTAIN_DEAL_SELECTION_SEQUENCE_METADATA_KEY = 'captain_deal_selection_sequence'.freeze
   CAPTAIN_ACTIVE_DEAL_SELECTION_METADATA_KEY = 'captain_active_deal_selection'.freeze
   CAPTAIN_DEAL_SELECTION_TOOLS = %w[get_deal search_deals].freeze
+  CONVERSATION_MUTATING_TOOL_IDS = %w[
+    add_label_to_conversation add_private_note assign_conversation create_note edit_message handoff merge_contacts
+    remove_label_from_conversation request_confirmation request_transfer resolve_conversation retry_failed_message
+    send_message_to_conversation update_conversation update_priority
+  ].freeze
   @captain_catalog_cache = {}
   @captain_catalog_cache_mutex = Mutex.new
 
@@ -406,18 +411,39 @@ class Telephony::AiVoice::ToolDispatchService
     captain_assistant&.id
   end
 
-  def with_captain_assistant_assignment_lock
+  def with_captain_assistant_assignment_lock(&block)
     ensure_call_session!
-    inbox = assignment_inbox
-    return yield(captain_assistant&.id) if inbox.blank?
+    call_session.reload
+    return with_current_assignment_lock { block.call(captain_assistant&.id) } unless conversation_mutation?
 
-    Telephony::AiVoice::AssistantAssignmentLock.with_lock!(inbox.id) do
-      reset_assistant_assignment_cache!
-      yield(captain_assistant&.id)
-    end
+    Conversation.transaction { with_locked_voice_conversations(&block) }
   end
 
   private
+
+  def with_locked_voice_conversations(&block)
+    call_session.reload
+    Contacts::PhoneIdentityLock.acquire!(account_id: account.id) if tool_name.to_s.split(/--|__/).last == 'merge_contacts'
+    conversations = account.conversations.where(id: conversation_mutation_conversation_ids).order(:id).lock.to_a
+    current_conversation = conversations.find { |target| target.id == call_session.conversation_id }
+    raise_call_conversation_missing! if call_session.conversation_id.present? && current_conversation.blank?
+
+    verify_conversation_scope!(current_conversation) if current_conversation
+    @conversation = current_conversation || conversations.first
+    with_captain_control_locks(conversations) do
+      lock_voice_assignment_inboxes(conversations, call_session) do
+        with_current_voice_configuration_lock(&block)
+      end
+    end
+  end
+
+  def raise_call_conversation_missing!
+    raise Telephony::Error.new(
+      code: 'CONVERSATION_NOT_FOUND',
+      message: 'Unable to resolve the call session conversation for a mutating voice tool',
+      status: :not_found
+    )
+  end
 
   attr_reader :tool_name, :payload
 
@@ -947,9 +973,9 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def reset_assistant_assignment_cache!
+    clear_assignment_memoization!
     reset_inbox_assignment_cache!
     reset_routing_policy_cache!
-    clear_assignment_memoization!
   end
 
   def reset_inbox_assignment_cache!
@@ -966,9 +992,139 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def clear_assignment_memoization!
-    %i[@captain_assistant @captain_tool_definition @captain_runtime_state].each do |variable|
+    %i[@assignment_inbox @captain_assistant @captain_tool_definition @captain_runtime_state].each do |variable|
       remove_instance_variable(variable) if instance_variable_defined?(variable)
     end
+  end
+
+  def conversation_mutation?
+    CONVERSATION_MUTATING_TOOL_IDS.include?(tool_name.to_s.split(/--|__/).last)
+  end
+
+  def conversation_mutation_conversation_ids
+    mutation_tool = tool_name.to_s.split(/--|__/).last
+    explicit_conversation = voice_target_conversation(arguments['conversation_id'] || arguments['conversationId'])
+    ids = [call_session.conversation_id, conversation&.id, explicit_conversation&.id]
+    ids << voice_target_message_conversation_id if %w[edit_message retry_failed_message].include?(mutation_tool)
+
+    if mutation_tool == 'send_message_to_conversation'
+      thread = voice_target_communication_thread(arguments['communication_thread_id'], explicit_conversation || conversation)
+      ids.concat(voice_thread_conversation_ids(thread))
+    elsif mutation_tool == 'merge_contacts'
+      ids.concat(voice_merge_contact_conversation_ids)
+    end
+
+    ids.compact.uniq.sort
+  end
+
+  def voice_merge_contact_conversation_ids
+    mergee_contact_id = arguments['mergee_contact_id'] || arguments['mergeeContactId']
+    return [] if mergee_contact_id.blank?
+
+    mergee_contact = account.contacts.find_by(id: mergee_contact_id)
+    return [] if mergee_contact.blank?
+
+    account.conversations.where(contact_id: mergee_contact.id).order(:id).pluck(:id)
+  end
+
+  def voice_target_message_conversation_id
+    message_id = arguments['message_id'] || arguments['messageId']
+    return if message_id.blank?
+
+    Message.joins(:conversation)
+           .where(account_id: account.id, id: message_id, conversations: { account_id: account.id })
+           .pick(:conversation_id)
+  end
+
+  def voice_target_conversation(raw_id)
+    return if raw_id.blank?
+
+    scope = account.conversations
+    scope.find_by(display_id: raw_id) || scope.find_by(id: raw_id)
+  end
+
+  def voice_target_communication_thread(raw_id, target_conversation)
+    scope = CommunicationThread.where(account_id: account.id)
+    return scope.find_by(display_id: raw_id) || scope.find_by(id: raw_id) if raw_id.present?
+
+    target_conversation&.communication_thread
+  end
+
+  def voice_thread_conversation_ids(thread)
+    return [] if thread.blank? || thread.account_id != account.id
+
+    thread.communication_thread_conversations
+          .where(conversation_id: account.conversations.select(:id))
+          .pluck(:conversation_id)
+  end
+
+  def with_captain_control_locks(conversations, index = 0, &block)
+    return block.call if index >= conversations.length
+
+    conversations[index].with_captain_control_lock do
+      with_captain_control_locks(conversations, index + 1, &block)
+    end
+  end
+
+  def with_current_assignment_lock
+    with_assignment_inbox_locks(current_assignment_inbox_ids) do
+      reset_assistant_assignment_cache!
+      yield
+    end
+  end
+
+  def with_current_voice_configuration_lock
+    account.with_lock do
+      account.reload
+      reset_assistant_assignment_cache!
+      assistant = captain_assistant
+      if assistant.blank?
+        yield(nil)
+      else
+        assistant.with_lock do
+          assistant.reload
+          clear_captain_runtime_config_cache!
+          @captain_assistant = assistant
+          yield(assistant.id)
+        end
+      end
+    end
+  end
+
+  def clear_captain_runtime_config_cache!
+    %i[@captain_tool_definition @captain_runtime_state @voice_settings].each do |variable|
+      remove_instance_variable(variable) if instance_variable_defined?(variable)
+    end
+  end
+
+  def lock_voice_assignment_inboxes(current_conversations, current_call_session)
+    inbox_ids = [current_call_session.inbox_id, *current_conversations.map(&:inbox_id)].compact.uniq.sort
+    inbox_ids.each { |inbox_id| Telephony::AiVoice::AssistantAssignmentLock.acquire!(inbox_id) }
+    yield
+  end
+
+  def with_assignment_inbox_locks(inbox_ids, &block)
+    return block.call if inbox_ids.blank?
+
+    first_id, *remaining_ids = inbox_ids
+    Telephony::AiVoice::AssistantAssignmentLock.with_lock!(first_id) do
+      with_assignment_inbox_locks(remaining_ids, &block)
+    end
+  end
+
+  def current_assignment_inbox_ids
+    [call_session&.inbox_id, conversation&.inbox_id].compact.uniq.sort
+  end
+
+  def verify_conversation_scope!(current_conversation)
+    return if current_conversation.account_id == call_session.account_id &&
+              current_conversation.id == call_session.conversation_id
+
+    raise Telephony::Error.new(
+      code: 'CALL_SESSION_TENANT_MISMATCH',
+      message: 'call session and conversation scope are inconsistent',
+      status: :forbidden
+    )
   end
 
   def assignment_inbox

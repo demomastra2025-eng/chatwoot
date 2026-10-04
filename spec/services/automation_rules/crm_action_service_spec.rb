@@ -59,6 +59,36 @@ RSpec.describe AutomationRules::CrmActionService do
       )
     end
 
+    it 'uses the event-time webhook snapshot after the live deal changes' do
+      original_title = deal.title
+      source_snapshot = AutomationRules::CrmMatchingSnapshot.build(deal)
+      deal.update!(title: 'Changed after the event')
+
+      snapshot_rule = create(
+        :automation_rule,
+        account: account,
+        event_name: 'deal_updated',
+        conditions: [{ attribute_key: 'stage_id', filter_operator: 'equal_to', values: [stage.id.to_s], query_operator: nil }],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/deals'] }]
+      )
+
+      expect do
+        described_class.new(
+          snapshot_rule,
+          account,
+          deal,
+          entity_kind: 'deal',
+          options: {
+            source_snapshot: source_snapshot,
+            changed_attributes: { 'title' => [original_title, 'Changed after the event'] }
+          }
+        ).perform
+      end.to have_enqueued_job(WebhookJob).with(
+        'https://example.com/hooks/deals',
+        hash_including(deal: hash_including(title: original_title))
+      )
+    end
+
     it 'updates deal stage through the native transition path' do
       status_rule = create(
         :automation_rule,

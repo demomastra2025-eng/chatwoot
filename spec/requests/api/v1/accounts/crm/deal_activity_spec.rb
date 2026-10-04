@@ -39,14 +39,14 @@ RSpec.describe 'CRM Deal Activity API', type: :request do
     expect(deal.comments.find(comment_id).deleted_at).to be_present
   end
 
-  it 'returns timeline items with events, comments, and only accessible conversations' do
+  it 'returns timeline items with events, comments, and only permission-scoped conversations' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     stage = pipeline.stages.find_by!(code: 'new')
     agent = create(:user, account: account, role: :agent)
     custom_role = create(
       :custom_role,
       account: account,
-      permissions: %w[crm_deal_view conversation_manage]
+      permissions: %w[crm_deal_view conversation_participating_manage]
     )
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     allowed_inbox = create(:inbox, account: account, channel: create(:channel_widget, account: account))
@@ -54,8 +54,15 @@ RSpec.describe 'CRM Deal Activity API', type: :request do
     create(:inbox_member, inbox: allowed_inbox, user: agent)
 
     contact = create(:contact, :with_email, account: account)
-    originating_conversation = create(:conversation, account: account, contact: contact, inbox: allowed_inbox)
-    hidden_conversation = create(:conversation, account: account, contact: contact, inbox: blocked_inbox)
+    hidden_contact = create(:contact, :with_email, account: account)
+    originating_conversation = create(
+      :conversation,
+      account: account,
+      contact: contact,
+      inbox: allowed_inbox,
+      assignee: agent
+    )
+    hidden_conversation = create(:conversation, account: account, contact: hidden_contact, inbox: blocked_inbox)
     deal = create(
       :crm_deal,
       account: account,
@@ -65,6 +72,7 @@ RSpec.describe 'CRM Deal Activity API', type: :request do
       originating_conversation: originating_conversation
     )
     create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+    create(:crm_deal_contact, account: account, deal: deal, contact: hidden_contact)
     create(:crm_comment, account: account, commentable: deal, user: administrator, body: 'Left voicemail')
     create(:crm_event, account: account, eventable: deal, actor: administrator, event_type: 'deal_follow_up_scheduled')
 

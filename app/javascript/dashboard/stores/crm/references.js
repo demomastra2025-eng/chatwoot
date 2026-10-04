@@ -3,6 +3,9 @@ import { defineStore } from 'pinia';
 import CrmFieldDefinitionsAPI from 'dashboard/api/crm/fieldDefinitions';
 import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 import CrmTaskStatusesAPI from 'dashboard/api/crm/taskStatuses';
+import CrmTaskTypesAPI from 'dashboard/api/crm/taskTypes';
+import CrmTaskOutcomesAPI from 'dashboard/api/crm/taskOutcomes';
+import { loadTaskCatalog, mutateTaskCatalog } from './taskCatalog';
 import {
   extractCrmError,
   normalizePayload,
@@ -10,11 +13,38 @@ import {
   upsertRecord,
 } from './shared';
 
+const pipelineLoadRequests = new WeakMap();
+const pipelinePublicationStates = new WeakMap();
+const taskStatusPublicationStates = new WeakMap();
+
+const pipelineAccountId = () =>
+  String(CrmPipelinesAPI.accountIdFromRoute || '');
+const taskStatusAccountId = () =>
+  String(CrmTaskStatusesAPI.accountIdFromRoute || '');
+
+const publicationStateFor = (store, accountId) => {
+  const current = pipelinePublicationStates.get(store);
+  if (current?.accountId === accountId) return current;
+
+  const next = {
+    accountId,
+    latestGeneration: 0,
+    publishedGeneration: 0,
+    includesInactiveStages: false,
+  };
+  pipelinePublicationStates.set(store, next);
+  store.pipelines = [];
+  return next;
+};
+
 const defaultUi = () => ({
   error: null,
   isLoadingFieldDefinitions: false,
   isLoadingPipelines: false,
   isLoadingTaskStatuses: false,
+  isLoadingTaskTypes: false,
+  isSavingTaskCatalog: false,
+  taskCatalogError: null,
   isSaving: false,
 });
 
@@ -32,6 +62,20 @@ const sortStages = stages =>
       Number(left.position ?? 0) - Number(right.position ?? 0) ||
       Number(left.id ?? 0) - Number(right.id ?? 0)
   );
+
+const shiftStagePositionsForInsert = (pipelines, stage) =>
+  pipelines.map(pipeline => {
+    if (Number(pipeline.id) !== Number(stage.pipelineId)) return pipeline;
+
+    return {
+      ...pipeline,
+      stages: (pipeline.stages || []).map(existingStage =>
+        Number(existingStage.position) >= Number(stage.position)
+          ? { ...existingStage, position: Number(existingStage.position) + 1 }
+          : existingStage
+      ),
+    };
+  });
 
 const upsertStageInPipelines = (pipelines, stage) => {
   return pipelines.map(pipeline => {
@@ -109,8 +153,10 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       task: [],
       appointment: [],
     },
+    fieldDefinitionRequestIds: {},
     pipelines: [],
     taskStatuses: [],
+    taskTypes: [],
     ui: defaultUi(),
   }),
 
@@ -125,19 +171,70 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       this.ui.error = null;
     },
 
+    resetFieldDefinitions(entityKind) {
+      this.fieldDefinitionRequestIds[entityKind] =
+        (this.fieldDefinitionRequestIds[entityKind] || 0) + 1;
+      this.fieldDefinitions[entityKind] = [];
+      this.ui.error = null;
+      this.ui.isLoadingFieldDefinitions = false;
+    },
+
     async loadPipelines(params = {}) {
+      const accountId = pipelineAccountId();
+      const requestKey = JSON.stringify([accountId, params]);
+      const requests = pipelineLoadRequests.get(this) || new Map();
+      const existingRequest = requests.get(requestKey);
+      if (existingRequest) return existingRequest;
+
+      const publicationState = publicationStateFor(this, accountId);
+      const requestGeneration = publicationState.latestGeneration + 1;
+      publicationState.latestGeneration = requestGeneration;
+      const includesInactiveStages = params.include_inactive_stages === true;
+
       this.ui.isLoadingPipelines = true;
       this.ui.error = null;
 
-      try {
+      const request = (async () => {
         const { data } = await CrmPipelinesAPI.get(params);
-        this.pipelines = normalizePayload(data);
+        const pipelines = normalizePayload(data);
+        const currentState = pipelinePublicationStates.get(this);
+        const accountIsCurrent = pipelineAccountId() === accountId;
+        const stateIsCurrent = currentState?.accountId === accountId;
+        if (!accountIsCurrent || !stateIsCurrent) return this.pipelines;
+
+        const wouldDowngradeFullData =
+          currentState.includesInactiveStages && !includesInactiveStages;
+        const staleRequest =
+          requestGeneration < currentState.latestGeneration &&
+          !(includesInactiveStages && !currentState.includesInactiveStages);
+        if (wouldDowngradeFullData || staleRequest) return this.pipelines;
+
+        this.pipelines = pipelines;
+        currentState.publishedGeneration = requestGeneration;
+        currentState.includesInactiveStages = includesInactiveStages;
         return this.pipelines;
+      })();
+      requests.set(requestKey, request);
+      pipelineLoadRequests.set(this, requests);
+
+      try {
+        return await request;
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        const currentState = pipelinePublicationStates.get(this);
+        if (
+          pipelineAccountId() === accountId &&
+          currentState?.accountId === accountId &&
+          requestGeneration === currentState.latestGeneration
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingPipelines = false;
+        requests.delete(requestKey);
+        if (!requests.size) {
+          pipelineLoadRequests.delete(this);
+          this.ui.isLoadingPipelines = false;
+        }
       }
     },
 
@@ -186,6 +283,13 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
           : await CrmPipelinesAPI.createStage(payload.pipelineId, payload);
 
         const stage = normalizePayload(response.data);
+        if (
+          !payload.id &&
+          stage.position !== null &&
+          stage.position !== undefined
+        ) {
+          this.pipelines = shiftStagePositionsForInsert(this.pipelines, stage);
+        }
         this.pipelines = upsertStageInPipelines(this.pipelines, stage);
         return stage;
       } catch (error) {
@@ -194,6 +298,33 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       } finally {
         this.ui.isSaving = false;
       }
+    },
+
+    async saveStageDraft(pipelineId, payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.saveStageDraft(
+          pipelineId,
+          payload
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async checkStageDeletion(stageId) {
+      this.ui.error = null;
+
+      const response = await CrmPipelinesAPI.checkStageDeletion(stageId);
+      return normalizePayload(response.data);
     },
 
     async deleteStage(stage) {
@@ -211,20 +342,127 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       }
     },
 
+    async reorderStages(pipelineId, stageIds) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.reorderStages(
+          pipelineId,
+          stageIds
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async batchUpdateStages(pipelineId, payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.batchUpdateStages(
+          pipelineId,
+          payload
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
     async loadTaskStatuses(params = {}) {
+      const accountId = taskStatusAccountId();
+      const previousState = taskStatusPublicationStates.get(this);
+      const state =
+        previousState?.accountId === accountId
+          ? previousState
+          : { accountId, latestGeneration: 0 };
+      if (state !== previousState) {
+        taskStatusPublicationStates.set(this, state);
+        this.taskStatuses = [];
+      }
+      state.latestGeneration += 1;
+      const generation = state.latestGeneration;
       this.ui.isLoadingTaskStatuses = true;
       this.ui.error = null;
 
       try {
         const { data } = await CrmTaskStatusesAPI.get(params);
+        if (
+          taskStatusPublicationStates.get(this) !== state ||
+          taskStatusAccountId() !== accountId ||
+          generation !== state.latestGeneration
+        ) {
+          return this.taskStatuses;
+        }
         this.taskStatuses = normalizePayload(data);
         return this.taskStatuses;
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        if (
+          taskStatusPublicationStates.get(this) === state &&
+          taskStatusAccountId() === accountId &&
+          generation === state.latestGeneration
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingTaskStatuses = false;
+        if (
+          taskStatusPublicationStates.get(this) === state &&
+          generation === state.latestGeneration
+        ) {
+          this.ui.isLoadingTaskStatuses = false;
+        }
       }
+    },
+
+    loadTaskTypes() {
+      return loadTaskCatalog(this);
+    },
+
+    saveTaskType(payload) {
+      return mutateTaskCatalog(
+        this,
+        () =>
+          payload.id
+            ? CrmTaskTypesAPI.update(payload.id, payload)
+            : CrmTaskTypesAPI.create(payload),
+        upsertTaskStatusInList
+      );
+    },
+
+    saveTaskOutcome(payload) {
+      return mutateTaskCatalog(
+        this,
+        () =>
+          payload.id
+            ? CrmTaskOutcomesAPI.update(payload.id, payload)
+            : CrmTaskOutcomesAPI.create(payload),
+        (types, outcome) =>
+          types.map(taskType =>
+            Number(taskType.id) === Number(outcome.taskTypeId)
+              ? {
+                  ...taskType,
+                  outcomes: upsertTaskStatusInList(
+                    taskType.outcomes || [],
+                    outcome
+                  ),
+                }
+              : taskType
+          )
+      );
     },
 
     async saveTaskStatus(payload) {
@@ -266,6 +504,9 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
 
     async loadFieldDefinitions(entityKind) {
+      const accountId = String(CrmFieldDefinitionsAPI.accountIdFromRoute || '');
+      const requestId = (this.fieldDefinitionRequestIds[entityKind] || 0) + 1;
+      this.fieldDefinitionRequestIds[entityKind] = requestId;
       this.ui.isLoadingFieldDefinitions = true;
       this.ui.error = null;
 
@@ -273,13 +514,26 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
         const { data } = await CrmFieldDefinitionsAPI.get({
           entity_kind: entityKind,
         });
+        if (
+          requestId !== this.fieldDefinitionRequestIds[entityKind] ||
+          String(CrmFieldDefinitionsAPI.accountIdFromRoute || '') !== accountId
+        ) {
+          return this.fieldDefinitions[entityKind];
+        }
         this.fieldDefinitions[entityKind] = normalizePayload(data);
         return this.fieldDefinitions[entityKind];
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        if (
+          requestId === this.fieldDefinitionRequestIds[entityKind] &&
+          String(CrmFieldDefinitionsAPI.accountIdFromRoute || '') === accountId
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingFieldDefinitions = false;
+        if (requestId === this.fieldDefinitionRequestIds[entityKind]) {
+          this.ui.isLoadingFieldDefinitions = false;
+        }
       }
     },
 

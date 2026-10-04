@@ -1,13 +1,18 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useMediaQuery } from '@vueuse/core';
 import Draggable from 'vuedraggable';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
-import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
-import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
@@ -27,6 +32,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  filtered: {
+    type: Boolean,
+    default: false,
+  },
   hasMore: {
     type: Boolean,
     default: false,
@@ -35,9 +44,17 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  loadMoreFailed: {
+    type: Boolean,
+    default: false,
+  },
   owners: {
     type: Array,
     default: () => [],
+  },
+  pendingDealIds: {
+    type: Set,
+    default: () => new Set(),
   },
   showSortToggle: {
     type: Boolean,
@@ -66,16 +83,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  sortValueResolver: {
-    type: Function,
-    default: null,
-  },
 });
 
 const emit = defineEmits([
-  'changeOwner',
   'changeStage',
-  'createDeal',
   'loadMore',
   'selectDeal',
   'toggleSortDirection',
@@ -83,7 +94,15 @@ const emit = defineEmits([
 const { locale, t } = useI18n();
 
 const boardColumns = ref({});
+const boardScrollContainer = ref(null);
 const canDragDeals = computed(() => props.canManage && props.canReorder);
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+const ownerNameById = computed(() =>
+  props.owners.reduce((result, owner) => {
+    result[Number(owner.value)] = owner.label;
+    return result;
+  }, {})
+);
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
@@ -113,21 +132,6 @@ const sortDirectionLabel = columnId =>
 const resolveBoardPosition = index =>
   props.sortKey === 'position' ? index + 1 : null;
 
-const sortColumnDeals = (items, columnId) => {
-  if (!props.sortKey || !props.sortValueResolver) {
-    return items;
-  }
-
-  return sortListRecords(
-    items,
-    {
-      direction: columnSortDirection(columnId),
-      key: props.sortKey,
-    },
-    props.sortValueResolver
-  );
-};
-
 const syncBoardColumns = () => {
   const nextColumns = createBoardState();
   const fallbackStageId = Number(props.stages[0]?.id);
@@ -139,10 +143,6 @@ const syncBoardColumns = () => {
     if (!stageId) return;
 
     nextColumns[stageId].push({ ...deal, stageId });
-  });
-
-  Object.keys(nextColumns).forEach(stageId => {
-    nextColumns[stageId] = sortColumnDeals(nextColumns[stageId], stageId);
   });
 
   boardColumns.value = nextColumns;
@@ -167,7 +167,6 @@ const kanbanColumns = computed(() =>
     color: stage.color,
     deals: boardColumns.value[Number(stage.id)] || [],
     label: stage.name,
-    pipelineId: Number(stage.pipelineId),
     stageId: Number(stage.id),
   }))
 );
@@ -175,10 +174,57 @@ const kanbanColumns = computed(() =>
 const columnDealCount = column =>
   Number(props.stageCounts?.[String(column.stageId)]) || column.deals.length;
 
-const handleBoardScroll = event => {
-  if (!props.hasMore || props.isLoadingMore) return;
+let lastBoardScrollTop = 0;
+let lastAutoFillSignature = null;
+let resizeObserver = null;
 
+const loadMoreIfBoardDoesNotOverflow = async () => {
+  await nextTick();
+  const element = boardScrollContainer.value;
+  if (
+    !element ||
+    !props.hasMore ||
+    props.isLoadingMore ||
+    props.loadMoreFailed
+  ) {
+    return;
+  }
+  if (element.scrollHeight > element.clientHeight + 1) return;
+
+  const dealSignature = props.deals.map(deal => deal.id).join(',');
+  if (lastAutoFillSignature === dealSignature) return;
+
+  lastAutoFillSignature = dealSignature;
+  emit('loadMore');
+};
+
+watch(
+  [
+    () => props.deals.map(deal => deal.id).join(','),
+    () => props.hasMore,
+    () => props.isLoadingMore,
+  ],
+  () => loadMoreIfBoardDoesNotOverflow(),
+  { flush: 'post' }
+);
+
+onMounted(() => {
+  loadMoreIfBoardDoesNotOverflow();
+  if (typeof ResizeObserver === 'undefined') return;
+
+  resizeObserver = new ResizeObserver(() => loadMoreIfBoardDoesNotOverflow());
+  resizeObserver.observe(boardScrollContainer.value);
+});
+
+onBeforeUnmount(() => resizeObserver?.disconnect());
+
+const handleBoardScroll = event => {
   const element = event.currentTarget;
+  const isScrollingDown = element.scrollTop > lastBoardScrollTop;
+  lastBoardScrollTop = element.scrollTop;
+  if (!props.hasMore || props.isLoadingMore || props.loadMoreFailed) return;
+  if (!isScrollingDown) return;
+
   const distanceToBottom =
     element.scrollHeight - element.scrollTop - element.clientHeight;
 
@@ -208,6 +254,51 @@ const formatAmountLabel = deal => {
 
 const dealSubtitle = deal => {
   return deal.primaryContact?.name || '';
+};
+
+const taskNextActionLabel = nextAction => {
+  const params = { title: nextAction.task?.title };
+  if (nextAction.state === 'overdue') {
+    return t('CRM.DEALS.NEXT_ACTION.OVERDUE', params);
+  }
+  if (nextAction.state === 'today') {
+    return t('CRM.DEALS.NEXT_ACTION.TODAY', params);
+  }
+  if (nextAction.state === 'unscheduled') {
+    return t('CRM.DEALS.NEXT_ACTION.UNSCHEDULED', params);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.FUTURE', params);
+};
+
+const nextActionLabel = deal => {
+  const nextAction = deal.nextAction || {};
+  if (nextAction.kind === 'waiting') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING', {
+      date: formatDateLabel(deal.waitingUntil),
+    });
+  }
+  if (nextAction.kind === 'waitingExpired') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING_EXPIRED');
+  }
+  if (nextAction.kind === 'task') {
+    return taskNextActionLabel(nextAction);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.NONE');
+};
+
+const nextActionClass = deal => {
+  const { kind, state } = deal.nextAction || {};
+  if (kind === 'waitingExpired' || state === 'overdue') {
+    return 'bg-n-ruby-3 text-n-ruby-11';
+  }
+  if (kind === 'waiting' || state === 'today') {
+    return 'bg-n-amber-3 text-n-amber-11';
+  }
+  if (kind === 'task') return 'bg-n-blue-3 text-n-blue-11';
+
+  return 'bg-n-alpha-black2 text-n-slate-10';
 };
 
 const emitStageChange = (deal, stageId, position) => {
@@ -242,30 +333,27 @@ const handleColumnChange = (event, stageId) => {
   emitStageChange(deal, stageId, resolveBoardPosition(event.added.newIndex));
 };
 
-const handleOwnerChange = (deal, ownerId) => {
-  const nextOwnerId = Number(ownerId);
-
-  if (!nextOwnerId || Number(deal.ownerId) === nextOwnerId) {
-    return;
-  }
-
-  emit('changeOwner', { deal, ownerId: nextOwnerId });
+const handleStageSelect = (event, deal) => {
+  const stageId = Number(event.target.value);
+  event.target.value = String(deal.stageId);
+  emitStageChange(deal, stageId, null);
 };
 </script>
 
 <template>
   <div
+    ref="boardScrollContainer"
     class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2"
     @scroll.passive="handleBoardScroll"
   >
-    <div class="mx-auto flex w-max min-h-full items-start gap-2 py-1">
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 py-1">
       <section
         v-for="column in kanbanColumns"
         :key="column.stageId"
-        class="crm-deal-board-column group/crm-column flex min-h-full w-[17rem] shrink-0 self-start flex-col overflow-visible"
+        class="crm-deal-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
-          class="sticky top-0 z-10 rounded-t-xl bg-n-slate-2/95 px-4 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
+          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -295,21 +383,19 @@ const handleOwnerChange = (deal, ownerId) => {
               </button>
             </div>
           </div>
-          <div class="mt-3 h-1 overflow-hidden rounded-full bg-n-alpha-black2">
-            <div
-              class="h-full rounded-full"
-              :style="{
-                backgroundColor: column.color || DEFAULT_STAGE_COLOR,
-              }"
-            />
-          </div>
+          <div
+            class="crm-deal-board-stage-color mt-3 h-1 overflow-hidden rounded-full"
+            :style="{
+              backgroundColor: column.color || DEFAULT_STAGE_COLOR,
+            }"
+          />
         </header>
 
         <Draggable
           :list="boardColumns[column.stageId]"
           :disabled="!canDragDeals"
           :sort="canDragDeals && sortKey === 'position'"
-          animation="180"
+          :animation="prefersReducedMotion ? 0 : 180"
           class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
           ghost-class="crm-deal-board-card-ghost"
           group="crm-deal-board"
@@ -318,11 +404,15 @@ const handleOwnerChange = (deal, ownerId) => {
         >
           <template #item="{ element }">
             <article
-              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
+              class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md motion-reduce:transition-none"
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
+                <button
+                  type="button"
+                  data-test="open-deal"
+                  class="min-w-0 flex-1 overflow-hidden text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                >
                   <div class="flex min-w-0 items-center gap-1.5">
                     <h4
                       class="mb-0 min-w-0 truncate text-xs font-semibold text-n-slate-12"
@@ -336,10 +426,10 @@ const handleOwnerChange = (deal, ownerId) => {
                       {{ $t('CRM.DEALS.AI_BADGE') }}
                     </span>
                   </div>
-                  <p class="mb-0 mt-0.5 text-[10px] text-n-slate-11">
+                  <p class="mb-0 mt-0.5 truncate text-[10px] text-n-slate-11">
                     {{ dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE') }}
                   </p>
-                </div>
+                </button>
 
                 <span
                   class="shrink-0 text-right text-[10px] font-medium tabular-nums text-n-slate-10"
@@ -350,12 +440,14 @@ const handleOwnerChange = (deal, ownerId) => {
 
               <div class="mt-2 flex items-start justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
-                  <CrmDealOwnerMenu
-                    :disabled="!canManage"
-                    :model-value="element.ownerId"
-                    :owners="owners"
-                    @update:model-value="handleOwnerChange(element, $event)"
-                  />
+                  <span
+                    class="max-w-[8.5rem] truncate rounded-md bg-n-alpha-black2 px-1.5 py-1 text-[9px] font-medium text-n-slate-12"
+                  >
+                    {{
+                      ownerNameById[element.ownerId] ||
+                      $t('CRM.GENERAL.EMPTY_VALUE')
+                    }}
+                  </span>
                   <span
                     v-if="element.archivedAt"
                     class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
@@ -372,6 +464,34 @@ const handleOwnerChange = (deal, ownerId) => {
                 </span>
               </div>
 
+              <p
+                class="mb-0 mt-2 truncate rounded-md px-1.5 py-1 text-[9px] font-medium"
+                :class="nextActionClass(element)"
+              >
+                {{ nextActionLabel(element) }}
+              </p>
+
+              <select
+                v-if="canManage && stages.length > 1"
+                data-test="move-deal-stage"
+                class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                :aria-label="
+                  t('CRM.DEALS.BOARD.MOVE_TO_STAGE', { title: element.title })
+                "
+                :disabled="pendingDealIds.has(Number(element.id))"
+                :value="String(element.stageId)"
+                @click.stop
+                @change.stop="handleStageSelect($event, element)"
+              >
+                <option
+                  v-for="stage in stages"
+                  :key="stage.id"
+                  :value="String(stage.id)"
+                >
+                  {{ stage.name }}
+                </option>
+              </select>
+
               <CrmCustomFieldsSummary
                 class="mt-2"
                 :definitions="fieldDefinitions"
@@ -379,58 +499,39 @@ const handleOwnerChange = (deal, ownerId) => {
               />
             </article>
           </template>
-
-          <template #footer>
-            <template v-if="!column.deals.length">
-              <div v-if="canManage" class="block">
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                  @click.stop="
-                    emit('createDeal', {
-                      pipelineId: column.pipelineId,
-                      stageId: column.stageId,
-                    })
-                  "
-                >
-                  <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                  <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
-                </button>
-              </div>
-            </template>
-
-            <div
-              v-else-if="canManage"
-              class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
-            >
-              <button
-                type="button"
-                class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                @click.stop="
-                  emit('createDeal', {
-                    pipelineId: column.pipelineId,
-                    stageId: column.stageId,
-                  })
-                "
-              >
-                <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
-              </button>
-            </div>
-          </template>
         </Draggable>
+        <p
+          v-if="columnDealCount(column) === 0"
+          class="mx-3 mb-3 rounded-md border border-dashed border-n-weak px-3 py-4 text-center text-xs text-n-slate-10"
+          data-test="empty-deal-stage"
+        >
+          {{
+            filtered
+              ? $t('CRM.DEALS.LIST.EMPTY_FILTERED')
+              : $t('CRM.DEALS.BOARD.EMPTY_COLUMN')
+          }}
+        </p>
       </section>
     </div>
-    <div v-if="hasMore" class="flex justify-center px-4 py-3">
-      <Button
-        size="sm"
-        color="slate"
-        variant="ghost"
-        icon="i-lucide-plus"
-        :is-loading="isLoadingMore"
-        :label="$t('CRM.DEALS.LOAD_MORE')"
+    <div
+      v-if="isLoadingMore && hasMore"
+      class="sticky left-0 flex justify-center py-3 text-sm text-n-slate-10"
+      aria-live="polite"
+      data-test="deal-board-loading-more"
+    >
+      {{ $t('CRM.DEALS.LOADING_MORE') }}
+    </div>
+    <div
+      v-else-if="loadMoreFailed && hasMore"
+      class="sticky left-0 flex justify-center py-3"
+    >
+      <button
+        type="button"
+        class="rounded-md border border-n-weak bg-n-surface-1 px-3 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-black2"
         @click="emit('loadMore')"
-      />
+      >
+        {{ $t('CRM.DEALS.RETRY_LOAD') }}
+      </button>
     </div>
   </div>
 </template>

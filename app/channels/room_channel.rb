@@ -1,7 +1,5 @@
 class RoomChannel < ApplicationCable::Channel
   def subscribed
-    # TODO: should we only do ensure stream  if current account is present?
-    # for now going ahead with guard clauses in update_subscription and broadcast_presence
     current_user
     current_account
     ensure_stream
@@ -12,6 +10,8 @@ class RoomChannel < ApplicationCable::Channel
   end
 
   def update_presence
+    return if @impersonation_context && !refresh_impersonation_context!
+
     update_subscription
     broadcast_presence
   end
@@ -27,9 +27,44 @@ class RoomChannel < ApplicationCable::Channel
   end
 
   def ensure_stream
+    if @impersonation_context
+      callback = ->(payload) { transmit_support_payload(payload) }
+      stream_from pubsub_token, coder: ActiveSupport::JSON, &callback
+      stream_from "account_#{@current_account.id}", coder: ActiveSupport::JSON, &callback
+      return
+    end
+
     stream_from pubsub_token
     stream_from "account_#{@current_account.id}" if @current_account.present? && @current_user.is_a?(User)
     stream_from @current_user.auth_session_stream_name(auth_client_id) if @current_user.is_a?(User)
+  end
+
+  def transmit_support_payload(payload)
+    return unless refresh_impersonation_context!
+
+    event = payload.respond_to?(:with_indifferent_access) ? payload.with_indifferent_access : {}
+    data = event[:data]
+    return unless data.respond_to?(:[])
+    return unless data[:account_id].to_s == @current_account.id.to_s
+
+    transmit(payload)
+  end
+
+  def refresh_impersonation_context!
+    context = SuperAdmin::ImpersonationService.context_for_websocket(
+      auth_client_id,
+      target_user_id: @current_user.id,
+      account_id: params[:account_id],
+      pubsub_token: pubsub_token
+    )
+    unless context && context['account_id'].to_s == @current_account&.id.to_s
+      stop_all_streams
+      reject
+      return false
+    end
+
+    @impersonation_context = context
+    true
   end
 
   def update_subscription
@@ -55,8 +90,19 @@ class RoomChannel < ApplicationCable::Channel
   end
 
   def find_authenticated_user!
-    user = User.find_by!(pubsub_token: pubsub_token, id: params[:user_id])
-    raise ActiveRecord::RecordNotFound unless user.active_auth_client?(auth_client_id)
+    user = User.find(params[:user_id])
+    if auth_client_id.to_s.start_with?(SuperAdmin::ImpersonationService::CLIENT_PREFIX)
+      @impersonation_context = SuperAdmin::ImpersonationService.context_for_websocket(
+        auth_client_id,
+        target_user_id: user.id,
+        account_id: params[:account_id],
+        pubsub_token: pubsub_token
+      )
+      raise ActiveRecord::RecordNotFound unless @impersonation_context
+    else
+      user = User.find_by!(pubsub_token: pubsub_token, id: params[:user_id])
+      raise ActiveRecord::RecordNotFound unless user.active_auth_client?(auth_client_id)
+    end
 
     user
   end
@@ -66,6 +112,8 @@ class RoomChannel < ApplicationCable::Channel
 
     @current_account ||= if @current_user.is_a? Contact
                            @current_user.account
+                         elsif @impersonation_context
+                           Account.find(@impersonation_context['account_id'])
                          else
                            @current_user.accounts.find(params[:account_id])
                          end

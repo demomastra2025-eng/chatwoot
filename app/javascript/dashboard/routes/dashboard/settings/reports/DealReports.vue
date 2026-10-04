@@ -14,6 +14,7 @@ import { normalizeMeta, normalizePayload } from 'dashboard/stores/crm/shared';
 import BarChart from 'shared/components/charts/BarChart.vue';
 import DoughnutChart from 'shared/components/charts/DoughnutChart.vue';
 import LineChart from 'shared/components/charts/LineChart.vue';
+import CRMActivityReports from './components/CRMActivityReports.vue';
 import ReportFilters from './components/ReportFilters.vue';
 import ReportHeader from './components/ReportHeader.vue';
 
@@ -23,6 +24,7 @@ const report = ref(null);
 const meta = ref({});
 const managerEffectiveness = ref(null);
 const managerMeta = ref({});
+const reportPeriod = ref(null);
 const managerEffectivenessError = ref(false);
 const isExportMenuOpen = ref(false);
 const isLoading = ref(false);
@@ -76,6 +78,12 @@ const sections = computed(() => [
     icon: 'i-lucide-users-round',
     label: t('CRM_DEAL_REPORTS.SECTIONS.TEAM.TITLE'),
     description: t('CRM_DEAL_REPORTS.SECTIONS.TEAM.DESCRIPTION'),
+  },
+  {
+    key: 'activity',
+    icon: 'i-lucide-list-checks',
+    label: t('CRM_DEAL_REPORTS.SECTIONS.ACTIVITY.TITLE'),
+    description: t('CRM_DEAL_REPORTS.SECTIONS.ACTIVITY.DESCRIPTION'),
   },
 ]);
 
@@ -810,6 +818,7 @@ const loadDealReport = async payload => {
 };
 
 const onFilterChange = payload => {
+  reportPeriod.value = payload;
   loadDealReport(payload);
 };
 </script>
@@ -860,8 +869,46 @@ const onFilterChange = payload => {
       @filter-change="onFilterChange"
     />
 
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-6">
+      <button
+        v-for="section in sections"
+        :key="section.key"
+        type="button"
+        class="rounded-xl border p-4 text-left transition hover:border-n-blue-6 hover:bg-n-blue-2"
+        :class="
+          activeSection === section.key
+            ? 'border-n-blue-8 bg-n-blue-3 text-n-blue-12'
+            : 'border-n-container bg-n-solid-2 text-n-slate-11'
+        "
+        @click="activeSection = section.key"
+      >
+        <div class="flex items-center gap-2 text-sm font-semibold">
+          <i :class="section.icon" />
+          <span>{{ section.label }}</span>
+        </div>
+        <p class="mt-2 text-xs leading-5 opacity-80">
+          {{ section.description }}
+        </p>
+      </button>
+    </div>
+
+    <section
+      v-if="activeSection === 'activity'"
+      class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
+    >
+      <div class="flex flex-col gap-1">
+        <h3 class="text-base font-semibold text-n-slate-12">
+          {{ currentSection.label }}
+        </h3>
+        <p class="text-sm text-n-slate-10">
+          {{ currentSection.description }}
+        </p>
+      </div>
+      <CRMActivityReports :from="reportPeriod?.from" :to="reportPeriod?.to" />
+    </section>
+
     <div
-      v-if="isLoading"
+      v-if="isLoading && activeSection !== 'activity'"
       class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
     >
       <div
@@ -871,7 +918,7 @@ const onFilterChange = payload => {
       />
     </div>
 
-    <template v-else-if="report">
+    <template v-else-if="report && activeSection !== 'activity'">
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div
           v-for="card in summaryCards"
@@ -901,7 +948,7 @@ const onFilterChange = payload => {
       </div>
 
       <div
-        v-if="!hasReportData"
+        v-if="!hasReportData && activeSection !== 'activity'"
         class="rounded-xl bg-n-solid-2 p-8 text-center shadow-sm outline outline-1 outline-n-container"
       >
         <i
@@ -916,29 +963,6 @@ const onFilterChange = payload => {
       </div>
 
       <template v-else>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <button
-            v-for="section in sections"
-            :key="section.key"
-            type="button"
-            class="rounded-xl border p-4 text-left transition hover:border-n-blue-6 hover:bg-n-blue-2"
-            :class="
-              activeSection === section.key
-                ? 'border-n-blue-8 bg-n-blue-3 text-n-blue-12'
-                : 'border-n-container bg-n-solid-2 text-n-slate-11'
-            "
-            @click="activeSection = section.key"
-          >
-            <div class="flex items-center gap-2 text-sm font-semibold">
-              <i :class="section.icon" />
-              <span>{{ section.label }}</span>
-            </div>
-            <p class="mt-2 text-xs leading-5 opacity-80">
-              {{ section.description }}
-            </p>
-          </button>
-        </div>
-
         <section
           class="rounded-xl bg-n-solid-2 p-5 shadow-sm outline outline-1 outline-n-container"
         >

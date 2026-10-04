@@ -8,7 +8,8 @@ module EnsureCurrentAccountHelper
 
   def ensure_current_account
     account = Account.find(params[:account_id])
-    render_unauthorized('Account is suspended') and return unless account.active?
+    return render_unauthorized('Account is suspended') unless account.active?
+    return render_unauthorized('Impersonation is restricted to one account') if impersonation_account_mismatch?(account)
 
     if current_user
       account_accessible_for_user?(account)
@@ -16,6 +17,10 @@ module EnsureCurrentAccountHelper
       account_accessible_for_bot?(account)
     end
     account
+  end
+
+  def impersonation_account_mismatch?(account)
+    @super_admin_impersonation && account.id.to_s != @super_admin_impersonation['account_id'].to_s
   end
 
   def account_accessible_for_user?(account)

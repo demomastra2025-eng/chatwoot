@@ -16,7 +16,6 @@
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
       "HEADER": "Shopify"
     },
-
     "HEADER": "Integrations",
     "DESCRIPTION": "Integrations connect OneLink to external services and modules. Configure the integrations you need below.",
     "LEARN_MORE": "Learn more about integrations",
@@ -187,7 +186,8 @@
         "GRAMMAR": "Fix grammar & spelling",
         "SUGGESTION": "Suggest a reply",
         "SUMMARIZE": "Summarize the conversation",
-        "EMPTY_HINT": "Start typing a message to use AI writing tools"
+        "EMPTY_HINT": "Start typing a message to use AI writing tools",
+        "ASK_COPILOT": "Ask Assistant"
       },
       "ASSISTANCE_MODAL": {
         "DRAFT_TITLE": "Draft content",
@@ -393,7 +393,25 @@
       "HEADER": "Notion"
     },
     "SEARCH_PLACEHOLDER": "Search integrations...",
-    "NO_RESULTS": "No integrations found matching your search"
+    "NO_RESULTS": "No integrations found matching your search",
+    "KASPI_PAY": {
+      "SEND_OTP": "Send SMS code",
+      "CONNECT": "Connect Kaspi Pay",
+      "PHONE_LABEL": "Kaspi cashier phone",
+      "OTP_LABEL": "SMS code",
+      "LATITUDE_LABEL": "POS latitude",
+      "LONGITUDE_LABEL": "POS longitude",
+      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
+      "PHONE_REQUIRED": "Enter the phone number",
+      "OTP_REQUIRED": "Enter the SMS code",
+      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
+      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
+      "CONNECTED_TITLE": "Connected merchant",
+      "DELETE": {
+        "TITLE": "Delete Kaspi Pay integration",
+        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
+      }
+    }
   },
   "CAPTAIN": {
     "NAME": "AI Agents",
@@ -909,7 +927,8 @@
             "CAPACITY": "All preview sessions are busy. Try again in a moment.",
             "ORIGIN": "This page is not allowed to open a voice preview.",
             "PROTOCOL": "The voice runtime returned an invalid response. Start again."
-          }
+          },
+          "UNMUTE": "Unmute microphone"
         },
         "DESCRIPTION": {
           "LABEL": "Description",
@@ -982,6 +1001,11 @@
         "CATALOG_ITEM_USED": "Used",
         "FEATURES": {
           "TITLE": "Features",
+          "GROUPS": {
+            "CUSTOMER_CONTEXT": "Customer context",
+            "TOOLS": "Tools and actions",
+            "VOICE": "Voice messages"
+          },
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
           "ALLOW_NOTES": "Allow creating contact notes and private conversation notes",
@@ -991,7 +1015,17 @@
           "ALLOW_WEB_ACCESS": "Allow web search",
           "USE_AUDIO_TRANSCRIPTIONS": "Use voice message transcripts",
           "USE_AUDIO_TRANSCRIPTIONS_DISABLED": "Use voice message transcripts (enable workspace transcription first)",
-          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
+          "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information",
+          "DESCRIPTION": "Enable the capabilities and tools available to this AI agent.",
+          "WEB_SEARCH": "Web search",
+          "WEB_SEARCH_DESCRIPTION": "Find current information on the public web.",
+          "WEB_PAGE_READING": "Read web pages",
+          "WEB_PAGE_READING_DESCRIPTION": "Read the content of a provided public URL.",
+          "DOCUMENT_READING": "Read documents",
+          "DOCUMENT_READING_DESCRIPTION": "Use text extracted from customer file attachments.",
+          "IMAGE_UNDERSTANDING": "Understand customer images",
+          "IMAGE_UNDERSTANDING_DESCRIPTION": "Generate a text description of new images while preparing a reply. The original image is not sent to the response model.",
+          "WEB_PROVIDER_REQUIRED": "These capabilities require the web provider to be configured by an administrator."
         },
         "ACCESS_MODES": {
           "TITLE": "AI assistant access",
@@ -1058,100 +1092,266 @@
           },
           "FIELDS": {
             "CONTACT": {
-              "ID": { "TITLE": "Contact ID" },
-              "NAME": { "TITLE": "Name" },
-              "EMAIL": { "TITLE": "Email" },
-              "PHONE_NUMBER": { "TITLE": "Phone Number" },
-              "IDENTIFIER": { "TITLE": "Identifier" },
-              "CONTACT_TYPE": { "TITLE": "Contact Type" }
+              "ID": {
+                "TITLE": "Contact ID"
+              },
+              "NAME": {
+                "TITLE": "Name"
+              },
+              "EMAIL": {
+                "TITLE": "Email"
+              },
+              "PHONE_NUMBER": {
+                "TITLE": "Phone Number"
+              },
+              "IDENTIFIER": {
+                "TITLE": "Identifier"
+              },
+              "CONTACT_TYPE": {
+                "TITLE": "Contact Type"
+              }
             },
             "CONVERSATION": {
-              "ID": { "TITLE": "Conversation Record ID" },
-              "DISPLAY_ID": { "TITLE": "Conversation ID" },
-              "INBOX_ID": { "TITLE": "Inbox ID" },
-              "CONTACT_ID": { "TITLE": "Contact ID" },
-              "STATUS": { "TITLE": "Status" },
-              "PRIORITY": { "TITLE": "Priority" },
-              "LABEL_LIST": { "TITLE": "Tags" }
+              "ID": {
+                "TITLE": "Conversation Record ID"
+              },
+              "DISPLAY_ID": {
+                "TITLE": "Conversation ID"
+              },
+              "INBOX_ID": {
+                "TITLE": "Inbox ID"
+              },
+              "CONTACT_ID": {
+                "TITLE": "Contact ID"
+              },
+              "STATUS": {
+                "TITLE": "Status"
+              },
+              "PRIORITY": {
+                "TITLE": "Priority"
+              },
+              "LABEL_LIST": {
+                "TITLE": "Tags"
+              }
             },
             "DEAL": {
-              "ID": { "TITLE": "Deal ID" },
-              "TITLE": { "TITLE": "Title" },
-              "DESCRIPTION": { "TITLE": "Description" },
-              "AMOUNT": { "TITLE": "Amount" },
-              "CURRENCY": { "TITLE": "Currency" },
-              "EXPECTED_CLOSE_ON": { "TITLE": "Expected Close Date" },
-              "WIN_PROBABILITY": { "TITLE": "Win Probability" },
-              "CLOSED_AT": { "TITLE": "Closed At" },
-              "EXTERNAL_REF": { "TITLE": "External Reference" },
-              "PIPELINE_ID": { "TITLE": "Pipeline ID" },
-              "PIPELINE_NAME": { "TITLE": "Pipeline Name" },
-              "STAGE_ID": { "TITLE": "Stage ID" },
-              "STAGE_NAME": { "TITLE": "Stage Name" },
-              "OWNER_ID": { "TITLE": "Owner User ID" },
-              "OWNER_NAME": { "TITLE": "Owner Name" },
-              "CREATOR_ID": { "TITLE": "Created By User ID" },
-              "CREATOR_NAME": { "TITLE": "Creator Name" },
-              "TEAM_ID": { "TITLE": "Team ID" },
-              "TEAM_NAME": { "TITLE": "Team Name" },
-              "COMPANY_ID": { "TITLE": "Company ID" },
-              "COMPANY_NAME": { "TITLE": "Company Name" },
-              "ORIGINATING_CONVERSATION_ID": { "TITLE": "Conversation ID" }
+              "ID": {
+                "TITLE": "Deal ID"
+              },
+              "TITLE": {
+                "TITLE": "Title"
+              },
+              "DESCRIPTION": {
+                "TITLE": "Description"
+              },
+              "AMOUNT": {
+                "TITLE": "Amount"
+              },
+              "CURRENCY": {
+                "TITLE": "Currency"
+              },
+              "EXPECTED_CLOSE_ON": {
+                "TITLE": "Expected Close Date"
+              },
+              "WIN_PROBABILITY": {
+                "TITLE": "Win Probability"
+              },
+              "CLOSED_AT": {
+                "TITLE": "Closed At"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "External Reference"
+              },
+              "PIPELINE_ID": {
+                "TITLE": "Pipeline ID"
+              },
+              "PIPELINE_NAME": {
+                "TITLE": "Pipeline Name"
+              },
+              "STAGE_ID": {
+                "TITLE": "Stage ID"
+              },
+              "STAGE_NAME": {
+                "TITLE": "Stage Name"
+              },
+              "OWNER_ID": {
+                "TITLE": "Owner User ID"
+              },
+              "OWNER_NAME": {
+                "TITLE": "Owner Name"
+              },
+              "CREATOR_ID": {
+                "TITLE": "Created By User ID"
+              },
+              "CREATOR_NAME": {
+                "TITLE": "Creator Name"
+              },
+              "TEAM_ID": {
+                "TITLE": "Team ID"
+              },
+              "TEAM_NAME": {
+                "TITLE": "Team Name"
+              },
+              "COMPANY_ID": {
+                "TITLE": "Company ID"
+              },
+              "COMPANY_NAME": {
+                "TITLE": "Company Name"
+              },
+              "ORIGINATING_CONVERSATION_ID": {
+                "TITLE": "Conversation ID"
+              }
             },
             "TASK": {
-              "ID": { "TITLE": "Task ID" },
-              "TITLE": { "TITLE": "Title" },
-              "DESCRIPTION": { "TITLE": "Description" },
-              "DUE_AT": { "TITLE": "Due At" },
-              "START_AT": { "TITLE": "Start At" },
-              "PRIORITY": { "TITLE": "Priority" },
-              "COMPLETED_AT": { "TITLE": "Completed At" },
-              "EXTERNAL_REF": { "TITLE": "External Reference" },
-              "STATUS_ID": { "TITLE": "Status ID" },
-              "STATUS_NAME": { "TITLE": "Status Name" },
-              "ASSIGNEE_ID": { "TITLE": "Assignee User ID" },
-              "ASSIGNEE_NAME": { "TITLE": "Assignee Name" },
-              "CREATOR_ID": { "TITLE": "Created By User ID" },
-              "CREATOR_NAME": { "TITLE": "Creator Name" },
-              "TEAM_ID": { "TITLE": "Team ID" },
-              "TEAM_NAME": { "TITLE": "Team Name" },
-              "DEAL_ID": { "TITLE": "Deal ID" },
-              "DEAL_TITLE": { "TITLE": "Deal Title" },
-              "ORIGINATING_CONVERSATION_ID": { "TITLE": "Conversation ID" }
+              "ID": {
+                "TITLE": "Task ID"
+              },
+              "TITLE": {
+                "TITLE": "Title"
+              },
+              "DESCRIPTION": {
+                "TITLE": "Description"
+              },
+              "DUE_AT": {
+                "TITLE": "Due At"
+              },
+              "START_AT": {
+                "TITLE": "Start At"
+              },
+              "PRIORITY": {
+                "TITLE": "Priority"
+              },
+              "COMPLETED_AT": {
+                "TITLE": "Completed At"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "External Reference"
+              },
+              "STATUS_ID": {
+                "TITLE": "Status ID"
+              },
+              "STATUS_NAME": {
+                "TITLE": "Status Name"
+              },
+              "ASSIGNEE_ID": {
+                "TITLE": "Assignee User ID"
+              },
+              "ASSIGNEE_NAME": {
+                "TITLE": "Assignee Name"
+              },
+              "CREATOR_ID": {
+                "TITLE": "Created By User ID"
+              },
+              "CREATOR_NAME": {
+                "TITLE": "Creator Name"
+              },
+              "TEAM_ID": {
+                "TITLE": "Team ID"
+              },
+              "TEAM_NAME": {
+                "TITLE": "Team Name"
+              },
+              "DEAL_ID": {
+                "TITLE": "Deal ID"
+              },
+              "DEAL_TITLE": {
+                "TITLE": "Deal Title"
+              },
+              "ORIGINATING_CONVERSATION_ID": {
+                "TITLE": "Conversation ID"
+              }
             },
             "APPOINTMENT": {
-              "ID": { "TITLE": "Appointment ID" },
-              "RESOURCE_ID": { "TITLE": "Specialist ID" },
-              "RESOURCE_NAME": { "TITLE": "Specialist Name" },
-              "CONTACT_ID": { "TITLE": "Contact ID" },
-              "SERVICE_ID": { "TITLE": "Service ID" },
-              "COMPANY_ID": { "TITLE": "Company ID" },
-              "CONVERSATION_ID": { "TITLE": "Conversation ID" },
-              "CREATED_BY_ID": { "TITLE": "Created By User ID" },
-              "STARTS_AT": { "TITLE": "Start Time" },
-              "ENDS_AT": { "TITLE": "End Time" },
-              "START_DATE": { "TITLE": "Appointment date" },
-              "START_TIME": { "TITLE": "Appointment time" },
-              "END_DATE": { "TITLE": "Appointment end date" },
-              "END_TIME": { "TITLE": "Appointment end time" },
-              "DURATION_MIN": { "TITLE": "Duration (minutes)" },
-              "STATUS": { "TITLE": "Status" },
-              "APPOINTMENT_TYPE": { "TITLE": "Appointment Type" },
-              "CLIENT_NAME": { "TITLE": "Client Name" },
-              "CLIENT_PHONE": { "TITLE": "Client Phone" },
-              "CLIENT_IDENTIFIER": { "TITLE": "Client Identifier" },
-              "CLIENT_BIRTH_DATE": { "TITLE": "Client Birth Date" },
-              "CLIENT_GENDER": { "TITLE": "Client Gender" },
-              "CLIENT_COMMENT": { "TITLE": "Client Comment" },
-              "SOURCE": { "TITLE": "Source" },
-              "EXTERNAL_REF": { "TITLE": "External Reference" },
-              "PAYMENT_STATUS": { "TITLE": "Payment Status" },
-              "SERVICE_NAME_SNAPSHOT": { "TITLE": "Service Name" },
-              "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Service Type" },
+              "ID": {
+                "TITLE": "Appointment ID"
+              },
+              "RESOURCE_ID": {
+                "TITLE": "Specialist ID"
+              },
+              "RESOURCE_NAME": {
+                "TITLE": "Specialist Name"
+              },
+              "CONTACT_ID": {
+                "TITLE": "Contact ID"
+              },
+              "SERVICE_ID": {
+                "TITLE": "Service ID"
+              },
+              "COMPANY_ID": {
+                "TITLE": "Company ID"
+              },
+              "CONVERSATION_ID": {
+                "TITLE": "Conversation ID"
+              },
+              "CREATED_BY_ID": {
+                "TITLE": "Created By User ID"
+              },
+              "STARTS_AT": {
+                "TITLE": "Start Time"
+              },
+              "ENDS_AT": {
+                "TITLE": "End Time"
+              },
+              "START_DATE": {
+                "TITLE": "Appointment date"
+              },
+              "START_TIME": {
+                "TITLE": "Appointment time"
+              },
+              "END_DATE": {
+                "TITLE": "Appointment end date"
+              },
+              "END_TIME": {
+                "TITLE": "Appointment end time"
+              },
+              "DURATION_MIN": {
+                "TITLE": "Duration (minutes)"
+              },
+              "STATUS": {
+                "TITLE": "Status"
+              },
+              "APPOINTMENT_TYPE": {
+                "TITLE": "Appointment Type"
+              },
+              "CLIENT_NAME": {
+                "TITLE": "Client Name"
+              },
+              "CLIENT_PHONE": {
+                "TITLE": "Client Phone"
+              },
+              "CLIENT_IDENTIFIER": {
+                "TITLE": "Client Identifier"
+              },
+              "CLIENT_BIRTH_DATE": {
+                "TITLE": "Client Birth Date"
+              },
+              "CLIENT_GENDER": {
+                "TITLE": "Client Gender"
+              },
+              "CLIENT_COMMENT": {
+                "TITLE": "Client Comment"
+              },
+              "SOURCE": {
+                "TITLE": "Source"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "External Reference"
+              },
+              "PAYMENT_STATUS": {
+                "TITLE": "Payment Status"
+              },
+              "SERVICE_NAME_SNAPSHOT": {
+                "TITLE": "Service Name"
+              },
+              "SERVICE_TYPE_SNAPSHOT": {
+                "TITLE": "Service Type"
+              },
               "SERVICE_DURATION_MIN_SNAPSHOT": {
                 "TITLE": "Service Duration (minutes)"
               },
-              "SERVICE_AMOUNT": { "TITLE": "Service Amount" },
+              "SERVICE_AMOUNT": {
+                "TITLE": "Service Amount"
+              },
               "COMPENSATION_TYPE_SNAPSHOT": {
                 "TITLE": "Compensation Type"
               },
@@ -1161,11 +1361,15 @@
               "COMPENSATION_PERCENT_SNAPSHOT": {
                 "TITLE": "Compensation Percent"
               },
-              "PREPAID_AMOUNT": { "TITLE": "Prepaid Amount" },
+              "PREPAID_AMOUNT": {
+                "TITLE": "Prepaid Amount"
+              },
               "PREPAID_PAYMENT_METHOD": {
                 "TITLE": "Prepaid Payment Method"
               },
-              "SETTLEMENT_AMOUNT": { "TITLE": "Settlement Amount" },
+              "SETTLEMENT_AMOUNT": {
+                "TITLE": "Settlement Amount"
+              },
               "SETTLEMENT_PAYMENT_METHOD": {
                 "TITLE": "Settlement Payment Method"
               }
@@ -1567,6 +1771,10 @@
         "AUTO_REPLY_ON_LAST_INCOMING": {
           "TITLE": "Auto-reply to last incoming",
           "DESCRIPTION": "When an agent manually switches a conversation to an AI agent, reply immediately if the latest public message is from the customer."
+        },
+        "MODEL": {
+          "LABEL": "Response model",
+          "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator."
         }
       },
       "EDIT": {
@@ -2006,6 +2214,79 @@
           "DELETE": {
             "SUCCESS": "Scenarios deleted successfully",
             "ERROR": "There was an error deleting scenarios, please try again."
+          }
+        }
+      },
+      "FOLLOW_UPS": {
+        "HEADER": "Follow-ups",
+        "DESCRIPTION": "A sequence of messages sent when the customer does not reply. Before each step, the system checks for a new reply and whether the conversation is complete.",
+        "PROMPT_LABEL": "AI follow-up instruction",
+        "PROMPT_DESCRIPTION": "Used only to generate follow-ups and does not change the main AI agent's normal replies.",
+        "PROMPT_PLACEHOLDER": "Describe the tone, constraints, and approach for follow-ups",
+        "DEFAULT_PROMPT": "Continue the conversation naturally. Do not introduce yourself again or repeat previous messages. Briefly remind the customer about the unfinished topic and offer one clear next action without pressure.",
+        "STEP": "Step {number}",
+        "DELAY": "Delay",
+        "UNIT": "Delay unit",
+        "MINUTES": "minutes",
+        "HOURS": "hours",
+        "DAYS": "days",
+        "MINUTES_SHORT": "min",
+        "HOURS_SHORT": "h",
+        "DAYS_SHORT": "d",
+        "DELAY_SUMMARY": "After {delay} {unit}",
+        "MODE": "Message mode",
+        "MODE_AI": "Generate with AI",
+        "MODE_STATIC": "Static text",
+        "OBJECTIVE_LABEL": "Follow-up objective",
+        "OBJECTIVE_PLACEHOLDER": "For example: gently remind the customer about the unfinished topic",
+        "STATIC_MESSAGE_LABEL": "Customer message",
+        "MESSAGE_PLACEHOLDER": "Message to the customer",
+        "EMPTY_STEP_SUMMARY": "Add a follow-up objective",
+        "REMOVE_STEP": "Remove step",
+        "ADD_STEP": "Add step",
+        "SAVE": "Save",
+        "VALIDATION": "Add at least one completed step with a delay.",
+        "PROMPT_VALIDATION": "Add an instruction for AI follow-ups.",
+        "DEFAULT_OBJECTIVE_1": "Gently remind the customer about the unfinished topic without pressure.",
+        "DEFAULT_OBJECTIVE_2": "Ask whether the customer needs more information to make a decision.",
+        "DEFAULT_OBJECTIVE_3": "Send one polite final follow-up and leave an easy way to return to the conversation."
+      },
+      "OUTCOMES": {
+        "HEADER": "Outcomes and handoffs",
+        "DESCRIPTION": "Configure the reasons the AI agent uses when completing a conversation or handing it to a human.",
+        "ADD": "Add",
+        "REMOVE": "Remove reason",
+        "ACTIVE": "Active reason",
+        "PLACEHOLDER": "Reason label",
+        "EMPTY": "No reasons configured",
+        "SAVE": "Save",
+        "VALIDATION": "Complete or remove empty reasons.",
+        "COMPLETION": {
+          "ENABLE_TITLE": "Automatically complete conversations",
+          "ENABLE_DESCRIPTION": "The AI agent can complete a conversation when the customer's task is resolved.",
+          "TITLE": "Completion reasons",
+          "DESCRIPTION": "The agent selects one reason when it considers the customer’s task complete."
+        },
+        "HANDOFF": {
+          "TITLE": "Human handoff reasons",
+          "DESCRIPTION": "The agent selects one reason when it opens the conversation for a human."
+        },
+        "DEFAULTS": {
+          "COMPLETION": {
+            "GOAL_ACHIEVED": "Goal achieved",
+            "QUESTION_RESOLVED": "Question resolved",
+            "CUSTOMER_DECLINED": "Customer declined",
+            "NO_RESPONSE": "Customer stopped responding"
+          },
+          "HANDOFF": {
+            "CUSTOMER_REQUESTED_HUMAN": "Customer requested a human",
+            "LOW_CONFIDENCE": "AI is not confident in the answer",
+            "MANUAL_ACTION_REQUIRED": "Manual action required",
+            "COMPLAINT_OR_CONFLICT": "Complaint or conflict",
+            "TOOL_OR_POLICY_LIMIT": "Tool or policy limitation"
+          },
+          "COMMON": {
+            "OTHER": "Other reason"
           }
         }
       }
@@ -3059,6 +3340,73 @@
         "OVERVIEW_ERROR": "Failed to load logs data",
         "RELEASE_CHECK_ERROR": "Failed to run release check",
         "PREFERENCES_ERROR": "Failed to update log preferences"
+      },
+      "LOGS": {
+        "TITLE": "Logs",
+        "TIMELINE_TITLE": "AI agent requests",
+        "TIMELINE_DESCRIPTION": "Request count for the selected period",
+        "TOTAL_REQUESTS": "Total requests: {count}",
+        "REQUESTS": "Requests: {count}",
+        "MILLISECONDS": "ms",
+        "SECONDS": "s",
+        "CUSTOM_RANGE": {
+          "SINCE": "Start",
+          "UNTIL": "End",
+          "APPLY": "Apply",
+          "INVALID": "Choose a valid range: the start must be earlier than the end."
+        },
+        "EMPTY_TITLE": "No requests in this period",
+        "EMPTY_DESCRIPTION": "Select another period or check again later.",
+        "COLUMNS": {
+          "DATETIME": "Date and time",
+          "MODEL": "Model",
+          "INPUT_TOKENS": "Input tokens",
+          "OUTPUT_TOKENS": "Output tokens",
+          "COST": "Cost, $",
+          "DURATION": "Response time"
+        },
+        "RANGES": {
+          "15m": "Past 15 minutes",
+          "30m": "Past 30 minutes",
+          "1h": "Past hour",
+          "3h": "Past 3 hours",
+          "24h": "Past 24 hours",
+          "48h": "Past 48 hours",
+          "7d": "Past week",
+          "30d": "Past month",
+          "1y": "Past year",
+          "CUSTOM": "Custom range"
+        }
+      },
+      "SIMPLE": {
+        "REFRESH": "Refresh",
+        "CLEAR": "Clear",
+        "DELETE": "Delete",
+        "EVENT": "AI event",
+        "NO_MODEL": "Model not specified",
+        "EMPTY_TITLE": "No logs yet",
+        "EMPTY_DESCRIPTION": "Recent AI Agent events will appear here.",
+        "LOAD_ERROR": "Could not load logs",
+        "DELETE_TITLE": "Delete this entry?",
+        "DELETE_DESCRIPTION": "This entry will be permanently deleted.",
+        "DELETE_SUCCESS": "Entry deleted",
+        "DELETE_ERROR": "Could not delete the entry",
+        "CLEAR_TITLE": "Clear all AI Agent logs?",
+        "CLEAR_DESCRIPTION": "All AI Agent entries will be permanently deleted.",
+        "CLEAR_SUCCESS": "AI Agent logs cleared",
+        "CLEAR_ERROR": "Could not clear logs",
+        "DETAILS": {
+          "STATUS": "Status",
+          "MODEL": "Model",
+          "PROVIDER": "Provider",
+          "TOOL": "Tool",
+          "DURATION": "Duration",
+          "TOKENS": "Tokens",
+          "COST": "Cost",
+          "TIME": "Time",
+          "ERROR": "Execution error",
+          "DATA": "Event data"
+        }
       }
     },
     "RESPONSES": {

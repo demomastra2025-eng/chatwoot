@@ -84,6 +84,12 @@ RSpec.describe AutomationRules::CrmConditionService do
       )
     end
 
+    it 'matches legacy task rules with no conditions' do
+      rule = create(:automation_rule, account: account, event_name: 'task_status_changed', conditions: [], actions: [])
+
+      expect(described_class.new(rule, task, entity_kind: 'task').perform).to be(true)
+    end
+
     it 'matches standard and managed custom task conditions' do
       rule = create(
         :automation_rule,

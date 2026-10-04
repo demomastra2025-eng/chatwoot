@@ -15,10 +15,9 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     get path, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('meta', 'count')).to eq(3)
-    expect(response.parsed_body.dig('payload', 0, 'code')).to eq('todo')
+    expect(response.parsed_body.dig('meta', 'count')).to eq(4)
+    expect(response.parsed_body['payload'].pluck('code')).to eq(%w[todo in_progress done cancelled])
     expect(response.parsed_body.dig('payload', 0, 'color')).to eq(Crm::TaskStatus::STANDARD_COLORS.first)
-    expect(response.parsed_body.dig('payload', 1, 'code')).to eq('in_progress')
     expect(response.parsed_body.dig('payload', 1, 'category')).to eq('in_progress')
     expect(response.parsed_body.dig('payload', 1, 'color')).to eq(Crm::TaskStatus::STANDARD_COLORS.second)
   end
@@ -77,8 +76,8 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     new_default = account.crm_task_statuses.find_by!(code: 'waiting_for_client')
 
     expect(response).to have_http_status(:created)
-    expect(new_default.default).to eq(true)
-    expect(original_default.reload.default).to eq(false)
+    expect(new_default.default).to be(true)
+    expect(original_default.reload.default).to be(false)
   end
 
   it 'switches the default status when updating an existing open status' do
@@ -101,8 +100,8 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(task_status.reload.default).to eq(true)
-    expect(original_default.reload.default).to eq(false)
+    expect(task_status.reload.default).to be(true)
+    expect(original_default.reload.default).to be(false)
   end
 
   it 'creates a task status with a russian name and auto-generated code' do
@@ -152,7 +151,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:created)
-    expect(response.parsed_body.dig('payload', 'active')).to eq(false)
+    expect(response.parsed_body.dig('payload', 'active')).to be(false)
   end
 
   it 'deletes a task status without tasks for administrators' do
@@ -178,7 +177,7 @@ RSpec.describe 'CRM Task Statuses API', type: :request do
     get path, headers: agent.create_new_auth_token, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('meta', 'count')).to eq(3)
+    expect(response.parsed_body.dig('meta', 'count')).to eq(4)
     expect(response.parsed_body.dig('payload', 0, 'code')).to eq('todo')
   end
 

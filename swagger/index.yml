@@ -75,6 +75,14 @@ tags:
     description: User profile APIs
   - name: Reports
     description: Analytics and reporting APIs
+  - name: CRM
+    description: Account-scoped CRM pipelines, deals, tasks, and catalogs
+  - name: CRM Reports
+    description: Account-scoped CRM funnel, lifecycle, and stage reports
+  - name: Account Storage
+    description: Account administrator storage usage, cleanup, trash, and restore
+  - name: Captain Assistants
+    description: Account-scoped Captain assistant configuration
   - name: Scheduling
     description: Scheduling, appointment, and finance APIs
   - name: Teams
@@ -120,6 +128,10 @@ x-tagGroups:
       - Messages
       - Profile
       - Reports
+      - CRM
+      - CRM Reports
+      - Account Storage
+      - Captain Assistants
       - Scheduling
       - Teams
       - Webhooks

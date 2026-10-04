@@ -12,6 +12,7 @@
       "CLOSE": "Close",
       "CREATE": "Create",
       "DEFAULT": "Default",
+      "EDIT": "Edit",
       "EMPTY_VALUE": "—",
       "INACTIVE": "Inactive",
       "LINKED_COMMUNICATION_THREAD": "Linked communication thread",
@@ -33,6 +34,16 @@
       "DUE_AT_RANGE": "Due date",
       "DESCRIPTION": "Refine runtime records without leaving the native dashboard workflow.",
       "INCLUDE_ARCHIVED": "Include archived",
+      "MAIN_FIELDS": "Main fields",
+      "NEXT_ACTION": "Next action",
+      "NEXT_ACTION_ALL": "All",
+      "NEXT_ACTION_NONE": "No next action",
+      "NEXT_ACTION_OVERDUE": "Overdue",
+      "NEXT_ACTION_WAITING_EXPIRED": "Waiting expired",
+      "QUICK_ALL": "All deals",
+      "QUICK_ARCHIVED": "Include archived",
+      "QUICK_MINE": "My deals only",
+      "QUICK_TITLE": "Quick filters",
       "SHOW_INACTIVE": "Show inactive",
       "SEARCH": "Search",
       "SEARCH_PLACEHOLDER": "Search by title",
@@ -57,6 +68,8 @@
       "CLOSING_REASONS": "Closing reason: {reasons}",
       "TRANSITION_REASON": "Transition reason: {reason}",
       "LOADING": "Loading history...",
+      "LOAD_ERROR": "Unable to load history",
+      "LOAD_ERROR_DESCRIPTION": "Try again to load the latest events and comments.",
       "POST_COMMENT": "Post comment",
       "TITLE": "History",
       "UNKNOWN_CONTACT": "Unknown contact",
@@ -66,9 +79,17 @@
         "DEAL_STAGE_CHANGED": "Deal stage changed",
         "DEAL_UNARCHIVED": "Deal restored",
         "DEAL_UPDATED": "Deal updated",
+        "DEAL_WAITING_CLEARED": "Deal waiting cleared",
+        "DEAL_WAITING_SET": "Deal set to waiting",
         "TASK_ARCHIVED": "Task archived",
         "TASK_CREATED": "Task created",
         "TASK_STATUS_CHANGED": "Task status changed",
+        "TASK_ASSIGNED": "Task assignee changed",
+        "TASK_RESCHEDULED": "Task rescheduled",
+        "TASK_COMPLETED": "Task completed",
+        "TASK_CANCELLED": "Task cancelled",
+        "TASK_REOPENED": "Task reopened",
+        "TASK_WAITING_CHANGED": "Task waiting state changed",
         "TASK_UNARCHIVED": "Task restored",
         "TASK_UPDATED": "Task updated"
       }
@@ -78,21 +99,37 @@
       "DEAL_STAGE_INVALID_TRANSITION_REASON": "Choose a transition reason from the configured list.",
       "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Choose a closing reason before moving the deal to this stage.",
       "DEAL_STAGE_REQUIRES_TRANSITION_REASON": "Choose a transition reason before moving the deal to this stage.",
-      "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to a closed stage: {fields}.",
+      "DEFAULT_STAGE_REQUIRES_FALLBACK": "Create another active open stage before disabling the default stage.",
+      "DEAL_STAGE_ENTRY_RESTRICTED": "This move is blocked by the pipeline stage order rules.",
+      "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to this stage: {fields}.",
       "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
       "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
+      "IDEMPOTENCY_KEY_REUSED": "A command with this key was already sent with different parameters. Refresh the deal and try again.",
+      "DEAL_TRANSITION_NOT_UNDOABLE": "This transition can no longer be undone. Refresh the deal history.",
       "FEATURE_DISABLED": "CRM is not enabled for this account.",
       "GENERIC": "Something went wrong while working with CRM.",
       "LOAD_TITLE": "Unable to load CRM data",
       "NOT_FOUND": "The requested CRM record could not be found.",
-      "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
+      "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline on the deal list page.",
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
-      "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
+      "STAGE_HAS_DEALS": "This stage cannot be deleted. Move its deals first.",
       "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed and configured with closing reasons.",
+      "STAGE_RULE_OVERRIDE_FORBIDDEN": "You cannot override the rules for this stage.",
+      "STAGE_RULE_OVERRIDE_REASON_REQUIRED": "Enter a reason to override the stage rules.",
+      "UNSORTED_STAGE_REQUIRES_FALLBACK": "Create at least one active open stage before disabling Unsorted.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
+      "TASK_COMMAND_REQUIRED": "Use the task completion, cancellation, reopening, or result action to change lifecycle fields.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
       "VALIDATION_ERROR": "Please fix the form errors and try again."
+    },
+    "CONFLICT": {
+      "TITLE": "This record changed elsewhere",
+      "DESCRIPTION": "Load the latest server version before saving your changes again.",
+      "DRAFT_PRESERVED": "Your unsaved changes are preserved.",
+      "RELOAD_FAILED": "The latest version could not be loaded. Your draft is still preserved.",
+      "RELOAD_ACTION": "Load latest version",
+      "RETRY_ACTION": "Retry save"
     },
     "DEALS": {
       "CREATE_TITLE": "Create deal",
@@ -114,6 +151,31 @@
         "START_AT": "Starts: {date}",
         "TITLE": "Deal tasks"
       },
+      "WAITING": {
+        "ACTIVE": "Waiting until {date}",
+        "CLEARED": "Waiting cleared",
+        "CLEAR_ACTION": "Resume",
+        "CONFIRM": "Set waiting",
+        "CREATE_WAKE_UP_TASK": "Create a task for the waiting end date",
+        "DESCRIPTION": "Set an end date and a required reason for waiting.",
+        "EXPIRED": "Waiting expired on {date}",
+        "REASON": "Waiting reason",
+        "SAVED": "Waiting saved",
+        "SET_ACTION": "Wait",
+        "TITLE": "Deal waiting",
+        "UNTIL": "Wait until",
+        "WAKE_UP_TASK": "Return to deal: {title}"
+      },
+      "NEXT_ACTION": {
+        "FUTURE": "Next: {title}",
+        "NONE": "No next action",
+        "OVERDUE": "Overdue: {title}",
+        "TODAY": "Today: {title}",
+        "UNSCHEDULED": "No due date: {title}",
+        "WAITING": "Waiting until {date}",
+        "WAITING_EXPIRED": "Waiting expired",
+        "WAITING_SHORT": "Waiting"
+      },
       "DESCRIPTION": "Track opportunities without leaving the account dashboard.",
       "DRAWER_DESCRIPTION": "Keep ownership, contacts, and stage movement in one place.",
       "EDIT_TITLE": "Edit deal",
@@ -122,11 +184,13 @@
       "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
       "EMPTY_TITLE": "No deals yet",
       "BOARD": {
+        "ADD_TO_STAGE": "Create a deal in “{stage}”",
         "CREATE_STAGE": "Create stage",
         "EMPTY_COLUMN_DESCRIPTION": "New deals moved to this stage will appear here.",
         "EMPTY_PIPELINE_DESCRIPTION": "Add at least one stage so the board can render columns for this pipeline.",
         "EMPTY_PIPELINE_TITLE": "This pipeline has no stages yet",
         "EMPTY_COLUMN": "No deals in this stage",
+        "MOVE_TO_STAGE": "Move “{title}” to another stage",
         "SORT": {
           "LABEL": "Sort by",
           "ORDER": "Order",
@@ -146,7 +210,9 @@
       },
       "LIST": {
         "EMPTY_FILTERED": "No deals match the current quick filters.",
-        "SEARCH_PLACEHOLDER": "Filter deals..."
+        "SEARCH_PLACEHOLDER": "Search and filter",
+        "SELECT_ALL": "Select all deals on this page",
+        "SELECT_ROW": "Select deal “{title}”"
       },
       "FORM": {
         "AMOUNT": "Amount",
@@ -157,7 +223,9 @@
         "CONTACTS_EMPTY_STATE": "No contacts found",
         "CONTACTS_SEARCH_PLACEHOLDER": "Search by name, phone or email",
         "CREATE_COMPANY": "Create",
+        "CREATE_COMPANY_FROM_SEARCH": "Create company",
         "CREATE_CONTACT": "Create",
+        "CREATE_CONTACT_FROM_SEARCH": "Create contact",
         "CURRENCY": "Currency",
         "DESCRIPTION": "Description",
         "EXPECTED_CLOSE_ON": "Expected close date",
@@ -172,7 +240,49 @@
         "TITLE": "Title",
         "WIN_PROBABILITY": "Win probability"
       },
+      "STAGE_ENTRY": {
+        "MISSING_FIELDS": "Complete: {fields}",
+        "MOVEMENT_BLOCKED": "This move conflicts with the pipeline stage order rules.",
+        "OVERRIDE_ACTION": "Override and move",
+        "OVERRIDE_REASON": "Reason for override",
+        "OVERRIDE_SUCCESS": "Deal moved with administrator override",
+        "TITLE": "Complete the stage requirements"
+      },
       "LOAD_MORE": "Load more",
+      "LOADING_MORE": "Loading more...",
+      "LIFECYCLE": {
+        "SAVE_CHANGES_FIRST": "Save the deal changes first.",
+        "CLOSE_WON": {
+          "ACTION": "Won",
+          "TITLE": "Close this deal as won?",
+          "DESCRIPTION": "The deal will move to the Won stage. All unfinished tasks linked to it will be cancelled.",
+          "CONFIRM": "Close as won",
+          "SUCCESS": "Deal closed as won"
+        },
+        "CLOSE_LOST": {
+          "ACTION": "Lost",
+          "TITLE": "Close this deal as lost?",
+          "DESCRIPTION": "The deal will move to the Lost stage. All unfinished tasks linked to it will be cancelled.",
+          "CONFIRM": "Close as lost",
+          "SUCCESS": "Deal closed as lost"
+        },
+        "REOPEN": {
+          "ACTION": "Reopen",
+          "TITLE": "Reopen this deal?",
+          "DESCRIPTION": "The deal will return to its last open stage. Previously cancelled tasks will remain cancelled.",
+          "CONFIRM": "Reopen",
+          "SUCCESS": "Deal reopened"
+        },
+        "UNDO": {
+          "ACTION": "Undo transition",
+          "TITLE": "Undo the last transition?",
+          "DESCRIPTION": "The deal will return to its previous stage. Tasks cancelled when the deal was closed will remain cancelled.",
+          "CONFIRM": "Undo transition",
+          "SUCCESS": "Last transition undone"
+        }
+      },
+      "PIPELINES_LOAD_ERROR": "Could not load the selected CRM pipeline. Your filter was preserved.",
+      "RETRY_LOAD": "Retry loading",
       "CONVERSATION_PLACEHOLDER": {
         "ADD_CONTACT": "Add contact",
         "CONTACT": "Contact",
@@ -226,13 +336,15 @@
       "SUCCESS_UNARCHIVED": "Deal restored",
       "SUCCESS_UPDATED": "Deal updated",
       "TABLE": {
-        "AMOUNT": "Amount",
+        "AMOUNT": "Budget",
+        "COMPANY": "Contact company",
         "OWNER": "Owner",
-        "STAGE": "Stage",
-        "TITLE": "Deal",
+        "PRIMARY_CONTACT": "Primary contact",
+        "STAGE": "Deal stage",
+        "TITLE": "Deal name",
         "UPDATED": "Updated"
       },
-      "TITLE": "Pipelines",
+      "TITLE": "Deals",
       "CLOSING_REASONS": {
         "CONFIRM": "Apply",
         "EMPTY_STATE": "No reasons available",
@@ -256,9 +368,7 @@
         "SEARCH_PLACEHOLDER": "Search reasons",
         "STAGE_FALLBACK": "stage",
         "TITLE": "Transition reason: {stage}"
-      },
-      "PIPELINES_LOAD_ERROR": "Could not load the selected CRM pipeline. Your filter was preserved.",
-      "RETRY_LOAD": "Retry loading"
+      }
     },
     "TASKS": {
       "CREATE_TITLE": "Create task",
@@ -279,6 +389,19 @@
         "EMPTY_COLUMN_DESCRIPTION": "New tasks moved to this status will appear here.",
         "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
         "EMPTY_STATUS_TITLE": "No task statuses yet",
+        "OVERDUE_BADGE": "Overdue",
+        "MOVE_TO_BUCKET": "Move “{title}” to another due date",
+        "TIME_BUCKETS": {
+          "FUTURE": "Future",
+          "LATER": "Later",
+          "NEXT_WEEK": "Next week",
+          "OVERDUE": "Overdue",
+          "THIS_MONTH": "Within a month",
+          "THIS_WEEK": "This week",
+          "TODAY": "Today",
+          "TOMORROW": "Tomorrow",
+          "UNSCHEDULED": "No due date"
+        },
         "SORT": {
           "LABEL": "Sort by",
           "ORDER": "Order",
@@ -295,7 +418,8 @@
             "TITLE": "Title",
             "UPDATED_AT": "Updated date"
           }
-        }
+        },
+        "PLANNING_ONLY": "Planning board · completed and archived tasks are hidden"
       },
       "LIST": {
         "EMPTY_FILTERED": "No tasks match the current quick filters.",
@@ -307,9 +431,11 @@
       },
       "FORM": {
         "ACTIVITY_TYPE": "Task type",
+        "ALL_DAY": "All day",
         "ASSIGNEE": "Assignee",
         "BASICS": "Task details",
         "BASICS_DESCRIPTION": "Define ownership, schedule, and linkage to an optional deal.",
+        "CONTEXT_KIND": "Task context",
         "DEAL": "Linked deal",
         "DESCRIPTION": "Description",
         "DUE_AT": "Due at",
@@ -317,11 +443,19 @@
         "OUTCOME": "Result",
         "OUTCOME_NOTE": "Result details",
         "PRIORITY": "Priority",
+        "SALES_DEAL_REQUIRED": "Select a deal for a sales task.",
         "START_AT": "Start at",
         "STATUS": "Status",
         "TEAM": "Team",
         "TITLE": "Title"
       },
+      "CONTEXT_KIND": {
+        "personal": "Personal",
+        "sales": "Sales"
+      },
+      "LOAD_MORE": "Load more",
+      "LOADING_MORE": "Loading more...",
+      "RETRY_LOAD": "Retry loading",
       "NEW_TASK": "New task",
       "PREFILL": {
         "CONVERSATION_GENERIC": "Follow up conversation #{conversationId}",
@@ -346,21 +480,41 @@
         "CANCELLED_PREFIX": "Not done",
         "CANCELLED_TITLE": "Task not done",
         "CHANGE_ACTION": "Result",
+        "CHANGE_TITLE": "Completion result",
         "COMPLETED_DESCRIPTION": "Briefly record what exactly was completed.",
         "COMPLETED_LABEL": "What was done?",
         "COMPLETED_PREFIX": "Done",
         "COMPLETED_TITLE": "Task done",
-        "DESCRIPTION": "Choose the task outcome from the list and add details if needed.",
+        "CONFIRM_WITHOUT_NOTE": "I completed the task without a comment",
+        "CONFIRM_WITHOUT_NOTE_HELP": "Check this when no result text is needed. This prevents accidental completion.",
+        "DESCRIPTION": "Describe the result or explicitly confirm completion without a comment.",
         "NOTE_LABEL": "Result comment",
         "NOT_DONE_LABEL": "Reason",
+        "OPTIONAL_NOTE_LABEL": "Completion result",
+        "OPTIONAL_NOTE_PLACEHOLDER": "What was done?",
         "TITLE": "Complete task"
+      },
+      "STATE_FILTER": {
+        "LABEL": "Task state",
+        "active": "Active",
+        "all": "All",
+        "cancelled": "Cancelled",
+        "completed": "Completed"
+      },
+      "LIFECYCLE": {
+        "CANCEL_ACTION": "Cancel",
+        "CANCEL_DESCRIPTION": "Enter a cancellation reason. It will be kept in the task history.",
+        "CANCEL_REASON": "Cancellation reason",
+        "CANCEL_TITLE": "Cancel task",
+        "REOPEN_ACTION": "Reopen",
+        "REOPENED": "Task reopened"
       },
       "ACTIVITY_TYPE": {
         "call": "Call",
         "meeting": "Meeting",
         "message": "Message",
         "task": "Task",
-        "touch": "Reminder"
+        "touch": "Follow-up"
       },
       "OUTCOME": {
         "answered": "Answered",
@@ -372,6 +526,7 @@
         "no_answer": "No answer",
         "no_show": "No-show",
         "not_done": "Not done with reason",
+        "other": "Other",
         "rescheduled": "Rescheduled",
         "sent": "Sent"
       },
@@ -393,7 +548,7 @@
       "DESCRIPTION": "Configure pipelines and task statuses using the same dashboard settings shell.",
       "TASK_SETTINGS": {
         "TITLE": "Task settings",
-        "DESCRIPTION": "Manage statuses used on the CRM task board and across the task lifecycle."
+        "DESCRIPTION": "Configure CRM task types and their available completion outcomes."
       },
       "FIELD_TABS": {
         "DEALS": "Deals",
@@ -445,35 +600,51 @@
         "TITLE": "Additional fields"
       },
       "DEFAULT_TOUCH_PLAN": {
-        "DEAL_TITLE": "Default reminder plan for deals",
+        "DEAL_TITLE": "Default follow-up plan for deals",
         "DEAL_DESCRIPTION": "Apply this reminder plan automatically when a new deal is created.",
-        "TASK_TITLE": "Default reminder plan for tasks",
+        "TASK_TITLE": "Default follow-up plan for tasks",
         "TASK_DESCRIPTION": "Apply this reminder plan automatically when a new CRM task is created.",
-        "LABEL": "Reminder plan",
+        "LABEL": "Follow-up plan",
         "NOTE": "Only plans that support this entity type are shown here.",
-        "PLACEHOLDER": "No default reminder plan",
+        "PLACEHOLDER": "No default follow-up plan",
         "SAVE": "Save default plan"
       },
       "LOADING": "Loading CRM settings...",
       "PIPELINES": {
         "ADD": "Add pipeline",
+        "AUTO_CREATE_DIALOG": {
+          "CONFIRM": "Enable auto-create",
+          "DESCRIPTION": "Choose where new channel deals in “{name}” will be created.",
+          "NO_STAGES": "Create or activate an open stage before enabling auto-create.",
+          "STAGE_HELP": "This stage becomes the default starting stage for new deals in the pipeline.",
+          "STAGE_LABEL": "Default stage",
+          "TITLE": "Auto-create deals"
+        },
         "ARCHIVE": "Archive",
         "ARCHIVED_STATUS": "Archived",
         "CREATE_TITLE": "Create pipeline",
         "DELETE": "Delete pipeline",
         "DELETE_CONFIRM": "Delete",
-        "DELETE_DESCRIPTION": "Archived pipeline “{name}” can only be deleted when it has no deals.",
+        "DELETE_DESCRIPTION": "Pipeline “{name}” and its stages will be deleted. Deletion is only available when it has no deals.",
         "DELETE_TITLE": "Delete pipeline?",
-        "DESCRIPTION": "Pipelines and stages drive the native deal board and transition rules.",
+        "BACK_TO_DEALS": "Back",
+        "MOVE_DOWN": "Move down",
+        "MOVE_UP": "Move up",
+        "CURRENT_KICKER": "Selected deal settings",
+        "DESCRIPTION": "Stages and sources for the selected deal pipeline.",
         "DRAG": "Drag pipeline",
         "EDIT_TITLE": "Edit pipeline",
         "FORM": {
+          "AUTO_CREATE": "Automatic deal creation",
           "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT": "Auto-create deal through channel",
+          "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP": "Create a deal when a contact first reaches a connected channel.",
           "CODE": "Code",
           "DEFAULT": "Primary",
           "NAME": "Name",
           "POSITION": "Position"
         },
+        "LEAD_FORMS_HELP": "Website forms and API requests that feed new incoming leads.",
+        "LEAD_FORMS_TITLE": "Lead forms",
         "NEW_PIPELINE_HELP": "Code will be generated automatically",
         "EMPTY_FILTERED": "No pipelines found for this search",
         "RESTORE": "Restore",
@@ -482,6 +653,9 @@
         "SUCCESS_ARCHIVED": "Pipeline archived",
         "SUCCESS_DELETE": "Pipeline deleted",
         "SUCCESS_RESTORED": "Pipeline restored",
+        "SOURCES_TITLE": "Deal sources",
+        "STAGE_FLOW_HELP": "Drag open stages. Won and Lost always remain at the end.",
+        "STAGE_FLOW_TITLE": "Deal stages",
         "SUCCESS_SAVE": "Pipeline saved",
         "TABLE": {
           "AUTO_CREATE": "Auto",
@@ -490,18 +664,31 @@
           "STAGES": "Stages",
           "STATUS": "Status"
         },
-        "TITLE": "Pipelines"
+        "TITLE": "Deals",
+        "UNSORTED_HELP": "Send incoming requests here first when they need manual qualification."
+      },
+      "STAGE_RULES": {
+        "ALLOW_OVERRIDE": "Allow administrator override",
+        "DRAWER_DESCRIPTION": "Select the fields that must be completed before a deal can enter this stage.",
+        "DRAWER_TITLE": "Required fields · {name}",
+        "REQUIRED_FIELDS": "Required fields",
+        "RESTRICT_BACKWARD": "Block backward moves",
+        "RESTRICT_SKIPPING": "Block stage skipping",
+        "TITLE": "Stage entry rules"
       },
       "STAGES": {
         "CREATE_TITLE": "Create stage",
+        "NEW_NAME": "New stage",
         "DEFAULT_BADGE": "Default",
+        "INACTIVE_BADGE": "Stage hidden",
         "DELETE": "Delete stage",
         "DELETE_CONFIRM": "Delete",
-        "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
+        "DELETE_DESCRIPTION": "Stage “{name}” will be deleted after you save the changes.",
         "DELETE_TITLE": "Delete stage?",
         "EDIT_TITLE": "Edit stage",
         "FORM": {
           "ACTIVE": "Stage is active",
+          "ACTIVE_HELP": "Hidden stages are not shown on the working board.",
           "COLOR": "Color",
           "COLOR_UNAVAILABLE": "Already used in this pipeline",
           "CLOSING_REASONS": "Closing reasons",
@@ -510,6 +697,9 @@
           "CLOSING_REASONS_REQUIRED": "Require a reason",
           "CLOSING_REASONS_REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
           "CLOSING_REASONS_REQUIRED_HELP": "Deals cannot move to this stage without a selected reason.",
+          "LOSS_REASONS_ENABLED": "Ask for a loss reason",
+          "LOSS_REASONS_ENABLED_HELP": "When a deal moves to Lost, “No reason” is shown first, followed by the configured reasons.",
+          "LOSS_REASONS_SHORT": "Reasons",
           "TRANSITION_REASONS": "Transition reasons",
           "TRANSITION_REASONS_HELP": "These options are shown when a manager or Captain moves a deal into this open stage.",
           "TRANSITION_REASONS_PLACEHOLDER": "Example: Waiting for payment, Needs documents, Customer is thinking",
@@ -532,13 +722,37 @@
         "REORDER": "Reorder stages",
         "REORDER_DESCRIPTION": "Drag stages to change their order inside the “{name}” pipeline.",
         "REORDER_TITLE": "Stage order",
+        "SYSTEM": {
+          "POSITION_LOCKED": "System stages cannot be moved",
+          "UNSORTED": "Unsorted"
+        },
         "SUCCESS_DELETE": "Stage deleted",
         "SUCCESS_REORDER": "Stage order saved",
-        "SUCCESS_SAVE": "Stage saved"
+        "SUCCESS_SAVE": "Stage saved",
+        "UNSAVED": {
+          "DESCRIPTION": "Save your stage changes before leaving?",
+          "DISCARD": "Don't save",
+          "SAVE": "Save",
+          "STAY": "Stay",
+          "TITLE": "You have unsaved changes"
+        },
+        "WON_HELP": "Successfully closed deals",
+        "DELETE_STAGE": "Delete {name}",
+        "LOCKED_TERMINAL_STAGES": "Won and lost stages",
+        "NO_ACTIVE_PIPELINES": "Create or restore an active pipeline to manage its stages.",
+        "ORDER_DRAFT_NOTICE": "This pipeline has unsaved stage changes. Save or cancel the draft before switching pipelines.",
+        "REORDER_STAGE": "Reorder {name}",
+        "SAVE_ORDER": "Save changes",
+        "SAVE_OR_DISCARD_ORDER_FIRST": "Save or cancel the stage draft before switching pipelines.",
+        "SELECTED_PIPELINE_ONLY": "Edit stages from the selected pipeline card editor.",
+        "DRAFT_UPDATED": "Stage draft updated",
+        "CLOSING_REASON_REQUIRED": "Closing reason required",
+        "TRANSITION_REASON_REQUIRED": "Transition reason required"
       },
       "TASK_STATUSES": {
         "ADD": "Add status",
         "CATEGORIES": {
+          "cancelled": "Cancelled",
           "done": "Done",
           "in_progress": "In progress",
           "open": "Open"
@@ -566,6 +780,24 @@
           "NAME": "Status"
         },
         "TITLE": "Task statuses"
+      },
+      "TASK_CATALOGS": {
+        "ACTIVATE": "Activate",
+        "ACTIVE": "Active",
+        "ADD_OUTCOME": "Add outcome",
+        "ADD_TYPE": "Add type",
+        "DEACTIVATE": "Deactivate",
+        "DEFAULT": "Default",
+        "DESCRIPTION": "Configure task types and their completion outcomes.",
+        "EDIT_OUTCOME": "Edit outcome",
+        "EDIT_TYPE": "Edit type",
+        "ICON": "Icon",
+        "ICON_OPTION": "Icon {number}",
+        "INACTIVE": "Inactive",
+        "NAME": "Name",
+        "REQUIRES_NOTE": "Require a note",
+        "SAVED": "Task settings saved",
+        "TITLE": "Task types and outcomes"
       },
       "TITLE": "CRM Settings"
     }

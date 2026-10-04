@@ -30,6 +30,199 @@ RSpec.describe Reminders::DeliverMaterializedMessageJob do
     expect(SendReplyJob).not_to have_received(:perform_now)
   end
 
+  def materialized_captain_follow_up
+    records = captain_follow_up_records
+    claim = records[:reminder].mark_processing!
+    message = materialize_follow_up_message(records)
+    records[:reminder].update!(status: :completed, completed_at: Time.current)
+
+    [records[:account], records[:conversation], records[:assistant], records[:reminder], claim, message]
+  end
+
+  def captain_follow_up_records
+    account = create(:account)
+    account.enable_features!('captain_integration')
+    inbox = create(:inbox, account: account)
+    conversation = create(:conversation, account: account, inbox: inbox, status: :pending)
+    assistant = create(:captain_assistant, account: account, config: follow_up_config)
+    create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
+    incoming = create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, content: 'Please help.')
+    anchor = captain_ai_anchor(account, inbox, conversation, assistant)
+    fence = {
+      control_generation: conversation.current_captain_control_generation,
+      status_transition_id: conversation.status_transitions.maximum(:id).to_i,
+      last_message_id: incoming.id
+    }
+    reminder = scheduled_captain_reminder(conversation, assistant, anchor, fence)
+    { account: account, conversation: conversation, assistant: assistant, reminder: reminder, anchor: anchor, fence: fence }
+  end
+
+  def scheduled_captain_reminder(conversation, assistant, anchor, fence)
+    Captain::Conversation::FollowUpJob.schedule!(
+      conversation: conversation,
+      assistant: assistant,
+      anchor_message: anchor,
+      step: { index: 0, delay_seconds: 60 },
+      control_fence: fence
+    )
+  end
+
+  def follow_up_config
+    {
+      'follow_up_settings' => {
+        'enabled' => true,
+        'prompt' => '',
+        'steps' => [
+          { 'mode' => 'static', 'message' => 'Checking in.', 'delay_seconds' => 60 },
+          { 'mode' => 'static', 'message' => 'One more thought.', 'delay_seconds' => 120 }
+        ]
+      }
+    }
+  end
+
+  def captain_ai_anchor(account, inbox, conversation, assistant)
+    create(
+      :message,
+      account: account,
+      inbox: inbox,
+      conversation: conversation,
+      sender: assistant,
+      message_type: :outgoing,
+      private: false,
+      additional_attributes: { captain_ai_reply: { assistant_id: assistant.id } }
+    )
+  end
+
+  def materialize_follow_up_message(records)
+    marker = {
+      'captain_follow_up' => {
+        'assistant_id' => records[:assistant].id,
+        'anchor_message_id' => records[:anchor].id,
+        'step_index' => 0,
+        'control_fence' => records[:fence]
+      }
+    }
+    Reminders::MessageMaterializer.new(reminder: records[:reminder], additional_attributes: marker).perform(
+      conversation: records[:conversation],
+      sender: records[:assistant],
+      content: 'Checking in.',
+      delivery_policy: nil
+    )
+  end
+
+  it 'schedules the next chain step only after confirmed provider dispatch and keeps retries idempotent' do
+    _account, conversation, assistant, reminder, claim, message = materialized_captain_follow_up
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer) do |_message_id, &finalizer|
+      finalizer.call
+    end
+
+    2.times { described_class.perform_now(reminder.id, message.id, claim) }
+
+    expect(SendReplyJob).to have_received(:perform_now_with_follow_up_finalizer).with(message.id).once
+    next_step = conversation.account.reminders.captain_follow_up.find_by!(
+      idempotency_key: "captain_follow_up:#{assistant.id}:#{message.id}:1"
+    )
+    expect(next_step).to be_pending
+    expect(conversation.account.reminders.captain_follow_up.count).to eq(2)
+  end
+
+  it 'retries next-step scheduling after provider acceptance without sending twice' do
+    _account, conversation, assistant, reminder, claim, message = materialized_captain_follow_up
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer) do |_message_id, &finalizer|
+      finalizer.call
+    end
+    attempts = 0
+    allow(Captain::Conversation::FollowUpJob).to receive(:schedule_after_delivery!).and_wrap_original do |original, **arguments|
+      attempts += 1
+      raise ActiveRecord::Deadlocked if attempts == 1
+
+      original.call(**arguments)
+    end
+
+    expect do
+      described_class.perform_now(reminder.id, message.id, claim)
+    end.to have_enqueued_job(described_class).with(reminder.id, message.id, claim)
+
+    described_class.perform_now(reminder.id, message.id, claim)
+
+    expect(SendReplyJob).to have_received(:perform_now_with_follow_up_finalizer).with(message.id).once
+    next_step = conversation.account.reminders.captain_follow_up.find_by!(
+      idempotency_key: "captain_follow_up:#{assistant.id}:#{message.id}:1"
+    )
+    expect(next_step).to be_pending
+  end
+
+  it 'cancels a materialized chain when its assistant is deleted before delivery' do
+    account, conversation, assistant, reminder, claim, message = materialized_captain_follow_up
+    patient_reminder = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      body: 'Existing patient reminder'
+    )
+    assistant.destroy!
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
+
+    described_class.perform_now(reminder.id, message.id, claim)
+
+    expect(SendReplyJob).not_to have_received(:perform_now_with_follow_up_finalizer)
+    expect(reminder.reload).to be_cancelled
+    expect(reminder).to be_captain_follow_up_delivery_suppressed
+    expect(message.reload).to be_failed
+    expect(account.reminders.captain_follow_up.active_delivery_or_open).not_to exist
+    expect(patient_reminder.reload).to be_pending
+  end
+
+  it 'suppresses a queued follow-up after human control takes over' do
+    _account, conversation, _assistant, reminder, claim, message = materialized_captain_follow_up
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
+    user = create(:user, account: conversation.account)
+    conversation.activate_captain_human_control!(source: 'manual', actor: user)
+
+    described_class.perform_now(reminder.id, message.id, claim)
+
+    expect(SendReplyJob).not_to have_received(:perform_now_with_follow_up_finalizer)
+    expect(reminder.reload).to be_cancelled
+    expect(reminder).to be_captain_follow_up_delivery_suppressed
+    expect(message.reload).to be_failed
+    expect(reminder.account.reminders.captain_follow_up.count).to eq(1)
+  end
+
+  it 'rechecks control at the final send boundary when takeover happens after preparation' do
+    _account, conversation, _assistant, reminder, claim, message = materialized_captain_follow_up
+    provider = instance_double(Messages::SendEmailNotificationService, perform: true)
+    allow(Messages::SendEmailNotificationService).to receive(:new).and_return(provider)
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer) do |message_id|
+      conversation.activate_captain_human_control!(
+        source: 'manual',
+        actor: create(:user, account: conversation.account)
+      )
+      SendReplyJob.new.perform(message_id)
+    end
+
+    described_class.perform_now(reminder.id, message.id, claim)
+
+    expect(provider).not_to have_received(:perform)
+    expect(reminder.reload).to be_cancelled
+    expect(reminder).to be_captain_follow_up_delivery_suppressed
+    expect(message.reload).to be_failed
+  end
+
+  it 'suppresses a queued follow-up after the Captain feature is disabled' do
+    account, _conversation, _assistant, reminder, claim, message = materialized_captain_follow_up
+    allow(SendReplyJob).to receive(:perform_now_with_follow_up_finalizer)
+    account.disable_features!('captain_integration')
+
+    described_class.perform_now(reminder.id, message.id, claim)
+
+    expect(SendReplyJob).not_to have_received(:perform_now_with_follow_up_finalizer)
+    expect(reminder.reload).to be_cancelled
+    expect(reminder).to be_captain_follow_up_delivery_suppressed
+    expect(reminder.account.reminders.captain_follow_up.count).to eq(1)
+  end
+
   it 'dispatches a materialized message once across duplicate jobs' do
     conversation = create(:conversation)
     touch = create(

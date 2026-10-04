@@ -116,6 +116,32 @@ class AccountDashboard < Administrate::BaseDashboard
     active: ->(resources) { resources.where(status: :active) },
     suspended: ->(resources) { resources.where(status: :suspended) },
     recent: ->(resources) { resources.where('created_at > ?', 30.days.ago) },
+    starter: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'starter'") },
+    growth: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'growth'") },
+    advanced: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'advanced'") },
+    enterprise: ->(resources) { resources.where("custom_attributes->>'plan_type' = 'enterprise'") },
+    trial_active: lambda { |resources|
+      resources.where(
+        "custom_attributes->>'plan_type' = 'trial' AND (custom_attributes->>'trial_expires_at')::timestamp > ?",
+        Time.current
+      )
+    },
+    trial_expired: lambda { |resources|
+      resources.where(
+        "custom_attributes->>'plan_type' = 'trial' AND " \
+        "(custom_attributes->>'trial_expires_at' IS NULL OR (custom_attributes->>'trial_expires_at')::timestamp <= ?)",
+        Time.current
+      )
+    },
+    storage_high: lambda { |resources|
+      resources.where(
+        "COALESCE((limits->>'storage_bytes')::numeric, 0) > 0 AND " \
+        'COALESCE((SELECT SUM(b.byte_size) FROM active_storage_attachments a ' \
+        'JOIN active_storage_blobs b ON b.id = a.blob_id ' \
+        'JOIN attachments att ON att.id = a.record_id ' \
+        "WHERE a.record_type = 'Attachment' AND att.account_id = accounts.id), 0) >= (COALESCE((limits->>'storage_bytes')::numeric, 0) * 0.8)"
+      )
+    },
     marked_for_deletion: ->(resources) { resources.where("custom_attributes->>'marked_for_deletion_at' IS NOT NULL") }
   }.freeze
 
@@ -131,6 +157,7 @@ class AccountDashboard < Administrate::BaseDashboard
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
     attrs = super + [limits: {}]
+    attrs << :plan_type
     attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
 
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud

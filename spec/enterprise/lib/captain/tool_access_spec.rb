@@ -78,4 +78,32 @@ RSpec.describe Captain::ToolAccess do
       expect(ids).to eq(['faq_lookup'])
     end
   end
+
+  describe '.per_assistant_web_tool_enabled?' do
+    it 'preserves the legacy default when no per-agent permission fields are stored' do
+      assistant.config = {}
+
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(true)
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(true)
+    end
+
+    it 'honors the legacy aggregate flag when the per-agent scope is absent' do
+      assistant.config = { 'feature_web' => false }
+
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(false)
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(false)
+    end
+
+    it 'uses separate web permissions when an agent scope is configured' do
+      assistant.config = {
+        'feature_web' => false,
+        'tool_access' => {
+          'agent' => { 'enabled' => true, 'tool_ids' => ['web_search'] }
+        }
+      }
+
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_search')).to be(true)
+      expect(described_class.per_assistant_web_tool_enabled?(assistant, 'web_scrape_url')).to be(false)
+    end
+  end
 end

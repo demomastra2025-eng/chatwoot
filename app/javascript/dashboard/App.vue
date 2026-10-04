@@ -6,6 +6,7 @@ import PaymentPendingBanner from './components/app/PaymentPendingBanner.vue';
 import StatusBanner from './components/app/StatusBanner.vue';
 import PendingEmailVerificationBanner from './components/app/PendingEmailVerificationBanner.vue';
 import WhatsappUsageBanner from './components/app/WhatsappUsageBanner.vue';
+import StorageUsageBanner from './components/app/StorageUsageBanner.vue';
 import vueActionCable from './helper/actionCable';
 import AuthAPI from './api/auth';
 import { useRouter } from 'vue-router';
@@ -36,6 +37,7 @@ export default {
     WootSnackbarBox,
     PendingEmailVerificationBanner,
     WhatsappUsageBanner,
+    StorageUsageBanner,
   },
   setup() {
     const router = useRouter();
@@ -152,6 +154,7 @@ export default {
     :dir="isRTL ? 'rtl' : 'ltr'"
   >
     <WhatsappUsageBanner v-if="currentAccountId" />
+    <StorageUsageBanner v-if="currentAccountId" />
     <!-- Onelink intentionally hides the global update banner in the app chrome. -->
     <StatusBanner />
     <template v-if="currentAccountId">

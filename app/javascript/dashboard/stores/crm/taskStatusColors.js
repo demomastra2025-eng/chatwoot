@@ -1,12 +1,20 @@
-import {
-  DEFAULT_STAGE_COLOR,
-  STAGE_STANDARD_COLORS,
-  getUnavailableStageColors,
-  pickStageColor,
-} from './stageColors';
+import { getUnavailableStageColors, pickStageColor } from './stageColors';
 
-export const TASK_STATUS_STANDARD_COLORS = STAGE_STANDARD_COLORS;
-export const DEFAULT_TASK_STATUS_COLOR = DEFAULT_STAGE_COLOR;
+export const TASK_STATUS_STANDARD_COLORS = [
+  '#F0F0F3',
+  '#E8E8EC',
+  '#0EA5E9',
+  '#3B82F6',
+  '#6366F1',
+  '#8B5CF6',
+  '#A855F7',
+  '#EC4899',
+  '#F97316',
+  '#EAB308',
+  '#22C55E',
+  '#14B8A6',
+];
+export const DEFAULT_TASK_STATUS_COLOR = TASK_STATUS_STANDARD_COLORS[0];
 
 export const getUnavailableTaskStatusColors = (
   taskStatuses = [],

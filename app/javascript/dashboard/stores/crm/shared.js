@@ -14,19 +14,29 @@ export const normalizePayload = data => normalizeRecord(data?.payload || []);
 export const normalizeMeta = data =>
   camelcaseKeys(data?.meta || {}, { deep: true });
 
+const normalizeErrorMessage = (value, fallback = '') => {
+  if (typeof value === 'string') return value;
+  if (typeof value?.message === 'string') return value.message;
+  return fallback;
+};
+
 export const extractCrmError = error => {
   const payload = camelcaseKeys(error?.response?.data || {}, { deep: true });
+  const fallbackMessage = normalizeErrorMessage(
+    parseAPIErrorResponse(error),
+    normalizeErrorMessage(error)
+  );
 
   return {
     code: payload.code || 'UNKNOWN_ERROR',
     details: payload.details || null,
-    message: payload.error || parseAPIErrorResponse(error),
+    message: normalizeErrorMessage(payload.error, fallbackMessage),
     status: error?.response?.status || 500,
   };
 };
 
 const resolveCrmErrorPayload = error => {
-  if (error?.code && error?.message) {
+  if (!error?.response && error?.code && typeof error.message === 'string') {
     return error;
   }
 
@@ -55,6 +65,8 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.DUPLICATE_EXTERNAL_REF');
     case 'DUPLICATE_IDEMPOTENCY_KEY':
       return t('CRM.ERRORS.DUPLICATE_IDEMPOTENCY_KEY');
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return t('CRM.ERRORS.IDEMPOTENCY_KEY_REUSED');
     case 'DEAL_STAGE_INVALID_CLOSING_REASONS':
       return t('CRM.ERRORS.DEAL_STAGE_INVALID_CLOSING_REASONS');
     case 'DEAL_STAGE_INVALID_TRANSITION_REASON':
@@ -70,6 +82,14 @@ export const formatCrmErrorMessage = (error, t) => {
         payload.message,
         { fields: missingFields }
       );
+    case 'DEAL_STAGE_ENTRY_RESTRICTED':
+      return t('CRM.ERRORS.DEAL_STAGE_ENTRY_RESTRICTED');
+    case 'STAGE_RULE_OVERRIDE_FORBIDDEN':
+      return t('CRM.ERRORS.STAGE_RULE_OVERRIDE_FORBIDDEN');
+    case 'STAGE_RULE_OVERRIDE_REASON_REQUIRED':
+      return t('CRM.ERRORS.STAGE_RULE_OVERRIDE_REASON_REQUIRED');
+    case 'DEAL_TRANSITION_NOT_UNDOABLE':
+      return t('CRM.ERRORS.DEAL_TRANSITION_NOT_UNDOABLE');
     case 'FEATURE_DISABLED':
       return t('CRM.ERRORS.FEATURE_DISABLED');
     case 'NOT_FOUND':
@@ -82,6 +102,10 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.STAGE_HAS_DEALS');
     case 'STANDARD_STAGE_LOCKED':
       return t('CRM.ERRORS.STANDARD_STAGE_LOCKED');
+    case 'UNSORTED_STAGE_REQUIRES_FALLBACK':
+      return t('CRM.ERRORS.UNSORTED_STAGE_REQUIRES_FALLBACK');
+    case 'DEFAULT_STAGE_REQUIRES_FALLBACK':
+      return t('CRM.ERRORS.DEFAULT_STAGE_REQUIRES_FALLBACK');
     case 'TASK_STATUS_HAS_TASKS':
       return t('CRM.ERRORS.TASK_STATUS_HAS_TASKS');
     case 'TASK_STATUS_REQUIRES_FIELDS':
@@ -91,6 +115,8 @@ export const formatCrmErrorMessage = (error, t) => {
         payload.message,
         { fields: missingFields }
       );
+    case 'TASK_COMMAND_REQUIRED':
+      return t('CRM.ERRORS.TASK_COMMAND_REQUIRED');
     case 'STALE_RECORD':
       return t('CRM.ERRORS.STALE_RECORD');
     case 'VALIDATION_ERROR':

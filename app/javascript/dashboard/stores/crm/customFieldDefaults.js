@@ -55,3 +55,17 @@ export const mergeMissingDefaultCustomAttributes = (
 
   return nextAttributes;
 };
+
+export const reconcileCustomAttributesForDefinitions = (
+  customAttributes = {},
+  definitions = []
+) => {
+  const allowedKeys = new Set(definitions.map(definition => definition.key));
+  const applicableAttributes = Object.fromEntries(
+    Object.entries(customAttributes || {}).filter(([key]) =>
+      allowedKeys.has(key)
+    )
+  );
+
+  return mergeMissingDefaultCustomAttributes(applicableAttributes, definitions);
+};

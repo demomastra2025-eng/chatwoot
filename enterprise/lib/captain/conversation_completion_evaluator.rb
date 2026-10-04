@@ -48,8 +48,12 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   def parse_response(message)
     return default_incomplete_response('Invalid response format') unless message.is_a?(Hash)
 
+    complete = message.key?('complete') ? message['complete'] : message[:complete]
+    return default_incomplete_response('Invalid completion value') unless [true, false].include?(complete)
+
     result = {
-      complete: message['complete'] == true || message[:complete] == true,
+      evaluated: true,
+      complete: complete,
       reason: message['reason'] || message[:reason] || 'No reason provided'
     }
     generated_message = message['message'] || message[:message]
@@ -58,7 +62,7 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   end
 
   def default_incomplete_response(reason)
-    { complete: false, reason: reason }
+    { evaluated: false, complete: false, reason: reason }
   end
 
   # Prefer the system API key over the account's OpenAI hook key.

@@ -507,6 +507,7 @@ describe('Sidebar', () => {
         'Roles',
         'Policies',
         'Audit Logs',
+        'Storage',
         'Additional Fields',
         'Tags',
         'Settings Captain',

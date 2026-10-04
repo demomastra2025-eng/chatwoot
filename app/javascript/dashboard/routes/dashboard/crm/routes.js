@@ -66,12 +66,32 @@ export const routes = [
   },
   {
     path: frontendURL('accounts/:accountId/crm/deals'),
+    redirect: to => ({
+      name: 'crm_deals_index',
+      params: to.params,
+      query: to.query,
+      hash: to.hash,
+    }),
+    meta: dealsMeta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/crm/tasks'),
+    redirect: to => ({
+      name: 'crm_tasks_index',
+      params: to.params,
+      query: to.query,
+      hash: to.hash,
+    }),
+    meta: tasksMeta,
+  },
+  {
+    path: frontendURL('accounts/:accountId/deals'),
     name: 'crm_deals_index',
     component: CrmDealsPage,
     meta: dealsMeta,
   },
   {
-    path: frontendURL('accounts/:accountId/crm/tasks'),
+    path: frontendURL('accounts/:accountId/tasks'),
     name: 'crm_tasks_index',
     component: CrmTasksPage,
     meta: tasksMeta,

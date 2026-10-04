@@ -36,6 +36,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  contextLoadError: {
+    type: [Object, String],
+    default: null,
+  },
   selectedContactId: {
     type: [Number, String],
     default: '',
@@ -74,6 +78,7 @@ const emit = defineEmits([
   'addContact',
   'close',
   'createConversation',
+  'retryContext',
   'selectContact',
 ]);
 
@@ -259,6 +264,7 @@ const selectedInbox = computed(() =>
 const canCreateConversation = computed(
   () =>
     props.canManage &&
+    !props.contextLoadError &&
     !!selectedPlaceholderContactId.value &&
     !!selectedInboxId.value &&
     !props.isCreatingConversation &&
@@ -282,6 +288,12 @@ const createConversation = () => {
     inboxId: selectedInboxId.value,
   });
 };
+
+const contextLoadErrorDescription = computed(() =>
+  typeof props.contextLoadError === 'string'
+    ? props.contextLoadError
+    : props.contextLoadError?.message || loadErrorText.value
+);
 
 const invalidateActivation = () => {
   activationRequestId.value += 1;
@@ -437,8 +449,16 @@ onBeforeUnmount(() => {
         <aside
           class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
         >
+          <SchedulingErrorState
+            v-if="!hasLinkedChat && contextLoadError"
+            class="m-4"
+            :title="loadErrorText"
+            :description="contextLoadErrorDescription"
+            @retry="emit('retryContext')"
+          />
+
           <div
-            v-if="!hasLinkedChat"
+            v-else-if="!hasLinkedChat"
             class="flex h-full flex-1 items-center justify-center px-6 py-8"
           >
             <div class="grid w-full max-w-md gap-5 text-center">

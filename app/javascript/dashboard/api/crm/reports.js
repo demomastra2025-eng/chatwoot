@@ -17,6 +17,18 @@ class CrmReportsAPI extends ApiClient {
   funnels(params = {}) {
     return axios.get(`${this.url}/funnels`, { params });
   }
+
+  stageDurations(params = {}) {
+    return axios.get(`${this.url}/stage_durations`, { params });
+  }
+
+  taskResults(params = {}) {
+    return axios.get(`${this.url}/task_results`, { params });
+  }
+
+  dealsWithoutNextAction(params = {}) {
+    return axios.get(`${this.url}/deals_without_next_action`, { params });
+  }
 }
 
 export default new CrmReportsAPI();

@@ -5,6 +5,7 @@ import {
   STAGE_STANDARD_COLORS,
   getUnavailableStageColors,
   pickStageColor,
+  resolveStageDisplayColor,
 } from './stageColors';
 
 describe('stageColors', () => {
@@ -12,21 +13,19 @@ describe('stageColors', () => {
     expect(pickStageColor([], STAGE_STANDARD_COLORS)).toBe(DEFAULT_STAGE_COLOR);
   });
 
-  it('exposes 20 unique non-white spectrum colors', () => {
-    expect(STAGE_STANDARD_COLORS).toHaveLength(20);
-    expect(new Set(STAGE_STANDARD_COLORS).size).toBe(20);
-    expect(STAGE_STANDARD_COLORS).not.toContain('#F0F0F3');
-    expect(STAGE_STANDARD_COLORS).not.toContain('#E8E8EC');
+  it('exposes the 21 unique amoCRM stage colors', () => {
+    expect(STAGE_STANDARD_COLORS).toHaveLength(21);
+    expect(new Set(STAGE_STANDARD_COLORS).size).toBe(21);
     expect(STAGE_STANDARD_COLORS).not.toContain('#FFFFFF');
   });
 
   it('returns the first unused palette color', () => {
     expect(
       pickStageColor(
-        [{ color: DEFAULT_STAGE_COLOR }, { color: '#EA580C' }],
+        [{ color: DEFAULT_STAGE_COLOR }, { color: '#FFF000' }],
         STAGE_STANDARD_COLORS
       )
-    ).toBe('#DC2626');
+    ).toBe('#FEFD7F');
   });
 
   it('does not block repeated standard colors', () => {
@@ -34,11 +33,17 @@ describe('stageColors', () => {
       getUnavailableStageColors(
         [
           { id: 1, color: DEFAULT_STAGE_COLOR },
-          { id: 2, color: '#DC2626' },
+          { id: 2, color: '#FEFD7F' },
         ],
         STAGE_STANDARD_COLORS,
         2
       )
     ).toEqual([]);
+  });
+
+  it('renders legacy persisted colors with the amoCRM palette without changing data', () => {
+    expect(resolveStageDisplayColor('#2563eb')).toBe('#C1E0FD');
+    expect(resolveStageDisplayColor('#16A34A')).toBe('#87F1C0');
+    expect(resolveStageDisplayColor('#123456')).toBe('#123456');
   });
 });

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import CompanyAPI from 'dashboard/api/companies';
@@ -11,8 +11,10 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
+import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealTasksPanel from 'dashboard/components-next/CRM/CrmDealTasksPanel.vue';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
@@ -50,6 +52,10 @@ import {
 } from 'dashboard/stores/crm/customFieldDefaults';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
+import {
+  createCrmConflictStateMachine,
+  isStaleCrmError,
+} from 'dashboard/routes/dashboard/crm/conflictDraft';
 import {
   compactPayload,
   formatCrmErrorMessage,
@@ -89,14 +95,39 @@ const scrollContainer = ref(null);
 const isCreating = ref(false);
 const savingDealKey = ref('');
 const ui = reactive({
+  error: null,
   isInitializing: false,
 });
 const forms = reactive({});
+let sidebarInitializationGeneration = 0;
+let dealMutationGeneration = 0;
+let isSidebarMounted = true;
+const dealConflictKey = ref('');
+const dealConflictAppliedUpdatePayload = ref(null);
+const {
+  markStale: markDealConflictStale,
+  reload: reloadConflict,
+  reset: resetDealConflict,
+  state: dealConflict,
+} = createCrmConflictStateMachine();
 const metaAdReferralExpanded = ref(false);
 
 const currentDealSourceContext = computed(() =>
   buildCrmDealSourceContext(props.currentChat)
 );
+const currentSidebarContextKey = computed(() => {
+  const context = currentDealSourceContext.value;
+  return JSON.stringify({
+    accountId: Number(accountId.value) || null,
+    contactId: Number(context.contactId) || null,
+    conversationId: Number(props.currentChat?.id) || null,
+    originatingCommunicationThreadId:
+      Number(context.originatingCommunicationThreadId) || null,
+    originatingConversationId:
+      Number(context.originatingConversationId) || null,
+    sourceType: context.sourceType,
+  });
+});
 const metaAdReferral = computed(
   () => currentDealSourceContext.value.metaAdReferral || {}
 );
@@ -167,6 +198,7 @@ const taskFieldDefinitions = computed(
   () => referencesStore.taskFieldDefinitions
 );
 const taskStatuses = computed(() => referencesStore.taskStatuses);
+const taskTypes = computed(() => referencesStore.taskTypes);
 const dealKey = deal => `deal-${deal.id}`;
 const accordionItems = computed(() => {
   const items = deals.value.map(deal => ({
@@ -175,6 +207,7 @@ const accordionItems = computed(() => {
     key: dealKey(deal),
   }));
 
+  if (!canManageDeals.value) return items;
   if (isCreating.value || !items.length) {
     return [{ deal: null, isNew: true, key: NEW_DEAL_KEY }, ...items];
   }
@@ -182,7 +215,7 @@ const accordionItems = computed(() => {
   return items;
 });
 const headerButtons = computed(() =>
-  isCreating.value
+  !canManageDeals.value || ui.error || ui.isInitializing || isCreating.value
     ? []
     : [
         {
@@ -201,13 +234,18 @@ const defaultStageForPipeline = pipeline =>
   (pipeline?.stages || []).find(stage => stage.active) ||
   pipeline?.stages?.[0];
 
+const stageDisplayName = stage =>
+  stage?.code === 'new'
+    ? t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED')
+    : stage?.name;
+
 const stageOptionsForForm = form =>
   (
     referencesStore.pipelines.find(
       pipeline => Number(pipeline.id) === Number(form?.pipelineId)
     )?.stages || []
   ).map(stage => ({
-    label: stage.name,
+    label: stageDisplayName(stage),
     stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }));
@@ -235,7 +273,7 @@ const ownerOptions = computed(() =>
 
 const pipelineOptions = computed(() =>
   activePipelines.value.map(pipeline => ({
-    icon: 'i-lucide-funnel',
+    icon: 'i-lucide-briefcase-business',
     label: pipeline.name,
     value: pipeline.id,
   }))
@@ -266,15 +304,12 @@ const normalizedTextValues = values => [
   ),
 ];
 
-const isTerminalStage = stage => ['won', 'lost'].includes(stage?.outcome);
 const closingReasonOptionsForStage = stage =>
   normalizedTextValues(stage?.closingReasonOptions);
-const transitionReasonOptionsForStage = stage =>
-  normalizedTextValues(stage?.transitionReasonOptions);
 const shouldPromptForClosingReasons = stage =>
-  isTerminalStage(stage) && closingReasonOptionsForStage(stage).length > 0;
+  stage?.outcome === 'lost' && closingReasonOptionsForStage(stage).length > 0;
 const shouldPromptForTransitionReason = stage =>
-  !isTerminalStage(stage) && transitionReasonOptionsForStage(stage).length > 0;
+  normalizedTextValues(stage?.transitionReasonOptions).length > 0;
 const isStageReasonCancelled = value =>
   value === closingReasonDialogRef.value?.CANCELLED;
 
@@ -297,15 +332,12 @@ const collectClosingReasonsForStage = async ({
   );
 };
 
-const collectTransitionReasonForStage = async ({ targetStage }) => {
-  if (!targetStage) return '';
-  if (!shouldPromptForTransitionReason(targetStage)) return '';
+const collectTransitionReasonForStage = async targetStage => {
+  if (!targetStage || !shouldPromptForTransitionReason(targetStage)) return '';
 
   return (
-    closingReasonDialogRef.value?.open({
-      kind: 'transition',
-      targetStage,
-    }) ?? ''
+    closingReasonDialogRef.value?.open({ kind: 'transition', targetStage }) ??
+    ''
   );
 };
 
@@ -430,13 +462,10 @@ const setDealForms = () => {
 };
 
 const loadCompanies = async () => {
-  if (!companiesEnabled.value) {
-    companyOptions.value = [];
-    return;
-  }
+  if (!companiesEnabled.value) return [];
 
   const response = await CompanyAPI.get();
-  companyOptions.value = normalizePayload(response.data).map(company => ({
+  return normalizePayload(response.data).map(company => ({
     label: company.name,
     value: company.id,
   }));
@@ -449,8 +478,7 @@ const fetchDealsByParams = async params => {
   return normalizePayload(response.data);
 };
 
-const loadDeals = async () => {
-  const context = currentDealSourceContext.value;
+const loadDeals = async context => {
   const lookupParams = buildCrmDealLookupParams(context);
   const originLookupParams = buildCrmDealOriginLookupParams(context);
   const shouldFetchOrigin =
@@ -462,41 +490,70 @@ const loadDeals = async () => {
     shouldFetchOrigin ? fetchDealsByParams(originLookupParams) : [],
   ]);
 
-  deals.value = sortCrmDealsForContext(
+  return sortCrmDealsForContext(
     mergeUniqueCrmDeals(lookupDeals, originDeals),
     context
   );
 };
 
+const invalidateDealMutations = () => {
+  dealMutationGeneration += 1;
+  savingDealKey.value = '';
+  dealConflictKey.value = '';
+  dealConflictAppliedUpdatePayload.value = null;
+  resetDealConflict();
+};
+
 const initializeSidebar = async () => {
+  sidebarInitializationGeneration += 1;
+  const generation = sidebarInitializationGeneration;
+  const context = currentDealSourceContext.value;
+  const contextKey = currentSidebarContextKey.value;
+  const isCurrent = () =>
+    isSidebarMounted &&
+    generation === sidebarInitializationGeneration &&
+    contextKey === currentSidebarContextKey.value;
+
+  invalidateDealMutations();
+  ui.error = null;
+  ui.isInitializing = false;
+  deals.value = [];
+  companyOptions.value = [];
+  resetForms();
+  isCreating.value = false;
+  openDealKeys.value = [];
   if (!props.currentChat?.id || !canManageDeals.value) return;
 
   ui.isInitializing = true;
-  isCreating.value = false;
-  openDealKeys.value = [];
 
   try {
     if (!agents.value.length) await store.dispatch('agents/get');
     if (!teams.value.length) await store.dispatch('teams/get');
 
-    await Promise.all([
+    const [, , , , , nextCompanyOptions] = await Promise.all([
       referencesStore.loadPipelines(),
       referencesStore.loadTaskStatuses(),
+      referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('deal'),
       referencesStore.loadFieldDefinitions('task'),
       loadCompanies(),
     ]);
-    await loadDeals();
+    if (!isCurrent()) return;
 
+    const nextDeals = await loadDeals(context);
+    if (!isCurrent()) return;
+
+    companyOptions.value = nextCompanyOptions;
+    deals.value = nextDeals;
     isCreating.value = deals.value.length === 0;
     setDealForms();
     openDealKeys.value = [
       isCreating.value ? NEW_DEAL_KEY : dealKey(deals.value[0]),
     ];
   } catch (error) {
-    useAlert(formatCrmErrorMessage(error, t));
+    if (isCurrent()) ui.error = error;
   } finally {
-    ui.isInitializing = false;
+    if (isCurrent()) ui.isInitializing = false;
   }
 };
 
@@ -521,6 +578,8 @@ const scrollDealsToTop = async () => {
 };
 
 const startCreateDeal = () => {
+  if (!canManageDeals.value || savingDealKey.value) return;
+
   isCreating.value = true;
   setNewDealForm();
   if (!isDealOpen(NEW_DEAL_KEY)) {
@@ -530,7 +589,7 @@ const startCreateDeal = () => {
 };
 
 const cancelCreateDeal = () => {
-  if (!deals.value.length) return;
+  if (!deals.value.length || savingDealKey.value) return;
 
   isCreating.value = false;
   delete forms[NEW_DEAL_KEY];
@@ -648,16 +707,65 @@ const refreshCrmSidebarCounters = () => {
   ]);
 };
 
+const dealForKey = key =>
+  deals.value.find(deal => dealKey(deal) === key) || null;
+
+const isConflictError = error => isStaleCrmError(error);
+
+const reloadDealConflict = (
+  itemKey = dealConflictKey.value,
+  mutationOwner = null
+) => {
+  const dealId = Number(dealForKey(itemKey)?.id);
+  const owner = mutationOwner || {
+    contextKey: currentSidebarContextKey.value,
+    generation: dealMutationGeneration,
+  };
+  const isCurrentOwner = () =>
+    isSidebarMounted &&
+    owner.generation === dealMutationGeneration &&
+    owner.contextKey === currentSidebarContextKey.value &&
+    dealConflictKey.value === itemKey;
+
+  return reloadConflict({
+    recordId: dealId,
+    isCurrentRecord: requestedId =>
+      isCurrentOwner() && Number(dealForKey(itemKey)?.id) === requestedId,
+    loadAuthoritative: async requestedId => {
+      const response = await CrmDealsAPI.show(requestedId);
+      return normalizePayload(response.data);
+    },
+    applyAuthoritative: authoritativeDeal => {
+      if (!isCurrentOwner()) return;
+      // There is no realtime subscription in this sidebar. Conflict reloads
+      // are authoritative while the local form remains the retry draft.
+      upsertDeal(authoritativeDeal);
+    },
+  });
+};
+
 const saveDeal = async item => {
+  if (!canManageDeals.value || savingDealKey.value) return;
+
   const form = forms[item.key];
   if (!form || !form.title.trim() || !form.pipelineId || !form.stageId) return;
+
+  dealMutationGeneration += 1;
+  const mutationOwner = {
+    contextKey: currentSidebarContextKey.value,
+    generation: dealMutationGeneration,
+  };
+  const isCurrentMutation = () =>
+    isSidebarMounted &&
+    mutationOwner.generation === dealMutationGeneration &&
+    mutationOwner.contextKey === currentSidebarContextKey.value;
+  savingDealKey.value = item.key;
 
   const targetStage = stageForForm(form);
   const stageChanging =
     !item.deal?.id || Number(form.stageId) !== Number(item.deal.stageId);
 
   let transitionReason = '';
-
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: item.deal,
@@ -665,18 +773,22 @@ const saveDeal = async item => {
       targetStage,
     });
 
-    if (isStageReasonCancelled(closingReasons)) return;
-
-    transitionReason = item.deal?.id
-      ? await collectTransitionReasonForStage({ targetStage })
-      : '';
-
-    if (isStageReasonCancelled(transitionReason)) return;
+    if (!isCurrentMutation() || isStageReasonCancelled(closingReasons)) {
+      if (isCurrentMutation()) savingDealKey.value = '';
+      return;
+    }
 
     form.closingReasons = closingReasons;
+    if (item.deal?.id) {
+      transitionReason = await collectTransitionReasonForStage(targetStage);
+      if (!isCurrentMutation() || isStageReasonCancelled(transitionReason)) {
+        if (isCurrentMutation()) savingDealKey.value = '';
+        return;
+      }
+    }
   }
 
-  savingDealKey.value = item.key;
+  let appliedUpdatePayload = null;
 
   try {
     const payload = buildPayload(form);
@@ -687,13 +799,27 @@ const saveDeal = async item => {
       const {
         closing_reasons: _closingReasons,
         stage_id: _stageId,
-        ...updatePayload
-      } = {
-        ...payload,
-        lock_version: item.deal.lockVersion,
-      };
-      const response = await CrmDealsAPI.update(item.deal.id, updatePayload);
-      savedDeal = normalizePayload(response.data);
+        ...draftUpdatePayload
+      } = payload;
+      const canReuseAppliedUpdate =
+        dealConflict.active &&
+        dealConflict.hasAuthoritative &&
+        dealConflictKey.value === item.key &&
+        JSON.stringify(dealConflictAppliedUpdatePayload.value) ===
+          JSON.stringify(draftUpdatePayload);
+
+      if (canReuseAppliedUpdate) {
+        savedDeal = item.deal;
+        appliedUpdatePayload = draftUpdatePayload;
+      } else {
+        const response = await CrmDealsAPI.update(item.deal.id, {
+          ...draftUpdatePayload,
+          lock_version: item.deal.lockVersion,
+        });
+        if (!isCurrentMutation()) return;
+        savedDeal = normalizePayload(response.data);
+        appliedUpdatePayload = draftUpdatePayload;
+      }
 
       if (Number(form.stageId) !== Number(currentStageId) && form.stageId) {
         const transitionResponse = await CrmDealsAPI.transitionStage(
@@ -702,37 +828,62 @@ const saveDeal = async item => {
             closing_reasons: form.closingReasons,
             lock_version: savedDeal.lockVersion,
             stage_id: Number(form.stageId),
-            transition_reason: transitionReason || undefined,
+            ...(transitionReason
+              ? { transition_reason: transitionReason }
+              : {}),
           }
         );
+        if (!isCurrentMutation()) return;
         savedDeal = normalizePayload(transitionResponse.data);
       }
     } else {
       const response = await CrmDealsAPI.create(payload);
+      if (!isCurrentMutation()) return;
       savedDeal = normalizePayload(response.data);
       isCreating.value = false;
       delete forms[NEW_DEAL_KEY];
     }
 
+    if (!isCurrentMutation()) return;
     upsertDeal(savedDeal);
     refreshCrmSidebarCounters();
     forms[dealKey(savedDeal)] = formFromDeal(savedDeal);
     openDealKeys.value = [dealKey(savedDeal)];
+    dealConflictKey.value = '';
+    dealConflictAppliedUpdatePayload.value = null;
+    resetDealConflict();
     useAlert(
       item.deal?.id
         ? t('CRM.DEALS.SUCCESS_UPDATED')
         : t('CRM.DEALS.SUCCESS_CREATED')
     );
   } catch (error) {
+    if (!isCurrentMutation()) return;
+    if (item.deal?.id && isConflictError(error)) {
+      dealConflictKey.value = item.key;
+      dealConflictAppliedUpdatePayload.value = appliedUpdatePayload;
+      markDealConflictStale();
+      const conflictIsCurrent = await reloadDealConflict(
+        item.key,
+        mutationOwner
+      );
+      if (conflictIsCurrent && isCurrentMutation()) {
+        useAlert(formatCrmErrorMessage(error, t));
+      }
+      return;
+    }
+
     useAlert(error.message || formatCrmErrorMessage(error, t));
   } finally {
-    savingDealKey.value = '';
+    if (isCurrentMutation()) savingDealKey.value = '';
   }
 };
 
-watch(() => [props.currentChat?.id, canManageDeals.value], initializeSidebar, {
-  immediate: true,
-});
+watch(
+  () => [currentSidebarContextKey.value, canManageDeals.value],
+  initializeSidebar,
+  { immediate: true }
+);
 
 watch(dealFieldDefinitions, definitions => {
   if (!definitions.length) return;
@@ -743,6 +894,12 @@ watch(dealFieldDefinitions, definitions => {
       definitions
     );
   });
+});
+
+onBeforeUnmount(() => {
+  isSidebarMounted = false;
+  sidebarInitializationGeneration += 1;
+  invalidateDealMutations();
 });
 </script>
 
@@ -762,6 +919,14 @@ watch(dealFieldDefinitions, definitions => {
       <div v-if="ui.isInitializing" class="flex justify-center py-12">
         <Spinner class="!h-8 !w-8" />
       </div>
+
+      <SchedulingErrorState
+        v-else-if="ui.error"
+        class="m-3"
+        :title="$t('CRM.ERRORS.LOAD_TITLE')"
+        :description="formatCrmErrorMessage(ui.error, t)"
+        @retry="initializeSidebar"
+      />
 
       <div v-else class="border-t border-n-weak">
         <div
@@ -888,6 +1053,15 @@ watch(dealFieldDefinitions, definitions => {
           >
             <div v-if="forms[item.key]" class="grid gap-3">
               <div class="crm-deal-drawer-form">
+                <CrmConflictNotice
+                  v-if="dealConflict.active && dealConflictKey === item.key"
+                  :is-reloading="dealConflict.isReloading"
+                  :is-retrying="savingDealKey === item.key"
+                  :reload-failed="dealConflict.reloadFailed"
+                  :retry-ready="dealConflict.hasAuthoritative"
+                  @reload="reloadDealConflict(item.key)"
+                  @retry="saveDeal(item)"
+                />
                 <div
                   class="crm-deal-drawer-section crm-deal-drawer-section--top"
                 >
@@ -1094,7 +1268,7 @@ watch(dealFieldDefinitions, definitions => {
                 :deal="item.deal"
                 :statuses="taskStatuses"
                 :task-field-definitions="taskFieldDefinitions"
-                :team-options="teamOptions"
+                :task-types="taskTypes"
               />
 
               <div class="flex items-center justify-end gap-2">
@@ -1103,14 +1277,18 @@ watch(dealFieldDefinitions, definitions => {
                   size="sm"
                   slate
                   faded
+                  :disabled="!!savingDealKey"
                   :label="$t('CRM.GENERAL.CANCEL')"
                   @click="cancelCreateDeal"
                 />
                 <Button
+                  v-if="canManageDeals"
                   size="sm"
                   color="blue"
                   :is-loading="savingDealKey === item.key"
                   :disabled="
+                    !!savingDealKey ||
+                    dealConflict.active ||
                     !forms[item.key].title.trim() ||
                     !forms[item.key].pipelineId ||
                     !forms[item.key].stageId

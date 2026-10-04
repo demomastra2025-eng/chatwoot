@@ -1321,6 +1321,14 @@ const buildSettingsMenuItems = () =>
       activeOn: ['auditlogs_list'],
       to: accountScopedRoute('auditlogs_list'),
     }),
+    onlyIf(checkPermissions(['administrator']), {
+      name: 'Storage',
+      visibilityKey: 'MyCompany:Storage',
+      label: t('SIDEBAR.STORAGE'),
+      icon: 'i-lucide-hard-drive',
+      activeOn: ['storage_settings_index'],
+      to: accountScopedRoute('storage_settings_index'),
+    }),
     settingsSection('Data', t('SIDEBAR.SETTINGS_SECTIONS.DATA')),
     onlyIf(
       hasLegacyCustomAttributes.value ||

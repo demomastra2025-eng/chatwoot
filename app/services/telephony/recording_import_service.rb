@@ -20,6 +20,7 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
     validate!
     if recording_already_stored?
       sync_voice_message_recording!(call_session)
+      enqueue_recording_compression(call_session)
       return duplicate_response
     end
 
@@ -124,11 +125,20 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
     call_session = Telephony::EventsIngestionService.new(payload: ingestion_payload(storage_key: storage_key, byte_size: byte_size)).perform
     mark_import_stored!(call_session, storage_key)
     sync_voice_message_recording!(call_session)
+    enqueue_recording_compression(call_session)
     response_payload(call_session, status: 'ok', storage_key: storage_key)
   end
 
   def sync_voice_message_recording!(session)
     Telephony::VoiceMessageRecordingSyncService.new(call_session: session).perform
+  end
+
+  def enqueue_recording_compression(session)
+    return unless session&.recording_ref.to_s.match?(/\.(wav|wave|pcm)\z/i)
+
+    Telephony::CompressRecordingsJob.perform_later(call_session_id: session.id)
+  rescue StandardError => e
+    Rails.logger.warn("[RecordingImportService] Could not schedule compression for call session #{session&.id}: #{e.class.name}")
   end
 
   def mark_import_stored!(call_session, storage_key)

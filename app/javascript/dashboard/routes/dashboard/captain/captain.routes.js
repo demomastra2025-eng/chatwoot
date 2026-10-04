@@ -11,7 +11,7 @@ const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
 const AssistantPlaygroundIndex = () =>
   import('./assistants/playground/Index.vue');
 const AssistantFollowUpsIndex = () =>
-  import('../campaigns/pages/OutboundTouchPlansPage.vue');
+  import('./assistants/followUps/Index.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
 const ResponsesIndex = () => import('./responses/Index.vue');
 const ResponsesPendingIndex = () => import('./responses/Pending.vue');
@@ -155,6 +155,16 @@ const assistantRoutes = [
     path: frontendURL('accounts/:accountId/captain/:assistantId/follow-ups'),
     component: AssistantFollowUpsIndex,
     name: 'captain_assistants_follow_ups_index',
+    meta: metaV2,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/outcomes'),
+    redirect: to => ({
+      name: 'captain_assistants_settings_index',
+      params: to.params,
+      query: to.query,
+    }),
+    name: 'captain_assistants_outcomes_index',
     meta: metaV2,
   },
   {

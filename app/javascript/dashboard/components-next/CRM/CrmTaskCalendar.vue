@@ -1,8 +1,10 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import SchedulingVueCalCalendar from 'dashboard/components-next/Scheduling/SchedulingVueCalCalendar.vue';
+import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const props = defineProps({
   anchorDate: {
@@ -17,6 +19,10 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
+  archived: {
+    type: Boolean,
+    default: false,
+  },
   fieldDefinitions: {
     type: Array,
     default: () => [],
@@ -25,17 +31,22 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  statusNames: {
-    type: Object,
-    default: () => ({}),
-  },
+
   tasks: {
     type: Array,
     default: () => [],
   },
+  taskState: {
+    type: String,
+    default: 'active',
+  },
   view: {
     type: String,
     required: true,
+  },
+  workspaceTimezone: {
+    type: String,
+    default: 'Asia/Almaty',
   },
 });
 
@@ -46,17 +57,6 @@ const emit = defineEmits([
   'selectTask',
 ]);
 const { t } = useI18n();
-
-const priorityColor = priority => {
-  const colors = {
-    high: '#D97706',
-    low: '#0F766E',
-    medium: '#2563EB',
-    urgent: '#DC2626',
-  };
-
-  return colors[priority] || '#2563EB';
-};
 
 const activityTypeLabelByValue = computed(() => ({
   call: t('CRM.TASKS.ACTIVITY_TYPE.call'),
@@ -71,6 +71,19 @@ const activityTypeLabel = task =>
   task.activityType;
 
 const resolveTaskRange = task => {
+  if (task.allDay) {
+    const dueDate = taskDueDate(task);
+    if (!dueDate) return null;
+
+    const startsAt = zonedTimeToUtc(dueDate, props.workspaceTimezone);
+    const nextDay = new Date(dueDate);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const endsAt = new Date(
+      zonedTimeToUtc(nextDay, props.workspaceTimezone).getTime() - 1
+    );
+    return { endsAt, startsAt };
+  }
+
   const startValue = task.startAt || task.dueAt;
   const endValue = task.dueAt || task.startAt;
 
@@ -94,7 +107,6 @@ const resolveTaskRange = task => {
 const buildTaskSubtitle = task => {
   return [
     activityTypeLabel(task),
-    props.statusNames[task.statusId],
     props.dealNames[task.dealId],
     props.assigneeNames[task.assigneeId],
   ]
@@ -102,32 +114,62 @@ const buildTaskSubtitle = task => {
     .join(' · ');
 };
 
+const isOverdue = task => {
+  if (task.archivedAt || task.cancelledAt || task.completedAt) return false;
+
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return false;
+  if (!task.allDay) return dueDate < new Date();
+
+  const today = utcToZonedTime(new Date(), props.workspaceTimezone);
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  return task.dueOn < todayKey;
+};
+
+const matchesTaskState = task => {
+  if (props.taskState === 'completed') return Boolean(task.completedAt);
+  if (props.taskState === 'cancelled') return Boolean(task.cancelledAt);
+  if (props.taskState === 'all') return true;
+
+  return !task.completedAt && !task.cancelledAt;
+};
+
 const calendarTasks = computed(() =>
   props.tasks
+    .filter(
+      task =>
+        Boolean(task.archivedAt) === props.archived && matchesTaskState(task)
+    )
     .map(task => {
       const range = resolveTaskRange(task);
       if (!range) {
         return null;
       }
 
+      const overdue = isOverdue(task);
+
       return {
+        allDay: Boolean(task.allDay),
         id: task.id,
         startsAt: range.startsAt.toISOString(),
         endsAt: range.endsAt.toISOString(),
-        status: task.archivedAt ? 'cancelled' : 'scheduled',
-        statusIcon: task.archivedAt ? 'i-lucide-archive' : 'i-lucide-list-todo',
-        statusLabel: task.archivedAt
-          ? t('CRM.GENERAL.ARCHIVED')
-          : props.statusNames[task.statusId] || t('CRM.GENERAL.EMPTY_VALUE'),
+        hideStatus: !overdue,
+        status: 'scheduled',
+        statusIcon: 'i-lucide-circle-alert',
+        statusLabel: overdue ? t('CRM.TASKS.BOARD.OVERDUE_BADGE') : '',
         title: task.title,
         subtitle: buildTaskSubtitle(task),
         clientName: task.title,
         customAttributes: task.customAttributes,
         serviceNameSnapshot: buildTaskSubtitle(task),
-        resourceColor: priorityColor(task.priority),
+        resourceColor: '#2563EB',
         resourceName: '',
-        muted: Boolean(task.archivedAt),
-        cancelled: Boolean(task.archivedAt),
+        muted: false,
+        cancelled: false,
         task,
       };
     })
@@ -159,7 +201,7 @@ const handleResizeTask = payload => {
 
 <template>
   <SchedulingVueCalCalendar
-    color-by="resource"
+    all-day-events
     class="min-h-0 flex-1"
     :anchor-date="anchorDate"
     :appointments="calendarTasks"
@@ -172,6 +214,7 @@ const handleResizeTask = payload => {
     :slots="[]"
     :time-offs="[]"
     :view="view"
+    :workspace-timezone="workspaceTimezone"
     :work-rules="[]"
     :workday-overrides="[]"
     @create-appointment="handleCreateTask"

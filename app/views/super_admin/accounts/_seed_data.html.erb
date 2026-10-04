@@ -5,10 +5,10 @@
 
   <div class="form-actions">
     <div class="pb-3">
-      <p>Click the button to generate seed data into this account for demos.</p>
-      <p class="text-color-red">Note: This will clear all the existing data in this account.</p>
+      <p>Нажмите кнопку, чтобы сгенерировать демо-данные в этом аккаунте для тестирования.</p>
+      <p class="text-color-red">Внимание: это действие перезапишет существующие данные аккаунта.</p>
     </div>
-  <%= f.submit 'Generate Seed Data' %>
+  <%= f.submit 'Сгенерировать демо-данные', data: { confirm: 'Вы уверены? Данные аккаунта будут заменены демо-данными.' } %>
   </div>
   <% end %>
 </section>

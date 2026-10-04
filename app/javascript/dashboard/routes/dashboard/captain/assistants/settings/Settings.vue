@@ -12,6 +12,13 @@ import SettingsHeader from 'dashboard/components-next/captain/pageComponents/set
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
 import VoiceAgentPreview from 'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue';
+import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
+import {
+  AGENT_TOOL_SCOPE,
+  HANDOFF_TOOL_ID,
+  isToolEnabled,
+  resolveToolAccessForUsageMode,
+} from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
@@ -22,6 +29,7 @@ const store = useStore();
 
 const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
+const generalOutcomeFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
 const draftUsageMode = ref('external_agent');
@@ -42,6 +50,29 @@ const isInternalAssistant = computed(
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
 const assistantConfig = computed(() => assistant.value?.config || {});
+const handoffEnabled = computed(() => {
+  if (
+    Object.prototype.hasOwnProperty.call(
+      assistantConfig.value,
+      'handoff_enabled'
+    )
+  ) {
+    return assistantConfig.value.handoff_enabled !== false;
+  }
+  const access = resolveToolAccessForUsageMode(
+    assistantConfig.value.tool_access || {},
+    'external_agent'
+  );
+  return isToolEnabled(access, AGENT_TOOL_SCOPE, HANDOFF_TOOL_ID);
+});
+const legacyOutcomeReasons = computed(() => {
+  const getAccount = store.getters['accounts/getAccount'];
+  const account =
+    typeof getAccount === 'function'
+      ? getAccount(route.params.accountId)
+      : null;
+  return account?.settings?.conversation_status_reason_config || {};
+});
 const workspaceAudioTranscriptionsEnabled = computed(() => {
   const getAccount = store.getters['accounts/getAccount'];
   const account =
@@ -72,6 +103,10 @@ const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'feature_memory',
   'feature_citation',
   'feature_web',
+  'feature_document_reading',
+  'feature_image_understanding',
+  'model',
+  'handoff_enabled',
   'use_audio_transcriptions',
   'context_access',
   'tool_access',
@@ -84,6 +119,8 @@ const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'auto_reply_on_last_incoming',
   'message_collapse_window_seconds',
   'history_message_limit',
+  'auto_completion_enabled',
+  'outcome_reason_settings',
 ]);
 
 const VOICE_SETTINGS_CONFIG_KEYS = Object.freeze(['voice_settings']);
@@ -171,7 +208,11 @@ const pickConfigKeys = (config = {}, keys = []) =>
     return result;
   }, {});
 
-const mergeAssistantPayloads = (basicPayload, systemPayload) => {
+const mergeAssistantPayloads = (
+  basicPayload,
+  systemPayload,
+  outcomePayload
+) => {
   const basicAssistant = basicPayload?.assistant || {};
   const systemAssistant = systemPayload?.assistant || {};
 
@@ -186,6 +227,10 @@ const mergeAssistantPayloads = (basicPayload, systemPayload) => {
         ...assistantConfig.value,
         ...pickConfigKeys(basicAssistant.config, BASIC_SETTINGS_CONFIG_KEYS),
         ...pickConfigKeys(systemAssistant.config, SYSTEM_SETTINGS_CONFIG_KEYS),
+        ...pickConfigKeys(outcomePayload?.assistant?.config, [
+          'auto_completion_enabled',
+          'outcome_reason_settings',
+        ]),
       },
     },
     avatar: basicPayload?.avatar ?? null,
@@ -200,7 +245,17 @@ const handleGeneralSave = async () => {
   const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
   if (!systemPayload) return;
 
-  await handleSubmit(mergeAssistantPayloads(basicPayload, systemPayload));
+  const outcomePayload = isExternalAgent.value
+    ? await generalOutcomeFormRef.value?.buildPayload?.()
+    : null;
+  if (isExternalAgent.value && !outcomePayload) {
+    useAlert(t('CAPTAIN.ASSISTANTS.OUTCOMES.VALIDATION'));
+    return;
+  }
+
+  await handleSubmit(
+    mergeAssistantPayloads(basicPayload, systemPayload, outcomePayload)
+  );
 };
 
 const handleVoiceSave = async () => {
@@ -285,6 +340,18 @@ const handleDeleteSuccess = () => {
                 @update:usage-mode="handleUsageModeUpdate"
               />
             </div>
+          </div>
+
+          <div
+            v-if="isExternalAgent"
+            class="rounded-2xl bg-n-solid-1 p-5 md:p-6"
+          >
+            <AssistantOutcomeSettingsForm
+              ref="generalOutcomeFormRef"
+              :assistant="assistant"
+              :handoff-enabled="handoffEnabled"
+              :legacy-reasons="legacyOutcomeReasons"
+            />
           </div>
 
           <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">

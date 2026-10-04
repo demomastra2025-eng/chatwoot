@@ -1,18 +1,36 @@
 class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
   param :reason, type: 'string', desc: 'Optional reason for resolving the conversation', required: false
-  param :status_reason, type: 'string', desc: 'Configured conversation status reason for resolving when status reasons are enabled', required: false
+  param :status_reason, type: 'string', desc: 'Configured conversation outcome reason for resolving', required: false
+  param :outcome_reason_id, type: 'string', desc: 'Configured completion outcome reason ID', required: false
 
-  def perform(tool_context, reason: nil, status_reason: nil)
+  def perform(tool_context, reason: nil, status_reason: nil, outcome_reason_id: nil)
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
     return "Conversation ##{conversation.display_id} is already resolved" if conversation.resolved?
+    return 'Automatic completion is disabled for this assistant' unless assistant.auto_completion_enabled?
     return 'Auto-resolve is disabled for this account' if conversation.account.captain_auto_resolve_disabled?
 
     log_tool_usage('resolve_conversation', { conversation_id: conversation.id, reason: reason })
 
     params = { status: 'resolved' }
-    resolved_status_reason = configured_status_reason_for(conversation, 'resolved', status_reason, fallback_reason: reason)
+    outcome_config = Captain::OutcomeReasonConfig.new(assistant)
+    configured = outcome_config.configured?(:completion)
+    selected_reason = outcome_config.resolve(:completion, outcome_reason_id.presence || status_reason) if configured
+    return tool_failure('A configured completion reason is required') if configured && selected_reason.blank?
+
+    begin
+      audit_options = outcome_config.transition_options(:completion, selected_reason, explanation: reason) if configured
+      audit = audit_options&.fetch(:audit, {})
+    rescue ArgumentError => e
+      return tool_failure(e.message)
+    end
+    resolved_status_reason = if configured
+                               selected_reason['label']
+                             else
+                               configured_status_reason_for(conversation, 'resolved', status_reason,
+                                                            fallback_reason: reason)
+                             end
     params[:status_reason] = resolved_status_reason if resolved_status_reason.present?
 
     transition = lambda do
@@ -20,7 +38,8 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
         conversation: conversation,
         params: params,
         actor: assistant,
-        source: 'captain'
+        source: 'captain',
+        audit: audit || {}
       ).perform
     end
 
@@ -38,7 +57,8 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
         conversation_display_id: conversation.display_id,
         status: conversation.status,
         reason: reason.presence,
-        status_reason: resolved_status_reason
+        status_reason: resolved_status_reason,
+        outcome_reason_id: selected_reason&.fetch('id', nil)
       }.compact
     )
   end

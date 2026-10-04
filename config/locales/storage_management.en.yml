@@ -1,0 +1,23 @@
+en:
+  storage_management:
+    unknown_channel: 'Unknown channel'
+    no_channel: 'Unassigned storage'
+    item_labels:
+      audio_recording: Audio recording
+      file: File
+    errors:
+      confirmation_required: Explicit confirmation is required.
+      preview_expired: The preview expired. Review the current selection again.
+      preview_changed: The selected files changed. Review the current preview again.
+      invalid_file_type: Choose a supported file type.
+      invalid_age_filter: Choose an age between 1 and 120 months.
+      invalid_inbox: The selected channel does not belong to this account.
+      trash_target_exists: A matching trash item already exists. Refresh the preview
+        and retry.
+      recording_reference_ambiguous: The recording reference is ambiguous across provider folders. Resolve it before moving this recording.
+      trash_path_rejected: The file path is outside this account’s storage.
+      recording_changed: The recording changed while this action was running. Refresh
+        and retry.
+      trash_item_required: A valid item type and item id are required.
+      invalid_date: The %{field} date is invalid.
+      invalid_date_range: The start date must be on or before the end date.

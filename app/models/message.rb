@@ -129,6 +129,16 @@ class Message < ApplicationRecord
                                          :translations, :in_reply_to_external_id, :is_unsupported, :data,
                                          :meta_referral, :meta_ad_referral_id], coder: JSON
 
+  # ActiveRecord::Store can persist this JSON column as a JSON string. Search its serialized root
+  # for candidate aliases; callers inspect the decoded payload and confirm exact field ownership.
+  def self.with_recording_reference_candidates(references)
+    references = Array(references).compact_blank.uniq
+    return none if references.empty?
+
+    patterns = references.map { |reference| "%#{sanitize_sql_like(reference.to_s)}%" }
+    where("(#{patterns.map { "content_attributes #>> '{}' LIKE ?" }.join(' OR ')})", *patterns)
+  end
+
   store :external_source_ids, accessors: [:slack], coder: JSON, prefix: :external_source_id
 
   scope :created_since, ->(datetime) { where('created_at > ?', datetime) }

@@ -21,11 +21,13 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
 
   def render_create_success
     finalize_authenticated_session!
-    render partial: 'devise/auth', formats: [:json], locals: { resource: @resource }
+    render partial: 'devise/auth', formats: [:json],
+           locals: { resource: @resource, impersonation_context: @impersonation_context }
   end
 
   def destroy
     current_client_id = request.headers[DeviseTokenAuth.headers_names[:client]]
+    SuperAdmin::ImpersonationService.revoke!(current_client_id)
 
     super do |user|
       user.clear_active_auth_client!(current_client_id)
@@ -35,6 +37,8 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
   private
 
   def finalize_authenticated_session!
+    return if @impersonation_grant
+
     previous_client_id = @resource.activate_auth_client!(
       @token.client,
       device_type: current_auth_device_type
@@ -62,11 +66,12 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
   end
 
   def sso_authentication_request?
-    params[:sso_auth_token].present? && @resource.present?
+    @impersonation_grant_attempt || (params[:sso_auth_token].present? && @resource.present?)
   end
 
   def handle_sso_authentication
-    authenticate_resource_with_sso_token
+    return render_impersonation_auth_error unless authenticate_resource_with_sso_token
+
     yield @resource if block_given?
     render_create_success
   end
@@ -78,19 +83,50 @@ class DeviseOverrides::SessionsController < DeviseTokenAuth::SessionsController
   end
 
   def authenticate_resource_with_sso_token
-    @token = @resource.create_token
+    return false if @impersonation_grant_attempt && (@resource.blank? || @impersonation_grant.blank?)
+
+    if @impersonation_grant_attempt
+      return false unless SuperAdmin::ImpersonationService.consume_grant!(
+        user: @resource, token: params[:sso_auth_token], grant: @impersonation_grant
+      )
+
+      @token = @resource.create_token(
+        client: @impersonation_grant['client_id'],
+        lifespan: SuperAdmin::ImpersonationService::SESSION_TTL.to_i
+      )
+      @impersonation_context = SuperAdmin::ImpersonationService.context_for_request(
+        @impersonation_grant['client_id'], target_user_id: @resource.id
+      )
+      return false unless @impersonation_context
+    else
+      @token = @resource.create_token
+    end
     @resource.save!
 
     sign_in(:user, @resource, store: false, bypass: false)
-    # invalidate the token after the user is signed in
     @resource.invalidate_sso_auth_token(params[:sso_auth_token])
+    true
   end
 
   def process_sso_auth_token
+    token = params[:sso_auth_token].to_s
+    return if token.blank?
+
+    @impersonation_grant_attempt = SuperAdmin::ImpersonationService.impersonation_grant_token?(token)
     return if params[:email].blank?
 
     user = User.from_email(params[:email])
-    @resource = user if user&.valid_sso_auth_token?(params[:sso_auth_token])
+    return unless user&.valid_sso_auth_token?(token)
+
+    if @impersonation_grant_attempt
+      @impersonation_grant = SuperAdmin::ImpersonationService.grant_for(user: user, token: token)
+      return unless @impersonation_grant
+    end
+    @resource = user
+  end
+
+  def render_impersonation_auth_error
+    render json: { error: I18n.t('auth.session_replaced'), code: 'session_replaced' }, status: :unauthorized
   end
 
   def handle_mfa_required(user)

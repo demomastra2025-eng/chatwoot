@@ -1,0 +1,43 @@
+{
+  "HEALTH_MATRIX": {
+    "TITLE": "Матрица здоровья клиентов (OneLink Health Matrix)",
+    "SUBTITLE": "Диагностика WhatsApp, телефонии, шлюзов Janus и интеграции МИС МедЭлемент в реальном времени",
+    "UPDATED": "Обновлено: {time}",
+    "REFRESH": "Обновить",
+    "CHART_SHOW": "Показать график обращений",
+    "CHART_HIDE": "Скрыть график обращений",
+    "CHART_TITLE": "График обращений за 30 дней",
+    "CHART_LABEL": "Обращения",
+    "INCOMPLETE": "Часть данных недоступна ({sources}): строки матрицы могут быть неполными.",
+    "KPI": {
+      "TOTAL_ACCOUNTS": "Всего аккаунтов",
+      "TOTAL_ACCOUNTS_HINT": "зарегистрировано в системе",
+      "NEEDS_ATTENTION": "Требуют внимания",
+      "NEEDS_ATTENTION_HINT": "Сбой WhatsApp, Janus или зависшие сообщения",
+      "FILTER_ACTIVE_HINT": "Фильтр активен (нажмите для сброса)",
+      "WHATSAPP_HEALTHY": "WhatsApp в норме",
+      "WHATSAPP_HEALTHY_HINT": "линии с действующей сессией",
+      "TELEPHONY_HEALTHY": "Телефония OK",
+      "TELEPHONY_HEALTHY_HINT": "линии с привязкой и Janus"
+    },
+    "TOOLBAR": {
+      "SEARCH_PLACEHOLDER": "Поиск аккаунта по названию или ID...",
+      "FILTER_OFF": "Фильтр: только с проблемами",
+      "FILTER_ON": "Показаны только с проблемами",
+      "SHOWING": "Отображается: {shown} из {total}"
+    },
+    "TABLE": {
+      "ACCOUNT": "ID / Аккаунт",
+      "WHATSAPP": "WhatsApp",
+      "TELEPHONY": "Телефония & Janus",
+      "MEDELEMENT": "МедЭлемент (МИС)",
+      "STUCK": "Зависшие сообщения",
+      "ACTIONS": "Действия",
+      "SUSPENDED": "Приостановлен",
+      "STUCK_COUNT": "⚠️ {count} застрявших",
+      "SETTINGS": "Настройки →",
+      "EMPTY_TITLE": "Аккаунтов не найдено",
+      "EMPTY_HINT": "Попробуйте изменить поисковый запрос или сбросить фильтр проблем"
+    }
+  }
+}

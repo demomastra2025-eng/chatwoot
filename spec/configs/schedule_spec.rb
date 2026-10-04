@@ -62,6 +62,28 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('refresh_openrouter_model_catalog_job', 'queue')).to eq('scheduled_jobs')
   end
 
+  it 'replays unpublished CRM outbox events every minute' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['crm_event_replay_job']).to include(
+      'cron' => '*/1 * * * *',
+      'class' => 'Crm::Events::ReplayUnpublishedJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+  end
+
+  it 'audits CRM stage-visit consistency daily' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['crm_stage_visit_reconciliation_job']).to include(
+      'cron' => '23 3 * * *',
+      'class' => 'Crm::StageVisits::ReconcileJob',
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
+    )
+  end
+
   it 'does not schedule obsolete legacy telephony binding reconciliation' do
     schedule = YAML.safe_load(file.read)
 

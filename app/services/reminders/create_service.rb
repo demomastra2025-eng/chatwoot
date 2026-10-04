@@ -12,6 +12,8 @@ class Reminders::CreateService
   end
 
   def perform
+    raise ArgumentError, 'Captain follow-up steps are scheduled internally' if attributes[:action_type].to_s == 'captain_follow_up'
+
     reminder = nil
     Reminder.transaction do
       reminder = account.reminders.new(

@@ -32,9 +32,9 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     )
   end
 
-  def execution(arguments:, key: 'tool-call-1', capability: nil, assistant_id: nil)
+  def execution(arguments:, key: 'tool-call-1', capability: nil, assistant_id: nil, tool_name: 'create_note')
     described_class.new(
-      tool_name: 'create_note',
+      tool_name: tool_name,
       payload: {
         account_id: account.id,
         call_session_id: call_session.id,
@@ -44,7 +44,7 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
         assistant_id: assistant_id,
         runtime_session_id: runtime_session_id,
         runtime_engine: runtime_engine,
-        tool_capability: capability || tool_capability('create_note', assistant_id: assistant_id),
+        tool_capability: capability || tool_capability(tool_name, assistant_id: assistant_id),
         tool_call_id: key,
         arguments: arguments
       }
@@ -341,8 +341,8 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     expect(conversation.messages.where(private: true)).not_to exist
   end
 
-  it 'holds the assistant assignment fence without retaining a transaction during the tool body' do
-    service = execution(arguments: { content: 'Outside assignment lock' })
+  it 'holds the assistant assignment fence without retaining a transaction during a read-only tool body' do
+    service = execution(arguments: { query: 'No matching contact' }, tool_name: 'find_contact')
     dispatch_service = service.send(:dispatch_service)
     baseline_transactions = ActiveRecord::Base.connection.open_transactions
     assignment_fenced = false
@@ -362,8 +362,7 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
       original.call
     end
 
-    expect { service.perform }
-      .to change { conversation.messages.where(private: true).count }.by(1)
+    expect { service.perform }.not_to(change { conversation.messages.where(private: true).count })
   end
 
   it 'requires account scope, an idempotency key and a per-call capability' do

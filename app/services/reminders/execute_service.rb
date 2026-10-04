@@ -1,3 +1,5 @@
+# The existing reminder executor coordinates several established delivery paths; new AI flow is delegated below.
+# rubocop:disable Metrics/ClassLength
 class Reminders::ExecuteService
   PROVIDER_GUARD_BLOCKED = Object.new.freeze
   NOTIFICATION_ROUTE_CHANGED = Object.new.freeze
@@ -26,6 +28,14 @@ class Reminders::ExecuteService
   rescue *TRANSIENT_DATABASE_ERRORS => e
     release_claim_for_retry!(e)
     reminder
+  rescue Reminders::RetryableExecutionError => e
+    if e.preserve_claim
+      retry_claimed_execution!
+    else
+      release_claim_for_retry!(e)
+      Reminders::ProcessPendingRemindersJob.set(wait: TRANSIENT_FINISH_RETRY_DELAY).perform_later
+    end
+    reminder
   rescue StandardError => e
     fail_reminder!(e.message)
     raise
@@ -47,6 +57,8 @@ class Reminders::ExecuteService
       execute_send_message
     when 'ai_agent_wakeup'
       execute_ai_agent_wakeup
+    when 'captain_follow_up'
+      execute_captain_follow_up
     else
       raise ArgumentError, "Unsupported touch action: #{reminder.action_type}"
     end
@@ -219,6 +231,94 @@ class Reminders::ExecuteService
     finish_execution(message)
   end
 
+  def execute_captain_follow_up
+    conversation = reminder.target_conversation || reminder.conversation
+    raise ArgumentError, 'Captain follow-up reminders require a conversation target' if conversation.blank?
+    return reminder if execution_blocked?(conversation)
+
+    context = captain_follow_up_context(conversation)
+    outcome = run_captain_follow_up(context)
+    return finish_execution(outcome) if outcome.is_a?(Message)
+    raise follow_up_in_progress_error if outcome == :in_progress
+
+    complete_without_materialized_delivery
+  end
+
+  def captain_follow_up_context(conversation)
+    delivery_policy = ensure_delivery_allowed!(
+      conversation,
+      content_kind: 'free_text',
+      template_params: {},
+      attachments: []
+    )
+    metadata = reminder.metadata.to_h.deep_stringify_keys.fetch('captain_follow_up')
+    assistant = Captain::Assistant.find_by(id: metadata['assistant_id'], account_id: reminder.account_id)
+    anchor = conversation.messages.find_by(id: metadata['anchor_message_id'])
+    raise ArgumentError, 'Captain follow-up assistant or anchor message was not found' if assistant.blank? || anchor.blank?
+
+    { conversation: conversation, assistant: assistant, anchor: anchor, delivery_policy: delivery_policy }
+  end
+
+  def run_captain_follow_up(context)
+    Captain::Conversation::FollowUpJob.new.perform_for_reminder(
+      reminder: reminder,
+      conversation: context[:conversation],
+      assistant: context[:assistant],
+      anchor_message: context[:anchor],
+      delivery: ->(content, attributes) { materialize_follow_up_message(context, content, attributes) }
+    )
+  end
+
+  def materialize_follow_up_message(context, content, attributes)
+    conversation = context[:conversation]
+    expected_contact_id = conversation.contact_id
+    with_execution_lock(conversation: conversation, captain_control_lock: true) do
+      next if conversation.contact_id != expected_contact_id
+      next if execution_blocked?(conversation)
+
+      materialize_follow_up_under_conversation_lock(context, content, attributes)
+    end
+  end
+
+  def materialize_follow_up_under_conversation_lock(context, content, attributes)
+    conversation = context[:conversation]
+    message = conversation.with_lock do
+      conversation.reload
+      conversation.with_captain_control_lock do
+        conversation.reload
+        next unless follow_up_delivery_guard_current?(context)
+
+        create_materialized_follow_up(context, content, attributes)
+      end
+    end
+    message if message.is_a?(Message)
+  end
+
+  def follow_up_delivery_guard_current?(context)
+    Captain::Conversation::FollowUpGuard.current?(
+      reminder: reminder,
+      conversation: context[:conversation],
+      assistant: context[:assistant],
+      anchor_message: context[:anchor]
+    )
+  end
+
+  def create_materialized_follow_up(context, content, attributes)
+    conversation = context[:conversation]
+    message = Reminders::MessageMaterializer.new(
+      reminder: reminder,
+      additional_attributes: attributes
+    ).perform(
+      conversation: conversation,
+      sender: context[:assistant],
+      content: content,
+      delivery_policy: context[:delivery_policy]
+    )
+    update_resolved_targets!(conversation)
+    @execution_updated_at = reminder.updated_at
+    message
+  end
+
   # A wakeup of a separate patient's appointment runs in the conversation of its current route contact (own number,
   # holder, booking chat), found or created in the target inbox exactly like a message touch; another contact's
   # conversation is never used for it.
@@ -260,6 +360,19 @@ class Reminders::ExecuteService
     reminder.update!(updates) if updates.present?
   end
 
+  def retry_claimed_execution!
+    Reminders::ExecuteReminderJob.set(wait: TRANSIENT_FINISH_RETRY_DELAY).perform_later(reminder.id, @processing_claim)
+  end
+
+  def follow_up_in_progress_error
+    Reminders::RetryableExecutionError.new('Captain follow-up generation is already in progress', preserve_claim: true)
+  end
+
+  def complete_without_materialized_delivery
+    reminder.complete_captain_follow_up_without_delivery!(processing_claim: @processing_claim)
+    reminder
+  end
+
   def finish_execution(message = nil)
     Reminders::ExecutionFinisher.new(
       reminder: reminder,
@@ -284,7 +397,7 @@ class Reminders::ExecuteService
     ).blocked?
   end
 
-  def with_execution_lock(&)
+  def with_execution_lock(conversation: nil, captain_control_lock: false, &)
     guarded_execution = lambda do
       next PROVIDER_GUARD_BLOCKED if appointment_provider_blocked?(:materialization)
 
@@ -295,7 +408,9 @@ class Reminders::ExecuteService
     Reminders::ExecutionLockService.new(
       reminder: reminder,
       processing_claim: @processing_claim,
-      execution_updated_at: @execution_updated_at
+      execution_updated_at: @execution_updated_at,
+      conversation: conversation,
+      captain_control_lock: captain_control_lock
     ).perform(&guarded_execution)
   end
 
@@ -407,3 +522,4 @@ class Reminders::ExecuteService
     )
   end
 end
+# rubocop:enable Metrics/ClassLength

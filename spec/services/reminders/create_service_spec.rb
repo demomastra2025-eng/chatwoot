@@ -44,6 +44,26 @@ RSpec.describe Reminders::CreateService do
       expect(reminder.target_conversation).to eq(current_conversation)
     end
 
+    it 'rejects a user-created reminder that requests the internal Captain follow-up action' do
+      account = create(:account)
+      conversation = create(:conversation, account: account)
+
+      expect do
+        described_class.new(
+          account: account,
+          remindable: conversation,
+          attributes: {
+            action_type: 'captain_follow_up',
+            metadata: {
+              captain_follow_up: { assistant_id: 1, anchor_message_id: 1, step_index: 0 }
+            }
+          }
+        ).perform
+      end.to raise_error(ArgumentError, 'Captain follow-up steps are scheduled internally')
+
+      expect(account.reminders).to be_empty
+    end
+
     it 'rolls back a contact inbox created during route resolution when the reminder is invalid' do
       account = create(:account)
       contact = create(:contact, account: account, phone_number: '+77001232233')

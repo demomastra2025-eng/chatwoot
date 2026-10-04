@@ -50,8 +50,8 @@ module Enterprise::Conversation
     captain_control_service.publish_ai_activated!(source: source, actor: actor)
   end
 
-  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system', fence: nil, &)
-    result = captain_control_service.handoff!(status_reason: status_reason, actor: actor, source: source, fence: fence, &)
+  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system', fence: nil, audit: {}, &)
+    result = captain_control_service.handoff!(status_reason: status_reason, actor: actor, source: source, fence: fence, audit: audit, &)
     dispatcher_dispatch(::Conversation::CONVERSATION_BOT_HANDOFF) if result == :applied
     result
   end

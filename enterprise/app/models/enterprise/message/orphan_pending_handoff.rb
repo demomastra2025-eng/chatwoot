@@ -3,7 +3,25 @@ module Enterprise::Message::OrphanPendingHandoff
 
   def activate_captain_human_control_for_human_response
     reset_captain_takeover_context
+    lock_captain_follow_up_for_customer_reply if customer_reply_to_captain_inbox?
     return activate_linked_captain_human_control if captain_public_human_reply? && captain_inbox_involved?
+  end
+
+  def customer_reply_to_captain_inbox?
+    incoming? && sender.is_a?(Contact) && !private? && captain_inbox_involved?
+  end
+
+  # Serialize public customer replies with follow-up scheduling and provider
+  # submission. The dispatch guard takes these same locks before it reads the
+  # latest incoming message, so a reply cannot commit in the guard/send gap.
+  def lock_captain_follow_up_for_customer_reply
+    locked_conversation = Conversation.find_by(id: conversation.id, account_id: conversation.account_id)
+    return unless locked_conversation
+
+    locked_conversation.with_lock do
+      locked_conversation.reload
+      locked_conversation.with_captain_control_lock { true }
+    end
   end
 
   def activate_linked_captain_human_control

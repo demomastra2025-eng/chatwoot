@@ -54,7 +54,7 @@ class Captain::Scenario < ApplicationRecord
   scope :enabled, -> { where(enabled: true) }
 
   delegate :temperature, :feature_faq, :feature_memory, :response_guidelines, :guardrails, :system_rule_groups,
-           :response_guideline_groups, :guardrail_groups, to: :assistant
+           :response_guideline_groups, :guardrail_groups, :model, to: :assistant
 
   before_save :resolve_tool_references
 
@@ -96,6 +96,7 @@ class Captain::Scenario < ApplicationRecord
       runtime_tool_ids: available_prompt_tools.pluck(:id),
       tools: available_prompt_tools,
       assistant_handoff_tool_name: assistant.handoff_tool_name,
+      outcome_reasons: Captain::OutcomeReasonConfig.prompt_context_for(assistant),
       handoff_scenarios: sibling_handoff_scenarios,
       system_rule_groups: system_rule_groups,
       response_guidelines: response_guidelines || [],

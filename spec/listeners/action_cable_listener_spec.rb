@@ -338,26 +338,7 @@ describe ActionCableListener do
       account.enable_features!('communication_threads')
       conversation.update!(agent_last_seen_at: 1.hour.ago)
       create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :incoming, created_at: 5.minutes.ago)
-      second_inbox = create(:inbox, account: account)
-      second_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: second_inbox)
-      second_conversation = create(
-        :conversation,
-        account: account,
-        contact: conversation.contact,
-        inbox: second_inbox,
-        contact_inbox: second_contact_inbox,
-        agent_last_seen_at: 1.hour.ago
-      )
-      create(
-        :message,
-        account: account,
-        inbox: second_inbox,
-        conversation: second_conversation,
-        message_type: :incoming,
-        created_at: 5.minutes.ago
-      )
-      second_agent = create(:user, account: account, role: :agent)
-      create(:inbox_member, inbox: second_inbox, user: second_agent)
+      second_conversation, second_agent = create_sibling_thread_context
       communication_thread = conversation.reload.refresh_communication_thread!
       expect(communication_thread.conversation_ids).to contain_exactly(conversation.id, second_conversation.id)
       broadcasts = []
@@ -502,7 +483,7 @@ describe ActionCableListener do
     let(:event_name) { :'conversation.typing_on' }
     let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation, user: agent, is_private: false) }
 
-    it 'sends message to account admins, inbox agents and the contact' do
+    it 'accepts the native three-argument keyword payload and keeps the typing recipient policy' do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
@@ -562,7 +543,7 @@ describe ActionCableListener do
     let(:event_name) { :'conversation.typing_off' }
     let!(:event) { Events::Base.new(event_name, Time.zone.now, conversation: conversation, user: agent, is_private: false) }
 
-    it 'sends message to account admins, inbox agents and the contact' do
+    it 'accepts the native three-argument keyword payload and keeps the typing recipient policy' do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
@@ -807,7 +788,7 @@ describe ActionCableListener do
 
     it 'broadcasts the deal payload to the account stream' do
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        ["account_#{account.id}"],
+        Crm::Deals::RealtimeRecipients.new(account: account, deal: deal).tokens,
         'crm.deal.created',
         hash_including(
           account_id: account.id,
@@ -818,6 +799,63 @@ describe ActionCableListener do
 
       listener.crm_deal_created(event)
     end
+  end
+
+  describe '#crm_task_updated' do
+    let(:task) { create(:crm_task, account: account) }
+    let(:event) do
+      Events::Base.new(
+        :'crm.task.updated',
+        Time.zone.now,
+        account: account,
+        task: task,
+        meta: { changes: { 'assignee_id' => [nil, agent.id] } }
+      )
+    end
+
+    it 'sends full task data to authorized private streams and a redacted account invalidation' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(admin.pubsub_token, agent.pubsub_token),
+        'crm.task.updated',
+        hash_including(
+          account_id: account.id,
+          task_id: task.id,
+          task: hash_including(id: task.id),
+          meta: { changes: { 'assignee_id' => [nil, agent.id] } }
+        )
+      ).once
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        ["account_#{account.id}"],
+        'crm.task.updated',
+        satisfy do |payload|
+          payload == {
+            account_id: account.id,
+            task_id: task.id,
+            meta: { event_type: 'crm.task.updated' }
+          }
+        end
+      ).once
+
+      listener.crm_task_updated(event)
+    end
+  end
+
+  def create_sibling_thread_context
+    second_inbox = create(:inbox, account: account)
+    second_conversation = create(
+      :conversation,
+      account: account,
+      contact: conversation.contact,
+      inbox: second_inbox,
+      contact_inbox: create(:contact_inbox, contact: conversation.contact, inbox: second_inbox),
+      agent_last_seen_at: 1.hour.ago
+    )
+    create(:message, account: account, inbox: second_inbox, conversation: second_conversation,
+                     message_type: :incoming, created_at: 5.minutes.ago)
+    second_agent = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: second_inbox, user: second_agent)
+
+    [second_conversation, second_agent]
   end
 
   def perform_communication_thread_realtime(&)

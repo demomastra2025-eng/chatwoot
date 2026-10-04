@@ -23,6 +23,10 @@ class Crm::DealPolicy < Crm::BasePolicy
     deal_manage_access?
   end
 
+  def assign?
+    deal_manage_access?
+  end
+
   def archive?
     deal_manage_access?
   end

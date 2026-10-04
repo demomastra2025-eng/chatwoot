@@ -7,23 +7,28 @@ class Conversations::StatusTransitionService
   CAPTAIN_CONTROL_RELEASE_SOURCES = %w[api manual bulk_action communication_thread copilot].freeze
   CAPTAIN_CONTROL_RELEASE_STATUSES = %w[pending resolved].freeze
 
-  def initialize(conversation:, params: {}, actor: nil, source: 'manual')
+  def initialize(conversation:, params: {}, actor: nil, source: 'manual', audit: {})
     @conversation = conversation
     @account = conversation.account
     @params = params.to_h.with_indifferent_access
     @actor = actor
     @source = source.to_s.presence || 'manual'
+    @audit = audit.to_h.with_indifferent_access
   end
 
   def perform
-    return perform_captain_control_release_transition if explicit_captain_control_release?
-
-    with_locked_conversation_preserving_changes { perform_transition }
+    result = if explicit_captain_control_release?
+               perform_captain_control_release_transition
+             else
+               with_locked_conversation_preserving_changes { perform_transition }
+             end
+    cancel_follow_up_chain_after_status_change if @status_transition_recorded
+    result
   end
 
   private
 
-  attr_reader :conversation, :account, :params, :actor, :source
+  attr_reader :conversation, :account, :params, :actor, :source, :audit
 
   def perform_captain_control_release_transition
     with_locked_conversation_preserving_changes do
@@ -50,7 +55,8 @@ class Conversations::StatusTransitionService
     previous_status = conversation.status
     target_status = resolve_target_status(previous_status)
     status_changing = previous_status != target_status
-    reason = reason_config.resolve_reason!(
+    reason_override = audit[:reason_override].to_s.strip.presence
+    reason = reason_override || reason_config.resolve_reason!(
       target_status,
       params[:status_reason],
       enforce_required: enforce_reason? && status_changing
@@ -62,9 +68,22 @@ class Conversations::StatusTransitionService
     changed = conversation.changed?
     conversation.save! if changed
 
-    record_transition!(previous_status: previous_status, target_status: conversation.status, reason: reason) if changed && status_changing
+    record_status_transition(previous_status, reason) if changed && status_changing
     publish_captain_control_release!
     true
+  end
+
+  def record_status_transition(previous_status, reason)
+    record_transition!(previous_status: previous_status, target_status: conversation.status, reason: reason)
+    @status_transition_recorded = true
+  end
+
+  def cancel_follow_up_chain_after_status_change
+    return unless defined?(Captain::Conversation::FollowUpChainService)
+
+    Captain::Conversation::FollowUpChainService.cancel_for!(conversation, reason: 'Conversation status changed')
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][FollowUpJob] Could not cancel a stale status chain: #{e.class.name}")
   end
 
   def explicit_captain_control_release?
@@ -124,6 +143,6 @@ class Conversations::StatusTransitionService
   def transition_metadata
     metadata = {}
     metadata[:snoozed_until] = conversation.snoozed_until.iso8601 if conversation.snoozed_until.present?
-    metadata
+    metadata.deep_merge(audit[:metadata].to_h)
   end
 end

@@ -118,6 +118,8 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def image_parts(image_attachments)
+    return [] unless image_understanding_enabled?
+
     image_attachments.each_with_object([]) do |attachment, parts|
       url = get_attachment_url(attachment)
       next if url.blank?
@@ -151,7 +153,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_document_texts(attachments)
-    return '' unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+    return '' unless Messages::DocumentParsingService.reading_enabled_for?(@assistant, account: @message.account)
 
     file_attachments(attachments).filter_map do |attachment|
       document_text = Messages::DocumentParsingService.extracted_text(attachment)
@@ -162,7 +164,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def unparsed_attachment_summary(attachments)
-    document_parse_enabled = Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+    document_parse_enabled = Messages::DocumentParsingService.reading_enabled_for?(@assistant, account: @message.account)
     unparsed_attachments = attachments.where.not(file_type: %i[image audio]).reject do |attachment|
       document_parse_enabled && attachment.file_type == 'file' && Messages::DocumentParsingService.extracted_text(attachment).present?
     end
@@ -172,6 +174,15 @@ class Captain::OpenAiMessageBuilderService
     return 'User has shared an attachment' if filenames.blank?
 
     "User has shared file attachment(s): #{filenames.first(5).join(', ')}"
+  end
+
+  def image_understanding_enabled?
+    return true if @assistant.blank?
+
+    assistant_config = @assistant.config.to_h.deep_stringify_keys
+    return true unless assistant_config.key?('feature_image_understanding')
+
+    ActiveModel::Type::Boolean.new.cast(assistant_config['feature_image_understanding'])
   end
 
   def file_attachments(attachments)

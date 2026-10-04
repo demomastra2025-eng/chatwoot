@@ -122,8 +122,21 @@ class Api::V1::Accounts::Crm::BaseController < Api::V1::Accounts::BaseController
     )
   end
 
-  def render_stale_record(_error)
-    render_error(code: 'STALE_RECORD', error: 'Record has been modified by another request', status: :conflict)
+  def render_stale_record(error)
+    record = error.record
+    snapshot = {
+      id: record.id,
+      lock_version: record.lock_version,
+      pipeline_id: record.try(:pipeline_id),
+      stage_id: record.try(:stage_id),
+      position: record.try(:position)
+    }.compact
+    render_error(
+      code: 'STALE_RECORD',
+      error: 'Record has been modified by another request',
+      details: { current: snapshot },
+      status: :conflict
+    )
   end
 
   def render_unprocessable_entity(error)

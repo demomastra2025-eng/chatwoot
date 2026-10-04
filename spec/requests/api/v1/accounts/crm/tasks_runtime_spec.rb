@@ -12,6 +12,90 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
   end
 
+  it 'reads an old-writer row through the canonical catalog snapshot without writing on show' do
+    task_type = account.crm_task_types.find_by!(code: 'call')
+    task_outcome = task_type.outcomes.find_by!(code: 'answered')
+    task = create(:crm_task, account: account, activity_type: 'call', outcome: 'answered')
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, task_outcome_id: nil, context_kind: nil, position: 0)
+    # rubocop:enable Rails/SkipsModelValidations
+    writes = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql].to_s
+      writes << sql if sql.match?(/\A(?:INSERT|UPDATE|DELETE) /) &&
+                       sql.match?(/"crm_(?:tasks|task_types|task_outcomes)"/)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+      get "#{path}/#{task.id}", headers: headers, as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(writes).to be_empty
+    expect(payload).to include(
+      'context_kind' => 'personal',
+      'task_type_id' => task_type.id,
+      'task_outcome_id' => task_outcome.id,
+      'outcome' => 'answered',
+      'position' => 0
+    )
+    expect(task.reload).to have_attributes(task_type_id: nil, task_outcome_id: nil, context_kind: nil, position: 0)
+
+    post "#{path}/#{task.id}/assign",
+         params: { assignee_id: administrator.id, lock_version: task.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(task.reload).to have_attributes(assignee_id: administrator.id, position: 0)
+  end
+
+  it 'reads the first old-writer task before catalogs exist and can assign it with position zero' do
+    empty_account = create(:account)
+    empty_account.enable_features!('crm_tasks')
+    empty_actor = create(:user, :administrator, account: empty_account)
+    status = create(:crm_task_status, account: empty_account, code: 'legacy-open', default: true)
+    now = Time.current
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a pre-catalog SQL writer.
+    task_id = Crm::Task.insert_all!([{
+                                      account_id: empty_account.id,
+                                      status_id: status.id,
+                                      title: 'First task from old writer',
+                                      activity_type: 'call',
+                                      context_kind: nil,
+                                      task_type_id: nil,
+                                      task_outcome_id: nil,
+                                      position: 0,
+                                      created_at: now,
+                                      updated_at: now
+                                    }]).rows.first.first
+    # rubocop:enable Rails/SkipsModelValidations
+    empty_path = "/api/v1/accounts/#{empty_account.id}/crm/tasks"
+    empty_actor_headers = empty_actor.create_new_auth_token
+
+    get "#{empty_path}/#{task_id}", headers: empty_actor_headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']['task_type']).to include(
+      'id' => nil,
+      'code' => 'call'
+    )
+    expect(response.parsed_body['payload']['position']).to eq(0)
+
+    post "#{empty_path}/#{task_id}/assign",
+         params: { assignee_id: empty_actor.id, lock_version: 0 },
+         headers: empty_actor_headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'assignee_id' => empty_actor.id,
+      'position' => 0
+    )
+    expect(empty_account.crm_task_types).to exist
+  end
+
   it 'creates task activity types and outcomes for CRM task workflows' do
     post path,
          params: {
@@ -35,7 +119,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(created_task.outcome_note).to eq('Client joined and approved next step')
   end
 
-  it 'updates task outcome details through the task API' do
+  it 'rejects task outcome details through generic update' do
     task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
 
     patch "#{path}/#{task.id}",
@@ -47,10 +131,140 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
           headers: headers,
           as: :json
 
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('TASK_COMMAND_REQUIRED')
+    expect(response.parsed_body.dig('details', 'fields')).to contain_exactly('outcome', 'outcome_note')
+    expect(task.reload).to have_attributes(outcome: nil, outcome_note: nil)
+  end
+
+  it 'rejects status transitions through generic update' do
+    todo_status = account.crm_task_statuses.find_by!(code: 'todo')
+    done_status = account.crm_task_statuses.find_by!(code: 'done')
+    task = create(:crm_task, account: account, status: todo_status)
+
+    patch "#{path}/#{task.id}",
+          params: { status_id: done_status.id },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('TASK_COMMAND_REQUIRED')
+    expect(response.parsed_body.dig('details', 'fields')).to contain_exactly('status_id')
+    expect(task.reload.status_id).to eq(todo_status.id)
+  end
+
+  it 'uses the reporting timezone for new all-day tasks and overdue buckets' do
+    account.update!(reporting_timezone: 'America/Los_Angeles')
+    status = account.crm_task_statuses.find_by!(code: 'todo')
+    old_task = create(:crm_task, account: account, status: status, all_day: true, due_on: Date.new(2026, 10, 2))
+
+    post path,
+         params: { all_day: true, due_on: '2026-10-03', title: 'Today in the account timezone' },
+         headers: headers,
+         as: :json
+
+    created_task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+    expect(response).to have_http_status(:created)
+    expect(created_task).to have_attributes(all_day: true, due_on: Date.new(2026, 10, 3), schedule_timezone: 'America/Los_Angeles')
+
+    get path,
+        params: { time_bucket: 'overdue', as_of: '2026-10-04T06:30:00Z' },
+        headers: headers,
+        as: :json
+
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
-    expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Customer asked to postpone until next week')
-    expect(task.reload.outcome_note).to eq('Customer asked to postpone until next week')
+    expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(old_task.id)
+  end
+
+  it 'creates a date-only all-day task deadline' do
+    post path,
+         params: {
+           all_day: true,
+           due_on: '2026-09-04',
+           schedule_timezone: 'Asia/Almaty',
+           start_at: '2026-09-04T09:00:00+02:00',
+           title: 'Prepare tomorrow report'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    payload = response.parsed_body.fetch('payload')
+    task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+    expect(payload.slice('all_day', 'due_at', 'due_on', 'schedule_timezone')).to eq(
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => '2026-09-04',
+      'schedule_timezone' => 'Asia/Almaty'
+    )
+    expect(task.attributes.slice('all_day', 'due_at', 'due_on', 'start_at')).to eq(
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => Date.new(2026, 9, 4),
+      'start_at' => nil
+    )
+  end
+
+  it 'converts an all-day task into a timed task deadline' do
+    task = create(
+      :crm_task,
+      account: account,
+      all_day: true,
+      due_on: Date.new(2026, 9, 4),
+      schedule_timezone: 'Asia/Almaty'
+    )
+
+    patch "#{path}/#{task.id}",
+          params: {
+            all_day: false,
+            due_at: '2026-09-04T15:30:00+02:00',
+            lock_version: task.lock_version
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'all_day')).to be(false)
+    expect(task.reload).not_to be_all_day
+    expect(task.due_on).to be_nil
+    expect(task.due_at).to eq(Time.iso8601('2026-09-04T13:30:00Z'))
+  end
+
+  it 'converts legacy all-day due_at input without storing a synthetic timestamp' do
+    post path,
+         params: {
+           all_day: true,
+           due_at: '2026-09-03T23:30:00Z',
+           schedule_timezone: 'Asia/Almaty',
+           title: 'Legacy all-day request'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+    expect(task.due_on).to eq(Date.new(2026, 9, 4))
+    expect(task.due_at).to be_nil
+  end
+
+  it 'updates a deadline when a legacy creator no longer belongs to the account' do
+    creator = create(:user, account: account)
+    task = create(:crm_task, account: account, creator: creator)
+    account.account_users.find_by!(user: creator).destroy!
+
+    patch "#{path}/#{task.id}",
+          params: {
+            all_day: true,
+            due_on: '2026-09-04',
+            lock_version: task.lock_version,
+            start_at: nil
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'all_day')).to be(true)
+    expect(task.reload.start_at).to be_nil
   end
 
   it 'filters tasks by activity type and outcome' do
@@ -79,11 +293,41 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([matching_task.id])
   end
 
+  it 'filters timed and date-only deadlines through the same due range' do
+    status = account.crm_task_statuses.find_by!(code: 'todo')
+    date_only_task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      all_day: true,
+      due_on: Date.new(2026, 9, 4)
+    )
+    timed_task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      due_at: Time.iso8601('2026-09-04T08:00:00Z')
+    )
+    create(:crm_task, account: account, status: status, all_day: true, due_on: Date.new(2026, 9, 5))
+
+    get path,
+        params: {
+          due_from: '2026-09-04T00:00:00+05:00',
+          due_to: '2026-09-05T00:00:00+05:00'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(date_only_task.id, timed_task.id)
+  end
+
   it 'creates a deal task and defaults assignee/team from the deal' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     stage = pipeline.stages.find_by!(code: 'new')
     owner = create(:user, account: account, role: :agent)
     team = create(:team, account: account)
+    create(:team_member, team: team, user: owner)
     company = create(:company, account: account)
     conversation = create(:conversation, account: account)
     deal = create(
@@ -118,6 +362,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'assignee_id')).to eq(owner.id)
+    expect(response.parsed_body.dig('payload', 'context_kind')).to eq('sales')
     expect(response.parsed_body.dig('payload', 'team_id')).to eq(team.id)
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
     expect(response.parsed_body.dig('payload', 'custom_attributes', 'follow_up_reason')).to eq('documents')
@@ -135,7 +380,30 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'context_kind')).to eq('personal')
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
+  end
+
+  it 'rejects a sales task without a deal' do
+    post path,
+         params: { context_kind: 'sales', title: 'Orphan sales task' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to include('code' => 'VALIDATION_ERROR')
+    expect(response.parsed_body.dig('details', 'deal_id')).to eq(['is required for sales tasks'])
+  end
+
+  it 'filters tasks by their explicit context kind' do
+    deal = create(:crm_deal, account: account)
+    personal_task = create(:crm_task, account: account, context_kind: 'personal', deal: deal)
+    create(:crm_task, account: account, context_kind: 'sales', deal: deal)
+
+    get path, params: { context_kind: 'personal' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].pluck('id')).to eq([personal_task.id])
   end
 
   it 'does not auto-assign an inactive default status to new tasks' do
@@ -265,8 +533,8 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
     expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Client was unavailable; retry tomorrow')
     expect(response.parsed_body.dig('payload', 'completed_at')).to be_present
-    expect(task.reload.events.where(event_type: 'task_status_changed')).to exist
-    expect(task.outcome_note).to eq('Client was unavailable; retry tomorrow')
+    expect(task.reload.events.where(event_type: 'task_completed')).to exist
+    expect(task).to have_attributes(completed_by_id: administrator.id, outcome_note: 'Client was unavailable; retry tomorrow')
   end
 
   it 'reorders tasks inside a status using board position' do
@@ -284,7 +552,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'position')).to eq(1)
+    expect(response.parsed_body['payload']['position']).to eq(1)
     expect(status.tasks.kept.order(:position, :id).pluck(:id)).to eq(
       [third_task.id, first_task.id, second_task.id]
     )
@@ -311,6 +579,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'assignee_id')).to eq(next_assignee.id)
     expect(task.reload.assignee_id).to eq(next_assignee.id)
+    expect(task.events.where(event_type: 'task_assigned')).to exist
   end
 
   it 'blocks moving a task to done when required custom fields are missing' do
@@ -372,6 +641,27 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'archived_at')).to be_nil
+  end
+
+  it 'archives an old-writer row after bootstrapping missing catalogs' do
+    task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+    Crm::TaskOutcome.where(account: account).delete_all
+    Crm::TaskType.where(account: account).delete_all
+
+    post "#{path}/#{task.id}/archive",
+         params: { lock_version: task.lock_version },
+         headers: headers,
+         as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['archived_at']).to be_present
+    expect(payload['context_kind']).to eq('personal')
+    expect(payload['task_type_id']).to eq(account.crm_task_types.find_by!(code: 'task').id)
+    expect(task.reload).to have_attributes(context_kind: 'personal', task_type_id: payload['task_type_id'])
   end
 
   it 'drops custom field values when their field definition is deleted' do

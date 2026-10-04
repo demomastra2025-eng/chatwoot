@@ -27,7 +27,7 @@ class Crm::Timelines::TaskService < Crm::Timelines::BaseService
   end
 
   def event_items
-    scope = task.events.includes(:actor).order(created_at: :desc, id: :desc)
+    scope = task.events.where.not(event_type: 'task_command_noop').includes(:actor).order(created_at: :desc, id: :desc)
     scope = scope.where('crm_events.created_at < ?', before_time) if before_time.present?
 
     scope.limit(limit).map do |event|

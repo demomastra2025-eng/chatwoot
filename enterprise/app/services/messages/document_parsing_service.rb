@@ -18,6 +18,17 @@ class Messages::DocumentParsingService
       Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
     end
 
+    def reading_enabled_for?(assistant, account: nil)
+      account ||= assistant&.account
+      return enabled_for_account?(account) unless assistant.present?
+
+      config = assistant.config.to_h.deep_stringify_keys
+      return enabled_for_account?(account) unless config.key?('feature_document_reading')
+
+      enabled_for_account?(account) &&
+        ActiveModel::Type::Boolean.new.cast(config['feature_document_reading'])
+    end
+
     def parseable_attachment?(attachment)
       return false unless supported_attachment?(attachment)
       return true if local_text_supported_attachment?(attachment)

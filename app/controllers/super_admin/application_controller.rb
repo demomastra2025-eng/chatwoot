@@ -8,11 +8,13 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
   include ActionView::Helpers::TagHelper
   include ActionView::Context
   include SuperAdmin::NavigationHelper
+  include SwitchLocale
 
   helper SuperAdmin::NavigationHelper
   helper_method :render_vue_component, :settings_open?, :settings_pages, :super_admin_resource_label
   # authenticiation done via devise : SuperAdmin Model
   before_action :authenticate_super_admin!
+  around_action :switch_locale
 
   # Override this value to specify the number of elements to display at a time
   # on index pages. Defaults to 20.

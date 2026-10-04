@@ -10,6 +10,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     let(:agent_runner_service) { instance_double(Captain::Assistant::AgentRunnerService) }
 
     before do
+      account.enable_features!('captain_integration', 'captain_tasks')
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello', message_type: :incoming)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
@@ -43,34 +44,78 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
     end
 
     def list_documents_trace(*documents)
+      { 'version' => 1, 'tool_steps' => [list_documents_finish_step(documents)] }
+    end
+
+    def list_documents_finish_step(documents)
       {
-        'version' => 1,
-        'tool_steps' => [
-          {
-            'event' => 'finish',
-            'tool_name' => 'list_captain_documents',
-            'output' => {
-              'success' => true,
-              'message' => JSON.generate(
-                'action' => 'list_captain_documents',
-                'documents' => documents.map do |document|
-                  {
-                    'document_id' => document.id,
-                    'name' => document.name,
-                    'source_mode' => document.source_mode,
-                    'status' => document.status,
-                    'content_type' => document.content_type,
-                    'file_size' => document.file_size,
-                    'sendable' => true,
-                    'filename' => document.sendable_filename,
-                    'artifact_id' => document_artifact_payload(document)
-                  }
-                end
-              )
-            }
-          }
-        ]
+        'event' => 'finish',
+        'tool_name' => 'list_captain_documents',
+        'output' => {
+          'success' => true,
+          'message' => JSON.generate('action' => 'list_captain_documents', 'documents' => documents.map { |document| list_document_entry(document) })
+        }
       }
+    end
+
+    def list_document_entry(document)
+      {
+        'document_id' => document.id,
+        'name' => document.name,
+        'source_mode' => document.source_mode,
+        'status' => document.status,
+        'content_type' => document.content_type,
+        'file_size' => document.file_size,
+        'sendable' => true,
+        'filename' => document.sendable_filename,
+        'artifact_id' => document_artifact_payload(document)
+      }
+    end
+
+    it 'resolves duplicate handoff labels by stable outcome reason ID' do
+      assistant.update!(
+        config: assistant.config.to_h.deep_merge(
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [
+              { 'id' => 'billing_queue', 'label' => 'Support', 'active' => true },
+              { 'id' => 'technical_queue', 'label' => 'Support', 'active' => true }
+            ]
+          }
+        )
+      )
+      job = described_class.new
+      job.instance_variable_set(:@assistant, assistant)
+      job.instance_variable_set(:@response, {
+                                  'handoff_outcome_reason_id' => 'technical_queue',
+                                  'handoff_status_reason' => 'Support'
+                                })
+
+      expect(job.send(:handoff_outcome_reason)).to include('id' => 'technical_queue', 'label' => 'Support')
+    end
+
+    it 'persists a fenced first follow-up with a normal public AI reply' do
+      account.enable_features!('captain_integration')
+      assistant.update!(
+        config: {
+          'follow_up_settings' => {
+            'enabled' => true,
+            'prompt' => '',
+            'steps' => [{ 'mode' => 'static', 'message' => 'Checking whether you still need help.', 'delay_seconds' => 60 }]
+          }
+        }
+      )
+
+      described_class.perform_now(conversation, assistant)
+
+      reply = conversation.messages.outgoing.where(sender: assistant, private: false).sole
+      expect(reply.additional_attributes.to_h).to include('captain_ai_reply' => { 'assistant_id' => assistant.id })
+      reminder = account.reminders.captain_follow_up.sole
+      expect(reminder.target_conversation_id).to eq(conversation.id)
+      expect(reminder.metadata.dig('captain_follow_up', 'control_fence')).to include(
+        'control_generation' => conversation.current_captain_control_generation,
+        'status_transition_id' => conversation.status_transitions.maximum(:id).to_i,
+        'last_message_id' => conversation.messages.incoming.maximum(:id)
+      )
     end
 
     it 'uses Captain::Assistant::AgentRunnerService with runtime callbacks' do
@@ -182,6 +227,44 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
 
       described_class.perform_now(conversation.reload, assistant)
+    end
+
+    it 'builds a second-turn history after trace-free legacy and static follow-up replies' do
+      conversation.messages.destroy_all
+      create(:message, conversation: conversation, content: 'Original question', message_type: :incoming)
+      create(
+        :message,
+        conversation: conversation,
+        content: 'Earlier Captain reply',
+        message_type: :outgoing,
+        sender: assistant,
+        additional_attributes: { captain_ai_reply: { assistant_id: assistant.id } }
+      )
+      create(
+        :message,
+        conversation: conversation,
+        content: 'Static follow-up',
+        message_type: :outgoing,
+        sender: assistant,
+        additional_attributes: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'step_index' => 0
+          }
+        }
+      )
+      create(:message, conversation: conversation, content: 'I still have a question', message_type: :incoming)
+
+      expect(agent_runner_service).to receive(:generate_response).with(
+        message_history: [
+          { content: 'Original question', role: 'user' },
+          { content: 'Earlier Captain reply', role: 'assistant' },
+          { content: 'Static follow-up', role: 'assistant' },
+          { content: 'I still have a question', role: 'user' }
+        ]
+      )
+
+      described_class.perform_now(conversation, assistant)
     end
 
     it 'infers scenario agent_name from captain trace when legacy messages are missing explicit attribution' do
@@ -1387,7 +1470,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(private_note.sender).to eq(assistant)
       end
 
-      it 'drops an unknown optional status reason before creating handoff artifacts' do
+      it 'maps an unknown optional handoff reason to Other and audits its explanation' do
         buffer_token = SecureRandom.uuid
         trigger_message = conversation.messages.incoming.last
         expected_generation = conversation.captain_control_generation
@@ -1424,13 +1507,19 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         end.not_to raise_error
 
         transition = conversation.reload.status_transitions.last
-        expect(transition).to have_attributes(reason: nil, source: 'system')
+        expect(transition).to have_attributes(reason: 'Other', source: 'captain')
+        expect(transition.metadata).to include(
+          'outcome_reason_id' => 'other',
+          'outcome_reason_type' => 'handoff',
+          'assistant_id' => assistant.id,
+          'outcome_reason_explanation' => 'Customer requested a human'
+        )
         expect(conversation.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
         expect(conversation.messages.where(private: true, content: described_class.new.send(:provider_error_note_content)).count).to eq(0)
         expect(Redis::Alfred.get(state_key)).to be_nil
         expect(agent_runner_service).to have_received(:generate_response).once
-        expect(Llm::EventBus).to have_received(:publish)
-          .with('captain.handoff_status_reason_dropped', hash_including(account_id: account.id, conversation_id: conversation.id))
+        expect(Llm::EventBus).not_to have_received(:publish)
+          .with('captain.handoff_status_reason_dropped', anything)
       ensure
         Redis::Alfred.delete(state_key) if defined?(state_key)
       end
@@ -1761,7 +1850,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'waits for stored audio transcription before generating a response' do
-        allow_any_instance_of(described_class).to receive(:sleep) do |_job, _duration|
+        job = described_class.new(conversation, assistant)
+        allow(job).to receive(:sleep) do |_duration|
           audio_attachment.update!(meta: { 'transcribed_text' => 'Audio transcript text' })
         end
 
@@ -1770,31 +1860,33 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           { 'response' => 'I understood the voice message.' }
         end
 
-        described_class.perform_now(conversation, assistant)
+        job.perform_now
       end
 
       it 'continues without audio text after the transcription wait timeout' do
-        expect_any_instance_of(described_class).to receive(:sleep).at_least(:once)
+        job = described_class.new(conversation, assistant)
+        expect(job).to receive(:sleep).at_least(:once)
         expect(Messages::AudioTranscriptionService).not_to receive(:new)
         expect(agent_runner_service).to receive(:generate_response) do |message_history:|
           expect(message_history.last[:content]).to eq('Message without content')
           { 'response' => 'Please send the details again.' }
         end
 
-        described_class.perform_now(conversation, assistant)
+        job.perform_now
       end
 
       it 'does not wait or include transcription when the AI agent capability is disabled' do
         assistant.update!(config: assistant.config.merge('use_audio_transcriptions' => false))
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
 
-        expect_any_instance_of(described_class).not_to receive(:sleep)
+        job = described_class.new(conversation, assistant)
+        expect(job).not_to receive(:sleep)
         expect(agent_runner_service).to receive(:generate_response) do |message_history:|
           expect(message_history.last[:content]).to eq('Message without content')
           { 'response' => 'I need more details.' }
         end
 
-        described_class.perform_now(conversation, assistant)
+        job.perform_now
       end
     end
 
@@ -1821,7 +1913,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       before do
-        account.enable_features('captain_integration')
+        account.enable_features!('captain_integration')
         account.update!(captain_runtime: { 'web_document_parse_enabled' => true })
         allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
         document_attachment
@@ -1831,7 +1923,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       it 'waits for stored document text before generating a response' do
-        allow_any_instance_of(described_class).to receive(:sleep) do |_job, _duration|
+        job = described_class.new(conversation, assistant)
+        allow(job).to receive(:sleep) do
           document_attachment.update!(meta: { 'parsed_text' => 'Parsed contract text' })
         end
 
@@ -1840,17 +1933,18 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           { 'response' => 'I read the document.' }
         end
 
-        described_class.perform_now(conversation, assistant)
+        job.perform_now
       end
 
       it 'continues after the document parsing wait timeout' do
-        expect_any_instance_of(described_class).to receive(:sleep).at_least(:once)
+        job = described_class.new(conversation, assistant)
+        expect(job).to receive(:sleep).at_least(:once)
         expect(agent_runner_service).to receive(:generate_response) do |message_history:|
           expect(message_history.last[:content]).to eq('User has shared file attachment(s): contract.pdf')
           { 'response' => 'Please confirm the document details.' }
         end
 
-        described_class.perform_now(conversation, assistant)
+        job.perform_now
       end
     end
   end

@@ -1,57 +1,35 @@
 class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseController
-  DEFAULT_PER_PAGE = 100
-  MAX_PER_PAGE = 500
-
-  CREATE_PARAM_KEYS = %i[
-    pipeline_id
-    stage_id
-    owner_id
-    creator_id
-    team_id
-    company_id
-    originating_conversation_id
-    originating_communication_thread_id
-    title
-    description
-    amount_minor
-    currency
-    expected_close_on
-    position
-    win_probability
-    external_ref
-    idempotency_key
-    primary_contact_id
+  include ::Api::V1::Accounts::Crm::Concerns::DealsIndexFiltering
+  include ::Api::V1::Accounts::Crm::Concerns::DealsOriginResolvers
+  include ::Api::V1::Accounts::Crm::Concerns::DealsBoarding
+  include ::Api::V1::Accounts::Crm::Concerns::DealsLifecycleCommands
+  include ::Api::V1::Accounts::Crm::Concerns::DealsWriteHelpers
+  DEAL_PRELOADS = [
+    :company,
+    :originating_conversation,
+    :originating_communication_thread,
+    { deal_contacts: :contact },
+    { tasks: :status }
   ].freeze
-  UPDATE_PARAM_KEYS = %i[
-    owner_id
-    creator_id
-    team_id
-    company_id
-    originating_conversation_id
-    originating_communication_thread_id
-    title
-    description
-    amount_minor
-    currency
-    expected_close_on
-    position
-    win_probability
-    external_ref
-    idempotency_key
-    primary_contact_id
-    lock_version
-    transition_reason
-  ].freeze
-
   before_action :ensure_crm_deals_enabled!
   before_action :bootstrap_defaults!, only: [:index, :create]
-  before_action :set_deal, only: [:show, :update, :timeline, :transition_stage, :archive, :unarchive]
+  before_action :set_deal, only: [
+    :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
+    :set_waiting, :clear_waiting, :archive, :unarchive
+  ]
 
   def index
     authorize ::Crm::Deal
 
     deals = filtered_deals
-    paginated_deals = deals.offset(page_offset).limit(per_page_param)
+    list_page = ::Crm::Deals::ListOrderService.new(
+      scope: deals,
+      page: page_param,
+      per_page: per_page_param,
+      sort_by: params[:sort_by],
+      sort_direction: params[:sort_direction]
+    )
+    paginated_deals = board_mode? ? board_page(deals) : list_page.perform
 
     render_payload(
       paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
@@ -66,6 +44,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def create
     authorize ::Crm::Deal
+    authorize ::Crm::Deal, :assign? if assignment_requested?(create_deal_params)
 
     existing_deal = idempotent_deal
     return render_payload(::Crm::PayloadBuilder.deal(existing_deal)) if existing_deal.present?
@@ -81,6 +60,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def update
     authorize @deal
+    authorize @deal, :assign? if assignment_requested?(update_deal_params)
 
     deal = ::Crm::Deals::UpsertService.new(
       account: Current.account,
@@ -108,14 +88,42 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   def transition_stage
     authorize @deal, :transition_stage?
 
-    deal = ::Crm::Deals::TransitionService.new(
+    deal = ::Crm::Deals::StageCommandService.new(
       account: Current.account,
       deal: @deal,
-      params: params.permit(:stage_id, :position, :lock_version, :transition_reason, closing_reasons: []),
+      params: lifecycle_params,
       actor: Current.user
     ).perform
 
     render_payload(::Crm::PayloadBuilder.deal(deal))
+  end
+
+  def close_won
+    perform_lifecycle_command(::Crm::Deals::CloseWonService)
+  end
+
+  def close_lost
+    perform_lifecycle_command(::Crm::Deals::CloseLostService)
+  end
+
+  def reopen
+    perform_lifecycle_command(::Crm::Deals::ReopenService)
+  end
+
+  def reorder
+    perform_lifecycle_command(::Crm::Deals::ReorderService)
+  end
+
+  def undo_transition
+    perform_lifecycle_command(::Crm::Deals::UndoTransitionService)
+  end
+
+  def set_waiting
+    perform_waiting_command(::Crm::Deals::SetWaitingService, waiting_params)
+  end
+
+  def clear_waiting
+    perform_waiting_command(::Crm::Deals::ClearWaitingService, params.permit(:lock_version, :idempotency_key))
   end
 
   def archive
@@ -148,140 +156,6 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   private
 
-  def bootstrap_defaults!
-    ::Crm::Bootstrap::AccountService.new(account: Current.account).perform
-  end
-
-  def create_deal_params
-    params.permit(*CREATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
-  end
-
-  def filter_by_ai_only(scope)
-    return scope unless parse_boolean(params[:ai_only])
-
-    pending_conversation_ids = Current.account.conversations.pending.select(:id)
-    pending_thread_ids = CommunicationThread.pending.where(account_id: Current.account.id).select(:id)
-
-    scope.where(originating_communication_thread_id: pending_thread_ids)
-         .or(
-           scope.where(
-             originating_communication_thread_id: nil,
-             originating_conversation_id: pending_conversation_ids
-           )
-         )
-  end
-
-  def filter_by_contact(scope)
-    return scope if params[:contact_id].blank?
-
-    scope.joins(:deal_contacts).where(crm_deal_contacts: { contact_id: params[:contact_id] }).distinct
-  end
-
-  def filter_by_exact(scope, field_name)
-    return scope if params[field_name].blank?
-
-    scope.where(field_name => params[field_name])
-  end
-
-  def filter_by_created_range(scope)
-    from = parse_datetime_param!(params[:created_from], field_name: 'created_from', required: false)
-    to = parse_datetime_param!(params[:created_to], field_name: 'created_to', required: false)
-    return scope if from.blank? && to.blank?
-
-    scoped = scope
-    scoped = scoped.where('crm_deals.created_at >= ?', from) if from.present?
-    scoped = scoped.where('crm_deals.created_at <= ?', to) if to.present?
-    scoped
-  end
-
-  def filter_by_originating_conversation(scope)
-    return scope if params[:originating_conversation_id].blank?
-
-    conversation = resolve_originating_conversation(params[:originating_conversation_id])
-    return scope.none if conversation.blank?
-
-    scope.where(originating_conversation_id: conversation.id)
-  end
-
-  def filter_by_originating_communication_thread(scope)
-    return scope if params[:originating_communication_thread_id].blank?
-
-    communication_thread = resolve_originating_communication_thread(params[:originating_communication_thread_id])
-    return scope.none if communication_thread.blank?
-
-    scope.where(originating_communication_thread_id: communication_thread.id)
-  end
-
-  def filter_by_query(scope)
-    return scope if params[:q].blank?
-
-    query = "%#{params[:q].to_s.strip}%"
-    scope.where('crm_deals.title ILIKE :query OR crm_deals.external_ref ILIKE :query', query: query)
-  end
-
-  def filtered_deals
-    scope = policy_scope(::Crm::Deal).preload(
-      :company,
-      :originating_conversation,
-      :originating_communication_thread,
-      deal_contacts: :contact
-    ).ordered
-    scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
-    %i[pipeline_id stage_id owner_id team_id company_id].each do |field_name|
-      scope = filter_by_exact(scope, field_name)
-    end
-    scope = filter_by_originating_conversation(scope)
-    scope = filter_by_ai_only(filter_by_originating_communication_thread(scope))
-    scope = filter_by_contact(scope)
-    scope = filter_by_query(filter_by_created_range(scope))
-
-    ::Crm::CustomFieldFilterSet.new(
-      account: Current.account,
-      entity_kind: 'deal',
-      raw_filters: custom_attribute_filters_param
-    ).apply(scope)
-  end
-
-  def page_param
-    value = params[:page].presence || 1
-    value.to_i.clamp(1, 10_000)
-  end
-
-  def per_page_param
-    value = params[:per_page].presence || params[:limit].presence || DEFAULT_PER_PAGE
-    value.to_i.clamp(1, MAX_PER_PAGE)
-  end
-
-  def page_offset
-    (page_param - 1) * per_page_param
-  end
-
-  def pagination_meta(scope, records)
-    total_count = scope.reorder(nil).count
-    total_pages = (total_count.to_f / per_page_param).ceil
-
-    {
-      count: records.size,
-      has_more: page_param < total_pages,
-      page: page_param,
-      per_page: per_page_param,
-      stage_counts: scope.reorder(nil).group(:stage_id).count.transform_keys(&:to_s),
-      total_count: total_count,
-      total_pages: total_pages
-    }
-  end
-
-  def idempotent_deal
-    return if create_deal_params[:idempotency_key].blank?
-
-    Current.account.crm_deals.preload(
-      :company,
-      :originating_conversation,
-      :originating_communication_thread,
-      deal_contacts: :contact
-    ).find_by(idempotency_key: create_deal_params[:idempotency_key])
-  end
-
   def set_deal
     @deal = policy_scope(::Crm::Deal).preload(
       :company,
@@ -289,25 +163,5 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       :originating_communication_thread,
       deal_contacts: :contact
     ).find(params[:id])
-  end
-
-  def resolve_originating_conversation(raw_value)
-    value = raw_value.to_s.strip
-    return if value.blank?
-
-    Current.account.conversations.find_by(id: value) ||
-      Current.account.conversations.find_by(display_id: value)
-  end
-
-  def resolve_originating_communication_thread(raw_value)
-    value = raw_value.to_s.strip
-    return if value.blank?
-
-    CommunicationThread.find_by(account_id: Current.account.id, display_id: value) ||
-      CommunicationThread.find_by(account_id: Current.account.id, id: value)
-  end
-
-  def update_deal_params
-    params.permit(*UPDATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
   end
 end

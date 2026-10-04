@@ -3,6 +3,7 @@ class DeviseOverrides::PasswordsController < Devise::PasswordsController
 
   skip_before_action :require_no_authentication, raise: false
   skip_before_action :authenticate_user!, raise: false
+  before_action :reject_impersonation_credential_change!, only: [:update]
 
   def create
     @user = User.from_email(params[:email])
@@ -24,6 +25,13 @@ class DeviseOverrides::PasswordsController < Devise::PasswordsController
   end
 
   private
+
+  def reject_impersonation_credential_change!
+    client_id = request.headers[DeviseTokenAuth.headers_names[:client]].to_s
+    return unless client_id.start_with?(SuperAdmin::ImpersonationService::CLIENT_PREFIX)
+
+    render json: { error: I18n.t('auth.session_replaced'), code: 'session_replaced' }, status: :unauthorized
+  end
 
   def reset_password_and_confirmation(recoverable)
     recoverable.confirm unless recoverable.confirmed? # confirm if user resets password without confirming anytime before

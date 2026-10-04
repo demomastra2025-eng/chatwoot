@@ -1,15 +1,26 @@
 class Reminders::ExecutionLockService
-  def initialize(reminder:, processing_claim:, execution_updated_at:)
+  def initialize(reminder:, processing_claim:, execution_updated_at:, conversation: nil, captain_control_lock: false)
     @reminder = reminder
     @processing_claim = processing_claim
     @execution_updated_at = execution_updated_at
+    @conversation = conversation
+    @captain_control_lock = captain_control_lock
   end
 
   def perform(&)
     result = nil
     lock_scope = -> { result = with_locked_execution(&) }
 
-    if lock_remindable?
+    if conversation.present?
+      conversation.with_lock do
+        conversation.reload
+        if captain_control_lock
+          conversation.with_captain_control_lock { lock_scope.call }
+        else
+          lock_scope.call
+        end
+      end
+    elsif lock_remindable?
       reminder.remindable.with_lock(&lock_scope)
     else
       lock_scope.call
@@ -20,7 +31,7 @@ class Reminders::ExecutionLockService
 
   private
 
-  attr_reader :reminder, :processing_claim, :execution_updated_at
+  attr_reader :reminder, :processing_claim, :execution_updated_at, :conversation, :captain_control_lock
 
   def lock_remindable?
     return false if reminder.remindable.blank?

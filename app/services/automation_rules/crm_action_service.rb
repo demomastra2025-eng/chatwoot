@@ -5,6 +5,10 @@ class AutomationRules::CrmActionService
     @record = record
     @entity_kind = entity_kind.to_s
     @changed_attributes = options[:changed_attributes]
+    @source_webhook_data = AutomationRules::CrmMatchingSnapshot.webhook_data_from(
+      options[:source_snapshot],
+      entity_kind: @entity_kind
+    )
     Current.executed_by = rule
   end
 
@@ -27,10 +31,11 @@ class AutomationRules::CrmActionService
 
   private
 
-  attr_reader :account, :record, :rule, :entity_kind
+  attr_reader :account, :record, :rule, :entity_kind, :source_webhook_data
 
   def send_webhook_event(webhook_url)
-    payload = record.automation_webhook_data.merge(event: "automation_event.#{rule.event_name}")
+    payload = (source_webhook_data || record.automation_webhook_data).deep_dup
+    payload[:event] = "automation_event.#{rule.event_name}"
     payload[:changed_attributes] = formatted_changed_attributes if formatted_changed_attributes.present?
     WebhookJob.perform_later(webhook_url[0], payload)
   end

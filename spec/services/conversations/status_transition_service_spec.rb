@@ -86,6 +86,32 @@ RSpec.describe Conversations::StatusTransitionService do
     expect(conversation.current_captain_control_state).to eq('human')
   end
 
+  it 'merges assistant outcome audit data into transition history' do
+    described_class.new(
+      conversation: conversation,
+      params: { status: 'resolved', status_reason: 'Other' },
+      actor: create(:captain_assistant, account: account),
+      source: 'captain',
+      audit: {
+        reason_override: 'Other',
+        metadata: {
+          outcome_reason_id: 'other',
+          outcome_reason_type: 'completion',
+          assistant_id: 123,
+          outcome_reason_explanation: 'Customer requested closure after resolution.'
+        }
+      }
+    ).perform
+
+    expect(conversation.status_transitions.last).to have_attributes(reason: 'Other', source: 'captain')
+    expect(conversation.status_transitions.last.metadata).to include(
+      'outcome_reason_id' => 'other',
+      'outcome_reason_type' => 'completion',
+      'assistant_id' => 123,
+      'outcome_reason_explanation' => 'Customer requested closure after resolution.'
+    )
+  end
+
   it 'requires configured reasons for manual transitions' do
     configure_status_reasons(:resolved, options: ['Вопрос решён'], required: true)
 

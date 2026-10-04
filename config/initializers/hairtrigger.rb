@@ -1,3 +1,18 @@
+if defined?(HairTrigger) && ActiveRecord::Tasks::DatabaseTasks.respond_to?(:migration_connection_pool)
+  hair_trigger = HairTrigger.singleton_class
+
+  unless hair_trigger.method_defined?(:migrator_with_rails_migration_context)
+    hair_trigger.class_eval do
+      def migrator_with_rails_migration_context
+        context = ActiveRecord::Tasks::DatabaseTasks.migration_connection_pool.migration_context
+        ActiveRecord::Migrator.new(:up, context.migrations, context.schema_migration, context.internal_metadata)
+      end
+
+      alias_method :migrator, :migrator_with_rails_migration_context
+    end
+  end
+end
+
 if defined?(HairTrigger::MigrationReader)
   migration_reader = HairTrigger::MigrationReader.singleton_class
 
@@ -24,5 +39,21 @@ if defined?(HairTrigger::MigrationReader)
         File.exist?(HairTrigger.schema_rb_path)
       end
     end
+  end
+end
+
+if defined?(HairTrigger)
+  require 'active_record/schema_dumper'
+
+  module HairTrigger::Rails72SchemaDumperPoolCompatibility
+    def dump(pool = ActiveRecord::Base.connection_pool, stream = $stdout, config = ActiveRecord::Base)
+      pool = pool.pool unless pool.respond_to?(:with_connection)
+      super(pool, stream, config)
+    end
+  end
+
+  schema_dumper = ActiveRecord::SchemaDumper.singleton_class
+  unless schema_dumper.ancestors.include?(HairTrigger::Rails72SchemaDumperPoolCompatibility)
+    schema_dumper.prepend(HairTrigger::Rails72SchemaDumperPoolCompatibility)
   end
 end

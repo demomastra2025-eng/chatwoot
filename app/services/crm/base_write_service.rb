@@ -94,70 +94,36 @@ class Crm::BaseWriteService
   end
 
   def resolve_closing_reasons!(target_stage:, current_reasons:, require_input:)
-    return [] if target_stage.outcome_open?
+    return [] unless target_stage.terminal_outcome?
     return current_reasons unless params.key?(:closing_reasons) || require_input
 
     submitted_reasons = ::Crm::Stage.normalize_closing_reason_values(params[:closing_reasons])
     invalid_reasons = target_stage.invalid_closing_reasons(submitted_reasons)
     raise_invalid_closing_reasons!(target_stage, invalid_reasons) if invalid_reasons.present?
 
-    canonical_reasons = target_stage.canonical_closing_reasons(submitted_reasons)
-    raise_missing_closing_reasons!(target_stage) if target_stage.closing_reason_required? && canonical_reasons.blank?
-
-    canonical_reasons
+    target_stage.canonical_closing_reasons(submitted_reasons)
   end
 
   def resolve_transition_reason!(target_stage:, require_input:)
     return if target_stage.terminal_outcome?
-    return unless params.key?(:transition_reason) || (require_input && target_stage.transition_reason_required?)
+    return unless transition_reason_submitted?(target_stage, require_input)
 
     submitted_reason = ::Crm::Stage.normalize_closing_reason_values([params[:transition_reason]]).first
-    invalid_reasons = target_stage.invalid_transition_reason(submitted_reason)
-    raise_invalid_transition_reason!(target_stage, invalid_reasons) if invalid_reasons.present?
-
-    canonical_reason = target_stage.canonical_transition_reason(submitted_reason)
+    canonical_reason = canonical_transition_reason!(target_stage, submitted_reason)
     raise_missing_transition_reason!(target_stage) if target_stage.transition_reason_required? && canonical_reason.blank?
 
     canonical_reason
   end
 
-  def dispatch_crm_deal_realtime_event!(event_name, deal, meta: {})
-    Rails.configuration.dispatcher.dispatch(
-      event_name,
-      Time.zone.now,
-      {
-        account: account,
-        deal: deal,
-        meta: meta
-      }
-    )
+  def transition_reason_submitted?(target_stage, require_input)
+    params.key?(:transition_reason) || (require_input && target_stage.transition_reason_required?)
   end
 
-  def raise_missing_closing_reasons!(target_stage)
-    raise ::Crm::Error.new(
-      code: 'DEAL_STAGE_REQUIRES_CLOSING_REASONS',
-      message: "Select at least one closing reason before moving the deal to #{target_stage.name}.",
-      status: :unprocessable_content,
-      details: {
-        stage_id: target_stage.id,
-        outcome: target_stage.outcome,
-        closing_reason_options: target_stage.closing_reason_options
-      }
-    )
-  end
+  def canonical_transition_reason!(target_stage, submitted_reason)
+    invalid_reasons = target_stage.invalid_transition_reason(submitted_reason)
+    raise_invalid_transition_reason!(target_stage, invalid_reasons) if invalid_reasons.present?
 
-  def raise_invalid_closing_reasons!(target_stage, invalid_reasons)
-    raise ::Crm::Error.new(
-      code: 'DEAL_STAGE_INVALID_CLOSING_REASONS',
-      message: "Closing reasons are not configured for #{target_stage.name}: #{invalid_reasons.join(', ')}.",
-      status: :unprocessable_content,
-      details: {
-        stage_id: target_stage.id,
-        outcome: target_stage.outcome,
-        invalid_reasons: invalid_reasons,
-        closing_reason_options: target_stage.closing_reason_options
-      }
-    )
+    target_stage.canonical_transition_reason(submitted_reason)
   end
 
   def raise_missing_transition_reason!(target_stage)
@@ -183,6 +149,54 @@ class Crm::BaseWriteService
         outcome: target_stage.outcome,
         invalid_reasons: invalid_reasons,
         transition_reason_options: target_stage.transition_reason_options
+      }
+    )
+  end
+
+  def dispatch_crm_deal_realtime_event!(event_name, deal, meta: {})
+    Rails.configuration.dispatcher.dispatch(
+      event_name,
+      Time.zone.now,
+      {
+        account: account,
+        deal: deal,
+        meta: meta
+      }
+    )
+  end
+
+  def dispatch_linked_deal_update!(task, event_type:)
+    return unless task.deal_id?
+
+    dispatch_crm_deal_realtime_event!(
+      Events::Types::CRM_DEAL_UPDATED,
+      task.deal.reload,
+      meta: { event_type: event_type, task_id: task.id }
+    )
+  end
+
+  def dispatch_crm_task_realtime_event!(event_name, task, meta: {})
+    Rails.configuration.dispatcher.dispatch(
+      event_name,
+      Time.zone.now,
+      {
+        account: account,
+        task: task,
+        meta: meta
+      }
+    )
+  end
+
+  def raise_invalid_closing_reasons!(target_stage, invalid_reasons)
+    raise ::Crm::Error.new(
+      code: 'DEAL_STAGE_INVALID_CLOSING_REASONS',
+      message: "Closing reasons are not configured for #{target_stage.name}: #{invalid_reasons.join(', ')}.",
+      status: :unprocessable_content,
+      details: {
+        stage_id: target_stage.id,
+        outcome: target_stage.outcome,
+        invalid_reasons: invalid_reasons,
+        closing_reason_options: target_stage.closing_reason_options
       }
     )
   end

@@ -261,6 +261,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
+        message.account.enable_features('captain_integration')
         message.account.update!(captain_runtime: { 'web_document_parse_enabled' => true })
       end
 
@@ -343,6 +344,34 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
         expect(result).to include({ type: 'image_url', image_url: { url: 'https://example.com/image2.jpg' } })
         expect(result.count { |part| part == { type: 'text', text: 'Image attachment: Recognized image content' } }).to eq(2)
       end
+    end
+
+    it 'preserves image understanding for agents without the new setting and honors an explicit disable' do
+      message.attachments.create!(
+        account: message.account,
+        file_type: :image,
+        external_url: 'https://example.com/image.jpg'
+      )
+      image_attachments = message.attachments.where(file_type: :image)
+      legacy_assistant = build(:captain_assistant, account: message.account, config: {})
+      disabled_assistant = build(
+        :captain_assistant,
+        account: message.account,
+        config: { 'feature_image_understanding' => false }
+      )
+
+      legacy_result = described_class.new(message: message, assistant: legacy_assistant)
+                                     .send(:image_parts, image_attachments)
+      disabled_result = described_class.new(message: message, assistant: disabled_assistant)
+                                       .send(:image_parts, image_attachments)
+
+      expect(legacy_result).to include(
+        { type: 'image_url', image_url: { url: 'https://example.com/image.jpg' } }
+      )
+      expect(legacy_result).to include(
+        { type: 'text', text: 'Image attachment: Recognized image content' }
+      )
+      expect(disabled_result).to be_empty
     end
 
     context 'with image attachments without URLs' do

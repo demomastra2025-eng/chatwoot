@@ -76,13 +76,25 @@ class Telephony::AiVoice::ToolExecutionService
   end
 
   def dispatch_with_current_capability!
-    dispatch_service.with_captain_assistant_assignment_lock do |assistant_id|
+    dispatch_error = nil
+    raw_result = dispatch_service.with_captain_assistant_assignment_lock do |assistant_id|
       verify_tool_capability!(assistant_id: assistant_id)
       @dispatch_started = true
-      result = normalize_result(dispatch_service.perform)
-      @dispatch_started = false
-      result
+      begin
+        dispatch_service.perform
+      rescue ActiveRecord::StatementInvalid, ActiveRecord::Deadlocked, ActiveRecord::LockWaitTimeout,
+             ActiveRecord::SerializationFailure, ActiveRecord::QueryCanceled
+        raise
+      rescue StandardError => error
+        dispatch_error = error
+        nil
+      end
     end
+    raise dispatch_error if dispatch_error
+
+    result = normalize_result(raw_result)
+    @dispatch_started = false
+    result
   end
 
   def tool_capability_token

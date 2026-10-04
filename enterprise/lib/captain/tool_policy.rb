@@ -28,6 +28,7 @@ class Captain::ToolPolicy
 
   def runtime_allowed?
     return false unless scope_allowed?
+    return false unless assistant_lifecycle_permission_satisfied?
 
     feature_requirements_satisfied? &&
       runtime_requirements_satisfied?
@@ -35,6 +36,7 @@ class Captain::ToolPolicy
 
   def execution_allowed?
     scope_allowed? &&
+      assistant_lifecycle_permission_satisfied? &&
       feature_requirements_satisfied? &&
       runtime_requirements_satisfied? &&
       permission_requirements_satisfied?
@@ -70,6 +72,14 @@ class Captain::ToolPolicy
     allowed_scopes.include?(scope_name)
   end
 
+  def assistant_lifecycle_permission_satisfied?
+    return true if assistant.blank?
+    return assistant.handoff_enabled? if tool_id == 'handoff' && assistant.respond_to?(:handoff_enabled?)
+    return assistant.auto_completion_enabled? if tool_id == 'resolve_conversation' && assistant.respond_to?(:auto_completion_enabled?)
+
+    true
+  end
+
   def feature_requirements_satisfied?
     return true if assistant.blank? || required_features.blank?
 
@@ -99,18 +109,19 @@ class Captain::ToolPolicy
     required_runtime_flags.all? do |flag|
       case flag
       when 'web_search'
-        web_access_available?(:search)
+        web_access_available?(:search, 'web_search')
       when 'web_scrape'
-        web_access_available?(:scrape)
+        web_access_available?(:scrape, 'web_scrape_url')
       else
         true
       end
     end
   end
 
-  def web_access_available?(capability)
+  def web_access_available?(capability, tool_id)
     Llm::RuntimePolicy.web_access_enabled?(capability, account: assistant.account) &&
-      Captain::Tools::FirecrawlService.configured?
+      Captain::Tools::FirecrawlService.configured? &&
+      Captain::ToolAccess.per_assistant_web_tool_enabled?(assistant, tool_id, scope_name: scope_name)
   end
 
   def confirmation_requirements_satisfied?

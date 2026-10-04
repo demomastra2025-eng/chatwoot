@@ -1,0 +1,43 @@
+{
+  "HEALTH_MATRIX": {
+    "TITLE": "Client health matrix (OneLink Health Matrix)",
+    "SUBTITLE": "Live diagnostics of WhatsApp, telephony, Janus gateways and the MedElement integration",
+    "UPDATED": "Updated: {time}",
+    "REFRESH": "Refresh",
+    "CHART_SHOW": "Show conversations chart",
+    "CHART_HIDE": "Hide conversations chart",
+    "CHART_TITLE": "Conversations over the last 30 days",
+    "CHART_LABEL": "Conversations",
+    "INCOMPLETE": "Some data is unavailable ({sources}): rows of the matrix may be incomplete.",
+    "KPI": {
+      "TOTAL_ACCOUNTS": "Total accounts",
+      "TOTAL_ACCOUNTS_HINT": "registered in the system",
+      "NEEDS_ATTENTION": "Need attention",
+      "NEEDS_ATTENTION_HINT": "WhatsApp or Janus failures, or stuck messages",
+      "FILTER_ACTIVE_HINT": "Filter is on (click to reset)",
+      "WHATSAPP_HEALTHY": "WhatsApp healthy",
+      "WHATSAPP_HEALTHY_HINT": "lines with a valid session",
+      "TELEPHONY_HEALTHY": "Telephony OK",
+      "TELEPHONY_HEALTHY_HINT": "lines with a binding and Janus"
+    },
+    "TOOLBAR": {
+      "SEARCH_PLACEHOLDER": "Search accounts by name or ID...",
+      "FILTER_OFF": "Filter: only with problems",
+      "FILTER_ON": "Showing only accounts with problems",
+      "SHOWING": "Showing: {shown} of {total}"
+    },
+    "TABLE": {
+      "ACCOUNT": "ID / Account",
+      "WHATSAPP": "WhatsApp",
+      "TELEPHONY": "Telephony & Janus",
+      "MEDELEMENT": "MedElement (MIS)",
+      "STUCK": "Stuck messages",
+      "ACTIONS": "Actions",
+      "SUSPENDED": "Suspended",
+      "STUCK_COUNT": "⚠️ {count} stuck",
+      "SETTINGS": "Settings →",
+      "EMPTY_TITLE": "No accounts found",
+      "EMPTY_HINT": "Try changing the search or turn the problems filter off"
+    }
+  }
+}

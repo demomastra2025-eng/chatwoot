@@ -24,9 +24,14 @@ as well as a link to its edit page.
       <%= content_for(:title) %>
     </h1>
 
-    <div>
+    <div class="flex items-center gap-2">
+      <% target_user = page.resource.administrators.first || page.resource.users.first %>
+      <% if target_user.present? %>
+        <%# POST on purpose: the one-time login token is only created (and audited) when the button is pressed, not on every page view. %>
+        <%= button_to("🔑 Войти в аккаунт", [:impersonate, :super_admin, page.resource], method: :post, form: { target: "_blank" }, class: "button button--secondary", title: "Беспарольный вход в кабинет клиента глазами администратора аккаунта") %>
+      <% end %>
       <%= if accessible_action?(page.resource, :edit)
-        link_to("Edit", [:edit, namespace, page.resource], class: "button")
+        link_to(t("administrate.actions.edit"), [:edit, namespace, page.resource], class: "button")
       end %>
     </div>
   </header>

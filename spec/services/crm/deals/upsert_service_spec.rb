@@ -205,7 +205,7 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(updated_deal.owner).to be_nil
   end
 
-  it 'syncs the deal owner to the primary contact when an explicit owner is provided' do
+  it 'keeps an explicit deal owner independent from the primary contact owner' do
     create(:crm_stage, account: account, pipeline: pipeline, default: true)
     owner = create(:user, account: account, role: :agent)
     contact = create(:contact, account: account, owner: nil)
@@ -222,7 +222,7 @@ RSpec.describe Crm::Deals::UpsertService do
     ).perform
 
     expect(deal.owner).to eq(owner)
-    expect(contact.reload.owner).to eq(owner)
+    expect(contact.reload.owner).to be_nil
   end
 
   it 'updates closed_at when an existing deal changes between open and closed stages' do
@@ -251,5 +251,79 @@ RSpec.describe Crm::Deals::UpsertService do
     ).perform
 
     expect(reopened_deal.closed_at).to be_nil
+  end
+
+  it 'captures terminal attribution when a deal is created directly in a terminal stage' do
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won')
+    owner = create(:user, account: account)
+    team = create(:team, account: account)
+
+    deal = described_class.new(
+      account: account,
+      params: {
+        title: 'Imported won deal',
+        stage_id: won_stage.id,
+        owner_id: owner.id,
+        team_id: team.id
+      }
+    ).perform
+
+    expect(deal.stage_visits.sole).to have_attributes(
+      stage_outcome: 'won',
+      owner_id_at_terminal: owner.id,
+      team_id_at_terminal: team.id,
+      terminal_attribution_version: 1
+    )
+  end
+
+  it 'syncs the new deal team to incomplete linked tasks only' do
+    original_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    open_status = create(:crm_task_status, account: account, category: 'open')
+    in_progress_status = create(:crm_task_status, account: account, category: 'in_progress')
+    done_status = create(:crm_task_status, account: account, category: 'done')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, team: original_team)
+    open_task = create(:crm_task, account: account, deal: deal, status: open_status, team: nil)
+    active_task = create(:crm_task, account: account, deal: deal, status: in_progress_status, team: original_team)
+    completed_task = create(:crm_task, account: account, deal: deal, status: done_status, team: original_team)
+    archived_task = create(
+      :crm_task,
+      account: account,
+      archived_at: Time.current,
+      deal: deal,
+      status: open_status,
+      team: original_team
+    )
+    updated_deal = nil
+
+    expect do
+      updated_deal = described_class.new(
+        account: account,
+        deal: deal,
+        params: {
+          lock_version: deal.lock_version,
+          team_id: new_team.id
+        }
+      ).perform
+    end.to change {
+      Crm::Event.where(account: account, eventable_type: 'Crm::Task', event_type: 'task_updated').count
+    }.by(2)
+
+    expect(open_task.reload.team).to eq(new_team)
+    expect(active_task.reload.team).to eq(new_team)
+    expect(completed_task.reload.team).to eq(original_team)
+    expect(archived_task.reload.team).to eq(original_team)
+
+    described_class.new(
+      account: account,
+      deal: updated_deal,
+      params: {
+        lock_version: updated_deal.lock_version,
+        team_id: nil
+      }
+    ).perform
+
+    expect(open_task.reload.team).to be_nil
+    expect(active_task.reload.team).to be_nil
   end
 end

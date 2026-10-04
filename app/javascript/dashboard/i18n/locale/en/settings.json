@@ -548,7 +548,8 @@
       "DATA": "Data",
       "AI": "AI"
     },
-    "VISIBILITY": "Navigation"
+    "VISIBILITY": "Navigation",
+    "STORAGE": "Storage"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1694,6 +1695,138 @@
       "DESCRIPTION": "Are you sure you want to delete this policy? This action cannot be undone.",
       "CONFIRM_BUTTON_LABEL": "Delete",
       "CANCEL_BUTTON_LABEL": "Cancel"
+    }
+  },
+  "STORAGE": {
+    "TITLE": "Storage & Disk",
+    "DESCRIPTION": "Monitor account disk usage, file breakdowns and channel storage distribution.",
+    "LOADING": "Loading storage data...",
+    "REFRESH": "Refresh Data",
+    "REFRESHING": "Refreshing...",
+    "REFRESH_SUCCESS": "Storage data refreshed successfully",
+    "REFRESH_ERROR": "Failed to refresh storage data",
+    "FETCH_ERROR": "Error loading storage information",
+    "HEAVY_FILES_ERROR": "Failed to load heavy files list",
+    "OVERVIEW": {
+      "TITLE": "Disk Quota",
+      "AVAILABLE": "Available",
+      "UNLIMITED": "Unlimited Plan",
+      "NORMAL": "Normal",
+      "WARNING": "Warning (>80%)",
+      "CRITICAL": "Critical (>95%)",
+      "LAST_UPDATED": "Last updated"
+    },
+    "TYPES": {
+      "TITLE": "Breakdown by Data Type",
+      "RECORDINGS": "Call Recordings",
+      "AUDIO": "Chat Voice Notes",
+      "IMAGES": "Images & Photos",
+      "DOCUMENTS": "Documents & Files",
+      "VIDEOS": "Video Files",
+      "CAPTAIN": "AI Knowledge Base (Captain)",
+      "OTHER": "Other Data",
+      "SHARE": "Share"
+    },
+    "INBOXES": {
+      "TITLE": "Storage by Communication Channel",
+      "FILES_COUNT": "files"
+    },
+    "HEAVY_FILES": {
+      "TITLE": "Top 50 Heaviest Files",
+      "SUBTITLE": "Files consuming the largest amount of disk space",
+      "ALL_TYPES": "All types",
+      "ALL_INBOXES": "All channels",
+      "EMPTY": "No files found",
+      "COLUMNS": {
+        "NAME": "File",
+        "TYPE": "Type",
+        "INBOX": "Channel",
+        "SIZE": "Size",
+        "DATE": "Date",
+        "ACTIONS": "Actions"
+      },
+      "ACTIONS": {
+        "OPEN_CONVERSATION": "Conversation",
+        "DOWNLOAD": "Download / Listen"
+      },
+      "CONVERSATION_ID": "Conversation ID",
+      "DATE_FROM": "From",
+      "DATE_TO": "To"
+    },
+    "TABS": {
+      "OVERVIEW": "Storage Overview",
+      "CLEANER": "Cleaner & Trash"
+    },
+    "CLEANER": {
+      "TITLE": "Smart Storage Cleaner",
+      "SUBTITLE": "Move selected files to a 30-day trash. Trashed files and retained call-recording originals remain physically stored and counted until permanently purged. Transcripts and call metadata are preserved.",
+      "FILE_TYPE": "File type to clean",
+      "ALL_TYPES": "All file types",
+      "OLDER_THAN": "Older than",
+      "OLDER_1_MONTH": "Older than 1 month",
+      "OLDER_3_MONTHS": "Older than 3 months",
+      "OLDER_6_MONTHS": "Older than 6 months",
+      "OLDER_1_YEAR": "Older than 1 year",
+      "PREVIEW_BUTTON": "Preview Cleanup",
+      "PREVIEWING": "Analyzing files...",
+      "PREVIEW_TITLE": "Cleanup Preview",
+      "FOUND_FILES": "Files found:",
+      "SPACE_TO_FREE": "Space to be freed:",
+      "RETENTION_NOTICE": "Files are kept in trash for 30 days and can be restored instantly anytime. After 30 days, they are permanently purged from disk.",
+      "MOVE_BUTTON": "Move to Trash (30 days)",
+      "MOVING": "Moving...",
+      "MOVE_CONFIRM": "Move {count} files ({size}) to trash? You can restore them within 30 days.",
+      "MOVE_SUCCESS": "Moved {count} items ({size}) to 30-day trash. Physical storage remains counted until the retention period ends or the item is permanently deleted.",
+      "MOVE_ERROR": "Error moving files to trash",
+      "NO_MATCHING_FILES": "No files match the selected criteria"
+    },
+    "TRASH": {
+      "TITLE": "Trash (30-Day Retention)",
+      "SUBTITLE": "Files moved to trash. Permanently purged after 30 days.",
+      "EMPTY": "Trash is empty. Trashed files remain here for 30 days.",
+      "TOTAL_IN_TRASH": "In trash:",
+      "RESTORE_ALL": "Restore All",
+      "EMPTY_TRASH": "Empty Trash Now",
+      "EMPTY_CONFIRM": "Are you sure you want to permanently delete all files from trash now? This cannot be undone.",
+      "RESTORE_CONFIRM": "Restore all files from trash back to storage?",
+      "COLUMNS": {
+        "NAME": "File Name",
+        "TYPE": "Type",
+        "INBOX": "Inbox",
+        "SIZE": "Size",
+        "DELETED_AT": "Moved to Trash",
+        "EXPIRES_IN": "Auto-purge In",
+        "ACTIONS": "Actions"
+      },
+      "DAYS_LEFT": "{days} d",
+      "RESTORE": "Restore",
+      "PURGE": "Purge Now",
+      "PURGE_ITEM_CONFIRM": "Permanently delete this file?",
+      "RESTORE_SUCCESS": "File restored successfully",
+      "RESTORE_ALL_SUCCESS": "All files restored from trash",
+      "PURGE_SUCCESS": "File permanently deleted",
+      "EMPTY_SUCCESS": "Trash emptied successfully"
+    },
+    "ALERTS": {
+      "GLOBAL_WARNING": "Storage usage is {percentage}% of this account’s limit.",
+      "GLOBAL_CRITICAL": "High storage usage: {percentage}% of this account’s limit.",
+      "OPEN": "Open storage",
+      "WARNING_TITLE": "Warning: storage is {percentage}% full",
+      "WARNING_MESSAGE": "Used {used} of {limit}. Files remain available; review storage usage if needed.",
+      "CRITICAL_TITLE": "High storage usage: {percentage}%",
+      "CRITICAL_MESSAGE": "Used {used} of {limit}. The displayed usage is informational and does not change upload behavior.",
+      "CLEAN_BUTTON": "Clean storage",
+      "DISMISS": "Dismiss for 24 hours"
+    }
+  },
+  "TRIAL_BANNER": {
+    "ACTIVE": "🎁 Free trial (Full Free): {time} left | All channels and AI are available",
+    "EXPIRED": "⚠️ Your trial has ended. Choose a plan to keep working.",
+    "CHOOSE_PLAN": "Choose a plan",
+    "TIME": {
+      "DAYS_HOURS": "{days} d {hours} h",
+      "HOURS_MINUTES": "{hours} h {minutes} min",
+      "MINUTES": "{minutes} min"
     }
   }
 }

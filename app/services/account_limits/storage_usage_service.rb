@@ -1,14 +1,21 @@
+# frozen_string_literal: true
+
 class AccountLimits::StorageUsageService
   LimitExceeded = Class.new(StandardError)
 
-  LIMIT_EXCEEDED_MESSAGE = 'Account storage limit exceeded'.freeze
+  LIMIT_EXCEEDED_MESSAGE = 'Account storage limit exceeded'
 
   RECORD_TYPE_SCOPES = {
     'Attachment' => nil,
+    'Account' => %w[contacts_export logo],
+    'CampaignAudienceImport' => %w[import_file],
+    'Call' => %w[recording recording_manifest recording_tracks decoded_recording_manifest decoded_recording_chunks],
+    'ContactChannelProfile' => %w[avatar],
+    'Whatsapp::TemplateMediaSource' => %w[file],
     'Macro' => %w[files],
     'AutomationRule' => %w[files],
     'Portal' => %w[logo],
-    'DataImport' => %w[import_file],
+    'DataImport' => %w[failed_records import_file],
     'AgentBot' => %w[avatar],
     'Inbox' => %w[avatar],
     'Contact' => %w[avatar],
@@ -22,24 +29,28 @@ class AccountLimits::StorageUsageService
     @account = account
   end
 
-  def usage_bytes
-    RECORD_TYPE_SCOPES.sum do |record_type, attachment_names|
-      relation = scoped_relation(record_type)
-      next 0 if relation.nil?
-
-      attachments = ActiveStorage::Attachment.joins(:blob)
-                                             .where(record_type: record_type)
-                                             .where("#{ActiveStorage::Attachment.table_name}.record_id IN (#{relation.to_sql})")
-      attachments = attachments.where(name: attachment_names) if attachment_names.present?
-      attachments.sum('active_storage_blobs.byte_size')
-    end
+  def active_storage_bytes
+    active_storage_blob_scope.sum(:byte_size).to_i
   end
 
-  def within_limit?(extra_bytes: 0, released_bytes: 0)
-    return true if unlimited?
+  # Local call recordings live outside ActiveStorage and are included in physical usage totals.
+  def count_recordings?
+    true
+  end
 
-    projected_usage = usage_bytes + extra_bytes.to_i - released_bytes.to_i
-    projected_usage <= total_limit_bytes
+  def recordings_bytes
+    return 0 unless count_recordings? && account.respond_to?(:local_recordings_bytes)
+
+    account.local_recordings_bytes.to_i
+  end
+
+  def usage_bytes
+    active_storage_bytes + recordings_bytes
+  end
+
+  # Storage is informational: uploads, imports, messages and attachments remain available above the limit.
+  def within_limit?(**)
+    true
   end
 
   def summary
@@ -58,9 +69,7 @@ class AccountLimits::StorageUsageService
   attr_reader :account
 
   def total_limit_bytes
-    account_storage_limit.presence ||
-      global_storage_limit.presence ||
-      ChatwootApp.max_limit.to_i
+    account_storage_limit.presence || global_storage_limit.presence || ChatwootApp.max_limit.to_i
   end
 
   def unlimited?
@@ -77,8 +86,57 @@ class AccountLimits::StorageUsageService
 
   def scoped_relation(record_type)
     model = record_type.safe_constantize
-    return if model.blank? || !model.column_names.include?('account_id')
+    return if model.blank?
 
-    model.where(account_id: account.id).select(:id)
+    case record_type
+    when 'Account'
+      model.where(id: account.id).select(:id)
+    when 'Whatsapp::TemplateMediaSource'
+      model.where(whatsapp_channel_id: Channel::Whatsapp.where(account_id: account.id).select(:id)).select(:id)
+    else
+      return if model.column_names.exclude?('account_id')
+
+      model.where(account_id: account.id).select(:id)
+    end
+  end
+
+  # Count each physical blob once per tenant, including generated images only when their source blob
+  # is owned by this account. Shared User avatars remain excluded from tenant totals.
+  def active_storage_blob_scope
+    source_blob_ids = tenant_source_blob_ids
+    return ActiveStorage::Blob.none unless source_blob_ids
+
+    owned_blobs = ActiveStorage::Blob.where(id: source_blob_ids)
+    return owned_blobs unless variants_available?
+
+    owned_blobs.or(ActiveStorage::Blob.where(id: derived_variant_blob_ids(source_blob_ids)))
+  end
+
+  def tenant_source_blob_ids
+    predicates = RECORD_TYPE_SCOPES.filter_map do |record_type, attachment_names|
+      relation = scoped_relation(record_type)
+      next if relation.nil?
+
+      attachment_table = ActiveStorage::Attachment.arel_table
+      predicate = attachment_table[:record_type].eq(record_type)
+                                                .and(attachment_table[:record_id].in(relation.arel))
+      predicate = predicate.and(attachment_table[:name].in(attachment_names)) if attachment_names.present?
+      predicate
+    end
+    return if predicates.empty?
+
+    ActiveStorage::Attachment.where(predicates.reduce(&:or)).select(:blob_id).distinct
+  end
+
+  def variants_available?
+    defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
+  end
+
+  def derived_variant_blob_ids(source_blob_ids)
+    ActiveStorage::Attachment.where(
+      record_type: ActiveStorage::VariantRecord.name,
+      name: 'image',
+      record_id: ActiveStorage::VariantRecord.where(blob_id: source_blob_ids).select(:id)
+    ).select(:blob_id).distinct
   end
 end

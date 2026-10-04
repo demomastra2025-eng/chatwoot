@@ -500,6 +500,185 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       )
     end
 
+    def create_thread_conversation(thread:, inbox:)
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: inbox)
+      target = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        contact: conversation.contact,
+        contact_inbox: contact_inbox
+      )
+      link = CommunicationThreadConversation.find_by!(account_id: account.id, conversation_id: target.id)
+      link.update!(
+        communication_thread: thread,
+        inbox: inbox,
+        contact_inbox: contact_inbox,
+        primary: CommunicationThreadConversation.where(communication_thread_id: thread.id).where.not(id: link.id).none?
+      )
+      target.association(:communication_thread_conversation).reset
+      target.association(:communication_thread).reset
+      target
+    end
+
+    it 'uses the conversation-first transaction lock path for conversation, confirmation, and contact-merge mutations' do
+      tool_ids = described_class::CONVERSATION_MUTATING_TOOL_IDS
+      tool_ids.each do |tool_id|
+        service = described_class.new(
+          tool_name: tool_id,
+          payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }
+        )
+        acquired_inboxes = []
+        allow(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).and_wrap_original do |original, inbox_id|
+          acquired_inboxes << inbox_id
+          original.call(inbox_id)
+        end
+
+        service.with_captain_assistant_assignment_lock { |_assistant_id| true }
+
+        expect(acquired_inboxes).to include(inbox.id), "#{tool_id} did not take the transaction-scoped assignment lock"
+      end
+    end
+
+    it 'includes an explicit account-scoped target conversation in the lock set' do
+      target_conversation = create(:conversation, account: account, inbox: create(:inbox, account: account))
+      service = described_class.new(
+        tool_name: 'assign_conversation',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { conversation_id: target_conversation.display_id }
+        }
+      )
+
+      expect(service.send(:conversation_mutation_conversation_ids)).to match_array([conversation.id, target_conversation.id])
+    end
+
+    it 'resolves a colliding conversation display ID before a primary key like native Captain tools' do
+      primary_key_conversation = create(:conversation, account: account, inbox: inbox)
+      display_id_conversation = create(:conversation, account: account, inbox: inbox)
+      primary_key_conversation.update_column(:display_id, 2_000_000 + primary_key_conversation.id) # rubocop:disable Rails/SkipsModelValidations
+      display_id_conversation.update_column(:display_id, primary_key_conversation.id) # rubocop:disable Rails/SkipsModelValidations
+      service = described_class.new(
+        tool_name: 'add_private_note',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { conversation_id: primary_key_conversation.id }
+        }
+      )
+
+      expect(service.send(:voice_target_conversation, primary_key_conversation.id)).to eq(display_id_conversation)
+      expect(service.send(:conversation_mutation_conversation_ids))
+        .to contain_exactly(conversation.id, display_id_conversation.id)
+    end
+
+    it 'includes every account conversation on a mergee contact in the pre-action lock set' do
+      base_contact = create(:contact, account: account)
+      mergee_contact = create(:contact, account: account)
+      mergee_inbox = create(:inbox, account: account)
+      mergee_conversation = create(:conversation, account: account, inbox: mergee_inbox, contact: mergee_contact)
+      service = described_class.new(
+        tool_name: 'merge_contacts',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { base_contact_id: base_contact.id, mergee_contact_id: mergee_contact.id }
+        }
+      )
+
+      expect(service.send(:conversation_mutation_conversation_ids))
+        .to contain_exactly(conversation.id, mergee_conversation.id)
+    end
+
+    it 'locks the account-scoped conversation attached to a native message target' do
+      target_conversation = create(:conversation, account: account, inbox: create(:inbox, account: account))
+      target_message = create(
+        :message,
+        account: account,
+        inbox: target_conversation.inbox,
+        conversation: target_conversation,
+        message_type: :outgoing,
+        content: 'Existing message'
+      )
+      service = described_class.new(
+        tool_name: 'edit_message',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { message_id: target_message.id }
+        }
+      )
+
+      expect(service.send(:conversation_mutation_conversation_ids))
+        .to contain_exactly(conversation.id, target_conversation.id)
+    end
+
+    it 'locks every account conversation linked to an explicit communication thread target' do
+      target_inbox = create(:inbox, account: account)
+      target_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: target_inbox)
+      target_conversation = create(
+        :conversation,
+        account: account,
+        inbox: target_inbox,
+        contact: conversation.contact,
+        contact_inbox: target_contact_inbox
+      )
+      thread = create(:communication_thread, account: account, contact: conversation.contact)
+      create(
+        :communication_thread_conversation,
+        communication_thread: thread,
+        conversation: target_conversation,
+        account: account,
+        inbox: target_inbox,
+        contact_inbox: target_contact_inbox
+      )
+      service = described_class.new(
+        tool_name: 'send_message_to_conversation',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { communication_thread_id: thread.id, content: 'Reply' }
+        }
+      )
+
+      expect(service.send(:conversation_mutation_conversation_ids))
+        .to contain_exactly(conversation.id, target_conversation.id)
+    end
+
+    it 'locks the linked conversations for a colliding display ID before a primary key' do
+      account.enable_features!('communication_threads')
+      primary_key_thread = create(:communication_thread, account: account, contact: conversation.contact)
+      display_id_thread = create(:communication_thread, account: account, contact: conversation.contact)
+      primary_key_thread.update_column(:display_id, 2_000_000 + primary_key_thread.id) # rubocop:disable Rails/SkipsModelValidations
+      display_id_thread.update_column(:display_id, primary_key_thread.id) # rubocop:disable Rails/SkipsModelValidations
+
+      primary_inbox = create(:inbox, account: account)
+      display_inbox = create(:inbox, account: account)
+      create_thread_conversation(thread: primary_key_thread, inbox: primary_inbox)
+      create_thread_conversation(thread: display_id_thread, inbox: display_inbox)
+      service = described_class.new(
+        tool_name: 'send_message_to_conversation',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { communication_thread_id: primary_key_thread.id, content: 'Reply' }
+        }
+      )
+      acquired_inboxes = []
+      allow(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).and_wrap_original do |original, inbox_id|
+        acquired_inboxes << inbox_id
+        original.call(inbox_id)
+      end
+
+      expect(service.send(:voice_target_communication_thread, primary_key_thread.id, conversation))
+        .to eq(display_id_thread)
+      service.with_captain_assistant_assignment_lock { |_assistant_id| true }
+
+      expect(acquired_inboxes).to include(display_inbox.id)
+      expect(acquired_inboxes).not_to include(primary_inbox.id)
+    end
+
     it 'keeps a missing assignment stable after the lock is released' do
       service = described_class.new(
         tool_name: 'create_note',

@@ -180,3 +180,42 @@ campaign_audience_import_cleanup_job:
   cron: '17 * * * *'
   class: 'Campaigns::AudienceImportCleanupJob'
   queue: housekeeping
+
+# Replays durable CRM outbox events missed by transient enqueue failures.
+crm_event_replay_job:
+  cron: '*/1 * * * *'
+  class: 'Crm::Events::ReplayUnpublishedJob'
+  queue: scheduled_jobs
+  active_job: true
+
+# Audits stage-visit read models for missed or inconsistent stage transitions.
+crm_stage_visit_reconciliation_job:
+  cron: '23 3 * * *'
+  class: 'Crm::StageVisits::ReconcileJob'
+  queue: scheduled_jobs
+  active_job: true
+
+accounts_storage_breakdown_refresh_job:
+  cron: '0 * * * *'
+  class: 'Accounts::StorageBreakdownRefreshJob'
+  queue: housekeeping
+
+telephony_purge_retained_recordings_job:
+  cron: '40 3 * * *'
+  class: 'Telephony::PurgeRetainedRecordingsJob'
+  queue: housekeeping
+
+storage_purge_expired_trash_job:
+  cron: '30 3 * * *'
+  class: 'Storage::PurgeExpiredTrashJob'
+  queue: housekeeping
+
+accounts_storage_threshold_alert_job:
+  cron: '15 */6 * * *'
+  class: 'Accounts::StorageThresholdAlertJob'
+  queue: housekeeping
+
+accounts_expire_trials_job:
+  cron: '5 * * * *'
+  class: 'Accounts::ExpireTrialsJob'
+  queue: housekeeping

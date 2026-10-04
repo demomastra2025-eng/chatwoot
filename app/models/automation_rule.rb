@@ -34,6 +34,8 @@ class AutomationRule < ApplicationRecord
     deal_created
     deal_updated
     deal_stage_changed
+    deal_waiting_set
+    deal_waiting_cleared
     deal_archived
     deal_unarchived
   ].freeze
@@ -41,6 +43,12 @@ class AutomationRule < ApplicationRecord
     task_created
     task_updated
     task_status_changed
+    task_assigned
+    task_rescheduled
+    task_completed
+    task_cancelled
+    task_reopened
+    task_waiting_changed
     task_archived
     task_unarchived
   ].freeze
@@ -582,7 +590,7 @@ class AutomationRule < ApplicationRecord
     params[:repeat_mode].blank? || params[:repeat_mode].to_s == 'once'
   end
 
-  def create_touch_content_supported?(params)
+  def create_touch_content_supported?(params) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity
     action_type = params[:action_type].presence || 'send_message'
     return true if action_type.to_s == 'ai_agent_wakeup'
 
@@ -600,7 +608,7 @@ class AutomationRule < ApplicationRecord
     params[:body].to_s.strip.present? || Array(params[:attachments]).any?
   end
 
-  def create_touch_timing_supported?(params)
+  def create_touch_timing_supported?(params) # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
     return false unless delay_minutes_supported?(params[:delay_minutes])
     return false unless repeat_mode_supported?(params[:repeat_mode])
     return false if params[:timing_mode].to_s == 'relative' && params[:relative_anchor].blank?

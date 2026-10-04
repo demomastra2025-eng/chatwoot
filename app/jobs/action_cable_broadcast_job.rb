@@ -16,7 +16,13 @@ class ActionCableBroadcastJob < ApplicationJob
     return if members.blank?
 
     broadcast_data = prepare_broadcast_data(event_name, data)
+    payload = { event: event_name, data: broadcast_data }
     broadcast_to_members(members, event_name, broadcast_data)
+    SuperAdmin::ImpersonationService.broadcast_to_active_sessions(
+      account_id: broadcast_data[:account_id] || broadcast_data['account_id'],
+      recipient_tokens: members,
+      payload: payload
+    )
   end
 
   private

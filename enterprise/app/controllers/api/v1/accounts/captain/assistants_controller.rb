@@ -1,7 +1,8 @@
 # rubocop:disable Metrics/ClassLength
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
   ASSISTANT_CONFIG_FIELDS = [
-    :feature_faq, :feature_memory, :feature_citation, :feature_web,
+    :feature_faq, :feature_memory, :feature_citation, :feature_web, :feature_document_reading,
+    :model, :feature_image_understanding, :handoff_enabled, :auto_completion_enabled,
     :welcome_message, :handoff_message, :resolution_message,
     :handoff_message_enabled, :handoff_message_mode,
     :resolution_message_enabled, :resolution_message_mode,
@@ -38,6 +39,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     attributes = assistant_update_params
     Current.account.with_lock do
       @assistant.update!(attributes)
+      cancel_captain_follow_ups_if_disabled!
     end
   rescue ActiveRecord::RecordInvalid => e
     render_fish_voice_reference_error_or_raise(e)
@@ -138,6 +140,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_array_param!(permitted, :guardrails)
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
+    merge_optional_config_param!(permitted, :follow_up_settings)
+    merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
     merge_optional_config_param!(permitted, :rules)
 
@@ -148,6 +152,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     attributes = assistant_params.to_h.deep_symbolize_keys
     existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
     existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
+    normalize_outcome_reason_settings!(existing_config)
 
     attributes.merge(config: existing_config)
   end
@@ -161,8 +166,25 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if incoming_config.key?('voice_settings')
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
+    normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
 
     attributes.merge(config: existing_config.merge(incoming_config))
+  end
+
+  def cancel_captain_follow_ups_if_disabled!
+    settings = @assistant.config.to_h.deep_stringify_keys['follow_up_settings'].to_h
+    return if settings['enabled'] == true
+
+    Current.account.reminders.captain_follow_up.open_statuses
+           .where("metadata -> 'captain_follow_up' ->> 'assistant_id' = ?", @assistant.id.to_s)
+           .find_each(&:cancel!)
+  end
+
+  def normalize_outcome_reason_settings!(config, existing_settings = nil)
+    return unless config.key?('outcome_reason_settings')
+
+    merged = existing_settings.to_h.deep_merge(config['outcome_reason_settings'].to_h)
+    config['outcome_reason_settings'] = Captain::OutcomeReasonConfig.normalize_settings(merged)
   end
 
   def normalized_voice_settings(*sources)

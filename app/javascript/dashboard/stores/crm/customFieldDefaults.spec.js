@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
+  reconcileCustomAttributesForDefinitions,
 } from './customFieldDefaults';
 
 describe('customFieldDefaults', () => {
@@ -36,6 +37,24 @@ describe('customFieldDefaults', () => {
       visit_reason: 'custom',
       source_mode: 'imported',
       visit_tags: ['vip'],
+    });
+  });
+
+  it('keeps applicable values, removes hidden fields, and fills new defaults', () => {
+    const attributes = reconcileCustomAttributesForDefinitions(
+      {
+        shared_note: 'keep me',
+        sales_note: 'remove me',
+      },
+      [
+        { defaultValue: 'shared default', key: 'shared_note' },
+        { defaultValue: 'personal default', key: 'personal_note' },
+      ]
+    );
+
+    expect(attributes).toEqual({
+      shared_note: 'keep me',
+      personal_note: 'personal default',
     });
   });
 });

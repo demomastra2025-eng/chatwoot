@@ -39,6 +39,17 @@ RSpec.describe Crm::Stage do
     expect(pipeline.stages.reload.ordered).to eq([open_stage, won_stage, lost_stage])
   end
 
+  it 'keeps technical, movable, won and lost stages in their system order' do
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'won', outcome: 'won', position: 1)
+    lost_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'lost', outcome: 'lost', position: 2)
+    open_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'qualified', position: 3)
+    technical_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 99)
+
+    expect(pipeline.stages.reload.ordered).to eq([technical_stage, open_stage, won_stage, lost_stage])
+    expect(technical_stage).to be_system_stage
+    expect(technical_stage).to be_position_locked
+  end
+
   it 'marks the first active open stage in a pipeline as default' do
     stage = create(
       :crm_stage,

@@ -7,7 +7,7 @@ class DeviseOverrides::TokenValidationsController < DeviseTokenAuth::TokenValida
     # @resource will have been set by set_user_by_token concern
     if @resource
       @resource = preload_account_user_details(@resource)
-      render 'devise/token', formats: [:json]
+      render 'devise/token', formats: [:json], locals: { impersonation_context: @super_admin_impersonation }
     else
       render_validate_token_error
     end

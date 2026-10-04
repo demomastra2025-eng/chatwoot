@@ -3,30 +3,63 @@ const normalizeColor = color =>
     .trim()
     .toUpperCase();
 
+const LEGACY_STAGE_COLOR_MAP = {
+  '#E11D48': '#FF8F93',
+  '#DC2626': '#FEC8C8',
+  '#EA580C': '#FCCF58',
+  '#F97316': '#FFDB80',
+  '#D97706': '#FFEAB1',
+  '#CA8A04': '#FFF000',
+  '#84CC16': '#DFFF82',
+  '#65A30D': '#EAFFB0',
+  '#16A34A': '#87F1C0',
+  '#059669': '#87F1C0',
+  '#0D9488': '#87F1C0',
+  '#0891B2': '#D5EAFF',
+  '#0284C7': '#9BCAFF',
+  '#2563EB': '#C1E0FD',
+  '#4F46E5': '#CBC9F8',
+  '#7C3AED': '#CBC9F8',
+  '#9333EA': '#F1BFFE',
+  '#C026D3': '#EB94FF',
+  '#DB2777': '#F9DEFF',
+  '#BE123C': '#FFDBDB',
+};
+
 export const STAGE_STANDARD_COLORS = [
-  '#E11D48',
-  '#DC2626',
-  '#EA580C',
-  '#F97316',
-  '#D97706',
-  '#CA8A04',
-  '#84CC16',
-  '#65A30D',
-  '#16A34A',
-  '#059669',
-  '#0D9488',
-  '#0891B2',
-  '#0284C7',
-  '#2563EB',
-  '#4F46E5',
-  '#7C3AED',
-  '#9333EA',
-  '#C026D3',
-  '#DB2777',
-  '#BE123C',
+  '#FFFEB3',
+  '#FEFD7F',
+  '#FFF000',
+  '#FFEAB1',
+  '#FFDB80',
+  '#FCCF58',
+  '#FFDBDB',
+  '#FEC8C8',
+  '#FF8F93',
+  '#D5EAFF',
+  '#C1E0FD',
+  '#9BCAFF',
+  '#EAFFB0',
+  '#DFFF82',
+  '#87F1C0',
+  '#F9DEFF',
+  '#F1BFFE',
+  '#CBC9F8',
+  '#EB94FF',
+  '#F2F3F5',
+  '#E7E8EA',
 ];
 
 export const DEFAULT_STAGE_COLOR = STAGE_STANDARD_COLORS[0] || '';
+
+export const resolveStageDisplayColor = color => {
+  const normalizedColor = normalizeColor(color);
+  return (
+    LEGACY_STAGE_COLOR_MAP[normalizedColor] ||
+    normalizedColor ||
+    DEFAULT_STAGE_COLOR
+  );
+};
 
 const getUsedStandardColors = (
   stages = [],
@@ -44,7 +77,9 @@ const getUsedStandardColors = (
       return;
     }
 
-    const normalizedColor = normalizeColor(stage?.color || stage);
+    const normalizedColor = normalizeColor(
+      resolveStageDisplayColor(stage?.color || stage)
+    );
     if (!paletteColors.has(normalizedColor)) {
       return;
     }

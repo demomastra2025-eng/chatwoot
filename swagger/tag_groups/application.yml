@@ -42,6 +42,14 @@ tags:
     description: Manage user profile
   - name: Reports
     description: Generate reports
+  - name: CRM
+    description: Account-scoped CRM pipelines, deals, tasks, and catalogs
+  - name: CRM Reports
+    description: Account-scoped CRM funnel, lifecycle, and stage reports
+  - name: Account Storage
+    description: Account administrator storage usage, cleanup, trash, and restore
+  - name: Captain Assistants
+    description: Account-scoped Captain assistant configuration
   - name: Teams
     description: Manage teams
   - name: Webhooks

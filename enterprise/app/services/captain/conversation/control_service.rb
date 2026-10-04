@@ -62,7 +62,14 @@ class Captain::Conversation::ControlService
       end
     end
 
-    publish('captain.control.human_activated', source: source, actor: actor) if changed && publish_activation
+    if changed
+      begin
+        Captain::Conversation::FollowUpChainService.cancel_for!(conversation, reason: 'Human control was activated')
+      rescue StandardError => e
+        Rails.logger.warn("[CAPTAIN][FollowUpJob] Could not cancel a stale human-control chain: #{e.class.name}")
+      end
+      publish('captain.control.human_activated', source: source, actor: actor) if publish_activation
+    end
     changed
   end
 
@@ -86,9 +93,9 @@ class Captain::Conversation::ControlService
     control_owner.with_lock(&)
   end
 
-  def handoff!(status_reason:, actor:, source:, fence: nil, &)
+  def handoff!(status_reason:, actor:, source:, fence: nil, audit: {}, &)
     publish('captain.handoff.requested', source: source, actor: actor)
-    result = apply_handoff(status_reason: status_reason, actor: actor, source: source, fence: fence, &)
+    result = apply_handoff(status_reason: status_reason, actor: actor, source: source, fence: fence, audit: audit, &)
     event_name = handoff_event_name(result)
     publish(event_name, source: source, actor: actor)
     result
@@ -145,13 +152,13 @@ class Captain::Conversation::ControlService
     control_owner.captain_control_state = state
   end
 
-  def apply_handoff(status_reason:, actor:, source:, fence:, &callback)
+  def apply_handoff(status_reason:, actor:, source:, fence:, audit:, &callback)
     result = :already_applied
 
     with_locked_conversation_preserving_changes do
       persist_control_owner!
       with_control_owner_lock do
-        result = apply_handoff_under_lock(status_reason: status_reason, actor: actor, source: source, fence: fence, &callback)
+        result = apply_handoff_under_lock(status_reason: status_reason, actor: actor, source: source, fence: fence, audit: audit, &callback)
       end
     end
 
@@ -190,16 +197,16 @@ class Captain::Conversation::ControlService
     record.clear_attribute_changes(stale.keys)
   end
 
-  def apply_handoff_under_lock(status_reason:, actor:, source:, fence:)
+  def apply_handoff_under_lock(status_reason:, actor:, source:, fence:, audit:)
     return :stale if handoff_stale?(fence)
     return :already_applied if handoff_already_applied?
 
-    apply_handoff_transition!(status_reason: status_reason, actor: actor, source: source)
+    apply_handoff_transition!(status_reason: status_reason, actor: actor, source: source, audit: audit)
     yield if block_given?
     :applied
   end
 
-  def apply_handoff_transition!(status_reason:, actor:, source:)
+  def apply_handoff_transition!(status_reason:, actor:, source:, audit:)
     conversation.waiting_since ||= Time.current
     mirror_legacy_control_state(HUMAN_CONTROL)
     control_owner.captain_control_generation += 1
@@ -209,7 +216,8 @@ class Captain::Conversation::ControlService
       conversation: conversation,
       params: { status: 'open', status_reason: status_reason },
       actor: actor,
-      source: source
+      source: source,
+      audit: audit
     ).perform
   end
 

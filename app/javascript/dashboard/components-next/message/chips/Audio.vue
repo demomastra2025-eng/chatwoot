@@ -116,6 +116,20 @@ const waveformInitFrameId = ref(0);
 const { uid } = getCurrentInstance();
 
 const playbackSpeedLabel = computed(() => `${playbackSpeed.value}x`);
+const seekBackwardLabel = '-10s';
+const seekForwardLabel = '+10s';
+
+const FALLBACK_BAR_HEIGHTS = [
+  28, 45, 62, 35, 78, 92, 60, 42, 55, 80, 100, 75, 48, 30, 52, 85, 96, 70, 45,
+  60, 88, 72, 40, 65, 82, 50, 32, 68, 90, 74, 52, 38, 64, 86, 70, 44, 30, 58,
+  82, 94, 66, 42, 56, 78, 62, 38, 25, 40,
+];
+
+const isBarPlayed = index => {
+  if (!duration.value || duration.value <= 0) return false;
+  const progressRatio = currentTime.value / duration.value;
+  return index / FALLBACK_BAR_HEIGHTS.length <= progressRatio;
+};
 
 const destroyWaveform = () => {
   if (waveSurfer.value) {
@@ -347,6 +361,27 @@ const seek = event => {
   currentTime.value = nextTime;
 };
 
+const seekBy = deltaSeconds => {
+  if (!duration.value) return;
+
+  const nextTime = Math.max(
+    0,
+    Math.min(duration.value, currentTime.value + deltaSeconds)
+  );
+
+  if (waveSurfer.value && !isFallbackMode.value) {
+    waveSurfer.value.setTime?.(nextTime);
+    currentTime.value = nextTime;
+    return;
+  }
+
+  const audio = audioElement.value;
+  if (!audio) return;
+
+  audio.currentTime = nextTime;
+  currentTime.value = nextTime;
+};
+
 const playNativeAudio = async () => {
   const audio = audioElement.value;
   if (!audio) return;
@@ -408,7 +443,7 @@ const playOrPause = async () => {
 };
 
 const changePlaybackSpeed = () => {
-  const speeds = [1, 1.5, 2];
+  const speeds = [1, 1.25, 1.5, 2];
   const currentIndex = speeds.indexOf(playbackSpeed.value);
   const nextIndex = (currentIndex + 1) % speeds.length;
   playbackSpeed.value = speeds[nextIndex];
@@ -527,6 +562,21 @@ watchEffect(() => {
           ref="waveformContainer"
           class="min-h-11 w-full overflow-hidden pointer-events-none"
         />
+        <div
+          v-if="isFallbackMode || !isAudioReady"
+          class="absolute inset-0 flex items-center justify-between gap-[2px] px-1 pointer-events-none"
+          data-testid="audio-fallback-waveform"
+        >
+          <div
+            v-for="(height, idx) in FALLBACK_BAR_HEIGHTS"
+            :key="idx"
+            class="w-[2px] rounded-full transition-colors duration-150"
+            :style="{
+              height: `${height}%`,
+              backgroundColor: isBarPlayed(idx) ? '#1F93FF' : '#AEBACB',
+            }"
+          />
+        </div>
         <input
           type="range"
           min="0"
@@ -538,6 +588,22 @@ watchEffect(() => {
           @input="seek"
         />
       </div>
+      <button
+        v-if="isAudioReady"
+        class="border-0 h-6 px-1.5 grid place-content-center bg-n-alpha-2 hover:bg-alpha-3 rounded-lg text-[10px] font-semibold text-n-slate-11 hover:text-n-slate-12 select-none"
+        :title="seekBackwardLabel"
+        @click="seekBy(-10)"
+      >
+        {{ seekBackwardLabel }}
+      </button>
+      <button
+        v-if="isAudioReady"
+        class="border-0 h-6 px-1.5 grid place-content-center bg-n-alpha-2 hover:bg-alpha-3 rounded-lg text-[10px] font-semibold text-n-slate-11 hover:text-n-slate-12 select-none"
+        :title="seekForwardLabel"
+        @click="seekBy(10)"
+      >
+        {{ seekForwardLabel }}
+      </button>
       <button
         class="p-0 border-0 size-8 grid place-content-center"
         @click="toggleMute"

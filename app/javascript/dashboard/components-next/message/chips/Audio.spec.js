@@ -40,13 +40,14 @@ vi.mock('dashboard/composables/emitter', () => ({ useEmitter: vi.fn() }));
 vi.mock('@chatwoot/utils', () => ({ downloadFile: vi.fn() }));
 
 import AudioChip from './Audio.vue';
+import { downloadFile } from '@chatwoot/utils';
 
 const RECORDING_URL =
   '/api/v1/accounts/77/telephony/calls/sipuni%3Alocal%3Aabc/recording?recording_token=signed';
 
 let wrapper;
 
-const mountChip = () => {
+const mountChip = (attachmentOverrides = {}) => {
   wrapper = mount(AudioChip, {
     props: {
       attachment: {
@@ -54,6 +55,7 @@ const mountChip = () => {
         fileType: 'audio',
         extension: 'wav',
         dataUrl: RECORDING_URL,
+        ...attachmentOverrides,
       },
     },
     global: { stubs: { Icon: true } },
@@ -188,5 +190,124 @@ describe('Audio chip playback', () => {
     expect(waveSurfer.playPause).toHaveBeenCalledTimes(1);
     expect(waveSurfer.destroy).not.toHaveBeenCalled();
     expect(playSpy).not.toHaveBeenCalled();
+  });
+
+  it('renders fallback equalizer waveform when in native fallback mode', async () => {
+    withContainerWidth(0);
+    const chip = mountChip();
+    await flushPromises();
+
+    expect(chip.find('[data-testid="audio-fallback-waveform"]').exists()).toBe(
+      true
+    );
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(chip.find('[data-testid="audio-fallback-waveform"]').exists()).toBe(
+      true
+    );
+  });
+
+  it('cycles playback speeds including 1.25x and supports seek buttons', async () => {
+    withContainerWidth(300);
+    const chip = mountChip();
+    await flushPromises();
+
+    const [waveSurfer] = waveSurferState.instances;
+    waveSurfer.setTime = vi.fn();
+    waveSurfer.handlers.ready(30);
+    await flushPromises();
+
+    // Start playing
+    await playButton(chip).trigger('click');
+    waveSurfer.handlers.play?.();
+    await flushPromises();
+
+    // Speed button is shown while playing
+    const speedButton = chip
+      .findAll('button')
+      .find(btn => btn.text().includes('x'));
+    expect(speedButton.text()).toBe('1x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1.25);
+    expect(speedButton.text()).toBe('1.25x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1.5);
+    expect(speedButton.text()).toBe('1.5x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(2);
+    expect(speedButton.text()).toBe('2x');
+
+    await speedButton.trigger('click');
+    expect(waveSurfer.setPlaybackRate).toHaveBeenCalledWith(1);
+    expect(speedButton.text()).toBe('1x');
+
+    // Seek buttons
+    const seekForwardBtn = chip
+      .findAll('button')
+      .find(btn => btn.text() === '+10s');
+    const seekBackwardBtn = chip
+      .findAll('button')
+      .find(btn => btn.text() === '-10s');
+    expect(seekForwardBtn.exists()).toBe(true);
+    expect(seekBackwardBtn.exists()).toBe(true);
+
+    await seekForwardBtn.trigger('click');
+    expect(waveSurfer.setTime).toHaveBeenCalledWith(10);
+
+    waveSurfer.handlers.timeupdate?.(15);
+    await flushPromises();
+    await seekBackwardBtn.trigger('click');
+    expect(waveSurfer.setTime).toHaveBeenCalledWith(5);
+  });
+  it('uses native playback when Safari cannot decode an MP3 waveform', async () => {
+    withContainerWidth(300);
+    const chip = mountChip({
+      id: 'voice-recordings/janus/77/call/recording.mp3',
+      extension: 'mp3',
+      dataUrl:
+        '/api/v1/accounts/77/telephony/calls/sipuni%3Alocal%3Aabc/recording.mp3?recording_token=signed',
+    });
+    await flushPromises();
+
+    const [waveSurfer] = waveSurferState.instances;
+    await waveSurfer.handlers.error(new Error('Web Audio MP3 decode failed'));
+    await flushPromises();
+
+    const audio = chip.find('audio').element;
+    expect(chip.find('[data-testid="audio-fallback-waveform"]').exists()).toBe(
+      true
+    );
+    expect(audio.getAttribute('src')).toContain('.mp3');
+    expect(audio.getAttribute('src')).toContain('recording_token=signed');
+
+    await playButton(chip).trigger('click');
+    await flushPromises();
+
+    expect(playSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps transcript text and the recording download action in fallback mode', async () => {
+    withContainerWidth(0);
+    const chip = mountChip({
+      transcribedText: 'The caller asked for a callback.',
+    });
+    await flushPromises();
+
+    expect(chip.text()).toContain('The caller asked for a callback.');
+
+    const downloadButton = chip.findAll('button').at(-1);
+    await downloadButton.trigger('click');
+    await flushPromises();
+
+    expect(downloadFile).toHaveBeenCalledWith({
+      url: expect.stringContaining('recording_token=signed'),
+      type: 'audio',
+      extension: 'wav',
+    });
   });
 });

@@ -72,6 +72,925 @@
           }
         }
       },
+      "crm_error": {
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "crm_field_requirement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "field_key": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "validation": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "role_exemptions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "crm_stage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "pipeline_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "open",
+              "won",
+              "lost"
+            ]
+          },
+          "system": {
+            "type": "boolean"
+          },
+          "position_locked": {
+            "type": "boolean"
+          },
+          "closing_reason_options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "closing_reason_required": {
+            "type": "boolean"
+          },
+          "transition_reason_options": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "transition_reason_required": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "field_requirements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/crm_field_requirement"
+            }
+          },
+          "deal_count": {
+            "type": "integer"
+          },
+          "dialog_deal_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_pipeline": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "auto_create_deal_on_channel_contact": {
+            "type": "boolean"
+          },
+          "restrict_stage_skipping": {
+            "type": "boolean"
+          },
+          "restrict_backward_move": {
+            "type": "boolean"
+          },
+          "allow_stage_rule_override": {
+            "type": "boolean"
+          },
+          "deal_count": {
+            "type": "integer"
+          },
+          "dialog_deal_count": {
+            "type": "integer"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/crm_stage"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_task_status": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "color": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "open",
+              "in_progress",
+              "completed",
+              "cancelled"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_task_outcome": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "task_type_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "requires_note": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_task_type": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "default": {
+            "type": "boolean"
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/crm_task_outcome"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_deal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "pipeline_id": {
+            "type": "integer"
+          },
+          "stage_id": {
+            "type": "integer"
+          },
+          "owner_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "creator_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "team_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "company_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "originating_conversation_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "originating_conversation_display_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "originating_communication_thread_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "originating_communication_thread_display_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "dialog_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "dialog_display_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "dialog_kind": {
+            "type": "string",
+            "nullable": true
+          },
+          "dialog_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "nullable": true
+          },
+          "amount_minor": {
+            "type": "integer",
+            "nullable": true
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected_close_on": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "closed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "waiting_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "waiting_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "waiting_started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "waiting_set_by_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "next_action": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "closing_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "position": {
+            "type": "integer"
+          },
+          "win_probability": {
+            "type": "number",
+            "nullable": true
+          },
+          "external_ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotency_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "lock_version": {
+            "type": "integer"
+          },
+          "custom_attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "company": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "deal_contacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "contact_id": {
+                  "type": "integer"
+                },
+                "primary": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "primary_contact": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "primary_contact_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "context_kind": {
+            "type": "string"
+          },
+          "deal_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "status_id": {
+            "type": "integer"
+          },
+          "task_type_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "task_outcome_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "creator_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "completed_by_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cancelled_by_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "team_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "originating_conversation_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "activity_type": {
+            "type": "string",
+            "nullable": true,
+            "description": "Compatibility projection for legacy tasks without a catalog task type."
+          },
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcome_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "type": "string",
+            "nullable": true
+          },
+          "all_day": {
+            "type": "boolean"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "due_on": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "schedule_timezone": {
+            "type": "string",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancellation_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reschedule_count": {
+            "type": "integer"
+          },
+          "task_type": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "task_outcome": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "position": {
+            "type": "integer"
+          },
+          "external_ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotency_key": {
+            "type": "string",
+            "nullable": true
+          },
+          "lock_version": {
+            "type": "integer"
+          },
+          "custom_attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "archived_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "crm_report_meta": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_count": {
+            "type": "integer"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "metric_kind": {
+            "type": "string"
+          },
+          "reliability": {
+            "type": "string"
+          },
+          "timezone": {
+            "type": "string"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "generated_at_local": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "query_fingerprint": {
+            "type": "string"
+          },
+          "metric_definition": {
+            "type": "string"
+          },
+          "temporal_definition": {
+            "type": "string"
+          }
+        }
+      },
+      "crm_report_rows_response": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "rows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/crm_report_meta"
+          }
+        }
+      },
+      "crm_storage_summary": {
+        "type": "object",
+        "properties": {
+          "total_limit_bytes": {
+            "type": "integer"
+          },
+          "consumed_bytes": {
+            "type": "integer"
+          },
+          "available_bytes": {
+            "type": "integer"
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "usage_percent": {
+            "type": "number"
+          },
+          "breakdown": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "last_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "crm_storage_file": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "file_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer"
+          },
+          "human_size": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inbox_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "inbox_name": {
+            "type": "string"
+          },
+          "conversation_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "download_url": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "crm_storage_trash_item": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "recording",
+              "attachment"
+            ]
+          },
+          "file_name": {
+            "type": "string"
+          },
+          "file_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inbox_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "inbox_name": {
+            "type": "string"
+          },
+          "trashed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "captain_assistant": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "usage_mode": {
+            "type": "string",
+            "enum": [
+              "external_agent",
+              "internal_assistant"
+            ]
+          },
+          "response_guidelines": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "guardrails": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "type": "object",
+            "description": "Assistant configuration is updated through the existing assistant endpoint. Model, tool access, follow-up settings, and outcome reason settings are account-scoped per assistant.",
+            "properties": {
+              "model": {
+                "type": "string"
+              },
+              "tool_access": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "follow_up_settings": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "outcome_reason_settings": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "context_access": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "voice_settings": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "captain_assistant"
+            ]
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unix timestamp in seconds"
+          }
+        }
+      },
       "generic_id": {
         "type": "object",
         "properties": {
@@ -2262,6 +3181,23 @@
             "type": "integer",
             "description": "Display Id of the conversation the message belongs to"
           },
+          "source_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "External source identifier of the message"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "delivered",
+              "read",
+              "failed"
+            ],
+            "description": "Delivery status of the message"
+          },
           "attachments": {
             "type": "array",
             "description": "Attachments if any",
@@ -4030,6 +4966,11 @@
       "public_contact_create_update_payload": {
         "type": "object",
         "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Stable external contact identifier used during creation. Reusing it makes contact creation idempotent.",
+            "example": "salebot-contact-123"
+          },
           "identifier": {
             "type": "string",
             "description": "External identifier of the contact",
@@ -4079,6 +5020,11 @@
             "type": "string",
             "description": "Temporary identifier which will be passed back via websockets",
             "example": "1234567890"
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Stable external message identifier. Reusing it in the same conversation returns the existing message.",
+            "example": "salebot-message-123"
           }
         }
       },
@@ -5900,6 +6846,300 @@
             "description": "List of reporting events"
           }
         }
+      },
+      "captain_assistants_response": {
+        "type": "object",
+        "required": [
+          "payload",
+          "meta"
+        ],
+        "properties": {
+          "payload": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/captain_assistant"
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "total_count": {
+                "type": "integer"
+              },
+              "page": {
+                "type": "integer",
+                "description": "Pagination structure is reserved; current response reports page 1."
+              }
+            }
+          }
+        }
+      },
+      "captain_assistant_payload": {
+        "type": "object",
+        "required": [
+          "assistant"
+        ],
+        "properties": {
+          "assistant": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string",
+                "nullable": true
+              },
+              "usage_mode": {
+                "type": "string",
+                "enum": [
+                  "external_agent",
+                  "internal_assistant"
+                ]
+              },
+              "response_guidelines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "guardrails": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "config": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "tool_access": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "follow_up_settings": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "outcome_reason_settings": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "context_access": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "voice_settings": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "crm_task_lifecycle_snapshot": {
+        "type": "object",
+        "description": "State captured before or after a CRM task lifecycle command in its timeline event.",
+        "properties": {
+          "status_id": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "task_type_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "task_outcome_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcome_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "assignee_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "team_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "due_on": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "all_day": {
+            "type": "boolean"
+          },
+          "schedule_timezone": {
+            "type": "string"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_by_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cancelled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelled_by_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "cancellation_reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reschedule_count": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": true
+      },
+      "crm_task_timeline_event": {
+        "type": "object",
+        "description": "CRM event attached to the task timeline. Lifecycle command events carry state snapshots in before_data and after_data.",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "account_id": {
+            "type": "integer"
+          },
+          "eventable_type": {
+            "type": "string"
+          },
+          "eventable_id": {
+            "type": "integer"
+          },
+          "actor_id": {
+            "type": "integer",
+            "nullable": true
+          },
+          "actor_kind": {
+            "type": "string"
+          },
+          "event_type": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "before_data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/crm_task_lifecycle_snapshot"
+              }
+            ],
+            "nullable": true
+          },
+          "after_data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/crm_task_lifecycle_snapshot"
+              }
+            ],
+            "nullable": true
+          },
+          "correlation_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "causation_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      },
+      "crm_task_timeline_entry": {
+        "type": "object",
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "event",
+              "comment",
+              "conversation"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/crm_task_timeline_event"
+          }
+        }
+      },
+      "crm_task_timeline_response": {
+        "type": "object",
+        "properties": {
+          "payload": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/crm_task_timeline_entry"
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "next_cursor": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          }
+        }
       }
     },
     "parameters": {
@@ -6159,6 +7399,10 @@
         "Messages",
         "Profile",
         "Reports",
+        "CRM",
+        "CRM Reports",
+        "Account Storage",
+        "Captain Assistants",
         "Scheduling",
         "Teams",
         "Webhooks",

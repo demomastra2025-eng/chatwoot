@@ -9,6 +9,15 @@ module ActiveAuthSessionEnforcer
     client_id = current_auth_client_id
     return render_session_replaced_error if client_id.blank?
 
+    if client_id.start_with?(SuperAdmin::ImpersonationService::CLIENT_PREFIX)
+      @super_admin_impersonation = SuperAdmin::ImpersonationService.context_for_request(
+        client_id, target_user_id: current_user.id
+      )
+      return render_session_replaced_error unless @super_admin_impersonation
+
+      return
+    end
+
     if current_user.active_auth_client_ids.blank?
       current_user.activate_auth_client!(client_id, device_type: current_auth_device_type)
       return

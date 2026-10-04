@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
+import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 
 const props = defineProps({
@@ -19,6 +20,10 @@ const props = defineProps({
   emptyMessage: {
     type: String,
     default: '',
+  },
+  error: {
+    type: [Object, String],
+    default: null,
   },
   isLoading: {
     type: Boolean,
@@ -38,7 +43,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['createComment', 'deleteComment']);
+const emit = defineEmits(['createComment', 'deleteComment', 'retry']);
 
 const { t } = useI18n();
 
@@ -79,6 +84,7 @@ const eventLabelByType = computed(() => ({
 
 const timelineSummary = computed(() => {
   if (props.isLoading) return t('CRM.TIMELINE.LOADING');
+  if (props.error) return t('CRM.TIMELINE.LOAD_ERROR');
   if (!sortedItems.value.length) {
     return props.emptyMessage || t('CRM.TIMELINE.EMPTY');
   }
@@ -89,6 +95,11 @@ const timelineSummary = computed(() => {
 });
 
 const isContentVisible = computed(() => !props.collapsible || isExpanded.value);
+const errorDescription = computed(() =>
+  typeof props.error === 'string'
+    ? props.error
+    : props.error?.message || t('CRM.TIMELINE.LOAD_ERROR_DESCRIPTION')
+);
 
 const toggleExpanded = () => {
   if (!props.collapsible) return;
@@ -272,8 +283,16 @@ const submitComment = () => {
         </div>
       </div>
 
+      <SchedulingErrorState
+        v-if="error"
+        class="m-4"
+        :title="t('CRM.TIMELINE.LOAD_ERROR')"
+        :description="errorDescription"
+        @retry="emit('retry')"
+      />
+
       <div
-        v-if="isLoading"
+        v-else-if="isLoading"
         class="px-4 py-6 text-center text-sm text-n-slate-11"
       >
         {{ t('CRM.TIMELINE.LOADING') }}

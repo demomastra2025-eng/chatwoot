@@ -236,7 +236,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response.media_type).to eq('audio/wav')
     expect(response.body).to start_with('RIFF')
   ensure
-    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present? && recording_path.present?
   end
 
   it 'stores a browser SIP recording upload and exposes it through the telephony recording route' do
@@ -286,7 +286,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
   ensure
     upload_file&.close
     upload_file&.unlink
-    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present? && recording_path.present?
   end
 
   it 'rejects browser SIP recording uploads from another inbox-visible user' do
@@ -469,7 +469,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(response.media_type).to eq('audio/wav')
     expect(response.body).to start_with('RIFF')
   ensure
-    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present? && recording_path.present?
   end
 
   it 'rejects an invalid signed recording playback URL without falling back to account auth' do
@@ -629,6 +629,75 @@ RSpec.describe 'Telephony Calls API', type: :request do
     expect(a_request(:get, external_url).with(headers: { 'Range' => 'bytes=0-24575' })).to have_been_made.twice
   ensure
     FileUtils.rm_f(Rails.root.join('storage', cached_storage_key)) if defined?(cached_storage_key) && cached_storage_key.present?
+  end
+
+  it 'does not expose a second tenant recording through a support session scoped to this tenant' do
+    other_account = create(:account)
+    other_account.enable_features!('channel_voice')
+    other_channel = create(
+      :channel_voice, :sipuni, account: other_account, phone_number: '+15551230001'
+    )
+    other_contact = create(:contact, account: other_account, phone_number: '+15551230002')
+    other_conversation = create(
+      :conversation, account: other_account, inbox: other_channel.inbox, contact: other_contact
+    )
+    create(
+      :telephony_call_session,
+      account: other_account,
+      provider: 'sipuni',
+      external_call_ref: 'support-scope-other-tenant-call',
+      conversation: other_conversation,
+      inbox: other_channel.inbox,
+      number_binding: other_channel.inbox.telephony_number_binding,
+      contact: other_contact,
+      recording_ref: 'voice-recordings/sipuni/other-tenant/call.wav',
+      metadata: { 'recording' => { 'storage_key' => 'voice-recordings/sipuni/other-tenant/call.wav' } }
+    )
+    create(:account_user, account: other_account, user: administrator, role: :administrator)
+    support_actor = create(:super_admin)
+    grant = SuperAdmin::ImpersonationService.issue_grant!(
+      actor: support_actor, account: account, target_user: administrator
+    )
+    post '/auth/sign_in', params: { email: administrator.email, sso_auth_token: grant.token }, as: :json
+    expect(response).to have_http_status(:success)
+    support_headers = response.headers.slice('access-token', 'client', 'uid')
+
+    get "/api/v1/accounts/#{other_account.id}/telephony/calls/support-scope-other-tenant-call/recording",
+        headers: support_headers
+
+    expect(response).to have_http_status(:unauthorized)
+
+    get '/auth/validate_token', headers: support_headers, as: :json
+    expect(response).to have_http_status(:success)
+    validated_headers = support_headers.merge(response.headers.slice('access-token', 'client', 'uid'))
+    expect(validated_headers['client']).to eq(support_headers['client'])
+    expect(response.parsed_body.dig('payload', 'data')).not_to include('access_token')
+
+    get "/api/v1/accounts/#{other_account.id}/telephony/calls/support-scope-other-tenant-call/recording",
+        headers: validated_headers
+    expect(response).to have_http_status(:unauthorized)
+
+    storage_key = "voice-recordings/sipuni/#{account.id}/support-scoped/recording.wav"
+    recording_path = Rails.root.join('storage', storage_key)
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.binwrite(recording_path, 'scoped call audio')
+    active_session = create_recorded_call_session(
+      'support-scope-active-call',
+      recording_metadata.merge('storage_key' => storage_key),
+      recording_ref: storage_key
+    )
+    get "/api/v1/accounts/#{account.id}/telephony/calls/#{active_session.external_call_ref}/recording",
+        headers: validated_headers
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to eq('scoped call audio')
+
+    travel 16.minutes do
+      get "/api/v1/accounts/#{account.id}/telephony/calls/#{active_session.external_call_ref}/recording",
+          headers: validated_headers
+      expect(response).to have_http_status(:unauthorized)
+    end
+  ensure
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
   end
 
   it 'does not expose another account recording for the same call ref' do

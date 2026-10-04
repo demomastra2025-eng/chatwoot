@@ -23,6 +23,30 @@ class Crm::TaskPolicy < Crm::BasePolicy
     task_manage_access?
   end
 
+  def complete?
+    task_manage_access?
+  end
+
+  def cancel?
+    task_manage_access?
+  end
+
+  def reopen?
+    task_manage_access?
+  end
+
+  def reschedule?
+    task_manage_access?
+  end
+
+  def assign?
+    task_manage_access?
+  end
+
+  def save_form?
+    task_manage_access?
+  end
+
   def archive?
     task_manage_access?
   end

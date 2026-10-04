@@ -1,43 +1,283 @@
 <section class="main-content__body">
-  <hr/>
+  <hr class="my-6 border-slate-200" />
 
-  <div class="space-y-4">
+  <%
+    storage_overview = account.account_usage_overview[:storage] || {}
+    consumed_bytes = storage_overview[:consumed].to_i
+    total_bytes = storage_overview[:total_count].to_i
+    is_unlimited = storage_overview[:unlimited]
+
+    bytes_per_gb = 1.gigabyte.to_f
+    consumed_gb = (consumed_bytes / bytes_per_gb).round(2)
+    total_gb = is_unlimited ? nil : (total_bytes / bytes_per_gb).round(2)
+
+    usage_percent = if is_unlimited || total_bytes <= 0
+                      0.0
+                    else
+                      ((consumed_bytes.to_f / total_bytes) * 100).round(1)
+                    end
+
+    badge_text, badge_classes, progress_bar_classes = if is_unlimited
+                                                        [t('super_admin.accounts.storage.status_unlimited'), 'bg-slate-100 text-slate-700 border-slate-300', 'bg-slate-400']
+                                                      elsif usage_percent >= 95
+                                                        [t('super_admin.accounts.storage.status_critical'), 'bg-red-100 text-red-800 border-red-300', 'bg-red-500']
+                                                      elsif usage_percent >= 80
+                                                        [t('super_admin.accounts.storage.status_warning'), 'bg-amber-100 text-amber-800 border-amber-300', 'bg-amber-500']
+                                                      else
+                                                        [t('super_admin.accounts.storage.status_normal'), 'bg-emerald-100 text-emerald-800 border-emerald-300', 'bg-emerald-500']
+                                                      end
+
+    breakdown = account.storage_breakdown
+    bytes_mb = 1.megabyte.to_f
+    recordings_mb = (breakdown[:recordings].to_f / bytes_mb).round(2)
+    audio_mb = (breakdown[:audio].to_f / bytes_mb).round(2)
+    image_mb = (breakdown[:images].to_f / bytes_mb).round(2)
+    video_mb = (breakdown[:videos].to_f / bytes_mb).round(2)
+    docs_mb = (breakdown[:documents].to_f / bytes_mb).round(2)
+    captain_mb = (breakdown[:captain].to_f / bytes_mb).round(2)
+    other_mb = (breakdown[:other].to_f / bytes_mb).round(2)
+    trash_mb = (breakdown[:trash].to_f / bytes_mb).round(2)
+  %>
+
+  <%
+    is_trial = account.trial? && account.trial_snapshot?
+    trial_expires_at = if account.custom_attributes&.dig('trial_expires_at').present?
+                         begin
+                           Time.zone.parse(account.custom_attributes['trial_expires_at'].to_s)
+                         rescue ArgumentError
+                           nil
+                         end
+                       end
+
+    trial_active = is_trial && trial_expires_at.present? && trial_expires_at > Time.current
+    trial_expired = is_trial && (trial_expires_at.blank? || trial_expires_at <= Time.current)
+    can_start_trial = account.custom_attributes.to_h['plan_type'].blank? || account.custom_attributes.to_h['plan_type'] == 'trial'
+
+    time_remaining_text = if !is_trial
+                            t('super_admin.accounts.trial.inactive')
+                          elsif trial_expired
+                            t('super_admin.accounts.trial.expired')
+                          else
+                            seconds_left = (trial_expires_at - Time.current).to_i
+                            days_left = seconds_left / 86400
+                            hours_left = (seconds_left % 86400) / 3600
+                            minutes_left = (seconds_left % 3600) / 60
+                            if days_left > 0
+                              t('super_admin.accounts.trial.remaining_days', days: days_left, hours: hours_left)
+                            elsif hours_left > 0
+                              t('super_admin.accounts.trial.remaining_hours', hours: hours_left, minutes: minutes_left)
+                            else
+                              t('super_admin.accounts.trial.remaining_minutes', minutes: minutes_left)
+                            end
+                          end
+
+    trial_badge_text = if !is_trial
+                         t('super_admin.accounts.trial.inactive')
+                       elsif trial_active
+                         t('super_admin.accounts.trial.active')
+                       else
+                         t('super_admin.accounts.trial.expired')
+                       end
+
+    trial_badge_classes = if !is_trial
+                            'bg-slate-100 text-slate-700 border-slate-300'
+                          elsif trial_active
+                            'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          else
+                            'bg-amber-100 text-amber-800 border-amber-300'
+                          end
+  %>
+
+  <div class="space-y-6">
+    <!-- Trial Status Card -->
+    <div class="p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-3">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-2xl font-bold shadow-2xs">
+            🎁
+          </div>
+          <div>
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-base font-bold text-slate-900"><%= t('super_admin.accounts.trial.title') %></h3>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border <%= trial_badge_classes %>">
+                <%= trial_badge_text %>
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              <%= t('super_admin.accounts.trial.description') %>
+            </p>
+          </div>
+        </div>
+
+        <div class="text-left md:text-right">
+          <div class="text-lg font-black text-slate-900 tracking-tight">
+            <%= time_remaining_text %>
+          </div>
+          <div class="text-xs font-medium text-slate-500 mt-0.5">
+            <% if trial_expires_at.present? %>
+              <%= t('super_admin.accounts.trial.until') %> <%= trial_expires_at.in_time_zone.strftime("%d.%m.%Y %H:%M") %>
+            <% else %>
+              <%= t('super_admin.accounts.trial.no_expiry') %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center">
+        <% if is_trial %>
+          <%= button_to t('super_admin.accounts.trial.extend'), [:extend_trial, :super_admin, account], method: :post, class: 'button mt-2', form_class: 'inline-block mr-2',
+                data: { confirm: t('super_admin.accounts.trial.extend_confirm') } %>
+          <%= button_to t('super_admin.accounts.trial.expire'), [:expire_trial, :super_admin, account], method: :post, class: 'button button--danger mt-2', form_class: 'inline-block',
+                data: { confirm: t('super_admin.accounts.trial.expire_confirm') } %>
+        <% elsif can_start_trial %>
+          <%= button_to t('super_admin.accounts.trial.start'), [:extend_trial, :super_admin, account], method: :post, params: { start: true }, class: 'button mt-2', form_class: 'inline-block',
+                data: { confirm: t('super_admin.accounts.trial.start_confirm') } %>
+        <% end %>
+      </div>
+    </div>
+
+    <!-- Prominent Storage Card -->
+    <div class="p-5 bg-white rounded-xl border border-slate-200 shadow-sm">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-2xl font-bold shadow-2xs">
+            💾
+          </div>
+          <div>
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-base font-bold text-slate-900"><%= t('super_admin.accounts.storage.title') %></h3>
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border <%= badge_classes %>">
+                <%= badge_text %>
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              <%= t('super_admin.accounts.storage.description') %>
+            </p>
+          </div>
+        </div>
+
+        <div class="text-left md:text-right">
+          <div class="text-2xl font-black text-slate-900 tracking-tight">
+            <%= number_with_precision(consumed_gb, precision: 2, strip_insignificant_zeros: true) %> GB
+            <span class="text-sm font-normal text-slate-500">
+              / <%= is_unlimited ? t('super_admin.accounts.storage.unlimited') : "#{number_with_precision(total_gb, precision: 2, strip_insignificant_zeros: true)} GB" %>
+            </span>
+          </div>
+          <div class="text-xs font-medium text-slate-500 mt-0.5">
+            <% if is_unlimited %>
+              <%= t('super_admin.accounts.storage.unlimited_limit') %>
+            <% else %>
+              <%= t('super_admin.accounts.storage.used', percent: usage_percent) %>
+              <% available_bytes = (total_bytes - consumed_bytes).clamp(0, total_bytes) %>
+              · <%= t('super_admin.accounts.storage.available', value: number_with_precision((available_bytes / bytes_per_gb).round(2), precision: 2, strip_insignificant_zeros: true)) %>
+            <% end %>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual Progress Bar -->
+      <div class="w-full bg-slate-100 rounded-full h-3.5 overflow-hidden p-0.5 border border-slate-200">
+        <div class="h-2.5 rounded-full transition-all duration-500 <%= progress_bar_classes %>"
+             style="width: <%= is_unlimited ? '100' : [[usage_percent, 1.5].max, 100].min %>%;"></div>
+      </div>
+
+      <div class="flex items-center justify-between text-[11px] text-slate-400 mt-2 px-0.5">
+        <span>0 GB</span>
+        <span><%= is_unlimited ? t('super_admin.accounts.storage.unlimited_plan') : t('super_admin.accounts.storage.quota', value: total_gb) %></span>
+      </div>
+
+      <p class="text-xs text-slate-500 mt-3"><%= t('super_admin.accounts.storage.informational_notice') %></p>
+
+      <!-- File Types Breakdown -->
+      <div class="mt-4 pt-4 border-t border-slate-100">
+        <div class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5">
+          <%= t('super_admin.accounts.storage.breakdown') %>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-8 gap-2.5 text-xs">
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">📞 <%= t('super_admin.accounts.storage.recordings') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= recordings_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🎙️ <%= t('super_admin.accounts.storage.audio') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= audio_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🖼️ <%= t('super_admin.accounts.storage.images') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= image_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🎥 <%= t('super_admin.accounts.storage.videos') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= video_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">📄 <%= t('super_admin.accounts.storage.documents') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= docs_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🤖 <%= t('super_admin.accounts.storage.captain') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= captain_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🗂️ <%= t('super_admin.accounts.storage.other') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= other_mb %> MB</div>
+          </div>
+          <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-100">
+            <div class="text-slate-500 flex items-center gap-1">🗑️ <%= t('super_admin.accounts.storage.trash') %></div>
+            <div class="font-bold text-slate-900 mt-1"><%= trash_mb %> MB</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Usage controls heading -->
     <div>
-      <h2 class="text-base font-medium">Usage controls</h2>
-      <p class="mt-2 text-sm text-gray-600">
-        Edit account limits to change allowed quota. The actions below reset mutable usage counters only.
+      <h2 class="text-base font-semibold text-slate-900">Управление расходом (Сброс счетчиков)</h2>
+      <p class="mt-1 text-sm text-slate-600">
+        Управление динамическими счетчиками использования. Действия ниже сбрасывают только изменяемые счетчики.
       </p>
-      <p class="mt-1 text-sm text-gray-600">
-        Conversations, inbox counts, storage, and Captain documents are derived from account data and stay read-only here.
+      <p class="text-xs text-slate-500">
+        Диалоги, инбоксы, хранилище и документы Captain вычисляются автоматически из базы данных.
       </p>
     </div>
 
+    <!-- Resettable counters -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
-        <div class="font-medium">Captain responses</div>
-        <p class="mt-2 text-sm text-gray-600">
-          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:captain, :responses, :consumed).to_i) %>
+      <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-sm text-slate-900">Ответы Captain AI</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">AI</span>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">
+          Текущий расход: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:captain, :responses, :consumed).to_i) %></strong>
         </p>
-        <p class="mt-1 text-sm text-gray-600">Resets the consumed counter to <code>0</code>. The allowed limit is not changed.</p>
-        <%= button_to 'Reset Captain Responses Usage', [:reset_captain_responses_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+        <p class="mt-1 text-xs text-slate-500">Сбрасывает счетчик ответов в <code>0</code>. Лимит аккаунта не изменяется.</p>
+        <%= button_to 'Сбросить расход ответов Captain', [:reset_captain_responses_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
 
-      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
-        <div class="font-medium">Captain tokens</div>
-        <p class="mt-2 text-sm text-gray-600">
-          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:captain, :tokens, :consumed).to_i) %>
+      <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-sm text-slate-900">Токены Captain AI</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">Tokens</span>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">
+          Текущий расход: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:captain, :tokens, :consumed).to_i) %></strong>
         </p>
-        <p class="mt-1 text-sm text-gray-600">Resets the consumed token counter to <code>0</code>. The allowed limit is not changed.</p>
-        <%= button_to 'Reset Captain Tokens Usage', [:reset_captain_tokens_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+        <p class="mt-1 text-xs text-slate-500">Сбрасывает счетчик токенов в <code>0</code>. Лимит аккаунта не изменяется.</p>
+        <%= button_to 'Сбросить расход токенов Captain', [:reset_captain_tokens_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
 
-      <div class="p-4 bg-white rounded-md outline outline-1 outline-n-container">
-        <div class="font-medium">Emails today</div>
-        <p class="mt-2 text-sm text-gray-600">
-          Current used: <%= number_with_delimiter(account.account_usage_overview.dig(:emails, :consumed).to_i) %>
+      <div class="p-4 bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-sm text-slate-900">Email за сегодня</span>
+          <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-mono">Email</span>
+        </div>
+        <p class="mt-2 text-sm text-slate-600">
+          Отправлено сегодня: <strong class="text-slate-900"><%= number_with_delimiter(account.account_usage_overview.dig(:emails, :consumed).to_i) %></strong>
         </p>
-        <p class="mt-1 text-sm text-gray-600">Clears today's outbound email counter in Redis. The daily limit is not changed.</p>
-        <%= button_to 'Reset Email Usage Counter', [:reset_email_usage, :super_admin, account], method: :post, class: 'button mt-3', form_class: 'inline-block' %>
+        <p class="mt-1 text-xs text-slate-500">Очищает счетчик отправленных email в Redis за сегодня.</p>
+        <%= button_to 'Сбросить счетчик отправки Email', [:reset_email_usage, :super_admin, account], method: :post, class: 'button mt-3 w-full text-center', form_class: 'block w-full' %>
       </div>
     </div>
   </div>

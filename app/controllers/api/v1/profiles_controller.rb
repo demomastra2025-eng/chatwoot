@@ -1,7 +1,18 @@
 class Api::V1::ProfilesController < Api::BaseController
   before_action :set_user
 
-  def show; end
+  def show
+    return unless @super_admin_impersonation
+
+    membership = @user.account_users.find_by(account_id: @super_admin_impersonation['account_id'])
+    return render_unauthorized('Impersonation account access was revoked') unless membership
+
+    Current.account = membership.account
+    Current.account_user = membership
+    association = @user.association(:account_users)
+    association.target = [membership]
+    association.loaded!
+  end
 
   def update
     if password_params[:password].present?

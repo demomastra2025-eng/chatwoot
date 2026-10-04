@@ -1,7 +1,16 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { format } from 'date-fns';
-import { useLocalStorage } from '@vueuse/core';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
+import { useDebounceFn, useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -19,15 +28,18 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
-import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
-import CrmTaskAssigneeMenu from 'dashboard/components-next/CRM/CrmTaskAssigneeMenu.vue';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
+import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
+import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
+import { buildTaskTypeResolver } from 'dashboard/components-next/CRM/taskTypeMetadata';
 import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
-import CrmTaskPriorityMenu from 'dashboard/components-next/CRM/CrmTaskPriorityMenu.vue';
-import CrmTaskStatusMenu from 'dashboard/components-next/CRM/CrmTaskStatusMenu.vue';
+import CrmTaskCancelDialog from 'dashboard/components-next/CRM/CrmTaskCancelDialog.vue';
+import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
+import { taskMatchesStateFilter } from 'dashboard/components-next/CRM/taskCompletion';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -41,9 +53,9 @@ import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/Sc
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
-import SelectMenu from 'dashboard/components-next/selectmenu/SelectMenu.vue';
+import DateTimePicker from 'dashboard/components/ui/DateTimePicker.vue';
+
 import {
   buildCalendarRange,
   formatCalendarTitle,
@@ -54,6 +66,7 @@ import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
+  reconcileCustomAttributesForDefinitions,
 } from 'dashboard/stores/crm/customFieldDefaults';
 import {
   buildAdvancedCustomFieldOperatorOptions,
@@ -63,18 +76,43 @@ import {
   isDiscreteFilterableCustomFieldDefinition,
   isFilterableCustomFieldDefinition,
   normalizeCustomFieldFilters,
+  recordMatchesCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
-import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
+import {
+  buildLocalizedDateSearchAliases,
+  buildLocalizedNumberSearchAlias,
+  resolveCustomFieldEntries,
+} from 'dashboard/stores/crm/customFieldFormatter';
 import {
   compactPayload,
   formatCrmErrorMessage,
+  normalizeMeta,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
 import {
   createTaskListSortValueResolver,
   sortListRecords,
 } from 'dashboard/routes/dashboard/crm/listSort';
-import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
+import {
+  TASK_TIME_BUCKETS,
+  formatTaskDueDate,
+  taskDeadlineForBucket,
+  taskDueDate,
+} from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
+import {
+  assertTaskEditCurrent,
+  buildTaskFormSavePayload,
+  canRollbackOptimisticTask,
+  cloneTaskDraft,
+  rememberTaskSnapshot,
+} from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
+import {
+  createCrmConflictStateMachine,
+  isStaleCrmError,
+  rebaseSnapshotLockVersion,
+} from 'dashboard/routes/dashboard/crm/conflictDraft';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
@@ -87,15 +125,34 @@ const TASKS_PREFERENCES_STORAGE_KEY = 'crm-tasks-page-preferences';
 const MANUAL_BOARD_SORT_KEY = 'position';
 
 const tasks = ref([]);
+const tasksMeta = ref({ count: 0, hasMore: false, page: 1, perPage: 25 });
+const boardBucketMeta = ref({});
+const boardBucketLoading = ref({});
+const boardBucketLoadFailed = ref({});
+const boardAsOf = ref(null);
+const isLoadingMoreTasks = ref(false);
+const calendarLoadMoreFailed = ref(false);
 const dealOptions = ref([]);
-const currentPresentation = ref('list');
-const currentTaskScope = ref('mine');
+const currentPresentation = ref('board');
 const currentCalendarView = ref('week');
 const calendarAnchorDate = ref(new Date());
 const drawerOpen = ref(false);
 const filterDialogRef = ref(null);
+const completionDialogRef = ref(null);
+const cancelDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const selectedTask = ref(null);
+const taskEditSnapshot = ref(null);
+const {
+  markStale: markTaskConflictStale,
+  reload: reloadConflict,
+  reset: resetTaskConflict,
+  state: taskConflict,
+} = createCrmConflictStateMachine();
+let taskEditorGeneration = 0;
+let taskCompletionGeneration = 0;
+let taskCompletionTaskId = null;
+const taskTitleEditSnapshot = ref(null);
 const timelineItems = ref([]);
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const editingTaskTitleId = ref(null);
@@ -118,28 +175,15 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
-const TASK_ACTIVITY_TYPES = ['task', 'call', 'meeting', 'message', 'touch'];
-const NOT_DONE_OUTCOME = 'not_done';
-const TASK_OUTCOME_VALUES = [
-  'completed',
-  'held',
-  'cancelled',
-  'no_show',
-  'rescheduled',
-  'answered',
-  'no_answer',
-  'not_done',
-  'busy',
-  'sent',
-  'failed',
+const BOARD_PAGE_SIZE = 25;
+const CALENDAR_PAGE_SIZE = 100;
+const LEGACY_TASK_ACTIVITY_TYPES = [
+  'task',
+  'call',
+  'meeting',
+  'message',
+  'touch',
 ];
-const TASK_OUTCOMES_BY_ACTIVITY_TYPE = {
-  call: ['answered', 'no_answer', 'busy', 'cancelled', 'not_done'],
-  meeting: ['held', 'cancelled', 'no_show', 'rescheduled', 'not_done'],
-  message: ['sent', 'failed', 'not_done'],
-  task: ['completed', 'not_done', 'cancelled'],
-  touch: ['completed', 'no_answer', 'cancelled', 'not_done'],
-};
 
 const filters = reactive({
   activityType: '',
@@ -148,9 +192,7 @@ const filters = reactive({
   dateRange: { from: '', to: '', type: '' },
   dealId: '',
   outcome: '',
-  priority: '',
-  statusId: '',
-  teamId: '',
+  taskState: 'active',
 });
 const filterDraft = reactive({
   activityType: '',
@@ -159,9 +201,7 @@ const filterDraft = reactive({
   dateRange: { from: '', to: '', type: '' },
   dealId: '',
   outcome: '',
-  priority: '',
-  statusId: '',
-  teamId: '',
+  taskState: 'active',
 });
 const listQuickFilters = reactive({
   q: '',
@@ -169,7 +209,9 @@ const listQuickFilters = reactive({
 
 const form = reactive({
   activityType: 'task',
+  allDay: false,
   assigneeId: '',
+  contextKind: 'personal',
   customAttributes: {},
   dealId: '',
   description: '',
@@ -182,7 +224,6 @@ const form = reactive({
   priority: 'medium',
   startAt: '',
   statusId: '',
-  teamId: '',
   title: '',
 });
 
@@ -192,63 +233,71 @@ const ui = reactive({
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
+  timelineError: null,
 });
-const taskUiActionQueryInFlight = ref(false);
+let taskUiActionGeneration = 0;
+const taskLoadGeneration = ref(0);
+let taskPageInitializationGeneration = 0;
+let taskRealtimeSequence = 0;
+const pendingTaskRealtimeUpdates = new Map();
+const pendingTaskDeadlineIds = reactive(new Set());
+let taskRealtimeLifecycleGeneration = 0;
+const taskRealtimeRequestSequences = new Map();
+let taskListReloadGeneration = 0;
+let debouncedTaskListReload = () => {};
+const scheduleTaskListReload = () => {
+  taskListReloadGeneration += 1;
+  debouncedTaskListReload(taskListReloadGeneration);
+};
+scheduleTaskListReload.cancel = () => {
+  taskListReloadGeneration += 1;
+};
+let suppressNextListSearchReload = false;
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
+const getAccount = useMapGetter('accounts/getAccount');
 const currentUser = useMapGetter('getCurrentUser');
-const teams = useMapGetter('teams/getTeams');
+const workspaceTimezone = computed(() => {
+  const account =
+    typeof getAccount.value === 'function'
+      ? getAccount.value(Number(accountId.value))
+      : null;
+  const configured = account?.settings?.reporting_timezone;
+  if (tasksMeta.value.workspaceTimezone)
+    return tasksMeta.value.workspaceTimezone;
+  if (!configured) return 'Asia/Almaty';
+
+  try {
+    const supportedTimezone = new Intl.DateTimeFormat('en-US', {
+      timeZone: configured,
+    }).resolvedOptions().timeZone;
+    return supportedTimezone ? configured : 'Asia/Almaty';
+  } catch {
+    return 'Asia/Almaty';
+  }
+});
 
 const canManageTasks = computed(() =>
   checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
 );
-const canAccessTaskSettings = computed(() =>
-  checkPermissions([
-    'administrator',
-    'crm_settings_view',
-    'crm_settings_manage',
-  ])
-);
+
 const canViewTasks = computed(() =>
   checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
 );
+const doneStatus = computed(() =>
+  referencesStore.taskStatuses.find(status => status.category === 'done')
+);
 const isTaskFormDisabled = computed(
   () =>
+    (taskConflict.active && !taskConflict.hasAuthoritative) ||
     !form.title.trim() ||
     !form.statusId ||
-    (form.outcome === NOT_DONE_OUTCOME && !form.outcomeNote.trim())
+    !form.contextKind ||
+    (form.contextKind === 'sales' && !form.dealId)
 );
 
-const taskStatusOptions = computed(() =>
-  referencesStore.taskStatuses.map(status => ({
-    label: status.name,
-    value: status.id,
-  }))
-);
-
-const taskStatusCategoryMeta = {
-  done: {
-    icon: 'i-lucide-check-circle',
-    toneClass: 'text-n-teal-11',
-  },
-  in_progress: {
-    icon: 'i-lucide-clock-3',
-    toneClass: 'text-n-amber-11',
-  },
-  open: {
-    icon: 'i-lucide-circle',
-    toneClass: 'text-n-slate-11',
-  },
-};
-
-const hasBoardStatuses = computed(
-  () => referencesStore.taskStatuses.length > 0
-);
-
-const shouldRenderBoard = computed(
-  () => currentPresentation.value === 'board' && hasBoardStatuses.value
-);
+const shouldRenderBoard = computed(() => currentPresentation.value === 'board');
 
 const assigneeOptions = computed(() =>
   agents.value.map(agent => ({
@@ -260,21 +309,21 @@ const assigneeOptions = computed(() =>
   }))
 );
 
-const teamOptions = computed(() =>
-  teams.value.map(team => ({
-    label: team.name,
-    value: team.id,
-  }))
-);
+const taskContextOptions = computed(() => [
+  {
+    label: t('CRM.TASKS.CONTEXT_KIND.personal'),
+    value: 'personal',
+  },
+  {
+    label: t('CRM.TASKS.CONTEXT_KIND.sales'),
+    value: 'sales',
+  },
+]);
 
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
-
-const effectiveTaskAssigneeId = computed(() =>
-  currentTaskScope.value === 'mine' ? currentUserId.value : filters.assigneeId
-);
 
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
@@ -284,14 +333,28 @@ const taskFieldDefinitions = computed(
   () => referencesStore.taskFieldDefinitions
 );
 
-const applicableTaskFieldDefinitions = computed(() => {
-  const context = form.dealId ? 'deal_task' : 'standalone_task';
+const taskFieldDefinitionsForContext = contextKind => {
+  const context = contextKind === 'sales' ? 'deal_task' : 'standalone_task';
 
   return taskFieldDefinitions.value.filter(definition => {
     const contexts = definition.rules?.contexts || [];
     return contexts.length === 0 || contexts.includes(context);
   });
-});
+};
+
+const applicableTaskFieldDefinitions = computed(() =>
+  taskFieldDefinitionsForContext(form.contextKind)
+);
+
+const taskCustomAttributesForContext = (customAttributes, contextKind) => {
+  const draft = cloneTaskDraft(customAttributes || {});
+  if (!taskFieldDefinitions.value.length) return draft;
+
+  return reconcileCustomAttributesForDefinitions(
+    draft,
+    taskFieldDefinitionsForContext(contextKind)
+  );
+};
 
 const customFieldFilterLabels = computed(() => ({
   noLabel: t('CHOICE_TOGGLE.NO'),
@@ -332,13 +395,6 @@ const statusNameById = computed(() =>
   }, {})
 );
 
-const statusColorById = computed(() =>
-  referencesStore.taskStatuses.reduce((result, status) => {
-    result[status.id] = status.color;
-    return result;
-  }, {})
-);
-
 const assigneeNameById = computed(() =>
   agents.value.reduce((result, agent) => {
     result[agent.id] = agent.name || agent.email;
@@ -353,7 +409,7 @@ const dealNameById = computed(() =>
   }, {})
 );
 
-const activityTypeMetaByValue = computed(() => ({
+const legacyActivityTypeMetaByValue = computed(() => ({
   call: {
     icon: 'i-lucide-phone',
     label: t('CRM.TASKS.ACTIVITY_TYPE.call'),
@@ -376,22 +432,48 @@ const activityTypeMetaByValue = computed(() => ({
   },
 }));
 
+const availableTaskTypes = computed(() => {
+  const configured = referencesStore.taskTypes.filter(
+    taskType => taskType.active !== false || taskType.code === form.activityType
+  );
+  if (configured.length) return configured;
+
+  return LEGACY_TASK_ACTIVITY_TYPES.map((code, index) => ({
+    active: true,
+    code,
+    icon: legacyActivityTypeMetaByValue.value[code]?.icon,
+    id: null,
+    name: legacyActivityTypeMetaByValue.value[code]?.label || code,
+    outcomes: [],
+    position: index + 1,
+  }));
+});
+
+const taskTypeResolver = computed(() =>
+  buildTaskTypeResolver(referencesStore.taskTypes, t)
+);
+
+const taskTypeByCode = computed(() =>
+  referencesStore.taskTypes.reduce((result, taskType) => {
+    result[taskType.code] = taskType;
+    return result;
+  }, {})
+);
+
 const activityTypeOptions = computed(() =>
-  TASK_ACTIVITY_TYPES.map(value => ({
-    icon: activityTypeMetaByValue.value[value]?.icon,
-    label: activityTypeMetaByValue.value[value]?.label || value,
-    value,
+  availableTaskTypes.value.map(taskType => ({
+    icon:
+      taskType.icon || legacyActivityTypeMetaByValue.value[taskType.code]?.icon,
+    label: taskType.name,
+    value: taskType.code,
   }))
 );
 
 const activityTypeLabelByValue = computed(() =>
-  Object.entries(activityTypeMetaByValue.value).reduce(
-    (result, [value, meta]) => {
-      result[value] = meta.label;
-      return result;
-    },
-    {}
-  )
+  availableTaskTypes.value.reduce((result, taskType) => {
+    result[taskType.code] = taskType.name;
+    return result;
+  }, {})
 );
 
 const outcomeLabelByValue = computed(() => ({
@@ -404,104 +486,81 @@ const outcomeLabelByValue = computed(() => ({
   no_answer: t('CRM.TASKS.OUTCOME.no_answer'),
   no_show: t('CRM.TASKS.OUTCOME.no_show'),
   not_done: t('CRM.TASKS.OUTCOME.not_done'),
+  other: t('CRM.TASKS.OUTCOME.other'),
   rescheduled: t('CRM.TASKS.OUTCOME.rescheduled'),
   sent: t('CRM.TASKS.OUTCOME.sent'),
 }));
 
 const buildOutcomeOptions = (activityType, currentOutcome = '') => {
-  const values = new Set(
-    TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType] || TASK_OUTCOME_VALUES
-  );
+  const configuredOutcomes = taskTypeByCode.value[activityType]?.outcomes || [];
+  const options = configuredOutcomes
+    .filter(
+      outcome => outcome.active !== false || outcome.code === currentOutcome
+    )
+    .map(outcome => ({ label: outcome.name, value: outcome.code }));
 
-  if (currentOutcome) {
-    values.add(currentOutcome);
+  if (
+    currentOutcome &&
+    !options.some(option => option.value === currentOutcome)
+  ) {
+    options.push({
+      label: outcomeLabelByValue.value[currentOutcome] || currentOutcome,
+      value: currentOutcome,
+    });
   }
 
-  return [...values].map(value => ({
-    label: outcomeLabelByValue.value[value] || value,
-    value,
-  }));
+  return options;
 };
 
-const taskOutcomeOptions = computed(() =>
-  buildOutcomeOptions(form.activityType, form.outcome)
-);
 const filterOutcomeOptions = computed(() =>
   buildOutcomeOptions(filterDraft.activityType, filterDraft.outcome)
 );
+const taskStateOptions = computed(() => [
+  { label: t('CRM.TASKS.STATE_FILTER.active'), value: 'active' },
+  { label: t('CRM.TASKS.STATE_FILTER.completed'), value: 'completed' },
+  { label: t('CRM.TASKS.STATE_FILTER.cancelled'), value: 'cancelled' },
+  { label: t('CRM.TASKS.STATE_FILTER.all'), value: 'all' },
+]);
 
-const normalizeActivityType = value =>
-  TASK_ACTIVITY_TYPES.includes(value) ? value : 'task';
+const normalizeActivityType = value => {
+  if (availableTaskTypes.value.some(taskType => taskType.code === value))
+    return value;
 
-const updateFormActivityType = value => {
-  const activityType = normalizeActivityType(value);
-  form.activityType = activityType;
-
-  if (
-    form.outcome &&
-    !TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType]?.includes(form.outcome)
-  ) {
-    form.outcome = '';
-    form.outcomeNote = '';
-  }
+  return (
+    availableTaskTypes.value.find(taskType => taskType.default)?.code ||
+    availableTaskTypes.value[0]?.code ||
+    'task'
+  );
 };
 
-const priorityOptions = computed(() => [
-  { label: t('CRM.TASKS.PRIORITY.low'), value: 'low' },
-  { label: t('CRM.TASKS.PRIORITY.medium'), value: 'medium' },
-  { label: t('CRM.TASKS.PRIORITY.high'), value: 'high' },
-  { label: t('CRM.TASKS.PRIORITY.urgent'), value: 'urgent' },
-]);
-
-const priorityMetaByValue = computed(() => ({
-  high: {
-    icon: 'i-lucide-arrow-up',
-    label: t('CRM.TASKS.PRIORITY.high'),
-    toneClass: 'text-n-ruby-11',
-  },
-  low: {
-    icon: 'i-lucide-arrow-down',
-    label: t('CRM.TASKS.PRIORITY.low'),
-    toneClass: 'text-n-slate-11',
-  },
-  medium: {
-    icon: 'i-lucide-arrow-right',
-    label: t('CRM.TASKS.PRIORITY.medium'),
-    toneClass: 'text-n-amber-11',
-  },
-  urgent: {
-    icon: 'i-lucide-arrow-up',
-    label: t('CRM.TASKS.PRIORITY.urgent'),
-    toneClass: 'text-n-ruby-11',
-  },
-}));
-
-const statusMetaById = computed(() =>
-  referencesStore.taskStatuses.reduce((result, status) => {
-    const categoryMeta =
-      taskStatusCategoryMeta[status.category] || taskStatusCategoryMeta.open;
-
-    result[status.id] = {
-      color: status.color || DEFAULT_TASK_STATUS_COLOR,
-      icon: categoryMeta.icon,
-      label: status.name,
-      toneClass: categoryMeta.toneClass,
-    };
-    return result;
-  }, {})
-);
+const updateFormActivityType = value => {
+  form.activityType = normalizeActivityType(value);
+};
 
 const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
+const hasActiveBoardTaskFilters = computed(() =>
+  Boolean(
+    filters.activityType ||
+      filters.assigneeId ||
+      filters.dateRange.from ||
+      filters.dateRange.to ||
+      filters.dealId ||
+      filters.outcome ||
+      Object.keys(customFieldFilters.value).length
+  )
+);
 
 const viewOptions = computed(() => [
-  { label: t('CRM.VIEWS.LIST'), value: 'list' },
-  { label: t('CRM.VIEWS.BOARD'), value: 'board' },
-  { label: t('SCHEDULING.VIEWS.CALENDAR'), value: 'calendar' },
-]);
-
-const taskScopeOptions = computed(() => [
-  { id: 'crm-tasks-scope-mine', label: t('CRM.TASKS.SCOPE.MY'), value: 'mine' },
-  { id: 'crm-tasks-scope-all', label: t('CRM.TASKS.SCOPE.ALL'), value: 'all' },
+  {
+    icon: 'i-lucide-columns-3',
+    label: t('CRM.VIEWS.BOARD'),
+    value: 'board',
+  },
+  {
+    icon: 'i-lucide-list',
+    label: t('CRM.VIEWS.LIST'),
+    value: 'list',
+  },
 ]);
 
 const boardSortOptions = computed(() => [
@@ -539,43 +598,30 @@ const boardSortOptions = computed(() => [
   },
 ]);
 
-const boardSortDirectionOptions = computed(() => [
-  {
-    label: t('CRM.TASKS.BOARD.SORT.DIRECTIONS.ASC'),
-    value: 'asc',
-  },
-  {
-    label: t('CRM.TASKS.BOARD.SORT.DIRECTIONS.DESC'),
-    value: 'desc',
-  },
-]);
-
-const selectedBoardSortLabel = computed(
-  () =>
-    boardSortOptions.value.find(option => option.value === boardSort.key)
-      ?.label || t('CRM.TASKS.BOARD.SORT.LABEL')
-);
-
-const boardSortDirectionLabels = computed(() => ({
-  asc:
-    boardSortDirectionOptions.value.find(option => option.value === 'asc')
-      ?.label || '',
-  desc:
-    boardSortDirectionOptions.value.find(option => option.value === 'desc')
-      ?.label || '',
-}));
-
 const calendarViewOptions = computed(() => [
-  { label: t('SCHEDULING.VIEWS.DAY'), value: 'day' },
-  { label: t('SCHEDULING.VIEWS.WEEK'), value: 'week' },
-  { label: t('SCHEDULING.VIEWS.MONTH'), value: 'month' },
+  {
+    icon: 'i-lucide-calendar-days',
+    label: t('SCHEDULING.VIEWS.DAY'),
+    value: 'day',
+  },
+  {
+    icon: 'i-lucide-calendar-range',
+    label: t('SCHEDULING.VIEWS.WEEK'),
+    value: 'week',
+  },
+  {
+    icon: 'i-lucide-calendar-fold',
+    label: t('SCHEDULING.VIEWS.MONTH'),
+    value: 'month',
+  },
 ]);
 
 const calendarLabel = computed(() =>
   formatCalendarTitle(
     currentCalendarView.value,
     calendarAnchorDate.value,
-    locale.value
+    locale.value,
+    workspaceTimezone.value
   )
 );
 
@@ -601,20 +647,7 @@ const tableColumns = computed(() => [
     sortable: true,
     defaultSortDirection: 'asc',
   },
-  {
-    key: 'status',
-    label: t('CRM.TASKS.TABLE.STATUS'),
-    width: '1fr',
-    sortable: true,
-    defaultSortDirection: 'asc',
-  },
-  {
-    key: 'priority',
-    label: t('CRM.TASKS.FORM.PRIORITY'),
-    width: '0.95fr',
-    sortable: true,
-    defaultSortDirection: 'asc',
-  },
+
   {
     key: 'assignee',
     label: t('CRM.TASKS.TABLE.ASSIGNEE'),
@@ -637,6 +670,18 @@ const normalizeFilterText = value =>
     .trim()
     .toLowerCase();
 
+const isTaskOverdue = task => {
+  if (task.archivedAt || task.cancelledAt || task.completedAt) return false;
+
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return false;
+  if (!task.allDay) return dueDate < new Date();
+
+  const today = utcToZonedTime(new Date(), workspaceTimezone.value);
+  const todayKey = format(today, 'yyyy-MM-dd');
+  return task.dueOn < todayKey;
+};
+
 const taskCustomFieldEntries = task =>
   resolveCustomFieldEntries(
     taskFieldDefinitions.value,
@@ -654,10 +699,36 @@ const searchableTaskCustomFieldTerms = task =>
     entry.displayValue,
   ]);
 
+const customFieldSearchAliases = computed(() => {
+  const search = normalizeFilterText(listQuickFilters.q);
+  if (!search) {
+    return {
+      checked: false,
+      dateAlias: '',
+      datetimeAlias: '',
+      numericAlias: '',
+    };
+  }
+
+  const yesLabel = normalizeFilterText(customFieldFilterLabels.value.yesLabel);
+  return {
+    checked: yesLabel.includes(search),
+    numericAlias: buildLocalizedNumberSearchAlias(
+      listQuickFilters.q,
+      localeCode.value
+    ),
+    ...buildLocalizedDateSearchAliases(listQuickFilters.q, localeCode.value),
+  };
+});
+
 const filteredListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return tasks.value;
+
   const search = normalizeFilterText(listQuickFilters.q);
 
   return tasks.value.filter(task => {
+    if (!taskMatchesStateFilter(task, filters.taskState)) return false;
+
     if (!search) {
       return true;
     }
@@ -684,46 +755,15 @@ const resolveTaskSortValue = computed(() =>
   })
 );
 
-const prioritySortRank = {
-  none: 0,
-  low: 1,
-  medium: 2,
-  high: 3,
-  urgent: 4,
-};
+const sortedListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return filteredListTasks.value;
 
-const resolveTaskBoardSortValue = (task, key) => {
-  switch (key) {
-    case 'activityType':
-      return normalizeFilterText(
-        activityTypeLabelByValue.value[task.activityType] || task.activityType
-      );
-    case 'createdAt':
-      return task.createdAt ? new Date(task.createdAt).getTime() : null;
-    case 'dueAt':
-      return task.dueAt ? new Date(task.dueAt).getTime() : null;
-    case 'position':
-      return Number(task.position ?? Number.MAX_SAFE_INTEGER);
-    case 'priority':
-      return prioritySortRank[task.priority] ?? -1;
-    case 'startAt':
-      return task.startAt ? new Date(task.startAt).getTime() : null;
-    case 'title':
-      return normalizeFilterText(task.title);
-    case 'updatedAt':
-      return task.updatedAt ? new Date(task.updatedAt).getTime() : null;
-    default:
-      return null;
-  }
-};
-
-const sortedListTasks = computed(() =>
-  sortListRecords(
+  return sortListRecords(
     filteredListTasks.value,
     listSort.value,
     resolveTaskSortValue.value
-  )
-);
+  );
+});
 
 const defaultTasksPreferences = () => ({
   boardSort: {
@@ -731,8 +771,7 @@ const defaultTasksPreferences = () => ({
   },
   boardSortDirections: {},
   currentCalendarView: 'week',
-  currentPresentation: 'list',
-  currentTaskScope: 'mine',
+  currentPresentation: 'board',
   filters: {
     activityType: '',
     archived: false,
@@ -740,9 +779,7 @@ const defaultTasksPreferences = () => ({
     dateRange: { from: '', to: '', type: '' },
     dealId: '',
     outcome: '',
-    priority: '',
-    statusId: '',
-    teamId: '',
+    taskState: 'active',
   },
   listQuickFilters: {
     q: '',
@@ -788,12 +825,16 @@ const sanitizeTasksPreferences = preferences => {
     next.currentPresentation = defaults.currentPresentation;
   }
 
-  if (!['mine', 'all'].includes(next.currentTaskScope)) {
-    next.currentTaskScope = defaults.currentTaskScope;
-  }
-
   if (!['day', 'week', 'month'].includes(next.currentCalendarView)) {
     next.currentCalendarView = defaults.currentCalendarView;
+  }
+
+  if (
+    !['active', 'completed', 'cancelled', 'all'].includes(
+      next.filters.taskState
+    )
+  ) {
+    next.filters.taskState = defaults.filters.taskState;
   }
 
   if (
@@ -818,7 +859,6 @@ const restoreTasksPreferences = () => {
   const preferences = sanitizeTasksPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
-  currentTaskScope.value = preferences.currentTaskScope;
   currentCalendarView.value = preferences.currentCalendarView;
   listSort.value = { ...preferences.listSort };
   boardSort.key = preferences.boardSort.key;
@@ -840,7 +880,6 @@ const persistTasksPreferences = () => {
       boardSortDirections: { ...boardSortDirections },
       currentCalendarView: currentCalendarView.value,
       currentPresentation: currentPresentation.value,
-      currentTaskScope: currentTaskScope.value,
       filters: { ...filters },
       listQuickFilters: { ...listQuickFilters },
       listSort: { ...listSort.value },
@@ -849,6 +888,8 @@ const persistTasksPreferences = () => {
 };
 
 const paginatedListTasks = computed(() => {
+  if (currentPresentation.value === 'list') return sortedListTasks.value;
+
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
   return sortedListTasks.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
 });
@@ -863,7 +904,7 @@ const stripedTaskRowIds = computed(
 );
 
 const shouldShowListPagination = computed(
-  () => sortedListTasks.value.length > LIST_PAGE_SIZE
+  () => Number(tasksMeta.value.count || 0) > LIST_PAGE_SIZE
 );
 
 const taskListRowClass = row => [
@@ -880,12 +921,18 @@ const resetForm = () => {
   const defaultStatus =
     referencesStore.taskStatuses.find(status => status.default) ||
     referencesStore.taskStatuses[0];
+  const defaultTaskType =
+    referencesStore.taskTypes.find(
+      taskType => taskType.default && taskType.active
+    ) || referencesStore.taskTypes.find(taskType => taskType.active);
 
   Object.assign(form, {
-    activityType: 'task',
+    activityType: defaultTaskType?.code || 'task',
+    allDay: false,
     assigneeId: currentUserId.value,
+    contextKind: 'personal',
     customAttributes: buildDefaultCustomAttributes(
-      referencesStore.taskFieldDefinitions
+      taskFieldDefinitionsForContext('personal')
     ),
     dealId: '',
     description: '',
@@ -898,17 +945,11 @@ const resetForm = () => {
     priority: 'medium',
     startAt: '',
     statusId: defaultStatus?.id || '',
-    teamId: '',
     title: '',
   });
 };
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
-
-const formatDate = value => {
-  if (!value) return t('CRM.GENERAL.EMPTY_VALUE');
-  return format(new Date(value), 'MMM d, yyyy HH:mm');
-};
 
 const crmPrefillKeys = [
   'action',
@@ -916,6 +957,7 @@ const crmPrefillKeys = [
   'assigneeId',
   'contactName',
   'conversationDisplayId',
+  'contextKind',
   'dealId',
   'description',
   'dueAt',
@@ -960,40 +1002,92 @@ const buildPrefillTaskTitle = () => {
   return '';
 };
 
+let dealOptionsLoadGeneration = 0;
+let timelineLoadGeneration = 0;
+let isComponentUnmounted = false;
+
+const resetTimeline = () => {
+  timelineLoadGeneration += 1;
+  timelineItems.value = [];
+  ui.isTimelineLoading = false;
+  ui.timelineError = null;
+};
+
 const loadDealOptions = async () => {
-  const { data } = await CrmDealsAPI.get({
-    archived: false,
-    page: 1,
-    per_page: 100,
-  });
-  dealOptions.value = normalizePayload(data).map(deal => ({
-    label: deal.title,
-    value: deal.id,
-  }));
+  if (isComponentUnmounted) return;
+  dealOptionsLoadGeneration += 1;
+  const generation = dealOptionsLoadGeneration;
+  const requestAccountId = accountId.value;
+  const isCurrent = () =>
+    generation === dealOptionsLoadGeneration &&
+    requestAccountId === accountId.value;
+
+  try {
+    const { data } = await CrmDealsAPI.get({
+      archived: false,
+      page: 1,
+      per_page: 100,
+    });
+    if (!isCurrent()) return;
+    dealOptions.value = normalizePayload(data).map(deal => ({
+      label: deal.title,
+      value: deal.id,
+    }));
+  } catch (error) {
+    if (isCurrent()) throw error;
+  }
 };
 
 const loadTimeline = async taskId => {
+  if (isComponentUnmounted) return;
+  timelineLoadGeneration += 1;
+  const generation = timelineLoadGeneration;
+  const requestAccountId = accountId.value;
+  const isCurrent = () =>
+    generation === timelineLoadGeneration &&
+    requestAccountId === accountId.value &&
+    drawerOpen.value &&
+    Number(selectedTask.value?.id) === Number(taskId);
+  if (!isCurrent()) return;
   ui.isTimelineLoading = true;
+  ui.timelineError = null;
 
   try {
     const { data } = await CrmTasksAPI.timeline(taskId, { limit: 50 });
-    timelineItems.value = normalizePayload(data);
+    if (isCurrent()) timelineItems.value = normalizePayload(data);
+  } catch (error) {
+    if (isCurrent()) {
+      timelineItems.value = [];
+      ui.timelineError = formatErrorMessage(error);
+    }
   } finally {
-    ui.isTimelineLoading = false;
+    if (isCurrent()) ui.isTimelineLoading = false;
   }
 };
 
+const openTaskSettings = () => {
+  router.push({
+    name: 'crm_task_settings_index',
+    params: { accountId: accountId.value },
+  });
+};
+
 const openCreateDrawer = async prefill => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
   selectedTask.value = null;
+  taskEditSnapshot.value = null;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
-  timelineItems.value = [];
+  resetTimeline();
   drawerOpen.value = true;
-  await loadDealOptions();
 
   if (prefill) {
     Object.assign(form, prefill);
+    if (prefill.dealId && !prefill.contextKind) form.contextKind = 'sales';
   }
+  await loadDealOptions();
 };
 
 const openCalendarCreateDrawer = async payload => {
@@ -1007,16 +1101,75 @@ const openCalendarCreateDrawer = async payload => {
   });
 };
 
+const taskDueInputValue = task => {
+  if (task.allDay) return task.dueOn || '';
+  if (!task.dueAt) return '';
+
+  return task.dueAt.slice(0, 16);
+};
+
+const buildPayload = () => {
+  const taskType = taskTypeByCode.value[form.activityType];
+  const payload = compactPayload({
+    activity_type: form.activityType || 'task',
+    task_type_id: taskType?.id ? Number(taskType.id) : undefined,
+    all_day: form.allDay,
+    assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
+    context_kind: form.contextKind,
+    custom_attributes: form.customAttributes,
+    deal_id: form.dealId ? Number(form.dealId) : null,
+    description: form.description || undefined,
+    due_at: form.allDay ? undefined : form.dueAt || undefined,
+    due_on: form.allDay ? form.dueAt || undefined : undefined,
+    external_ref: form.externalRef || undefined,
+    lock_version: selectedTask.value?.lockVersion,
+    originating_conversation_id: form.originatingConversationId
+      ? Number(form.originatingConversationId)
+      : undefined,
+    start_at: form.startAt || undefined,
+    status_id: form.statusId ? Number(form.statusId) : undefined,
+    title: form.title.trim(),
+  });
+
+  if (form.allDay) {
+    payload.due_at = null;
+    payload.start_at = null;
+  } else {
+    payload.due_on = null;
+  }
+
+  if (selectedTask.value) {
+    payload.deal_id = form.dealId ? Number(form.dealId) : null;
+    payload.description = form.description || null;
+    payload.external_ref = form.externalRef || null;
+    payload.originating_conversation_id = form.originatingConversationId
+      ? Number(form.originatingConversationId)
+      : null;
+  }
+
+  return payload;
+};
+
 const openEditDrawer = async task => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
+  resetTimeline();
+  const contextKind = task.contextKind || (task.dealId ? 'sales' : 'personal');
   Object.assign(form, {
     activityType: normalizeActivityType(task.activityType || 'task'),
+    allDay: Boolean(task.allDay),
     assigneeId: task.assigneeId ?? '',
-    customAttributes: { ...(task.customAttributes || {}) },
+    contextKind,
+    customAttributes: taskCustomAttributesForContext(
+      task.customAttributes,
+      contextKind
+    ),
     dealId: task.dealId ?? '',
     description: task.description || '',
-    dueAt: task.dueAt ? task.dueAt.slice(0, 16) : '',
+    dueAt: taskDueInputValue(task),
     externalRef: task.externalRef || '',
     originatingConversationDisplayId: task.originatingConversationId
       ? `#${task.originatingConversationId}`
@@ -1027,24 +1180,28 @@ const openEditDrawer = async task => {
     priority: task.priority || 'medium',
     startAt: task.startAt ? task.startAt.slice(0, 16) : '',
     statusId: task.statusId,
-    teamId: task.teamId ?? '',
     title: task.title,
   });
+  taskEditSnapshot.value = cloneTaskDraft({ task, payload: buildPayload() });
   drawerOpen.value = true;
-  await loadDealOptions();
-  await loadTimeline(task.id);
+  await Promise.all([loadDealOptions(), loadTimeline(task.id)]);
 };
 
 const closeDrawer = () => {
+  taskEditorGeneration += 1;
+  ui.isSaving = false;
+  resetTaskConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   selectedTask.value = null;
-  timelineItems.value = [];
+  taskEditSnapshot.value = null;
+  resetTimeline();
   resetForm();
 };
 
 const closeTaskTitleEditor = () => {
   editingTaskTitleId.value = null;
+  taskTitleEditSnapshot.value = null;
   taskTitleDraft.value = '';
 };
 
@@ -1057,11 +1214,13 @@ const syncTaskRangeInDrawer = task => {
   }
 
   selectedTask.value = task;
+  form.allDay = Boolean(task.allDay);
   form.startAt = task.startAt ? task.startAt.slice(0, 16) : '';
-  form.dueAt = task.dueAt ? task.dueAt.slice(0, 16) : '';
+  form.dueAt = taskDueInputValue(task);
 };
 
 const upsertTask = task => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
   const existingIndex = tasks.value.findIndex(item => item.id === task.id);
 
   if (existingIndex === -1) {
@@ -1072,6 +1231,143 @@ const upsertTask = task => {
   const nextTasks = [...tasks.value];
   nextTasks.splice(existingIndex, 1, task);
   tasks.value = nextTasks;
+};
+
+const removeTask = taskId => {
+  tasks.value = tasks.value.filter(task => Number(task.id) !== Number(taskId));
+};
+
+const reloadTaskConflict = () => {
+  const taskId = Number(selectedTask.value?.id);
+  return reloadConflict({
+    recordId: taskId,
+    isCurrentRecord: requestedId =>
+      Number(selectedTask.value?.id) === requestedId,
+    loadAuthoritative: async requestedId => {
+      const response = await CrmTasksAPI.show(requestedId);
+      return normalizePayload(response.data);
+    },
+    applyAuthoritative: (task, requestedId) => {
+      upsertTask(task);
+      const authoritativeTask =
+        pendingTaskRealtimeUpdates.get(requestedId)?.task || task;
+      selectedTask.value = authoritativeTask;
+      taskEditSnapshot.value = rebaseSnapshotLockVersion(
+        taskEditSnapshot.value,
+        'task',
+        authoritativeTask
+      );
+    },
+  });
+};
+
+const effectiveTaskState = () =>
+  currentPresentation.value === 'board' ? 'active' : filters.taskState;
+const effectiveArchivedFilter = () =>
+  currentPresentation.value === 'board' ? false : filters.archived;
+
+const taskMatchesRealtimeFilters = task => {
+  if (!taskMatchesStateFilter(task, effectiveTaskState())) return false;
+  if (filters.activityType && task.activityType !== filters.activityType) {
+    return false;
+  }
+  if (Boolean(task.archivedAt) !== effectiveArchivedFilter()) return false;
+  if (
+    filters.assigneeId &&
+    Number(task.assigneeId) !== Number(filters.assigneeId)
+  ) {
+    return false;
+  }
+  if (filters.dealId && Number(task.dealId) !== Number(filters.dealId)) {
+    return false;
+  }
+  if (filters.outcome && task.outcome !== filters.outcome) return false;
+
+  const dueDate = taskDueDate(task);
+  if (filters.dateRange.from) {
+    const dueFrom = new Date(filters.dateRange.from);
+    if (!dueDate || dueDate < dueFrom) return false;
+  }
+  if (filters.dateRange.to) {
+    const dueTo = new Date(filters.dateRange.to);
+    dueTo.setHours(23, 59, 59, 999);
+    if (!dueDate || dueDate > dueTo) return false;
+  }
+
+  return recordMatchesCustomFieldFilters(
+    task,
+    taskFieldDefinitions.value,
+    customFieldFilters.value
+  );
+};
+
+const applyTaskRealtimeState = (task, boardTimeBucket = null) => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
+  if (currentPresentation.value === 'list') {
+    if (tasks.value.some(item => Number(item.id) === Number(task.id))) {
+      upsertTask(task);
+    }
+    scheduleTaskListReload();
+    return;
+  }
+
+  let visibleTask = task;
+  if (currentPresentation.value === 'board') {
+    const existingTask = tasks.value.find(
+      item => Number(item.id) === Number(task.id)
+    );
+    const hasDeadlineUpdate = ['allDay', 'dueAt', 'dueOn'].some(field =>
+      Object.prototype.hasOwnProperty.call(task, field)
+    );
+    const deadlineIsUnchanged =
+      !hasDeadlineUpdate ||
+      (existingTask?.dueAt === task.dueAt &&
+        existingTask?.dueOn === task.dueOn &&
+        existingTask?.allDay === task.allDay);
+    const authoritativeBucket =
+      boardTimeBucket ||
+      (deadlineIsUnchanged ? existingTask?.boardTimeBucket : null);
+    visibleTask = authoritativeBucket
+      ? { ...task, boardTimeBucket: authoritativeBucket }
+      : null;
+  }
+
+  if (visibleTask && taskMatchesRealtimeFilters(visibleTask)) {
+    upsertTask(visibleTask);
+  } else if (visibleTask) {
+    removeTask(visibleTask.id);
+  }
+  scheduleTaskListReload();
+};
+
+const runTaskMutation = async (
+  request,
+  expectedTask,
+  isCurrentEditor = () => true
+) => {
+  const accountAtStart = accountId.value;
+  if (expectedTask) {
+    assertTaskEditCurrent(
+      expectedTask,
+      pendingTaskRealtimeUpdates.get(Number(expectedTask.id))?.task ||
+        expectedTask
+    );
+  }
+  const response = await request();
+  if (accountAtStart !== accountId.value) assertTaskEditCurrent(null, null);
+  const responseTask = normalizePayload(response.data);
+  taskRealtimeSequence += 1;
+  const newest = rememberTaskSnapshot(
+    pendingTaskRealtimeUpdates,
+    responseTask,
+    taskRealtimeSequence
+  );
+  if (expectedTask) assertTaskEditCurrent(responseTask, newest);
+  if (!isCurrentEditor()) return newest;
+  applyTaskRealtimeState(newest);
+  if (Number(selectedTask.value?.id) === Number(newest.id))
+    selectedTask.value = newest;
+  return newest;
 };
 
 const syncSelectedTask = records => {
@@ -1086,70 +1382,61 @@ const syncSelectedTask = records => {
   }
 };
 
-const buildPayload = () => {
-  const payload = compactPayload({
-    activity_type: form.activityType || 'task',
-    assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
-    custom_attributes: form.customAttributes,
-    deal_id: form.dealId ? Number(form.dealId) : undefined,
-    description: form.description || undefined,
-    due_at: form.dueAt || undefined,
-    external_ref: form.externalRef || undefined,
-    lock_version: selectedTask.value?.lockVersion,
-    originating_conversation_id: form.originatingConversationId
-      ? Number(form.originatingConversationId)
-      : undefined,
-    outcome: form.outcome || undefined,
-    outcome_note: form.outcomeNote || undefined,
-    priority: form.priority || undefined,
-    start_at: form.startAt || undefined,
-    status_id: form.statusId ? Number(form.statusId) : undefined,
-    team_id: form.teamId ? Number(form.teamId) : undefined,
-    title: form.title.trim(),
-  });
+const updateAllDay = enabled => {
+  form.allDay = enabled;
 
-  if (selectedTask.value && !form.outcome) {
-    payload.outcome = '';
+  if (enabled) {
+    const dueDate = form.dueAt ? new Date(form.dueAt) : new Date();
+    form.dueAt = format(dueDate, 'yyyy-MM-dd');
+    form.startAt = '';
+    return;
   }
 
-  if (selectedTask.value && !form.outcomeNote) {
-    payload.outcome_note = '';
-  }
-
-  return payload;
+  // A date-only deadline has no implied wall-clock time. Require an explicit
+  // timed value instead of inventing noon and shifting it across timezones.
+  form.dueAt = '';
 };
 
 const saveTask = async () => {
-  if (!canManageTasks.value) return;
+  if (!canManageTasks.value || ui.isSaving) return;
 
   ui.isSaving = true;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
 
   try {
     const payload = buildPayload();
+    const draft = cloneTaskDraft(form);
     let task;
 
     if (selectedTask.value) {
-      const currentStatusId = selectedTask.value.statusId;
-      const { status_id: _statusId, ...updatePayload } = payload;
-      const response = await CrmTasksAPI.update(
-        selectedTask.value.id,
-        updatePayload
+      const currentTask = taskEditSnapshot.value?.task;
+      const savePayload = buildTaskFormSavePayload({
+        snapshot: taskEditSnapshot.value,
+        currentTask: selectedTask.value,
+        requested: payload,
+        form: draft,
+      });
+      task = await runTaskMutation(
+        () => CrmTasksAPI.saveForm(currentTask.id, savePayload),
+        currentTask,
+        isCurrentEditor
       );
-      task = normalizePayload(response.data);
-
-      if (Number(form.statusId) !== Number(currentStatusId) && form.statusId) {
-        const transitionResponse = await CrmTasksAPI.changeStatus(task.id, {
-          lock_version: task.lockVersion,
-          status_id: Number(form.statusId),
-        });
-        task = normalizePayload(transitionResponse.data);
-      }
     } else {
-      const response = await CrmTasksAPI.create(payload);
-      task = normalizePayload(response.data);
+      task = await runTaskMutation(
+        () => CrmTasksAPI.create(payload),
+        null,
+        isCurrentEditor
+      );
     }
 
-    upsertTask(task);
+    if (!isCurrentEditor()) return;
+    applyTaskRealtimeState(task);
     useAlert(
       selectedTask.value
         ? t('CRM.TASKS.SUCCESS_UPDATED')
@@ -1157,19 +1444,166 @@ const saveTask = async () => {
     );
     closeDrawer();
   } catch (error) {
+    if (!isCurrentEditor()) return;
+    if (selectedTask.value && isStaleCrmError(error)) {
+      markTaskConflictStale();
+      const conflictIsCurrent = await reloadTaskConflict();
+      if (conflictIsCurrent) useAlert(formatErrorMessage(error));
+      return;
+    }
     useAlert(formatErrorMessage(error));
   } finally {
-    ui.isSaving = false;
+    if (isCurrentEditor()) ui.isSaving = false;
+  }
+};
+
+const openTaskCompletionDialog = task => {
+  if (!canManageTasks.value || !doneStatus.value || task?.archivedAt) return;
+
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = Number(task.id);
+  completionDialogRef.value?.open(task);
+};
+
+const invalidateTaskCompletionDialog = () => {
+  if (taskCompletionTaskId === null) return;
+
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = null;
+  ui.isSaving = false;
+};
+
+const saveTaskCompletion = async ({ task, note, taskOutcomeId }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const completionGeneration = taskCompletionGeneration;
+  const completionTaskId = Number(task.id);
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    completionGeneration === taskCompletionGeneration &&
+    taskCompletionTaskId === completionTaskId &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
+
+  ui.isSaving = true;
+
+  try {
+    await runTaskMutation(
+      () =>
+        CrmTasksAPI.complete(
+          currentTask.id,
+          compactPayload({
+            idempotency_key: crypto.randomUUID(),
+            lock_version: currentTask.lockVersion,
+            outcome_note: note,
+            task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
+          })
+        ),
+      currentTask,
+      isCurrentEditor
+    );
+    if (!isCurrentEditor()) return;
+    completionDialogRef.value?.close();
+    closeDrawer();
+    useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
+  } catch (error) {
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
+  } finally {
+    if (isCurrentEditor()) ui.isSaving = false;
+  }
+};
+
+const openTaskCancelDialog = task => {
+  if (
+    !canManageTasks.value ||
+    task?.archivedAt ||
+    task?.completedAt ||
+    task?.cancelledAt
+  ) {
+    return;
+  }
+
+  cancelDialogRef.value?.open(task);
+};
+
+const saveTaskCancellation = async ({ task, reason }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
+  ui.isSaving = true;
+
+  try {
+    await runTaskMutation(
+      () =>
+        CrmTasksAPI.cancel(currentTask.id, {
+          cancellation_reason: reason,
+          idempotency_key: crypto.randomUUID(),
+          lock_version: currentTask.lockVersion,
+        }),
+      currentTask,
+      isCurrentEditor
+    );
+    if (!isCurrentEditor()) return;
+    cancelDialogRef.value?.close();
+    closeDrawer();
+    useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
+  } catch (error) {
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
+  } finally {
+    if (isCurrentEditor()) ui.isSaving = false;
+  }
+};
+
+const reopenTask = async task => {
+  if (!canManageTasks.value || (!task?.completedAt && !task?.cancelledAt)) {
+    return;
+  }
+
+  const editorGeneration = taskEditorGeneration;
+  const editorTaskId = Number(selectedTask.value?.id) || null;
+  const isCurrentEditor = () =>
+    editorGeneration === taskEditorGeneration &&
+    (editorTaskId
+      ? Number(selectedTask.value?.id) === editorTaskId
+      : !selectedTask.value);
+  ui.isSaving = true;
+  try {
+    const updatedTask = await runTaskMutation(
+      () =>
+        CrmTasksAPI.reopen(task.id, {
+          idempotency_key: crypto.randomUUID(),
+          lock_version: task.lockVersion,
+        }),
+      task,
+      isCurrentEditor
+    );
+    if (!isCurrentEditor()) return;
+    selectedTask.value = updatedTask;
+    useAlert(t('CRM.TASKS.LIFECYCLE.REOPENED'));
+  } catch (error) {
+    if (isCurrentEditor()) useAlert(formatErrorMessage(error));
+  } finally {
+    if (isCurrentEditor()) ui.isSaving = false;
   }
 };
 
 const toggleArchived = async task => {
   try {
-    const response = task.archivedAt
-      ? await CrmTasksAPI.unarchive(task.id, { lock_version: task.lockVersion })
-      : await CrmTasksAPI.archive(task.id, { lock_version: task.lockVersion });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      task.archivedAt
+        ? CrmTasksAPI.unarchive(task.id, { lock_version: task.lockVersion })
+        : CrmTasksAPI.archive(task.id, { lock_version: task.lockVersion })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncSelectedTask(tasks.value);
     useAlert(
       task.archivedAt
@@ -1181,52 +1615,478 @@ const toggleArchived = async task => {
   }
 };
 
+const buildTaskQuery = () =>
+  compactPayload({
+    activity_type: filters.activityType || undefined,
+    archived: effectiveArchivedFilter(),
+    assignee_id: filters.assigneeId || undefined,
+    custom_attribute_filters: customFieldFilters.value,
+    deal_id: filters.dealId || undefined,
+    due_from: filters.dateRange.from || undefined,
+    due_to: filters.dateRange.to || undefined,
+    outcome: filters.outcome || undefined,
+    q:
+      currentPresentation.value === 'list'
+        ? listQuickFilters.q || undefined
+        : undefined,
+    q_checked:
+      currentPresentation.value === 'list' &&
+      customFieldSearchAliases.value.checked
+        ? true
+        : undefined,
+    q_date_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.dateAlias || undefined
+        : undefined,
+    q_datetime_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.datetimeAlias || undefined
+        : undefined,
+    q_numeric_alias:
+      currentPresentation.value === 'list'
+        ? customFieldSearchAliases.value.numericAlias || undefined
+        : undefined,
+    sort_by:
+      currentPresentation.value === 'list'
+        ? listSort.value.key || undefined
+        : undefined,
+    sort_direction:
+      currentPresentation.value === 'list'
+        ? listSort.value.direction || undefined
+        : undefined,
+    task_state: effectiveTaskState(),
+  });
+
+const withCalendarRange = query => {
+  const { from, to } = buildCalendarRange(
+    currentCalendarView.value,
+    calendarAnchorDate.value,
+    workspaceTimezone.value
+  );
+  const calendarTo = new Date(to.getTime() + 1);
+  const zonedFrom = utcToZonedTime(from, workspaceTimezone.value);
+  const zonedTo = utcToZonedTime(calendarTo, workspaceTimezone.value);
+
+  return {
+    ...query,
+    calendar_from: from.toISOString(),
+    calendar_from_date: format(zonedFrom, 'yyyy-MM-dd'),
+    calendar_to: calendarTo.toISOString(),
+    calendar_to_date: format(zonedTo, 'yyyy-MM-dd'),
+  };
+};
+
+const fetchBoardTaskBuckets = async ({ loadGeneration, query }) => {
+  const snapshotBucket = 'today';
+  const snapshotResponse = await CrmTasksAPI.get({
+    ...query,
+    page: 1,
+    per_page: BOARD_PAGE_SIZE,
+    sort_by: 'dueAt',
+    sort_direction: 'asc',
+    time_bucket: snapshotBucket,
+  });
+  if (loadGeneration !== taskLoadGeneration.value) return null;
+
+  const asOf = snapshotResponse.data?.meta?.as_of;
+  if (!asOf) throw new Error('CRM task board snapshot is missing');
+  boardAsOf.value = asOf;
+
+  const remainingBuckets = TASK_TIME_BUCKETS.filter(
+    timeBucket => timeBucket !== snapshotBucket
+  );
+  const remainingResponses = await Promise.all(
+    remainingBuckets.map(timeBucket =>
+      CrmTasksAPI.get({
+        ...query,
+        as_of: asOf,
+        page: 1,
+        per_page: BOARD_PAGE_SIZE,
+        sort_by: 'dueAt',
+        sort_direction: 'asc',
+        time_bucket: timeBucket,
+      })
+    )
+  );
+  if (loadGeneration !== taskLoadGeneration.value) return null;
+
+  const responsesByBucket = new Map([
+    [snapshotBucket, snapshotResponse],
+    ...remainingBuckets.map((timeBucket, index) => [
+      timeBucket,
+      remainingResponses[index],
+    ]),
+  ]);
+
+  boardBucketMeta.value = Object.fromEntries(
+    TASK_TIME_BUCKETS.map(timeBucket => [
+      timeBucket,
+      normalizeMeta(responsesByBucket.get(timeBucket).data),
+    ])
+  );
+  return TASK_TIME_BUCKETS.flatMap(timeBucket =>
+    normalizePayload(responsesByBucket.get(timeBucket).data).map(task => ({
+      ...task,
+      boardTimeBucket: timeBucket,
+    }))
+  );
+};
+
 const loadTasks = async () => {
+  taskLoadGeneration.value += 1;
+  const loadGeneration = taskLoadGeneration.value;
+  const realtimeSequenceAtStart = taskRealtimeSequence;
+  boardBucketLoading.value = {};
+  boardBucketLoadFailed.value = {};
+  boardAsOf.value = null;
+  isLoadingMoreTasks.value = false;
+  calendarLoadMoreFailed.value = false;
   ui.isLoading = true;
   ui.error = null;
 
   try {
-    const query = compactPayload({
-      activity_type: filters.activityType || undefined,
-      archived: filters.archived,
-      assignee_id: effectiveTaskAssigneeId.value || undefined,
-      custom_attribute_filters: customFieldFilters.value,
-      deal_id: filters.dealId || undefined,
-      due_from: filters.dateRange.from || undefined,
-      due_to: filters.dateRange.to || undefined,
-      outcome: filters.outcome || undefined,
-      priority: filters.priority || undefined,
-      status_id: filters.statusId || undefined,
-      team_id: filters.teamId || undefined,
-    });
+    const query = buildTaskQuery();
 
-    if (currentPresentation.value === 'calendar') {
-      const { from, to } = buildCalendarRange(
-        currentCalendarView.value,
-        calendarAnchorDate.value
+    let loadedTasks;
+    if (currentPresentation.value === 'list') {
+      const { data } = await CrmTasksAPI.get({
+        ...query,
+        page: listCurrentPage.value,
+        per_page: LIST_PAGE_SIZE,
+      });
+      if (loadGeneration !== taskLoadGeneration.value) return false;
+
+      loadedTasks = normalizePayload(data);
+      tasksMeta.value = normalizeMeta(data);
+      const maxPage = Math.max(
+        1,
+        Math.ceil(Number(tasksMeta.value.count || 0) / LIST_PAGE_SIZE)
       );
-      const calendarTo = new Date(to.getTime() + 1);
-      const selectedFrom = query.due_from ? new Date(query.due_from) : null;
-      const selectedTo = query.due_to ? new Date(query.due_to) : null;
+      if (listCurrentPage.value > maxPage) {
+        listCurrentPage.value = maxPage;
+        return loadTasks();
+      }
+    } else if (currentPresentation.value === 'calendar') {
+      const { data } = await CrmTasksAPI.get({
+        ...withCalendarRange(query),
+        page: 1,
+        per_page: CALENDAR_PAGE_SIZE,
+        sort_by: 'dueAt',
+        sort_direction: 'asc',
+      });
+      if (loadGeneration !== taskLoadGeneration.value) return false;
 
-      query.due_from = new Date(
-        Math.max(from.getTime(), selectedFrom?.getTime() || from.getTime())
-      ).toISOString();
-      query.due_to = new Date(
-        Math.min(
-          calendarTo.getTime(),
-          selectedTo?.getTime() || calendarTo.getTime()
-        )
-      ).toISOString();
+      loadedTasks = normalizePayload(data);
+      tasksMeta.value = normalizeMeta(data);
+      boardBucketMeta.value = {};
+    } else {
+      loadedTasks = await fetchBoardTaskBuckets({ loadGeneration, query });
+      if (!loadedTasks || loadGeneration !== taskLoadGeneration.value) {
+        return false;
+      }
+
+      tasksMeta.value = {
+        count: Object.values(boardBucketMeta.value).reduce(
+          (total, meta) => total + Number(meta.count || 0),
+          0
+        ),
+        hasMore: Object.values(boardBucketMeta.value).some(
+          meta => meta.hasMore
+        ),
+        page: 1,
+        perPage: BOARD_PAGE_SIZE,
+        workspaceTimezone:
+          boardBucketMeta.value.today?.workspaceTimezone || 'Asia/Almaty',
+      };
+    }
+    if (!loadedTasks) return false;
+
+    tasks.value = [
+      ...new Map(
+        loadedTasks
+          .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
+          .filter(
+            task =>
+              currentPresentation.value === 'list' ||
+              taskMatchesRealtimeFilters(task)
+          )
+          .map(task => [Number(task.id), task])
+      ).values(),
+    ];
+    pendingTaskRealtimeUpdates.forEach(update => {
+      if (update.sequence <= realtimeSequenceAtStart) return;
+
+      applyTaskRealtimeState(update.task);
+    });
+    syncSelectedTask(tasks.value);
+    return true;
+  } catch (error) {
+    if (loadGeneration !== taskLoadGeneration.value) return false;
+    ui.error = formatErrorMessage(error);
+    return false;
+  } finally {
+    if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
+  }
+};
+
+const handleListPageChange = async page => {
+  if (listCurrentPage.value === page) return;
+
+  scheduleTaskListReload.cancel?.();
+  listCurrentPage.value = page;
+  await loadTasks();
+};
+
+const mergeTaskPage = loadedTasks => {
+  const tasksById = new Map(tasks.value.map(task => [Number(task.id), task]));
+  loadedTasks.forEach(task => {
+    const newest = rememberTaskSnapshot(pendingTaskRealtimeUpdates, task);
+    tasksById.set(Number(newest.id), newest);
+  });
+  tasks.value = [...tasksById.values()];
+  syncSelectedTask(tasks.value);
+};
+
+const loadMoreCalendarTasks = async () => {
+  if (
+    currentPresentation.value !== 'calendar' ||
+    !tasksMeta.value.hasMore ||
+    isLoadingMoreTasks.value
+  ) {
+    return;
+  }
+
+  const loadGeneration = taskLoadGeneration.value;
+  calendarLoadMoreFailed.value = false;
+  isLoadingMoreTasks.value = true;
+  try {
+    const { data } = await CrmTasksAPI.get({
+      ...withCalendarRange(buildTaskQuery()),
+      page: Number(tasksMeta.value.page || 1) + 1,
+      per_page: CALENDAR_PAGE_SIZE,
+      sort_by: 'dueAt',
+      sort_direction: 'asc',
+    });
+    if (
+      loadGeneration !== taskLoadGeneration.value ||
+      currentPresentation.value !== 'calendar'
+    ) {
+      return;
     }
 
-    const { data } = await CrmTasksAPI.get(query);
-    tasks.value = normalizePayload(data);
-    syncSelectedTask(tasks.value);
-  } catch (error) {
-    ui.error = error;
+    mergeTaskPage(normalizePayload(data));
+    tasksMeta.value = normalizeMeta(data);
+  } catch {
+    if (loadGeneration === taskLoadGeneration.value) {
+      calendarLoadMoreFailed.value = true;
+    }
   } finally {
-    ui.isLoading = false;
+    if (loadGeneration === taskLoadGeneration.value) {
+      isLoadingMoreTasks.value = false;
+    }
+  }
+};
+
+const loadMoreBoardBucket = async timeBucket => {
+  const currentMeta = boardBucketMeta.value[timeBucket];
+  if (
+    currentPresentation.value !== 'board' ||
+    !currentMeta?.hasMore ||
+    !boardAsOf.value ||
+    boardBucketLoading.value[timeBucket]
+  ) {
+    return;
+  }
+
+  const loadGeneration = taskLoadGeneration.value;
+  boardBucketLoadFailed.value = {
+    ...boardBucketLoadFailed.value,
+    [timeBucket]: false,
+  };
+  boardBucketLoading.value = {
+    ...boardBucketLoading.value,
+    [timeBucket]: true,
+  };
+  try {
+    const { data } = await CrmTasksAPI.get({
+      ...buildTaskQuery(),
+      as_of: boardAsOf.value,
+      page: Number(currentMeta.page || 1) + 1,
+      per_page: BOARD_PAGE_SIZE,
+      sort_by: 'dueAt',
+      sort_direction: 'asc',
+      time_bucket: timeBucket,
+    });
+    if (
+      loadGeneration !== taskLoadGeneration.value ||
+      currentPresentation.value !== 'board'
+    ) {
+      return;
+    }
+
+    mergeTaskPage(
+      normalizePayload(data).map(task => ({
+        ...task,
+        boardTimeBucket: timeBucket,
+      }))
+    );
+    boardBucketMeta.value = {
+      ...boardBucketMeta.value,
+      [timeBucket]: normalizeMeta(data),
+    };
+  } catch {
+    if (loadGeneration === taskLoadGeneration.value) {
+      boardBucketLoadFailed.value = {
+        ...boardBucketLoadFailed.value,
+        [timeBucket]: true,
+      };
+    }
+  } finally {
+    if (loadGeneration === taskLoadGeneration.value) {
+      boardBucketLoading.value = {
+        ...boardBucketLoading.value,
+        [timeBucket]: false,
+      };
+    }
+  }
+};
+
+const refreshTaskFromRealtime = async payload => {
+  if (
+    Number(payload?.account_id) !== Number(accountId.value) ||
+    !payload?.task_id
+  ) {
+    return;
+  }
+
+  taskRealtimeSequence += 1;
+  const realtimeSequence = taskRealtimeSequence;
+  const lifecycleGeneration = taskRealtimeLifecycleGeneration;
+  const accountAtStart = accountId.value;
+  const taskId = Number(payload.task_id);
+  taskRealtimeRequestSequences.set(taskId, realtimeSequence);
+
+  try {
+    const { data } = await CrmTasksAPI.show(taskId);
+    if (
+      lifecycleGeneration !== taskRealtimeLifecycleGeneration ||
+      accountAtStart !== accountId.value ||
+      taskRealtimeRequestSequences.get(taskId) !== realtimeSequence
+    ) {
+      return;
+    }
+
+    const task = normalizePayload(data);
+    const newest = rememberTaskSnapshot(
+      pendingTaskRealtimeUpdates,
+      task,
+      realtimeSequence
+    );
+    if (Number(selectedTask.value?.id) === taskId) selectedTask.value = newest;
+    if (currentPresentation.value === 'list') {
+      await loadTasks();
+    } else {
+      applyTaskRealtimeState(newest);
+    }
+  } catch (error) {
+    if (
+      lifecycleGeneration !== taskRealtimeLifecycleGeneration ||
+      accountAtStart !== accountId.value ||
+      taskRealtimeRequestSequences.get(taskId) !== realtimeSequence
+    ) {
+      return;
+    }
+    if (error?.response?.status !== 404) {
+      await loadTasks();
+      return;
+    }
+
+    const remembered = pendingTaskRealtimeUpdates.get(taskId);
+    if (remembered?.sequence > realtimeSequence) return;
+
+    removeTask(taskId);
+    await loadTasks();
+    if (Number(selectedTask.value?.id) === taskId) closeDrawer();
+    if (Number(editingTaskTitleId.value) === taskId) closeTaskTitleEditor();
+  } finally {
+    if (taskRealtimeRequestSequences.get(taskId) === realtimeSequence) {
+      taskRealtimeRequestSequences.delete(taskId);
+    }
+  }
+};
+
+const handleCrmTaskRealtimeEvent = payload => refreshTaskFromRealtime(payload);
+
+const reconcileFailedOptimisticTask = ({ optimisticTask, previousTask }) => {
+  const taskId = Number(optimisticTask.id);
+  const displayedTask = tasks.value.find(item => Number(item.id) === taskId);
+  const authoritativeTask = pendingTaskRealtimeUpdates.get(taskId)?.task;
+
+  if (
+    canRollbackOptimisticTask(displayedTask, optimisticTask, authoritativeTask)
+  ) {
+    upsertTask(previousTask);
+    syncTaskRangeInDrawer(previousTask);
+    return;
+  }
+
+  if (
+    currentPresentation.value === 'board' &&
+    canRollbackOptimisticTask(displayedTask, optimisticTask)
+  ) {
+    // A newer authoritative deadline has no server-classified board bucket yet.
+    // Hide the stale optimistic card until the recovery reload can classify it.
+    removeTask(taskId);
+  }
+};
+
+const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
+  if (!canManageTasks.value || !task) return;
+
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const taskId = Number(currentTask.id);
+  if (pendingTaskDeadlineIds.has(taskId)) return;
+  pendingTaskDeadlineIds.add(taskId);
+
+  const deadline = taskDeadlineForBucket(bucket, boardAsOf.value?.slice(0, 10));
+  const previousTask = { ...currentTask };
+  const optimisticTask = {
+    ...currentTask,
+    allDay: deadline.allDay,
+    boardTimeBucket: bucket,
+    dueAt: deadline.dueAt,
+    dueOn: deadline.dueOn,
+    startAt: deadline.startAt,
+  };
+  upsertTask(optimisticTask);
+  syncTaskRangeInDrawer(optimisticTask);
+
+  try {
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(currentTask.id, {
+        all_day: deadline.allDay,
+        due_at: deadline.dueAt,
+        due_on: deadline.dueOn,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+        start_at: deadline.startAt,
+      })
+    );
+    applyTaskRealtimeState(updatedTask, bucket);
+    syncTaskRangeInDrawer(updatedTask);
+    useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
+  } catch (error) {
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
+
+    useAlert(formatErrorMessage(error));
+    try {
+      await loadTasks();
+    } catch {
+      // Keep the original mutation error as the surfaced failure.
+    }
+  } finally {
+    pendingTaskDeadlineIds.delete(taskId);
   }
 };
 
@@ -1258,7 +2118,8 @@ const deleteComment = async comment => {
   }
 };
 
-const clearTaskPrefillQuery = async () => {
+const clearTaskPrefillQuery = async isCurrent => {
+  if (!isCurrent()) return;
   const nextQuery = { ...route.query };
   crmPrefillKeys.forEach(key => {
     delete nextQuery[key];
@@ -1267,17 +2128,21 @@ const clearTaskPrefillQuery = async () => {
   await router.replace({ query: nextQuery });
 };
 
-const consumeTaskPrefillQuery = async () => {
+const consumeTaskPrefillQuery = async isCurrent => {
   if (queryValue('action') !== 'new') return;
+  if (!isCurrent()) return;
 
   if (!canManageTasks.value) {
-    await clearTaskPrefillQuery();
+    await clearTaskPrefillQuery(isCurrent);
     return;
   }
 
   await openCreateDrawer({
     activityType: normalizeActivityType(queryValue('activityType') || 'task'),
     assigneeId: numericQueryValue('assigneeId'),
+    contextKind:
+      queryValue('contextKind') ||
+      (numericQueryValue('dealId') ? 'sales' : 'personal'),
     dealId: numericQueryValue('dealId'),
     description: queryValue('description') || '',
     dueAt: queryValue('dueAt') || '',
@@ -1290,57 +2155,61 @@ const consumeTaskPrefillQuery = async () => {
     priority: queryValue('priority') || 'medium',
     startAt: queryValue('startAt') || '',
     statusId: numericQueryValue('statusId') || form.statusId,
-    teamId: numericQueryValue('teamId'),
     title: queryValue('title') || buildPrefillTaskTitle(),
   });
-  await clearTaskPrefillQuery();
+  await clearTaskPrefillQuery(isCurrent);
 };
 
-const consumeTaskOpenQuery = async () => {
+const consumeTaskOpenQuery = async isCurrent => {
   const taskId = numericQueryValue('taskId');
   if (!taskId) return false;
+  if (!isCurrent()) return true;
 
   try {
     let task = tasks.value.find(record => Number(record.id) === Number(taskId));
     if (!task) {
       const { data } = await CrmTasksAPI.show(taskId);
+      if (!isCurrent()) return true;
       task = normalizePayload(data);
       upsertTask(task);
     }
 
+    if (!isCurrent()) return true;
     await openEditDrawer(task);
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (isCurrent()) useAlert(formatErrorMessage(error));
   } finally {
-    await clearTaskPrefillQuery();
+    await clearTaskPrefillQuery(isCurrent);
   }
 
   return true;
 };
 
 const handlePresentationChange = async presentation => {
+  if (currentPresentation.value === presentation) return;
+
+  scheduleTaskListReload.cancel?.();
   currentPresentation.value = presentation;
   await loadTasks();
 };
 
-const selectTaskScope = async scope => {
-  if (currentTaskScope.value === scope) return;
+const selectCalendarPresentation = async view => {
+  if (
+    currentPresentation.value === 'calendar' &&
+    currentCalendarView.value === view
+  ) {
+    return;
+  }
 
-  currentTaskScope.value = scope;
-  listCurrentPage.value = 1;
+  scheduleTaskListReload.cancel?.();
+  currentCalendarView.value = view;
+  currentPresentation.value = 'calendar';
   await loadTasks();
-};
-
-const toggleBoardSortDirection = statusId => {
-  const key = String(statusId);
-  boardSortDirections[key] =
-    boardSortDirections[key] === 'desc' ? 'asc' : 'desc';
 };
 
 watch(
   [
     currentPresentation,
-    currentTaskScope,
     currentCalendarView,
     listSort,
     () => ({ ...boardSort }),
@@ -1362,9 +2231,7 @@ const syncFilterDraft = () => {
     dateRange: { ...filters.dateRange },
     dealId: filters.dealId,
     outcome: filters.outcome,
-    priority: filters.priority,
-    statusId: filters.statusId,
-    teamId: filters.teamId,
+    taskState: filters.taskState,
   });
   customFieldFilterDraft.value = { ...customFieldFilters.value };
 };
@@ -1398,6 +2265,7 @@ const updateTaskCustomFieldFilterDraft = (key, value) => {
 };
 
 const applyFilters = async () => {
+  scheduleTaskListReload.cancel?.();
   listCurrentPage.value = 1;
   Object.assign(filters, {
     activityType: filterDraft.activityType,
@@ -1406,9 +2274,7 @@ const applyFilters = async () => {
     dateRange: { ...filterDraft.dateRange },
     dealId: filterDraft.dealId,
     outcome: filterDraft.outcome,
-    priority: filterDraft.priority,
-    statusId: filterDraft.statusId,
-    teamId: filterDraft.teamId,
+    taskState: filterDraft.taskState,
   });
   customFieldFilters.value = normalizeCustomFieldFilters(
     filterableTaskFieldDefinitions.value,
@@ -1420,6 +2286,8 @@ const applyFilters = async () => {
 };
 
 const resetFilters = async () => {
+  scheduleTaskListReload.cancel?.();
+  suppressNextListSearchReload = Boolean(listQuickFilters.q);
   const defaults = defaultTasksPreferences();
   Object.assign(filters, {
     ...defaults.filters,
@@ -1428,7 +2296,6 @@ const resetFilters = async () => {
   customFieldFilters.value = {};
   customFieldFilterDraft.value = {};
   listQuickFilters.q = '';
-  currentTaskScope.value = defaults.currentTaskScope;
   listCurrentPage.value = 1;
   syncFilterDraft();
   filterDialogRef.value?.close();
@@ -1455,14 +2322,17 @@ watch(
 watch(
   applicableTaskFieldDefinitions,
   definitions => {
-    if (
-      !drawerOpen.value ||
-      selectedTask.value ||
-      !pendingCreateCustomFieldDefaultsHydration.value ||
-      !definitions.length
-    ) {
+    if (!drawerOpen.value || !definitions.length) return;
+
+    if (selectedTask.value) {
+      form.customAttributes = reconcileCustomAttributesForDefinitions(
+        form.customAttributes,
+        definitions
+      );
       return;
     }
+
+    if (!pendingCreateCustomFieldDefaultsHydration.value) return;
 
     form.customAttributes = mergeMissingDefaultCustomAttributes(
       form.customAttributes,
@@ -1474,51 +2344,48 @@ watch(
 );
 
 watch(
-  () => listQuickFilters.q,
-  () => {
-    listCurrentPage.value = 1;
+  () => form.contextKind,
+  (contextKind, previousContextKind) => {
+    if (
+      !drawerOpen.value ||
+      contextKind === previousContextKind ||
+      !taskFieldDefinitions.value.length
+    ) {
+      return;
+    }
+
+    form.customAttributes = reconcileCustomAttributesForDefinitions(
+      form.customAttributes,
+      taskFieldDefinitionsForContext(contextKind)
+    );
   }
 );
 
-watch(filteredListTasks, rows => {
-  if (!rows.length) {
+debouncedTaskListReload = useDebounceFn(generation => {
+  if (generation !== taskListReloadGeneration) return;
+  loadTasks();
+}, 300);
+
+watch(
+  () => listQuickFilters.q,
+  () => {
+    if (suppressNextListSearchReload) {
+      suppressNextListSearchReload = false;
+      return;
+    }
     listCurrentPage.value = 1;
-    return;
+    if (currentPresentation.value === 'list' && hasRestoredPreferences.value) {
+      scheduleTaskListReload();
+    }
   }
+);
 
-  const maxPage = Math.max(1, Math.ceil(rows.length / LIST_PAGE_SIZE));
-
-  if (listCurrentPage.value > maxPage) {
-    listCurrentPage.value = maxPage;
+watch(listSort, () => {
+  listCurrentPage.value = 1;
+  if (currentPresentation.value === 'list' && hasRestoredPreferences.value) {
+    scheduleTaskListReload();
   }
 });
-
-const openCreateTaskStatusSetup = () => {
-  if (!canManageTasks.value) return;
-
-  router.push({
-    name: 'crm_task_settings_index',
-    params: { accountId: accountId.value },
-    query: {
-      action: 'create-task-status',
-    },
-  });
-};
-
-const openTaskSettings = () => {
-  if (!canAccessTaskSettings.value) return;
-
-  router.push({
-    name: 'crm_task_settings_index',
-    params: { accountId: accountId.value },
-  });
-};
-
-const handleBoardCreateTask = async ({ statusId }) => {
-  await openCreateDrawer({
-    statusId,
-  });
-};
 
 const startEditingTaskTitle = task => {
   if (!canManageTasks.value) {
@@ -1527,12 +2394,20 @@ const startEditingTaskTitle = task => {
   }
 
   editingTaskTitleId.value = task.id;
+  taskTitleEditSnapshot.value = cloneTaskDraft(task);
   taskTitleDraft.value = task.title || '';
 };
 
 const saveTaskTitle = async task => {
-  const currentTask =
+  const latestTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const currentTask = taskTitleEditSnapshot.value || task;
+  try {
+    assertTaskEditCurrent(currentTask, latestTask);
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+    return;
+  }
   const nextTitle = String(taskTitleDraft.value || '').trim();
   const currentTitle = String(currentTask.title || '').trim();
 
@@ -1554,24 +2429,26 @@ const saveTaskTitle = async task => {
     Number(selectedTask.value.id) === optimisticTask.id
   ) {
     selectedTask.value = optimisticTask;
-    form.title = nextTitle;
   }
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      title: nextTitle,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(
+      () =>
+        CrmTasksAPI.update(currentTask.id, {
+          lock_version: currentTask.lockVersion,
+          title: nextTitle,
+        }),
+      currentTask
+    );
+    applyTaskRealtimeState(updatedTask);
 
     if (
       selectedTask.value &&
       Number(selectedTask.value.id) === updatedTask.id
     ) {
       selectedTask.value = updatedTask;
-      form.title = updatedTask.title;
     }
+    closeTaskTitleEditor();
   } catch (error) {
     try {
       await loadTasks();
@@ -1582,7 +2459,6 @@ const saveTaskTitle = async task => {
     useAlert(formatErrorMessage(error));
   } finally {
     savingTaskTitleId.value = null;
-    closeTaskTitleEditor();
   }
 };
 
@@ -1590,28 +2466,36 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const nextDueAt = dueAt || '';
-  const currentDueAt = toDateTimeInputValue(currentTask.dueAt);
+  const currentDueAt = currentTask.allDay
+    ? currentTask.dueOn || ''
+    : toDateTimeInputValue(currentTask.dueAt);
 
   if (nextDueAt === currentDueAt) {
     return;
   }
 
   const previousTask = { ...currentTask };
-  const optimisticTask = { ...currentTask, dueAt: nextDueAt || null };
+  const optimisticTask = {
+    ...currentTask,
+    dueAt: currentTask.allDay ? null : nextDueAt || null,
+    dueOn: currentTask.allDay ? nextDueAt.slice(0, 10) || null : null,
+  };
   upsertTask(optimisticTask);
   syncTaskRangeInDrawer(optimisticTask);
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      due_at: nextDueAt || null,
-      lock_version: currentTask.lockVersion,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(currentTask.id, {
+        due_at: currentTask.allDay ? null : nextDueAt || null,
+        due_on: currentTask.allDay ? nextDueAt.slice(0, 10) || null : null,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
-    upsertTask(previousTask);
-    syncTaskRangeInDrawer(previousTask);
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
 
     try {
       await loadTasks();
@@ -1623,165 +2507,7 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
   }
 };
 
-const handleTaskStatusChange = async ({ task, statusId, position }) => {
-  const currentTask =
-    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
-  const nextStatusId = Number(statusId);
-  const nextPosition = Number(position);
-
-  if (
-    !nextStatusId ||
-    (Number(currentTask.statusId) === nextStatusId &&
-      (!nextPosition || Number(currentTask.position) === nextPosition))
-  ) {
-    return;
-  }
-
-  if (
-    selectedTask.value &&
-    Number(selectedTask.value.id) === Number(currentTask.id)
-  ) {
-    selectedTask.value = {
-      ...selectedTask.value,
-      position: nextPosition || selectedTask.value.position,
-      statusId: nextStatusId,
-    };
-    form.statusId = nextStatusId;
-  }
-
-  try {
-    const response =
-      Number(currentTask.statusId) === nextStatusId
-        ? await CrmTasksAPI.update(currentTask.id, {
-            lock_version: currentTask.lockVersion,
-            position: nextPosition || currentTask.position,
-          })
-        : await CrmTasksAPI.changeStatus(currentTask.id, {
-            lock_version: currentTask.lockVersion,
-            position: nextPosition || undefined,
-            status_id: nextStatusId,
-          });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
-
-    if (
-      selectedTask.value &&
-      Number(selectedTask.value.id) === updatedTask.id
-    ) {
-      selectedTask.value = updatedTask;
-      form.statusId = updatedTask.statusId;
-    }
-  } catch (error) {
-    try {
-      await loadTasks();
-
-      if (selectedTask.value) {
-        selectedTask.value =
-          tasks.value.find(
-            item => Number(item.id) === Number(currentTask.id)
-          ) || selectedTask.value;
-      }
-    } catch {
-      // Keep the original API error as the surfaced failure.
-    }
-
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const handleTaskPriorityChange = async ({ priority, task }) => {
-  const currentTask =
-    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
-  const nextPriority = String(priority || '');
-
-  if (!nextPriority || currentTask.priority === nextPriority) {
-    return;
-  }
-
-  const optimisticTask = { ...currentTask, priority: nextPriority };
-  upsertTask(optimisticTask);
-
-  if (
-    selectedTask.value &&
-    Number(selectedTask.value.id) === optimisticTask.id
-  ) {
-    selectedTask.value = optimisticTask;
-    form.priority = nextPriority;
-  }
-
-  try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      priority: nextPriority,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
-
-    if (
-      selectedTask.value &&
-      Number(selectedTask.value.id) === updatedTask.id
-    ) {
-      selectedTask.value = updatedTask;
-      form.priority = updatedTask.priority;
-    }
-  } catch (error) {
-    try {
-      await loadTasks();
-    } catch {
-      // Keep the original API error as the surfaced failure.
-    }
-
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const handleTaskAssigneeChange = async ({ task, assigneeId }) => {
-  const currentTask =
-    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
-  const nextAssigneeId = Number(assigneeId);
-
-  if (!nextAssigneeId || Number(currentTask.assigneeId) === nextAssigneeId) {
-    return;
-  }
-
-  const optimisticTask = { ...currentTask, assigneeId: nextAssigneeId };
-  upsertTask(optimisticTask);
-
-  if (
-    selectedTask.value &&
-    Number(selectedTask.value.id) === optimisticTask.id
-  ) {
-    selectedTask.value = optimisticTask;
-    form.assigneeId = nextAssigneeId;
-  }
-
-  try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      assignee_id: nextAssigneeId,
-      lock_version: currentTask.lockVersion,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
-
-    if (
-      selectedTask.value &&
-      Number(selectedTask.value.id) === updatedTask.id
-    ) {
-      selectedTask.value = updatedTask;
-      form.assigneeId = updatedTask.assigneeId;
-    }
-  } catch (error) {
-    try {
-      await loadTasks();
-    } catch {
-      // Keep the original API error as the surfaced failure.
-    }
-
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
+const updateTaskCalendarRange = async ({ allDay, task, startsAt, endsAt }) => {
   if (!canManageTasks.value) {
     return;
   }
@@ -1793,28 +2519,45 @@ const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
     return;
   }
 
+  let dueAt = endsAt;
+  let dueOn = null;
+  let startAt = startsAt;
+  if (allDay) {
+    dueOn = format(
+      utcToZonedTime(new Date(startsAt), workspaceTimezone.value),
+      'yyyy-MM-dd'
+    );
+    dueAt = null;
+    startAt = null;
+  }
+
   const previousTask = { ...currentTask };
   const optimisticTask = {
     ...currentTask,
-    dueAt: endsAt,
-    startAt: startsAt,
+    allDay: Boolean(allDay),
+    dueAt,
+    dueOn,
+    startAt,
   };
 
   upsertTask(optimisticTask);
   syncTaskRangeInDrawer(optimisticTask);
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      due_at: endsAt,
-      lock_version: currentTask.lockVersion,
-      start_at: startsAt,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(currentTask.id, {
+        all_day: Boolean(allDay),
+        due_at: dueAt,
+        due_on: dueOn,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+        start_at: startAt,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
-    upsertTask(previousTask);
-    syncTaskRangeInDrawer(previousTask);
+    reconcileFailedOptimisticTask({ optimisticTask, previousTask });
 
     try {
       await loadTasks();
@@ -1826,22 +2569,20 @@ const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
   }
 };
 
-const selectCalendarView = async view => {
-  currentCalendarView.value = view;
-  await loadTasks();
-};
-
 const shiftCalendar = async direction => {
   calendarAnchorDate.value = shiftAnchorDate(
     currentCalendarView.value,
     calendarAnchorDate.value,
-    direction
+    direction,
+    workspaceTimezone.value
   );
   await loadTasks();
 };
 
 const selectCalendarDate = async value => {
-  calendarAnchorDate.value = value || new Date();
+  calendarAnchorDate.value = value
+    ? zonedTimeToUtc(value, workspaceTimezone.value)
+    : new Date();
   await loadTasks();
 };
 
@@ -1852,44 +2593,113 @@ const jumpCalendarToToday = async () => {
 
 const handleTaskUiActionQuery = async () => {
   if (!hasRestoredPreferences.value || !canViewTasks.value) return;
-  if (taskUiActionQueryInFlight.value) return;
+  taskUiActionGeneration += 1;
+  const generation = taskUiActionGeneration;
+  const requestAccountId = Number(accountId.value);
+  const querySnapshot = JSON.stringify(route.query);
+  const isCurrent = () =>
+    generation === taskUiActionGeneration &&
+    Number(accountId.value) === requestAccountId &&
+    JSON.stringify(route.query) === querySnapshot &&
+    !isComponentUnmounted;
 
-  taskUiActionQueryInFlight.value = true;
+  if (await consumeTaskOpenQuery(isCurrent)) return;
+  if (isCurrent()) await consumeTaskPrefillQuery(isCurrent);
+};
+
+const initializeTasksPage = async ({ reloadAgents = false } = {}) => {
+  taskPageInitializationGeneration += 1;
+  const generation = taskPageInitializationGeneration;
+  const requestAccountId = Number(accountId.value);
+  const isCurrent = () =>
+    generation === taskPageInitializationGeneration &&
+    Number(accountId.value) === requestAccountId &&
+    !isComponentUnmounted;
+
+  taskLoadGeneration.value += 1;
+  ui.error = null;
+  ui.isLoading = true;
+  let listLoadStarted = false;
+
   try {
-    if (await consumeTaskOpenQuery()) return;
-    await consumeTaskPrefillQuery();
+    if (reloadAgents || !agents.value.length) {
+      await store.dispatch('agents/get', { throwOnError: true });
+    }
+    if (!isCurrent()) return;
+
+    await Promise.all([
+      referencesStore.loadTaskStatuses(),
+      referencesStore.loadTaskTypes(),
+      referencesStore.loadFieldDefinitions('task'),
+      loadDealOptions(),
+    ]);
+    if (!isCurrent()) return;
+
+    resetForm();
+    hasRestoredPreferences.value = true;
+    persistTasksPreferences();
+    listLoadStarted = true;
+    const listLoadCommitted = await loadTasks();
+    if (!isCurrent() || !listLoadCommitted || ui.error) return;
+    await handleTaskUiActionQuery();
+  } catch (error) {
+    if (isCurrent()) ui.error = formatErrorMessage(error);
   } finally {
-    taskUiActionQueryInFlight.value = false;
+    if (isCurrent() && !listLoadStarted) ui.isLoading = false;
   }
 };
 
 onMounted(async () => {
+  taskRealtimeLifecycleGeneration += 1;
   if (!canViewTasks.value) return;
+  emitter.on(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  restoreTasksPreferences();
+  await initializeTasksPage();
+});
 
-  try {
-    restoreTasksPreferences();
+onBeforeUnmount(() => {
+  taskUiActionGeneration += 1;
+  taskPageInitializationGeneration += 1;
+  taskEditorGeneration += 1;
+  taskCompletionGeneration += 1;
+  taskCompletionTaskId = null;
+  ui.isSaving = false;
+  resetTaskConflict();
+  emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  scheduleTaskListReload.cancel?.();
+  isComponentUnmounted = true;
+  taskRealtimeLifecycleGeneration += 1;
+  taskRealtimeRequestSequences.clear();
+  dealOptionsLoadGeneration += 1;
+  timelineLoadGeneration += 1;
+  taskLoadGeneration.value += 1;
+  pendingTaskRealtimeUpdates.clear();
+});
 
-    if (!agents.value.length) {
-      await store.dispatch('agents/get');
-    }
+watch(accountId, async nextAccountId => {
+  taskUiActionGeneration += 1;
+  taskPageInitializationGeneration += 1;
+  scheduleTaskListReload.cancel();
+  suppressNextListSearchReload = false;
+  hasRestoredPreferences.value = false;
+  taskRealtimeLifecycleGeneration += 1;
+  taskRealtimeRequestSequences.clear();
+  dealOptionsLoadGeneration += 1;
+  dealOptions.value = [];
+  taskLoadGeneration.value += 1;
+  pendingTaskRealtimeUpdates.clear();
+  taskRealtimeSequence = 0;
+  tasks.value = [];
+  tasksMeta.value = { count: 0, hasMore: false, page: 1, perPage: 25 };
+  listCurrentPage.value = 1;
+  restoreTasksPreferences();
+  closeDrawer();
+  closeTaskTitleEditor();
+  await nextTick();
+  if (Number(accountId.value) !== Number(nextAccountId)) return;
 
-    if (!teams.value.length) {
-      await store.dispatch('teams/get');
-    }
-
-    await Promise.all([
-      referencesStore.loadTaskStatuses(),
-      referencesStore.loadFieldDefinitions('task'),
-      loadDealOptions(),
-    ]);
-    resetForm();
-    hasRestoredPreferences.value = true;
-    persistTasksPreferences();
-    await loadTasks();
-    await handleTaskUiActionQuery();
-  } catch (error) {
-    ui.error = error;
-    useAlert(formatErrorMessage(error));
+  if (canViewTasks.value) {
+    await initializeTasksPage({ reloadAgents: true });
   }
 });
 
@@ -1908,7 +2718,6 @@ watch(
     route.query?.dealId,
     route.query?.statusId,
     route.query?.assigneeId,
-    route.query?.teamId,
     route.query?.conversationDisplayId,
     route.query?.originatingConversationId,
   ],
@@ -1919,54 +2728,59 @@ watch(
 <template>
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
-      <template #title-actions>
-        <Button
-          v-if="canAccessTaskSettings"
-          size="sm"
-          color="slate"
-          variant="ghost"
-          icon="i-lucide-settings-2"
-          class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
-          :aria-label="$t('SIDEBAR.SETTINGS')"
-          :title="$t('SIDEBAR.SETTINGS')"
-          @click="openTaskSettings"
-        />
-      </template>
       <template #left>
-        <label
-          v-for="scope in taskScopeOptions"
-          :key="scope.id"
-          class="relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-n-weak focus-within:outline-offset-2"
-          :class="
-            currentTaskScope === scope.value
-              ? 'border-n-weak bg-n-solid-1 text-n-slate-12 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
-              : 'border-transparent bg-transparent text-n-slate-11 hover:bg-n-alpha-black2/60 hover:text-n-slate-12'
-          "
-        >
-          <input
-            :id="scope.id"
-            class="size-3 flex-shrink-0 border-n-slate-6 text-n-slate-12 focus:ring-n-weak focus:ring-offset-0"
-            type="radio"
-            name="crm-tasks-scope"
-            :value="scope.value"
-            :checked="currentTaskScope === scope.value"
-            @change="selectTaskScope(scope.value)"
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <SchedulingViewSwitcher
+            icon-only
+            :model-value="currentPresentation"
+            :views="viewOptions"
+            @update:model-value="handlePresentationChange"
           />
-          <span class="text-xs font-medium leading-none">
-            {{ scope.label }}
-          </span>
-        </label>
+          <SchedulingViewSwitcher
+            :model-value="
+              currentPresentation === 'calendar' ? currentCalendarView : ''
+            "
+            :views="calendarViewOptions"
+            @update:model-value="selectCalendarPresentation"
+          />
+        </div>
       </template>
       <template #actions>
-        <SelectMenu
-          v-if="currentPresentation === 'board'"
-          icon="i-lucide-arrow-down-up"
-          :model-value="boardSort.key"
-          :options="boardSortOptions"
-          :label="selectedBoardSortLabel"
-          sub-menu-position="bottom"
-          @update:model-value="boardSort.key = $event"
-        />
+        <div
+          v-if="currentPresentation === 'calendar'"
+          class="flex items-center gap-1 whitespace-nowrap"
+        >
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            icon="i-lucide-chevron-left"
+            @click="shiftCalendar(-1)"
+          />
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            icon="i-lucide-chevron-right"
+            @click="shiftCalendar(1)"
+          />
+          <Button
+            size="sm"
+            color="slate"
+            variant="outline"
+            :label="$t('SCHEDULING.GENERAL.TODAY')"
+            @click="jumpCalendarToToday"
+          />
+          <DateTimePicker
+            class="!w-auto"
+            type="date"
+            :value="calendarAnchorDate"
+            :display-label="calendarLabel"
+            hide-icon
+            input-class="!h-8 !w-auto !bg-n-alpha-black2 !px-3 !py-1.5 !text-sm !font-semibold !text-n-slate-12 !outline-n-weak hover:!outline-n-slate-6 focus-visible:!outline-n-brand data-[state=open]:!outline-n-brand"
+            @change="selectCalendarDate"
+          />
+        </div>
         <Input
           v-if="currentPresentation === 'list'"
           size="sm"
@@ -1992,11 +2806,19 @@ watch(
           class="!text-n-slate-11 hover:!text-n-slate-12"
           @click="openFilterDialog"
         />
-        <SchedulingViewSwitcher
-          :model-value="currentPresentation"
-          :views="viewOptions"
-          @update:model-value="handlePresentationChange"
+
+        <Button
+          v-if="canManageTasks"
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-settings"
+          class="!size-8 !text-n-slate-11 hover:!text-n-slate-12"
+          :aria-label="$t('SIDEBAR.SETTINGS')"
+          :title="$t('SIDEBAR.SETTINGS')"
+          @click="openTaskSettings"
         />
+
         <Button
           v-if="canManageTasks"
           size="sm"
@@ -2006,20 +2828,6 @@ watch(
         />
       </template>
     </SchedulingPageHeader>
-
-    <SchedulingToolbar
-      v-if="currentPresentation === 'calendar'"
-      transparent
-      :current-label="calendarLabel"
-      :anchor-date="calendarAnchorDate"
-      :model-value="currentCalendarView"
-      :views="calendarViewOptions"
-      @next="shiftCalendar(1)"
-      @previous="shiftCalendar(-1)"
-      @select-date="selectCalendarDate"
-      @today="jumpCalendarToToday"
-      @update:model-value="selectCalendarView"
-    />
 
     <div
       class="flex-1"
@@ -2040,34 +2848,32 @@ watch(
             : 'flex flex-col gap-4 px-5 pb-5 pt-3'
         "
       >
-        <div v-if="ui.isLoading" class="flex justify-center py-16">
-          <Spinner class="!h-8 !w-8" />
-        </div>
+        <CrmPageSkeleton
+          v-if="ui.isLoading"
+          :presentation="currentPresentation"
+        />
 
         <SchedulingErrorState
           v-else-if="ui.error"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
           :description="formatErrorMessage(ui.error)"
-          @retry="loadTasks"
-        />
-
-        <SchedulingEmptyState
-          v-else-if="currentPresentation === 'board' && !hasBoardStatuses"
-          icon="i-lucide-columns-3"
-          :title="$t('CRM.TASKS.BOARD.EMPTY_STATUS_TITLE')"
-          :description="$t('CRM.TASKS.BOARD.EMPTY_STATUS_DESCRIPTION')"
-          :action-label="
-            canManageTasks ? $t('CRM.TASKS.BOARD.CREATE_STATUS') : ''
-          "
-          @action="openCreateTaskStatusSetup"
+          @retry="initializeTasksPage({ reloadAgents: true })"
         />
 
         <SchedulingEmptyState
           v-else-if="tasks.length === 0 && currentPresentation === 'list'"
           icon="i-lucide-list-todo"
           title=""
-          :description="$t('CRM.TASKS.EMPTY_DESCRIPTION')"
-          :action-label="canManageTasks ? $t('CRM.TASKS.NEW_TASK') : ''"
+          :description="
+            hasListSearchQuery
+              ? $t('CRM.TASKS.LIST.EMPTY_FILTERED')
+              : $t('CRM.TASKS.EMPTY_DESCRIPTION')
+          "
+          :action-label="
+            canManageTasks && !hasListSearchQuery
+              ? $t('CRM.TASKS.NEW_TASK')
+              : ''
+          "
           @action="openCreateDrawer"
         />
 
@@ -2099,8 +2905,8 @@ watch(
             </template>
 
             <template #cell-title="{ row }">
-              <div class="grid w-full gap-0.5">
-                <span class="flex flex-wrap items-center gap-2">
+              <div class="grid min-w-0 w-full gap-0.5">
+                <span class="flex min-w-0 items-center gap-2 overflow-hidden">
                   <Input
                     v-if="
                       canManageTasks &&
@@ -2108,7 +2914,7 @@ watch(
                     "
                     autofocus
                     size="sm"
-                    class="min-w-[14rem] flex-1"
+                    class="min-w-0 flex-1"
                     :disabled="savingTaskTitleId === row.id"
                     :model-value="taskTitleDraft"
                     custom-input-class="font-medium shadow-none !bg-n-surface-1"
@@ -2119,20 +2925,22 @@ watch(
                   <button
                     v-else
                     type="button"
-                    class="min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
+                    class="min-w-0 flex-1 overflow-hidden border-0 bg-transparent p-0 text-left"
+                    :title="row.title"
                     @click="
                       canManageTasks
                         ? startEditingTaskTitle(row)
                         : openEditDrawer(row)
                     "
                   >
-                    <span class="font-medium text-n-slate-12">
+                    <span class="block truncate font-medium text-n-slate-12">
                       {{ row.title }}
                     </span>
                   </button>
                   <span
                     v-if="row.dealId"
-                    class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                    class="min-w-0 max-w-[40%] shrink truncate rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                    :title="dealNameById[row.dealId]"
                   >
                     {{
                       dealNameById[row.dealId] || $t('CRM.GENERAL.EMPTY_VALUE')
@@ -2140,7 +2948,7 @@ watch(
                   </span>
                   <span
                     v-if="row.archivedAt"
-                    class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
+                    class="shrink-0 rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
                   >
                     {{ $t('CRM.GENERAL.ARCHIVED') }}
                   </span>
@@ -2165,17 +2973,10 @@ watch(
                 >
                   <span
                     class="size-3"
-                    :class="
-                      activityTypeMetaByValue[row.activityType || 'task']
-                        ?.icon || 'i-lucide-list-todo'
-                    "
+                    :class="taskTypeResolver(row).icon"
                     aria-hidden="true"
                   />
-                  {{
-                    activityTypeLabelByValue[row.activityType || 'task'] ||
-                    row.activityType ||
-                    $t('CRM.TASKS.ACTIVITY_TYPE.task')
-                  }}
+                  {{ taskTypeResolver(row).label }}
                 </span>
                 <span
                   v-if="row.outcome"
@@ -2186,93 +2987,11 @@ watch(
               </div>
             </template>
 
-            <template #cell-status="{ row }">
-              <CrmTaskStatusMenu
-                v-if="canManageTasks"
-                borderless
-                :model-value="row.statusId"
-                :statuses="referencesStore.taskStatuses"
-                @update:model-value="
-                  handleTaskStatusChange({ task: row, statusId: $event })
-                "
-              />
-              <span
-                v-else
-                class="inline-flex items-center gap-2 text-sm text-n-slate-12"
-              >
-                <span
-                  class="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-n-alpha-black2"
-                >
-                  <span
-                    class="size-3"
-                    :class="[
-                      statusMetaById[row.statusId]?.icon || 'i-lucide-circle',
-                      statusMetaById[row.statusId]?.toneClass ||
-                        'text-n-slate-11',
-                    ]"
-                    aria-hidden="true"
-                  />
-                </span>
-                <span class="inline-flex items-center gap-2">
-                  <span
-                    class="size-2 rounded-full"
-                    :style="{
-                      backgroundColor:
-                        statusColorById[row.statusId] ||
-                        DEFAULT_TASK_STATUS_COLOR,
-                    }"
-                  />
-                  <span>
-                    {{
-                      statusNameById[row.statusId] ||
-                      $t('CRM.GENERAL.EMPTY_VALUE')
-                    }}
-                  </span>
-                </span>
-              </span>
-            </template>
-
-            <template #cell-priority="{ row }">
-              <CrmTaskPriorityMenu
-                v-if="canManageTasks"
-                :model-value="row.priority"
-                :options="priorityOptions"
-                @update:model-value="
-                  handleTaskPriorityChange({ task: row, priority: $event })
-                "
-              />
-              <span
-                v-else
-                class="inline-flex items-center gap-2 text-sm text-n-slate-12"
-              >
-                <span
-                  class="size-4"
-                  :class="[
-                    priorityMetaByValue[row.priority]?.icon || 'i-lucide-minus',
-                    priorityMetaByValue[row.priority]?.toneClass ||
-                      'text-n-slate-10',
-                  ]"
-                  aria-hidden="true"
-                />
-                <span>
-                  {{
-                    priorityMetaByValue[row.priority]?.label ||
-                    $t('CRM.GENERAL.EMPTY_VALUE')
-                  }}
-                </span>
-              </span>
-            </template>
-
             <template #cell-assignee="{ row }">
-              <CrmTaskAssigneeMenu
-                v-if="canManageTasks"
-                :assignees="assigneeOptions"
-                :model-value="row.assigneeId"
-                @update:model-value="
-                  handleTaskAssigneeChange({ task: row, assigneeId: $event })
-                "
-              />
-              <span v-else class="text-sm text-n-slate-12">
+              <span
+                class="block truncate text-sm text-n-slate-12"
+                :title="assigneeNameById[row.assigneeId]"
+              >
                 {{
                   assigneeNameById[row.assigneeId] ||
                   $t('CRM.GENERAL.EMPTY_VALUE')
@@ -2281,22 +3000,32 @@ watch(
             </template>
 
             <template #cell-dueAt="{ row }">
-              <SchedulingDateTimeField
-                v-if="canManageTasks"
-                class="!w-auto"
-                type="datetime"
-                :display-label="formatDate(row.dueAt)"
-                :model-value="toDateTimeInputValue(row.dueAt)"
-                hide-icon
-                input-class="!h-auto !w-auto !justify-start !gap-1 !rounded-none !bg-transparent !px-0 !py-0 !text-sm !font-normal !text-n-slate-12 !outline-transparent hover:!outline-transparent focus-visible:!outline-transparent data-[state=open]:!outline-transparent"
-                time-picker-variant="field"
-                @update:model-value="
-                  handleTaskDueAtChange({ task: row, dueAt: $event })
-                "
-              />
-              <span v-else class="text-sm text-n-slate-12">
-                {{ formatDate(row.dueAt) }}
-              </span>
+              <div class="flex flex-wrap items-center gap-2">
+                <SchedulingDateTimeField
+                  v-if="canManageTasks"
+                  class="!w-auto"
+                  :type="row.allDay ? 'date' : 'datetime'"
+                  :display-label="
+                    formatTaskDueDate(row, $t('CRM.GENERAL.EMPTY_VALUE'))
+                  "
+                  :model-value="taskDueInputValue(row)"
+                  hide-icon
+                  input-class="!h-auto !w-auto !justify-start !gap-1 !rounded-none !bg-transparent !px-0 !py-0 !text-sm !font-normal !text-n-slate-12 !outline-transparent hover:!outline-transparent focus-visible:!outline-transparent data-[state=open]:!outline-transparent"
+                  time-picker-variant="field"
+                  @update:model-value="
+                    handleTaskDueAtChange({ task: row, dueAt: $event })
+                  "
+                />
+                <span v-else class="text-sm text-n-slate-12">
+                  {{ formatTaskDueDate(row, $t('CRM.GENERAL.EMPTY_VALUE')) }}
+                </span>
+                <span
+                  v-if="isTaskOverdue(row)"
+                  class="rounded-full bg-n-ruby-9/10 px-2 py-0.5 text-[10px] font-semibold text-n-ruby-11"
+                >
+                  {{ $t('CRM.TASKS.BOARD.OVERDUE_BADGE') }}
+                </span>
+              </div>
             </template>
 
             <template #cell-actions="{ row }">
@@ -2328,48 +3057,69 @@ watch(
             v-if="shouldShowListPagination"
             class="!border-t !border-n-weak !bg-transparent before:!hidden"
             :current-page="listCurrentPage"
-            :total-items="sortedListTasks.length"
+            :total-items="tasksMeta.count"
             :items-per-page="LIST_PAGE_SIZE"
-            @update:current-page="listCurrentPage = $event"
+            @update:current-page="handleListPageChange"
           />
         </div>
 
-        <CrmTaskCalendar
+        <div
           v-else-if="currentPresentation === 'calendar'"
-          class="min-h-0 flex-1"
-          :anchor-date="calendarAnchorDate"
-          :assignee-names="assigneeNameById"
-          :can-manage="canManageTasks"
-          :deal-names="dealNameById"
-          :field-definitions="taskFieldDefinitions"
-          :tasks="tasks"
-          :view="currentCalendarView"
-          :status-names="statusNameById"
-          @create-task="openCalendarCreateDrawer"
-          @move-task="updateTaskCalendarRange"
-          @resize-task="updateTaskCalendarRange"
-          @select-task="openEditDrawer"
-        />
+          class="flex min-h-0 flex-1 flex-col"
+        >
+          <CrmTaskCalendar
+            class="min-h-0 flex-1"
+            :anchor-date="calendarAnchorDate"
+            :archived="filters.archived"
+            :assignee-names="assigneeNameById"
+            :can-manage="canManageTasks"
+            :deal-names="dealNameById"
+            :field-definitions="taskFieldDefinitions"
+            :tasks="tasks"
+            :task-state="filters.taskState"
+            :view="currentCalendarView"
+            :workspace-timezone="workspaceTimezone"
+            @create-task="openCalendarCreateDrawer"
+            @move-task="updateTaskCalendarRange"
+            @resize-task="updateTaskCalendarRange"
+            @select-task="openEditDrawer"
+          />
+          <div
+            v-if="tasksMeta.hasMore"
+            class="flex justify-center pt-3"
+            aria-live="polite"
+          >
+            <Button
+              ghost
+              sm
+              :is-loading="isLoadingMoreTasks"
+              :label="
+                calendarLoadMoreFailed
+                  ? $t('CRM.TASKS.RETRY_LOAD')
+                  : $t('CRM.TASKS.LOAD_MORE')
+              "
+              @click="loadMoreCalendarTasks"
+            />
+          </div>
+        </div>
 
         <CrmTaskBoard
           v-else
           class="min-h-0 flex-1"
+          :task-type-resolver="taskTypeResolver"
           :assignees="assigneeOptions"
           :can-manage="canManageTasks"
+          :bucket-load-failed="boardBucketLoadFailed"
+          :bucket-loading="boardBucketLoading"
+          :bucket-meta="boardBucketMeta"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
-          :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
-          :statuses="referencesStore.taskStatuses"
-          :sort-direction-labels="boardSortDirectionLabels"
-          :sort-directions="boardSortDirections"
-          :sort-key="boardSort.key"
-          :sort-value-resolver="resolveTaskBoardSortValue"
+          :filtered="hasActiveBoardTaskFilters"
+          :pending-task-ids="pendingTaskDeadlineIds"
           :tasks="tasks"
-          @change-assignee="handleTaskAssigneeChange"
-          @change-status="handleTaskStatusChange"
-          @create-task="handleBoardCreateTask"
+          @change-due-date="updateTaskDeadlineFromBoard"
+          @load-more="loadMoreBoardBucket"
           @select-task="openEditDrawer"
-          @toggle-sort-direction="toggleBoardSortDirection"
         />
       </div>
     </div>
@@ -2390,6 +3140,16 @@ watch(
       @confirm="saveTask"
     >
       <div class="grid gap-4">
+        <CrmConflictNotice
+          v-if="taskConflict.active"
+          :is-reloading="taskConflict.isReloading"
+          :is-retrying="ui.isSaving"
+          :reload-failed="taskConflict.reloadFailed"
+          :retry-ready="taskConflict.hasAuthoritative"
+          @reload="reloadTaskConflict"
+          @retry="saveTask"
+        />
+
         <div
           v-if="form.originatingConversationId"
           class="rounded-2xl bg-n-alpha-black2 px-4 py-3 outline outline-1 outline-n-weak"
@@ -2418,50 +3178,54 @@ watch(
               :model-value="form.title"
               @update:model-value="form.title = $event"
             />
-            <SchedulingSelectField
-              :label="$t('CRM.TASKS.FORM.STATUS')"
-              :model-value="form.statusId"
-              :options="taskStatusOptions"
-              @update:model-value="form.statusId = $event"
-            />
+
             <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
               :model-value="form.activityType"
               :options="activityTypeOptions"
               @update:model-value="updateFormActivityType"
             />
-            <SchedulingSelectField
-              :label="$t('CRM.TASKS.FORM.OUTCOME')"
-              :model-value="form.outcome"
-              :options="taskOutcomeOptions"
-              :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
-              @update:model-value="form.outcome = $event"
-            />
+
             <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
               :model-value="form.assigneeId"
               :options="assigneeOptions"
               @update:model-value="form.assigneeId = $event"
             />
+
             <SchedulingSelectField
-              :label="$t('CRM.TASKS.FORM.TEAM')"
-              :model-value="form.teamId"
-              :options="teamOptions"
-              @update:model-value="form.teamId = $event"
+              :label="$t('CRM.TASKS.FORM.CONTEXT_KIND')"
+              :model-value="form.contextKind"
+              :options="taskContextOptions"
+              @update:model-value="form.contextKind = $event"
             />
+
             <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.DEAL')"
               :model-value="form.dealId"
               :options="dealOptions"
               @update:model-value="form.dealId = $event"
             />
-            <SchedulingSelectField
-              :label="$t('CRM.TASKS.FORM.PRIORITY')"
-              :model-value="form.priority"
-              :options="priorityOptions"
-              @update:model-value="form.priority = $event"
-            />
+
+            <p
+              v-if="form.contextKind === 'sales' && !form.dealId"
+              class="mb-0 text-xs text-n-ruby-11 md:col-span-2"
+            >
+              {{ $t('CRM.TASKS.FORM.SALES_DEAL_REQUIRED') }}
+            </p>
+
+            <div class="flex items-center gap-3 md:col-span-2">
+              <Switch
+                :model-value="form.allDay"
+                @update:model-value="updateAllDay"
+              />
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.TASKS.FORM.ALL_DAY') }}
+              </span>
+            </div>
+
             <SchedulingDateTimeField
+              v-if="!form.allDay"
               :label="$t('CRM.TASKS.FORM.START_AT')"
               :model-value="form.startAt"
               type="datetime"
@@ -2470,7 +3234,7 @@ watch(
             <SchedulingDateTimeField
               :label="$t('CRM.TASKS.FORM.DUE_AT')"
               :model-value="form.dueAt"
-              type="datetime"
+              :type="form.allDay ? 'date' : 'datetime'"
               @update:model-value="form.dueAt = $event"
             />
             <TextArea
@@ -2479,14 +3243,6 @@ watch(
               :model-value="form.description"
               auto-height
               @update:model-value="form.description = $event"
-            />
-            <TextArea
-              v-if="form.outcome"
-              class="md:col-span-2"
-              :label="$t('CRM.TASKS.FORM.OUTCOME_NOTE')"
-              :model-value="form.outcomeNote"
-              auto-height
-              @update:model-value="form.outcomeNote = $event"
             />
           </div>
         </SchedulingFormFieldGroup>
@@ -2501,12 +3257,14 @@ watch(
         <CrmTimelineFeed
           v-if="selectedTask"
           :items="timelineItems"
+          :error="ui.timelineError"
           :is-loading="ui.isTimelineLoading"
           :is-saving-comment="ui.isSavingComment"
           :can-manage-comments="canManageTasks"
           :empty-message="$t('CRM.TIMELINE.EMPTY')"
           @create-comment="saveComment"
           @delete-comment="deleteComment"
+          @retry="loadTimeline(selectedTask.id)"
         />
       </div>
 
@@ -2521,6 +3279,45 @@ watch(
           />
           <div class="flex items-center gap-2">
             <Button
+              v-if="
+                doneStatus &&
+                !selectedTask.archivedAt &&
+                !selectedTask.cancelledAt
+              "
+              size="sm"
+              color="teal"
+              variant="faded"
+              icon="i-lucide-circle-check-big"
+              :label="
+                selectedTask.completedAt
+                  ? $t('CRM.TASKS.RESULT_DIALOG.CHANGE_ACTION')
+                  : $t('CRM.TASKS.RESULT_DIALOG.ACTION')
+              "
+              @click="openTaskCompletionDialog(selectedTask)"
+            />
+            <Button
+              v-if="
+                !selectedTask.archivedAt &&
+                !selectedTask.completedAt &&
+                !selectedTask.cancelledAt
+              "
+              size="sm"
+              color="ruby"
+              variant="faded"
+              icon="i-lucide-ban"
+              :label="$t('CRM.TASKS.LIFECYCLE.CANCEL_ACTION')"
+              @click="openTaskCancelDialog(selectedTask)"
+            />
+            <Button
+              v-if="selectedTask.completedAt || selectedTask.cancelledAt"
+              size="sm"
+              color="slate"
+              variant="faded"
+              icon="i-lucide-rotate-ccw"
+              :label="$t('CRM.TASKS.LIFECYCLE.REOPEN_ACTION')"
+              @click="reopenTask(selectedTask)"
+            />
+            <Button
               size="sm"
               color="slate"
               variant="outline"
@@ -2534,7 +3331,7 @@ watch(
             <Button
               size="sm"
               :is-loading="ui.isSaving"
-              :disabled="!form.title.trim() || !form.statusId"
+              :disabled="isTaskFormDisabled"
               :label="$t('CRM.GENERAL.SAVE')"
               @click="saveTask"
             />
@@ -2542,6 +3339,20 @@ watch(
         </div>
       </template>
     </SchedulingDrawer>
+
+    <CrmTaskCompletionDialog
+      ref="completionDialogRef"
+      :is-loading="ui.isSaving"
+      :task-types="referencesStore.taskTypes"
+      @close="invalidateTaskCompletionDialog"
+      @confirm="saveTaskCompletion"
+    />
+
+    <CrmTaskCancelDialog
+      ref="cancelDialogRef"
+      :is-loading="ui.isSaving"
+      @confirm="saveTaskCancellation"
+    />
 
     <Dialog
       ref="filterDialogRef"
@@ -2562,14 +3373,6 @@ watch(
 
         <div class="grid gap-4 md:grid-cols-3">
           <SchedulingSelectField
-            :label="$t('CRM.TASKS.FORM.STATUS')"
-            :model-value="filterDraft.statusId"
-            :options="taskStatusOptions"
-            :placeholder="$t('CRM.TASKS.FORM.STATUS')"
-            @update:model-value="filterDraft.statusId = $event"
-          />
-
-          <SchedulingSelectField
             :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
             :model-value="filterDraft.activityType"
             :options="activityTypeOptions"
@@ -2584,9 +3387,16 @@ watch(
             :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
             @update:model-value="filterDraft.outcome = $event"
           />
+
+          <SchedulingSelectField
+            :label="$t('CRM.TASKS.STATE_FILTER.LABEL')"
+            :model-value="filterDraft.taskState"
+            :options="taskStateOptions"
+            @update:model-value="filterDraft.taskState = $event"
+          />
         </div>
 
-        <div class="grid gap-4 md:grid-cols-4">
+        <div class="grid gap-4 md:grid-cols-2">
           <SchedulingSelectField
             :label="$t('CRM.TASKS.FORM.ASSIGNEE')"
             :model-value="filterDraft.assigneeId"
@@ -2601,22 +3411,6 @@ watch(
             :options="dealOptions"
             :placeholder="$t('CRM.TASKS.FORM.DEAL')"
             @update:model-value="filterDraft.dealId = $event"
-          />
-
-          <SchedulingSelectField
-            :label="$t('CRM.TASKS.FORM.PRIORITY')"
-            :model-value="filterDraft.priority"
-            :options="priorityOptions"
-            :placeholder="$t('CRM.TASKS.FORM.PRIORITY')"
-            @update:model-value="filterDraft.priority = $event"
-          />
-
-          <SchedulingSelectField
-            :label="$t('CRM.TASKS.FORM.TEAM')"
-            :model-value="filterDraft.teamId"
-            :options="teamOptions"
-            :placeholder="$t('CRM.TASKS.FORM.TEAM')"
-            @update:model-value="filterDraft.teamId = $event"
           />
         </div>
 

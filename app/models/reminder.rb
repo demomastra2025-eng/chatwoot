@@ -85,9 +85,11 @@ class Reminder < ApplicationRecord
   PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
   DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
   DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
+  DELIVERY_DISPATCH_STARTED_MESSAGE_ID_KEY = 'delivery_dispatch_started_message_id'.freeze
   DELIVERY_STAGE_KEY = 'delivery_stage'.freeze
   DELIVERY_STAGE_UPDATED_AT_KEY = 'delivery_stage_updated_at'.freeze
   DELIVERY_FAILURE_CATEGORY_KEY = 'delivery_failure_category'.freeze
+  CAPTAIN_FOLLOW_UP_DELIVERY_SUPPRESSED_KEY = 'captain_follow_up_delivery_suppressed'.freeze
   DELIVERY_STAGES = %w[materialized provider_accepted provider_unknown retry_scheduled delivered read failed template_rejected].freeze
   DELIVERY_STAGE_RANKS = {
     'materialized' => 0,
@@ -117,9 +119,11 @@ class Reminder < ApplicationRecord
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
     DELIVERY_DISPATCHED_MESSAGE_ID_KEY,
+    DELIVERY_DISPATCH_STARTED_MESSAGE_ID_KEY,
     DELIVERY_STAGE_KEY,
     DELIVERY_STAGE_UPDATED_AT_KEY,
     DELIVERY_FAILURE_CATEGORY_KEY,
+    CAPTAIN_FOLLOW_UP_DELIVERY_SUPPRESSED_KEY,
     POST_DELIVERY_ACTION_MESSAGE_ID_KEY,
     POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
@@ -173,6 +177,8 @@ class Reminder < ApplicationRecord
   belongs_to :reminder_group, optional: true
   belongs_to :remindable, polymorphic: true, optional: true
 
+  attr_accessor :internal_captain_follow_up_write
+
   has_one :confirmation_request, dependent: :nullify
 
   has_many_attached :files
@@ -188,7 +194,8 @@ class Reminder < ApplicationRecord
   }
   enum :action_type, {
     send_message: 0,
-    ai_agent_wakeup: 1
+    ai_agent_wakeup: 1,
+    captain_follow_up: 2
   }
   enum :content_kind, {
     free_text: 0,
@@ -212,6 +219,7 @@ class Reminder < ApplicationRecord
   }
 
   validates :timezone, inclusion: { in: TZInfo::Timezone.all_identifiers }
+  validates :idempotency_key, uniqueness: { scope: :account_id }, allow_nil: true
   validates :relative_time_mode, inclusion: { in: RELATIVE_TIME_MODES }
   validates :relative_anchor, inclusion: { in: RELATIVE_ANCHORS }, allow_blank: true
   validates :post_delivery_action, inclusion: { in: POST_DELIVERY_ACTIONS }, allow_blank: true
@@ -220,6 +228,7 @@ class Reminder < ApplicationRecord
   validate :validate_target_associations
   validate :validate_json_field_shapes
   validate :validate_content_requirements
+  validate :validate_captain_follow_up_requirements
   validate :validate_delivery_policy
   validate :validate_repeat_requirements
   validate :validate_post_delivery_action
@@ -244,6 +253,17 @@ class Reminder < ApplicationRecord
 
   scope :ordered, -> { order(scheduled_at: :asc, created_at: :asc, id: :asc) }
   scope :open_statuses, -> { where(status: OPEN_STATUSES) }
+  scope :active_delivery_or_open, lambda {
+    open_statuses.or(
+      where(status: %w[processing completed]).where(
+        [
+          "metadata ->> '#{DELIVERY_MATERIALIZED_MESSAGE_ID_KEY}' IS NOT NULL",
+          "COALESCE(metadata ->> '#{DELIVERY_STAGE_KEY}', '') IN (?)"
+        ].join(' AND '),
+        %w[materialized retry_scheduled provider_unknown]
+      )
+    )
+  }
   scope :due, -> { where('scheduled_at <= ?', Time.current) }
 
   def ready_for_pending?
@@ -325,6 +345,28 @@ class Reminder < ApplicationRecord
     claim_token
   end
 
+  def complete_captain_follow_up_without_delivery!(processing_claim:)
+    return false unless captain_follow_up?
+
+    completed = false
+    with_lock do
+      reload
+      next unless processing? && processing_claim_token == processing_claim.to_s
+      next if delivery_materialized?
+
+      with_internal_metadata_write do
+        update!(
+          status: :completed,
+          completed_at: Time.current,
+          processing_started_at: nil,
+          metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY)
+        )
+      end
+      completed = true
+    end
+    completed
+  end
+
   def processing_claim_token
     metadata.to_h[PROCESSING_CLAIM_KEY].presence
   end
@@ -376,6 +418,20 @@ class Reminder < ApplicationRecord
     metadata.to_h[DELIVERY_DISPATCHED_MESSAGE_ID_KEY].to_s == message_id.to_s
   end
 
+  def delivery_dispatch_started_for?(message_id)
+    metadata.to_h[DELIVERY_DISPATCH_STARTED_MESSAGE_ID_KEY].to_s == message_id.to_s
+  end
+
+  def mark_delivery_dispatch_started!(message_id)
+    return false unless captain_follow_up? && delivery_materialized_for?(message_id)
+    return false if delivery_dispatched_for?(message_id) || captain_follow_up_delivery_suppressed?
+
+    with_internal_metadata_write do
+      update!(metadata: metadata.to_h.merge(DELIVERY_DISPATCH_STARTED_MESSAGE_ID_KEY => message_id))
+    end
+    true
+  end
+
   def mark_delivery_dispatched!(message_id, stage: 'provider_accepted')
     raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
 
@@ -392,25 +448,53 @@ class Reminder < ApplicationRecord
     end
   end
 
+  def suppress_captain_follow_up_delivery!(message_id:, reason:)
+    return false unless captain_follow_up? && delivery_materialized_for?(message_id)
+    return false if delivery_dispatched_for?(message_id) && delivery_stage != 'retry_scheduled'
+    return false unless processing? || completed?
+
+    with_internal_metadata_write do
+      update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        processing_started_at: nil,
+        last_error: reason,
+        metadata: metadata.to_h.merge(CAPTAIN_FOLLOW_UP_DELIVERY_SUPPRESSED_KEY => true)
+      )
+    end
+    true
+  end
+
+  def captain_follow_up_delivery_suppressed?
+    metadata.to_h[CAPTAIN_FOLLOW_UP_DELIVERY_SUPPRESSED_KEY] == true
+  end
+
   def record_delivery_status!(message_id:, stage:, error: nil)
     raise ArgumentError, 'Invalid delivery stage' unless stage.in?(DELIVERY_STAGES)
 
     with_lock do
       reload
-      next unless delivery_materialized_for?(message_id)
-      next unless delivery_stage_transition_allowed?(delivery_stage, stage)
+      next unless current_delivery_status_update?(message_id, stage)
 
-      attributes = metadata.to_h.merge(
-        DELIVERY_STAGE_KEY => stage,
-        DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
-      )
-      attributes[DELIVERY_FAILURE_CATEGORY_KEY] = stage if stage.in?(%w[failed template_rejected])
-      update_attributes = { metadata: attributes }
-      if stage.in?(%w[failed template_rejected])
-        update_attributes.merge!(status: :failed, last_error: error.presence || 'Provider delivery failed')
-      end
-      with_internal_metadata_write { update!(update_attributes) }
+      persist_delivery_status!(stage, error)
     end
+  end
+
+  def current_delivery_status_update?(message_id, stage)
+    delivery_materialized_for?(message_id) && delivery_stage_transition_allowed?(delivery_stage, stage)
+  end
+
+  def persist_delivery_status!(stage, error)
+    attributes = metadata.to_h.merge(
+      DELIVERY_STAGE_KEY => stage,
+      DELIVERY_STAGE_UPDATED_AT_KEY => Time.current.iso8601
+    )
+    failure_stage = stage.in?(%w[failed template_rejected])
+    attributes[DELIVERY_FAILURE_CATEGORY_KEY] = stage if failure_stage
+    update_attributes = { metadata: attributes }
+    update_attributes[:status] = :failed if failure_stage
+    update_attributes[:last_error] = error.presence || 'Provider delivery failed' if failure_stage
+    with_internal_metadata_write { update!(update_attributes) }
   end
 
   def post_delivery_action_executed_for?(message_id)
@@ -650,14 +734,18 @@ class Reminder < ApplicationRecord
                  end
   end
 
+  # Existing readiness rules predate the Captain follow-up port and are retained unchanged.
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def content_ready?
-    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
+    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup? || captain_follow_up?
     return false unless send_message?
     return instructions.present? if agent?
     return template_params.present? if channel_template?
 
     body.present? || attachments.present? || files.attached?
   end
+
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def materialize_schedule
     return unless relative?
@@ -754,6 +842,8 @@ class Reminder < ApplicationRecord
     self.repeat_until_at = nil if once?
   end
 
+  # Existing reminder fingerprint construction is preserved unchanged.
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def refresh_fingerprint
     digest_source = [
       remindable_type,
@@ -782,7 +872,10 @@ class Reminder < ApplicationRecord
     self.fingerprint = Digest::SHA256.hexdigest(digest_source)
   end
 
-  # rubocop:disable Metrics/CyclomaticComplexity
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+  # Existing reminder anchor mapping is preserved unchanged.
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def relative_anchor_time
     case relative_anchor
     when 'touch.created_at'
@@ -811,7 +904,7 @@ class Reminder < ApplicationRecord
       anchor_conversation&.waiting_since
     end
   end
-  # rubocop:enable Metrics/CyclomaticComplexity
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def anchor_conversation
     conversation || (remindable if remindable.is_a?(Conversation)) || target_conversation
@@ -849,9 +942,11 @@ class Reminder < ApplicationRecord
                        .pick(:created_at)
   end
 
+  # Existing route resolution behavior predates Captain follow-ups and is retained unchanged.
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def route_resolved?
     return false if route_reassignment_required?
-    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
+    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup? || captain_follow_up?
 
     return false if target_inbox_id.blank?
     return true if target_contact_inbox_id.present?
@@ -860,6 +955,8 @@ class Reminder < ApplicationRecord
 
     Campaigns::TargetResolver.new(inbox: target_inbox, contact: target_contact).resolve.present?
   end
+
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def active_target_conversation?
     target_conversation.present? && !target_conversation.resolved? &&
@@ -987,6 +1084,8 @@ class Reminder < ApplicationRecord
   end
   # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
+  # Existing TouchPlan content checks are retained unchanged.
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def validate_content_requirements
     return unless send_message?
 
@@ -999,6 +1098,133 @@ class Reminder < ApplicationRecord
     elsif free_text? && !agent? && body.blank? && attachments.blank? && !files.attached?
       errors.add(:body, 'must be present for message touches')
     end
+  end
+
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+
+  def validate_captain_follow_up_requirements
+    return unless captain_follow_up?
+
+    validate_follow_up_write_permission
+    follow_up = captain_follow_up_metadata
+    return unless valid_captain_follow_up_metadata?(follow_up)
+
+    identifiers_changed = captain_follow_up_identifiers_changed?(follow_up)
+    validate_captain_follow_up_key_and_policy(follow_up, identifiers_changed)
+    validate_follow_up_records(follow_up) if follow_up_records_changed?(identifiers_changed)
+  end
+
+  def validate_follow_up_write_permission
+    return unless (new_record? || will_save_change_to_action_type?) && !internal_captain_follow_up_write
+
+    errors.add(:action_type, 'is reserved for Captain follow-up scheduling')
+  end
+
+  def captain_follow_up_metadata
+    metadata.to_h.deep_stringify_keys['captain_follow_up']
+  end
+
+  def valid_captain_follow_up_metadata?(follow_up)
+    valid = follow_up.is_a?(Hash) && follow_up['assistant_id'].present? &&
+            follow_up['anchor_message_id'].present? && follow_up['step_index'].present?
+    errors.add(:metadata, 'must include Captain follow-up identifiers') unless valid
+    valid
+  end
+
+  def captain_follow_up_identifiers_changed?(follow_up)
+    return false unless persisted?
+
+    original = self.class.attribute_types['metadata'].deserialize(attribute_in_database('metadata')).to_h.deep_stringify_keys
+    original['captain_follow_up'] != follow_up
+  end
+
+  def validate_captain_follow_up_key_and_policy(follow_up, identifiers_changed)
+    expected_key = "captain_follow_up:#{follow_up['assistant_id']}:#{follow_up['anchor_message_id']}:#{follow_up['step_index']}"
+    errors.add(:metadata, 'Captain follow-up identifiers cannot be changed') if identifiers_changed
+    errors.add(:idempotency_key, 'does not match the Captain follow-up step') unless idempotency_key == expected_key
+    errors.add(:auto_cancel_on_incoming, 'must be enabled for Captain follow-up steps') unless auto_cancel_on_incoming?
+    errors.add(:metadata, 'must mark incoming-reply cancellation as explicit') unless
+      Reminders::BooleanParam.truthy?(metadata.to_h['auto_cancel_on_incoming_explicit'])
+  end
+
+  def follow_up_records_changed?(identifiers_changed)
+    new_record? || identifiers_changed || will_save_change_to_account_id? ||
+      will_save_change_to_conversation_id? || will_save_change_to_target_conversation_id? ||
+      will_save_change_to_idempotency_key?
+  end
+
+  def validate_follow_up_records(follow_up)
+    target = target_conversation || conversation
+    assistant = Captain::Assistant.find_by(id: follow_up['assistant_id'])
+    anchor = Message.find_by(id: follow_up['anchor_message_id'])
+
+    validate_follow_up_target(target)
+    validate_follow_up_assistant(assistant, target)
+    validate_follow_up_anchor(anchor, assistant, target)
+  end
+
+  def validate_follow_up_target(target)
+    validate_follow_up_target_account(target)
+    validate_follow_up_target_link
+    validate_follow_up_target_status(target)
+  end
+
+  def validate_follow_up_target_account(target)
+    errors.add(:account, 'must match the follow-up conversation') if target.blank? || target.account_id != account_id
+  end
+
+  def validate_follow_up_target_link
+    errors.add(:conversation, 'and target conversation must match') if
+      conversation_id.blank? || target_conversation_id.blank? || conversation_id != target_conversation_id
+  end
+
+  def validate_follow_up_target_status(target)
+    errors.add(:conversation, 'must be pending under Captain control') if target.present? && !target.pending?
+  end
+
+  def validate_follow_up_assistant(assistant, target)
+    if assistant.blank?
+      errors.add(:metadata, 'references a missing Captain assistant')
+      return
+    end
+
+    errors.add(:account, 'must match the Captain assistant') unless assistant.account_id == account_id
+    errors.add(:assistant, 'must be a customer-facing agent') unless assistant.external_agent?
+    errors.add(:assistant, 'must be connected to the follow-up inbox') unless
+      target.present? && assistant.inboxes.exists?(id: target.inbox_id)
+  end
+
+  def validate_follow_up_anchor(anchor, assistant, target)
+    if anchor.blank?
+      errors.add(:metadata, 'references a missing anchor message')
+      return
+    end
+
+    errors.add(:anchor_message, 'must belong to the follow-up conversation') unless target.present? && anchor.conversation_id == target.id
+    errors.add(:anchor_message, 'must be an eligible public Captain reply') unless eligible_follow_up_anchor?(anchor, assistant, target)
+  end
+
+  def eligible_follow_up_anchor?(anchor, assistant, target)
+    assistant.present? && target.present? && follow_up_anchor_scope_matches?(anchor, assistant, target) &&
+      follow_up_anchor_is_public?(anchor) && eligible_captain_follow_up_anchor?(anchor, assistant)
+  end
+
+  def follow_up_anchor_scope_matches?(anchor, assistant, target)
+    anchor.account_id == account_id && anchor.inbox_id == target.inbox_id &&
+      anchor.sender_type == assistant.class.name && anchor.sender_id == assistant.id
+  end
+
+  def follow_up_anchor_is_public?(anchor)
+    anchor.outgoing? && !anchor.private? && !anchor.failed?
+  end
+
+  def eligible_captain_follow_up_anchor?(anchor, assistant)
+    attributes = anchor.additional_attributes.to_h.deep_stringify_keys
+    ai_reply = attributes['captain_ai_reply'].is_a?(Hash) ? attributes['captain_ai_reply'].deep_stringify_keys : {}
+    follow_up = attributes['captain_follow_up'].is_a?(Hash) ? attributes['captain_follow_up'].deep_stringify_keys : {}
+
+    ai_reply['assistant_id'].to_i == assistant.id ||
+      (follow_up['assistant_id'].to_i == assistant.id && follow_up['step_index'].present?)
   end
 
   def validate_delivery_policy
@@ -1017,6 +1243,8 @@ class Reminder < ApplicationRecord
     errors.add(:base, e.message)
   end
 
+  # Existing outbound policy readiness checks are retained unchanged.
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
   def delivery_policy_ready_for_validation?
     return false if delivery_policy_validation_blocked?
     return false unless send_message?
@@ -1026,6 +1254,8 @@ class Reminder < ApplicationRecord
 
     free_text? && (body.present? || attachments.present? || files.attached?)
   end
+
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
 
   def delivery_policy_validation_blocked?
     cancelled? || completed? || failed? || route_reassignment_required?

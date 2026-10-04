@@ -1,4 +1,4 @@
-class ActionCableListener < BaseListener
+class ActionCableListener < BaseListener # rubocop:disable Metrics/ClassLength
   include Events::Types
 
   COMMUNICATION_THREAD_FEATURE = 'communication_threads'.freeze
@@ -214,6 +214,22 @@ class ActionCableListener < BaseListener
     broadcast_crm_deal_event(event, CRM_DEAL_UNARCHIVED)
   end
 
+  def crm_task_created(event)
+    broadcast_crm_task_event(event, CRM_TASK_CREATED)
+  end
+
+  def crm_task_updated(event)
+    broadcast_crm_task_event(event, CRM_TASK_UPDATED)
+  end
+
+  def crm_task_archived(event)
+    broadcast_crm_task_event(event, CRM_TASK_ARCHIVED)
+  end
+
+  def crm_task_unarchived(event)
+    broadcast_crm_task_event(event, CRM_TASK_UNARCHIVED)
+  end
+
   def conversation_mentioned(event)
     conversation, account = extract_conversation_and_account(event)
     user = event.data[:user]
@@ -343,9 +359,14 @@ class ActionCableListener < BaseListener
     account = event.data[:account] || deal&.account
     return if account.blank? || deal.blank?
 
+    tokens = ::Crm::Deals::RealtimeRecipients.new(
+      account: account,
+      deal: deal,
+      changes: event.data.dig(:meta, :changes) || {}
+    ).tokens
     broadcast(
       account,
-      [account_token(account)],
+      tokens,
       event_name,
       {
         deal: ::Crm::PayloadBuilder.deal(deal),
@@ -354,13 +375,45 @@ class ActionCableListener < BaseListener
     )
   end
 
-  def broadcast(account, tokens, event_name, data)
+  def broadcast_crm_task_event(event, event_name)
+    task = event.data[:task]
+    account = event.data[:account] || task&.account
+    return if account.blank? || task.blank?
+
+    recipients = ::Crm::Tasks::RealtimeRecipients.new(account: account, task: task)
+    broadcast_authorized_task_payload(account, recipients, task, event, event_name)
+    broadcast_task_invalidation(account, recipients, task, event, event_name)
+  end
+
+  def broadcast_authorized_task_payload(account, recipients, task, event, event_name)
+    broadcast(
+      account,
+      recipients.tokens,
+      event_name,
+      { task_id: task.id, task: ::Crm::PayloadBuilder.task(task), meta: event.data[:meta] || {} }
+    )
+  end
+
+  def broadcast_task_invalidation(account, recipients, task, event, event_name)
+    event_type = event.data.dig(:meta, :event_type).presence || event_name
+    broadcast(
+      account,
+      recipients.relay_tokens,
+      event_name,
+      { task_id: task.id, meta: { event_type: event_type } },
+      include_performer: false
+    )
+  end
+
+  def broadcast(account, tokens, event_name, data = nil, **options)
+    include_performer = options.delete(:include_performer) { true }
     return if tokens.blank?
 
+    data = (data || {}).merge(options)
     payload = data.merge(account_id: account.id)
-    # So the frondend knows who performed the action.
+    # So the frontend knows who performed the action.
     # Useful in cases like conversation assignment for generating a notification with assigner name.
-    payload[:performer] = Current.user&.push_event_data if Current.user.present?
+    payload[:performer] = Current.user&.push_event_data if include_performer && Current.user.present?
 
     job = if Telephony::RealtimeEventQueue.telephony?(event_name, data)
             ::ActionCableBroadcastJob.set(queue: :telephony_realtime)

@@ -36,6 +36,17 @@ class Messages::StatusUpdateService
       stage: touch_delivery_stage,
       error: external_error
     )
+    schedule_confirmed_captain_follow_up(reminder)
+  end
+
+  def schedule_confirmed_captain_follow_up(reminder)
+    return unless reminder.captain_follow_up? && reminder.delivery_dispatched_for?(message.id)
+    return unless touch_delivery_stage.in?(%w[provider_accepted delivered read])
+
+    Captain::Conversation::FollowUpJob.schedule_after_delivery!(reminder: reminder, message: message)
+  rescue *Reminders::ExecuteService::TRANSIENT_DATABASE_ERRORS => e
+    Rails.logger.warn("[CAPTAIN][FollowUpJob] Retrying confirmed next-step scheduling: #{e.class.name}")
+    raise LockAcquisitionError, 'Could not persist a confirmed Captain follow-up next step'
   end
 
   def touch_delivery_stage

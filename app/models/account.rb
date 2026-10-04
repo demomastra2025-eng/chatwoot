@@ -23,7 +23,16 @@
 #  index_accounts_on_status  (status)
 #
 
+# rubocop:disable Metrics/ClassLength
 class Account < ApplicationRecord
+  TRIAL_FEATURES = %w[
+    channel_website channel_whatsapp channel_voice voice_recorder
+    captain_integration agent_bots crm help_center macros canned_responses
+    inbox_management team_management custom_attributes automations
+  ].freeze
+  TRIAL_SNAPSHOT_KEY = 'trial_snapshot'.freeze
+  TRIAL_LOCKED_LIMITS = %w[agents inboxes].freeze
+
   include Rails.application.routes.url_helpers
   include AccountStorageLimitable
   # used for single column multi flags
@@ -71,6 +80,7 @@ class Account < ApplicationRecord
   has_many :agent_bots, dependent: :destroy_async
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
+  has_many :attachments, dependent: :destroy_async
   has_many :assignment_policies, dependent: :destroy_async
   has_many :automation_rules, dependent: :destroy_async
   has_many :bulk_action_runs, dependent: :destroy_async
@@ -91,11 +101,15 @@ class Account < ApplicationRecord
   has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
   has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
   has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'
+  has_many :crm_task_types, dependent: :destroy_async, class_name: '::Crm::TaskType'
+  has_many :crm_task_outcomes, dependent: :destroy_async, class_name: '::Crm::TaskOutcome'
   has_many :crm_field_definitions, dependent: :destroy_async, class_name: '::Crm::FieldDefinition'
   has_many :crm_deals, dependent: :destroy_async, class_name: '::Crm::Deal'
   has_many :crm_deal_contacts, dependent: :destroy_async, class_name: '::Crm::DealContact'
   has_many :crm_tasks, dependent: :destroy_async, class_name: '::Crm::Task'
   has_many :crm_events, dependent: :destroy_async, class_name: '::Crm::Event'
+  has_many :crm_stage_visits, dependent: :delete_all, class_name: '::Crm::StageVisit'
+  has_many :crm_stage_field_requirements, dependent: :delete_all, class_name: '::Crm::StageFieldRequirement'
   has_many :crm_comments, dependent: :destroy_async, class_name: '::Crm::Comment'
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :custom_attribute_definitions, dependent: :destroy_async
@@ -252,7 +266,317 @@ class Account < ApplicationRecord
     ISO_639.find(account_locale)&.english_name&.downcase || 'english'
   end
 
+  def trial?
+    custom_attributes&.dig('plan_type') == 'trial'
+  end
+
+  def trial_expires_at
+    Time.zone.parse(custom_attributes['trial_expires_at'].to_s) if custom_attributes&.dig('trial_expires_at').present?
+  rescue ArgumentError
+    nil
+  end
+
+  def trial_active?
+    trial? && trial_expires_at.present? && trial_expires_at > Time.current
+  end
+
+  def trial_expired?
+    trial? && (trial_expires_at.blank? || trial_expires_at <= Time.current)
+  end
+
+  def trial_snapshot?
+    snapshot = custom_attributes&.[](TRIAL_SNAPSHOT_KEY)
+    snapshot.is_a?(Hash) && snapshot['features'].is_a?(Array)
+  end
+
+  def extend_trial!(days = 3)
+    with_lock do
+      reload
+      raise ArgumentError, 'Only a snapshot-backed trial can be extended' unless trial? && trial_snapshot?
+
+      attrs = (custom_attributes || {}).deep_dup
+      now = Time.current
+      current_expiry = trial_expires_at
+      base_time = current_expiry && current_expiry > now ? current_expiry : now
+      reopening = attrs.delete('trial_expired_at').present?
+      attrs['plan_type'] = 'trial'
+      attrs['trial_expires_at'] = (base_time + days.days).iso8601
+      self.custom_attributes = attrs
+      reopen_trial! if reopening
+      save!
+    end
+  end
+
+  # Starts a full-feature trial. The snapshot, feature activation and expiry write happen under one row lock.
+  def activate_trial!(days = 3)
+    with_lock do
+      reload
+      current_plan = custom_attributes.to_h['plan_type']
+      raise ArgumentError, 'A paid or manually assigned plan cannot be replaced by a trial' if current_plan.present? && current_plan != 'trial'
+
+      snapshot_pre_trial_state!
+      enable_features(*TRIAL_FEATURES)
+      attrs = (custom_attributes || {}).deep_dup
+      attrs['plan_type'] = 'trial'
+      attrs['trial_expires_at'] = (Time.current + days.days).iso8601
+      attrs.delete('trial_expired_at')
+      self.custom_attributes = attrs
+      save!
+    end
+  end
+
+  # Ends only a snapshot-backed trial. Scheduled expiry rechecks expiry under this lock; an explicit
+  # superadmin action may end an active trial early, but cannot mutate a manually assigned plan.
+  def expire_trial!(only_if_expired: false)
+    with_lock do
+      reload
+      attrs = (custom_attributes || {}).deep_dup
+      snapshot = attrs[TRIAL_SNAPSHOT_KEY]
+      return false unless eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
+
+      attrs['trial_expires_at'] = 1.minute.ago.iso8601
+      attrs['trial_expired_at'] = Time.current.iso8601
+      self.custom_attributes = attrs
+      disable_features(*(TRIAL_FEATURES - snapshot['features']))
+      self.limits = (limits || {}).merge(TRIAL_LOCKED_LIMITS.index_with { 0 })
+      save!
+      true
+    end
+  end
+
+  # Walking the recordings folder is expensive, so the result is cached for a short while. Everything that
+  # changes the recordings on disk refreshes it through #storage_breakdown(force_refresh: true).
+  def local_recordings_bytes
+    Rails.cache.fetch(local_recordings_bytes_cache_key, expires_in: 10.minutes) { scan_local_recordings_bytes }
+  end
+
+  def scan_local_recordings_bytes
+    return 0 unless defined?(Storage::RecordingPaths)
+
+    Storage::RecordingPaths.files_for_account(id).sum { |path| File.size(path) }
+  rescue SystemCallError => e
+    Rails.logger.warn("[AccountStorage] Could not scan local recordings for account #{id}: #{e.class.name}")
+    0
+  end
+
+  def local_recordings_bytes_cache_key
+    "account:#{id}:local_recordings_bytes"
+  end
+
+  def storage_breakdown(force_refresh: false)
+    cache_key = "account:#{id}:storage_breakdown_v2"
+    if force_refresh
+      Rails.cache.delete(cache_key)
+      Rails.cache.delete(local_recordings_bytes_cache_key)
+    end
+
+    Rails.cache.fetch(cache_key, expires_in: 1.hour) do
+      calculate_storage_breakdown
+    end
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+  def calculate_storage_breakdown
+    usage_by_type = owned_attachment_usage_rows.each_with_object(Hash.new(0)) do |(_blob_id, size, file_type), totals|
+      type = Attachment.file_types.key(file_type)
+      totals[type] += size.to_i if type
+    end
+    audio_bytes = usage_by_type['audio'].to_i
+    image_bytes = usage_by_type['image'].to_i
+    video_bytes = usage_by_type['video'].to_i
+    doc_bytes = usage_by_type['file'].to_i
+
+    active_attachment_blob_ids = active_attachment_scope.where("(attachments.meta->'trash') IS NULL")
+                                                        .select('active_storage_attachments.blob_id').distinct
+    trash_attachment_blob_ids = active_attachment_scope.where("(attachments.meta->'trash') IS NOT NULL")
+                                                       .select('active_storage_attachments.blob_id').distinct
+    captain_source_blob_ids = if defined?(Captain::Document) && Captain::Document.table_exists?
+                                ActiveStorage::Attachment.where(record_type: 'Captain::Document', name: %w[pdf_file source_file])
+                                                         .where(record_id: Captain::Document.where(account_id: id).select(:id))
+                                                         .select(:blob_id).distinct
+                              else
+                                ActiveStorage::Blob.none.select(:id)
+                              end
+    captain_blob_ids = captain_source_blob_ids
+    if defined?(ActiveStorage::VariantRecord) && ActiveStorage::VariantRecord.table_exists?
+      captain_variant_blob_ids = ActiveStorage::Attachment.where(
+        record_type: ActiveStorage::VariantRecord.name,
+        name: 'image',
+        record_id: ActiveStorage::VariantRecord.where(blob_id: captain_source_blob_ids).select(:id)
+      ).select(:blob_id).distinct
+      captain_blob_ids = ActiveStorage::Blob.where(id: captain_source_blob_ids)
+                                            .or(ActiveStorage::Blob.where(id: captain_variant_blob_ids))
+                                            .select(:id)
+    end
+    captain_bytes = ActiveStorage::Blob.where(id: captain_blob_ids).where.not(id: active_attachment_blob_ids).sum(:byte_size).to_i
+    trash_att_bytes = ActiveStorage::Blob.where(id: trash_attachment_blob_ids)
+                                         .where.not(id: active_attachment_blob_ids)
+                                         .where.not(id: captain_blob_ids)
+                                         .sum(:byte_size).to_i
+
+    storage_service = AccountLimits::StorageUsageService.new(account: self)
+    rec_bytes = local_recordings_bytes
+    active_recordings_bytes = Storage::RecordingPaths.files_for_account(id, include_trash: false).sum { |path| File.size(path) }
+    trashed_recordings_bytes = [rec_bytes - active_recordings_bytes, 0].max
+    active_bytes = storage_service.active_storage_bytes
+    total_bytes = active_bytes + rec_bytes
+
+    trash_bytes = trashed_recordings_bytes + trash_att_bytes
+    active_storage_known = audio_bytes + image_bytes + video_bytes + doc_bytes + captain_bytes + trash_att_bytes
+    other_bytes = [active_bytes - active_storage_known, 0].max
+
+    {
+      recordings: active_recordings_bytes,
+      audio: audio_bytes,
+      images: image_bytes,
+      videos: video_bytes,
+      documents: doc_bytes,
+      captain: captain_bytes,
+      other: other_bytes,
+      trash: trash_bytes,
+      total: total_bytes,
+      by_inbox: calculate_inbox_storage_breakdown,
+      last_updated_at: Time.current.iso8601
+    }
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+
+  def owned_attachment_usage_rows
+    scope = active_attachment_scope.where("(attachments.meta->'trash') IS NULL")
+                                   .select(
+                                     'DISTINCT ON (active_storage_blobs.id) active_storage_blobs.id, ' \
+                                     'active_storage_blobs.byte_size, attachments.file_type'
+                                   )
+                                   .order('active_storage_blobs.id, attachments.file_type')
+
+    ActiveRecord::Base.connection.select_rows(scope.to_sql)
+  end
+
+  def active_attachment_scope
+    ActiveStorage::Attachment.joins(:blob)
+                             .joins(
+                               'INNER JOIN attachments ON attachments.id = active_storage_attachments.record_id ' \
+                               "AND active_storage_attachments.record_type = 'Attachment'"
+                             )
+                             .where(attachments: { account_id: id })
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+  def calculate_inbox_storage_breakdown
+    inbox_scope = active_attachment_scope.joins('INNER JOIN messages ON messages.id = attachments.message_id')
+                                         .select(
+                                           'DISTINCT ON (active_storage_blobs.id) active_storage_blobs.id, ' \
+                                           'active_storage_blobs.byte_size, messages.inbox_id, attachments.id'
+                                         )
+                                         .where(messages: { account_id: id })
+                                         .order('active_storage_blobs.id, messages.inbox_id NULLS LAST, attachments.id')
+    inbox_rows = ActiveRecord::Base.connection.select_rows(inbox_scope.to_sql)
+    inbox_usage = Hash.new { |usage, inbox_id| usage[inbox_id] = { bytes: 0, count: 0 } }
+    inbox_rows.each do |_blob_id, bytes, inbox_id|
+      inbox_usage[inbox_id][:bytes] += bytes.to_i
+      inbox_usage[inbox_id][:count] += 1
+    end
+
+    recording_usage = Hash.new { |usage, inbox_id| usage[inbox_id] = { bytes: 0, count: 0 } }
+    seen_recordings = {}
+    if defined?(Telephony::CallSession) && Telephony::CallSession.table_exists? && defined?(Storage::RecordingPaths)
+      Telephony::CallSession.where(account_id: id).find_each do |session|
+        metadata = session.metadata.is_a?(Hash) ? session.metadata : {}
+        trash = metadata['trash']
+        refs = if trash.present?
+                 manifest = Array(trash['files'])
+                 manifest.filter_map { |entry| Storage::RecordingPaths.resolve_trash(entry['trash_path'], account_id: id) }
+                         .compact
+                         .presence || [Storage::RecordingPaths.resolve_trash(trash['trash_path'], account_id: id)].compact
+               else
+                 retained = metadata.dig('recording', 'retained_original') || {}
+                 [session.recording_ref, retained['storage_key']].filter_map { |ref| Storage::RecordingPaths.resolve(ref, account_id: id) }
+               end
+
+        refs.each do |path|
+          stat = File.stat(path)
+          identity = [stat.dev, stat.ino]
+          next if seen_recordings[identity]
+
+          seen_recordings[identity] = true
+          recording_usage[session.inbox_id][:bytes] += stat.size
+          recording_usage[session.inbox_id][:count] += 1
+        rescue SystemCallError
+          next
+        end
+      end
+    end
+
+    rows = inboxes.select(:id, :name, :channel_type).map do |inbox|
+      attachments = inbox_usage[inbox.id] || { bytes: 0, count: 0 }
+      recordings = recording_usage[inbox.id] || { bytes: 0, count: 0 }
+      {
+        id: inbox.id,
+        name: inbox.name,
+        channel_type: inbox.channel_type,
+        bytes: attachments[:bytes] + recordings[:bytes],
+        files_count: attachments[:count] + recordings[:count]
+      }
+    end
+
+    # Captain files, unattached blobs and unlinked local recordings still belong to the shared physical
+    # quota. Keep them in a clearly named bucket so the inbox totals add up to the account total.
+    known_bytes = rows.sum { |row| row[:bytes] }
+    usage = AccountLimits::StorageUsageService.new(account: self)
+    unassigned_bytes = [usage.usage_bytes - known_bytes, 0].max
+    if unassigned_bytes.positive?
+      rows << {
+        id: nil,
+        name: I18n.t('storage_management.no_channel'),
+        channel_type: nil,
+        bytes: unassigned_bytes,
+        files_count: 0
+      }
+    end
+    rows
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength
+
   private
+
+  # Remembers the enabled features and the agent/inbox limits from before the trial. The first snapshot wins,
+  # so repeated activations or expirations never overwrite what the account originally had.
+  # The first snapshot must win; the only nested branch upgrades a legacy limits-only snapshot on explicit opt-in.
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  def snapshot_pre_trial_state!(limits_only: false)
+    attrs = (custom_attributes || {}).dup
+    snapshot = attrs[TRIAL_SNAPSHOT_KEY].is_a?(Hash) ? attrs[TRIAL_SNAPSHOT_KEY].deep_dup : nil
+    if snapshot
+      complete_explicit_trial_snapshot!(attrs, snapshot) unless limits_only || snapshot['features'].is_a?(Array)
+      return
+    end
+
+    snapshot = { 'limits' => (limits || {}).slice(*TRIAL_LOCKED_LIMITS), 'taken_at' => Time.current.iso8601 }
+    snapshot['features'] = selected_feature_flags.map(&:to_s) unless limits_only
+    self.custom_attributes = attrs.merge(TRIAL_SNAPSHOT_KEY => snapshot)
+  end
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+
+  def eligible_for_trial_expiry?(attrs, snapshot, only_if_expired)
+    trial? && snapshot.is_a?(Hash) && snapshot['features'].is_a?(Array) &&
+      attrs['trial_expired_at'].blank? &&
+      (!only_if_expired || trial_expires_at.blank? || trial_expires_at <= Time.current)
+  end
+
+  def complete_explicit_trial_snapshot!(attrs, snapshot)
+    # Preserve the first feature snapshot; a legacy limits-only snapshot gains features only on explicit opt-in.
+    snapshot['features'] = selected_feature_flags.map(&:to_s)
+    snapshot['taken_at'] ||= Time.current.iso8601
+    snapshot['limits'] ||= (limits || {}).slice(*TRIAL_LOCKED_LIMITS)
+    self.custom_attributes = attrs.merge(TRIAL_SNAPSHOT_KEY => snapshot)
+  end
+
+  # An expired trial that gets extended gets its trial features and its previous limits back.
+  def reopen_trial!
+    snapshot = custom_attributes[TRIAL_SNAPSHOT_KEY] || {}
+    enable_features(*TRIAL_FEATURES) if snapshot.key?('features')
+    self.limits = (limits || {}).except(*TRIAL_LOCKED_LIMITS).merge(snapshot['limits'] || {})
+  end
 
   def storage_limit_account
     self
@@ -305,3 +629,5 @@ Account.prepend_mod_with('Account')
 Account.prepend_mod_with('Account::PlanUsageAndLimits')
 Account.include_mod_with('Concerns::Account')
 Account.include_mod_with('Audit::Account')
+
+# rubocop:enable Metrics/ClassLength

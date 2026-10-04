@@ -1,3 +1,5 @@
+# Existing transcription provider orchestration is intentionally retained in one service; this storage patch only adds safe metadata writes.
+# rubocop:disable Metrics/ClassLength
 class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
@@ -180,6 +182,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def update_call_and_message!(transcript, source:)
     transcript_ref = "call_recording_transcript:#{call_session.external_call_ref}"
+    message = nil
 
     call_session.with_lock do
       metadata = (call_session.reload.metadata || {}).deep_dup
@@ -191,22 +194,27 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
         'completed_at' => Time.current.iso8601
       }
       call_session.update!(metadata: metadata, transcript_ref: transcript_ref)
+      message = update_voice_message!(transcript, transcript_ref)
     end
 
-    update_voice_message!(transcript, transcript_ref)
+    message&.reload&.send_update_event
   end
 
   def update_voice_message!(transcript, transcript_ref)
     message = voice_message
-    return if message.blank?
+    return unless message
 
-    content_attributes = normalized_content_attributes(message)
-    content_attributes['data'] ||= {}
-    content_attributes['data']['transcript_ref'] = transcript_ref
-    content_attributes['data']['transcript'] = transcript
-    content_attributes['data']['recording'] = recording_metadata if recording_metadata.present?
-    message.update!(content_attributes: content_attributes)
-    message.reload.send_update_event
+    message.with_lock do
+      message.reload
+      attributes = normalized_content_attributes(message)
+      attributes['data'] ||= {}
+      attributes['data']['transcript_ref'] = transcript_ref
+      attributes['data']['transcript'] = transcript
+      latest_recording = recording_metadata
+      attributes['data']['recording'] = latest_recording if latest_recording.present?
+      message.update!(content_attributes: attributes)
+    end
+    message
   end
 
   def voice_message
@@ -292,4 +300,5 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   def llm_model_account
     account
   end
+  # rubocop:enable Metrics/ClassLength
 end

@@ -62,6 +62,7 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
+  HANDOFF_TOOL_ID = 'handoff'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
@@ -382,7 +383,7 @@ class Captain::Assistant < ApplicationRecord
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
                  :auto_reply_on_last_incoming, :use_audio_transcriptions,
-                 :context_access, :tool_access
+                 :context_access, :tool_access, :model, :feature_image_understanding
 
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
@@ -390,6 +391,7 @@ class Captain::Assistant < ApplicationRecord
   before_validation :capture_raw_rules_config_input
   before_validation :normalize_rules_config
   before_destroy :destroy_personal_knowledge, prepend: true
+  before_destroy :lock_captain_assignment_before_destroy, prepend: true
 
   validates :name, presence: true
   validates :description, presence: true
@@ -417,6 +419,8 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_guardrail_fields
   validate :validate_guardrail_skills
   validate :validate_fish_voice_reference
+  validate :validate_conversational_model
+  validate :validate_follow_up_settings
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -758,6 +762,17 @@ class Captain::Assistant < ApplicationRecord
     message_mode_value('handoff_message_mode')
   end
 
+  def handoff_enabled?
+    return config_boolean_value('handoff_enabled', default: true) if config.to_h.key?('handoff_enabled')
+
+    access = Captain::ToolAccess.normalized_access_for(self).fetch(Captain::ToolAccess::SCOPE_AGENT, {})
+    access['enabled'] && Array(access['tool_ids']).include?(HANDOFF_TOOL_ID)
+  end
+
+  def auto_completion_enabled?
+    config_boolean_value('auto_completion_enabled', default: true)
+  end
+
   def resolution_message_enabled?
     message_config_enabled?('resolution_message_enabled')
   end
@@ -767,6 +782,73 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  def validate_conversational_model
+    return if model.blank?
+    return if Llm::Models.valid_model_for?(:assistant, model, account: account)
+
+    errors.add(:config, :assistant_model_not_allowed)
+  end
+
+  def validate_follow_up_settings
+    raw = config.to_h.deep_stringify_keys
+    return unless raw.key?('follow_up_settings')
+
+    settings = raw['follow_up_settings']
+    unless settings.is_a?(Hash)
+      errors.add(:config, 'follow-up settings must be an object')
+      return
+    end
+    prompt = settings['prompt'].to_s
+    errors.add(:config, 'follow-up instructions are too long') if prompt.length > Captain::FollowUpMessageGenerator::MAX_PROMPT_LENGTH
+    return unless settings.key?('steps')
+
+    unless settings['steps'].is_a?(Array)
+      errors.add(:config, 'follow-up steps must be an array')
+      return
+    end
+
+    settings['steps'].each_with_index do |raw_step, index|
+      step = raw_step.respond_to?(:to_h) ? raw_step.to_h.deep_stringify_keys : {}
+      mode = step['mode'].presence || (step['message'].present? ? 'static' : 'ai')
+      errors.add(:config, "follow-up step #{index + 1} has an invalid mode") unless MESSAGE_MODES.include?(mode)
+      delay = step['delay_seconds']
+      errors.add(:config, "follow-up step #{index + 1} delay must be a non-negative integer") if delay.present? && !delay.to_s.match?(/\A\d+\z/)
+      if mode == 'static'
+        errors.add(:config, "follow-up step #{index + 1} message is required") if step['message'].to_s.strip.blank?
+        if step['message'].to_s.length > Captain::FollowUpMessageGenerator::MAX_MESSAGE_LENGTH
+          errors.add(:config,
+                     "follow-up step #{index + 1} message is too long")
+        end
+      else
+        errors.add(:config, "follow-up step #{index + 1} objective is required") if step['objective'].to_s.strip.blank?
+        if step['objective'].to_s.length > Captain::FollowUpMessageGenerator::MAX_OBJECTIVE_LENGTH
+          errors.add(:config,
+                     "follow-up step #{index + 1} objective is too long")
+        end
+      end
+    end
+  end
+
+  def outcome_reason_prompt_context
+    Captain::OutcomeReasonConfig.prompt_context_for(self)
+  end
+
+  def config_boolean_value(key, default:)
+    raw = config.to_h.deep_stringify_keys
+    return default unless raw.key?(key)
+
+    ActiveModel::Type::Boolean.new.cast(raw[key])
+  end
+
+  def lock_captain_assignment_before_destroy
+    return unless id.present?
+
+    inbox_ids = CaptainInbox.where(captain_assistant_id: id).order(:inbox_id).pluck(:inbox_id)
+    inbox_ids.each { |inbox_id| Telephony::AiVoice::AssistantAssignmentLock.acquire!(inbox_id) }
+
+    Account.find(account_id).with_lock { self.class.lock.find(id) }
+  end
 
   def destroy_personal_knowledge
     documents.visibility_personal.find_each(&:destroy!)
@@ -828,6 +910,7 @@ class Captain::Assistant < ApplicationRecord
       assistant_identity_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY),
       assistant_specialized_scenarios_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_SCENARIOS),
       assistant_human_handoff_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_HUMAN_HANDOFF),
+      outcome_reasons: outcome_reason_prompt_context,
       current_context_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT),
       reference_glossary_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY),
       runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),

@@ -83,6 +83,50 @@ RSpec.describe Captain::Scenario, type: :model do
     end
   end
 
+  describe '#prompt_context' do
+    it 'includes configured outcome reasons for scenario handoffs and completions' do
+      account = create(:account)
+      assistant = create(
+        :captain_assistant,
+        account: account,
+        config: {
+          'handoff_enabled' => true,
+          'auto_completion_enabled' => true,
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [{ 'id' => 'technical', 'label' => 'Technical support', 'active' => true }],
+            'completion_reasons' => [{ 'id' => 'answered', 'label' => 'Question answered', 'active' => true }]
+          }
+        }
+      )
+      scenario = build(:captain_scenario, assistant: assistant, account: account)
+
+      expect(scenario.prompt_context[:outcome_reasons]).to include(
+        'handoff' => [
+          { 'id' => 'technical', 'label' => 'Technical support' },
+          { 'id' => 'other', 'label' => 'Other' }
+        ],
+        'completion' => [
+          { 'id' => 'answered', 'label' => 'Question answered' },
+          { 'id' => 'other', 'label' => 'Other' }
+        ]
+      )
+    end
+  end
+
+  describe '#resolved_agent_model' do
+    it 'inherits and validates the selected assistant model' do
+      account = create(:account)
+      selected_model = 'openai/gpt-5.4'
+      allow(Llm::Models).to receive(:valid_model_for?)
+        .with(:assistant, selected_model, account: account).and_return(true)
+      allow(Llm::Models).to receive(:canonical_model_name).with(selected_model).and_return(selected_model)
+      assistant = create(:captain_assistant, account: account, config: { 'model' => selected_model })
+      scenario = build(:captain_scenario, assistant: assistant, account: account)
+
+      expect(scenario.resolved_agent_model).to eq(selected_model)
+    end
+  end
+
   describe '#agent_instructions' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }

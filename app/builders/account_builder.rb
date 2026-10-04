@@ -45,6 +45,7 @@ class AccountBuilder
 
   def create_account
     @account = Account.create!(name: account_name, locale: I18n.locale)
+    @account.activate_trial!(3)
     Current.account = @account
   end
 

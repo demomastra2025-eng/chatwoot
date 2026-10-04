@@ -162,6 +162,15 @@ Rails.application.routes.draw do
           end
           resources :assignable_agents, only: [:index]
           resource :audit_logs, only: [:show]
+          resource :storage, only: [:show], controller: 'storage' do
+            get :heavy_files
+            post :refresh
+            post :preview_cleanup
+            post :move_to_trash
+            get :trash
+            post :restore_trash
+            delete :empty_trash
+          end
           resource :whatsapp_usage, only: [:show], controller: 'whatsapp_usage'
           resources :callbacks, only: [] do
             collection do
@@ -247,16 +256,36 @@ Rails.application.routes.draw do
           end
           namespace :crm do
             resources :pipelines, only: [:index, :show, :create, :update, :destroy] do
-              resources :stages, only: [:create]
+              resources :stages, only: [:create] do
+                collection do
+                  patch :batch_update
+                end
+              end
+              member do
+                patch :reorder_stages
+              end
             end
-            resources :stages, only: [:update, :destroy]
+            resources :stages, only: [:update, :destroy] do
+              resource :field_requirements, only: [:update], controller: 'stage_field_requirements'
+              member do
+                get :deletion_check
+              end
+            end
             resources :task_statuses, only: [:index, :create, :update, :destroy]
+            resources :task_types, only: [:index, :create, :update, :destroy]
+            resources :task_outcomes, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
             resources :reports, only: [] do
               collection do
                 get :deals
                 get :funnels
                 get :manager_effectiveness
+                get :stage_durations
+                get :stage_duration_details
+                get :task_results
+                get :task_result_details
+                get :deals_without_next_action
+                get :deals_without_next_action_details
               end
             end
             resources :deals, only: [:index, :show, :create, :update] do
@@ -266,6 +295,13 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :transition_stage
+                post :close_won
+                post :close_lost
+                post :reopen
+                post :reorder
+                post :undo_transition
+                post :set_waiting
+                post :clear_waiting
                 post :archive
                 post :unarchive
               end
@@ -277,6 +313,12 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :change_status
+                post :complete
+                post :cancel
+                post :reopen
+                post :reschedule
+                post :assign
+                post :save_form
                 post :archive
                 post :unarchive
               end
@@ -968,6 +1010,7 @@ Rails.application.routes.draw do
   devise_scope :super_admin do
     get 'super_admin/logout', to: 'super_admin/devise/sessions#destroy'
     namespace :super_admin do
+      resources :audits, only: [:index, :show]
       root to: 'dashboard#index'
 
       resource :app_config, only: [:show, :create] do
@@ -982,6 +1025,10 @@ Rails.application.routes.draw do
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
+        post :extend_trial, on: :member
+        post :expire_trial, on: :member
+        post :impersonate, on: :member
+        get :export, on: :collection
         if ChatwootApp.enterprise?
           post :reset_captain_responses_usage, on: :member
           post :reset_captain_tokens_usage, on: :member

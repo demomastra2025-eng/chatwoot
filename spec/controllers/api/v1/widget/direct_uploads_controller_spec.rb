@@ -35,7 +35,7 @@ RSpec.describe '/api/v1/widget/direct_uploads', type: :request do
         expect(json_response['content_type']).to eq('image/png')
       end
 
-      it 'returns payment required when account storage limit is reached' do
+      it 'allows direct uploads when account storage limit is reached' do
         account.update!(limits: { storage_bytes: 1000 })
 
         post api_v1_widget_direct_uploads_url,
@@ -50,8 +50,8 @@ RSpec.describe '/api/v1/widget/direct_uploads', type: :request do
              },
              headers: { 'X-Auth-Token' => token }
 
-        expect(response).to have_http_status(:payment_required)
-        expect(response.parsed_body['error']).to eq('Account storage limit exceeded')
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['content_type']).to eq('image/png')
       end
     end
   end

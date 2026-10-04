@@ -21,6 +21,14 @@ vi.mock('vue-i18n', () => ({
   }),
 }));
 
+vi.mock('dashboard/store/captain/preferences', () => ({
+  useCaptainConfigStore: () => ({
+    getModelsForFeature: () => [],
+    getSelectedModelForFeature: () => null,
+    fetch: vi.fn().mockResolvedValue(),
+  }),
+}));
+
 const buildWrapper = props =>
   shallowMount(AssistantBasicSettingsForm, {
     props,
@@ -29,9 +37,10 @@ const buildWrapper = props =>
         Avatar: true,
         AssistantUsageModeSelector: true,
         Button: true,
-        Checkbox: true,
         Editor: true,
         Input: true,
+        Select: true,
+        Switch: true,
       },
     },
   });
@@ -70,7 +79,10 @@ describe('AssistantBasicSettingsForm', () => {
       feature_faq: false,
       feature_memory: false,
       feature_citation: false,
-      feature_web: false,
+      feature_web: true,
+      feature_document_reading: true,
+      feature_image_understanding: true,
+      model: null,
       use_audio_transcriptions: true,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
@@ -78,12 +90,46 @@ describe('AssistantBasicSettingsForm', () => {
           tool_ids: [
             FAQ_LOOKUP_TOOL_ID,
             HANDOFF_TOOL_ID,
+            WEB_SEARCH_TOOL_ID,
+            WEB_SCRAPE_URL_TOOL_ID,
             ADD_CONTACT_NOTE_TOOL_ID,
             ADD_PRIVATE_NOTE_TOOL_ID,
           ],
         },
       },
     });
+  });
+
+  it('groups capabilities while keeping mode-specific controls visible', () => {
+    const externalAgent = buildWrapper({
+      assistant: { usage_mode: 'external_agent', config: {} },
+      showSubmitButton: false,
+    });
+
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
+    );
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
+    );
+    expect(externalAgent.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
+    );
+
+    const internalAssistant = buildWrapper({
+      assistant: { usage_mode: 'internal_assistant', config: {} },
+      showSubmitButton: false,
+    });
+
+    expect(internalAssistant.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
+    );
+    expect(internalAssistant.text()).not.toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
+    );
+    expect(internalAssistant.text()).not.toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
+    );
   });
 
   it('persists an explicit empty agent scope when all default capability checkboxes are disabled', async () => {

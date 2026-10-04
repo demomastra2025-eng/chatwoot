@@ -3,6 +3,7 @@ class Reminders::DefinitionNormalizer
     def call(definition)
       normalized_definition = normalize_definition(definition)
       return normalized_definition unless normalized_definition.is_a?(Hash)
+      raise ArgumentError, 'Captain follow-up steps are scheduled internally' if normalized_definition['action_type'].to_s == 'captain_follow_up'
 
       normalized_definition['text_mode'] = Reminders::TextModeResolver.call(
         action_type: normalized_definition['action_type'],

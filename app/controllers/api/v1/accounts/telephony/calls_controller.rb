@@ -274,6 +274,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
 
     authenticate_user!
     ensure_active_auth_session!
+    enforce_super_admin_impersonation_scope!
   end
 
   def signed_recording_url_for_call_session

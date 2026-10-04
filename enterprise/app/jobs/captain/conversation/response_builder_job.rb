@@ -174,7 +174,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         return process_cancelled_response if response_cancelled?
 
         ActiveRecord::Base.transaction do
-          create_messages(attachment_ids: attachment_ids)
+          outgoing_message = create_messages(attachment_ids: attachment_ids)
+          schedule_first_follow_up(outgoing_message)
           Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
           account.increment_response_usage
           account.increment_token_usage(@response.dig('usage', 'total_tokens'))
@@ -291,7 +292,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_document_parsing
-    return unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+    return unless Messages::DocumentParsingService.reading_enabled_for?(@assistant)
     return unless pending_document_parsing?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DOCUMENT_PARSE_WAIT_TIMEOUT.to_f
@@ -325,7 +326,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def authorized_v2_handoff_requested?
-    @assistant.selected_agent_tool_ids.include?('handoff') &&
+    @assistant.handoff_enabled? && @assistant.selected_agent_tool_ids.include?('handoff') &&
       ActiveModel::Type::Boolean.new.cast(@response['handoff_authorized']) &&
       v2_handoff_tool_fired? && @response['response'] == 'conversation_handoff'
   end
@@ -461,7 +462,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_context_for(_action)
-    { status_reason: handoff_status_reason, reason_type: nil }
+    { status_reason: handoff_status_reason, audit: handoff_transition_audit, reason_type: nil }
   end
 
   def create_action_notifications(action)
@@ -478,7 +479,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     end
   end
 
-  def bot_handoff_with_activity_reason(reason = handoff_activity_reason, status_reason: handoff_status_reason, reason_type: nil, &)
+  def bot_handoff_with_activity_reason(reason = handoff_activity_reason, status_reason: handoff_status_reason, reason_type: nil, audit: {}, &)
     source = status_reason.present? ? 'captain' : 'system'
     handoff = lambda do
       @conversation.bot_handoff!(
@@ -486,6 +487,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
         actor: @assistant,
         source: source,
         fence: current_response_fence,
+        audit: audit,
         &
       )
     end
@@ -512,6 +514,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def handoff_status_reason
     explicit_reason = @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
+    return handoff_outcome_reason&.fetch('label') if outcome_reason_config.configured?(:handoff)
+
     config = Conversations::StatusReasonConfig.new(@conversation.account)
     if explicit_reason.present?
       canonical_reason = config.canonical_reason('open', explicit_reason)
@@ -520,6 +524,30 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     end
 
     config.canonical_reason('open', handoff_activity_reason)
+  end
+
+  def handoff_outcome_reason
+    candidate = @response['handoff_outcome_reason_id'].to_s.strip.presence ||
+                @response['handoff_status_reason'].to_s.strip.presence ||
+                @response['status_reason'].to_s.strip.presence
+    outcome_reason_config.resolve(:handoff, candidate)
+  end
+
+  def outcome_reason_config
+    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(@assistant)
+  end
+
+  def handoff_transition_audit
+    return {} unless outcome_reason_config.configured?(:handoff)
+
+    outcome_reason_config.transition_options(
+      :handoff,
+      handoff_outcome_reason,
+      explanation: handoff_activity_reason
+    ).fetch(:audit, {})
+  rescue ArgumentError => e
+    Rails.logger.warn("[CAPTAIN][Handoff] Outcome reason rejected conversation_id=#{@conversation.id}: #{e.message}")
+    {}
   end
 
   def publish_handoff_status_reason_dropped
@@ -567,6 +595,38 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     create_private_note(reason)
   end
 
+  def schedule_first_follow_up(outgoing_message)
+    settings = @assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
+    first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
+    delay_seconds = first_step['delay_seconds'].to_i
+    return unless first_step_schedulable?(settings, first_step, outgoing_message, delay_seconds)
+
+    Captain::Conversation::FollowUpJob.schedule!(
+      conversation: @conversation,
+      assistant: @assistant,
+      anchor_message: outgoing_message,
+      step: { index: 0, delay_seconds: delay_seconds },
+      control_fence: current_response_fence
+    )
+  end
+
+  def first_step_schedulable?(settings, step, outgoing_message, delay_seconds)
+    settings['enabled'] == true && outgoing_message.present? && delay_seconds.positive? &&
+      assistant_can_schedule_follow_up? && follow_up_step_configured?(settings, step)
+  end
+
+  def assistant_can_schedule_follow_up?
+    @assistant.external_agent? && @assistant.account.feature_enabled?('captain_integration') &&
+      @assistant.inboxes.exists?(id: @conversation.inbox_id)
+  end
+
+  def follow_up_step_configured?(settings, step)
+    static_step = step['mode'].to_s == 'static' || (step['mode'].blank? && step['message'].present?)
+    return step['message'].to_s.strip.present? if static_step
+
+    settings['prompt'].to_s.strip.present? && step['objective'].to_s.strip.present?
+  end
+
   def create_messages(attachment_ids: [])
     validate_message_content!(@response['response'], attachment_ids: attachment_ids)
     return create_split_attachment_messages(attachment_ids) if split_response_attachments?(attachment_ids)
@@ -574,7 +634,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     create_outgoing_message(
       @response['response'],
       agent_name: @response['agent_name'],
-      attachment_ids: attachment_ids
+      attachment_ids: attachment_ids,
+      captain_reply: true
     )
   end
 
@@ -583,7 +644,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     first_message = create_outgoing_message(
       @response['response'],
       agent_name: @response['agent_name'],
-      attachment_ids: [first_attachment_id]
+      attachment_ids: [first_attachment_id],
+      captain_reply: true
     )
 
     remaining_attachment_ids.each do |attachment_id|
@@ -610,28 +672,34 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     raise ArgumentError, 'Message content cannot be blank' if content.blank? && attachment_ids.blank?
   end
 
-  def create_outgoing_message(message_content, agent_name: nil, preserve_waiting_since: false, attachment_ids: [], include_trace: true)
-    message = @conversation.messages.build(
+  def create_outgoing_message(message_content, options = {})
+    options = options.symbolize_keys
+    message = build_outgoing_message(message_content, options)
+    Array(options[:attachment_ids]).each { |attachment_id| build_message_attachment(message, attachment_id) }
+    message.save!
+    message
+  end
+
+  def build_outgoing_message(message_content, options)
+    @conversation.messages.build(
       message_type: :outgoing,
       account_id: account.id,
       inbox_id: inbox.id,
       sender: @assistant,
       content: message_content,
-      additional_attributes: additional_message_attributes(agent_name: agent_name, include_trace: include_trace),
-      preserve_waiting_since: preserve_waiting_since
+      additional_attributes: additional_message_attributes(
+        agent_name: options[:agent_name],
+        include_trace: options.fetch(:include_trace, true),
+        captain_reply: options.fetch(:captain_reply, false)
+      ),
+      preserve_waiting_since: options.fetch(:preserve_waiting_since, false)
     )
-
-    Array(attachment_ids).each do |attachment_id|
-      build_message_attachment(message, attachment_id)
-    end
-
-    message.save!
-    message
   end
 
-  def additional_message_attributes(agent_name:, include_trace:)
+  def additional_message_attributes(agent_name:, include_trace:, captain_reply: false)
     {}.tap do |attributes|
       add_agent_name_attributes(attributes, agent_name)
+      attributes[:captain_ai_reply] = { assistant_id: @assistant.id } if captain_reply
       attributes[:captain_trace] = @response['captain_trace'] if include_trace && @response&.dig('captain_trace').present?
     end
   end
@@ -745,33 +813,47 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def document_artifact_ids_from_tool_step(step)
-    return [] unless step.respond_to?(:[])
-    return [] unless (step['event'] || step[:event]).to_s == 'finish'
-    return [] unless (step['tool_name'] || step[:tool_name]).to_s == 'list_captain_documents'
+    return [] unless completed_document_list_step?(step)
 
-    payload = document_tool_payload(step['output'] || step[:output])
-    return [] unless payload.respond_to?(:[])
+    document_artifact_ids(document_tool_payload(tool_value(step, 'output')))
+  end
 
-    Array(payload['documents'] || payload[:documents]).filter_map do |document|
-      next unless document.respond_to?(:[])
+  def completed_document_list_step?(step)
+    step.respond_to?(:[]) && tool_value(step, 'event').to_s == 'finish' &&
+      tool_value(step, 'tool_name').to_s == 'list_captain_documents'
+  end
 
-      sendable = ActiveModel::Type::Boolean.new.cast(document['sendable'] || document[:sendable])
-      artifact_id = document['artifact_id'] || document[:artifact_id]
-      artifact_id.to_s if sendable && artifact_id.to_s.start_with?(Captain::Tools::DocumentArtifactToken::PREFIX)
-    end
+  def document_artifact_ids(payload)
+    Array(tool_value(payload, 'documents')).filter_map { |document| document_artifact_id(document) }
+  end
+
+  def document_artifact_id(document)
+    return unless document.respond_to?(:[])
+
+    sendable = ActiveModel::Type::Boolean.new.cast(tool_value(document, 'sendable'))
+    artifact_id = tool_value(document, 'artifact_id').to_s
+    artifact_id if sendable && artifact_id.start_with?(Captain::Tools::DocumentArtifactToken::PREFIX)
+  end
+
+  def tool_value(payload, key)
+    return unless payload.respond_to?(:key?)
+
+    payload[key] || payload[key.to_sym]
   end
 
   def document_tool_payload(output)
     normalized_output = output.respond_to?(:to_h) ? output.to_h : {}
-    message = normalized_output['message'] || normalized_output[:message]
-    data = normalized_output['data'] || normalized_output[:data]
-    data_hash = data.respond_to?(:to_h) ? data.to_h : nil
-    return data_hash if data_hash.present? && (data_hash['documents'] || data_hash[:documents]).present?
+    data = tool_value(normalized_output, 'data')
+    data_hash = data.respond_to?(:to_h) ? data.to_h : {}
+    return data_hash if document_data_present?(data_hash)
 
-    parsed_message = JSON.parse(message.to_s)
-    parsed_message.respond_to?(:to_h) ? parsed_message.to_h : {}
+    JSON.parse(tool_value(normalized_output, 'message').to_s).to_h
   rescue JSON::ParserError
     {}
+  end
+
+  def document_data_present?(data)
+    tool_value(data, 'documents').present?
   end
 
   def attachment_resolver
@@ -809,19 +891,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def inferred_agent_name_from_trace(trace_payload)
-    tool_steps = trace_payload&.dig('tool_steps') || trace_payload&.dig(:tool_steps)
-    return if tool_steps.blank?
+    last_handoff_tool_name(trace_payload)&.delete_prefix('handoff_to_')&.presence
+  end
 
-    last_handoff_tool_name = Array(tool_steps).reverse.filter_map do |step|
-      next unless (step['event'] || step[:event]).to_s == 'complete'
+  def last_handoff_tool_name(trace_payload)
+    tool_steps = tool_value(trace_payload, 'tool_steps')
+    Array(tool_steps).reverse.filter_map { |step| completed_handoff_tool_name(step) }.first
+  end
 
-      tool_name = (step['tool_name'] || step[:tool_name]).to_s
-      next unless tool_name.start_with?('handoff_to_')
+  def completed_handoff_tool_name(step)
+    return unless tool_value(step, 'event').to_s == 'complete'
 
-      tool_name
-    end.first
-
-    last_handoff_tool_name&.delete_prefix('handoff_to_')&.presence
+    name = tool_value(step, 'tool_name').to_s
+    name if name.start_with?('handoff_to_')
   end
 
   def handle_error(error)

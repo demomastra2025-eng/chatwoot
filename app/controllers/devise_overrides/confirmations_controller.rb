@@ -2,6 +2,7 @@ class DeviseOverrides::ConfirmationsController < Devise::ConfirmationsController
   include AuthHelper
   skip_before_action :require_no_authentication, raise: false
   skip_before_action :authenticate_user!, raise: false
+  before_action :reject_impersonation_credential_change!, only: [:create]
 
   def create
     @confirmable = User.find_by(confirmation_token: params[:confirmation_token])
@@ -11,6 +12,13 @@ class DeviseOverrides::ConfirmationsController < Devise::ConfirmationsController
   end
 
   private
+
+  def reject_impersonation_credential_change!
+    client_id = request.headers[DeviseTokenAuth.headers_names[:client]].to_s
+    return unless client_id.start_with?(SuperAdmin::ImpersonationService::CLIENT_PREFIX)
+
+    render json: { error: I18n.t('auth.session_replaced'), code: 'session_replaced' }, status: :unauthorized
+  end
 
   def render_confirmation_success
     send_auth_headers(@confirmable)

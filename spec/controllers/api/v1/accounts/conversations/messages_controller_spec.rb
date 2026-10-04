@@ -95,12 +95,12 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.last.content_type).to eq('text')
       end
 
-      it 'creates a new outgoing message with attachment' do
+      it 'accepts an employee attachment when the account is already over its storage limit' do
+        account.update!(limits: { storage_bytes: 1 })
         file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
-        params = { content: 'test-message', attachments: [file] }
 
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
+             params: { content: 'test-message', attachments: [file] },
              headers: agent.create_new_auth_token
 
         expect(response).to have_http_status(:success)

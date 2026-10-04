@@ -1,6 +1,79 @@
 require 'rails_helper'
 
 RSpec.describe Crm::Task do
+  it 'keeps an existing old-writer row at position zero valid and editable' do
+    account = create(:account)
+    task = create(:crm_task, account: account)
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version SQL writer.
+    task.update_columns(position: 0)
+    # rubocop:enable Rails/SkipsModelValidations
+
+    expect(described_class.columns_hash.fetch('position').default.to_i).to eq(0)
+    expect(task.reload).to be_valid
+    expect(task.update(title: 'Updated by the current writer')).to be(true)
+    expect(task.reload.position).to eq(0)
+  end
+
+  describe 'task context' do
+    let(:account) { create(:account) }
+    let(:deal) { create(:crm_deal, account: account) }
+
+    it 'infers a persisted context for legacy callers that omit it' do
+      personal_task = build(:crm_task, account: account)
+      sales_task = build(:crm_task, account: account, deal: deal)
+
+      expect(personal_task).to be_valid
+      expect(personal_task.context_kind).to eq('personal')
+      expect(personal_task.custom_field_context).to eq('standalone_task')
+      expect(sales_task).to be_valid
+      expect(sales_task.context_kind).to eq('sales')
+      expect(sales_task.custom_field_context).to eq('deal_task')
+    end
+
+    it 'exposes inferred expand fields for a row committed by an old writer' do
+      task = create(:crm_task, account: account, activity_type: 'task')
+      task_type = task.task_type
+      # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+      task.update_columns(task_type_id: nil, context_kind: nil)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      task.reload
+
+      expect(task.effective_context_kind).to eq('personal')
+      expect(task.effective_task_type).to eq(task_type)
+      expect(task.custom_field_context).to eq('standalone_task')
+      expect(Crm::PayloadBuilder.task(task)).to include(context_kind: 'personal', task_type_id: task_type.id)
+    end
+
+    it 'allows an explicitly personal task to remain linked to a deal' do
+      task = build(:crm_task, account: account, context_kind: 'personal', deal: deal)
+
+      expect(task).to be_valid
+      expect(task.context_kind).to eq('personal')
+      expect(task.custom_field_context).to eq('standalone_task')
+    end
+
+    it 'requires a deal for a sales task' do
+      task = build(:crm_task, account: account, context_kind: 'sales', deal: nil)
+
+      expect(task).not_to be_valid
+      expect(task.errors[:deal_id]).to include('is required for sales tasks')
+    end
+
+    it 'enforces the sales deal invariant without rejecting legacy rows on unrelated updates' do
+      task = create(:crm_task, account: account, context_kind: 'personal')
+      # rubocop:disable Rails/SkipsModelValidations -- Simulates an old row with position zero.
+      task.update_columns(position: 0)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      expect(task.update(context_kind: 'sales')).to be(false)
+      expect(task.errors[:deal_id]).to include('is required for sales tasks')
+      expect(task.reload).to have_attributes(context_kind: 'personal', position: 0)
+      expect(task.update(title: 'Legacy row remains editable')).to be(true)
+      expect(task.reload).to have_attributes(title: 'Legacy row remains editable', position: 0)
+    end
+  end
+
   describe 'activity type and outcome' do
     let(:account) { create(:account) }
 
@@ -25,37 +98,109 @@ RSpec.describe Crm::Task do
       expect(task.errors[:outcome_note]).to be_present
     end
 
-    it 'rejects unknown task activity types' do
-      task = build(:crm_task, account: account, activity_type: 'appointment')
+    it 'accepts account-configured custom task activity types' do
+      task_type = create(:crm_task_type, account: account, code: 'appointment')
+      task = build(:crm_task, account: account, activity_type: 'appointment', task_type: task_type)
 
-      expect(task).not_to be_valid
-      expect(task.errors[:activity_type]).to be_present
+      expect(task).to be_valid
+      expect(task.activity_type).to eq('appointment')
     end
   end
 
-  describe 'contact owner sync' do
+  describe 'deadline updates' do
+    let(:account) { create(:account) }
+
+    it 'rejects an all-day task without a calendar date' do
+      task = build(:crm_task, account: account, all_day: true, due_on: nil, due_at: nil)
+
+      expect(task).not_to be_valid
+      expect(task.errors[:due_on]).to be_present
+    end
+
+    it 'clears the exact start time for an all-day task' do
+      task = build(:crm_task, account: account, all_day: true, due_on: Date.new(2026, 9, 4), start_at: Time.zone.now)
+
+      task.valid?
+
+      expect(task.start_at).to be_nil
+      expect(task.due_at).to be_nil
+      expect(task.schedule_timezone).to eq(Crm::WorkspaceTimezone.resolve(account))
+    end
+
+    it 'converts a legacy all-day timestamp into the task schedule timezone' do
+      task = build(
+        :crm_task,
+        account: account,
+        all_day: true,
+        due_at: Time.iso8601('2026-09-03T23:30:00Z'),
+        schedule_timezone: 'Asia/Almaty'
+      )
+
+      task.valid?
+
+      expect(task.due_on).to eq(Date.new(2026, 9, 4))
+      expect(task.due_at).to be_nil
+      expect(task.effective_due_at).to eq(Time.find_zone('Asia/Almaty').local(2026, 9, 4).end_of_day)
+    end
+
+    it 'keeps the canonical due_on when a legacy timestamp is also supplied' do
+      task = build(
+        :crm_task,
+        account: account,
+        all_day: true,
+        due_on: Date.new(2026, 9, 5),
+        due_at: Time.iso8601('2026-09-03T23:30:00Z'),
+        schedule_timezone: 'Asia/Almaty'
+      )
+
+      task.valid?
+
+      expect(task.due_on).to eq(Date.new(2026, 9, 5))
+      expect(task.due_at).to be_nil
+    end
+
+    it 'allows an unrelated deadline update when a legacy creator no longer belongs to the account' do
+      creator = create(:user, account: account)
+      task = create(:crm_task, account: account, creator: creator)
+      account.account_users.find_by!(user: creator).destroy!
+
+      expect(task.reload.update(due_at: 1.day.from_now)).to be(true)
+    end
+
+    it 'still rejects assigning a creator from another account' do
+      task = create(:crm_task, account: account)
+      other_creator = create(:user, account: create(:account))
+
+      task.creator = other_creator
+
+      expect(task).not_to be_valid
+      expect(task.errors[:creator]).to include('must belong to the current account')
+    end
+  end
+
+  describe 'relationship ownership' do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account, role: :agent) }
     let(:new_owner) { create(:user, account: account, role: :agent) }
     let(:contact) { create(:contact, account: account, owner: owner) }
 
-    it 'syncs assignee changes to the primary deal contact' do
+    it 'allows changing the executor without transferring the primary deal contact' do
       deal = create(:crm_deal, account: account, owner: owner)
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
       task = create(:crm_task, account: account, deal: deal, assignee: owner)
 
       task.update!(assignee: new_owner)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
     end
 
-    it 'syncs assignee changes to the originating conversation contact when there is no deal' do
+    it 'allows changing the executor without transferring the originating conversation contact' do
       conversation = create(:conversation, account: account, contact: contact, assignee: owner)
       task = create(:crm_task, account: account, originating_conversation: conversation, assignee: owner)
 
       task.update!(assignee: new_owner)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
     end
   end
 end

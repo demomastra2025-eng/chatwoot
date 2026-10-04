@@ -37,6 +37,16 @@ class Reminders::ApplyGroupService
 
   def perform
     raise ArgumentError, 'Touch plan does not support this entity kind' unless reminder_group.entity_kind_supported?(entity_kind)
+    return perform_locked unless remindable.is_a?(Conversation)
+
+    Conversation.transaction do
+      @remindable = Conversation.where(id: remindable.id, account_id: account.id).lock.first!
+      perform_locked
+    end
+  end
+
+  def perform_locked
+    raise ArgumentError, 'An AI follow-up chain is already active for this conversation' if ai_follow_up_chain_active?
 
     definitions = Reminders::ApplicableDefinitions.call(
       definitions: reminder_group.touches,
@@ -50,6 +60,14 @@ class Reminders::ApplyGroupService
   end
 
   private
+
+  def ai_follow_up_chain_active?
+    return false unless remindable.is_a?(Conversation)
+
+    account.reminders.captain_follow_up.active_delivery_or_open
+           .exists?(['conversation_id = :conversation_id OR target_conversation_id = :conversation_id',
+                     { conversation_id: remindable.id }])
+  end
 
   def entity_kind
     Reminders::ApplicableDefinitions.entity_kind_for(remindable)

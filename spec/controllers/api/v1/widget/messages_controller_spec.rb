@@ -174,7 +174,7 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
         expect(conversation.messages.last.attachments.first.file_type).to eq('image')
       end
 
-      it 'returns payment required when account storage limit is reached for attachments' do
+      it 'accepts attachments when account storage limit is reached' do
         account.update!(limits: { storage_bytes: 1000 })
         file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
         message_params = { content: 'hello world', timestamp: Time.current, attachments: [file] }
@@ -183,8 +183,8 @@ RSpec.describe '/api/v1/widget/messages', type: :request do
              params: { website_token: web_widget.website_token, message: message_params },
              headers: { 'X-Auth-Token' => token }
 
-        expect(response).to have_http_status(:payment_required)
-        expect(response.parsed_body['error']).to eq('Account storage limit exceeded')
+        expect(response).to have_http_status(:success)
+        expect(conversation.messages.last.attachments.first.file.present?).to be(true)
       end
 
       it 'does not reopen conversation when conversation is muted' do

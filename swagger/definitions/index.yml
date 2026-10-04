@@ -5,6 +5,38 @@ bad_request_error:
 request_error:
   $ref: ./error/request.yml
 
+# Account-scoped CRM, storage, and Captain APIs
+crm_error:
+  $ref: ./crm_account_apis.yml#/crm_error
+crm_field_requirement:
+  $ref: ./crm_account_apis.yml#/crm_field_requirement
+crm_stage:
+  $ref: ./crm_account_apis.yml#/crm_stage
+crm_pipeline:
+  $ref: ./crm_account_apis.yml#/crm_pipeline
+crm_task_status:
+  $ref: ./crm_account_apis.yml#/crm_task_status
+crm_task_outcome:
+  $ref: ./crm_account_apis.yml#/crm_task_outcome
+crm_task_type:
+  $ref: ./crm_account_apis.yml#/crm_task_type
+crm_deal:
+  $ref: ./crm_account_apis.yml#/crm_deal
+crm_task:
+  $ref: ./crm_account_apis.yml#/crm_task
+crm_report_meta:
+  $ref: ./crm_account_apis.yml#/crm_report_meta
+crm_report_rows_response:
+  $ref: ./crm_account_apis.yml#/crm_report_rows_response
+crm_storage_summary:
+  $ref: ./crm_account_apis.yml#/crm_storage_summary
+crm_storage_file:
+  $ref: ./crm_account_apis.yml#/crm_storage_file
+crm_storage_trash_item:
+  $ref: ./crm_account_apis.yml#/crm_storage_trash_item
+captain_assistant:
+  $ref: ./crm_account_apis.yml#/captain_assistant
+
 ## ---------- RESOURCE ------------ ##
 ## -------------------------------- ##
 
@@ -280,3 +312,20 @@ reporting_event_meta:
   $ref: ./resource/reporting_event_meta.yml
 reporting_events_list_response:
   $ref: ./resource/reporting_events_list_response.yml
+
+captain_assistants_response:
+  $ref: ./crm_account_apis.yml#/captain_assistants_response
+captain_assistant_payload:
+  $ref: ./crm_account_apis.yml#/captain_assistant_payload
+
+crm_task_lifecycle_snapshot:
+  $ref: ./crm_account_apis.yml#/crm_task_lifecycle_snapshot
+
+crm_task_timeline_event:
+  $ref: ./crm_account_apis.yml#/crm_task_timeline_event
+
+crm_task_timeline_entry:
+  $ref: ./crm_account_apis.yml#/crm_task_timeline_entry
+
+crm_task_timeline_response:
+  $ref: ./crm_account_apis.yml#/crm_task_timeline_response

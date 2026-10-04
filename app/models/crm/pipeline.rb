@@ -29,6 +29,7 @@ class Crm::Pipeline < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   has_many :stages, -> { ordered }, class_name: '::Crm::Stage', dependent: :destroy, inverse_of: :pipeline
   has_many :deals, class_name: '::Crm::Deal', inverse_of: :pipeline # rubocop:disable Rails/HasManyOrHasOneDependent
+  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :restrict_with_error, inverse_of: :pipeline
 
   validates :name, presence: true
   validates :code, presence: true, uniqueness: { scope: :account_id }

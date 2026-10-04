@@ -18,11 +18,13 @@ class Telephony::StoredRecordingReadyService
     validate!
     if recording_already_stored?
       sync_voice_message_recording!(call_session)
+      enqueue_recording_compression(call_session)
       return duplicate_response
     end
 
     updated_call_session = Telephony::EventsIngestionService.new(payload: recording_ready_payload).perform
     sync_voice_message_recording!(updated_call_session)
+    enqueue_recording_compression(updated_call_session)
     response_payload(updated_call_session, status: 'ok')
   end
 
@@ -32,6 +34,14 @@ class Telephony::StoredRecordingReadyService
 
   def sync_voice_message_recording!(session)
     Telephony::VoiceMessageRecordingSyncService.new(call_session: session).perform
+  end
+
+  def enqueue_recording_compression(session)
+    return unless session&.recording_ref.to_s.match?(/\.(wav|wave|pcm)\z/i)
+
+    Telephony::CompressRecordingsJob.perform_later(call_session_id: session.id)
+  rescue StandardError => e
+    Rails.logger.warn("[StoredRecordingReadyService] Could not schedule compression for call session #{session&.id}: #{e.class.name}")
   end
 
   def validate!

@@ -6,12 +6,20 @@ import { useI18n } from 'vue-i18n';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
-import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
+import {
+  DEFAULT_STAGE_COLOR,
+  resolveStageDisplayColor,
+} from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
   disabled: {
     type: Boolean,
     default: false,
+  },
+  displayVariant: {
+    type: String,
+    default: 'dot',
+    validator: value => ['dot', 'list'].includes(value),
   },
   modelValue: {
     type: [String, Number],
@@ -42,7 +50,7 @@ const stageLabelById = computed(() =>
 
 const stageColorById = computed(() =>
   props.stages.reduce((result, stage) => {
-    result[Number(stage.id)] = stage.color || fallbackStageColor;
+    result[Number(stage.id)] = resolveStageDisplayColor(stage.color);
     return result;
   }, {})
 );
@@ -55,11 +63,20 @@ const currentStageLabel = computed(
 const currentStageColor = computed(
   () => stageColorById.value[currentStageId.value] || fallbackStageColor
 );
+const isListVariant = computed(() => props.displayVariant === 'list');
+const triggerStyle = computed(() =>
+  isListVariant.value
+    ? {
+        backgroundColor: currentStageColor.value,
+        borderLeftColor: `color-mix(in srgb, ${currentStageColor.value} 70%, #64748b)`,
+      }
+    : undefined
+);
 
 const menuItems = computed(() =>
   props.stages.map(stage => ({
     action: 'select',
-    color: stage.color || fallbackStageColor,
+    color: resolveStageDisplayColor(stage.color),
     isSelected: Number(stage.id) === currentStageId.value,
     label: stage.name,
     value: stage.id,
@@ -137,11 +154,18 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         color="slate"
         no-animation
         :disabled="disabled"
-        class="!h-7 !gap-1 !rounded-full !bg-transparent !px-1.5 !text-xs !font-medium"
+        class="!h-7 !gap-1 !text-xs !font-medium"
+        :class="
+          isListVariant
+            ? '!rounded-md !border-l-[3px] !px-2'
+            : '!rounded-full !bg-transparent !px-1.5'
+        "
+        :style="triggerStyle"
         @click.stop="toggleMenu"
       >
         <span class="inline-flex min-w-0 items-center gap-1.5">
           <span
+            v-if="!isListVariant"
             class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
             :style="{ backgroundColor: currentStageColor }"
           />

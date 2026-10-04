@@ -1,5 +1,5 @@
 <% content_for(:title) do %>
-  Admin Dashboard
+  Сводка здоровья клиентов (OneLink Health Matrix)
 <% end %>
 
 <%= render_vue_component('DashboardIndex', {
@@ -7,5 +7,8 @@
   usersCount: @users_count,
   inboxesCount: @inboxes_count,
   conversationsCount: @conversations_count,
-  chartData: @data
+  chartData: @data,
+  healthAccounts: @health_accounts,
+  healthSummary: @health_summary,
+  locale: I18n.locale
 }) %>

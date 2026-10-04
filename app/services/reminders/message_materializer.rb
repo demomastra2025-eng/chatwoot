@@ -1,10 +1,11 @@
 class Reminders::MessageMaterializer
   attr_reader :reminder, :template_params, :confirmation_request
 
-  def initialize(reminder:, template_params: reminder.template_params.presence, confirmation_request: nil)
+  def initialize(reminder:, template_params: reminder.template_params.presence, confirmation_request: nil, additional_attributes: {})
     @reminder = reminder
     @template_params = template_params
     @confirmation_request = confirmation_request
+    @additional_attributes = additional_attributes.to_h
   end
 
   def perform(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
@@ -24,7 +25,7 @@ class Reminders::MessageMaterializer
       additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
       additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
 
-      message.update!(additional_attributes: additional_attributes)
+      message.update!(additional_attributes: additional_attributes.merge(@additional_attributes))
       confirmation_request&.update!(delivery_message: message)
       reminder.mark_delivery_materialized!(message.id) if reminder.persisted?
       message

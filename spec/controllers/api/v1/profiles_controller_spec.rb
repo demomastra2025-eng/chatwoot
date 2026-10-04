@@ -128,7 +128,11 @@ RSpec.describe 'Profile API', type: :request do
 
         expect(response).to have_http_status(:unprocessable_content)
         json_response = response.parsed_body
-        expect(json_response['message']).to eq('Name is too long (maximum is 255 characters)')
+        request_locale = agent.ui_settings&.dig('locale').presence || ENV.fetch('DEFAULT_LOCALE', I18n.default_locale)
+        expected_name = I18n.t('activerecord.attributes.user.name', locale: request_locale)
+        expected_length = I18n.t('errors.messages.too_long', count: 255, locale: :en)
+        expected_message = "#{expected_name} #{expected_length}"
+        expect(json_response['message']).to eq(expected_message)
       end
 
       it 'updates avatar' do

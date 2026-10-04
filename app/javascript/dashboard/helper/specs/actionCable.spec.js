@@ -1116,6 +1116,28 @@ describe('ActionCableConnector', () => {
       );
     });
 
+    it('should emit dashboard bus events for CRM task ActionCable events', () => {
+      const taskPayload = {
+        account_id: 1,
+        task_id: 42,
+        task: { id: 42, title: 'Realtime task' },
+        meta: { event_type: 'task_updated' },
+      };
+
+      actionCable.onReceived({
+        event: 'crm.task.updated',
+        data: taskPayload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CRM_TASK_REALTIME_EVENT,
+        {
+          event: 'crm.task.updated',
+          ...taskPayload,
+        }
+      );
+    });
+
     it('should refresh dialog CRM counters after CRM deal ActionCable events', async () => {
       vi.useFakeTimers();
       const crmReferencesStore = useCrmReferencesStore();

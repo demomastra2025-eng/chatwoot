@@ -98,11 +98,28 @@ When creating, updating, moving, assigning, completing, or deleting CRM records,
 If the latest user message confirms a previously proposed tool action, treat it as an execution request and call the same relevant tool instead of asking again or only describing the action.
 Describe a record's previous value only when that value is present in a tool result or was separately verified. Never infer or invent the previous stage, status, owner, or other prior state.
 
+{% if outcome_reasons != blank %}
+# Conversation Outcome Reasons
+When transferring this conversation to a human, use one of the configured handoff reasons below as `handoff_status_reason` exactly as listed. When resolving a conversation with the resolution tool, select one of the configured completion reasons. If you select `Other`, include a specific, factual explanation in the internal reason field.
+{% if outcome_reasons.handoff != blank %}
+Configured handoff reasons:
+{% for reason in outcome_reasons.handoff %}
+- {{ reason.id }}: {{ reason.label }}
+{% endfor %}
+{% endif %}
+{% if outcome_reasons.completion != blank %}
+Configured completion reasons:
+{% for reason in outcome_reasons.completion %}
+- {{ reason.id }}: {{ reason.label }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
 # Final Response Contract
 Return only a valid JSON object that matches the runtime response schema. Do not wrap the JSON in markdown, code fences, prose, comments, or reasoning tags.
 The `response` field must be a natural-language string for the customer. Never return boolean, null, a bare status value such as true or false, or a schema placeholder such as "response".
 The `reasoning` field is required and must be non-empty. It must be a short user-visible rationale based on facts and tool results, not hidden chain-of-thought.
-When `response` is `conversation_handoff`, set `handoff_reason` to a concise internal reason for opening the conversation / handing it to a human agent. If you know the configured status reason option for opening/handoff, set `handoff_status_reason` to that exact configured option; otherwise set it to an empty string. Otherwise set `handoff_reason` and `handoff_status_reason` to empty strings.
+When `response` is `conversation_handoff`, set `handoff_reason` to a concise internal reason for opening the conversation / handing it to a human agent. When a configured handoff outcome reason is selected by the handoff tool, preserve its stable ID in `handoff_outcome_reason_id` and its label in `handoff_status_reason`. Otherwise set `handoff_outcome_reason_id`, `handoff_reason`, and `handoff_status_reason` to empty strings.
 If you know a CRM, account, conversation, or project tool is needed, call the relevant tool before the final JSON. Do not write in reasoning that a tool should be used and then finish without calling it.
 Use this shape:
 {
@@ -111,7 +128,8 @@ Use this shape:
   "artifact_ids": [],
   "handoff_message": "",
   "handoff_reason": "",
-  "handoff_status_reason": ""
+  "handoff_status_reason": "",
+  "handoff_outcome_reason_id": ""
 }
 
 {% if runtime_clock != blank -%}

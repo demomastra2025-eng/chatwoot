@@ -1,6 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe CaptainInbox do
+  include ActiveJob::TestHelper
   let(:account) { create(:account) }
   let(:inbox) { create(:inbox, account: account) }
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -8,11 +9,19 @@ RSpec.describe CaptainInbox do
   it 'acquires the shared assistant assignment lock on save and destroy' do
     captain_inbox = build(:captain_inbox, inbox: inbox, captain_assistant: assistant)
 
-    expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).and_call_original
+    expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).exactly(3).times.and_call_original
     captain_inbox.save!
-
-    expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).and_call_original
+    captain_inbox.update!(auto_reply_mode: 'working_hours')
     captain_inbox.destroy!
+  end
+
+  it 'uses the shared lock when an assistant asynchronously destroys its assignments' do
+    captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+
+    expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).twice.and_call_original
+    perform_enqueued_jobs { assistant.destroy! }
+
+    expect(described_class.where(id: captain_inbox.id)).not_to exist
   end
 
   it 'rolls back assignment creation when routing policy sync fails' do

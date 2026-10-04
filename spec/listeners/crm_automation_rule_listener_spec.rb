@@ -1,8 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe CrmAutomationRuleListener do
-  include ActiveJob::TestHelper
-
   let(:listener) { described_class.instance }
   let(:account) { create(:account) }
 
@@ -65,7 +63,8 @@ RSpec.describe CrmAutomationRuleListener do
           'deal_updated',
           Time.zone.now,
           deal: deal,
-          changed_attributes: { 'title' => ['Old', 'Renewal opportunity updated'] }
+          changed_attributes: { 'title' => ['Old', 'Renewal opportunity updated'] },
+          automation_matching_snapshot: AutomationRules::CrmMatchingSnapshot.build(deal)
         )
       )
 
@@ -88,6 +87,31 @@ RSpec.describe CrmAutomationRuleListener do
       account.enable_features!('crm_tasks')
       clear_enqueued_jobs
       clear_performed_jobs
+    end
+
+    it 'runs legacy status-change rules once for granular task completion events' do
+      create(
+        :automation_rule,
+        account: account,
+        event_name: 'task_status_changed',
+        conditions: [],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/tasks'] }]
+      )
+      event = Events::Base.new(
+        'task_completed',
+        Time.zone.now,
+        account: account,
+        task: task,
+        changed_attributes: { 'status_id' => [status.id, status.id + 1] },
+        automation_matching_snapshot: AutomationRules::CrmMatchingSnapshot.build(task)
+      )
+
+      expect do
+        listener.task_completed(event)
+      end.to have_enqueued_job(WebhookJob).with(
+        'https://example.com/hooks/tasks',
+        hash_including(event: 'automation_event.task_status_changed')
+      ).once
     end
 
     it 'applies native task actions after CRM event dispatch' do

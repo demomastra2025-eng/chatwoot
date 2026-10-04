@@ -16,7 +16,6 @@
       "ERROR": "Произошла ошибка при подключении к Shopify. Попробуйте еще раз или свяжитесь с поддержкой, если проблема повторится.",
       "HEADER": "Shopify"
     },
-
     "HEADER": "Интеграции",
     "DESCRIPTION": "Интеграции подключают OneLink к внешним сервисам и модулям. Настройте нужные подключения ниже.",
     "LEARN_MORE": "Узнать больше об интеграциях",
@@ -225,7 +224,8 @@
         "GRAMMAR": "Исправить грамматику и орфографию",
         "SUGGESTION": "Предложить ответ",
         "SUMMARIZE": "Суммировать диалог",
-        "EMPTY_HINT": "Начните писать сообщение, чтобы воспользоваться AI-инструментами"
+        "EMPTY_HINT": "Начните писать сообщение, чтобы воспользоваться AI-инструментами",
+        "ASK_COPILOT": "Спросить ассистента"
       }
     },
     "DELETE": {
@@ -393,7 +393,25 @@
       "HEADER": "Notion"
     },
     "SEARCH_PLACEHOLDER": "Поиск интеграций...",
-    "NO_RESULTS": "Интеграции по запросу не найдены"
+    "NO_RESULTS": "Интеграции по запросу не найдены",
+    "KASPI_PAY": {
+      "SEND_OTP": "Отправить SMS-код",
+      "CONNECT": "Подключить Kaspi Pay",
+      "PHONE_LABEL": "Телефон кассира Kaspi",
+      "OTP_LABEL": "SMS-код",
+      "LATITUDE_LABEL": "Широта POS",
+      "LONGITUDE_LABEL": "Долгота POS",
+      "CONNECT_HELP": "Kaspi Pay подключается через SMS-вход кассира. Можно вводить номер с +7/7/8 — OneLink отправит в Kaspi локальные 10 цифр. Секреты сессии хранятся только на сервере и не возвращаются в браузер.",
+      "PHONE_REQUIRED": "Укажите телефон",
+      "OTP_REQUIRED": "Укажите SMS-код",
+      "CONNECT_ERROR": "Не удалось подключить Kaspi Pay. Проверьте код и повторите попытку.",
+      "CONNECT_SUCCESS": "Kaspi Pay успешно подключён",
+      "CONNECTED_TITLE": "Подключенный мерчант",
+      "DELETE": {
+        "TITLE": "Удалить интеграцию Kaspi Pay",
+        "MESSAGE": "Вы уверены, что хотите отключить Kaspi Pay? Новые оплаты Kaspi перестанут работать."
+      }
+    }
   },
   "CAPTAIN": {
     "NAME": "AI-агенты",
@@ -909,7 +927,8 @@
             "CAPACITY": "Все тестовые сессии заняты. Повторите через несколько секунд.",
             "ORIGIN": "Этой странице запрещено запускать предпросмотр голоса.",
             "PROTOCOL": "Голосовая платформа вернула некорректный ответ. Запустите разговор снова."
-          }
+          },
+          "UNMUTE": "Включить микрофон"
         },
         "DESCRIPTION": {
           "LABEL": "Описание",
@@ -982,6 +1001,11 @@
         "CATALOG_ITEM_USED": "Используется",
         "FEATURES": {
           "TITLE": "Возможности",
+          "GROUPS": {
+            "CUSTOMER_CONTEXT": "Контекст клиента",
+            "TOOLS": "Инструменты и действия",
+            "VOICE": "Голосовые сообщения"
+          },
           "ALLOW_CONVERSATION_FAQS": "Создать FAQ из решённых диалогов",
           "ALLOW_MEMORIES": "Сохраняйте ключевые детали в виде воспоминаний о взаимодействии с клиентами.",
           "ALLOW_NOTES": "Разрешить создавать заметки по контакту и приватные заметки в диалоге",
@@ -991,7 +1015,17 @@
           "ALLOW_WEB_ACCESS": "Разрешить веб-поиск",
           "USE_AUDIO_TRANSCRIPTIONS": "Использовать расшифровки голосовых сообщений",
           "USE_AUDIO_TRANSCRIPTIONS_DISABLED": "Использовать расшифровки голосовых сообщений (сначала включите транскрибацию компании)",
-          "ALLOW_CONTACT_ATTRIBUTES": "Разрешить доступ к информации о контакте"
+          "ALLOW_CONTACT_ATTRIBUTES": "Разрешить доступ к информации о контакте",
+          "DESCRIPTION": "Включите функции и инструменты, доступные этому AI-агенту.",
+          "WEB_SEARCH": "Веб-поиск",
+          "WEB_SEARCH_DESCRIPTION": "Искать актуальную информацию в открытом интернете.",
+          "WEB_PAGE_READING": "Чтение страниц",
+          "WEB_PAGE_READING_DESCRIPTION": "Читать содержимое указанной публичной ссылки.",
+          "DOCUMENT_READING": "Чтение документов",
+          "DOCUMENT_READING_DESCRIPTION": "Использовать текст из файлов, присланных клиентом.",
+          "IMAGE_UNDERSTANDING": "Понимать изображения клиентов",
+          "IMAGE_UNDERSTANDING_DESCRIPTION": "При подготовке ответа получить текстовое описание новых изображений. Оригинал изображения основной модели не передаётся.",
+          "WEB_PROVIDER_REQUIRED": "Для этих возможностей администратор должен настроить веб-провайдер."
         },
         "ACCESS_MODES": {
           "TITLE": "Доступ ИИ-ассистента",
@@ -1058,100 +1092,266 @@
           },
           "FIELDS": {
             "CONTACT": {
-              "ID": { "TITLE": "ID контакта" },
-              "NAME": { "TITLE": "Имя" },
-              "EMAIL": { "TITLE": "Email" },
-              "PHONE_NUMBER": { "TITLE": "Номер телефона" },
-              "IDENTIFIER": { "TITLE": "Идентификатор" },
-              "CONTACT_TYPE": { "TITLE": "Тип контакта" }
+              "ID": {
+                "TITLE": "ID контакта"
+              },
+              "NAME": {
+                "TITLE": "Имя"
+              },
+              "EMAIL": {
+                "TITLE": "Email"
+              },
+              "PHONE_NUMBER": {
+                "TITLE": "Номер телефона"
+              },
+              "IDENTIFIER": {
+                "TITLE": "Идентификатор"
+              },
+              "CONTACT_TYPE": {
+                "TITLE": "Тип контакта"
+              }
             },
             "CONVERSATION": {
-              "ID": { "TITLE": "ID записи диалога" },
-              "DISPLAY_ID": { "TITLE": "ID диалога" },
-              "INBOX_ID": { "TITLE": "ID инбокса" },
-              "CONTACT_ID": { "TITLE": "ID контакта" },
-              "STATUS": { "TITLE": "Статус" },
-              "PRIORITY": { "TITLE": "Приоритет" },
-              "LABEL_LIST": { "TITLE": "Теги" }
+              "ID": {
+                "TITLE": "ID записи диалога"
+              },
+              "DISPLAY_ID": {
+                "TITLE": "ID диалога"
+              },
+              "INBOX_ID": {
+                "TITLE": "ID инбокса"
+              },
+              "CONTACT_ID": {
+                "TITLE": "ID контакта"
+              },
+              "STATUS": {
+                "TITLE": "Статус"
+              },
+              "PRIORITY": {
+                "TITLE": "Приоритет"
+              },
+              "LABEL_LIST": {
+                "TITLE": "Теги"
+              }
             },
             "DEAL": {
-              "ID": { "TITLE": "ID сделки" },
-              "TITLE": { "TITLE": "Название" },
-              "DESCRIPTION": { "TITLE": "Описание" },
-              "AMOUNT": { "TITLE": "Сумма" },
-              "CURRENCY": { "TITLE": "Валюта" },
-              "EXPECTED_CLOSE_ON": { "TITLE": "Ожидаемая дата закрытия" },
-              "WIN_PROBABILITY": { "TITLE": "Вероятность успеха" },
-              "CLOSED_AT": { "TITLE": "Дата закрытия" },
-              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
-              "PIPELINE_ID": { "TITLE": "ID воронки" },
-              "PIPELINE_NAME": { "TITLE": "Название воронки" },
-              "STAGE_ID": { "TITLE": "ID этапа" },
-              "STAGE_NAME": { "TITLE": "Название этапа" },
-              "OWNER_ID": { "TITLE": "ID ответственного" },
-              "OWNER_NAME": { "TITLE": "Имя ответственного" },
-              "CREATOR_ID": { "TITLE": "ID создателя" },
-              "CREATOR_NAME": { "TITLE": "Имя создателя" },
-              "TEAM_ID": { "TITLE": "ID команды" },
-              "TEAM_NAME": { "TITLE": "Название команды" },
-              "COMPANY_ID": { "TITLE": "ID компании" },
-              "COMPANY_NAME": { "TITLE": "Название компании" },
-              "ORIGINATING_CONVERSATION_ID": { "TITLE": "ID диалога" }
+              "ID": {
+                "TITLE": "ID сделки"
+              },
+              "TITLE": {
+                "TITLE": "Название"
+              },
+              "DESCRIPTION": {
+                "TITLE": "Описание"
+              },
+              "AMOUNT": {
+                "TITLE": "Сумма"
+              },
+              "CURRENCY": {
+                "TITLE": "Валюта"
+              },
+              "EXPECTED_CLOSE_ON": {
+                "TITLE": "Ожидаемая дата закрытия"
+              },
+              "WIN_PROBABILITY": {
+                "TITLE": "Вероятность успеха"
+              },
+              "CLOSED_AT": {
+                "TITLE": "Дата закрытия"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "Внешний идентификатор"
+              },
+              "PIPELINE_ID": {
+                "TITLE": "ID воронки"
+              },
+              "PIPELINE_NAME": {
+                "TITLE": "Название воронки"
+              },
+              "STAGE_ID": {
+                "TITLE": "ID этапа"
+              },
+              "STAGE_NAME": {
+                "TITLE": "Название этапа"
+              },
+              "OWNER_ID": {
+                "TITLE": "ID ответственного"
+              },
+              "OWNER_NAME": {
+                "TITLE": "Имя ответственного"
+              },
+              "CREATOR_ID": {
+                "TITLE": "ID создателя"
+              },
+              "CREATOR_NAME": {
+                "TITLE": "Имя создателя"
+              },
+              "TEAM_ID": {
+                "TITLE": "ID команды"
+              },
+              "TEAM_NAME": {
+                "TITLE": "Название команды"
+              },
+              "COMPANY_ID": {
+                "TITLE": "ID компании"
+              },
+              "COMPANY_NAME": {
+                "TITLE": "Название компании"
+              },
+              "ORIGINATING_CONVERSATION_ID": {
+                "TITLE": "ID диалога"
+              }
             },
             "TASK": {
-              "ID": { "TITLE": "ID задачи" },
-              "TITLE": { "TITLE": "Название" },
-              "DESCRIPTION": { "TITLE": "Описание" },
-              "DUE_AT": { "TITLE": "Срок выполнения" },
-              "START_AT": { "TITLE": "Начало" },
-              "PRIORITY": { "TITLE": "Приоритет" },
-              "COMPLETED_AT": { "TITLE": "Дата выполнения" },
-              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
-              "STATUS_ID": { "TITLE": "ID статуса" },
-              "STATUS_NAME": { "TITLE": "Название статуса" },
-              "ASSIGNEE_ID": { "TITLE": "ID исполнителя" },
-              "ASSIGNEE_NAME": { "TITLE": "Имя исполнителя" },
-              "CREATOR_ID": { "TITLE": "ID создателя" },
-              "CREATOR_NAME": { "TITLE": "Имя создателя" },
-              "TEAM_ID": { "TITLE": "ID команды" },
-              "TEAM_NAME": { "TITLE": "Название команды" },
-              "DEAL_ID": { "TITLE": "ID сделки" },
-              "DEAL_TITLE": { "TITLE": "Название сделки" },
-              "ORIGINATING_CONVERSATION_ID": { "TITLE": "ID диалога" }
+              "ID": {
+                "TITLE": "ID задачи"
+              },
+              "TITLE": {
+                "TITLE": "Название"
+              },
+              "DESCRIPTION": {
+                "TITLE": "Описание"
+              },
+              "DUE_AT": {
+                "TITLE": "Срок выполнения"
+              },
+              "START_AT": {
+                "TITLE": "Начало"
+              },
+              "PRIORITY": {
+                "TITLE": "Приоритет"
+              },
+              "COMPLETED_AT": {
+                "TITLE": "Дата выполнения"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "Внешний идентификатор"
+              },
+              "STATUS_ID": {
+                "TITLE": "ID статуса"
+              },
+              "STATUS_NAME": {
+                "TITLE": "Название статуса"
+              },
+              "ASSIGNEE_ID": {
+                "TITLE": "ID исполнителя"
+              },
+              "ASSIGNEE_NAME": {
+                "TITLE": "Имя исполнителя"
+              },
+              "CREATOR_ID": {
+                "TITLE": "ID создателя"
+              },
+              "CREATOR_NAME": {
+                "TITLE": "Имя создателя"
+              },
+              "TEAM_ID": {
+                "TITLE": "ID команды"
+              },
+              "TEAM_NAME": {
+                "TITLE": "Название команды"
+              },
+              "DEAL_ID": {
+                "TITLE": "ID сделки"
+              },
+              "DEAL_TITLE": {
+                "TITLE": "Название сделки"
+              },
+              "ORIGINATING_CONVERSATION_ID": {
+                "TITLE": "ID диалога"
+              }
             },
             "APPOINTMENT": {
-              "ID": { "TITLE": "ID записи" },
-              "RESOURCE_ID": { "TITLE": "ID специалиста" },
-              "RESOURCE_NAME": { "TITLE": "Имя специалиста" },
-              "CONTACT_ID": { "TITLE": "ID контакта" },
-              "SERVICE_ID": { "TITLE": "ID услуги" },
-              "COMPANY_ID": { "TITLE": "ID компании" },
-              "CONVERSATION_ID": { "TITLE": "ID диалога" },
-              "CREATED_BY_ID": { "TITLE": "ID создателя" },
-              "STARTS_AT": { "TITLE": "Время начала" },
-              "ENDS_AT": { "TITLE": "Время окончания" },
-              "START_DATE": { "TITLE": "Время начала (только дата)" },
-              "START_TIME": { "TITLE": "Время начала (только время)" },
-              "END_DATE": { "TITLE": "Время окончания (только дата)" },
-              "END_TIME": { "TITLE": "Время окончания (только время)" },
-              "DURATION_MIN": { "TITLE": "Длительность (в минутах)" },
-              "STATUS": { "TITLE": "Статус" },
-              "APPOINTMENT_TYPE": { "TITLE": "Тип записи" },
-              "CLIENT_NAME": { "TITLE": "Имя клиента" },
-              "CLIENT_PHONE": { "TITLE": "Телефон клиента" },
-              "CLIENT_IDENTIFIER": { "TITLE": "Идентификатор клиента" },
-              "CLIENT_BIRTH_DATE": { "TITLE": "Дата рождения клиента" },
-              "CLIENT_GENDER": { "TITLE": "Пол клиента" },
-              "CLIENT_COMMENT": { "TITLE": "Комментарий клиента" },
-              "SOURCE": { "TITLE": "Источник" },
-              "EXTERNAL_REF": { "TITLE": "Внешний идентификатор" },
-              "PAYMENT_STATUS": { "TITLE": "Статус оплаты" },
-              "SERVICE_NAME_SNAPSHOT": { "TITLE": "Название услуги" },
-              "SERVICE_TYPE_SNAPSHOT": { "TITLE": "Тип услуги" },
+              "ID": {
+                "TITLE": "ID записи"
+              },
+              "RESOURCE_ID": {
+                "TITLE": "ID специалиста"
+              },
+              "RESOURCE_NAME": {
+                "TITLE": "Имя специалиста"
+              },
+              "CONTACT_ID": {
+                "TITLE": "ID контакта"
+              },
+              "SERVICE_ID": {
+                "TITLE": "ID услуги"
+              },
+              "COMPANY_ID": {
+                "TITLE": "ID компании"
+              },
+              "CONVERSATION_ID": {
+                "TITLE": "ID диалога"
+              },
+              "CREATED_BY_ID": {
+                "TITLE": "ID создателя"
+              },
+              "STARTS_AT": {
+                "TITLE": "Время начала"
+              },
+              "ENDS_AT": {
+                "TITLE": "Время окончания"
+              },
+              "START_DATE": {
+                "TITLE": "Время начала (только дата)"
+              },
+              "START_TIME": {
+                "TITLE": "Время начала (только время)"
+              },
+              "END_DATE": {
+                "TITLE": "Время окончания (только дата)"
+              },
+              "END_TIME": {
+                "TITLE": "Время окончания (только время)"
+              },
+              "DURATION_MIN": {
+                "TITLE": "Длительность (в минутах)"
+              },
+              "STATUS": {
+                "TITLE": "Статус"
+              },
+              "APPOINTMENT_TYPE": {
+                "TITLE": "Тип записи"
+              },
+              "CLIENT_NAME": {
+                "TITLE": "Имя клиента"
+              },
+              "CLIENT_PHONE": {
+                "TITLE": "Телефон клиента"
+              },
+              "CLIENT_IDENTIFIER": {
+                "TITLE": "Идентификатор клиента"
+              },
+              "CLIENT_BIRTH_DATE": {
+                "TITLE": "Дата рождения клиента"
+              },
+              "CLIENT_GENDER": {
+                "TITLE": "Пол клиента"
+              },
+              "CLIENT_COMMENT": {
+                "TITLE": "Комментарий клиента"
+              },
+              "SOURCE": {
+                "TITLE": "Источник"
+              },
+              "EXTERNAL_REF": {
+                "TITLE": "Внешний идентификатор"
+              },
+              "PAYMENT_STATUS": {
+                "TITLE": "Статус оплаты"
+              },
+              "SERVICE_NAME_SNAPSHOT": {
+                "TITLE": "Название услуги"
+              },
+              "SERVICE_TYPE_SNAPSHOT": {
+                "TITLE": "Тип услуги"
+              },
               "SERVICE_DURATION_MIN_SNAPSHOT": {
                 "TITLE": "Длительность услуги (в минутах)"
               },
-              "SERVICE_AMOUNT": { "TITLE": "Стоимость услуги" },
+              "SERVICE_AMOUNT": {
+                "TITLE": "Стоимость услуги"
+              },
               "COMPENSATION_TYPE_SNAPSHOT": {
                 "TITLE": "Тип компенсации"
               },
@@ -1161,11 +1361,15 @@
               "COMPENSATION_PERCENT_SNAPSHOT": {
                 "TITLE": "Процент компенсации"
               },
-              "PREPAID_AMOUNT": { "TITLE": "Сумма предоплаты" },
+              "PREPAID_AMOUNT": {
+                "TITLE": "Сумма предоплаты"
+              },
               "PREPAID_PAYMENT_METHOD": {
                 "TITLE": "Способ предоплаты"
               },
-              "SETTLEMENT_AMOUNT": { "TITLE": "Сумма расчета" },
+              "SETTLEMENT_AMOUNT": {
+                "TITLE": "Сумма расчета"
+              },
               "SETTLEMENT_PAYMENT_METHOD": {
                 "TITLE": "Способ расчета"
               }
@@ -1567,6 +1771,10 @@
         "AUTO_REPLY_ON_LAST_INCOMING": {
           "TITLE": "Автоответ на последнее входящее",
           "DESCRIPTION": "Когда сотрудник вручную переключает диалог на AI-агента, он сразу отвечает, если последнее публичное сообщение было от клиента."
+        },
+        "MODEL": {
+          "LABEL": "Модель для ответов",
+          "DESCRIPTION": "Модель выбирается из каталога, разрешённого администратором OneLink."
         }
       },
       "EDIT": {
@@ -2006,6 +2214,79 @@
           "DELETE": {
             "SUCCESS": "Сценарий успешно удален",
             "ERROR": "При удалении сценария произошла ошибка. Пожалуйста, попробуйте еще раз."
+          }
+        }
+      },
+      "FOLLOW_UPS": {
+        "HEADER": "Дожимы",
+        "DESCRIPTION": "Последовательность сообщений, если клиент не ответил. Перед каждым шагом система проверяет новый ответ и завершённость разговора.",
+        "PROMPT_LABEL": "Инструкция для AI-дожимов",
+        "PROMPT_DESCRIPTION": "Применяется только при генерации дожима и не меняет обычные ответы основного AI-агента.",
+        "PROMPT_PLACEHOLDER": "Опишите тон, ограничения и подход к дожимам",
+        "DEFAULT_PROMPT": "Продолжай разговор естественно. Не представляйся повторно и не повторяй предыдущие сообщения. Кратко напомни о незавершённом вопросе и предложи одно понятное следующее действие без давления.",
+        "STEP": "Шаг {number}",
+        "DELAY": "Задержка",
+        "UNIT": "Единица задержки",
+        "MINUTES": "минут",
+        "HOURS": "часов",
+        "DAYS": "дней",
+        "MINUTES_SHORT": "мин",
+        "HOURS_SHORT": "ч",
+        "DAYS_SHORT": "д",
+        "DELAY_SUMMARY": "Через {delay} {unit}",
+        "MODE": "Режим сообщения",
+        "MODE_AI": "Сгенерировать AI",
+        "MODE_STATIC": "Готовый текст",
+        "OBJECTIVE_LABEL": "Цель напоминания",
+        "OBJECTIVE_PLACEHOLDER": "Например: мягко напомнить о незавершённом вопросе",
+        "STATIC_MESSAGE_LABEL": "Сообщение клиенту",
+        "MESSAGE_PLACEHOLDER": "Сообщение клиенту",
+        "EMPTY_STEP_SUMMARY": "Добавьте цель напоминания",
+        "REMOVE_STEP": "Удалить шаг",
+        "ADD_STEP": "Добавить шаг",
+        "SAVE": "Сохранить",
+        "VALIDATION": "Добавьте хотя бы один заполненный шаг с задержкой.",
+        "PROMPT_VALIDATION": "Добавьте инструкцию для AI-дожимов.",
+        "DEFAULT_OBJECTIVE_1": "Мягко напомнить клиенту о незавершённом вопросе без давления.",
+        "DEFAULT_OBJECTIVE_2": "Уточнить, нужна ли клиенту дополнительная информация для принятия решения.",
+        "DEFAULT_OBJECTIVE_3": "Вежливо напомнить в последний раз и оставить простой способ вернуться к разговору."
+      },
+      "OUTCOMES": {
+        "HEADER": "Результаты и передачи",
+        "DESCRIPTION": "Настройте причины, которыми AI-агент объясняет завершение диалога или передачу сотруднику.",
+        "ADD": "Добавить",
+        "REMOVE": "Удалить причину",
+        "ACTIVE": "Активная причина",
+        "PLACEHOLDER": "Название причины",
+        "EMPTY": "Причины не настроены",
+        "SAVE": "Сохранить",
+        "VALIDATION": "Заполните или удалите пустые причины.",
+        "COMPLETION": {
+          "ENABLE_TITLE": "Автоматически завершать диалоги",
+          "ENABLE_DESCRIPTION": "AI-агент сможет завершить диалог, когда задача клиента решена.",
+          "TITLE": "Причины завершения",
+          "DESCRIPTION": "Агент выбирает одну причину, когда считает задачу клиента завершённой."
+        },
+        "HANDOFF": {
+          "TITLE": "Причины передачи сотруднику",
+          "DESCRIPTION": "Агент выбирает одну причину, когда открывает диалог для человека."
+        },
+        "DEFAULTS": {
+          "COMPLETION": {
+            "GOAL_ACHIEVED": "Цель достигнута",
+            "QUESTION_RESOLVED": "Вопрос решён",
+            "CUSTOMER_DECLINED": "Клиент отказался",
+            "NO_RESPONSE": "Клиент не отвечает"
+          },
+          "HANDOFF": {
+            "CUSTOMER_REQUESTED_HUMAN": "Клиент попросил сотрудника",
+            "LOW_CONFIDENCE": "AI не уверен в ответе",
+            "MANUAL_ACTION_REQUIRED": "Требуется ручное действие",
+            "COMPLAINT_OR_CONFLICT": "Жалоба или конфликт",
+            "TOOL_OR_POLICY_LIMIT": "Ограничение инструмента или политики"
+          },
+          "COMMON": {
+            "OTHER": "Другая причина"
           }
         }
       }
@@ -3059,6 +3340,73 @@
         "OVERVIEW_ERROR": "Не удалось загрузить логи",
         "RELEASE_CHECK_ERROR": "Не удалось запустить release check",
         "PREFERENCES_ERROR": "Не удалось обновить настройки логов"
+      },
+      "LOGS": {
+        "TITLE": "Логи",
+        "TIMELINE_TITLE": "Запросы AI-агентов",
+        "TIMELINE_DESCRIPTION": "Количество запросов за выбранный период",
+        "TOTAL_REQUESTS": "Всего запросов: {count}",
+        "REQUESTS": "Запросов: {count}",
+        "MILLISECONDS": "мс",
+        "SECONDS": "с",
+        "CUSTOM_RANGE": {
+          "SINCE": "Начало",
+          "UNTIL": "Конец",
+          "APPLY": "Применить",
+          "INVALID": "Укажите корректный период: дата начала должна быть раньше даты окончания."
+        },
+        "EMPTY_TITLE": "За выбранный период запросов нет",
+        "EMPTY_DESCRIPTION": "Измените период или вернитесь позже.",
+        "COLUMNS": {
+          "DATETIME": "Дата и время",
+          "MODEL": "Модель",
+          "INPUT_TOKENS": "Инпут-токены",
+          "OUTPUT_TOKENS": "Аутпут-токены",
+          "COST": "Cost, $",
+          "DURATION": "Время ответа"
+        },
+        "RANGES": {
+          "15m": "Последние 15 минут",
+          "30m": "Последние 30 минут",
+          "1h": "Последний час",
+          "3h": "Последние 3 часа",
+          "24h": "Последние 24 часа",
+          "48h": "Последние 48 часов",
+          "7d": "Последняя неделя",
+          "30d": "Последний месяц",
+          "1y": "Последний год",
+          "CUSTOM": "Произвольный период"
+        }
+      },
+      "SIMPLE": {
+        "REFRESH": "Обновить",
+        "CLEAR": "Очистить",
+        "DELETE": "Удалить",
+        "EVENT": "Событие AI",
+        "NO_MODEL": "Модель не указана",
+        "EMPTY_TITLE": "Логов пока нет",
+        "EMPTY_DESCRIPTION": "Здесь появятся последние события AI-агентов.",
+        "LOAD_ERROR": "Не удалось загрузить логи",
+        "DELETE_TITLE": "Удалить запись?",
+        "DELETE_DESCRIPTION": "Эта запись будет удалена без возможности восстановления.",
+        "DELETE_SUCCESS": "Запись удалена",
+        "DELETE_ERROR": "Не удалось удалить запись",
+        "CLEAR_TITLE": "Очистить все логи AI-агентов?",
+        "CLEAR_DESCRIPTION": "Все записи AI-агентов будут удалены без возможности восстановления.",
+        "CLEAR_SUCCESS": "Логи AI-агентов очищены",
+        "CLEAR_ERROR": "Не удалось очистить логи",
+        "DETAILS": {
+          "STATUS": "Статус",
+          "MODEL": "Модель",
+          "PROVIDER": "Провайдер",
+          "TOOL": "Инструмент",
+          "DURATION": "Время выполнения",
+          "TOKENS": "Токены",
+          "COST": "Стоимость",
+          "TIME": "Время",
+          "ERROR": "Ошибка выполнения",
+          "DATA": "Данные события"
+        }
       }
     },
     "RESPONSES": {

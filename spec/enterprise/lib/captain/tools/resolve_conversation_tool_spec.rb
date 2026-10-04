@@ -69,6 +69,82 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
     end
 
+    it 'prefers an exact outcome reason ID when it collides with another reason label' do
+      assistant.update!(
+        config: assistant.config.to_h.deep_merge(
+          'outcome_reason_settings' => {
+            'completion_reasons' => [
+              { 'id' => 'billing', 'label' => 'support', 'active' => true },
+              { 'id' => 'support', 'label' => 'Technical', 'active' => true }
+            ]
+          }
+        )
+      )
+      account.update!(
+        conversation_status_reason_config: {
+          resolved: { options: ['Technical'], required: false }
+        }
+      )
+
+      result = tool.perform(
+        tool_context,
+        outcome_reason_id: 'support',
+        reason: 'The customer confirmed the technical issue is resolved.'
+      )
+      payload = JSON.parse(result)
+      transition = conversation.status_transitions.last
+
+      expect(payload).to include('outcome_reason_id' => 'support', 'status_reason' => 'Technical')
+      expect(transition.reason).to eq('Technical')
+      expect(transition.metadata).to include(
+        'outcome_reason_id' => 'support',
+        'outcome_reason_type' => 'completion'
+      )
+    end
+
+    it 'requires a specific explanation for the Other completion reason and audits the selected reason' do
+      assistant.update!(
+        config: assistant.config.to_h.deep_merge(
+          'outcome_reason_settings' => {
+            'completion_reasons' => [{ 'id' => 'other', 'label' => 'Other', 'active' => true }]
+          }
+        )
+      )
+      account.update!(
+        conversation_status_reason_config: {
+          resolved: { options: ['Other'], required: false }
+        }
+      )
+
+      expect(tool.perform(tool_context, outcome_reason_id: 'other')).to include('ERROR:')
+      expect(conversation.reload).not_to be_resolved
+
+      result = tool.perform(
+        tool_context,
+        outcome_reason_id: 'other',
+        reason: 'The customer asked to close the conversation after receiving the requested information.'
+      )
+
+      expect(JSON.parse(result)).to include('outcome_reason_id' => 'other')
+      transition = conversation.status_transitions.last
+      expect(transition.reason).to eq('Other')
+      expect(transition.metadata).to include(
+        'outcome_reason_id' => 'other',
+        'outcome_reason_type' => 'completion',
+        'assistant_id' => assistant.id,
+        'outcome_reason_explanation' => 'The customer asked to close the conversation after receiving the requested information.'
+      )
+    end
+
+    it 'does not resolve when automatic completion is disabled for this assistant' do
+      assistant.update!(config: assistant.config.to_h.deep_merge('auto_completion_enabled' => false))
+
+      expect(tool.perform(tool_context, reason: 'Resolved by the customer')).to eq(
+        'Automatic completion is disabled for this assistant'
+      )
+      expect(conversation.reload).not_to be_resolved
+    end
+
     it 'creates a conversation_resolved reporting event' do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
 

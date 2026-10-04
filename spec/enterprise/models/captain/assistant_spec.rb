@@ -11,6 +11,32 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  describe '#resolved_agent_model' do
+    it 'uses a valid per-assistant model and canonicalizes it at runtime' do
+      account = create(:account)
+      assistant = build(:captain_assistant, account: account, config: { 'model' => 'openai/gpt-5.4' })
+      allow(Llm::Models).to receive(:valid_model_for?)
+        .with(:assistant, 'openai/gpt-5.4', account: account).and_return(true)
+      allow(Llm::Models).to receive(:canonical_model_name)
+        .with('openai/gpt-5.4').and_return('openai/gpt-5.4')
+
+      expect(assistant.resolved_agent_model).to eq('openai/gpt-5.4')
+    end
+
+    it 'keeps the shared assistant model fallback when an agent has no model setting' do
+      account = create(:account)
+      assistant = build(:captain_assistant, account: account, config: {})
+
+      expect(Llm::Config).to receive(:model_for).with(
+        feature: :assistant,
+        account: account,
+        fallback: LlmConstants::DEFAULT_MODEL
+      ).and_return('openai/gpt-6-luna')
+
+      expect(assistant.resolved_agent_model).to eq('openai/gpt-6-luna')
+    end
+  end
+
   describe 'validations' do
     it { is_expected.to validate_length_of(:description).is_at_most(Captain::Assistant::DESCRIPTION_MAX_LENGTH) }
 
@@ -25,6 +51,30 @@ RSpec.describe Captain::Assistant, type: :model do
 
       expect(assistant).not_to be_valid
       expect(assistant.errors.details[:description]).to include(error: :too_long, count: Captain::Assistant::DESCRIPTION_MAX_LENGTH)
+    end
+
+    it 'rejects a model that is not enabled for Captain assistants' do
+      account = create(:account)
+      model = 'unknown/provider-model'
+      allow(Llm::Models).to receive(:valid_model_for?)
+        .with(:assistant, model, account: account).and_return(false)
+      assistant = build(:captain_assistant, account: account, config: { 'model' => model })
+
+      expect(assistant).not_to be_valid
+      expect(assistant.errors.of_kind?(:config, :assistant_model_not_allowed)).to be(true)
+    end
+
+    it 'allows follow-up chains with more than five steps' do
+      steps = Array.new(7) do |index|
+        { 'mode' => 'static', 'message' => "Follow-up #{index + 1}", 'delay_seconds' => 60 }
+      end
+      assistant = build(
+        :captain_assistant,
+        account: create(:account),
+        config: { 'follow_up_settings' => { 'enabled' => true, 'steps' => steps } }
+      )
+
+      expect(assistant).to be_valid
     end
 
     it 'allows external assistants with names that do not transliterate into ASCII' do
