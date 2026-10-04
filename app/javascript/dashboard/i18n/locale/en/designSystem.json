@@ -1,0 +1,35 @@
+{
+  "DESIGN_SYSTEM": {
+    "STATUS": {
+      "GOOD": "OK",
+      "WARN": "Attention",
+      "BAD": "Error",
+      "NEUTRAL": "No data"
+    },
+    "STATE": {
+      "EMPTY_TITLE": "No data yet",
+      "EMPTY_DESCRIPTION": "Data will appear here once there is activity in the selected period.",
+      "LOADING": "Loading…",
+      "ERROR_TITLE": "Could not load the data",
+      "ERROR_DESCRIPTION": "Check the connection and try again.",
+      "RETRY": "Try again"
+    },
+    "CHART": {
+      "SHOW_TABLE": "Show as table",
+      "SHOW_CHART": "Show as chart",
+      "LEGEND": "Legend",
+      "CATEGORY": "Period",
+      "STAGE": "Stage",
+      "SHARE": "Share of the first stage"
+    },
+    "METER": {
+      "VALUE": "{value}%"
+    },
+    "SEGMENTED": {
+      "LABEL": "Choose an option"
+    },
+    "TABLE": {
+      "EMPTY": "No data"
+    }
+  }
+}

@@ -42,6 +42,18 @@ const tailwindConfig = {
   theme: {
     extend: {
       colors: compatColors,
+      // Design variant A: cards 10px, controls 7px; caption above big figures
+      borderRadius: {
+        'ds-card': '10px',
+        'ds-control': '7px',
+      },
+      fontSize: {
+        'ds-caption': ['12.5px', '1.4'],
+        'ds-figure': [
+          '30px',
+          { lineHeight: '1.15', letterSpacing: '-0.03em', fontWeight: '600' },
+        ],
+      },
       fontFamily: {
         sans: brandSansFonts,
         inter: brandSansFonts,

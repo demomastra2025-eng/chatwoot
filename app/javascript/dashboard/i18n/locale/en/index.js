@@ -17,6 +17,7 @@ import crm from './crm.json';
 import csatMgmt from './csatMgmt.json';
 import customRole from './customRole.json';
 import datePicker from './datePicker.json';
+import designSystem from './designSystem.json';
 import emoji from './emoji.json';
 import general from './general.json';
 import generalSettings from './generalSettings.json';
@@ -65,6 +66,7 @@ export default {
   ...csatMgmt,
   ...customRole,
   ...datePicker,
+  ...designSystem,
   ...emoji,
   ...general,
   ...generalSettings,
