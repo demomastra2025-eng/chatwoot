@@ -20,6 +20,29 @@ BEGIN
     RAISE EXCEPTION 'legacy timed task or explicit lifecycle mapping was changed';
   END IF;
 
+  IF EXISTS (
+    SELECT expected.task_id
+    FROM (VALUES
+      (96000440::bigint, 'Asia/Almaty'::text, 96000430::bigint),
+      (96000441::bigint, 'Asia/Almaty'::text, 96000431::bigint),
+      (96000442::bigint, 'Asia/Almaty'::text, 96000432::bigint),
+      (96000443::bigint, 'Asia/Almaty'::text, 96000433::bigint),
+      (96000444::bigint, 'Asia/Almaty'::text, 96000434::bigint),
+      (96000445::bigint, 'America/New_York'::text, 96000435::bigint)
+    ) AS expected(task_id, timezone, status_id)
+    LEFT JOIN crm_tasks task ON task.id = expected.task_id
+    WHERE task.id IS NULL
+      OR task.schedule_timezone IS DISTINCT FROM expected.timezone
+      OR task.status_id IS DISTINCT FROM expected.status_id
+      OR task.outcome IS DISTINCT FROM 'completed'
+      OR task.all_day IS DISTINCT FROM FALSE
+      OR task.due_on IS NOT NULL
+      OR task.start_at IS DISTINCT FROM '2025-02-03 10:15:00+00'::timestamptz
+      OR task.due_at IS DISTINCT FROM '2025-02-03 11:45:00+00'::timestamptz
+  ) THEN
+    RAISE EXCEPTION 'legacy tasks with invalid reporting timezones did not receive safe zones or changed their task state';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1 FROM crm_task_types task_type
     JOIN crm_task_outcomes outcome ON outcome.task_type_id = task_type.id

@@ -45,14 +45,21 @@ class ExpandCrmLifecycleSchema < ActiveRecord::Migration[7.1]
     SQL
 
     accounts_with_tasks.each do |row|
-      zone = ActiveSupport::TimeZone[row['reporting_timezone']]
-      timezone = zone&.tzinfo&.identifier.presence || DEFAULT_TIMEZONE
+      timezone = timezone_for_reporting_setting(row['reporting_timezone'])
       execute <<~SQL.squish
         UPDATE crm_tasks
         SET schedule_timezone = #{connection.quote(timezone)}
         WHERE account_id = #{connection.quote(row['id'])}
       SQL
     end
+  end
+
+  def timezone_for_reporting_setting(reporting_timezone)
+    return DEFAULT_TIMEZONE if reporting_timezone.blank?
+
+    ActiveSupport::TimeZone[reporting_timezone]&.tzinfo&.identifier.presence || DEFAULT_TIMEZONE
+  rescue ArgumentError
+    DEFAULT_TIMEZONE
   end
 
   def expand_task_lifecycle
