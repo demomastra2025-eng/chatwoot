@@ -72,7 +72,7 @@ class Crm::TaskCatalogs::Provisioner
 
   def legacy_name?(kind, code, name, type_code: nil)
     rename = legacy_names.dig(kind, [type_code, code])
-    rename.present? && rename[:from] == name
+    rename.present? && rename[:froms].include?(name)
   end
 
   def task_statuses_current?

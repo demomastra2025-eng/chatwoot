@@ -7,7 +7,8 @@ import kk from 'dashboard/i18n/locale/kk/crm.json';
 // label follows the language of the user; the stored name is shown only for
 // entries the admin created or renamed. A stored name counts as "seeded" when
 // it is the neutral seed name in any language (the same wording as these
-// locales) or one of the English defaults the first release wrote.
+// locales), one of the English defaults the first release wrote, or the bare
+// system code that the seed migration stores as the name.
 const KINDS = {
   type: {
     legacy: {
@@ -62,7 +63,11 @@ const seededNames = Object.fromEntries(
       Object.keys(legacy).map(code => [
         code,
         new Set(
-          [legacy[code], ...[ru, en, kk].map(locale => messages(locale)[code])]
+          [
+            legacy[code],
+            code,
+            ...[ru, en, kk].map(locale => messages(locale)[code]),
+          ]
             .filter(Boolean)
             .map(normalize)
         ),

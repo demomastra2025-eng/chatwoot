@@ -60,6 +60,21 @@ describe('task catalog labels', () => {
     );
   });
 
+  it('translates rows that carry the bare system code written by the seed migration', () => {
+    expect(taskOutcomeLabel({ code: 'no_answer', name: 'no_answer' }, t)).toBe(
+      'CRM.TASKS.OUTCOME.no_answer'
+    );
+    expect(taskOutcomeLabel({ code: 'not_done', name: 'not_done' }, t)).toBe(
+      'CRM.TASKS.OUTCOME.not_done'
+    );
+    expect(taskOutcomeLabel({ code: 'no_show', name: 'no_show' }, t)).toBe(
+      'CRM.TASKS.OUTCOME.no_show'
+    );
+    expect(taskTypeLabel({ code: 'touch', name: 'touch' }, t)).toBe(
+      'CRM.TASKS.ACTIVITY_TYPE.touch'
+    );
+  });
+
   it('translates seeded statuses and keeps custom ones', () => {
     expect(taskStatusLabel({ code: 'todo', name: 'To do' }, t)).toBe(
       'CRM.TASKS.STATUS_NAMES.todo'

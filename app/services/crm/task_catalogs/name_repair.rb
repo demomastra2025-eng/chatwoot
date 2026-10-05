@@ -46,7 +46,7 @@ class Crm::TaskCatalogs::NameRepair
       else outcome_scope(account_ids, rename)
       end
 
-    scope.where(name: rename[:from]).update_all(name: rename[:to], updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
+    scope.where(name: rename[:froms]).update_all(name: rename[:to], updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
   end
 
   def outcome_scope(account_ids, rename)

@@ -48,17 +48,17 @@ module Crm::TaskCatalogs::SeedNames
     code.to_s.humanize
   end
 
-  # Every rename the repair has to apply for an account language: the legacy
-  # English name of a system code and the neutral name it becomes. Pairs that
-  # are already equal are skipped.
+  # Every rename the repair has to apply for an account language: the names a
+  # system code may still carry (`froms`: the legacy English default `from`, and
+  # the bare code that migration 20261004120250 seeded) and the neutral name it
+  # becomes. Names that already equal the neutral one are not renamed again.
   def renames(locale)
     type_renames(locale) + outcome_renames(locale) + status_renames(locale)
   end
 
   def type_renames(locale)
     LEGACY_TYPE_NAMES.filter_map do |code, from|
-      to = type_name(code, locale)
-      { kind: :type, code: code, from: from, to: to } unless from == to
+      with_froms(kind: :type, code: code, from: from, to: type_name(code, locale))
     end
   end
 
@@ -66,17 +66,20 @@ module Crm::TaskCatalogs::SeedNames
     Crm::TaskCatalogs::Provisioner::TASK_OUTCOMES.flat_map do |type_code, outcome_codes|
       outcome_codes.filter_map do |code|
         from = legacy_outcome_name(code)
-        to = outcome_name(code, locale)
-        { kind: :outcome, type_code: type_code, code: code, from: from, to: to } unless from == to
+        with_froms(kind: :outcome, type_code: type_code, code: code, from: from, to: outcome_name(code, locale))
       end
     end
   end
 
   def status_renames(locale)
     LEGACY_STATUS_NAMES.filter_map do |code, from|
-      to = status_name(code, locale)
-      { kind: :status, code: code, from: from, to: to } unless from == to
+      with_froms(kind: :status, code: code, from: from, to: status_name(code, locale))
     end
+  end
+
+  def with_froms(rename)
+    froms = [rename[:from], rename[:code]].uniq - [rename[:to]]
+    rename.merge(froms: froms) if froms.any?
   end
 
   def translate(key, locale)
