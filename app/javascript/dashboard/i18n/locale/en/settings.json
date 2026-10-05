@@ -1707,6 +1707,13 @@
     "REFRESH_ERROR": "Failed to refresh storage data",
     "FETCH_ERROR": "Error loading storage information",
     "HEAVY_FILES_ERROR": "Failed to load heavy files list",
+    "UNITS": {
+      "B": "B",
+      "KB": "KB",
+      "MB": "MB",
+      "GB": "GB",
+      "TB": "TB"
+    },
     "OVERVIEW": {
       "TITLE": "Disk Quota",
       "AVAILABLE": "Available",
@@ -1771,8 +1778,8 @@
       "PREVIEWING": "Analyzing files...",
       "PREVIEW_TITLE": "Cleanup Preview",
       "FOUND_FILES": "Files found:",
-      "SPACE_TO_FREE": "Space to be freed:",
-      "RETENTION_NOTICE": "Files are kept in trash for 30 days and can be restored instantly anytime. After 30 days, they are permanently purged from disk.",
+      "TO_TRASH_SIZE": "To be moved to trash:",
+      "RETENTION_NOTICE": "Files are kept in trash for 30 days and can be restored instantly anytime. After 30 days, they are permanently purged from disk. Voice transcripts and recognised document text are always kept.",
       "MOVE_BUTTON": "Move to Trash (30 days)",
       "MOVING": "Moving...",
       "MOVE_CONFIRM": "Move {count} files ({size}) to trash? You can restore them within 30 days.",

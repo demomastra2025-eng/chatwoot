@@ -6,8 +6,9 @@ import StorageAPI from 'dashboard/api/storage';
 import { useAccount } from 'dashboard/composables/useAccount';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
+import { formatStorageBytes, formatStorageDate } from './storageFormatters';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { accountId } = useAccount();
 
 const activeTab = ref('overview');
@@ -43,30 +44,22 @@ const isLoadingTrash = ref(false);
 const isRestoring = ref(false);
 const isPurging = ref(false);
 
-const formatBytes = (bytes, decimals = 2) => {
-  if (!bytes || bytes === 0) return '0 B';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / k ** i).toFixed(dm))} ${sizes[i]}`;
-};
+const unitLabels = computed(() => ({
+  B: t('STORAGE.UNITS.B'),
+  KB: t('STORAGE.UNITS.KB'),
+  MB: t('STORAGE.UNITS.MB'),
+  GB: t('STORAGE.UNITS.GB'),
+  TB: t('STORAGE.UNITS.TB'),
+}));
 
-const formatDate = dateStr => {
-  if (!dateStr) return '—';
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return dateStr;
-  }
-};
+const formatBytes = (bytes, decimals = 2) =>
+  formatStorageBytes(bytes, {
+    locale: locale.value,
+    unitLabels: unitLabels.value,
+    decimals,
+  });
+
+const formatDate = dateStr => formatStorageDate(dateStr, locale.value);
 
 const fetchHeavyFiles = async () => {
   try {
@@ -184,7 +177,6 @@ const executeMoveToTrash = async () => {
       t('STORAGE.CLEANER.MOVE_SUCCESS', {
         count: response.data.moved_count,
         size: formatBytes(response.data.moved_bytes),
-        freed: formatBytes(response.data.freed_bytes),
       })
     );
     previewData.value = null;
@@ -1052,7 +1044,7 @@ const getFileTypeName = type => {
                   </div>
                   <div class="bg-white p-2.5 rounded-lg border border-blue-100">
                     <span class="text-slate-500 block">{{
-                      $t('STORAGE.CLEANER.SPACE_TO_FREE')
+                      $t('STORAGE.CLEANER.TO_TRASH_SIZE')
                     }}</span>
                     <strong class="text-slate-900 text-sm">{{
                       previewData.total_human ||
