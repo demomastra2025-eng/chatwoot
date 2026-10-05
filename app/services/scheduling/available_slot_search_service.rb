@@ -98,7 +98,10 @@ class Scheduling::AvailableSlotSearchService
   def provider_checked_slots(resource, local_slots)
     return unverified_provider_route_slots(resource) if provider_route_missing?(resource)
 
-    return local_slots.tap { record_availability(resource_id: resource.id, status: 'local_only') } unless medelement_resource?(resource)
+    unless medelement_resource?(resource)
+      record_availability(resource_id: resource.id, status: 'local_only')
+      return label_service_eligibility(local_slots, 'local_configured')
+    end
 
     result = Integrations::Medelement::ResourceAvailabilityService.new(
       resource: resource,
@@ -113,9 +116,13 @@ class Scheduling::AvailableSlotSearchService
       checked_at: result.checked_at.iso8601(6),
       reason: result.reason
     )
-    return result.slots if @service_id.blank?
+    label_service_eligibility(result.slots, 'price_link_unverified')
+  end
 
-    result.slots.map { |slot| slot.merge(service_eligibility_status: 'price_link_unverified') }
+  def label_service_eligibility(slots, status)
+    return slots if @service_id.blank?
+
+    slots.map { |slot| slot.merge(service_eligibility_status: status) }
   end
 
   def unverified_provider_route_slots(resource)
