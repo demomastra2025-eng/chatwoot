@@ -25,12 +25,21 @@ class AccountLimits::StorageUsageService
     'Captain::Document' => %w[pdf_file source_file]
   }.freeze
 
+  # ActiveStorage owners that hold call recordings: they follow STORAGE_QUOTA_INCLUDE_RECORDINGS like the local files.
+  RECORDING_RECORD_TYPES = %w[Call].freeze
+
   def initialize(account:)
     @account = account
   end
 
+  # Physical ActiveStorage bytes of the tenant, call recordings included. The storage page breakdown uses this one.
   def active_storage_bytes
     active_storage_blob_scope.sum(:byte_size).to_i
+  end
+
+  # The part of active_storage_bytes that counts towards the quota.
+  def quota_active_storage_bytes
+    active_storage_blob_scope(include_recordings: count_recordings?).sum(:byte_size).to_i
   end
 
   # Local call recordings live outside ActiveStorage. They stay out of the quota (and the upload check) by default,
@@ -46,7 +55,7 @@ class AccountLimits::StorageUsageService
   end
 
   def usage_bytes
-    active_storage_bytes + recordings_bytes
+    quota_active_storage_bytes + recordings_bytes
   end
 
   # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
@@ -107,8 +116,8 @@ class AccountLimits::StorageUsageService
 
   # Count each physical blob once per tenant, including generated images only when their source blob
   # is owned by this account. Shared User avatars remain excluded from tenant totals.
-  def active_storage_blob_scope
-    source_blob_ids = tenant_source_blob_ids
+  def active_storage_blob_scope(include_recordings: true)
+    source_blob_ids = tenant_source_blob_ids(include_recordings: include_recordings)
     return ActiveStorage::Blob.none unless source_blob_ids
 
     owned_blobs = ActiveStorage::Blob.where(id: source_blob_ids)
@@ -117,8 +126,8 @@ class AccountLimits::StorageUsageService
     owned_blobs.or(ActiveStorage::Blob.where(id: derived_variant_blob_ids(source_blob_ids)))
   end
 
-  def tenant_source_blob_ids
-    predicates = RECORD_TYPE_SCOPES.filter_map do |record_type, attachment_names|
+  def tenant_source_blob_ids(include_recordings: true)
+    predicates = tenant_record_type_scopes(include_recordings).filter_map do |record_type, attachment_names|
       relation = scoped_relation(record_type)
       next if relation.nil?
 
@@ -131,6 +140,10 @@ class AccountLimits::StorageUsageService
     return if predicates.empty?
 
     ActiveStorage::Attachment.where(predicates.reduce(&:or)).select(:blob_id).distinct
+  end
+
+  def tenant_record_type_scopes(include_recordings)
+    include_recordings ? RECORD_TYPE_SCOPES : RECORD_TYPE_SCOPES.except(*RECORDING_RECORD_TYPES)
   end
 
   def variants_available?

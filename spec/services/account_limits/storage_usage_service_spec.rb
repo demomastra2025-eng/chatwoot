@@ -121,6 +121,31 @@ RSpec.describe AccountLimits::StorageUsageService do
     end
   end
 
+  describe 'call recordings stored in ActiveStorage' do
+    before do
+      call = create(:call, account: account)
+      call.recording.attach(io: StringIO.new('r' * 4096), filename: 'call.ogg', content_type: 'audio/ogg')
+      account.update!(limits: { 'storage_bytes' => 5000 })
+    end
+
+    it 'leaves them out of the quota by default but keeps them in the physical bytes' do
+      service = described_class.new(account: account)
+
+      expect(service.active_storage_bytes).to eq(4096)
+      expect(service.usage_bytes).to eq(0)
+      expect(service.within_limit?(extra_bytes: 5000)).to be(true)
+    end
+
+    it 'counts them when STORAGE_QUOTA_INCLUDE_RECORDINGS is true' do
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+        service = described_class.new(account: account)
+
+        expect(service.usage_bytes).to eq(4096)
+        expect(service.within_limit?(extra_bytes: 905)).to be(false)
+      end
+    end
+  end
+
   describe '#within_limit?' do
     subject(:service) { described_class.new(account: account) }
 
