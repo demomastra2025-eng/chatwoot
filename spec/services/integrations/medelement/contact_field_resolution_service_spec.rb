@@ -194,6 +194,42 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
     )
   end
 
+  it 'recovers from a database uniqueness collision inside an outer transaction' do
+    contact.update!(identifier: nil)
+    duplicate = create(:contact, account: account, identifier: '950424301111')
+    race_service_class = Class.new(described_class) do
+      def ensure_unique_inbound_fields!(*); end
+    end
+    race_service = race_service_class.new(conflict: conflict, user: admin, client: client)
+    database_collision = false
+
+    allow(race_service).to receive(:persist_provider_fields!).and_wrap_original do |method, record, attributes|
+      record.define_singleton_method(:valid?) { |*_args| true }
+      begin
+        method.call(record, attributes)
+      rescue ActiveRecord::RecordNotUnique
+        database_collision = true
+        raise
+      end
+    end
+
+    ActiveRecord::Base.transaction do
+      expect do
+        race_service.perform(field_directions: { iin: 'medelement_to_onelink' })
+      end.to raise_error(described_class::FieldAlreadyUsedError) { |error|
+        expect(error).to have_attributes(field: 'iin', contact_id: duplicate.id)
+      }
+
+      expect(database_collision).to be(true)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+
+    expect(conflict.reload.details).to include(
+      'conflicting_contact_id' => duplicate.id,
+      'conflicting_field' => 'iin'
+    )
+  end
+
   it 'does not mask an unrelated validation error as a uniqueness collision' do
     contact.update!(identifier: nil)
     create(:contact, account: account, identifier: '950424301111')
