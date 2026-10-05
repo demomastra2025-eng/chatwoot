@@ -156,11 +156,12 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
   end
 
   def parse_offset(value)
-    return 0 if value.blank?
+    return 0 if value.nil? || value.to_s.strip.empty?
 
-    raise ArgumentError, 'offset must be a non-negative integer' unless value.to_s.match?(/\A\d+\z/)
+    text = value.is_a?(Float) && value.finite? && value == value.floor ? value.to_i.to_s : value.to_s.strip
+    raise ArgumentError, 'offset must be a non-negative integer of at most 9 digits' unless text.match?(/\A\d{1,9}\z/)
 
-    value.to_i
+    text.to_i
   end
 
   def permissible_conversations

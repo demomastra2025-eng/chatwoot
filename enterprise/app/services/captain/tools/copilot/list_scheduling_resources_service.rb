@@ -3,8 +3,10 @@ class Captain::Tools::Copilot::ListSchedulingResourcesService < Captain::Tools::
     'list_scheduling_resources'
   end
 
-  description 'List scheduling specialists, with optional filters for service and activity state'
-  param :service_id, type: :number, desc: 'Optional service ID to keep only specialists who can perform it', required: false
+  description 'List scheduling resources (specialists and diagnostic rooms); the service filter uses recorded price links, ' \
+              'which are not clinical proof'
+  param :service_id, type: :number, desc: 'Optional service ID to keep only resources with an active recorded price link (not clinical proof)',
+                     required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
 

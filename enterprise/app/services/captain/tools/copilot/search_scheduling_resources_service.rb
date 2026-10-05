@@ -3,13 +3,14 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     'search_scheduling_resources'
   end
 
-  description 'Search scheduling resources by stored name/specialty; service price links are not clinical proof'
+  description 'Search scheduling resources (specialists and diagnostic rooms) by name words in any order or by stored specialty; ' \
+              'a service_id filter uses recorded price links, which are not clinical proof; page through results with offset'
   param :query, type: :string, desc: 'Resource name or stored specialty query', required: false
   param :search_by, type: :string, desc: 'Search mode: name, specialty, or all', required: false
   param :service_id, type: :number, desc: 'Optional service ID to filter recorded active price links (not clinical eligibility)', required: false
   param :include_inactive, type: :boolean, desc: 'Whether to include inactive resources', required: false
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
-  param :offset, type: :number, desc: 'Pagination offset for matching resources', required: false
+  param :offset, type: :number, desc: 'Pagination offset for matching resources; pass next_offset of the previous answer', required: false
 
   def execute(query: nil, search_by: 'all', service_id: nil, include_inactive: false, limit: nil, offset: nil) # rubocop:disable Metrics/ParameterLists
     service_id = verified_optional_record_id(service_id, scope: account.scheduling_services, field_name: 'service_id')
@@ -47,18 +48,25 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       next_offset: result[:next_offset],
       page_status: result[:resources].empty? && result[:total_count].positive? ? 'offset_out_of_range' : 'returned',
       search_status: status,
+      ambiguous: status == 'ambiguous',
       link_status: link_status(status, filters[:service_id]),
       resources: result[:resources]
     )
   end
 
   def search_status(total_count, filters)
-    return 'candidates' if total_count.positive?
+    return matched_status(total_count, filters) if total_count.positive?
     return 'no_recorded_link' if filters[:service_id].present? && filters[:query].blank?
     return 'no_match_with_recorded_link_filter' if filters[:service_id].present?
     return 'catalog_empty' if filters[:query].blank?
 
     'no_name_or_specialty_match'
+  end
+
+  def matched_status(total_count, filters)
+    return 'candidates' if filters[:query].blank?
+
+    total_count == 1 ? 'candidate' : 'ambiguous'
   end
 
   def link_status(status, service_id)

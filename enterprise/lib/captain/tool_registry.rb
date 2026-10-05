@@ -1143,7 +1143,7 @@ class Captain::ToolRegistry
         definition(
           id: 'list_scheduling_resources',
           title: 'List Specialists',
-          description: 'List scheduling specialists, with optional filters for service and activity state',
+          description: Captain::Tools::Copilot::ListSchedulingResourcesService.description,
           group_name: 'Scheduling',
           icon: 'users',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1155,7 +1155,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_scheduling_resources',
           title: 'Search Specialists',
-          description: 'Search scheduling specialists by name or specialty, with optional service filtering',
+          description: Captain::Tools::Copilot::SearchSchedulingResourcesService.description,
           group_name: 'Scheduling',
           icon: 'user',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1179,7 +1179,7 @@ class Captain::ToolRegistry
         definition(
           id: 'get_scheduling_resource_availability',
           title: 'Get Specialist Availability',
-          description: 'Get free specialist appointment windows inside a time range, with service-aware duration when available',
+          description: Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService.description,
           group_name: 'Scheduling',
           icon: 'calendar-search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1191,7 +1191,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_scheduling_services',
           title: 'Search Services',
-          description: 'Search scheduling services by name, category, or direction',
+          description: Captain::Tools::Copilot::SearchSchedulingServicesService.description,
           group_name: 'Scheduling',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1203,7 +1203,7 @@ class Captain::ToolRegistry
         definition(
           id: 'search_available_slots',
           title: 'Search Available Slots',
-          description: 'Search appointment slots for one or more specialists using explicit specialist filters or a scheduling service',
+          description: Captain::Tools::Copilot::SearchAvailableSlotsService.description,
           group_name: 'Scheduling',
           icon: 'calendar',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
