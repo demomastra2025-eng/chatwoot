@@ -103,6 +103,25 @@ describe SearchService do
         expect(search.perform[:messages].map(&:id)).to eq([message2.id, message.id])
       end
 
+      it 'does not find the technical Captain tool lines' do
+        tool_line = create(
+          :message,
+          message_type: 'activity',
+          account: account,
+          inbox: inbox,
+          content: 'AI Agent completed tool zebralookup',
+          source_id: 'captain-tool:search-1',
+          content_attributes: { data: { type: 'captain_tool_event', event: 'completed' } }
+        )
+        assignment = create(:message, message_type: 'activity', account: account, inbox: inbox,
+                                      content: 'Conversation assigned to zebralookup owner')
+        params = { q: 'zebralookup' }
+        search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Message')
+
+        expect(search.perform[:messages].map(&:id)).to eq([assignment.id])
+        expect(search.perform[:messages].map(&:id)).not_to include(tool_line.id)
+      end
+
       context 'with feature flag for search type' do
         let(:params) { { q: 'Harry' } }
         let(:search_type) { 'Message' }
@@ -317,6 +336,27 @@ describe SearchService do
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
 
         expect(search.perform[:conversations].map(&:id)).to eq([matching_conversation.id])
+      end
+
+      it 'does not match a conversation only by its Captain tool lines' do
+        tool_only = create(:conversation, contact: create(:contact, account_id: account.id, name: 'Tool Only'), inbox: inbox, account: account)
+        create(
+          :message,
+          message_type: 'activity',
+          conversation: tool_only,
+          account: account,
+          inbox: inbox,
+          content: 'AI Agent completed tool zebralookup',
+          source_id: 'captain-tool:zebra-1',
+          content_attributes: { data: { type: 'captain_tool_event', event: 'completed' } }
+        )
+        typed = create(:conversation, contact: create(:contact, account_id: account.id, name: 'Typed'), inbox: inbox, account: account)
+        create(:message, conversation: typed, account: account, inbox: inbox, content: 'please run zebralookup')
+
+        params = { q: 'zebralookup' }
+        search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
+
+        expect(search.perform[:conversations].map(&:id)).to eq([typed.id])
       end
 
       it 'keeps message-content conversation search account and inbox scoped' do

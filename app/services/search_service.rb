@@ -130,7 +130,7 @@ class SearchService
   end
 
   def message_base_query
-    query = current_account.messages.where('created_at >= ?', 3.months.ago)
+    query = Messages::TimelineVisibility.without_captain_tool_activity(current_account.messages.where('created_at >= ?', 3.months.ago))
     query = query.where(inbox_id: accessable_inbox_ids) unless should_skip_inbox_filtering?
     query
   end
@@ -264,9 +264,11 @@ class SearchService
           AND messages.inbox_id = conversations.inbox_id
           AND messages.created_at >= :message_search_since
           AND messages.content ILIKE :search
+          AND NOT (#{Messages::TimelineVisibility::CAPTAIN_TOOL_ACTIVITY_SQL})
       )
     SQL
     search_bindings[:message_search_since] = 3.months.ago
+    search_bindings.merge!(Messages::TimelineVisibility.captain_tool_activity_bindings)
   end
 
   def build_phone_search_clause(column_name, bindings_prefix)
