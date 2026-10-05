@@ -17,7 +17,6 @@ const ResponsesIndex = () => import('./responses/Index.vue');
 const ResponsesPendingIndex = () => import('./responses/Pending.vue');
 const CustomToolsIndex = () => import('./tools/Index.vue');
 const ObservabilityIndex = () => import('./observability/Index.vue');
-const EvaluationsIndex = () => import('./evaluations/Index.vue');
 const meta = {
   permissions: ['administrator', 'agent'],
   featureFlag: FEATURE_FLAGS.CAPTAIN,
@@ -227,19 +226,6 @@ const assistantRoutes = [
     path: frontendURL('accounts/:accountId/captain/observability'),
     component: ObservabilityIndex,
     name: 'captain_observability_index',
-    meta: {
-      permissions: ['administrator'],
-      featureFlag: FEATURE_FLAGS.CAPTAIN_V2,
-      installationTypes: [
-        INSTALLATION_TYPES.CLOUD,
-        INSTALLATION_TYPES.ENTERPRISE,
-      ],
-    },
-  },
-  {
-    path: frontendURL('accounts/:accountId/captain/evaluations'),
-    component: EvaluationsIndex,
-    name: 'captain_evaluations_index',
     meta: {
       permissions: ['administrator'],
       featureFlag: FEATURE_FLAGS.CAPTAIN_V2,

@@ -64,16 +64,6 @@ const buildRouter = () =>
   });
 
 describe('captain routes', () => {
-  it('exposes a dedicated AI evaluations page', () => {
-    const evaluationRoute = flattenRoutes(routes).find(
-      route => route.name === 'captain_evaluations_index'
-    );
-
-    expect(evaluationRoute).toBeTruthy();
-    expect(evaluationRoute.path).toContain('/captain/evaluations');
-    expect(evaluationRoute.meta.permissions).toEqual(['administrator']);
-  });
-
   it('exposes the assistant sandbox («Площадка») at the playground route', () => {
     const playgroundRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_assistants_playground_index'
