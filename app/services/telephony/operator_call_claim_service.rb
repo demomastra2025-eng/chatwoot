@@ -17,12 +17,24 @@ class Telephony::OperatorCallClaimService
     call_session.reload
     validate_call_session_tenant_links!
     broadcast_claimed_call!
+    close_sibling_legs!
     claim_payload
   end
 
   private
 
   attr_reader :account, :user, :call_ref
+
+  # The other operators' legs of the same physical call end now, not minutes
+  # later. Never fails the claim.
+  def close_sibling_legs!
+    Telephony::SiblingLegCloser.new(call_session: call_session).perform
+  rescue StandardError => e
+    Rails.logger.warn(
+      'TELEPHONY_SIBLING_LEG_CLOSE_FAILED ' \
+      "call_ref=#{call_ref} account_id=#{account.id} user_id=#{user.id} error=#{e.class.name}: #{e.message}"
+    )
+  end
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)

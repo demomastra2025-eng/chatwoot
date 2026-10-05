@@ -268,7 +268,26 @@ class Telephony::EventsIngestionService
     elsif call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
+    close_sibling_legs!(call_session) if call_session.present? && operator_answered_inbound_leg?(call_session)
     call_session
+  end
+
+  # One operator answered: the other operators' legs of the same physical call
+  # are over for them (see Telephony::SiblingLegCloser).
+  def operator_answered_inbound_leg?(call_session)
+    return false unless resolved_event_type.to_s.in?(%w[operator_answered answered])
+
+    call_session.status == 'in_progress' && call_session.direction == 'inbound' &&
+      Telephony::SiblingLegGrouping.applies?(provider: call_session.provider, direction: call_session.direction)
+  end
+
+  def close_sibling_legs!(call_session)
+    Telephony::SiblingLegCloser.new(call_session: call_session).perform
+  rescue StandardError => e
+    Rails.logger.warn(
+      "TELEPHONY_SIBLING_LEG_CLOSE_FAILED call_ref=#{call_session.external_call_ref} " \
+      "account_id=#{call_session.account_id} error=#{e.class.name}: #{e.message}"
+    )
   end
 
   # Legs of one inbound call take turns: the caller's intake lock goes before
@@ -1973,10 +1992,20 @@ class Telephony::EventsIngestionService
     return false unless call_session.direction == 'inbound'
     return false unless unanswered_terminal_status?(call_session.status)
 
+    answered_by_other_operator_leg?(call_session) || linked_native_sip_branch_evidence?(call_session)
+  end
+
+  def linked_native_sip_branch_evidence?(call_session)
     linked_parent_voice_message_for(call_session).present? ||
       linked_answered_native_sip_call_session_for(call_session).present? ||
       linked_logical_group_voice_message_for(call_session).present? ||
       linked_unanswered_native_sip_voice_message_for(call_session).present?
+  end
+
+  # A leg closed because another operator took the call is not a missed call,
+  # whenever it is closed (a claim comes before the answer).
+  def answered_by_other_operator_leg?(call_session)
+    call_session.end_reason.to_s == Telephony::SiblingLegCloser::END_REASON
   end
 
   def suppress_linked_unanswered_native_sip_branch!(call_session)
