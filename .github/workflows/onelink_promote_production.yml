@@ -85,6 +85,64 @@ jobs:
             }
             core.setOutput('exists', 'false');
 
+  # Production runs migrations while the previous release still serves traffic, so every migration between the live
+  # production SHA and the requested SHA must be a short-locked expand (see script/onelink/change_plan.py).
+  migration-guard:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      # Read the last successful production deployment to find the live SHA.
+      deployments: read
+    steps:
+      - name: Validate requested SHA
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'A full lowercase 40-character Git SHA is required.' >&2
+            exit 64
+          }
+      - name: Find the SHA running in production
+        id: live
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'production',
+              per_page: 100
+            });
+            for (const deployment of deployments) {
+              const statuses = await github.rest.repos.listDeploymentStatuses({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                per_page: 1
+              });
+              if (statuses.data[0]?.state === 'success' && /^[0-9a-f]{40}$/.test(deployment.sha)) {
+                core.info(`Production runs ${deployment.sha} (deployment ${deployment.id}).`);
+                core.setOutput('sha', deployment.sha);
+                return;
+              }
+            }
+            core.setFailed('No successful production deployment exists to diff the migrations against.');
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject migrations that are not short-locked expands
+        env:
+          LIVE_SHA: ${{ steps.live.outputs.sha }}
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          git cat-file -e "${LIVE_SHA}^{commit}"
+          python3 -m unittest script/onelink/test_change_plan.py
+          python3 script/onelink/change_plan.py \
+            --base "$LIVE_SHA" --head "$REQUESTED_SHA" \
+            --validate-migrations
+
   full-verification:
     needs: nightly-proof
     if: needs.nightly-proof.outputs.exists != 'true'
@@ -97,9 +155,10 @@ jobs:
       sha: ${{ inputs.sha }}
 
   resolve:
-    needs: [nightly-proof, full-verification]
+    needs: [migration-guard, nightly-proof, full-verification]
     if: >-
       always() &&
+      needs.migration-guard.result == 'success' &&
       needs.nightly-proof.result == 'success' &&
       (needs.full-verification.result == 'success' || needs.full-verification.result == 'skipped')
     runs-on: ubuntu-24.04

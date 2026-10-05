@@ -10,6 +10,7 @@ from script.onelink.change_plan import (
     classify,
     existing_files_with_suffixes,
     frontend_files,
+    migration_violations,
     related_specs,
     unsupported_release_sidecars,
     validate_migrations,
@@ -18,7 +19,7 @@ from script.onelink.change_plan import (
 
 class ChangePlanTest(unittest.TestCase):
     def test_only_guarded_uuid_default_restore_is_expand_compatible(self):
-        migration_path = "db/migrate/20261004120000_expand_crm_lifecycle_schema.rb"
+        migration_path = "db/migrate/20261004120100_create_crm_lifecycle_tables.rb"
         other_migration_path = "db/migrate/20261004120001_other.rb"
         guarded_block = """
             correlation_id_column = connection.columns(:crm_stage_visits).find do |column|
@@ -366,6 +367,128 @@ class ChangePlanTest(unittest.TestCase):
                 violations = validate_migrations([migration.relative_to(root).as_posix()])
 
         self.assertEqual(violations, ["db/migrate/20260912000000_remove_legacy.rb"])
+
+    def migration_rules(self, content):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            migration = root / "db/migrate/20261005000000_example.rb"
+            migration.parent.mkdir(parents=True)
+            migration.write_text(content, encoding="utf-8")
+            with chdir(root):
+                return [rule for _, rule in migration_violations([migration.relative_to(root).as_posix()])]
+
+    def test_unsafe_lock_patterns_are_rejected(self):
+        cases = [
+            (
+                "add_index :crm_tasks, %i[account_id due_on], name: 'idx_a'\n",
+                ["add_index without algorithm: :concurrently"],
+            ),
+            (
+                "add_index(:crm_tasks, :task_type_id,\n          where: 'archived_at IS NULL')\n",
+                ["add_index without algorithm: :concurrently"],
+            ),
+            (
+                "add_foreign_key :crm_tasks, :users, column: :completed_by_id, on_delete: :nullify\n",
+                ["add_foreign_key without validate: false"],
+            ),
+            (
+                "add_check_constraint :crm_tasks, 'reschedule_count >= 0', name: 'crm_tasks_non_negative'\n",
+                ["add_check_constraint without validate: false"],
+            ),
+            (
+                "add_reference :crm_tasks, :task_type, foreign_key: { to_table: :crm_task_types }\n",
+                ["add_reference with a foreign key or a non-concurrent index"],
+            ),
+            (
+                "add_reference :crm_tasks, :task_type\n",
+                ["add_reference with a foreign key or a non-concurrent index"],
+            ),
+            (
+                "create_table :new_things do |t|\n  t.references :account, null: false, foreign_key: true\nend\n",
+                ["create_table references with an enforced foreign key"],
+            ),
+            (
+                "execute \"UPDATE crm_tasks SET context_kind = 'sales' WHERE context_kind IS NULL\"\n",
+                ["UPDATE of existing rows without batches"],
+            ),
+            (
+                "Crm::Task.where(context_kind: nil).update_all(context_kind: 'sales')\n",
+                ["UPDATE of existing rows without batches"],
+            ),
+        ]
+        for content, expected in cases:
+            with self.subTest(content=content):
+                self.assertEqual(self.migration_rules(content), expected)
+
+    def test_short_locked_expand_patterns_are_accepted(self):
+        cases = [
+            "add_index :crm_tasks, :task_type_id, algorithm: :concurrently, if_not_exists: true\n",
+            "add_index :crm_events, %i[a b],\n          unique: true,\n          where: 'command_key IS NOT NULL',\n"
+            "          algorithm: :concurrently\n",
+            "add_foreign_key :crm_tasks, :users, column: :completed_by_id, validate: false, if_not_exists: true\n",
+            "add_check_constraint :crm_tasks, 'a >= 0', name: 'crm_tasks_a', validate: false\n",
+            "add_reference :crm_tasks, :task_type, foreign_key: false, index: false\n",
+            "add_reference :crm_tasks, :task_type, foreign_key: false, index: { algorithm: :concurrently }\n",
+            "create_table :new_things do |t|\n  t.references :account, null: false, foreign_key: false\nend\n"
+            "add_index :new_things, :name, unique: true\n",
+            "BATCH_SIZE = 5_000\nexecute \"UPDATE crm_tasks SET context_kind = 'sales' WHERE id BETWEEN 1 AND 2\"\n",
+            "# UPDATE crm_tasks SET a = 1 is only mentioned in a comment\nadd_column :crm_tasks, :a, :string\n",
+            "add_check_constraint :crm_tasks, 'a IN (1, 2)', name: 'crm_tasks_a_in', validate: false\n",
+        ]
+        for content in cases:
+            with self.subTest(content=content):
+                self.assertEqual(self.migration_rules(content), [])
+
+    def test_crm_lifecycle_expand_migrations_are_short_locked(self):
+        repository_root = Path(__file__).resolve().parents[2]
+        with chdir(repository_root):
+            migrations = sorted(path.as_posix() for path in Path("db/migrate").glob("20261004*.rb"))
+            violations = migration_violations(migrations)
+
+        self.assertGreaterEqual(len(migrations), 10)
+        self.assertEqual(violations, [])
+
+    def test_production_promotion_runs_the_migration_guard_before_promoting(self):
+        workflow = (
+            Path(__file__).resolve().parents[2] / ".github/workflows/onelink_promote_production.yml"
+        ).read_text(encoding="utf-8")
+        guard = workflow.split("  migration-guard:\n", 1)[1].split("\n  full-verification:\n", 1)[0]
+
+        self.assertIn("environment: 'production'", guard)
+        self.assertIn("python3 script/onelink/change_plan.py", guard)
+        self.assertIn('--base "$LIVE_SHA" --head "$REQUESTED_SHA"', guard)
+        self.assertIn("--validate-migrations", guard)
+        self.assertIn("needs: [migration-guard, nightly-proof, full-verification]", workflow)
+        self.assertIn("needs.migration-guard.result == 'success'", workflow)
+
+    def test_cli_reports_rule_for_unsafe_migration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", root], check=True)
+            subprocess.run(["git", "-C", root, "config", "user.email", "ci@example.invalid"], check=True)
+            subprocess.run(["git", "-C", root, "config", "user.name", "CI"], check=True)
+            (root / "README.md").write_text("x\n", encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "."], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "base"], check=True)
+            base = subprocess.check_output(["git", "-C", root, "rev-parse", "HEAD"], text=True).strip()
+            migration = root / "db/migrate/20261005000000_add_index.rb"
+            migration.parent.mkdir(parents=True)
+            migration.write_text("add_index :crm_tasks, :task_type_id\n", encoding="utf-8")
+            subprocess.run(["git", "-C", root, "add", "."], check=True)
+            subprocess.run(["git", "-C", root, "commit", "-qm", "unsafe"], check=True)
+            script = Path(__file__).resolve().parent / "change_plan.py"
+            result = subprocess.run(
+                ["python3", script, "--base", base, "--head", "HEAD", "--validate-migrations"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            "db/migrate/20261005000000_add_index.rb: add_index without algorithm: :concurrently",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":

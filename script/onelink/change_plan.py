@@ -84,7 +84,7 @@ DESTRUCTIVE_MIGRATION_PATTERN = re.compile(
 # This one guarded SET DEFAULT only repairs a missing UUID generator on an
 # existing CRM table. Keep the exception bound to this migration and its exact
 # nil checks; unmatched default changes remain destructive.
-SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION = "db/migrate/20261004120000_expand_crm_lifecycle_schema.rb"
+SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION = "db/migrate/20261004120100_create_crm_lifecycle_tables.rb"
 SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK = re.compile(
     r"""
     correlation_id_column\s*=\s*connection\.columns\(\s*:crm_stage_visits\s*\)\.find\s+do\s*\|\s*column\s*\|\s*
@@ -106,6 +106,98 @@ SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK = re.compile(
     """,
     re.DOTALL | re.VERBOSE,
 )
+# Production runs migrations while the previous release is still serving, so an
+# "expand" migration must also be cheap and short-locked, not only additive.
+# These rules flag the statements that hold a strong lock for as long as the
+# table is large; each one has a safe form (see script/onelink/README.md).
+UNSAFE_UPDATE_PATTERN = re.compile(r"\bUPDATE\s+\S+\s+SET\b|\.update_all\b", re.IGNORECASE)
+BATCHING_MARKER_PATTERN = re.compile(
+    r"\b(in_batches|find_in_batches|find_each|each_batch|each_id_range|BATCH_SIZE)\b"
+    r"|\bLIMIT\s+(\d|#\{)",
+    re.IGNORECASE,
+)
+CREATE_TABLE_PATTERN = re.compile(r"\bcreate_table\s*\(?\s*:(\w+)")
+FIRST_TABLE_ARGUMENT_PATTERN = re.compile(r"\(?\s*:(\w+)")
+ENFORCED_FOREIGN_KEY_PATTERN = re.compile(r"foreign_key:\s*(true\b|\{)")
+CONCURRENT_INDEX_PATTERN = re.compile(r"algorithm:\s*:concurrently")
+UNINDEXED_REFERENCE_PATTERN = re.compile(r"index:\s*(false\b|\{[^}]*algorithm:\s*:concurrently)")
+NOT_VALID_PATTERN = re.compile(r"validate:\s*false\b")
+
+
+def strip_ruby_comments(content: str) -> str:
+    return "\n".join(
+        line for line in content.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
+def statement_arguments(content: str, start: int) -> str:
+    """Return the arguments of the Ruby call that begins at ``start``.
+
+    The call ends at the first newline outside brackets and quotes that does not
+    continue the expression (trailing comma, operator or backslash).
+    """
+    depth = 0
+    quote = ""
+    index = start
+    while index < len(content):
+        char = content[index]
+        if quote:
+            if char == "\\":
+                index += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"":
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "\n" and depth <= 0:
+            before = content[start:index].rstrip()
+            following = content[index:].lstrip()
+            if not (before.endswith((",", "\\", "(", "||", "&&", "+")) or following.startswith(".")):
+                break
+        index += 1
+    return content[start:index]
+
+
+def calls(content: str, name: str) -> list[str]:
+    pattern = re.compile(rf"(?<![\w:])(?:\w+\.)?{re.escape(name)}\b")
+    return [statement_arguments(content, match.end()) for match in pattern.finditer(content)]
+
+
+def unsafe_migration_rules(content: str) -> list[str]:
+    """Names the lock-heavy statements in a migration; empty when it is a safe expand."""
+    code = strip_ruby_comments(content)
+    created_tables = set(CREATE_TABLE_PATTERN.findall(code))
+    rules: list[str] = []
+
+    def on_existing_table(arguments: str) -> bool:
+        match = FIRST_TABLE_ARGUMENT_PATTERN.match(arguments)
+        return not (match and match.group(1) in created_tables)
+
+    if any(
+        on_existing_table(arguments) and not CONCURRENT_INDEX_PATTERN.search(arguments)
+        for arguments in calls(code, "add_index")
+    ):
+        rules.append("add_index without algorithm: :concurrently")
+    if any(not NOT_VALID_PATTERN.search(arguments) for arguments in calls(code, "add_foreign_key")):
+        rules.append("add_foreign_key without validate: false")
+    if any(not NOT_VALID_PATTERN.search(arguments) for arguments in calls(code, "add_check_constraint")):
+        rules.append("add_check_constraint without validate: false")
+    references = calls(code, "add_reference") + calls(code, "add_belongs_to")
+    if any(
+        on_existing_table(arguments)
+        and (ENFORCED_FOREIGN_KEY_PATTERN.search(arguments) or not UNINDEXED_REFERENCE_PATTERN.search(arguments))
+        for arguments in references
+    ):
+        rules.append("add_reference with a foreign key or a non-concurrent index")
+    table_references = calls(code, "t.references") + calls(code, "t.belongs_to")
+    if any(ENFORCED_FOREIGN_KEY_PATTERN.search(arguments) for arguments in table_references):
+        rules.append("create_table references with an enforced foreign key")
+    if UNSAFE_UPDATE_PATTERN.search(code) and not BATCHING_MARKER_PATTERN.search(code):
+        rules.append("UPDATE of existing rows without batches")
+    return rules
 
 
 
@@ -203,8 +295,9 @@ def frontend_files(paths: Iterable[str]) -> list[str]:
     )
 
 
-def validate_migrations(paths: Iterable[str]) -> list[str]:
-    violations: list[str] = []
+def migration_violations(paths: Iterable[str]) -> list[tuple[str, str]]:
+    """Return (path, rule) for every changed migration that is not a safe expand."""
+    violations: list[tuple[str, str]] = []
     for raw_path in paths:
         if not raw_path.startswith("db/migrate/") or not raw_path.endswith(".rb"):
             continue
@@ -215,8 +308,13 @@ def validate_migrations(paths: Iterable[str]) -> list[str]:
         if raw_path == SAFE_STAGE_VISIT_UUID_DEFAULT_MIGRATION:
             content = SAFE_STAGE_VISIT_UUID_DEFAULT_BLOCK.sub("", content)
         if DESTRUCTIVE_MIGRATION_PATTERN.search(content):
-            violations.append(raw_path)
+            violations.append((raw_path, "destructive or contracting schema change"))
+        violations.extend((raw_path, rule) for rule in unsafe_migration_rules(content))
     return violations
+
+
+def validate_migrations(paths: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(path for path, _ in migration_violations(paths)))
 
 
 def unsupported_release_sidecars(paths: Iterable[str]) -> list[str]:
@@ -271,15 +369,16 @@ def main() -> int:
         print(json.dumps({"files": files, "plan": plan}, sort_keys=True))
 
     if args.validate_migrations:
-        violations = validate_migrations(files)
+        violations = migration_violations(files)
         if violations:
             print(
-                "Automatic releases accept expand-compatible migrations only. "
+                "Automatic releases accept short-locked expand migrations only (additive, "
+                "NOT VALID keys and checks, concurrent indexes, batched backfills). "
                 "Run destructive contract cleanup as a separate reviewed maintenance task:",
                 file=sys.stderr,
             )
-            for violation in violations:
-                print(f"  - {violation}", file=sys.stderr)
+            for path, rule in violations:
+                print(f"  - {path}: {rule}", file=sys.stderr)
             return 2
     if args.validate_release_surface:
         sidecar_files = unsupported_release_sidecars(files)
