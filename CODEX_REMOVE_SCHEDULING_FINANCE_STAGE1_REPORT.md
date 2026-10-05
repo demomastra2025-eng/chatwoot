@@ -6,7 +6,7 @@
 - Branch: codex/remove-scheduling-finance-stage1
 - Base: rc/e-stage2 at 48990f08fdf86f61199dbf681df80255fab28321
 - Package: 2 of 2 independent packages; includes the backend/API/Swagger work and the frontend commits cherry-picked onto this branch.
-- Work stayed in this branch. At report time there was no push, pull request, or merge; root will publish only the codex branch after review. No PROD/DEV/app-server SSH, secret, or database access was performed.
+- Work stayed in this branch. No release or deployment for the 06–07 window was initiated or bound to this change; integration is post-release. At report time there was no push, pull request, or merge; after review, root will publish only this new codex branch. No PROD/DEV/app-server SSH, secret, or database access was performed.
 
 ## Changes
 
@@ -20,6 +20,7 @@ The following files and classes were deleted:
 | app/controllers/api/v1/accounts/scheduling/payments_controller.rb | Api::V1::Accounts::Scheduling::PaymentsController |
 | app/controllers/api/v1/accounts/scheduling/expenses_controller.rb | Api::V1::Accounts::Scheduling::ExpensesController |
 | enterprise/app/services/captain/tools/copilot/add_appointment_payment_service.rb | Captain::Tools::Copilot::AddAppointmentPaymentService |
+| app/javascript/dashboard/components-next/Scheduling/SchedulingPercentInput.vue | Finance-specific percentage input component |
 | spec/requests/api/v1/accounts/scheduling/finance_spec.rb | Finance-only scheduling request specs |
 
 The following route actions were removed beneath the account scheduling API prefix:
