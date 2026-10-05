@@ -33,6 +33,20 @@ RSpec.describe Crm::TaskCatalogs::NameRepair do
     expect(kazakh_account.crm_task_outcomes.where(code: 'no_show').pluck(:name).uniq).to eq(['Келмеді'])
   end
 
+  it 'renames rows that carry the bare system code written by the seed migration' do
+    [russian_account, english_account].each do |account|
+      account.crm_task_types.find_each { |task_type| task_type.update_columns(name: task_type.code) } # rubocop:disable Rails/SkipsModelValidations
+      account.crm_task_outcomes.find_each { |outcome| outcome.update_columns(name: outcome.code) } # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    described_class.new.perform
+
+    expect(russian_account.crm_task_types.find_by!(code: 'touch').name).to eq('Напоминание')
+    expect(russian_account.crm_task_outcomes.where(code: 'no_answer').pluck(:name).uniq).to eq(['Нет ответа'])
+    expect(english_account.crm_task_types.find_by!(code: 'task').name).to eq('Task')
+    expect(english_account.crm_task_outcomes.where(code: 'not_done').pluck(:name).uniq).to eq(['Not done with reason'])
+  end
+
   it 'never leaves the word Touch in any catalog row' do
     described_class.new.perform
 
