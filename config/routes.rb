@@ -317,6 +317,7 @@ Rails.application.routes.draw do
           resources :communication_threads, only: [:index, :show, :update] do
             collection do
               get :meta
+              get :list_search
               get :sidebar_unread_counts
               post :filter
               post :filter_sidebar_unread_counts
@@ -340,6 +341,7 @@ Rails.application.routes.draw do
               get :meta
               get :sidebar_unread_counts
               get :search
+              get :list_search
               post :filter
             end
             scope module: :conversations do

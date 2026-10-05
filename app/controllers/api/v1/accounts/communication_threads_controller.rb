@@ -26,10 +26,21 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
-  around_action :with_list_presence_cache, only: [:index, :filter]
+  around_action :with_list_presence_cache, only: [:index, :filter, :list_search]
 
   def index
     result = CommunicationThreadFinder.new(Current.user, params).perform
+    @communication_threads = result[:communication_threads]
+    @communication_threads_count = result[:count]
+    preload_accessible_links(@communication_threads)
+    preload_crm_deal_stages(@communication_threads)
+    preload_meta_ad_referrals(@communication_threads)
+  end
+
+  # Search box of the conversation list. Takes only `q` and `page`: the list filters (status, assignee, inbox, team,
+  # labels, CRM stage, unread) are never applied here, see CommunicationThreads::ListSearchService.
+  def list_search
+    result = CommunicationThreads::ListSearchService.new(user: Current.user, account: Current.account, params: params).perform
     @communication_threads = result[:communication_threads]
     @communication_threads_count = result[:count]
     preload_accessible_links(@communication_threads)

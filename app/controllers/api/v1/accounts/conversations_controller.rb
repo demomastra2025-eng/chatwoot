@@ -5,9 +5,9 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
 
-  before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
+  before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :list_search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
-  around_action :with_list_presence_cache, only: [:index, :filter]
+  around_action :with_list_presence_cache, only: [:index, :filter, :list_search]
 
   ATTACHMENT_RESULTS_PER_PAGE = 100
 
@@ -37,6 +37,18 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     result = conversation_finder.perform
     @conversations = result[:conversations]
     @conversations_count = result[:count]
+  end
+
+  # Search box of the conversation list. Takes only `q` and `page`: the list filters (status, assignee, inbox, team,
+  # labels, CRM stage, unread) are never applied here, see Conversations::ListSearchService.
+  def list_search
+    result = Conversations::ListSearchService.new(user: Current.user, account: Current.account, params: params).perform
+    @conversations = result[:conversations]
+    @search_meta = result[:meta]
+    preload_list_presence
+    preload_crm_deal_stages(@conversations)
+    preload_scheduling_appointment_statuses(@conversations)
+    preload_directional_message_timestamps(@conversations)
   end
 
   def attachments
