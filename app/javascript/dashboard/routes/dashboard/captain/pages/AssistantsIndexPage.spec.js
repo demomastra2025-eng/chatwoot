@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
+import assistantStore from 'dashboard/store/captain/assistant';
+
 const mocks = vi.hoisted(() => ({
   assistants: [{ id: 2 }],
   dispatch: vi.fn(),
@@ -23,7 +25,10 @@ vi.mock('vuex', () => ({
   useStore: () => ({
     dispatch: mocks.dispatch,
     getters: {
-      'captainAssistants/getRecords': mocks.assistants,
+      // The real getter of the assistant store decides which rows are visible.
+      get 'captainAssistants/getRecords'() {
+        return assistantStore.getters.getRecords({ records: mocks.assistants });
+      },
     },
   }),
 }));
@@ -83,6 +88,36 @@ describe('AssistantsIndexPage', () => {
         accountId: '1',
         assistantId: 2,
       },
+      replace: true,
+    });
+  });
+
+  it('does not return to an internal assistant that was the last active one', async () => {
+    mocks.assistants = [
+      { id: 2, usage_mode: 'external_agent' },
+      { id: 5, usage_mode: 'internal_assistant' },
+    ];
+    mocks.uiSettings.value = { last_active_assistant_id: 5 };
+
+    await mountPage();
+
+    expect(mocks.replace).toHaveBeenCalledWith({
+      name: 'captain_assistants_playground_index',
+      params: { accountId: '1', assistantId: 2 },
+      replace: true,
+    });
+  });
+
+  it('opens the create page when the account only has an internal assistant', async () => {
+    mocks.assistants = [{ id: 5, usage_mode: 'internal_assistant' }];
+    mocks.uiSettings.value = { last_active_assistant_id: 5 };
+
+    await mountPage();
+
+    expect(mocks.replace).toHaveBeenCalledTimes(1);
+    expect(mocks.replace).toHaveBeenCalledWith({
+      name: 'captain_assistants_create_index',
+      params: { accountId: '1' },
       replace: true,
     });
   });

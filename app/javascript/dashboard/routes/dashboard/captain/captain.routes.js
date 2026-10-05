@@ -1,6 +1,7 @@
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
 import { frontendURL } from '../../../helper/URLHelper';
+import { redirectHiddenAssistant } from './assistantRouteGuard';
 
 const CaptainPageRouteView = () => import('./pages/CaptainPageRouteView.vue');
 const AssistantsIndexPage = () => import('./pages/AssistantsIndexPage.vue');
@@ -117,6 +118,7 @@ const assistantRoutes = [
     component: AssistantPlaygroundIndex,
     name: 'captain_assistants_playground_index',
     meta,
+    beforeEnter: redirectHiddenAssistant,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/channels'),
@@ -144,18 +146,21 @@ const assistantRoutes = [
     component: AssistantSettingsIndex,
     name: 'captain_assistants_settings_index',
     meta,
+    beforeEnter: redirectHiddenAssistant,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/prompts'),
     component: AssistantPromptsIndex,
     name: 'captain_assistants_prompts_index',
     meta,
+    beforeEnter: redirectHiddenAssistant,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/follow-ups'),
     component: AssistantFollowUpsIndex,
     name: 'captain_assistants_follow_ups_index',
     meta: metaV2,
+    beforeEnter: redirectHiddenAssistant,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/outcomes'),

@@ -7,6 +7,18 @@ import AssistantsIndexPage from './pages/AssistantsIndexPage.vue';
 
 const mocks = vi.hoisted(() => ({
   assistants: [{ id: 2 }],
+  // The loaded assistants: an AI agent and an old internal assistant.
+  records: [
+    { id: 2, usage_mode: 'external_agent' },
+    { id: 9, usage_mode: 'internal_assistant' },
+  ],
+}));
+
+vi.mock('../../../store', () => ({
+  default: {
+    state: { captainAssistants: { records: mocks.records } },
+    dispatch: vi.fn(() => Promise.resolve()),
+  },
 }));
 
 vi.mock('vuex', () => ({
@@ -115,6 +127,49 @@ describe('captain routes', () => {
     );
     expect(currentRoute.value.matched.at(-1).components.default).toBe(PageStub);
     wrapper.unmount();
+  });
+
+  describe('links to the pages of an assistant', () => {
+    const open = async (router, name, assistantId) => {
+      await router.push({
+        name,
+        params: { accountId: '1', assistantId },
+      });
+      await flushPromises();
+      return router.currentRoute.value;
+    };
+
+    [
+      'captain_assistants_settings_index',
+      'captain_assistants_prompts_index',
+      'captain_assistants_follow_ups_index',
+      'captain_assistants_playground_index',
+    ].forEach(name => {
+      it(`opens the ${name} page of an AI agent`, async () => {
+        const router = buildRouter();
+
+        const route = await open(router, name, '2');
+
+        expect(route.name).toBe(name);
+      });
+
+      it(`treats the ${name} link of an internal assistant as a missing agent`, async () => {
+        const router = buildRouter();
+
+        const route = await open(router, name, '9');
+
+        expect(route.name).toBe('captain_assistants_create_index');
+        expect(route.path).toBe('/app/accounts/1/captain/assistants');
+      });
+    });
+
+    it('also catches the old redirecting links of an internal assistant', async () => {
+      const router = buildRouter();
+
+      const route = await open(router, 'captain_assistants_access_index', '9');
+
+      expect(route.name).toBe('captain_assistants_create_index');
+    });
   });
 
   it('redirects the removed channels page to channel settings', () => {
