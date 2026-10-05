@@ -29,6 +29,17 @@ module Onelink
         end
       end
 
+      def known_tool?(name)
+        Captain::ToolRegistry.definition_for(name).present? ||
+          Captain::ToolCatalog.available_tools_for_ids(
+            auth_context.assistant,
+            auth_context.scope_name,
+            [name]
+          ).any? do |tool_definition|
+            tool_definition[:id].to_s == name.to_s
+          end
+      end
+
       def call_tool(name:, arguments:, meta: {})
         tool_definition = tool_definition_for(name)
         return error_tool_response("Tool '#{name}' is not available for this workspace") if tool_definition.blank?

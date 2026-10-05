@@ -57,6 +57,7 @@ Rails.application.routes.draw do
 
         scope module: :accounts do
           match :mcp, to: 'mcp#handle', via: [:get, :post]
+          get 'mcp/metadata', to: 'mcp#metadata'
           resource :mcp_settings, only: [:show, :update], controller: 'mcp_settings'
 
           namespace :actions do

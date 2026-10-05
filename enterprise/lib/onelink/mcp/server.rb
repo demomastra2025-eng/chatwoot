@@ -4,6 +4,8 @@ module Onelink
   module Mcp
     class Server
       PROTOCOL_VERSION = '2025-06-18'
+      DEFAULT_PROTOCOL_VERSION = '2025-03-26'
+      SUPPORTED_PROTOCOL_VERSIONS = [DEFAULT_PROTOCOL_VERSION, PROTOCOL_VERSION].freeze
       SERVER_NAME = 'onelink-mcp'
       JSONRPC_VERSION = '2.0'
 
@@ -28,16 +30,26 @@ module Onelink
         )
       end
 
-      def call(envelope)
-        return handle_batch(envelope) if envelope.is_a?(Array)
+      def self.negotiate_protocol_version(requested_version)
+        return requested_version if SUPPORTED_PROTOCOL_VERSIONS.include?(requested_version)
 
-        handle_request(envelope)
+        PROTOCOL_VERSION
+      end
+
+      def call(envelope, protocol_version: DEFAULT_PROTOCOL_VERSION)
+        negotiated_version = protocol_version_for(envelope, protocol_version)
+        return handle_batch(envelope) if envelope.is_a?(Array) && negotiated_version == DEFAULT_PROTOCOL_VERSION
+        if envelope.is_a?(Array)
+          return error_response(nil, -32_600, 'JSON-RPC batches are not supported for this protocol version')
+        end
+
+        handle_request(envelope, protocol_version: negotiated_version)
       end
 
       def handle_batch(envelope)
         return error_response(nil, -32_600, 'Invalid JSON-RPC batch') if envelope.empty?
 
-        responses = envelope.filter_map { |item| handle_request(item) }
+        responses = envelope.filter_map { |item| handle_request(item, protocol_version: DEFAULT_PROTOCOL_VERSION) }
         responses.presence
       end
 
@@ -45,19 +57,54 @@ module Onelink
 
       attr_reader :auth_context, :captain_tool_adapter, :openapi_catalog, :resource_catalog
 
-      def handle_request(envelope)
+      def handle_request(envelope, protocol_version: DEFAULT_PROTOCOL_VERSION)
+        return nil if response_envelope?(envelope)
+
         request = normalize_request(envelope)
-        return handle_notification(request) if request[:id].nil?
+        return nil if request[:notification]
 
         result = dispatch(request[:method], request[:params])
+        result = adapt_result_for_protocol(request[:method], result, protocol_version)
         success_response(request[:id], result)
       rescue JsonRpcError => e
         error_response(envelope_id(envelope), e.code, e.message, e.data)
       rescue StandardError => e
-        Rails.logger.warn do
-          "#{self.class.name} internal error account=#{auth_context.account.id} user=#{auth_context.user.id}: #{e.class} #{e.message}"
-        end
+        Rails.logger.warn("#{self.class.name} internal error: #{e.class}")
         error_response(envelope_id(envelope), -32_603, 'Internal MCP server error')
+      end
+
+      def protocol_version_for(envelope, request_protocol_version)
+        initializer = if envelope.is_a?(Array)
+                        envelope.find do |item|
+                          item.is_a?(Hash) && item.with_indifferent_access[:method] == 'initialize'
+                        end
+                      elsif envelope.is_a?(Hash) && envelope.with_indifferent_access[:method] == 'initialize'
+                        envelope
+                      end
+
+        return request_protocol_version if initializer.blank?
+
+        params = initializer.with_indifferent_access[:params]
+        requested_version = params.is_a?(Hash) ? params.with_indifferent_access[:protocolVersion] : nil
+        self.class.negotiate_protocol_version(requested_version)
+      end
+
+      def response_envelope?(envelope)
+        return false unless envelope.is_a?(Hash)
+
+        normalized = envelope.with_indifferent_access
+        return false unless normalized[:jsonrpc] == JSONRPC_VERSION && !normalized.key?(:method)
+        return false unless normalized.key?(:id) && valid_request_id?(normalized[:id])
+
+        has_result = normalized.key?(:result)
+        has_error = normalized.key?(:error)
+        return false if has_result == has_error
+
+        return true if has_result
+
+        error = normalized[:error]
+        error.is_a?(Hash) && error.with_indifferent_access[:code].is_a?(Integer) &&
+          error.with_indifferent_access[:message].is_a?(String)
       end
 
       def normalize_request(envelope)
@@ -65,36 +112,41 @@ module Onelink
 
         normalized = envelope.with_indifferent_access
         raise JsonRpcError.new(-32_600, 'Invalid JSON-RPC version') unless normalized[:jsonrpc] == JSONRPC_VERSION
-        raise JsonRpcError.new(-32_600, 'JSON-RPC method is required') if normalized[:method].blank?
+        unless normalized[:method].is_a?(String) && normalized[:method].present?
+          raise JsonRpcError.new(-32_600, 'JSON-RPC method is required')
+        end
+
+        if normalized.key?(:result) || normalized.key?(:error)
+          raise JsonRpcError.new(-32_600, 'Invalid JSON-RPC request')
+        end
+
+        id = normalized[:id]
+        raise JsonRpcError.new(-32_600, 'Invalid JSON-RPC id') if normalized.key?(:id) && !valid_request_id?(id)
 
         {
-          id: normalized[:id],
+          id: id,
+          notification: !normalized.key?(:id),
           method: normalized[:method].to_s,
-          params: normalize_params(normalized[:params])
+          params: normalize_params(normalized[:params], present: normalized.key?(:params))
         }
       end
 
-      def normalize_params(params)
-        return {} if params.blank?
+      def normalize_params(params, present:)
+        return {} unless present
         raise JsonRpcError.new(-32_602, 'JSON-RPC params must be an object') unless params.is_a?(Hash)
 
         params.with_indifferent_access
       end
 
-      def envelope_id(envelope)
-        envelope.is_a?(Hash) ? envelope.with_indifferent_access[:id] : nil
+      def valid_request_id?(id)
+        id.nil? || id.is_a?(String) || id.is_a?(Numeric)
       end
 
-      def handle_notification(request)
-        case request[:method]
-        when 'notifications/initialized', 'notifications/cancelled', 'notifications/progress'
-          nil
-        else
-          Rails.logger.info do
-            "#{self.class.name} ignored notification method=#{request[:method]} account=#{auth_context.account.id} user=#{auth_context.user.id}"
-          end
-          nil
-        end
+      def envelope_id(envelope)
+        return unless envelope.is_a?(Hash)
+
+        id = envelope.with_indifferent_access[:id]
+        valid_request_id?(id) ? id : nil
       end
 
       def dispatch(method, params)
@@ -117,9 +169,8 @@ module Onelink
       end
 
       def initialize_result(params)
-        requested_protocol = params[:protocolVersion].presence
         {
-          protocolVersion: requested_protocol || PROTOCOL_VERSION,
+          protocolVersion: self.class.negotiate_protocol_version(params[:protocolVersion]),
           capabilities: {
             tools: {
               listChanged: false
@@ -152,12 +203,21 @@ module Onelink
         name = params[:name].to_s
         raise JsonRpcError.new(-32_602, 'Tool name is required') if name.blank?
 
-        arguments = params[:arguments].is_a?(Hash) ? params[:arguments] : {}
+        arguments = params[:arguments]
+        if params.key?(:arguments) && !arguments.is_a?(Hash)
+          raise JsonRpcError.new(-32_602, 'Tool arguments must be an object')
+        end
+
+        arguments ||= {}
         meta = params[:_meta].is_a?(Hash) ? params[:_meta] : {}
 
         if name.start_with?(Onelink::Mcp::OpenapiCatalog::TOOL_PREFIX)
+          raise JsonRpcError.new(-32_602, 'Unknown tool') unless openapi_catalog.known_tool?(name)
+
           openapi_catalog.call_tool(name: name, arguments: arguments)
         else
+          raise JsonRpcError.new(-32_602, 'Unknown tool') unless captain_tool_adapter.known_tool?(name)
+
           captain_tool_adapter.call_tool(name: name, arguments: arguments, meta: meta)
         end
       end
@@ -173,6 +233,20 @@ module Onelink
         raise JsonRpcError.new(-32_602, 'Resource uri is required') if uri.blank?
 
         resource_catalog.read(uri)
+      end
+
+      def adapt_result_for_protocol(method, result, protocol_version)
+        return result unless protocol_version == DEFAULT_PROTOCOL_VERSION && result.is_a?(Hash)
+
+        case method
+        when 'tools/list'
+          tools = Array(result[:tools]).map { |tool| tool.is_a?(Hash) ? tool.except(:title, 'title') : tool }
+          result.merge(tools: tools)
+        when 'tools/call'
+          result.except(:structuredContent, 'structuredContent')
+        else
+          result
+        end
       end
 
       def success_response(id, result)

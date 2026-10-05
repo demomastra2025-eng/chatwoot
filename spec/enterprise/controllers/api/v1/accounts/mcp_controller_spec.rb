@@ -24,7 +24,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
     {
       'Authorization' => "Bearer #{user.access_token.token}",
       'CONTENT_TYPE' => 'application/json',
-      'ACCEPT' => 'application/json'
+      'ACCEPT' => 'application/json, text/event-stream'
     }
   end
 
@@ -44,12 +44,21 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/mcp' do
-    it 'returns endpoint metadata for user API tokens' do
+    it 'returns 405 because the endpoint does not offer a server-sent event stream' do
       get "/api/v1/accounts/#{account.id}/mcp", headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:method_not_allowed)
+      expect(response.headers['Allow']).to eq('POST')
+      expect(response.body).to be_blank
+    end
+
+    it 'keeps endpoint metadata available on a separate authenticated route' do
+      get "/api/v1/accounts/#{account.id}/mcp/metadata", headers: mcp_headers(admin)
 
       expect(response).to have_http_status(:success)
       expect(json_response).to include(
         name: 'onelink-mcp',
+        endpoint: "/api/v1/accounts/#{account.id}/mcp",
         account_id: account.id,
         user_id: admin.id,
         assistant_id: assistant.id
@@ -215,14 +224,260 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(json_response.dig(:result, :capabilities, :tools)).to include(listChanged: false)
     end
 
+    it 'negotiates a supported older version and falls back to the latest for missing or unsupported versions' do
+      requests = [
+        ['2025-03-26', '2025-03-26'],
+        ['2025-11-25', '2025-06-18'],
+        [nil, '2025-06-18'],
+        [42, '2025-06-18']
+      ]
+
+      requests.each_with_index do |(requested_version, expected_version), index|
+        params = requested_version.nil? ? {} : { protocolVersion: requested_version }
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: mcp_request(id: "init-negotiation-#{index}", method: 'initialize', params: params).to_json,
+             headers: mcp_headers(admin)
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:result, :protocolVersion)).to eq(expected_version)
+      end
+    end
+
     it 'rejects malformed JSON-RPC envelopes without a version' do
       post "/api/v1/accounts/#{account.id}/mcp",
            params: { id: 'bad-1', method: 'ping' }.to_json,
            headers: mcp_headers(admin)
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(:bad_request)
       expect(json_response[:id]).to eq('bad-1')
       expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'accepts batches for 2025-03-26 and rejects them for 2025-06-18' do
+      batch = [mcp_request(id: 'legacy-batch-1', method: 'ping')]
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: batch.to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-03-26')
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true).first).to include(
+        jsonrpc: '2.0', id: 'legacy-batch-1', result: {}
+      )
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: batch.to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+      expect(json_response[:id]).to be_nil
+    end
+
+    it 'acknowledges incoming JSON-RPC responses with 202 and no body' do
+      response_message = { jsonrpc: '2.0', id: 'client-response-1', result: { accepted: true } }
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: response_message.to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:accepted)
+      expect(response.body).to be_blank
+    end
+
+    it 'rejects an unsupported protocol version header with a JSON-RPC error' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'header-version-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-11-25')
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(
+        jsonrpc: '2.0', id: nil,
+        error: include(code: -32_602, message: 'Unsupported MCP-Protocol-Version')
+      )
+    end
+
+    it 'preserves JSON-only Accept clients and rejects requests that accept no supported response type' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'accept-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('ACCEPT' => 'application/json')
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result)).to eq({})
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'accept-2', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('ACCEPT' => 'application/json;q=0, text/event-stream;q=0')
+
+      expect(response).to have_http_status(:not_acceptable)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'accepts missing and wildcard Accept headers and serves SSE-only requests as an event' do
+      headers = mcp_headers(admin).dup
+      headers.delete('ACCEPT')
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'accept-empty-1', method: 'ping').to_json,
+           headers: headers
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result)).to eq({})
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'accept-wildcard-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('ACCEPT' => '*/*')
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result)).to eq({})
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'accept-sse-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('ACCEPT' => 'application/json;q=0, text/event-stream')
+
+      expect(response).to have_http_status(:success)
+      expect(response.media_type).to eq('text/event-stream')
+      expect(response.body).to include('event: message', '"id":"accept-sse-1"')
+    end
+
+    it 'rejects a request with a non-JSON content type' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'content-type-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('CONTENT_TYPE' => 'text/plain')
+
+      expect(response).to have_http_status(:unsupported_media_type)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'rejects an Origin that matches a spoofed Host but is outside the configured application origin' do
+      with_modified_env(
+        'MCP_ALLOWED_ORIGINS' => 'http://app.example.test',
+        'FRONTEND_URL' => 'http://app.example.test'
+      ) do
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: mcp_request(id: 'origin-1', method: 'ping').to_json,
+             headers: mcp_headers(admin).merge(
+               'HTTP_HOST' => 'evil.example.test',
+               'Origin' => 'http://evil.example.test'
+             )
+      end
+
+      expect(response).to have_http_status(:forbidden)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'allows a configured frontend Origin when it differs from the request Host' do
+      with_modified_env(
+        'MCP_ALLOWED_ORIGINS' => 'https://app.example.test',
+        'FRONTEND_URL' => 'https://app.example.test'
+      ) do
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: mcp_request(id: 'origin-trusted-1', method: 'ping').to_json,
+             headers: mcp_headers(admin).merge(
+               'HTTP_HOST' => 'api.example.test',
+               'Origin' => 'https://app.example.test'
+             )
+      end
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result)).to eq({})
+    end
+
+    it 'rejects the opaque null Origin' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'origin-null-1', method: 'ping').to_json,
+           headers: mcp_headers(admin).merge('Origin' => 'null')
+
+      expect(response).to have_http_status(:forbidden)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'rejects malformed notifications as invalid requests and normalizes invalid IDs to null' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: { jsonrpc: '1.0', method: 123 }.to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(jsonrpc: '2.0', id: nil)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: {
+             jsonrpc: '2.0', method: 'notifications/initialized',
+             error: { code: -32_600, message: 'invalid' }
+           }.to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(jsonrpc: '2.0', id: nil)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: { jsonrpc: '2.0', id: { invalid: true }, method: 'ping' }.to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(jsonrpc: '2.0', id: nil)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: { jsonrpc: '2.0', id: [], result: {} }.to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(jsonrpc: '2.0', id: nil)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
+    end
+
+    it 'maps protocol errors to HTTP statuses and does not expose internal exception details' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'unknown-method-1', method: 'unknown/method').to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:not_found)
+      expect(json_response.dig(:error, :code)).to eq(-32_601)
+
+      allow_any_instance_of(Onelink::Mcp::Server).to receive(:dispatch).and_raise(
+        StandardError, 'private-user@example.test private stack detail'
+      )
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'internal-error-1', method: 'ping').to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:internal_server_error)
+      expect(json_response.dig(:error, :code)).to eq(-32_603)
+      expect(response.body).not_to include('private-user@example.test', 'private stack detail', 'backtrace')
+    end
+
+    it 'returns a protocol error for an unknown tool while keeping tool execution failures as tool results' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'unknown-tool-1',
+             method: 'tools/call',
+             params: { name: 'unknown_tool', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response.dig(:error, :code)).to eq(-32_602)
+      expect(json_response).not_to have_key(:result)
+    end
+
+    it 'preserves tool-result errors for known tools denied by the access policy' do
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter)
+        .to receive(:known_tool?).with('restricted_tool').and_return(true)
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter).to receive(:call_tool).with(
+        name: 'restricted_tool', arguments: {}, meta: {}
+      ).and_return(content: [{ type: 'text', text: 'Tool is disabled by workspace policy' }], isError: true)
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'restricted-tool-1',
+             method: 'tools/call',
+             params: { name: 'restricted_tool', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :isError)).to be(true)
+      expect(json_response).not_to have_key(:error)
     end
 
     it 'rejects empty JSON-RPC batches and accepts notification-only batches without a response body' do
@@ -230,7 +485,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
            params: [].to_json,
            headers: mcp_headers(admin)
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(:bad_request)
       expect(json_response.dig(:error, :code)).to eq(-32_600)
 
       post "/api/v1/accounts/#{account.id}/mcp",
@@ -272,7 +527,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       post "/api/v1/accounts/#{account.id}/mcp",
            params: mcp_request(id: 'tools-1', method: 'tools/list').to_json,
-           headers: mcp_headers(admin)
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
 
       expect(response).to have_http_status(:success)
       tool = json_response.dig(:result, :tools).first
@@ -283,6 +538,50 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       )
       expect(tool.dig(:inputSchema, :properties, :query, :type)).to eq('string')
       expect(tool.dig(:_meta, :account_id)).to eq(account.id)
+    end
+
+    it 'omits 2025-06 result fields for clients using 2025-03-26' do
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter).to receive(:tools).and_return(
+        [{ name: 'legacy_tool', title: 'Newer display title' }]
+      )
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'tools-legacy-1', method: 'tools/list').to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-03-26')
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :tools).first).not_to have_key(:title)
+
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter).to receive(:known_tool?).and_return(true)
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter).to receive(:call_tool).and_return(
+        content: [{ type: 'text', text: '{"value":true}' }],
+        structuredContent: { value: true },
+        isError: false
+      )
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(
+             id: 'call-legacy-1',
+             method: 'tools/call',
+             params: { name: 'legacy_tool', arguments: {} }
+           ).to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-03-26')
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :content).first[:text]).to eq('{"value":true}')
+      expect(json_response.dig(:result)).not_to have_key(:structuredContent)
+    end
+
+    it 'assumes 2025-03-26 behavior when the HTTP protocol-version header is absent' do
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter).to receive(:tools).and_return(
+        [{ name: 'legacy_tool', title: 'Newer display title' }]
+      )
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'tools-default-version-1', method: 'tools/list').to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :tools).first).not_to have_key(:title)
     end
 
     it 'does not list high-risk confirmation tools for non-admin users' do
@@ -323,6 +622,8 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       allow(Captain::ToolCatalog).to receive(:available_tools_for).and_return([tool_definition])
       allow(Captain::ToolCatalog).to receive(:allowed_tools_for).and_return([tool_definition])
+      allow_any_instance_of(Onelink::Mcp::CaptainToolAdapter)
+        .to receive(:known_tool?).with('search_documentation').and_return(true)
       allow(Captain::ToolCatalog).to receive(:build_tool).with(
         hash_including(id: 'search_documentation'),
         hash_including(assistant: assistant, scope_name: 'assistant', user: admin)
@@ -338,7 +639,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
              method: 'tools/call',
              params: { name: 'search_documentation', arguments: { query: 'shipping' } }
            ).to_json,
-           headers: mcp_headers(admin)
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
 
       expect(response).to have_http_status(:success)
       expect(json_response.dig(:result, :isError)).to be(false)
@@ -357,7 +658,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
              method: 'tools/call',
              params: { name: 'list_account_users', arguments: { limit: 1 } }
            ).to_json,
-           headers: mcp_headers(admin)
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
 
       expect(response).to have_http_status(:success)
       expect(json_response.dig(:result, :isError)).to be(false)
@@ -371,7 +672,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
              method: 'tools/call',
              params: { name: 'api__get_details_of_a_single_automation_rule', arguments: { id: 999_999 } }
            ).to_json,
-           headers: mcp_headers(admin)
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
 
       expect(response).to have_http_status(:success)
       expect(json_response.dig(:result, :isError)).to be(true)
@@ -403,7 +704,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
              method: 'tools/call',
              params: { name: 'list_account_users', arguments: { limit: 1 } }
            ).to_json,
-           headers: mcp_headers(admin)
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
 
       expect(response).to have_http_status(:success)
       expect(json_response.dig(:result, :isError)).to be(false)

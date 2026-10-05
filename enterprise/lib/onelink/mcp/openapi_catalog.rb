@@ -38,6 +38,10 @@ module Onelink
         operations.map { |operation| catalog_entry(operation) }
       end
 
+      def known_tool?(name)
+        operations.any? { |item| tool_name_for(item).to_s == name.to_s }
+      end
+
       def call_tool(name:, arguments:)
         operation = operations.find { |item| tool_name_for(item).to_s == name.to_s }
         return error_tool_response("OpenAPI tool '#{name}' is not available", code: 'not_available') if operation.blank?
