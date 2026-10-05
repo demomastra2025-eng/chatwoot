@@ -4,6 +4,10 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
 const props = defineProps({
+  actionLabel: {
+    type: String,
+    default: '',
+  },
   icon: {
     type: String,
     default: '',
@@ -20,6 +24,31 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  size: {
+    type: String,
+    default: 'sm',
+  },
+  variant: {
+    type: String,
+    default: 'faded',
+  },
+  triggerClass: {
+    type: String,
+    default: '',
+  },
+  triggerAriaLabel: {
+    type: String,
+    default: '',
+  },
+  highlightTrigger: {
+    type: Boolean,
+    default: true,
+  },
+  subMenuAlign: {
+    type: String,
+    default: 'end',
+    validator: value => ['start', 'end'].includes(value),
+  },
   subMenuPosition: {
     type: String,
     default: 'right',
@@ -29,7 +58,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['action', 'update:modelValue']);
 
 const isOpen = ref(false);
 
@@ -43,6 +72,11 @@ const handleSelect = value => {
   emit('update:modelValue', value);
   isOpen.value = false;
 };
+
+const handleAction = () => {
+  emit('action');
+  isOpen.value = false;
+};
 </script>
 
 <template>
@@ -51,11 +85,17 @@ const handleSelect = value => {
     class="relative flex flex-col gap-1 w-fit"
   >
     <Button
-      size="sm"
+      :size="size"
       color="slate"
-      variant="faded"
+      :variant="variant"
+      :aria-label="triggerAriaLabel || undefined"
       class="!w-fit max-w-40"
-      :class="{ 'dark:!bg-n-alpha-2 !bg-n-slate-9/20': isOpen }"
+      :class="[
+        triggerClass,
+        {
+          'dark:!bg-n-alpha-2 !bg-n-slate-9/20': isOpen && highlightTrigger,
+        },
+      ]"
       @click="toggleMenu"
     >
       <template #default>
@@ -65,7 +105,7 @@ const handleSelect = value => {
             :icon="icon"
             class="size-4 shrink-0 text-n-slate-11"
           />
-          <span class="min-w-0 truncate">{{ labelValue }}</span>
+          <span class="min-w-0 truncate text-left">{{ labelValue }}</span>
           <Icon
             icon="i-lucide-chevron-down"
             class="size-4 shrink-0 text-n-slate-11"
@@ -81,7 +121,11 @@ const handleSelect = value => {
           subMenuPosition === 'right',
         'ltr:right-full rtl:left-full ltr:mr-1 rtl:ml-1':
           subMenuPosition === 'left',
-        'top-full mt-1 ltr:right-0 rtl:left-0': subMenuPosition === 'bottom',
+        'top-full mt-1': subMenuPosition === 'bottom',
+        'ltr:left-0 rtl:right-0':
+          subMenuPosition === 'bottom' && subMenuAlign === 'start',
+        'ltr:right-0 rtl:left-0':
+          subMenuPosition === 'bottom' && subMenuAlign === 'end',
       }"
     >
       <Button
@@ -97,6 +141,17 @@ const handleSelect = value => {
         :class="{ '!bg-n-alpha-2': option.value === modelValue }"
         @click="handleSelect(option.value)"
       />
+      <div v-if="actionLabel" class="mt-1 border-t border-n-weak pt-1">
+        <Button
+          :label="actionLabel"
+          icon="i-lucide-plus"
+          size="sm"
+          variant="ghost"
+          color="slate"
+          class="!h-8 !w-full !justify-start !px-2.5"
+          @click="handleAction"
+        />
+      </div>
     </div>
   </div>
 </template>
