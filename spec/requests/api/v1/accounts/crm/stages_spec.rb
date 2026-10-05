@@ -432,25 +432,26 @@ RSpec.describe 'CRM Stages API', type: :request do
       deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
     end
 
-    it 'rejects deleting an empty stage that still has history' do
+    it 'deletes an empty stage that deals have passed through and keeps the history rows' do
+      visit = Crm::StageVisit.find_by!(stage_id: stage.id)
+
       delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
              headers: headers,
              as: :json
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
-      expect(account.crm_stages.exists?(stage.id)).to be(true)
+      expect(response).to have_http_status(:no_content)
+      expect(account.crm_stages.exists?(stage.id)).to be(false)
+      expect(visit.reload).to have_attributes(stage_id: nil, stage_name: stage.name, pipeline_id: pipeline.id)
     end
 
-    it 'reports the history in the deletion preflight' do
+    it 'lets the deletion preflight pass for an empty stage with history' do
       get "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}/deletion_check",
           headers: headers,
           as: :json
 
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body.dig('payload', 'can_delete')).to be(false)
-      expect(response.parsed_body.dig('payload', 'has_history')).to be(true)
-      expect(response.parsed_body.dig('payload', 'block_reason')).to eq('STAGE_HAS_HISTORY')
+      expect(response.parsed_body['payload']).to include('can_delete' => true, 'deal_count' => 0)
+      expect(response.parsed_body['payload']).not_to have_key('block_reason')
     end
 
     it 'answers 422 instead of 500 when a late dependent record blocks the destroy' do
@@ -538,6 +539,8 @@ RSpec.describe 'CRM Stages API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body['code']).to eq('STAGE_HAS_DEALS')
+    expect(response.parsed_body['error']).to start_with('В этапе есть сделки (1): перенесите их в другой этап')
+    expect(response.parsed_body['details']).to eq('deal_count' => 1, 'archived_deal_count' => 0, 'stage_id' => stage.id)
     expect(account.crm_stages.exists?(stage.id)).to be(true)
   end
 

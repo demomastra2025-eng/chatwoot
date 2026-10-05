@@ -7,10 +7,13 @@ class Crm::StageVisit < ApplicationRecord
 
   belongs_to :account, class_name: '::Account'
   belongs_to :deal, class_name: '::Crm::Deal', inverse_of: :stage_visits
-  belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stage_visits
-  belongs_to :stage, class_name: '::Crm::Stage', inverse_of: :stage_visits
+  # Deleting an emptied pipeline or stage keeps the visit (its pipeline_name and
+  # stage_name snapshots) and only clears the link, so the reports keep the history.
+  belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stage_visits, optional: true
+  belongs_to :stage, class_name: '::Crm::Stage', inverse_of: :stage_visits, optional: true
 
   validates :entered_at, :reliable_since, :pipeline_name, :stage_name, :stage_outcome, :correlation_id, presence: true
+  validates :pipeline, :stage, presence: true, on: :create
   validates :stage_outcome, inclusion: { in: Crm::Stage::OUTCOMES }
   validates :terminal_attribution_version, inclusion: { in: [TERMINAL_ATTRIBUTION_VERSION] }, allow_nil: true
   validate :references_belong_to_account

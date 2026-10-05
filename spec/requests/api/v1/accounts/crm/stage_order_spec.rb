@@ -357,27 +357,44 @@ RSpec.describe 'CRM stage draft API', type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
-  it 'rejects the whole draft when a deleted stage has history, keeping the other edits unsaved' do
+  it 'rejects the whole draft when a deleted stage still has deals, keeping the other edits unsaved' do
     open_stages = pipeline.stages.where(outcome: 'open').where.not(code: Crm::Stage::TECHNICAL_STAGE_CODES)
-    history_stage = open_stages.where(default: false).first
-    renamed_stage = open_stages.where.not(id: history_stage.id).first
-    other_stage = open_stages.where.not(id: [history_stage.id, renamed_stage.id]).first || renamed_stage
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: history_stage)
-    create(:crm_stage_visit, deal: deal, stage: history_stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
-    deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+    busy_stage = open_stages.where(default: false).first
+    renamed_stage = open_stages.where.not(id: busy_stage.id).first
+    create_list(:crm_deal, 2, account: account, pipeline: pipeline, stage: busy_stage)
     original_name = renamed_stage.name
     draft = stage_draft(pipeline)
-    draft[:deleted_stage_ids] = [history_stage.id]
-    draft[:stages].reject! { |row| row[:id] == history_stage.id }
+    draft[:deleted_stage_ids] = [busy_stage.id]
+    draft[:stages].reject! { |row| row[:id] == busy_stage.id }
     draft[:stages].find { |row| row[:id] == renamed_stage.id }[:name] = 'Renamed in the same draft'
 
     submit_stage_draft(draft)
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
-    expect(response.parsed_body.dig('details', 'stage_id')).to eq(history_stage.id)
-    expect(Crm::Stage.exists?(history_stage.id)).to be(true)
+    expect(response.parsed_body['code']).to eq('STAGE_HAS_DEALS')
+    expect(response.parsed_body['error']).to include('(2)').and end_with('Изменения не сохранены.')
+    expect(response.parsed_body.dig('details', 'stage_id')).to eq(busy_stage.id)
+    expect(response.parsed_body.dig('details', 'deal_count')).to eq(2)
+    expect(Crm::Stage.exists?(busy_stage.id)).to be(true)
     expect(renamed_stage.reload.name).to eq(original_name)
+  end
+
+  it 'deletes a stage in the draft once its deals left, keeping the history rows' do
+    open_stages = pipeline.stages.where(outcome: 'open').where.not(code: Crm::Stage::TECHNICAL_STAGE_CODES)
+    history_stage = open_stages.where(default: false).first
+    other_stage = open_stages.where.not(id: history_stage.id).first
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: history_stage)
+    visit = create(:crm_stage_visit, deal: deal, stage: history_stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
+    deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+    draft = stage_draft(pipeline)
+    draft[:deleted_stage_ids] = [history_stage.id]
+    draft[:stages].reject! { |row| row[:id] == history_stage.id }
+
+    submit_stage_draft(draft)
+
+    expect(response).to have_http_status(:ok)
+    expect(Crm::Stage.exists?(history_stage.id)).to be(false)
+    expect(visit.reload).to have_attributes(stage_id: nil, pipeline_id: pipeline.id, stage_name: history_stage.name)
   end
 
   it 'reports terminal and deal blockers without mutating protected stages' do

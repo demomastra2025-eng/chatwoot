@@ -80,7 +80,7 @@ class Crm::Stage < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stages
   has_many :deals, class_name: '::Crm::Deal', dependent: :restrict_with_error, inverse_of: :stage
-  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :restrict_with_error, inverse_of: :stage
+  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :nullify, inverse_of: :stage
   has_many :field_requirements,
            class_name: '::Crm::StageFieldRequirement',
            dependent: :destroy,

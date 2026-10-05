@@ -128,20 +128,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   end
 
   def ensure_destroyable_pipeline!
-    if @pipeline.deals.exists?
-      raise ::Crm::Error.new(
-        code: 'PIPELINE_HAS_DEALS',
-        message: 'You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.',
-        status: :unprocessable_content
-      )
-    end
-    return unless @pipeline.stage_visits.exists?
-
-    raise ::Crm::Error.new(
-      code: 'PIPELINE_HAS_HISTORY',
-      message: 'You cannot delete a pipeline that deals have passed through. Deactivate it instead to keep the deal history.',
-      status: :unprocessable_content
-    )
+    ::Crm::DealPresenceGuard.ensure_empty!(@pipeline)
   end
 
   def promote_default_pipeline!

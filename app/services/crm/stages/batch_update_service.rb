@@ -38,20 +38,8 @@ class Crm::Stages::BatchUpdateService
 
   def ensure_deletable_stage!(stage)
     raise_stage_error!('STANDARD_STAGE_LOCKED', 'System stages cannot be deleted.', stage) if stage.system_stage?
-    if stage.deals.exists?
-      raise_stage_error!(
-        'STAGE_HAS_DEALS',
-        'You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first. No changes were saved.',
-        stage
-      )
-    end
-    return unless stage.stage_visits.exists?
 
-    raise_stage_error!(
-      'STAGE_HAS_HISTORY',
-      'You cannot delete a stage that deals have passed through. Deactivate it instead to keep the deal history. No changes were saved.',
-      stage
-    )
+    Crm::DealPresenceGuard.ensure_empty!(stage, note: 'Изменения не сохранены.')
   end
 
   def upsert_movable_stages!
