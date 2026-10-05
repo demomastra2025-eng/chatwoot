@@ -63,6 +63,8 @@ class Messages::MessageBuilder
         account_id: @message.account_id,
         file: uploaded_attachment
       )
+      # Incoming messages (only allowed in Api inboxes) are never blocked by the storage limit.
+      attachment.skip_storage_limit_validation! if message_type == 'incoming'
 
       attachment.file_type = if uploaded_attachment.is_a?(String)
                                file_type_by_signed_id(

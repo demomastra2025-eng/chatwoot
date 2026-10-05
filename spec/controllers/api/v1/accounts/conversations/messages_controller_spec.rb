@@ -145,6 +145,33 @@ RSpec.describe 'Conversation Messages API', type: :request do
               .with(conversation, { account_id: conversation.account_id, inbox_id: conversation.inbox_id, message_type: :activity,
                                     content: 'System reopened the conversation due to a new incoming message.' }))
         end
+
+        it 'accepts an incoming message with an attachment while the account is over its storage limit' do
+          account.update!(limits: { storage_bytes: 1 })
+          file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+          expect do
+            post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+                 params: { content: 'test-message', message_type: 'incoming', attachments: [file] },
+                 headers: agent.create_new_auth_token
+          end.to change(Message, :count).by(1)
+
+          expect(response).to have_http_status(:success)
+          expect(conversation.messages.last.attachments.first.file).to be_attached
+        end
+
+        it 'still rejects an outgoing employee attachment over the storage limit in an api inbox' do
+          account.update!(limits: { storage_bytes: 1 })
+          file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+          expect do
+            post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+                 params: { content: 'test-message', attachments: [file] },
+                 headers: agent.create_new_auth_token
+          end.not_to change(Message, :count)
+
+          expect(response).to have_http_status(:unprocessable_content)
+        end
       end
     end
 
