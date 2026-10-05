@@ -1045,10 +1045,20 @@ onMounted(() => {
                 </span>
               </div>
 
-              <div class="flex flex-col gap-3 md:flex-row md:items-center">
-                <div class="min-w-0 flex-1">
+              <div
+                v-if="
+                  provider.credential.byok_allowed ||
+                  provider.credential.account_configured
+                "
+                class="flex flex-col gap-3 md:flex-row md:items-center"
+              >
+                <div
+                  v-if="provider.credential.byok_allowed"
+                  class="min-w-0 flex-1"
+                >
                   <Input
                     v-model="providerApiKeys[provider.key]"
+                    data-test="provider-api-key-input"
                     type="password"
                     :placeholder="
                       t('CAPTAIN_SETTINGS.PROVIDER_KEYS.PLACEHOLDER', {
@@ -1059,9 +1069,11 @@ onMounted(() => {
                 </div>
                 <div class="flex shrink-0 gap-2">
                   <NextButton
+                    v-if="provider.credential.byok_allowed"
                     sm
                     blue
                     type="button"
+                    data-test="provider-api-key-save"
                     :disabled="!isProviderApiKeyDirty(provider.key)"
                     @click="handleProviderApiKeySave(provider.key)"
                   >
@@ -1073,6 +1085,7 @@ onMounted(() => {
                     ruby
                     type="button"
                     icon="i-lucide-trash-2"
+                    data-test="provider-api-key-remove"
                     :disabled="!provider.credential.account_configured"
                     :title="
                       t('CAPTAIN_SETTINGS.PROVIDER_KEYS.REMOVE_ACCOUNT_KEY')
@@ -1084,7 +1097,10 @@ onMounted(() => {
                   />
                 </div>
               </div>
-              <p class="text-xs text-n-slate-11">
+              <p
+                v-if="provider.credential.byok_allowed"
+                class="text-xs text-n-slate-11"
+              >
                 {{ t('CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE') }}
               </p>
             </div>

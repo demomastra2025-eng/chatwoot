@@ -242,6 +242,85 @@ describe('Captain settings OpenRouter UX', () => {
     expect(wrapper.text()).not.toContain('Gemini');
   });
 
+  describe('OpenRouter account key (BYOK)', () => {
+    const mountWithCredential = credential => {
+      const store = useCaptainConfigStore();
+      store.applyPayload({
+        ...basePayload({
+          audioModel: {
+            id: 'openai/gpt-audio-mini',
+            display_name: 'GPT Audio Mini',
+            provider: 'openrouter',
+            provider_configured: true,
+            type: 'chat',
+            capabilities: ['audio_input', 'text_output', 'transcription'],
+          },
+        }),
+        provider_credentials: {
+          openrouter: {
+            display_name: 'OpenRouter',
+            source: 'global',
+            account_configured: false,
+            global_configured: true,
+            ...credential,
+          },
+        },
+      });
+      return mountComponent(store);
+    };
+
+    it('hides the key input and Save button when the platform blocks account keys', () => {
+      const wrapper = mountWithCredential({ byok_allowed: false });
+
+      // The status of the platform key stays visible, the form to override it does not.
+      expect(wrapper.text()).toContain('OpenRouter');
+      expect(
+        wrapper.find('[data-test="provider-api-key-input"]').exists()
+      ).toBe(false);
+      expect(wrapper.find('[data-test="provider-api-key-save"]').exists()).toBe(
+        false
+      );
+      expect(
+        wrapper.find('[data-test="provider-api-key-remove"]').exists()
+      ).toBe(false);
+      expect(wrapper.text()).not.toContain(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE'
+      );
+    });
+
+    it('keeps the remove button for a stored account key when keys are blocked', () => {
+      const wrapper = mountWithCredential({
+        byok_allowed: false,
+        source: 'global',
+        account_configured: true,
+      });
+
+      expect(
+        wrapper.find('[data-test="provider-api-key-input"]').exists()
+      ).toBe(false);
+      expect(wrapper.find('[data-test="provider-api-key-save"]').exists()).toBe(
+        false
+      );
+      expect(
+        wrapper.find('[data-test="provider-api-key-remove"]').exists()
+      ).toBe(true);
+    });
+
+    it('shows the key input and Save button when the account may bring its own key', () => {
+      const wrapper = mountWithCredential({ byok_allowed: true });
+
+      expect(
+        wrapper.find('[data-test="provider-api-key-input"]').exists()
+      ).toBe(true);
+      expect(wrapper.find('[data-test="provider-api-key-save"]').exists()).toBe(
+        true
+      );
+      expect(wrapper.text()).toContain(
+        'CAPTAIN_SETTINGS.PROVIDER_KEYS.SECRET_NOTE'
+      );
+    });
+  });
+
   it('hides the audio prompt control for native transcription endpoint models', () => {
     const store = useCaptainConfigStore();
     store.applyPayload(
