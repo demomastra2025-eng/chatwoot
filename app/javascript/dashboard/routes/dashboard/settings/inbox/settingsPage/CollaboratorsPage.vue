@@ -15,7 +15,6 @@ import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.v
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
 import assignmentPoliciesAPI from 'dashboard/api/assignmentPolicies';
-import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import { useI18n } from 'vue-i18n';
 
 const props = defineProps({
@@ -43,24 +42,8 @@ const availablePolicies = ref([]);
 const isLoadingPolicies = ref(false);
 const showPolicyDropdown = ref(false);
 const isLinkingPolicy = ref(false);
-const showCallsHandledByOtherOperators = ref(false);
-const persistedCallVisibility = ref(false);
-const isLoadingCallVisibility = ref(false);
-const isUpdatingCallVisibility = ref(false);
-const isCallVisibilityReadOnly = ref(false);
-const callVisibilityConfigurationVersion = ref(null);
-let callVisibilityRequestId = 0;
-let callVisibilityUpdateId = 0;
 
 const agentList = computed(() => store.getters['agents/getAgents']);
-
-const isVirtualPbxVoiceInbox = computed(
-  () =>
-    props.inbox.channel_type === 'Channel::Voice' &&
-    ['asterisk_analog', 'sipuni', 'binotel', 'beeline', 'wazo'].includes(
-      props.inbox.provider
-    )
-);
 
 const selectedAgentNames = computed(() =>
   selectedAgentIds.value.map(
@@ -278,110 +261,6 @@ const handleToggleAutoAssignment = async val => {
   }
 };
 
-const fetchCallVisibility = async () => {
-  callVisibilityRequestId += 1;
-  const requestId = callVisibilityRequestId;
-  const inboxId = props.inbox.id;
-  if (!isVirtualPbxVoiceInbox.value || !inboxId) {
-    showCallsHandledByOtherOperators.value = false;
-    persistedCallVisibility.value = false;
-    isCallVisibilityReadOnly.value = false;
-    callVisibilityConfigurationVersion.value = null;
-    isLoadingCallVisibility.value = false;
-    return;
-  }
-
-  isLoadingCallVisibility.value = true;
-  try {
-    const response = await VoiceAPI.getVirtualPbxStatus(inboxId);
-    if (requestId !== callVisibilityRequestId || props.inbox.id !== inboxId) {
-      return;
-    }
-    const config =
-      response?.payload?.ui_config || response?.payload?.config || {};
-    const visibilityEnabled =
-      config?.routing?.show_calls_handled_by_other_operators === true;
-    showCallsHandledByOtherOperators.value = visibilityEnabled;
-    persistedCallVisibility.value = visibilityEnabled;
-    callVisibilityConfigurationVersion.value =
-      config?.configuration_version || null;
-    isCallVisibilityReadOnly.value = Boolean(
-      config?.ownership?.read_only || config?.status?.read_only
-    );
-  } catch {
-    if (requestId !== callVisibilityRequestId || props.inbox.id !== inboxId) {
-      return;
-    }
-    isCallVisibilityReadOnly.value = true;
-    callVisibilityConfigurationVersion.value = null;
-    useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
-  } finally {
-    if (requestId === callVisibilityRequestId) {
-      isLoadingCallVisibility.value = false;
-    }
-  }
-};
-
-const updateCallVisibility = async value => {
-  callVisibilityUpdateId += 1;
-  const updateId = callVisibilityUpdateId;
-  const inboxId = props.inbox.id;
-  const previousValue = persistedCallVisibility.value;
-  isUpdatingCallVisibility.value = true;
-  try {
-    const response = await VoiceAPI.updateVirtualPbxChannel(
-      inboxId,
-      {
-        expected_configuration_version:
-          callVisibilityConfigurationVersion.value,
-        routing: {
-          show_calls_handled_by_other_operators: value,
-        },
-      },
-      { dryRun: false, remoteCommit: false }
-    );
-    const responseErrors = response?.payload?.errors || [];
-    if (responseErrors.length) {
-      if (updateId !== callVisibilityUpdateId || props.inbox.id !== inboxId) {
-        return;
-      }
-      showCallsHandledByOtherOperators.value = previousValue;
-      if (
-        responseErrors.some(error => error?.code === 'active_calls_present')
-      ) {
-        useAlert(
-          t(
-            'INBOX_MGMT.EDIT.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.ACTIVE_CALL_ERROR'
-          )
-        );
-      } else {
-        useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
-      }
-      return;
-    }
-    if (updateId !== callVisibilityUpdateId || props.inbox.id !== inboxId) {
-      return;
-    }
-
-    showCallsHandledByOtherOperators.value = value;
-    persistedCallVisibility.value = value;
-    callVisibilityConfigurationVersion.value =
-      response?.payload?.ui_config?.configuration_version ||
-      callVisibilityConfigurationVersion.value;
-    useAlert(t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
-  } catch {
-    if (updateId !== callVisibilityUpdateId || props.inbox.id !== inboxId) {
-      return;
-    }
-    showCallsHandledByOtherOperators.value = previousValue;
-    useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
-  } finally {
-    if (updateId === callVisibilityUpdateId && props.inbox.id === inboxId) {
-      isUpdatingCallVisibility.value = false;
-    }
-  }
-};
-
 const updateAgents = async () => {
   isAgentListUpdating.value = true;
   try {
@@ -463,13 +342,10 @@ const deleteAssignmentPolicy = async () => {
 };
 
 const setDefaults = () => {
-  callVisibilityUpdateId += 1;
-  isUpdatingCallVisibility.value = false;
   enableAutoAssignment.value = props.inbox.enable_auto_assignment;
   maxAssignmentLimit.value =
     props.inbox.auto_assignment_config?.max_assignment_limit || null;
   fetchAttachedAgents();
-  fetchCallVisibility();
   if (showAdvancedAssignmentUI.value) {
     fetchAssignmentPolicy();
     fetchAvailablePolicies();
@@ -519,27 +395,6 @@ onMounted(() => {
         </div>
       </template>
     </SettingsFieldSection>
-    <SettingsToggleSection
-      v-if="isVirtualPbxVoiceInbox"
-      v-model="showCallsHandledByOtherOperators"
-      data-test="handled-call-visibility"
-      class="mt-6"
-      compact
-      :disabled="
-        isLoadingCallVisibility ||
-        isUpdatingCallVisibility ||
-        isCallVisibilityReadOnly
-      "
-      :header="
-        $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.LABEL')
-      "
-      :description="
-        $t(
-          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.DESCRIPTION'
-        )
-      "
-      @update:model-value="updateCallVisibility"
-    />
     <SettingsAccordion
       :title="$t('INBOX_MGMT.SETTINGS_POPUP.AGENT_ASSIGNMENT')"
       class="mt-6"

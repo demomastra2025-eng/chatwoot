@@ -1,5 +1,8 @@
 import { CONTENT_TYPES } from 'dashboard/components-next/message/constants';
-import { useCallsStore } from 'dashboard/stores/calls';
+import {
+  isCallAddressedToAnotherOperator,
+  useCallsStore,
+} from 'dashboard/stores/calls';
 import types from 'dashboard/store/mutation-types';
 
 export const TERMINAL_STATUSES = [
@@ -126,11 +129,6 @@ function extractCallData(message) {
       contentData.relatedCallSids ||
       contentMeta?.related_call_sids ||
       contentMeta?.relatedCallSids,
-    showCallsHandledByOtherOperators:
-      contentData.show_calls_handled_by_other_operators ??
-      contentData.showCallsHandledByOtherOperators ??
-      contentMeta?.show_calls_handled_by_other_operators ??
-      contentMeta?.showCallsHandledByOtherOperators,
     provider:
       contentData.provider ||
       message?.provider ||
@@ -222,7 +220,6 @@ export function handleVoiceCallCreated(message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
-    showCallsHandledByOtherOperators,
     numberRef,
   } = extractCallData(message);
 
@@ -255,7 +252,6 @@ export function handleVoiceCallCreated(message, currentUserId) {
       logicalCallTerminal,
       sipProfileId,
       janusSessionKey,
-      showCallsHandledByOtherOperators,
       currentUserId,
       numberRef,
     });
@@ -269,6 +265,15 @@ export function handleVoiceCallCreated(message, currentUserId) {
   const callsStore = useCallsStore();
   if (foreignOperatorClaim) {
     callsStore.handleCallClaimed(extractCallData(message), currentUserId);
+    return;
+  }
+  // A call that rings for other operators only is not this employee's.
+  if (
+    isCallAddressedToAnotherOperator(
+      { operatorClaim, operatorCandidates },
+      currentUserId
+    )
+  ) {
     return;
   }
 
@@ -298,13 +303,6 @@ export function handleVoiceCallCreated(message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
-    showCallsHandledByOtherOperators,
-    ...(foreignOperatorClaim
-      ? {
-          browserJoinSupported: false,
-          browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-        }
-      : {}),
     numberRef,
   });
 }
@@ -338,7 +336,6 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
-    showCallsHandledByOtherOperators,
     numberRef,
   } = extractCallData(message);
 
@@ -383,16 +380,20 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
-    showCallsHandledByOtherOperators,
     currentUserId,
     numberRef,
+    startedByCurrentUser:
+      callDirection === 'outbound' && senderId === currentUserId,
   });
 
   const isNewCall =
     status === 'ringing' &&
     !shouldSkipCall(callDirection, senderId, currentUserId) &&
-    (!claimedByAnotherOperator(operatorClaim, currentUserId) ||
-      showCallsHandledByOtherOperators === true);
+    !claimedByAnotherOperator(operatorClaim, currentUserId) &&
+    !isCallAddressedToAnotherOperator(
+      { operatorClaim, operatorCandidates },
+      currentUserId
+    );
 
   if (isNewCall) {
     callsStore.addCall({
@@ -421,7 +422,6 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       logicalCallTerminal,
       sipProfileId,
       janusSessionKey,
-      showCallsHandledByOtherOperators,
       numberRef,
     });
   }

@@ -216,7 +216,7 @@ class Telephony::VirtualPbx::ProvisioningService
       errors << error('managed_ownership_required',
                       'Legacy/reference resources are read-only until managed migration is approved')
     end
-    errors << error('active_calls_present', 'Channel has active calls and cannot be updated') if block_update_for_active_calls?(inbox_id, payload)
+    errors << error('active_calls_present', 'Channel has active calls and cannot be updated') if active_calls_present?(inbox_id)
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'update', normalized_payload: normalized, errors: errors, existing_config: existing_config,
@@ -694,7 +694,6 @@ class Telephony::VirtualPbx::ProvisioningService
       ai_enabled: normalized_routing_ai_enabled(source, fallback),
       operator_distribution_mode: normalized_operator_distribution_mode(source, fallback),
       max_call_duration_seconds: normalized_max_call_duration_seconds(source, fallback),
-      show_calls_handled_by_other_operators: normalized_show_calls_handled_by_other_operators(source, fallback),
       operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
     }.compact
   end
@@ -719,16 +718,6 @@ class Telephony::VirtualPbx::ProvisioningService
     Integer(value.to_s, 10)
   rescue ArgumentError, TypeError
     value
-  end
-
-  def normalized_show_calls_handled_by_other_operators(source, fallback)
-    value = if source.key?('show_calls_handled_by_other_operators')
-              source['show_calls_handled_by_other_operators']
-            else
-              fallback[:show_calls_handled_by_other_operators]
-            end
-
-    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def normalized_operator_agent_aor(source, fallback, profiles_supplied: false)
@@ -1370,7 +1359,6 @@ class Telephony::VirtualPbx::ProvisioningService
       fallback_mode: payload.dig(:routing, :fallback_mode),
       operator_distribution_mode: payload.dig(:routing, :operator_distribution_mode),
       max_call_duration_seconds: payload.dig(:routing, :max_call_duration_seconds),
-      show_calls_handled_by_other_operators: payload.dig(:routing, :show_calls_handled_by_other_operators),
       operator_agent_aor: operator_agent_aor_for(payload),
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,
@@ -1456,20 +1444,6 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def active_calls_present?(inbox_id)
     Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
-  end
-
-  def block_update_for_active_calls?(inbox_id, payload)
-    !handled_call_visibility_only_update?(payload) && active_calls_present?(inbox_id)
-  end
-
-  def handled_call_visibility_only_update?(payload)
-    update_payload = payload.to_h.with_indifferent_access
-    return false if (update_payload.keys.map(&:to_s) - %w[expected_configuration_version routing]).any?
-
-    routing = update_payload[:routing]
-    return false unless routing.respond_to?(:to_h)
-
-    routing.to_h.keys.map(&:to_s) == ['show_calls_handled_by_other_operators']
   end
 
   def destroy_provider_connection_if_orphaned!(provider_connection)

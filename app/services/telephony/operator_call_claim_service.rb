@@ -374,13 +374,7 @@ class Telephony::OperatorCallClaimService
   end
 
   def claimed_call_pubsub_tokens
-    tokens = account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token)
-    inbox = account.inboxes.find_by(id: call_session.inbox_id)
-    if inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true
-      member_user_ids = inbox.inbox_members.select(:user_id)
-      tokens += account.users.where(id: member_user_ids).filter_map(&:pubsub_token)
-    end
-    tokens.uniq
+    account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token).uniq
   end
 
   def validate_call_session_tenant_links!
@@ -455,8 +449,6 @@ class Telephony::OperatorCallClaimService
       relatedCallSids: related_claimed_call_sessions.map(&:external_call_ref).uniq,
       claimed_by_user_id: user.id,
       claimedByUserId: user.id,
-      show_calls_handled_by_other_operators:
-        call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
       operator_claim: claim_payload
     }.compact
   end

@@ -139,8 +139,7 @@ describe('usePhoneWidgetVisibility', () => {
     const { isVisible, hasCallActivity, ownIncomingCalls } =
       usePhoneWidgetVisibility();
 
-    // The inbox shows calls handled by other operators: the calls store keeps
-    // an info card for the call operator 99 took.
+    // The call operator 99 took leaves no card in the calls store.
     callsStore.handleCallStatusChanged({
       callSid: 'sipuni:other-1',
       provider: 'sipuni',
@@ -150,10 +149,9 @@ describe('usePhoneWidgetVisibility', () => {
       accountId: 7,
       operatorClaim: { user_id: 99 },
       currentUserId: 1,
-      showCallsHandledByOtherOperators: true,
     });
 
-    expect(callsStore.incomingCalls).toHaveLength(1);
+    expect(callsStore.incomingCalls).toEqual([]);
     expect(ownIncomingCalls.value).toEqual([]);
     expect(hasCallActivity.value).toBe(false);
     expect(isVisible.value).toBe(false);
@@ -190,9 +188,7 @@ describe('usePhoneWidgetVisibility', () => {
         currentUserId: 1,
       });
 
-      expect(callsStore.incomingCalls.map(call => call.callSid)).toEqual([
-        'sipuni:ai-1',
-      ]);
+      expect(callsStore.incomingCalls).toEqual([]);
       expect(ownIncomingCalls.value).toEqual([]);
       expect(hasCallActivity.value).toBe(false);
       expect(isVisible.value).toBe(false);
@@ -227,9 +223,7 @@ describe('usePhoneWidgetVisibility', () => {
         currentUserId: 1,
       });
 
-      expect(callsStore.incomingCalls[0]?.browserJoinUnsupportedReason).toBe(
-        'CALL_IN_PROGRESS'
-      );
+      expect(callsStore.incomingCalls).toEqual([]);
       expect(hasCallActivity.value).toBe(false);
       expect(isVisible.value).toBe(false);
     });

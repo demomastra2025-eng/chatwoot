@@ -58,211 +58,39 @@ const inbox = {
   auto_assignment_config: {},
 };
 
-const buildWrapper = ({ inbox: inboxProp = inbox } = {}) =>
+const buildWrapper = () =>
   shallowMount(CollaboratorsPage, {
-    props: { inbox: inboxProp },
+    props: { inbox },
     global: {
       mocks: { $t: key => key },
       stubs: { 'woot-input': true },
     },
   });
 
-describe('CollaboratorsPage call visibility', () => {
+describe('CollaboratorsPage voice inbox', () => {
   beforeEach(() => {
     mocks.alert.mockReset();
     mocks.dispatch.mockReset();
     mocks.getVirtualPbxStatus.mockReset();
     mocks.updateVirtualPbxChannel.mockReset();
     mocks.dispatch.mockResolvedValue({ data: { payload: [] } });
-    mocks.getVirtualPbxStatus.mockResolvedValue({
-      payload: {
-        ui_config: {
-          configuration_version: 'config-version-1',
-          status: { read_only: false },
-          routing: { show_calls_handled_by_other_operators: true },
-        },
-      },
-    });
-    mocks.updateVirtualPbxChannel.mockResolvedValue({
-      payload: {
-        errors: [],
-        ui_config: { configuration_version: 'config-version-2' },
-      },
-    });
   });
 
-  it('loads and updates handled-call visibility from the employees page', async () => {
+  it('has no setting that shows the calls of other operators', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
-    expect(mocks.getVirtualPbxStatus).toHaveBeenCalledWith(194);
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
+    expect(wrapper.find('[data-test="handled-call-visibility"]').exists()).toBe(
+      false
     );
-    expect(toggle.exists()).toBe(true);
-    expect(toggle.props('modelValue')).toBe(true);
-
-    toggle.vm.$emit('update:modelValue', false);
-    await flushPromises();
-
-    expect(mocks.updateVirtualPbxChannel).toHaveBeenCalledWith(
-      194,
-      {
-        expected_configuration_version: 'config-version-1',
-        routing: {
-          show_calls_handled_by_other_operators: false,
-        },
-      },
-      { dryRun: false, remoteCommit: false }
-    );
+    expect(wrapper.html()).not.toContain('HANDLED_CALL_VISIBILITY');
   });
 
-  it('disables handled-call visibility when Virtual PBX settings are read-only', async () => {
-    mocks.getVirtualPbxStatus.mockResolvedValue({
-      payload: {
-        ui_config: {
-          status: { read_only: true },
-          routing: { show_calls_handled_by_other_operators: false },
-        },
-      },
-    });
-
-    const wrapper = buildWrapper();
+  it('never loads or changes the Virtual PBX channel from the employees page', async () => {
+    buildWrapper();
     await flushPromises();
 
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    expect(toggle.props('disabled')).toBe(true);
-  });
-
-  it('fails closed when handled-call visibility cannot be loaded', async () => {
-    mocks.getVirtualPbxStatus.mockRejectedValue(new Error('status failed'));
-
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    expect(toggle.props('disabled')).toBe(true);
-    expect(mocks.alert).toHaveBeenCalledWith(
-      'INBOX_MGMT.EDIT.API.ERROR_MESSAGE'
-    );
-  });
-
-  it('restores the persisted visibility when the update fails', async () => {
-    mocks.updateVirtualPbxChannel.mockRejectedValue(new Error('update failed'));
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    toggle.vm.$emit('update:modelValue', false);
-    await flushPromises();
-
-    expect(toggle.props('modelValue')).toBe(true);
-    expect(mocks.alert).toHaveBeenCalledWith(
-      'INBOX_MGMT.EDIT.API.ERROR_MESSAGE'
-    );
-  });
-
-  it('shows the actionable active-call error returned by the backend', async () => {
-    mocks.updateVirtualPbxChannel.mockResolvedValue({
-      payload: {
-        errors: [
-          {
-            code: 'active_calls_present',
-            message: 'Channel has active calls and cannot be updated',
-          },
-        ],
-      },
-    });
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    toggle.vm.$emit('update:modelValue', false);
-    await flushPromises();
-
-    expect(toggle.props('modelValue')).toBe(true);
-    expect(mocks.alert).toHaveBeenCalledWith(
-      'INBOX_MGMT.EDIT.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.ACTIVE_CALL_ERROR'
-    );
-  });
-
-  it('ignores a stale status response after switching inboxes', async () => {
-    let resolveFirstRequest;
-    mocks.getVirtualPbxStatus
-      .mockImplementationOnce(
-        () =>
-          new Promise(resolve => {
-            resolveFirstRequest = resolve;
-          })
-      )
-      .mockResolvedValueOnce({
-        payload: {
-          ui_config: {
-            status: { read_only: false },
-            routing: { show_calls_handled_by_other_operators: false },
-          },
-        },
-      });
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    await wrapper.setProps({ inbox: { ...inbox, id: 195 } });
-    await flushPromises();
-    resolveFirstRequest({
-      payload: {
-        ui_config: {
-          configuration_version: 'config-version-1',
-          status: { read_only: false },
-          routing: { show_calls_handled_by_other_operators: true },
-        },
-      },
-    });
-    await flushPromises();
-
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    expect(mocks.getVirtualPbxStatus).toHaveBeenLastCalledWith(195);
-    expect(toggle.props('modelValue')).toBe(false);
-  });
-
-  it('ignores a stale update response after switching away from and back to an inbox', async () => {
-    let resolveUpdate;
-    mocks.updateVirtualPbxChannel.mockImplementationOnce(
-      () =>
-        new Promise(resolve => {
-          resolveUpdate = resolve;
-        })
-    );
-    const wrapper = buildWrapper();
-    await flushPromises();
-
-    wrapper
-      .findComponent('[data-test="handled-call-visibility"]')
-      .vm.$emit('update:modelValue', false);
-    await flushPromises();
-    await wrapper.setProps({ inbox: { ...inbox, id: 195 } });
-    await flushPromises();
-    await wrapper.setProps({ inbox: { ...inbox, id: 194 } });
-    await flushPromises();
-
-    resolveUpdate({ payload: { errors: [] } });
-    await flushPromises();
-
-    const toggle = wrapper.findComponent(
-      '[data-test="handled-call-visibility"]'
-    );
-    expect(toggle.props('modelValue')).toBe(true);
-    expect(mocks.alert).not.toHaveBeenCalledWith(
-      'INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'
-    );
+    expect(mocks.getVirtualPbxStatus).not.toHaveBeenCalled();
+    expect(mocks.updateVirtualPbxChannel).not.toHaveBeenCalled();
   });
 });

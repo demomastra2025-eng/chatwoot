@@ -135,6 +135,24 @@ describe('WhatsappCallWidget ringtone', () => {
     wrapper.unmount();
   });
 
+  it('tells the employee on a call that he cannot take a second WhatsApp call', () => {
+    mockSession.incomingCalls = [
+      { callId: 'wa-incoming-note', caller: { name: 'Customer' } },
+    ];
+    const idle = mountComponent();
+    expect(idle.find('[data-testid="whatsapp-call-busy-note"]').exists()).toBe(
+      false
+    );
+    idle.unmount();
+
+    voiceCallsState.hasActiveCall = true;
+    const busy = mountComponent();
+    expect(busy.get('[data-testid="whatsapp-call-busy-note"]').text()).toBe(
+      'CONVERSATION.VOICE_WIDGET.BUSY_ON_CALL'
+    );
+    busy.unmount();
+  });
+
   it('silences the ringtone when the incoming card is closed', async () => {
     mockSession.incomingCalls = [
       { callId: 'wa-incoming-3', caller: { name: 'Customer' } },

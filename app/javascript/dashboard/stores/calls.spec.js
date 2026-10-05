@@ -19,7 +19,12 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   },
 }));
 
-import { useCallsStore } from './calls';
+import {
+  isCallAddressedToAnotherOperator,
+  isCallForCurrentUser,
+  isCallOfAnotherParty,
+  useCallsStore,
+} from './calls';
 
 describe('useCallsStore', () => {
   beforeEach(() => {
@@ -876,7 +881,7 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('keeps a partial-scope same-SID call separate from a scoped observer card', async () => {
+  it('keeps a partial-scope same-SID call separate from a scoped claimed call', async () => {
     const store = useCallsStore();
 
     store.calls.push(
@@ -905,33 +910,19 @@ describe('useCallsStore', () => {
         inbox_id: 42,
         logical_call_key: 'sipuni-inbound:observed-call',
         claimed_by_user_id: 9,
-        show_calls_handled_by_other_operators: true,
       },
       7
     );
 
-    expect(store.calls).toHaveLength(2);
-    expect(
-      store.calls.find(
-        call => call.logicalCallKey === 'sipuni-inbound:unrelated-observer-call'
-      )
-    ).toEqual(
+    // The claimed call is another operator's: no card is left for it, and
+    // the unrelated call with the same SID stays untouched.
+    expect(store.calls).toEqual([
       expect.objectContaining({
+        logicalCallKey: 'sipuni-inbound:unrelated-observer-call',
         inboxId: null,
         status: 'ringing',
-      })
-    );
-    expect(
-      store.calls.find(
-        call => call.logicalCallKey === 'sipuni-inbound:observed-call'
-      )
-    ).toEqual(
-      expect.objectContaining({
-        inboxId: 42,
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-      })
-    );
+      }),
+    ]);
   });
 
   it('ends the browser client only when a claimed Janus SIP call was active in this browser', async () => {
@@ -1305,7 +1296,7 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('shows one informational card to other operators when the channel setting is enabled', () => {
+  it('shows no card to other operators when an operator took the call', () => {
     const store = useCallsStore();
     [79, 81].forEach(profileId => {
       store.addCall({
@@ -1340,22 +1331,12 @@ describe('useCallsStore', () => {
         internal_extension: '202',
       },
       operatorInternalExtension: '202',
-      showCallsHandledByOtherOperators: true,
     });
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'operator-branch-81',
-        status: 'in_progress',
-        isActive: false,
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-        operatorInternalExtension: '202',
-      }),
-    ]);
+    expect(store.calls).toEqual([]);
   });
 
-  it('replaces every local branch with one observer card on a foreign claim', async () => {
+  it('removes every local branch and leaves no card on a foreign claim', async () => {
     const store = useCallsStore();
     [79, 81].forEach(profileId => {
       store.addCall({
@@ -1390,19 +1371,11 @@ describe('useCallsStore', () => {
           sip_profile_id: 79,
           internal_extension: '202',
         },
-        show_calls_handled_by_other_operators: true,
       },
       7
     );
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'claim-branch-79',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-        operatorInternalExtension: '202',
-      }),
-    ]);
+    expect(store.calls).toEqual([]);
   }, 30000);
 
   it('keeps an active branch when a same-SID sibling ends before the logical call', async () => {
@@ -2384,5 +2357,224 @@ describe('useCallsStore', () => {
         status: 'in_progress',
       }),
     ]);
+  });
+
+  describe('calls of other operators', () => {
+    const outboundInProgress = (overrides = {}) => ({
+      callSid: 'outbound-foreign-1',
+      status: 'in_progress',
+      conversationId: 44,
+      inboxId: 88,
+      provider: 'sipuni',
+      callDirection: 'outbound',
+      currentUserId: 7,
+      ...overrides,
+    });
+
+    it('does not show or activate an outbound call another operator started', () => {
+      const store = useCallsStore();
+
+      store.handleCallStatusChanged(
+        outboundInProgress({ operatorCandidates: [{ user_id: 9 }] })
+      );
+
+      expect(store.calls).toEqual([]);
+      expect(store.activeCall).toBeNull();
+      expect(store.hasIncomingCall).toBe(false);
+    });
+
+    it('does not show an in-progress call that says nothing about its operator', () => {
+      const store = useCallsStore();
+
+      store.handleCallStatusChanged(outboundInProgress());
+
+      expect(store.calls).toEqual([]);
+    });
+
+    it('does not show an in-progress call claimed by another operator', () => {
+      const store = useCallsStore();
+
+      store.handleCallStatusChanged(
+        outboundInProgress({
+          callDirection: 'inbound',
+          operatorClaim: { user_id: 9, user_name: 'Ayan' },
+        })
+      );
+
+      expect(store.calls).toEqual([]);
+    });
+
+    it('still activates the outbound call the employee started', () => {
+      const store = useCallsStore();
+
+      store.handleCallStatusChanged(
+        outboundInProgress({ operatorCandidates: [{ user_id: 7 }] })
+      );
+
+      expect(store.calls).toEqual([
+        expect.objectContaining({
+          callSid: 'outbound-foreign-1',
+          isActive: true,
+        }),
+      ]);
+    });
+
+    it('removes the ringing card of a call another operator took and never brings it back', async () => {
+      const store = useCallsStore();
+      store.addCall({
+        callSid: 'ringing-race-1',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        conversationId: 612,
+        logicalCallKey: 'sipuni-inbound:race',
+        status: 'ringing',
+      });
+
+      await store.handleCallClaimed(
+        {
+          call_sid: 'ringing-race-1',
+          provider: 'sipuni',
+          call_direction: 'inbound',
+          conversation_id: 612,
+          logical_call_key: 'sipuni-inbound:race',
+          claimed_by_user_id: 9,
+        },
+        7
+      );
+      store.handleCallStatusChanged({
+        callSid: 'ringing-race-1',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        conversationId: 612,
+        logicalCallKey: 'sipuni-inbound:race',
+        status: 'ringing',
+        currentUserId: 7,
+      });
+      store.addCall({
+        callSid: 'ringing-race-1',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        conversationId: 612,
+        logicalCallKey: 'sipuni-inbound:race',
+        status: 'ringing',
+      });
+
+      expect(store.calls).toEqual([]);
+    });
+
+    it('keeps the card when the employee himself took the call', async () => {
+      const store = useCallsStore();
+      store.addCall({
+        callSid: 'ringing-mine-1',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        conversationId: 612,
+        logicalCallKey: 'sipuni-inbound:mine',
+        status: 'ringing',
+      });
+
+      await store.handleCallClaimed(
+        {
+          call_sid: 'ringing-mine-1',
+          provider: 'sipuni',
+          call_direction: 'inbound',
+          conversation_id: 612,
+          logical_call_key: 'sipuni-inbound:mine',
+          claimed_by_user_id: 7,
+        },
+        7
+      );
+
+      expect(store.calls).toHaveLength(1);
+    });
+  });
+
+  describe('call ownership helpers', () => {
+    it('knows whether the server addressed a call to the employee', () => {
+      expect(
+        isCallForCurrentUser({ operatorCandidates: [{ user_id: 7 }] }, 7)
+      ).toBe(true);
+      expect(isCallForCurrentUser({ operatorClaim: { user_id: 7 } }, '7')).toBe(
+        true
+      );
+      expect(
+        isCallForCurrentUser({ operatorCandidates: [{ user_id: 9 }] }, 7)
+      ).toBe(false);
+      expect(isCallForCurrentUser({ operatorClaim: { user_id: 9 } }, 7)).toBe(
+        false
+      );
+      expect(isCallForCurrentUser({}, 7)).toBe(false);
+      expect(isCallForCurrentUser({}, undefined)).toBe(true);
+    });
+
+    it('detects a call addressed to other operators only', () => {
+      expect(
+        isCallAddressedToAnotherOperator(
+          { operatorCandidates: [{ user_id: 9 }, { user_id: 10 }] },
+          7
+        )
+      ).toBe(true);
+      expect(
+        isCallAddressedToAnotherOperator(
+          { operatorCandidates: [{ user_id: 9 }, { user_id: 7 }] },
+          7
+        )
+      ).toBe(false);
+      expect(
+        isCallAddressedToAnotherOperator({ operatorClaim: { user_id: 9 } }, 7)
+      ).toBe(true);
+      expect(isCallAddressedToAnotherOperator({}, 7)).toBe(false);
+    });
+
+    it('never shows the cards of other parties', () => {
+      const claimedElsewhere = {
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        operatorClaim: { user_id: 9 },
+      };
+      const aiCall = { serverManagedVoiceCall: true };
+      const unclaimedInProgress = {
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+      };
+
+      expect(isCallOfAnotherParty(claimedElsewhere, 7)).toBe(true);
+      expect(isCallOfAnotherParty(aiCall, 7)).toBe(true);
+      expect(
+        isCallOfAnotherParty(
+          { browserJoinUnsupportedReason: 'AI_AGENT_HANDLING' },
+          7
+        )
+      ).toBe(true);
+      expect(isCallOfAnotherParty(unclaimedInProgress, 7)).toBe(true);
+    });
+
+    it('keeps the employee own calls', () => {
+      expect(
+        isCallOfAnotherParty(
+          {
+            browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+            operatorClaim: { user_id: 7 },
+          },
+          7
+        )
+      ).toBe(false);
+      expect(
+        isCallOfAnotherParty(
+          {
+            browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+            operatorCandidates: [{ user_id: 7 }],
+          },
+          7
+        )
+      ).toBe(false);
+      expect(
+        isCallOfAnotherParty(
+          { isActive: true, serverManagedVoiceCall: true },
+          7
+        )
+      ).toBe(false);
+      expect(isCallOfAnotherParty({ browserJoinSupported: true }, 7)).toBe(
+        false
+      );
+    });
   });
 });

@@ -237,11 +237,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('does not overwrite handled-call visibility when technical settings are saved', async () => {
+  it('never sends the retired handled-call visibility setting when technical settings are saved', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
-    wrapper.vm.virtualPbxForm.showCallsHandledByOtherOperators = true;
 
     await wrapper.vm.updateVirtualPbxChannel();
     await flushPromises();

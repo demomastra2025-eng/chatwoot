@@ -8,7 +8,11 @@ import {
   useWhatsappCallsStore,
   getOutboundCallState,
 } from 'dashboard/stores/whatsappCalls';
-import { useCallsStore } from 'dashboard/stores/calls';
+import {
+  isCallAddressedToAnotherOperator,
+  useCallsStore,
+} from 'dashboard/stores/calls';
+import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   clearPreparedInboundAgentAnswer,
@@ -708,6 +712,19 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onVoiceCallIncoming = data => {
     const serverManagedVoiceCall = isServerManagedVoiceCall(data);
+    // A call the AI voice agent handles, or one addressed to other operators
+    // only, is not this employee's: no card for it.
+    if (serverManagedVoiceCall) return;
+    // (The server sends an incoming call to its operators only; a call that
+    // somebody else already took does not ring here.)
+    if (
+      isCallAddressedToAnotherOperator(
+        { operatorClaim: data.operator_claim || data.operatorClaim },
+        this.app.$store.getters.getCurrentUserID
+      )
+    ) {
+      return;
+    }
 
     const callsStore = useCallsStore();
     callsStore.addCall({
@@ -760,6 +777,10 @@ class ActionCableConnector extends BaseActionCableConnector {
   // eslint-disable-next-line class-methods-use-this
   onVoiceCallStatusChanged = data => {
     const serverManagedVoiceCall = isServerManagedVoiceCall(data);
+    // The AI voice agent's calls get no card; only their end is processed.
+    if (serverManagedVoiceCall && !TERMINAL_STATUSES.includes(data.status)) {
+      return;
+    }
 
     const callsStore = useCallsStore();
     const currentUserId = this.app.$store.getters.getCurrentUserID;
@@ -810,9 +831,6 @@ class ActionCableConnector extends BaseActionCableConnector {
           data.browserJoinUnsupportedReason,
       serverManagedVoiceCall,
       currentUserId,
-      showCallsHandledByOtherOperators:
-        data.show_calls_handled_by_other_operators ??
-        data.showCallsHandledByOtherOperators,
     });
   };
 

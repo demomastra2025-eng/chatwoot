@@ -118,7 +118,7 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     )
   end
 
-  it 'persists and exposes handled-call visibility for other operators' do
+  it 'no longer accepts or exposes the retired handled-call visibility setting' do
     payload = sipuni_channel_payload(operator).deep_merge(
       routing: { show_calls_handled_by_other_operators: true }
     )
@@ -126,56 +126,26 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     result = service.create_channel(payload, dry_run: false)
     inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
 
-    expect(inbox.channel.show_calls_handled_by_other_operators?).to be(true)
-    expect(result.dig(:ui_config, :routing, :show_calls_handled_by_other_operators)).to be(true)
+    expect(inbox.channel.provider_config_hash).not_to have_key('show_calls_handled_by_other_operators')
+    expect(result.dig(:ui_config, :routing)).not_to have_key(:show_calls_handled_by_other_operators)
   end
 
-  it 'updates handled-call visibility without resubmitting technical settings' do
+  it 'keeps a stored value of the retired handled-call visibility setting when the channel is updated' do
     result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
     inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
-    binding = inbox.telephony_number_binding
-    provider_connection = binding.provider_connection
-    binding.update!(metadata: binding.metadata.to_h.merge('binding_marker' => 'keep'))
-    provider_connection.update!(metadata: provider_connection.metadata.to_h.merge('connection_marker' => 'keep'))
-    expect(binding.reload.metadata).to include('binding_marker' => 'keep')
+    inbox.channel.update!(provider_config: inbox.channel.provider_config_hash.merge('show_calls_handled_by_other_operators' => true))
 
     update_result = service.update_channel(
       inbox_id: inbox.id,
-      payload: {
-        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version),
-        routing: { show_calls_handled_by_other_operators: true }
-      },
-      dry_run: false
-    )
-
-    expect(inbox.channel.reload.show_calls_handled_by_other_operators?).to be(true)
-    expect(update_result.dig(:ui_config, :routing, :show_calls_handled_by_other_operators)).to be(true)
-    expect(binding.reload.metadata).to include('binding_marker' => 'keep')
-    expect(provider_connection.reload.metadata).to include('connection_marker' => 'keep')
-  end
-
-  it 'updates handled-call visibility while a call is active without changing technical settings' do
-    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
-    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
-    create(
-      :telephony_call_session,
-      account: account,
-      inbox: inbox,
-      number_binding: inbox.telephony_number_binding,
-      status: 'in_progress'
-    )
-
-    update_result = service.update_channel(
-      inbox_id: inbox.id,
-      payload: {
-        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version),
-        routing: { show_calls_handled_by_other_operators: true }
-      },
+      payload: sipuni_channel_payload(operator).merge(
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version)
+      ),
       dry_run: false
     )
 
     expect(update_result[:errors]).to be_blank
-    expect(inbox.channel.reload.show_calls_handled_by_other_operators?).to be(true)
+    expect(inbox.channel.reload.provider_config_hash['show_calls_handled_by_other_operators']).to be(true)
+    expect(update_result.dig(:ui_config, :routing)).not_to have_key(:show_calls_handled_by_other_operators)
   end
 
   it 'blocks technical updates until a stale sibling branch is reconciled' do

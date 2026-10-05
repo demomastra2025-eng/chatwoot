@@ -10,8 +10,52 @@ const operatorClaimUserId = claim =>
   claim?.claimed_by_user_id ||
   claim?.claimedByUserId;
 
-// An info card of a call another operator took (kept on screen when the inbox
-// shows calls handled by other operators): not the employee's own call.
+const operatorCandidateUserIds = candidates =>
+  (Array.isArray(candidates) ? candidates : [])
+    .map(candidate => candidate?.user_id ?? candidate?.userId)
+    .filter(isPresent)
+    .map(String);
+
+// Whether the server addressed the call to this employee: he took it, or he
+// is one of the operators it rings for. A call that says nothing about its
+// operator is not his.
+export const isCallForCurrentUser = (call, currentUserId) => {
+  if (!isPresent(currentUserId)) return true;
+
+  const claimedByUserId = operatorClaimUserId(
+    call?.operatorClaim || call?.operator_claim
+  );
+  if (isPresent(claimedByUserId)) {
+    return String(claimedByUserId) === String(currentUserId);
+  }
+
+  return operatorCandidateUserIds(
+    call?.operatorCandidates || call?.operator_candidates
+  ).includes(String(currentUserId));
+};
+
+// A call the server explicitly addressed to other operators only (or that
+// another operator took): it must never show up for this employee.
+export const isCallAddressedToAnotherOperator = (call, currentUserId) => {
+  if (!isPresent(currentUserId)) return false;
+
+  const claimedByUserId = operatorClaimUserId(
+    call?.operatorClaim || call?.operator_claim
+  );
+  if (isPresent(claimedByUserId)) {
+    return String(claimedByUserId) !== String(currentUserId);
+  }
+
+  const candidateUserIds = operatorCandidateUserIds(
+    call?.operatorCandidates || call?.operator_candidates
+  );
+  return (
+    candidateUserIds.length > 0 &&
+    !candidateUserIds.includes(String(currentUserId))
+  );
+};
+
+// An info card of a call another operator took: not the employee's own call.
 export const isCallHandledByAnotherOperator = (call, currentUserId) => {
   if (call?.browserJoinUnsupportedReason !== 'CALL_ALREADY_CLAIMED') {
     return false;
@@ -46,6 +90,28 @@ export const isEmployeeOwnCall = (call, currentUserId) => {
   if (direction === 'outbound') return true;
 
   return call.browserJoinSupported !== false;
+};
+
+// An info card of a call that is not the employee's own: one another operator
+// took, one the AI voice agent handles, one in progress that nobody here
+// claimed. The employee never sees such a card.
+export const isCallOfAnotherParty = (call, currentUserId) => {
+  if (!call || call.isActive) return false;
+  if (isCallHandledByAnotherOperator(call, currentUserId)) return true;
+  const claimedByUserId = operatorClaimUserId(call.operatorClaim);
+  if (
+    isPresent(claimedByUserId) &&
+    isPresent(currentUserId) &&
+    String(claimedByUserId) !== String(currentUserId)
+  ) {
+    return true;
+  }
+  if (call.serverManagedVoiceCall) return true;
+  if (call.browserJoinUnsupportedReason === 'AI_AGENT_HANDLING') return true;
+  if (call.browserJoinUnsupportedReason === 'CALL_IN_PROGRESS') {
+    return !isCallForCurrentUser(call, currentUserId);
+  }
+  return false;
 };
 
 const sameValue = (left, right) =>
@@ -526,7 +592,9 @@ export const useCallsStore = defineStore('calls', {
       logicalCallTerminal,
       numberRef,
       currentUserId,
-      showCallsHandledByOtherOperators = false,
+      // The event itself says the employee started this call (the outbound
+      // call message he sent).
+      startedByCurrentUser = false,
     }) {
       const callData = {
         callSid,
@@ -641,32 +709,24 @@ export const useCallsStore = defineStore('calls', {
           .filter(item => NATIVE_BROWSER_SIP_PROVIDERS.has(item.provider))
           .forEach(item => cleanupClaimedBrowserCall(item));
 
-        if (showCallsHandledByOtherOperators) {
-          this.addCall({
-            ...callData,
-            callSid: call?.callSid || callSid,
-            status,
-            provider: resolvedProvider,
-            callDirection: resolvedCallDirection || 'inbound',
-            conversationId,
-            conversationDbId,
-            conversationDisplayId,
-            communicationThreadId,
-            senderId,
-            contactId,
-            numberRef,
-            startedAt,
-            answeredAt,
-            fromNumber,
-            toNumber,
-            caller,
-            operatorCandidates,
-            browserJoinSupported: false,
-            browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-          });
-        } else {
-          this.rememberTerminalCall(callData);
-        }
+        // The call is another operator's: it never gets a card here, so a
+        // late event about it cannot bring one back.
+        this.rememberTerminalCall(callData);
+        return;
+      }
+
+      // An in-progress call nobody here is tracking and the server did not
+      // address to this employee belongs to someone else: no card for it.
+      if (
+        status === 'in_progress' &&
+        !call &&
+        !ownedActiveLogicalCall &&
+        !startedByCurrentUser &&
+        !isCallForCurrentUser(
+          { operatorClaim, operatorCandidates },
+          currentUserId
+        )
+      ) {
         return;
       }
 
@@ -1304,51 +1364,47 @@ export const useCallsStore = defineStore('calls', {
       const removedCalls = matchedClaimCalls;
       const suppressionProvider =
         claimProvider || removedCalls.find(call => call.provider)?.provider;
-      const showHandledCall = Boolean(
-        data?.show_calls_handled_by_other_operators ??
-          data?.showCallsHandledByOtherOperators
+      // The call is another operator's: its ringing cards go for good and a
+      // late event about it cannot bring one back.
+      const preservedClaimCandidates = claimedCallCandidates.filter(
+        call => !removedCalls.includes(call)
       );
-      if (!showHandledCall) {
-        const preservedClaimCandidates = claimedCallCandidates.filter(
-          call => !removedCalls.includes(call)
+      const hasPreservedSameSid = call =>
+        preservedClaimCandidates.some(candidate =>
+          sameValue(candidate.callSid, call.callSid)
         );
-        const hasPreservedSameSid = call =>
-          preservedClaimCandidates.some(candidate =>
-            sameValue(candidate.callSid, call.callSid)
-          );
-        removedCalls.forEach(call => {
-          this.rememberTerminalCall(
-            {
-              ...callData,
-              ...call,
-              provider: call.provider || suppressionProvider,
-            },
-            {
-              includeUnscopedFallback: !hasPreservedSameSid(call),
-            }
-          );
-        });
-        const removedCallSids = removedCalls.map(call => call.callSid);
-        callSids
-          .filter(
-            callSid =>
-              !removedCallSids.some(removedCallSid =>
-                sameValue(removedCallSid, callSid)
-              )
-          )
-          .forEach(callSid => {
-            this.rememberTerminalCall({
-              ...callData,
-              callSid,
-              provider: suppressionProvider,
-            });
-          });
-        if (!callSids.length && !removedCalls.length) {
+      removedCalls.forEach(call => {
+        this.rememberTerminalCall(
+          {
+            ...callData,
+            ...call,
+            provider: call.provider || suppressionProvider,
+          },
+          {
+            includeUnscopedFallback: !hasPreservedSameSid(call),
+          }
+        );
+      });
+      const removedCallSids = removedCalls.map(call => call.callSid);
+      callSids
+        .filter(
+          callSid =>
+            !removedCallSids.some(removedCallSid =>
+              sameValue(removedCallSid, callSid)
+            )
+        )
+        .forEach(callSid => {
           this.rememberTerminalCall({
             ...callData,
+            callSid,
             provider: suppressionProvider,
           });
-        }
+        });
+      if (!callSids.length && !removedCalls.length) {
+        this.rememberTerminalCall({
+          ...callData,
+          provider: suppressionProvider,
+        });
       }
 
       this.calls = this.calls.filter(call => !removedCalls.includes(call));
@@ -1362,30 +1418,8 @@ export const useCallsStore = defineStore('calls', {
         );
       }
 
-      if (showHandledCall) {
-        const observerCallData = {
-          ...callData,
-          provider: suppressionProvider,
-        };
-        const observerCallIndex = this.calls.findIndex(
-          call =>
-            callScopeMatchesExactly(call, observerCallData) &&
-            (sameCallSid(call, observerCallData) ||
-              sameNativeSipLogicalCall(call, observerCallData))
-        );
-        if (observerCallIndex >= 0) {
-          this.calls[observerCallIndex] = buildCallState(
-            observerCallData,
-            this.calls[observerCallIndex]
-          );
-        } else {
-          this.calls.push(buildCallState(observerCallData));
-        }
-      }
-
-      // The winning operator owns the in-progress call. Other browsers either
-      // keep a single informational card or treat the event as terminal for
-      // their ringing UI, depending on the channel setting.
+      // The winning operator owns the in-progress call: for everyone else the
+      // event is terminal for their ringing UI, and no card stays behind.
     },
 
     dismissRelatedNativeSipIncomingCalls(targetCall) {
