@@ -1,5 +1,15 @@
 class SearchService
-  MIN_PHONE_SEARCH_DIGITS = 10
+  MESSAGE_CONTENT_SQL = <<~SQL.squish.freeze
+    EXISTS (
+      SELECT 1 FROM messages
+      WHERE messages.conversation_id = conversations.id
+        AND messages.account_id = conversations.account_id
+        AND messages.inbox_id = conversations.inbox_id
+        AND messages.created_at >= :message_search_since
+        AND messages.content ILIKE :message_search_pattern
+        AND NOT (#{Messages::TimelineVisibility::CAPTAIN_TOOL_ACTIVITY_SQL})
+    )
+  SQL
 
   pattr_initialize [:current_user!, :current_account!, :params!, :search_type!]
 
@@ -28,34 +38,19 @@ class SearchService
     @accessable_inbox_ids ||= @current_user.assigned_inboxes.pluck(:id)
   end
 
+  # The typed text without NUL bytes, invisible marks and exotic spaces, see Search::QueryText.
   def search_query
-    @search_query ||= params[:q].to_s.strip
+    @search_query ||= Search::QueryText.clean(params[:q])
+  end
+
+  def contact_query
+    @contact_query ||= Search::ContactQuery.new(search_query)
   end
 
   def filter_conversations
-    search_bindings = base_search_bindings
-    search_conditions = [
-      'cast(conversations.display_id as text) ILIKE :search',
-      'contacts.name ILIKE :search',
-      'contacts.email ILIKE :search',
-      'contacts.phone_number ILIKE :search',
-      'contacts.identifier ILIKE :search'
-    ]
-
-    append_phone_search_clause!(
-      search_conditions: search_conditions,
-      search_bindings: search_bindings,
-      column_name: 'contacts.phone_number',
-      bindings_prefix: 'conversation_phone'
-    )
-    append_message_content_search_clause!(
-      search_conditions: search_conditions,
-      search_bindings: search_bindings
-    )
-
     conversations_query = current_account.conversations.where(inbox_id: accessable_inbox_ids)
                                          .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
-                                         .where(search_conditions.join(' OR '), search_bindings)
+                                         .where(conversation_search_condition)
 
     if current_account.feature_enabled?('advanced_search')
       conversations_query = apply_time_filter(conversations_query,
@@ -187,22 +182,7 @@ class SearchService
   end
 
   def filter_contacts
-    search_bindings = base_search_bindings
-    search_conditions = [
-      'contacts.name ILIKE :search',
-      'contacts.email ILIKE :search',
-      'contacts.phone_number ILIKE :search',
-      'contacts.identifier ILIKE :search'
-    ]
-
-    append_phone_search_clause!(
-      search_conditions: search_conditions,
-      search_bindings: search_bindings,
-      column_name: 'contacts.phone_number',
-      bindings_prefix: 'contact_phone'
-    )
-
-    contacts_query = current_account.contacts.where(search_conditions.join(' OR '), search_bindings)
+    contacts_query = contact_query.apply(current_account.contacts)
 
     contacts_query = apply_time_filter(contacts_query, 'last_activity_at') if current_account.feature_enabled?('advanced_search')
 
@@ -241,70 +221,22 @@ class SearchService
     [requested_time, max_future].min
   end
 
-  def base_search_bindings
-    { search: "%#{search_query}%" }
+  # The display id, the contact (name, e-mail, phone number in any format, identifier) and, as before, the text of the
+  # conversation's messages of the last three months.
+  def conversation_search_condition
+    display_id = Arel::Nodes::NamedFunction.new('CAST', [Conversation.arel_table[:display_id].as('text')])
+    conditions = [display_id.matches(Search::QueryText.like_pattern(search_query), nil, false), contact_query.condition]
+    conditions << message_content_condition if search_query.present?
+    conditions.reduce { |combined, condition| combined.or(condition) }
   end
 
-  def append_phone_search_clause!(search_conditions:, search_bindings:, column_name:, bindings_prefix:)
-    phone_search_clause, phone_search_bindings = build_phone_search_clause(column_name, bindings_prefix)
-    return if phone_search_clause.blank?
-
-    search_conditions << phone_search_clause
-    search_bindings.merge!(phone_search_bindings)
-  end
-
-  def append_message_content_search_clause!(search_conditions:, search_bindings:)
-    return if search_query.blank?
-
-    search_conditions << <<~SQL.squish
-      EXISTS (
-        SELECT 1 FROM messages
-        WHERE messages.conversation_id = conversations.id
-          AND messages.account_id = conversations.account_id
-          AND messages.inbox_id = conversations.inbox_id
-          AND messages.created_at >= :message_search_since
-          AND messages.content ILIKE :search
-          AND NOT (#{Messages::TimelineVisibility::CAPTAIN_TOOL_ACTIVITY_SQL})
-      )
-    SQL
-    search_bindings[:message_search_since] = 3.months.ago
-    search_bindings.merge!(Messages::TimelineVisibility.captain_tool_activity_bindings)
-  end
-
-  def build_phone_search_clause(column_name, bindings_prefix)
-    variants = phone_search_variants
-    return ['', {}] if variants.blank?
-
-    normalized_column_sql = "regexp_replace(COALESCE(#{column_name}, ''), '\\D', '', 'g')"
-    clauses = variants.each_with_index.map do |_variant, index|
-      "#{normalized_column_sql} LIKE :#{bindings_prefix}_#{index}"
-    end
-
-    bindings = variants.each_with_index.to_h do |variant, index|
-      ["#{bindings_prefix}_#{index}".to_sym, "%#{variant}%"]
-    end
-
-    [clauses.join(' OR '), bindings]
-  end
-
-  def phone_search_variants
-    return @phone_search_variants if defined?(@phone_search_variants)
-
-    @phone_search_variants = begin
-      digits = search_query.gsub(/\D/, '')
-      if digits.length < MIN_PHONE_SEARCH_DIGITS || !phone_search_input?
-        []
-      else
-        variants = [digits]
-        variants << "7#{digits[1..]}" if digits.length >= 11 && digits.start_with?('8')
-        variants << "8#{digits[1..]}" if digits.length >= 11 && digits.start_with?('7')
-        variants.uniq
-      end
-    end
-  end
-
-  def phone_search_input?
-    search_query.match?(/\A[\d+\s\-\(\)]+\z/)
+  def message_content_condition
+    bindings = Messages::TimelineVisibility.captain_tool_activity_bindings.merge(
+      message_search_since: 3.months.ago,
+      message_search_pattern: Search::QueryText.like_pattern(search_query)
+    )
+    sql = ActiveRecord::Base.sanitize_sql_array([MESSAGE_CONTENT_SQL, bindings])
+    Arel::Nodes::Grouping.new(Arel.sql(sql))
   end
 end
 

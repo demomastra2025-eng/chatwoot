@@ -36,11 +36,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   def apply_search(scope)
     return scope if params[:search].blank?
 
-    search = "%#{params[:search].strip}%"
-    scope.where(
-      'contacts.name ILIKE :search OR contacts.email ILIKE :search OR contacts.phone_number ILIKE :search OR contacts.identifier ILIKE :search',
-      search: search
-    )
+    Search::ContactQuery.new(params[:search]).apply(scope)
   end
 
   def contact_attributes
