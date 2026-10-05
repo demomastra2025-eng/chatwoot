@@ -1,21 +1,35 @@
 # frozen_string_literal: true
 
+# Moves the original WAV that is kept after compression into the account trash once its retention ends. The
+# trash keeps it for another 30 days and an administrator can restore it; nothing is deleted here.
+# The job is off until TELEPHONY_PURGE_RETAINED_RECORDINGS_ENABLED=true is set explicitly.
 class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
+  ENABLED_ENV = 'TELEPHONY_PURGE_RETAINED_RECORDINGS_ENABLED'
+
   queue_as :housekeeping
 
+  def self.enabled?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch(ENABLED_ENV, false)) == true
+  end
+
   def perform(now = Time.current)
+    return { disabled: true } unless self.class.enabled?
+
     now = Time.zone.parse(now) if now.is_a?(String)
+    # Originals already in the trash, restored or purged are not picked up again.
     scope = Telephony::CallSession.where("metadata #>> '{recording,retained_original,expires_at}' <= ?", now.iso8601)
-    stats = { purged: 0, skipped: 0, failed: 0 }
+                                  .where("metadata #> '{recording,retained_original,trash}' IS NULL")
+                                  .where("metadata #>> '{recording,retained_original,purged_at}' IS NULL")
+    stats = { trashed: 0, skipped: 0, failed: 0 }
 
     scope.find_each do |session|
-      result = purge_expired_original(session, now)
+      result = trash_expired_original(session, now)
       stats[result] += 1
     rescue StandardError => e
       stats[:failed] += 1
       Rails.logger.warn("[PurgeRetainedRecordingsJob] Failed for call session #{session.id}: #{e.class.name}")
     end
-    Rails.logger.info("[PurgeRetainedRecordingsJob] Retained audio cleanup: #{stats.inspect}")
+    Rails.logger.info("[PurgeRetainedRecordingsJob] Retained audio moved to trash: #{stats.inspect}")
     stats
   end
 
@@ -23,7 +37,7 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
 
   # Keep expiry, live-reference, path-ownership and metadata publication checks in one locked critical section.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
-  def purge_expired_original(session, now)
+  def trash_expired_original(session, now)
     expected_key = session.metadata.to_h.dig('recording', 'retained_original', 'storage_key').to_s
     return :skipped if expected_key.blank?
 
@@ -42,16 +56,13 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
 
         path = Storage::RecordingPaths.resolve(key, account_id: session.account_id)
         next unless path
+        next unless compressed_recording_present?(session)
         next if Storage::RecordingPaths.same_physical_file?(key, session.recording_ref, account_id: session.account_id)
         next if retained_original_referenced?(session, key, path)
 
-        File.delete(path)
-        retained['purged_at'] = Time.current.iso8601
-        recording['retained_original'] = retained
-        metadata['recording'] = recording
-        session.update!(metadata: metadata)
+        Storage::TrashService.new(account: session.account).trash_retained_original!(session, path)
         session.account.storage_breakdown(force_refresh: true)
-        result = :purged
+        result = :trashed
       end
     end
     result
@@ -59,6 +70,12 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
     :skipped
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  # The original is the only other copy: it is never moved while the current recording is missing or empty.
+  def compressed_recording_present?(session)
+    current = Storage::RecordingPaths.resolve(session.recording_ref, account_id: session.account_id)
+    current.present? && File.file?(current) && File.size(current).positive?
+  end
 
   def retained_original_referenced?(session, key, path)
     aliases = Storage::RecordingPaths.reference_aliases(path, account_id: session.account_id).presence || [key]

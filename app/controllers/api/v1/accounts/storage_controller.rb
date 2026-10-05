@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::Accounts::StorageController < Api::V1::Accounts::BaseController
-  TRASH_ITEM_TYPES = %w[recording attachment].freeze
+  TRASH_ITEM_TYPES = %w[recording original_recording attachment].freeze
   DEFAULT_CLEANUP_MONTHS = 6
 
   before_action :check_admin_authorization?

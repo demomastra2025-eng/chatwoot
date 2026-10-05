@@ -56,7 +56,7 @@ class Storage::TrashService
     }
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def list_trash(page: 1, limit: 50)
     limit = limit.to_i.clamp(1, 100)
     page = page.to_i.clamp(1, 10_000)
@@ -78,7 +78,15 @@ class Storage::TrashService
       end
     end
 
-    # 2. Trashed attachments
+    # 2. Original recordings (the WAV kept after compression) moved here by the retention job
+    trashed_original_sessions.find_each do |session|
+      trash_meta = session.metadata.dig('recording', 'retained_original', 'trash') || {}
+      bytes = trash_meta['bytes'].to_i
+      total_bytes += bytes
+      items << format_trash_original(session, trash_meta, bytes)
+    end
+
+    # 3. Trashed attachments
     trashed_attachments = Attachment.where(account_id: @account.id)
                                     .where("meta->'trash' IS NOT NULL")
                                     .includes(:message, file_attachment: :blob)
@@ -101,20 +109,23 @@ class Storage::TrashService
       items: paged_items
     }
   end
-  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
-  # rubocop:disable Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def restore!(item_type: nil, item_id: nil, restore_all: false)
     restored_count = 0
     restored_bytes = 0
 
     if restore_all
-      recordings_res = restore_all_recordings
-      attachments_res = restore_all_attachments
-      restored_count = recordings_res[:count] + attachments_res[:count]
-      restored_bytes = recordings_res[:bytes] + attachments_res[:bytes]
+      results = [restore_all_recordings, restore_all_originals, restore_all_attachments]
+      restored_count = results.sum { |res| res[:count] }
+      restored_bytes = results.sum { |res| res[:bytes] }
     elsif item_type.to_s == 'recording' && item_id.present?
       res = restore_single_recording(item_id)
+      restored_count = res[:count]
+      restored_bytes = res[:bytes]
+    elsif item_type.to_s == 'original_recording' && item_id.present?
+      res = restore_original_recording(item_id)
       restored_count = res[:count]
       restored_bytes = res[:bytes]
     elsif item_type.to_s == 'attachment' && item_id.present?
@@ -137,12 +148,15 @@ class Storage::TrashService
     purged_bytes = 0
 
     if purge_all || (item_type.blank? && item_id.blank?)
-      recordings_res = purge_all_recordings
-      attachments_res = purge_all_attachments
-      purged_count = recordings_res[:count] + attachments_res[:count]
-      purged_bytes = recordings_res[:bytes] + attachments_res[:bytes]
+      results = [purge_all_recordings, purge_all_originals, purge_all_attachments]
+      purged_count = results.sum { |res| res[:count] }
+      purged_bytes = results.sum { |res| res[:bytes] }
     elsif item_type.to_s == 'recording' && item_id.present?
       res = purge_single_recording(item_id)
+      purged_count = res[:count]
+      purged_bytes = res[:bytes]
+    elsif item_type.to_s == 'original_recording' && item_id.present?
+      res = purge_original_recording(item_id)
       purged_count = res[:count]
       purged_bytes = res[:bytes]
     elsif item_type.to_s == 'attachment' && item_id.present?
@@ -182,13 +196,49 @@ class Storage::TrashService
     result = { purged_count: 0, purged_bytes: 0, failed_count: 0 }
 
     expired_recordings(now_iso).find_each { |session| purge_expired_item(result) { purge_single_recording(session.id) } }
+    expired_original_recordings(now_iso).find_each { |session| purge_expired_item(result) { purge_original_recording(session.id) } }
     expired_attachments(now_iso).find_each { |attachment| purge_expired_item(result) { purge_single_attachment(attachment.id) } }
 
     result
   end
-  # rubocop:enable Metrics/MethodLength, Metrics/PerceivedComplexity
+  # rubocop:enable Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  # Moves an expired original recording (the WAV kept after compression) into the account trash for
+  # RETENTION_DAYS and notes it in the call metadata so an administrator can restore it. The caller holds the
+  # recording lock and the call session row lock. Returns the moved byte size.
+  def trash_retained_original!(session, path)
+    trash_dir = Storage::RecordingPaths.prepare_trash_directory(@account.id)
+    trash_path = trash_dir.join("#{session.id}_retained_#{File.basename(path)}").to_s
+    unless Storage::RecordingPaths.within_account?(trash_path, account_id: @account.id, include_trash: true)
+      raise InvalidParams, I18n.t('storage_management.errors.trash_path_rejected')
+    end
+
+    byte_size = File.size(path)
+    move_file_exclusively(path.to_s, trash_path)
+    begin
+      write_retained_original_trash(session, path.to_s, trash_path, byte_size)
+    rescue StandardError
+      move_file_exclusively(trash_path, path.to_s) if File.exist?(trash_path) && !File.exist?(path.to_s)
+      raise
+    end
+    byte_size
+  end
 
   private
+
+  def write_retained_original_trash(session, original_path, trash_path, byte_size)
+    now = Time.current
+    metadata = (session.metadata || {}).deep_dup
+    metadata['recording']['retained_original']['trash'] = {
+      'deleted_at' => now.iso8601,
+      'expires_at' => (now + RETENTION_DAYS.days).iso8601,
+      'original_path' => original_path,
+      'trash_path' => trash_path,
+      'bytes' => byte_size
+    }
+    session.metadata = metadata
+    session.save!(validate: false)
+  end
 
   def human_size(bytes)
     ActiveSupport::NumberHelper.number_to_human_size(bytes.to_i)
@@ -380,6 +430,21 @@ class Storage::TrashService
 
   def expired_attachments(now_iso)
     Attachment.where(account_id: @account.id).where("(meta->'trash'->>'expires_at') <= ?", now_iso)
+  end
+
+  def trashed_original_sessions
+    return Telephony::CallSession.none unless call_sessions_available?
+
+    Telephony::CallSession.where(account_id: @account.id)
+                          .where("metadata #> '{recording,retained_original,trash}' IS NOT NULL")
+                          .includes(:inbox)
+  end
+
+  def expired_original_recordings(now_iso)
+    return Telephony::CallSession.none unless call_sessions_available?
+
+    Telephony::CallSession.where(account_id: @account.id)
+                          .where("(metadata #>> '{recording,retained_original,trash,expires_at}') <= ?", now_iso)
   end
 
   def purge_expired_item(result)
@@ -992,6 +1057,23 @@ class Storage::TrashService
     }
   end
 
+  def format_trash_original(session, trash_meta, bytes)
+    expires_at = trash_meta['expires_at']
+
+    {
+      id: session.id,
+      item_type: 'original_recording',
+      file_name: I18n.t('storage_management.item_labels.original_recording'),
+      file_type: 'audio',
+      byte_size: bytes,
+      deleted_at: trash_meta['deleted_at'],
+      expires_at: expires_at,
+      days_remaining: calculate_days_remaining(expires_at),
+      inbox_id: session.inbox_id,
+      inbox_name: session.inbox&.name
+    }
+  end
+
   def format_trash_attachment(attachment, trash_meta, bytes)
     expires_at = trash_meta['expires_at']
     days_remaining = calculate_days_remaining(expires_at)
@@ -1229,6 +1311,97 @@ class Storage::TrashService
     session.recording_ref = nil
   end
 
+  # Runs the block with the call session whose retained original is in the trash, under the recording lock and
+  # the row lock. The block gets the session, the metadata copy to save and the retained_original hash and
+  # returns the byte size it handled, or nil when it did nothing.
+  def with_trashed_original(session_id)
+    session = Telephony::CallSession.find_by(id: session_id, account_id: @account.id)
+    return { count: 0, bytes: 0 } unless session
+
+    expected_key = session.metadata.to_h.dig('recording', 'retained_original', 'storage_key').to_s
+    bytes = nil
+    Storage::RecordingLock.synchronize(account_id: @account.id, storage_keys: [expected_key]) do
+      session.with_lock do
+        session.reload
+        metadata = (session.metadata || {}).deep_dup
+        retained = metadata.dig('recording', 'retained_original')
+        next unless retained.is_a?(Hash) && retained['trash'].is_a?(Hash) && retained['storage_key'].to_s == expected_key
+
+        bytes = yield(session, metadata, retained)
+      end
+    end
+    { count: bytes.nil? ? 0 : 1, bytes: bytes.to_i }
+  end
+
+  # The file goes back to where the retention job took it from; the call keeps playing the compressed recording.
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def restore_original_recording(session_id)
+    with_trashed_original(session_id) do |session, metadata, retained|
+      trash = retained['trash']
+      trash_path = trash['trash_path'].to_s
+      original_path = trash['original_path'].to_s
+      next unless trash_path_deletable?(trash_path) && File.file?(trash_path)
+      next unless Storage::RecordingPaths.within_account?(original_path, account_id: @account.id)
+      next if File.exist?(original_path) || File.symlink?(original_path)
+
+      FileUtils.mkdir_p(File.dirname(original_path))
+      move_file_exclusively(trash_path, original_path)
+      begin
+        retained.delete('trash')
+        retained.delete('expires_at')
+        retained['restored_at'] = Time.current.iso8601
+        session.metadata = metadata
+        session.save!(validate: false)
+      rescue StandardError
+        move_file_exclusively(original_path, trash_path) if File.exist?(original_path) && !File.exist?(trash_path)
+        raise
+      end
+      trash['bytes'].to_i
+    end
+  end
+
+  def purge_original_recording(session_id)
+    with_trashed_original(session_id) do |session, metadata, retained|
+      trash = retained['trash']
+      path = trash['trash_path'].to_s
+      if path.present? && File.exist?(path)
+        raise InvalidParams, I18n.t('storage_management.errors.trash_path_rejected') unless trash_path_deletable?(path)
+
+        File.delete(path)
+      end
+
+      retained.delete('trash')
+      retained['purged_at'] = Time.current.iso8601
+      retained['status'] = 'purged'
+      session.metadata = metadata
+      session.save!(validate: false)
+      trash['bytes'].to_i
+    end
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+
+  def restore_all_originals
+    count = 0
+    bytes = 0
+    trashed_original_sessions.find_each do |session|
+      res = restore_original_recording(session.id)
+      count += res[:count]
+      bytes += res[:bytes]
+    end
+    { count: count, bytes: bytes }
+  end
+
+  def purge_all_originals
+    count = 0
+    bytes = 0
+    trashed_original_sessions.find_each do |session|
+      res = purge_original_recording(session.id)
+      count += res[:count]
+      bytes += res[:bytes]
+    end
+    { count: count, bytes: bytes }
+  end
+
   # Fresh account and trash checks stay adjacent to the attachment state change.
   def restore_single_attachment(attachment_id)
     attachment = Attachment.find_by(id: attachment_id, account_id: @account.id)
@@ -1374,6 +1547,8 @@ class Storage::TrashService
       next unless attachment.account_id == @account.id && attachment.meta.to_h['trash'].is_a?(Hash)
 
       bytes = trashed_attachment_bytes(attachment)
+      # Only the file goes. Voice-message transcripts and recognised document text live in attachment.meta and are
+      # kept forever, so the row stays and is marked instead of being destroyed.
       attachment.file.purge if attachment.file.attached?
       attachment.meta = attachment.meta.to_h.deep_dup.except('trash').merge('file_purged_at' => Time.current.iso8601)
       attachment.save!(validate: false)
