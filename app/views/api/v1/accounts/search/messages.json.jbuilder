@@ -1,3 +1,6 @@
+json.meta do
+  json.messages_partial @messages_partial.present?
+end
 json.payload do
   json.messages do
     json.array! @result[:messages] do |message|

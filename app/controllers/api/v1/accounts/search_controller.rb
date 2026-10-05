@@ -22,12 +22,15 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
   private
 
   def search(search_type)
-    result = SearchService.new(
+    service = SearchService.new(
       current_user: Current.user,
       current_account: Current.account,
       search_type: search_type,
       params: params
-    ).perform
+    )
+    result = service.perform
+    # The text search of messages was cancelled by its time limit: what is shown may be incomplete.
+    @messages_partial = service.messages_partial?
     preload_conversation_results(result)
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
