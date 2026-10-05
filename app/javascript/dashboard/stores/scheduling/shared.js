@@ -69,12 +69,6 @@ const ERROR_KEY_BY_MESSAGE = {
   'Service is not available for the selected resource':
     'SCHEDULING.ERRORS.SERVICE_NOT_AVAILABLE_FOR_RESOURCE',
   'Slot is already occupied': 'SCHEDULING.ERRORS.SLOT_CONFLICT',
-  'Total received amount cannot exceed service_amount':
-    'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
-  'total received amount cannot exceed service_amount':
-    'SCHEDULING.ERRORS.TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
-  'settlement_amount cannot be less than the total of recorded payments':
-    'SCHEDULING.ERRORS.SETTLEMENT_BELOW_RECORDED_PAYMENTS',
   'client_name is required': 'SCHEDULING.ERRORS.CLIENT_NAME_REQUIRED',
   'resource_id is required for service prices':
     'SCHEDULING.ERRORS.RESOURCE_REQUIRED_FOR_SERVICE_PRICE',

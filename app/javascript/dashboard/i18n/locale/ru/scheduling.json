@@ -423,10 +423,8 @@
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Выберите специалиста для цены по специалисту.",
       "SERVICE_AMOUNT_REQUIRED": "Укажите стоимость услуги больше 0.",
       "SERVICE_NOT_AVAILABLE_FOR_RESOURCE": "Эта услуга недоступна для выбранного специалиста.",
-      "SETTLEMENT_BELOW_RECORDED_PAYMENTS": "Сумма окончательного расчета не может быть меньше уже записанных оплат.",
       "SINGLE_DAY_REQUIRED": "Запись должна укладываться в один локальный день.",
       "SLOT_CONFLICT": "Этот слот уже занят.",
-      "TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT": "Общая сумма полученных оплат не может превышать стоимость услуги.",
       "MEDELEMENT_PATIENT_IDENTITY_CONFLICT": "Данные пациента противоречат связанной карточке MedElement. Выберите карточку пациента или создайте отдельную запись.",
       "MEDELEMENT_CANCELLATION_MODE_CHANGED": "Настройка отмены MedElement изменилась. Обновите запись и проверьте режим отмены перед повторной попыткой."
     },
