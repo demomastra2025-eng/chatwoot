@@ -1,0 +1,27 @@
+en:
+  crm:
+    task_catalogs:
+      types:
+        task: Task
+        call: Call
+        meeting: Meeting
+        message: Message
+        touch: Reminder
+      outcomes:
+        answered: Answered
+        busy: Busy
+        cancelled: Cancelled
+        completed: Completed
+        failed: Failed
+        held: Held
+        no_answer: No answer
+        no_show: No-show
+        not_done: Not done with reason
+        other: Other
+        rescheduled: Rescheduled
+        sent: Sent
+      statuses:
+        todo: To do
+        in_progress: In progress
+        done: Done
+        cancelled: Cancelled

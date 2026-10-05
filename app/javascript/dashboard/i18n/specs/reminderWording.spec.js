@@ -55,4 +55,47 @@ describe('reminder wording in the dashboard locales', () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it('names the reminder type and plan "Reminder" / «Еске салу» like PROD', () => {
+    const crm = locale =>
+      JSON.parse(readFileSync(resolve(LOCALE_DIR, locale, 'crm.json'), 'utf8'))
+        .CRM;
+
+    expect(crm('en').TASKS.ACTIVITY_TYPE.touch).toBe('Reminder');
+    expect(crm('kk').TASKS.ACTIVITY_TYPE.touch).toBe('Еске салу');
+    expect(crm('ru').TASKS.ACTIVITY_TYPE.touch).toBe('Напоминание');
+    expect(crm('en').SETTINGS.DEFAULT_TOUCH_PLAN.LABEL).toBe('Reminder plan');
+    expect(crm('kk').SETTINGS.DEFAULT_TOUCH_PLAN.LABEL).toBe(
+      'Еске салу жоспары'
+    );
+  });
+});
+
+// Display names are also seeded into the database (task types, outcomes,
+// statuses) by the backend; the locale files above cannot catch those.
+describe('reminder wording in seeded catalog data', () => {
+  const REPO_ROOT = resolve(LOCALE_DIR, '../../../../..');
+  const read = path => readFileSync(resolve(REPO_ROOT, path), 'utf8');
+
+  it.each(['ru', 'en', 'kk'])(
+    'the %s seed names never contain «Касание» or "touch"',
+    locale => {
+      const names = read(`config/locales/crm_task_catalogs.${locale}.yml`)
+        .split('\n')
+        .filter(line => /^\s{8}\w+:/.test(line))
+        .map(line => line.replace(/^\s+\w+:\s*/, ''));
+
+      expect(names.length).toBeGreaterThan(20);
+      expect(names.filter(name => TOUCH_WORDING.test(name))).toEqual([]);
+    }
+  );
+
+  it('the provisioner seeds no hard-coded display names', () => {
+    const provisioner = read('app/services/crm/task_catalogs/provisioner.rb');
+    const definitions = provisioner.split('TASK_OUTCOMES')[0];
+
+    expect(definitions).not.toMatch(/name:/);
+    expect(provisioner).not.toMatch(/humanize/);
+    expect(provisioner).not.toMatch(/name:\s*'Touch'/i);
+  });
 });

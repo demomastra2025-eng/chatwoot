@@ -1,16 +1,18 @@
 class Crm::TaskCatalogs::Provisioner
+  # Display names are not part of the definitions: they follow the account
+  # language (see Crm::TaskCatalogs::SeedNames).
   TASK_STATUS_DEFINITIONS = [
-    { code: 'todo', name: 'To do', category: 'open', default: true },
-    { code: 'in_progress', name: 'In progress', category: 'in_progress', default: false },
-    { code: 'done', name: 'Done', category: 'done', default: false },
-    { code: 'cancelled', name: 'Cancelled', category: 'cancelled', default: false }
+    { code: 'todo', category: 'open', default: true },
+    { code: 'in_progress', category: 'in_progress', default: false },
+    { code: 'done', category: 'done', default: false },
+    { code: 'cancelled', category: 'cancelled', default: false }
   ].freeze
   TASK_TYPE_DEFINITIONS = [
-    { code: 'task', name: 'Task', icon: 'i-lucide-list-todo', default: true },
-    { code: 'call', name: 'Call', icon: 'i-lucide-phone' },
-    { code: 'meeting', name: 'Meeting', icon: 'i-lucide-users' },
-    { code: 'message', name: 'Message', icon: 'i-lucide-message-square' },
-    { code: 'touch', name: 'Touch', icon: 'i-lucide-handshake' }
+    { code: 'task', icon: 'i-lucide-list-todo', default: true },
+    { code: 'call', icon: 'i-lucide-phone' },
+    { code: 'meeting', icon: 'i-lucide-users' },
+    { code: 'message', icon: 'i-lucide-message-square' },
+    { code: 'touch', icon: 'i-lucide-handshake' }
   ].freeze
   TASK_OUTCOMES = {
     'task' => %w[completed not_done cancelled other],
@@ -25,14 +27,15 @@ class Crm::TaskCatalogs::Provisioner
   end
 
   def perform
-    return if catalog_complete?
+    return if catalog_current?
 
     ApplicationRecord.transaction do
       acquire_catalog_lock!
-      next if catalog_complete?
+      next if catalog_current?
 
       ensure_default_task_statuses
       ensure_default_task_catalogs
+      localize_seeded_names
     end
   end
 
@@ -47,23 +50,53 @@ class Crm::TaskCatalogs::Provisioner
     ApplicationRecord.connection.execute(lock_sql)
   end
 
-  def catalog_complete?
-    task_statuses_complete? && task_catalogs_complete?
+  def catalog_current?
+    task_statuses_current? && task_catalogs_current?
   end
 
-  def task_statuses_complete?
+  def locale
+    @locale ||= Crm::TaskCatalogs::SeedNames.locale_for(account.locale)
+  end
+
+  # Rows created by the first release carry English names (including the
+  # banned "Touch"); the repair renames only those that are still unedited.
+  def localize_seeded_names
+    Crm::TaskCatalogs::NameRepair.new(accounts: Account.where(id: account.id)).perform
+  end
+
+  def legacy_names
+    @legacy_names ||= Crm::TaskCatalogs::SeedNames.renames(locale)
+                                                  .group_by { |rename| rename[:kind] }
+                                                  .transform_values { |renames| renames.index_by { |rename| rename.values_at(:type_code, :code) } }
+  end
+
+  def legacy_name?(kind, code, name, type_code: nil)
+    rename = legacy_names.dig(kind, [type_code, code])
+    rename.present? && rename[:from] == name
+  end
+
+  def task_statuses_current?
     expected_status_codes = TASK_STATUS_DEFINITIONS.map { |definition| definition.fetch(:code) }
-    status_codes = account.crm_task_statuses.where(code: expected_status_codes).pluck(:code)
-    status_codes.size == TASK_STATUS_DEFINITIONS.size
+    statuses = account.crm_task_statuses.where(code: expected_status_codes).pluck(:code, :name)
+    return false unless statuses.size == TASK_STATUS_DEFINITIONS.size
+
+    statuses.none? { |code, name| legacy_name?(:status, code, name) }
   end
 
-  def task_catalogs_complete?
+  def task_catalogs_current?
     type_codes = TASK_TYPE_DEFINITIONS.map { |definition| definition.fetch(:code) }
     task_types = account.crm_task_types.includes(:outcomes).where(code: type_codes).to_a
     return false unless task_types.size == TASK_TYPE_DEFINITIONS.size
 
-    task_types.all? do |task_type|
-      (TASK_OUTCOMES.fetch(task_type.code) - task_type.outcomes.map(&:code)).empty?
+    task_types.all? { |task_type| task_type_current?(task_type) }
+  end
+
+  def task_type_current?(task_type)
+    return false unless (TASK_OUTCOMES.fetch(task_type.code) - task_type.outcomes.map(&:code)).empty?
+    return false if legacy_name?(:type, task_type.code, task_type.name)
+
+    task_type.outcomes.none? do |outcome|
+      legacy_name?(:outcome, outcome.code, outcome.name, type_code: task_type.code)
     end
   end
 
@@ -74,6 +107,7 @@ class Crm::TaskCatalogs::Provisioner
 
       status.assign_attributes(
         definition.merge(
+          name: Crm::TaskCatalogs::SeedNames.status_name(definition[:code], locale),
           color: Crm::TaskStatus::STANDARD_COLORS[index] || Crm::TaskStatus::DEFAULT_COLOR,
           position: index + 1,
           active: true
@@ -87,7 +121,13 @@ class Crm::TaskCatalogs::Provisioner
     TASK_TYPE_DEFINITIONS.each_with_index do |definition, index|
       task_type = account.crm_task_types.find_or_initialize_by(code: definition[:code])
       if task_type.new_record?
-        task_type.assign_attributes(definition.merge(position: index + 1, active: true))
+        task_type.assign_attributes(
+          definition.merge(
+            name: Crm::TaskCatalogs::SeedNames.type_name(definition[:code], locale),
+            position: index + 1,
+            active: true
+          )
+        )
         task_type.save!
       end
       ensure_default_task_outcomes(task_type)
@@ -101,7 +141,7 @@ class Crm::TaskCatalogs::Provisioner
 
       outcome.assign_attributes(
         account: account,
-        name: code.humanize,
+        name: Crm::TaskCatalogs::SeedNames.outcome_name(code, locale),
         position: index + 1,
         active: true,
         default: index.zero?,

@@ -1,0 +1,27 @@
+ru:
+  crm:
+    task_catalogs:
+      types:
+        task: Задача
+        call: Звонок
+        meeting: Встреча
+        message: Сообщение
+        touch: Напоминание
+      outcomes:
+        answered: Ответили
+        busy: Занято
+        cancelled: Отменено
+        completed: Выполнено
+        failed: Неудачно
+        held: Проведена
+        no_answer: Нет ответа
+        no_show: Не пришёл
+        not_done: Не сделал с причиной
+        other: Другой
+        rescheduled: Перенесена
+        sent: Отправлено
+      statuses:
+        todo: К выполнению
+        in_progress: В процессе
+        done: Завершено
+        cancelled: Отменено

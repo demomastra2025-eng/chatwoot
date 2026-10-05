@@ -1,0 +1,27 @@
+kk:
+  crm:
+    task_catalogs:
+      types:
+        task: Міндет
+        call: Қоңырау
+        meeting: Кездесу
+        message: Хабарлама
+        touch: Еске салу
+      outcomes:
+        answered: Жауап берді
+        busy: Бос емес
+        cancelled: Болдырылмады
+        completed: Орындалды
+        failed: Сәтсіз
+        held: Өткізілді
+        no_answer: Жауап жоқ
+        no_show: Келмеді
+        not_done: Себеппен орындалмады
+        other: Басқа
+        rescheduled: Ауыстырылды
+        sent: Жіберілді
+      statuses:
+        todo: Орындалуға
+        in_progress: Орындалуда
+        done: Аяқталды
+        cancelled: Бас тартылған
