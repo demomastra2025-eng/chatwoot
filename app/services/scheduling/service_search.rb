@@ -16,9 +16,12 @@ class Scheduling::ServiceSearch
     return scope if normalized_query.blank?
 
     strict_scope = scope.where(all_concepts_condition)
-    matching_scope = strict_scope.exists? ? strict_scope : scope.where(broad_condition)
+    @match_kind = strict_scope.exists? ? 'all_concepts' : 'partial'
+    matching_scope = @match_kind == 'all_concepts' ? strict_scope : scope.where(broad_condition)
     matching_scope.order(Arel.sql(rank_sql), :name, :id)
   end
+
+  attr_reader :match_kind
 
   private
 
@@ -46,31 +49,40 @@ class Scheduling::ServiceSearch
   end
 
   def broad_condition
-    return scope.klass.sanitize_sql_array(["#{search_text_sql} ILIKE ?", "%#{escaped(normalized_query)}%"]) if concepts.blank?
+    return phrase_condition(search_text_sql) if concepts.blank?
 
-    sql = concepts.flatten.map { "#{search_text_sql} ILIKE ?" }.join(' OR ')
-    scope.klass.sanitize_sql_array([sql, *concepts.flatten])
+    "(#{concepts.flatten.map { |value| concept_condition(search_text_sql, value) }.join(' OR ')})"
   end
 
-  def all_concepts_condition
-    return broad_condition if concepts.blank?
+  def all_concepts_condition(text_sql = search_text_sql)
+    return phrase_condition(text_sql) if concepts.blank?
 
-    fragments = concepts.map do |alternatives|
-      "(#{alternatives.map { "#{search_text_sql} ILIKE ?" }.join(' OR ')})"
-    end
-    scope.klass.sanitize_sql_array([fragments.join(' AND '), *concepts.flatten])
+    concepts.map do |alternatives|
+      "(#{alternatives.map { |value| concept_condition(text_sql, value) }.join(' OR ')})"
+    end.join(' AND ')
   end
 
   def rank_sql
-    exact_phrase = scope.klass.sanitize_sql_array(["#{search_text_sql} ILIKE ?", "%#{escaped(normalized_query)}%"])
     <<~SQL.squish
       CASE
         WHEN LOWER(name) = #{scope.connection.quote(normalized_query)} THEN 0
-        WHEN #{exact_phrase} THEN 1
-        WHEN #{all_concepts_condition} THEN 2
-        ELSE 3
+        WHEN #{all_concepts_condition('LOWER(name)')} THEN 1
+        WHEN #{phrase_condition('LOWER(name)')} THEN 2
+        WHEN #{all_concepts_condition} THEN 3
+        ELSE 4
       END
     SQL
+  end
+
+  def phrase_condition(text_sql)
+    pattern = scope.connection.quote("%#{escaped(normalized_query)}%")
+    "#{text_sql} ILIKE #{pattern}"
+  end
+
+  def concept_condition(text_sql, value)
+    phrase = scope.connection.quote("%#{escaped(value)}%")
+    lexeme = scope.connection.quote(value)
+    "(#{text_sql} ILIKE #{phrase} OR to_tsvector('russian', #{text_sql}) @@ plainto_tsquery('russian', #{lexeme}))"
   end
 
   def escaped(value)

@@ -34,6 +34,18 @@ RSpec.describe Scheduling::ResourceSearchService do
     expect(perform(query: 'therapist', search_by: 'all')[:resources].pluck(:id)).to eq([therapist.id])
   end
 
+  it 'finds a specialist regardless of the order of name tokens' do
+    expect(perform(query: 'Sarsembayeva Aigerim', search_by: 'name')[:resources].pluck(:id)).to eq([therapist.id])
+    expect(perform(query: 'Aigerim Sarsembayeva', search_by: 'all')[:resources].pluck(:id)).to eq([therapist.id])
+  end
+
+  it 'does not infer a specialty from the resource cabinet' do
+    therapist.update!(specialty: '', custom_attributes: { 'medelement_cabinets' => [{ 'cabinetName' => 'УЗИ' }] })
+
+    expect(perform(query: 'УЗИ', search_by: 'specialty')[:resources]).to be_empty
+    expect(perform(query: 'Sarsembayeva', search_by: 'name')[:resources].pluck(:id)).to eq([therapist.id])
+  end
+
   it 'can include inactive specialists when explicitly requested' do
     payload = perform(query: 'old', include_inactive: true)
 
