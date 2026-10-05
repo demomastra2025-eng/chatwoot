@@ -94,8 +94,8 @@ class Crm::Reports::StageVisitsQuery
     raise_validation!('workspace timezone is invalid') if zone.blank?
   end
 
-  def visible_deals_sql
-    deals_scope.reselect(:id).to_sql
+  def visible_deals
+    deals_scope.reselect(:id)
   end
 
   def filter_predicates
@@ -144,7 +144,7 @@ class Crm::Reports::StageVisitsQuery
 
   def query_fingerprint
     @query_fingerprint ||= Digest::SHA256.hexdigest(
-      [self.class::QUERY_KIND, account.id, visible_deals_sql, from_time.utc.iso8601(6), to_time.utc.iso8601(6), filters.sort].to_json
+      [self.class::QUERY_KIND, account.id, visible_deals.to_sql, from_time.utc.iso8601(6), to_time.utc.iso8601(6), filters.sort].to_json
     )
   end
 

@@ -46,7 +46,7 @@ class Crm::Reports::StageDurationsQuery < Crm::Reports::StageVisitsQuery
   end
 
   def relation
-    @relation ||= Crm::StageVisit.unscoped.from("(#{filtered_sql}) crm_stage_visits")
+    @relation ||= Crm::StageVisit.unscoped.from(derived_table(filtered_sql, 'crm_stage_visits'))
   end
 
   private
@@ -76,7 +76,7 @@ class Crm::Reports::StageDurationsQuery < Crm::Reports::StageVisitsQuery
           ELSE 'exact'
         END AS coverage
       FROM crm_stage_visits visits
-      INNER JOIN (#{visible_deals_sql}) visible_deals ON visible_deals.id = visits.deal_id
+      INNER JOIN (#{visible_deals.to_sql}) visible_deals ON visible_deals.id = visits.deal_id
       WHERE visits.account_id = #{connection.quote(account.id)}
         AND visits.exited_at IS NOT NULL
         AND visits.exited_at >= visits.entered_at
@@ -89,6 +89,10 @@ class Crm::Reports::StageDurationsQuery < Crm::Reports::StageVisitsQuery
   def filter_sql_suffix
     predicates = filter_predicates
     predicates.empty? ? '' : "AND #{predicates.join(' AND ')}"
+  end
+
+  def derived_table(sql, name)
+    Arel::Nodes::TableAlias.new(Arel::Nodes::Grouping.new(Arel.sql(sql)), name)
   end
 
   def aggregate_payload(values)
@@ -172,7 +176,7 @@ class Crm::Reports::StageDurationsQuery < Crm::Reports::StageVisitsQuery
   end
 
   def excluded_relation
-    scope = Crm::StageVisit.unscoped.joins("INNER JOIN (#{visible_deals_sql}) visible_deals ON visible_deals.id = crm_stage_visits.deal_id")
+    scope = Crm::StageVisit.unscoped.joins("INNER JOIN (#{visible_deals.to_sql}) visible_deals ON visible_deals.id = crm_stage_visits.deal_id")
                            .where(account_id: account.id)
     filters.reduce(scope) { |relation_scope, (key, value)| relation_scope.where(FILTER_COLUMNS.fetch(key) => value) }
   end

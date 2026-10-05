@@ -84,7 +84,7 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
 
   def relation
     @relation ||= begin
-      scope = Crm::Event.unscoped.from("(#{result_facts_sql}) task_result_facts").select('task_result_facts.*')
+      scope = Crm::Event.unscoped.from(derived_table(result_facts_sql, 'task_result_facts')).select('task_result_facts.*')
       scope = scope.where(task_result_facts: { task_type_id: task_type_id }) if task_type_id
       scope = scope.where(task_result_facts: { task_outcome_id: task_outcome_id }) if task_outcome_id
       scope = scope.where(task_result_facts: { lifecycle_type: lifecycle_type }) if lifecycle_type.present?
@@ -174,6 +174,10 @@ class Crm::Reports::TaskResultsQuery # rubocop:disable Metrics/ClassLength
 
   def snapshot_id_sql(expression)
     "CASE WHEN #{valid_snapshot_id_sql(expression)} THEN #{expression}::bigint END"
+  end
+
+  def derived_table(sql, name)
+    Arel::Nodes::TableAlias.new(Arel::Nodes::Grouping.new(Arel.sql(sql)), name)
   end
 
   def grouped_counts

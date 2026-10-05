@@ -57,7 +57,7 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
   end
 
   def fact_relation
-    @fact_relation ||= Crm::Event.unscoped.from("(#{facts_sql}) crm_events")
+    @fact_relation ||= Crm::Event.unscoped.from(derived_table(facts_sql, 'crm_events'))
   end
 
   def attribution_payloads(values)
@@ -272,6 +272,10 @@ class Crm::Reports::TaskLifecycleQuery # rubocop:disable Metrics/ClassLength
 
   def visible_tasks_sql
     tasks_scope.reselect(:id).to_sql
+  end
+
+  def derived_table(sql, name)
+    Arel::Nodes::TableAlias.new(Arel::Nodes::Grouping.new(Arel.sql(sql)), name)
   end
 
   def terminal_at_sql

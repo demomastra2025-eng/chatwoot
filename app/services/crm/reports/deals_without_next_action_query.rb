@@ -54,7 +54,7 @@ class Crm::Reports::DealsWithoutNextActionQuery
       scope = deals_scope.where(account_id: account.id, archived_at: nil, closed_at: nil, waiting_until: nil)
       filters.each { |key, value| scope = scope.where(key => value) }
       scope
-        .where("NOT EXISTS (#{visible_action_tasks_sql})")
+        .where("NOT EXISTS (#{visible_action_tasks.to_sql})")
         .joins(tenant_dimension_join('INNER JOIN crm_pipelines pipelines', 'pipelines', 'crm_deals.pipeline_id'))
         .joins(tenant_dimension_join('INNER JOIN crm_stages stages', 'stages', 'crm_deals.stage_id'))
     end
@@ -88,7 +88,7 @@ class Crm::Reports::DealsWithoutNextActionQuery
     raise_validation!("#{key} is invalid")
   end
 
-  def visible_action_tasks_sql
+  def visible_action_tasks
     tasks_scope
       .where(account_id: account.id, archived_at: nil)
       .joins(:status)
@@ -96,7 +96,6 @@ class Crm::Reports::DealsWithoutNextActionQuery
       .where('crm_tasks.deal_id = crm_deals.id')
       .select('1')
       .reorder(nil)
-      .to_sql
   end
 
   def details_result

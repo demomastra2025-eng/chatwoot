@@ -17,15 +17,17 @@ class Crm::Reports::StageDurationSqlFragments
 
   def percentile_sql(percentile, reliability: nil)
     percentile_sql = PERCENTILE_SQL_VALUES.fetch(Float(percentile))
-    filter = reliability_filter(reliability)
-    Arel.sql("PERCENTILE_CONT(#{percentile_sql}) WITHIN GROUP (ORDER BY duration_seconds)#{filter}")
+    aggregate_sql = "PERCENTILE_CONT(#{percentile_sql}) WITHIN GROUP (ORDER BY duration_seconds)"
+    return Arel.sql(aggregate_sql) if reliability.blank?
+
+    validate_reliability!(reliability)
+    Arel.sql("#{aggregate_sql} FILTER (WHERE reliability = #{connection.quote(reliability)})")
   end
 
   def histogram_sql
     HISTOGRAM_BUCKETS.map do |bucket|
-      from = Integer(bucket.fetch(:from))
-      predicate = ["duration_seconds >= #{from}"]
-      predicate << "duration_seconds < #{Integer(bucket.fetch(:to))}" if bucket[:to]
+      predicate = ["duration_seconds >= #{connection.quote(Integer(bucket.fetch(:from)))}"]
+      predicate << "duration_seconds < #{connection.quote(Integer(bucket.fetch(:to)))}" if bucket[:to]
       Arel.sql("COUNT(*) FILTER (WHERE #{predicate.join(' AND ')})")
     end
   end
@@ -40,11 +42,7 @@ class Crm::Reports::StageDurationSqlFragments
 
   attr_reader :connection
 
-  def reliability_filter(reliability)
-    return '' if reliability.blank?
-
+  def validate_reliability!(reliability)
     raise ArgumentError, 'Unsupported reliability filter' unless reliability.in?(RELIABILITY_FILTER_VALUES)
-
-    " FILTER (WHERE reliability = #{connection.quote(reliability)})"
   end
 end
