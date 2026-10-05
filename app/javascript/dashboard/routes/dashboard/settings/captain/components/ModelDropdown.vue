@@ -79,6 +79,14 @@ const searchableModels = computed(() => [
   ...availableModels.value,
   ...diagnosticOnlyModels.value,
 ]);
+// The platform curates a handful of models; a search box only makes sense for a long list or when the
+// backend also sent models to explain (diagnostics).
+const SEARCH_MIN_MODELS = 8;
+const isSearchVisible = computed(
+  () =>
+    searchableModels.value.length > SEARCH_MIN_MODELS ||
+    diagnosticModels.value.length > 0
+);
 
 const recommendedModelId = computed(() =>
   captainConfigStore.getDefaultModelForFeature(props.featureKey)
@@ -476,7 +484,10 @@ const selectModel = model => {
           {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.SELECT_MODEL') }}
         </span>
       </span>
-      <Icon icon="i-lucide-search" class="size-4 text-n-slate-11" />
+      <Icon
+        :icon="isSearchVisible ? 'i-lucide-search' : 'i-lucide-chevron-down'"
+        class="size-4 text-n-slate-11"
+      />
     </button>
 
     <Dialog
@@ -495,7 +506,7 @@ const selectModel = model => {
       @close="handleDialogClose"
     >
       <div class="flex min-h-[34rem] max-h-[78vh] flex-col gap-3">
-        <label class="relative block">
+        <label v-if="isSearchVisible" class="relative block">
           <input
             ref="searchInputRef"
             v-model="searchQuery"
@@ -594,6 +605,13 @@ const selectModel = model => {
                       class="text-[10px] uppercase text-n-iris-11 border border-n-iris-10 leading-none rounded-md px-1.5 py-0.5 flex-shrink-0"
                     >
                       {{ t('GENERAL.PREFERRED') }}
+                    </span>
+                    <span
+                      v-if="model.current_only"
+                      data-test="current-model-badge"
+                      class="text-[10px] uppercase text-n-amber-11 border border-n-amber-7 bg-n-amber-2 leading-none rounded-md px-1.5 py-0.5 flex-shrink-0"
+                    >
+                      {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.CURRENT_MODEL') }}
                     </span>
                     <span
                       v-if="model.coming_soon"

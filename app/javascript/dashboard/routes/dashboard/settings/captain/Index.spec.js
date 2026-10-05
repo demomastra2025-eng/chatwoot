@@ -166,15 +166,16 @@ const mountComponent = (store, props = {}) => {
         BaseSettingsHeader: true,
         SectionLayout: { template: '<section><slot /></section>' },
         ModelSelector: {
-          props: [
-            'featureKey',
-            'title',
-            'description',
-            'models',
-            'showControls',
-          ],
+          props: {
+            featureKey: String,
+            title: String,
+            description: String,
+            models: Array,
+            showControls: Boolean,
+            allowModelSelection: { type: Boolean, default: true },
+          },
           template:
-            '<section :data-feature-key="featureKey"><span v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
+            '<section :data-feature-key="featureKey" :data-allow-model-selection="String(allowModelSelection)"><span v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
         },
         ModelDropdown: true,
         NextButton: { template: '<button type="button"><slot /></button>' },
@@ -285,79 +286,36 @@ describe('Captain settings OpenRouter UX', () => {
     ).toBe(true);
   });
 
-  it('filters embedding models by the selected knowledge chunk constraints', () => {
+  it('shows the models chosen by the platform without a picker and keeps the short list for the chat models', () => {
     const audioModel = {
-      id: 'openai/gpt-audio-mini',
-      display_name: 'GPT Audio Mini',
+      id: 'openai/gpt-4o-mini-transcribe',
+      display_name: 'GPT-4o mini transcribe',
       provider: 'openrouter',
       provider_configured: true,
-      type: 'chat',
-      capabilities: ['audio_input', 'text_output', 'transcription'],
+      type: 'transcription',
+      capabilities: ['audio_input', 'transcription'],
     };
     const store = useCaptainConfigStore();
-    store.applyPayload({
-      ...basePayload({ audioModel }),
-      features: {
-        ...basePayload({ audioModel }).features,
-        help_center_search: {
-          enabled: true,
-          selected: 'openai/text-embedding-3-small',
-          models: [
-            {
-              id: 'openai/text-embedding-3-small',
-              provider: 'openrouter',
-              provider_configured: true,
-              type: 'embedding',
-              capabilities: ['embedding'],
-              context_length: 8192,
-              embedding_dimensions: 1536,
-            },
-            {
-              id: 'openai/text-embedding-small-context',
-              provider: 'openrouter',
-              provider_configured: true,
-              type: 'embedding',
-              capabilities: ['embedding'],
-              context_length: 1024,
-              embedding_dimensions: 1536,
-            },
-            {
-              id: 'openai/text-embedding-wrong-dimensions',
-              provider: 'openrouter',
-              provider_configured: true,
-              type: 'embedding',
-              capabilities: ['embedding'],
-              context_length: 8192,
-              embedding_dimensions: 512,
-            },
-          ],
-        },
-      },
-      runtime_metadata: {
-        knowledge_indexing: {
-          vector_dimensions: 1536,
-          chunk_size_options: [
-            {
-              value: 20000,
-              estimated_tokens: 5000,
-              available_model_count: 1,
-            },
-          ],
-        },
-      },
-    });
+    store.applyPayload(basePayload({ audioModel }));
 
     const wrapper = mountComponent(store);
-    const embeddingBlock = wrapper.find(
-      '[data-feature-key="help_center_search"]'
-    );
+    const pickerFlag = featureKey =>
+      wrapper
+        .find(`[data-feature-key="${featureKey}"]`)
+        .attributes('data-allow-model-selection');
 
-    expect(embeddingBlock.text()).toContain('openai/text-embedding-3-small');
-    expect(embeddingBlock.text()).not.toContain(
-      'openai/text-embedding-small-context'
-    );
-    expect(embeddingBlock.text()).not.toContain(
-      'openai/text-embedding-wrong-dimensions'
+    ['moderation', 'audio_transcription', 'help_center_search'].forEach(key => {
+      expect(pickerFlag(key)).toBe('false');
+    });
+    ['editor', 'assistant', 'copilot'].forEach(key => {
+      expect(pickerFlag(key)).toBe('true');
+    });
+    // image recognition and the label suggestion model have no card or picker at all
+    expect(
+      wrapper.find('[data-feature-key="image_recognition"]').exists()
+    ).toBe(false);
+    expect(wrapper.findComponent({ name: 'ModelDropdown' }).exists()).toBe(
+      false
     );
   });
 

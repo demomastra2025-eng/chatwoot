@@ -30,6 +30,11 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // Recognition and guardrail models are chosen by the platform: the card keeps its toggles, no model picker.
+  allowModelSelection: {
+    type: Boolean,
+    default: true,
+  },
   models: {
     type: Array,
     default: null,
@@ -95,17 +100,24 @@ const handleModelChange = ({ feature, model }) => {
         </div>
       </div>
       <ModelDropdown
-        v-if="isAllowed && hasAvailableModels"
+        v-if="isAllowed && allowModelSelection && hasAvailableModels"
         :feature-key="featureKey"
         :feature-title="title"
         :models="availableModels"
         @change="handleModelChange"
       />
       <div
-        v-else-if="isAllowed"
+        v-else-if="isAllowed && allowModelSelection"
         class="text-xs text-n-amber-11 bg-n-amber-3 border border-n-amber-5 rounded-lg px-3 py-2 max-w-72"
       >
         {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.NO_COMPATIBLE_MODELS') }}
+      </div>
+      <div
+        v-else-if="isAllowed"
+        data-test="model-managed-globally"
+        class="max-w-72 rounded-lg border border-n-weak bg-n-alpha-2 px-3 py-2 text-xs text-n-slate-11"
+      >
+        {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.MANAGED_GLOBALLY') }}
       </div>
     </div>
 

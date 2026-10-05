@@ -21,10 +21,12 @@ vi.mock('vue-i18n', () => ({
   }),
 }));
 
+const storeState = vi.hoisted(() => ({ models: [], selected: null }));
+
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => ({
-    getModelsForFeature: () => [],
-    getSelectedModelForFeature: () => null,
+    getModelsForFeature: () => storeState.models,
+    getSelectedModelForFeature: () => storeState.selected,
     fetch: vi.fn().mockResolvedValue(),
   }),
 }));
@@ -48,6 +50,109 @@ const buildWrapper = props =>
 describe('AssistantBasicSettingsForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    storeState.models = [];
+    storeState.selected = null;
+  });
+
+  describe('model choice', () => {
+    const curatedModels = [
+      { id: 'openai/gpt-6-luna', display_name: 'GPT-6 Luna' },
+      { id: 'openai/gpt-5.6-luna', display_name: 'GPT-5.6 Luna' },
+      { id: 'openai/gpt-5.4', display_name: 'GPT-5.4' },
+      { id: 'openai/gpt-5.4-mini', display_name: 'GPT-5.4 mini' },
+    ];
+    const modelSelect = wrapper =>
+      wrapper.findAllComponents({ name: 'Select' })[0];
+
+    it('offers only the short list curated by the platform and nothing else to pick', () => {
+      storeState.models = curatedModels;
+      const wrapper = buildWrapper({
+        assistant: {
+          id: 58,
+          name: 'Мөлдір',
+          usage_mode: 'external_agent',
+          config: { model: 'openai/gpt-5.4' },
+        },
+      });
+
+      expect(modelSelect(wrapper).props('options')).toEqual([
+        { value: 'openai/gpt-6-luna', label: 'GPT-6 Luna' },
+        { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+        { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
+        { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 mini' },
+      ]);
+      // the only dropdown of the form is the agent model: recognition features have no picker
+      expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(1);
+    });
+
+    it('keeps the agent model outside the list selectable and marks it as the current one', async () => {
+      storeState.models = curatedModels;
+      const wrapper = buildWrapper({
+        assistant: {
+          id: 58,
+          name: 'Мөлдір',
+          description: 'Поприветствуй клиента.',
+          usage_mode: 'external_agent',
+          config: { model: 'legacy/old-model' },
+        },
+      });
+
+      expect(modelSelect(wrapper).props('options')[0]).toEqual({
+        value: 'legacy/old-model',
+        label: 'legacy/old-model (CAPTAIN.ASSISTANTS.FORM.MODEL.CURRENT_MODEL)',
+      });
+      expect(modelSelect(wrapper).props('options')).toHaveLength(5);
+
+      const payload = await wrapper.vm.buildPayload();
+      expect(payload.assistant.config.model).toBe('legacy/old-model');
+    });
+
+    it('does not copy a workspace model outside the list into an agent that has none', async () => {
+      storeState.models = [
+        ...curatedModels,
+        {
+          id: 'legacy/old-model',
+          display_name: 'Old model',
+          current_only: true,
+        },
+      ];
+      storeState.selected = 'legacy/old-model';
+      const wrapper = buildWrapper({
+        assistant: {
+          id: 58,
+          name: 'Мөлдір',
+          description: 'Поприветствуй клиента.',
+          usage_mode: 'external_agent',
+          config: {},
+        },
+      });
+      await flushPromises();
+
+      expect(modelSelect(wrapper).props('options')).toHaveLength(4);
+      const payload = await wrapper.vm.buildPayload();
+      expect(payload.assistant.config.model).toBeNull();
+    });
+
+    it('shows recognition capabilities as switches only', () => {
+      const wrapper = buildWrapper({
+        assistant: { usage_mode: 'external_agent', config: {} },
+        showSubmitButton: false,
+      });
+      const text = wrapper.text();
+
+      [
+        'IMAGE_UNDERSTANDING',
+        'DOCUMENT_READING',
+        'WEB_SEARCH',
+        'WEB_PAGE_READING',
+        'USE_AUDIO_TRANSCRIPTIONS',
+      ].forEach(key => {
+        expect(text).toContain(`CAPTAIN.ASSISTANTS.FORM.FEATURES.${key}`);
+      });
+      expect(
+        wrapper.findAllComponents({ name: 'Switch' }).length
+      ).toBeGreaterThanOrEqual(8);
+    });
   });
 
   it('includes capability tool access in profile payload so checkbox changes persist', async () => {

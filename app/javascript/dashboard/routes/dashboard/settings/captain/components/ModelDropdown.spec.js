@@ -117,4 +117,71 @@ describe('Captain model dropdown diagnostics', () => {
 
     expect(wrapper.emitted('change')).toBeFalsy();
   });
+
+  describe('short list curated by the platform', () => {
+    const curated = [
+      ['openai/gpt-6-luna', 'GPT-6 Luna'],
+      ['openai/gpt-5.6-luna', 'GPT-5.6 Luna'],
+      ['openai/gpt-5.4', 'GPT-5.4'],
+      ['openai/gpt-5.4-mini', 'GPT-5.4 mini'],
+    ].map(([id, displayName]) => ({
+      id,
+      display_name: displayName,
+      provider: 'openrouter',
+      provider_configured: true,
+      type: 'chat',
+      capabilities: ['text_input', 'text_output'],
+    }));
+
+    it('lists only the curated models without a search box', () => {
+      const store = useCaptainConfigStore();
+      store.applyPayload({
+        features: {
+          assistant: {
+            selected: 'openai/gpt-5.4',
+            default: 'openai/gpt-6-luna',
+            models: curated,
+            diagnostic_models: [],
+          },
+        },
+      });
+
+      const wrapper = mountComponent();
+
+      expect(wrapper.find('input[type="search"]').exists()).toBe(false);
+      expect(wrapper.findAll('[data-test="model-card"]')).toHaveLength(4);
+    });
+
+    it('marks the workspace model outside the list as the current model', () => {
+      const store = useCaptainConfigStore();
+      store.applyPayload({
+        features: {
+          assistant: {
+            selected: 'legacy/old-model',
+            default: 'openai/gpt-6-luna',
+            models: [
+              ...curated,
+              {
+                id: 'legacy/old-model',
+                display_name: 'Old model',
+                provider: 'openrouter',
+                provider_configured: true,
+                type: 'chat',
+                current_only: true,
+              },
+            ],
+          },
+        },
+      });
+
+      const wrapper = mountComponent();
+      const badges = wrapper.findAll('[data-test="current-model-badge"]');
+
+      expect(wrapper.findAll('[data-test="model-card"]')).toHaveLength(5);
+      expect(badges).toHaveLength(1);
+      expect(badges[0].text()).toContain(
+        'CAPTAIN_SETTINGS.MODEL_CONFIG.CURRENT_MODEL'
+      );
+    });
+  });
 });

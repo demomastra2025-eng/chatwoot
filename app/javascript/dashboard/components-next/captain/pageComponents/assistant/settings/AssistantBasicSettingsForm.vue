@@ -106,12 +106,31 @@ const initialState = {
 const state = reactive({ ...initialState });
 const instructionEditorRef = ref(null);
 const captainConfigStore = useCaptainConfigStore();
-const assistantModelOptions = computed(() =>
-  captainConfigStore.getModelsForFeature('assistant').map(model => ({
-    value: model.id,
-    label: model.display_name || model.id,
-  }))
-);
+// Only the short list curated by the platform. A model the agent already has stays selectable and is marked as
+// the current one; it is not offered to agents that do not use it.
+const assistantModelOptions = computed(() => {
+  const currentLabel = name =>
+    `${name} (${t('CAPTAIN.ASSISTANTS.FORM.MODEL.CURRENT_MODEL')})`;
+  const options = captainConfigStore
+    .getModelsForFeature('assistant')
+    .filter(model => !model.current_only || model.id === state.model)
+    .map(model => {
+      const name = model.display_name || model.id;
+      return {
+        value: model.id,
+        label: model.current_only ? currentLabel(name) : name,
+      };
+    });
+
+  if (state.model && !options.some(option => option.value === state.model)) {
+    options.unshift({
+      value: state.model,
+      label: currentLabel(state.model),
+    });
+  }
+
+  return options;
+});
 const isExternalAgent = computed(
   () => state.usageMode !== 'internal_assistant'
 );
@@ -395,8 +414,13 @@ const handleBasicInfoUpdate = async () => {
 onMounted(async () => {
   await captainConfigStore.fetch();
   if (!state.model) {
-    state.model =
+    // A workspace model outside the curated list is not copied into the agent: choosing it anew is not allowed.
+    const selectedModelId =
       captainConfigStore.getSelectedModelForFeature('assistant') || '';
+    const isCurrentOnly = captainConfigStore
+      .getModelsForFeature('assistant')
+      .some(model => model.id === selectedModelId && model.current_only);
+    state.model = isCurrentOnly ? '' : selectedModelId;
   }
 });
 

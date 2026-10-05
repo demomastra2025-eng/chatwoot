@@ -17,7 +17,6 @@ import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
 import ModelSelector from './components/ModelSelector.vue';
-import ModelDropdown from './components/ModelDropdown.vue';
 import { shouldShowAudioTranscriptionPrompt } from './helpers/modelDiagnostics';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -289,14 +288,6 @@ const specializedModelFeatures = computed(() => [
     enterprise: true,
   },
   {
-    key: 'image_recognition',
-    title: t('CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_RECOGNITION.TITLE'),
-    description: t(
-      'CAPTAIN_SETTINGS.MODEL_CONFIG.IMAGE_RECOGNITION.DESCRIPTION'
-    ),
-    enterprise: true,
-  },
-  {
     key: 'help_center_search',
     title: t('CAPTAIN_SETTINGS.MODEL_CONFIG.EMBEDDINGS.TITLE'),
     description: t('CAPTAIN_SETTINGS.MODEL_CONFIG.EMBEDDINGS.DESCRIPTION'),
@@ -340,9 +331,6 @@ const storedAudioTranscriptionPrompt = computed(
 );
 const knowledgeIndexingMetadata = computed(
   () => runtimeMetadata.value.knowledge_indexing || {}
-);
-const knowledgeVectorDimensions = computed(() =>
-  Number(knowledgeIndexingMetadata.value.vector_dimensions || 1536)
 );
 const knowledgeChunkDefault = computed(() =>
   Number(
@@ -433,9 +421,6 @@ const guardrailActionOptions = computed(() => [
     label: t('CAPTAIN_SETTINGS.RUNTIME.GUARDRAILS.OPTIONS.DISABLED'),
   },
 ]);
-const labelSuggestionModelCount = computed(
-  () => captainConfigStore.getModelsForFeature('label_suggestion').length
-);
 const selectedAudioTranscriptionModel = computed(() => {
   const modelId = captainConfigStore.getSelectedModelForFeature(
     'audio_transcription'
@@ -766,40 +751,6 @@ const providerCredentialStatus = provider => {
 };
 const isProviderApiKeyDirty = providerKey =>
   providerApiKeys[providerKey]?.trim().length > 0;
-const selectedKnowledgeChunkOption = computed(() =>
-  knowledgeIndexingMetadata.value.chunk_size_options?.find(
-    option => Number(option.value) === Number(knowledgeChunkSize.value)
-  )
-);
-const selectedKnowledgeChunkEstimatedTokens = computed(
-  () =>
-    selectedKnowledgeChunkOption.value?.estimated_tokens ||
-    Math.ceil(Number(knowledgeChunkSize.value || 0) / 4)
-);
-const embeddingModelsForSelectedChunk = computed(() =>
-  captainConfigStore.getModelsForFeature('help_center_search').filter(model => {
-    const contextLength = Number(model.context_length || 0);
-    const modelVectorDimensions = Number(
-      model.requested_embedding_dimensions || model.embedding_dimensions || 0
-    );
-    const supportsVectorDimensions =
-      !modelVectorDimensions ||
-      modelVectorDimensions === knowledgeVectorDimensions.value;
-
-    return (
-      supportsVectorDimensions &&
-      contextLength > 0 &&
-      contextLength >= selectedKnowledgeChunkEstimatedTokens.value
-    );
-  })
-);
-const modelsForFeature = featureKey => {
-  if (featureKey === 'help_center_search') {
-    return embeddingModelsForSelectedChunk.value;
-  }
-
-  return null;
-};
 
 watch(
   storedAudioTranscriptionPrompt,
@@ -1701,37 +1652,6 @@ onMounted(() => {
                       "
                     />
                   </div>
-
-                  <div
-                    v-if="
-                      isLabelSuggestionEnabled && labelSuggestionModelCount > 1
-                    "
-                    class="flex min-w-0 flex-col gap-4 border-t border-n-weak pt-4 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div class="min-w-0">
-                      <div class="text-xs font-medium text-n-slate-12">
-                        {{
-                          t(
-                            'CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.MODEL_TITLE'
-                          )
-                        }}
-                      </div>
-                      <div class="mt-0.5 text-xs text-n-slate-11">
-                        {{
-                          t(
-                            'CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.MODEL_DESCRIPTION'
-                          )
-                        }}
-                      </div>
-                    </div>
-                    <ModelDropdown
-                      feature-key="label_suggestion"
-                      :feature-title="
-                        t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.TITLE')
-                      "
-                      @change="handleModelChange"
-                    />
-                  </div>
                 </div>
 
                 <div
@@ -1886,9 +1806,7 @@ onMounted(() => {
               :feature-key="feature.key"
               :title="feature.title"
               :description="feature.description"
-              :models="modelsForFeature(feature.key)"
-              :show-controls="feature.key !== 'image_recognition'"
-              @change="handleModelChange"
+              :allow-model-selection="false"
             >
               <template #controls>
                 <div

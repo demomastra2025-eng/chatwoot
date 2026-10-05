@@ -107,4 +107,42 @@ describe('Captain model selector diagnostics', () => {
       wrapper.find('[data-test="selected-model-diagnostics"]').exists()
     ).toBe(false);
   });
+
+  it('shows no model picker for a platform-managed feature, only the note', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload({
+      features: {
+        audio_transcription: {
+          selected: 'openai/gpt-4o-mini-transcribe',
+          managed: true,
+          models: [
+            {
+              id: 'openai/gpt-4o-mini-transcribe',
+              display_name: 'GPT-4o mini transcribe',
+              provider: 'openrouter',
+              provider_configured: true,
+            },
+          ],
+        },
+      },
+    });
+
+    const wrapper = shallowMount(ModelSelector, {
+      props: {
+        featureKey: 'audio_transcription',
+        title: 'Voice transcription',
+        description: 'Transcribes voice messages.',
+        isAllowed: true,
+        allowModelSelection: false,
+      },
+      global: { stubs: { ModelDropdown: true } },
+    });
+
+    expect(wrapper.findComponent({ name: 'ModelDropdown' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.find('[data-test="model-managed-globally"]').text()).toBe(
+      'CAPTAIN_SETTINGS.MODEL_CONFIG.MANAGED_GLOBALLY'
+    );
+  });
 });
