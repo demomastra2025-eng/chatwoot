@@ -105,7 +105,8 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
       :tool_name,
       :schema_name,
       :since,
-      :until
+      :until,
+      features: []
     )
   end
 

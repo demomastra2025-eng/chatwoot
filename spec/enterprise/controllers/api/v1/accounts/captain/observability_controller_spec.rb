@@ -212,6 +212,43 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         )
       end
 
+      it 'supports filtering by more than one Captain agent feature family' do
+        captain_agent_event = create(
+          :llm_event,
+          account: account,
+          feature: 'captain_agent',
+          event_name: 'llm.chat.complete',
+          assistant_id: 202,
+          created_at: 3.hours.ago
+        )
+        create(
+          :llm_event,
+          account: account,
+          feature: 'copilot',
+          event_name: 'llm.chat.complete',
+          assistant_id: 303,
+          created_at: 1.hour.ago
+        )
+
+        get "/api/v1/accounts/#{account.id}/captain/observability",
+            params: {
+              features: %w[assistant captain_agent],
+              event_name: 'llm.chat.complete'
+            },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:meta][:applied_filters]).to include(
+          features: %w[assistant captain_agent],
+          event_name: 'llm.chat.complete'
+        )
+        expect(json_response[:payload].map { |event| event[:id] }).to contain_exactly(
+          assistant_event.id,
+          captain_agent_event.id
+        )
+      end
+
       it 'supports filtering by semantic event flags' do
         get "/api/v1/accounts/#{account.id}/captain/observability",
             params: { flag: 'tool_failure' },
