@@ -11,7 +11,6 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
 import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
@@ -236,7 +235,6 @@ const prepareAssistantDetails = () => {
     assistant: {
       name: state.name,
       description: state.description || safeAssistant.value.description || '',
-      usage_mode: state.usageMode,
       config,
     },
     avatar: state.avatarFile,
@@ -347,8 +345,6 @@ watch(
       :message="formErrors.name"
       :message-type="formErrors.name ? 'error' : 'info'"
     />
-
-    <AssistantUsageModeSelector v-model="state.usageMode" />
 
     <Editor
       v-model="state.description"

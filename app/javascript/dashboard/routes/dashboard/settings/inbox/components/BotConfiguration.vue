@@ -114,12 +114,6 @@ const isAutoReplyModeDisabled = computed(
     !canChangeSettings.value
 );
 
-const assistantUsageBadge = assistant => {
-  return assistant?.usage_mode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
-    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE');
-};
-
 const isAssistantSelected = assistantId => {
   return (
     String(assistantId || NO_ASSISTANT_VALUE) === selectedAssistantId.value
@@ -447,8 +441,11 @@ const updateAutoReplyMode = async event => {
                         >
                           {{ assistant.name || `#${assistant.id}` }}
                         </span>
-                        <span class="text-xs text-n-slate-11">
-                          {{ assistantUsageBadge(assistant) }}
+                        <span
+                          v-if="assistant.usage_mode === 'internal_assistant'"
+                          class="text-xs text-n-slate-11"
+                        >
+                          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
                         </span>
                       </span>
                     </span>

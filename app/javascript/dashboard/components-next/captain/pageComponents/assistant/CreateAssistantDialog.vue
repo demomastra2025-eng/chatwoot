@@ -8,7 +8,6 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import AssistantForm from './AssistantForm.vue';
-import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
 import {
   buildDefaultToolAccessForUsageMode,
   normalizeCapabilityToolAccess,
@@ -25,7 +24,12 @@ const props = defineProps({
     validator: value => ['create', 'edit'].includes(value),
   },
 });
+
 const emit = defineEmits(['close', 'created']);
+
+// Every new assistant is a customer-facing AI agent: there is no choice of kind.
+const NEW_ASSISTANT_USAGE_MODE = 'external_agent';
+
 const { t } = useI18n();
 const store = useStore();
 
@@ -35,13 +39,11 @@ const isCreateMode = computed(() => props.type === 'create');
 const isSubmitting = ref(false);
 const createFormState = reactive({
   name: '',
-  usageMode: 'external_agent',
   attemptedSubmit: false,
 });
 
 const resetCreateForm = () => {
   createFormState.name = '';
-  createFormState.usageMode = 'external_agent';
   createFormState.attemptedSubmit = false;
 };
 
@@ -78,10 +80,8 @@ const getDialogErrorMessage = () =>
     ? t('CAPTAIN.ASSISTANTS.CREATE.ERROR_MESSAGE')
     : t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE');
 
-const getCreateDefaultInstruction = usageMode =>
-  usageMode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.INTERNAL_ASSISTANT')
-    : t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT');
+const getCreateDefaultInstruction = () =>
+  t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT');
 
 const getAvatarErrorMessage = reason => {
   if (reason === 'delete') {
@@ -136,17 +136,15 @@ const syncAvatar = async ({ assistantId, avatar, removeAvatar }) => {
 };
 
 const buildCreateAssistantPayload = () => {
-  const usageMode = createFormState.usageMode || 'external_agent';
   const toolAccess = normalizeCapabilityToolAccess(
-    buildDefaultToolAccessForUsageMode(usageMode),
-    usageMode
+    buildDefaultToolAccessForUsageMode(NEW_ASSISTANT_USAGE_MODE)
   );
 
   return {
     assistant: {
       name: createFormState.name.trim(),
-      usage_mode: usageMode,
-      description: getCreateDefaultInstruction(usageMode),
+      usage_mode: NEW_ASSISTANT_USAGE_MODE,
+      description: getCreateDefaultInstruction(),
       config: {
         feature_faq: false,
         feature_memory: false,
@@ -251,8 +249,6 @@ defineExpose({ dialogRef });
         :message-type="createNameError ? 'error' : 'info'"
         autofocus
       />
-
-      <AssistantUsageModeSelector v-model="createFormState.usageMode" />
     </div>
     <AssistantForm
       v-else

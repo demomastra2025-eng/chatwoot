@@ -1914,6 +1914,7 @@
           "BUTTON_TEXT": "Удалить {assistantName}"
         }
       },
+      "INTERNAL_LABEL": "Внутренний ассистент",
       "OPTIONS": {
         "EDIT_ASSISTANT": "Редактировать AI-агента",
         "DELETE_ASSISTANT": "Удалить AI-агента",

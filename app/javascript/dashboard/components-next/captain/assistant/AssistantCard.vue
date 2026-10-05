@@ -39,10 +39,14 @@ const { t } = useI18n();
 
 const [showActionsDropdown, toggleDropdown] = useToggle();
 
+const isInternalAssistant = computed(
+  () => props.usageMode === 'internal_assistant'
+);
+
 const menuItems = computed(() => {
   const allOptions = [];
 
-  if (props.usageMode !== 'internal_assistant') {
+  if (!isInternalAssistant.value) {
     allOptions.push({
       label: t('CAPTAIN.ASSISTANTS.OPTIONS.VIEW_CONNECTED_INBOXES'),
       value: 'viewConnectedInboxes',
@@ -72,11 +76,6 @@ const menuItems = computed(() => {
 });
 
 const lastUpdatedAt = computed(() => dynamicTime(props.updatedAt));
-const usageModeBadgeLabel = computed(() =>
-  props.usageMode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
-    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE')
-);
 
 const handleAction = ({ action, value }) => {
   toggleDropdown(false);
@@ -94,14 +93,10 @@ const handleAction = ({ action, value }) => {
           {{ name }}
         </h6>
         <span
-          class="inline-flex shrink-0 rounded-full px-2 py-1 text-xs font-medium"
-          :class="
-            usageMode === 'internal_assistant'
-              ? 'bg-n-alpha-2 text-n-slate-11'
-              : 'bg-n-brand/10 text-n-brand'
-          "
+          v-if="isInternalAssistant"
+          class="shrink-0 text-xs text-n-slate-11"
         >
-          {{ usageModeBadgeLabel }}
+          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
         </span>
       </div>
       <div class="flex items-center gap-2">

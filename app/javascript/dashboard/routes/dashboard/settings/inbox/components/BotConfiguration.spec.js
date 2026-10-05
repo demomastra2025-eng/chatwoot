@@ -312,4 +312,53 @@ describe('Inbox BotConfiguration Captain settings', () => {
         .exists()
     ).toBe(false);
   });
+
+  it('lists AI agents without a kind badge and keeps internal assistants out of the choice', async () => {
+    mockState.assistants = [
+      ...mockState.assistants,
+      {
+        id: 103,
+        name: 'Team helper',
+        description: 'Works inside the team',
+        usage_mode: 'internal_assistant',
+      },
+    ];
+    const wrapper = buildWrapper({ inbox: mockState.inbox });
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant"]')
+      .trigger('click');
+
+    expect(wrapper.text()).toContain('Sales assistant');
+    expect(wrapper.text()).not.toContain('Team helper');
+    expect(wrapper.text()).not.toContain('USAGE_MODE');
+    expect(wrapper.text()).not.toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
+  });
+
+  it('marks an internal assistant that is already connected with a quiet label', async () => {
+    mockState.assistants = [
+      ...mockState.assistants,
+      {
+        id: 103,
+        name: 'Team helper',
+        description: 'Works inside the team',
+        usage_mode: 'internal_assistant',
+      },
+    ];
+    mockState.inbox = {
+      ...mockState.inbox,
+      captain_assistant: { id: 103, name: 'Team helper' },
+    };
+    const wrapper = buildWrapper({ inbox: mockState.inbox });
+    await flushPromises();
+
+    await wrapper
+      .get('[data-testid="captain-inbox-assistant"]')
+      .trigger('click');
+
+    expect(wrapper.text()).toContain('Team helper');
+    expect(wrapper.text()).toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
+    expect(wrapper.text()).not.toContain('USAGE_MODE');
+  });
 });

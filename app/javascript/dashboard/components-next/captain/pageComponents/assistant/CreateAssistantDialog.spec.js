@@ -53,14 +53,6 @@ const inputStub = {
     '<input @input="$emit(\'update:modelValue\', $event.target.value)" />',
 };
 
-const usageModeSelectorStub = {
-  name: 'AssistantUsageModeSelector',
-  props: ['modelValue'],
-  emits: ['update:modelValue'],
-  template:
-    "<button @click=\"$emit('update:modelValue', 'internal_assistant')\" />",
-};
-
 describe('CreateAssistantDialog', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
@@ -70,8 +62,8 @@ describe('CreateAssistantDialog', () => {
     });
   });
 
-  it('renders the compact create flow instead of the full assistant form', () => {
-    const wrapper = shallowMount(CreateAssistantDialog, {
+  const mountCreate = () =>
+    shallowMount(CreateAssistantDialog, {
       props: {
         type: 'create',
       },
@@ -80,81 +72,106 @@ describe('CreateAssistantDialog', () => {
           Dialog: dialogStub,
           Input: inputStub,
           AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
         },
       },
     });
 
+  it('renders the compact create flow instead of the full assistant form', () => {
+    const wrapper = mountCreate();
+
     expect(wrapper.findComponent({ name: 'Input' }).exists()).toBe(true);
-    expect(
-      wrapper.findComponent({ name: 'AssistantUsageModeSelector' }).exists()
-    ).toBe(true);
     expect(wrapper.findComponent({ name: 'AssistantForm' }).exists()).toBe(
       false
     );
   });
 
-  it('uses the wider create dialog width for agent and assistant creation', () => {
-    const wrapper = shallowMount(CreateAssistantDialog, {
-      props: {
-        type: 'create',
-      },
-      global: {
-        stubs: {
-          Dialog: dialogStub,
-          Input: inputStub,
-          AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
-        },
-      },
-    });
+  it('asks only for the name: there is no choice between an agent and an assistant', () => {
+    const wrapper = mountCreate();
+
+    expect(wrapper.findAllComponents({ name: 'Input' })).toHaveLength(1);
+    expect(wrapper.findAll('button')).toHaveLength(0);
+    expect(wrapper.html()).not.toContain('USAGE_MODE');
+  });
+
+  it('uses the wider create dialog width', () => {
+    const wrapper = mountCreate();
 
     expect(wrapper.findComponent({ name: 'Dialog' }).props('width')).toBe(
       'lg-plus'
     );
   });
 
-  it('creates an assistant from name and type with default settings', async () => {
-    dispatchMock.mockResolvedValueOnce({ id: 77, name: 'Ops Copilot' });
+  it('creates an AI agent from its name with default settings', async () => {
+    dispatchMock.mockResolvedValueOnce({ id: 77, name: 'Sales Agent' });
+
+    const wrapper = mountCreate();
+
+    await wrapper.findComponent({ name: 'Input' }).setValue('Sales Agent');
+    wrapper.findComponent({ name: 'Dialog' }).vm.$emit('confirm');
+
+    await flushPromises();
+
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/create', {
+      name: 'Sales Agent',
+      usage_mode: 'external_agent',
+      description:
+        'CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT',
+      config: {
+        feature_faq: false,
+        feature_memory: false,
+        feature_citation: false,
+        context_access: {},
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup', 'handoff'],
+          },
+        },
+      },
+    });
+    expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({
+      id: 77,
+      name: 'Sales Agent',
+    });
+  });
+
+  it('does not create an assistant without a name', async () => {
+    const wrapper = mountCreate();
+
+    wrapper.findComponent({ name: 'Dialog' }).vm.$emit('confirm');
+    await flushPromises();
+
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('saves edits of an existing assistant without touching its kind', async () => {
+    dispatchMock.mockResolvedValue({ id: 8, name: 'Team helper' });
 
     const wrapper = shallowMount(CreateAssistantDialog, {
       props: {
-        type: 'create',
+        type: 'edit',
+        selectedAssistant: { id: 8, usage_mode: 'internal_assistant' },
       },
       global: {
         stubs: {
           Dialog: dialogStub,
           Input: inputStub,
           AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
         },
       },
     });
 
-    await wrapper.findComponent({ name: 'Input' }).setValue('Ops Copilot');
-    wrapper
-      .findComponent({ name: 'AssistantUsageModeSelector' })
-      .vm.$emit('update:modelValue', 'internal_assistant');
-    wrapper.findComponent({ name: 'Dialog' }).vm.$emit('confirm');
-
+    wrapper.findComponent({ name: 'AssistantForm' }).vm.$emit('submit', {
+      assistant: { name: 'Team helper', config: {} },
+      avatar: null,
+      removeAvatar: false,
+    });
     await flushPromises();
 
-    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/create', {
-      name: 'Ops Copilot',
-      usage_mode: 'internal_assistant',
-      description:
-        'CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.INTERNAL_ASSISTANT',
-      config: {
-        feature_faq: false,
-        feature_memory: false,
-        feature_citation: false,
-        context_access: {},
-        tool_access: {},
-      },
-    });
-    expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({
-      id: 77,
-      name: 'Ops Copilot',
+    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
+      id: 8,
+      name: 'Team helper',
+      config: {},
     });
   });
 });
