@@ -253,6 +253,7 @@ class Telephony::EventsIngestionService
 
     validate_call_session_tenant_links!(call_session, account) if call_session.present?
     broadcast_realtime_call_status!(call_session) if call_session.present? && realtime_status_event?
+    broadcast_operator_activity!(call_session) if call_session.present? && realtime_status_event?
 
     if call_session.present? && terminal_late_terminal_event
       duplicate_terminal_branch = duplicate_broadcast_branch?(call_session)
@@ -397,6 +398,10 @@ class Telephony::EventsIngestionService
       'TELEPHONY_REALTIME_CALL_STATUS_BROADCAST_FAILED ' \
       "call_ref=#{call_session&.external_call_ref} account_id=#{call_session&.account_id} error=#{e.class.name}: #{e.message}"
     )
+  end
+
+  def broadcast_operator_activity!(call_session)
+    Telephony::OperatorActivityBroadcaster.new(call_session: call_session).perform
   end
 
   def realtime_call_status_pubsub_tokens(call_session)

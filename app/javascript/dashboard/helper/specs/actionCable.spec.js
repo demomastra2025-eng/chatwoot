@@ -6,6 +6,7 @@ import {
   useWhatsappCallsStore,
 } from 'dashboard/stores/whatsappCalls';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useCallOperatorActivityStore } from 'dashboard/stores/callOperatorActivity';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
@@ -686,6 +687,71 @@ describe('ActionCableConnector', () => {
       ]);
     });
 
+    it('keeps the operator activity of other operators per call and clears it when the call ends', () => {
+      const activityStore = useCallOperatorActivityStore();
+      const payload = {
+        account_id: 1,
+        call_id: 'sipuni:local:abc',
+        conversation_id: 627,
+        operator_user_id: 9,
+        operator_name: 'Ayan',
+        state: 'calling',
+      };
+
+      actionCable.onReceived({
+        event: 'voice_call.operator_activity',
+        data: payload,
+      });
+      expect(Object.keys(activityStore.entries)).toEqual(['sipuni:local:abc']);
+
+      actionCable.onReceived({
+        event: 'voice_call.operator_activity',
+        data: { ...payload, state: 'talking' },
+      });
+      expect(activityStore.entries['sipuni:local:abc'].state).toBe('talking');
+
+      actionCable.onReceived({
+        event: 'voice_call.operator_activity',
+        data: { ...payload, state: 'ended' },
+      });
+      expect(activityStore.entries).toEqual({});
+    });
+
+    it('ignores the operator activity of the employee own call', () => {
+      const activityStore = useCallOperatorActivityStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.operator_activity',
+        data: {
+          account_id: 1,
+          call_id: 'sipuni:local:mine',
+          conversation_id: 627,
+          operator_user_id: 7,
+          operator_name: 'Me',
+          state: 'calling',
+        },
+      });
+
+      expect(activityStore.entries).toEqual({});
+    });
+
+    it('starts the operator activity over when the connection comes back', () => {
+      const activityStore = useCallOperatorActivityStore();
+      activityStore.applyActivity(
+        {
+          call_id: 'sipuni:local:abc',
+          conversation_id: 627,
+          operator_user_id: 9,
+          operator_name: 'Ayan',
+          state: 'calling',
+        },
+        7
+      );
+
+      actionCable.onReconnect();
+
+      expect(activityStore.entries).toEqual({});
+    });
 
     it('emits browser SIP config change events to the dashboard bus', () => {
       actionCable.onReceived({

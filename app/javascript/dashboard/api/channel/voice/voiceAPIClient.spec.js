@@ -56,6 +56,29 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
     );
   });
 
+  it('asks which operators are calling the client of a conversation or thread', async () => {
+    axiosMock.get.mockResolvedValueOnce({
+      data: { payload: [{ call_id: 'call-1', state: 'calling' }] },
+    });
+
+    const items = await voiceAPIClient.getOperatorActivity({
+      conversationId: 627,
+    });
+    await voiceAPIClient.getOperatorActivity({ communicationThreadId: 72 });
+
+    expect(items).toEqual([{ call_id: 'call-1', state: 'calling' }]);
+    expect(axiosMock.get).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/accounts/530/telephony/calls/operator_activity',
+      { params: { conversation_id: 627 } }
+    );
+    expect(axiosMock.get).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/accounts/530/telephony/calls/operator_activity',
+      { params: { communication_thread_id: 72 } }
+    );
+  });
+
   it('does not request remote create/update/delete mutations by default', async () => {
     await voiceAPIClient.createVirtualPbxChannel({ channel_name: 'PBX' });
     await voiceAPIClient.updateVirtualPbxChannel(42, { channel_name: 'PBX' });

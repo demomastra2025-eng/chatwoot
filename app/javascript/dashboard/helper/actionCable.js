@@ -12,6 +12,7 @@ import {
   isCallAddressedToAnotherOperator,
   useCallsStore,
 } from 'dashboard/stores/calls';
+import { useCallOperatorActivityStore } from 'dashboard/stores/callOperatorActivity';
 import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
@@ -158,6 +159,7 @@ class ActionCableConnector extends BaseActionCableConnector {
       'voice_call.incoming': this.onVoiceCallIncoming,
       'voice_call.status_changed': this.onVoiceCallStatusChanged,
       'voice_call.claimed': this.onVoiceCallClaimed,
+      'voice_call.operator_activity': this.onVoiceCallOperatorActivity,
       'telephony.webphone_config_changed':
         this.onTelephonyWebphoneConfigChanged,
       'whatsapp_call.incoming': this.onWhatsappCallIncoming,
@@ -191,6 +193,9 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   // eslint-disable-next-line class-methods-use-this
   onReconnect = () => {
+    // Events may have been missed while offline: the "operator is calling"
+    // lines start over and the open chat asks for them again.
+    useCallOperatorActivityStore().clear();
     emitter.emit(BUS_EVENTS.WEBSOCKET_RECONNECT);
   };
 
@@ -839,6 +844,12 @@ class ActionCableConnector extends BaseActionCableConnector {
     const callsStore = useCallsStore();
     const currentUserId = this.app.$store.getters.getCurrentUserID;
     callsStore.handleCallClaimed(data, currentUserId);
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onVoiceCallOperatorActivity = data => {
+    const currentUserId = this.app.$store.getters.getCurrentUserID;
+    useCallOperatorActivityStore().applyActivity(data, currentUserId);
   };
 
   // eslint-disable-next-line class-methods-use-this

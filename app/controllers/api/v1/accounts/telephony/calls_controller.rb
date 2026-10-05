@@ -68,6 +68,18 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     render_payload(payload, status: :created)
   end
 
+  # Which operators are calling (or talking to) the client of this conversation
+  # right now. The page asks for it when a chat is opened or the connection
+  # comes back; the realtime events keep it current in between.
+  def operator_activity
+    conversation_ids = operator_activity_conversations.map(&:id)
+    sessions = Current.account.telephony_call_sessions.active.where(conversation_id: conversation_ids)
+                      .includes(:conversation, :agent_binding)
+    payloads = sessions.filter_map { |session| Telephony::OperatorActivity.new(session).live_payload }
+
+    render_payload(payloads.reject { |payload| payload[:operator_user_id] == Current.user.id })
+  end
+
   def outbound
     contact = Current.account.contacts.find(params.require(:contact_id))
     inbox = Current.user.assigned_inboxes.where(account_id: Current.account.id, channel_type: 'Channel::Voice').find(params.require(:inbox_id))
@@ -94,6 +106,18 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   private
+
+  # The conversation (or every conversation of the communication thread) the
+  # current user is allowed to see.
+  def operator_activity_conversations
+    conversations = if params[:communication_thread_id].present?
+                      thread = CommunicationThread.find_by!(account_id: Current.account.id, display_id: params[:communication_thread_id])
+                      thread.conversations.where(account_id: Current.account.id)
+                    else
+                      Current.account.conversations.where(display_id: params.require(:conversation_id))
+                    end
+    conversations.select { |conversation| policy(conversation).show? }
+  end
 
   def preload_call_session_associations(sessions)
     ActiveRecord::Associations::Preloader.new(

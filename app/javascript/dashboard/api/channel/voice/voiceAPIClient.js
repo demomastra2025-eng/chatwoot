@@ -132,6 +132,18 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
+  // Which operators are calling (or talking to) the client of a conversation
+  // (or of a communication thread) right now.
+  getOperatorActivity({ conversationId, communicationThreadId } = {}) {
+    return axios
+      .get(`${this.baseUrl()}/telephony/calls/operator_activity`, {
+        params: communicationThreadId
+          ? { communication_thread_id: communicationThreadId }
+          : { conversation_id: conversationId },
+      })
+      .then(r => r.data.payload || []);
+  }
+
   claimIncomingCall(callRef) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/claim`, { call_ref: callRef })

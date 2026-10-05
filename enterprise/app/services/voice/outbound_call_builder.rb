@@ -24,7 +24,7 @@ class Voice::OutboundCallBuilder
 
     timestamp = current_timestamp
 
-    ActiveRecord::Base.transaction do
+    result = ActiveRecord::Base.transaction do
       lock_call_identity!
       contact_inbox = ensure_contact_inbox!
       @contact = contact_inbox.contact
@@ -41,9 +41,20 @@ class Voice::OutboundCallBuilder
       build_voice_message!(conversation, call_sid, conference_sid, timestamp, status)
       { conversation: conversation, call_sid: call_sid, call_session: call[:call_session], browser_join_supported: call[:browser_join_supported] }
     end
+
+    announce_operator_activity(result[:call_session])
+    result
   end
 
   private
+
+  # The other operators see "operator X is calling the client" from the first
+  # moment of the call, not only after the provider reports its first event.
+  def announce_operator_activity(call_session)
+    return if call_session.blank?
+
+    Telephony::OperatorActivityBroadcaster.new(call_session: call_session).perform
+  end
 
   def ensure_contact_inbox!
     ContactInbox.find_by(inbox_id: inbox.id, source_id: normalized_contact_phone) ||

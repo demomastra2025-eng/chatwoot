@@ -13,6 +13,111 @@ RSpec.describe 'Telephony Calls API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  describe 'GET /api/v1/accounts/:account_id/telephony/calls/operator_activity' do
+    let(:operator) { create(:user, account: account, role: :agent, name: 'Aigerim Operator', display_name: 'Aigerim') }
+    let(:colleague) { create(:user, account: account, role: :agent) }
+    let(:colleague_headers) { colleague.create_new_auth_token }
+    let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
+    let(:activity_path) { "/api/v1/accounts/#{account.id}/telephony/calls/operator_activity" }
+
+    before do
+      [operator, colleague].each { |user| create(:inbox_member, inbox: voice_inbox, user: user) }
+    end
+
+    def create_activity_session(overrides = {})
+      create(
+        :telephony_call_session,
+        {
+          account: account,
+          conversation: conversation,
+          contact: conversation.contact,
+          inbox: voice_inbox,
+          number_binding: voice_inbox.telephony_number_binding,
+          direction: 'outbound',
+          status: 'ringing',
+          started_at: 5.seconds.ago,
+          metadata: { 'metadata' => { 'chatwoot_user_id' => operator.id } }
+        }.merge(overrides)
+      )
+    end
+
+    it 'tells a colleague which operator is calling the client of the conversation' do
+      session = create_activity_session
+
+      get activity_path, params: { conversation_id: conversation.display_id }, headers: colleague_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload']).to eq(
+        [
+          {
+            'account_id' => account.id,
+            'call_id' => session.external_call_ref,
+            'conversation_id' => conversation.display_id,
+            'operator_user_id' => operator.id,
+            'operator_name' => 'Aigerim',
+            'state' => 'calling'
+          }
+        ]
+      )
+    end
+
+    it 'does not tell the operator about his own call' do
+      create_activity_session
+
+      get activity_path, params: { conversation_id: conversation.display_id }, headers: operator.create_new_auth_token
+
+      expect(response.parsed_body['payload']).to eq([])
+    end
+
+    it 'leaves out calls that ended and lines that went stale' do
+      create_activity_session(status: 'completed')
+      create_activity_session(started_at: 10.minutes.ago)
+
+      get activity_path, params: { conversation_id: conversation.display_id }, headers: colleague_headers
+
+      expect(response.parsed_body['payload']).to eq([])
+    end
+
+    it 'reports every operator talking inside a communication thread' do
+      account.enable_features!('communication_threads')
+      thread = conversation.refresh_communication_thread!
+      create_activity_session(status: 'in_progress', answered_at: 1.minute.ago)
+
+      get activity_path, params: { communication_thread_id: thread.display_id }, headers: colleague_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload']).to contain_exactly(
+        include('operator_user_id' => operator.id, 'state' => 'talking', 'communication_thread_id' => thread.display_id)
+      )
+    end
+
+    it 'shows nothing about a conversation the user cannot see' do
+      create_activity_session
+      outsider = create(:user, account: account, role: :agent)
+
+      get activity_path, params: { conversation_id: conversation.display_id }, headers: outsider.create_new_auth_token
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload']).to eq([])
+    end
+
+    it 'does not leak calls of another account' do
+      foreign_account = create(:account)
+      foreign_account.enable_features!('channel_voice')
+      foreign_conversation = create(:conversation, account: foreign_account)
+
+      get activity_path, params: { conversation_id: foreign_conversation.display_id }, headers: colleague_headers
+
+      expect(response.parsed_body['payload']).to eq([])
+    end
+
+    it 'requires the conversation' do
+      get activity_path, headers: colleague_headers
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
+
   describe 'GET /api/v1/accounts/:account_id/telephony/calls' do
     it 'returns one completed logical call for multiple inbound operator branches' do
       logical_key = 'janus-inbound:shared-provider-call'

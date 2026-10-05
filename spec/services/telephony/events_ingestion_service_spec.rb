@@ -710,6 +710,16 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(tokens).not_to include(other_member.pubsub_token, foreign_member.pubsub_token)
     end
 
+    it 'announces the operator activity of the call after a status event' do
+      broadcaster = instance_double(Telephony::OperatorActivityBroadcaster, perform: nil)
+      allow(Telephony::OperatorActivityBroadcaster).to receive(:new).and_return(broadcaster)
+
+      service.perform
+
+      expect(Telephony::OperatorActivityBroadcaster).to have_received(:new).with(call_session: existing_call_session)
+      expect(broadcaster).to have_received(:perform)
+    end
+
     it 'does not rebroadcast a realtime status update for an already processed event' do
       operator = create(:user, account: account)
       create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
