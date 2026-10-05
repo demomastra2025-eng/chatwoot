@@ -228,4 +228,69 @@ RSpec.describe CaptainFeaturable do
       expect(account.captain_trace_output_capture?).to be false
     end
   end
+
+  describe 'the short assistant model list curated by the platform' do
+    let(:allowlisted_model) { 'openai/gpt-5.6-luna' }
+    let(:other_model) { 'openai/gpt-6-luna' }
+
+    context 'when the platform curated a list' do
+      before { upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', JSON.generate([allowlisted_model])) }
+
+      # What an account may newly choose is decided by the preferences API (and the AI agent form); the account
+      # record itself stays permissive so that internal tools such as the model rollout can still write models.
+      it 'does not make the account record refuse a model that is technically valid' do
+        expect(account.update(captain_models: { 'assistant' => other_model })).to be true
+        expect(account.captain_assistant_model).to eq(other_model)
+      end
+
+      it 'accepts a model from the list' do
+        expect(account.update(captain_models: { 'assistant' => allowlisted_model })).to be true
+        expect(account.captain_assistant_model).to eq(allowlisted_model)
+      end
+    end
+
+    context 'when the list is introduced after an account chose a model outside it' do
+      let(:stored_account) do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+        create(:account, captain_models: { 'assistant' => other_model }).tap do
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', JSON.generate([allowlisted_model]))
+        end
+      end
+
+      it 'keeps the stored model working at runtime' do
+        reloaded_account = Account.find(stored_account.id)
+
+        expect(reloaded_account.captain_assistant_model).to eq(other_model)
+        expect(Llm::Config.model_for(feature: :assistant, account: reloaded_account)).to eq(other_model)
+      end
+
+      it 'keeps the account valid while it changes other settings or other models' do
+        reloaded_account = Account.find(stored_account.id)
+
+        expect(reloaded_account.update(captain_features: { 'assistant' => true })).to be true
+        expect(reloaded_account.update(captain_models: reloaded_account.captain_models.merge('editor' => 'gpt-4.1-mini'))).to be true
+        expect(reloaded_account.captain_assistant_model).to eq(other_model)
+      end
+    end
+
+    context 'when the list is blank or malformed' do
+      it 'does not restrict anything while it is blank' do
+        expect(Llm::Models.configured_model_allowlist).to be_nil
+        expect(account.update(captain_models: { 'assistant' => other_model })).to be true
+      end
+
+      it 'ignores a malformed list instead of locking every assistant model out' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '{not json')
+
+        expect(Llm::Models.configured_model_allowlist).to be_nil
+        expect(account.update(captain_models: { 'assistant' => other_model })).to be true
+      end
+
+      it 'offers the built-in short list to the client' do
+        expect(Llm::Models.curated_model_names_for('assistant')).to all(satisfy do |model|
+          Llm::Models::DEFAULT_CURATED_MODELS.include?(model)
+        end)
+      end
+    end
+  end
 end

@@ -46,8 +46,27 @@ RSpec.describe Llm::Config do
       expect(described_class.api_key('openrouter')).to eq('[REDACTED]')
     end
 
-    it 'prefers account integration hook credentials over installation credentials' do
+    it 'ignores account integration hook credentials until the platform enables workspace keys' do
       account = create(:account)
+      create(
+        :integrations_hook,
+        account: account,
+        app_id: 'openrouter',
+        access_token: 'account-openrouter-key',
+        settings: { 'api_base' => 'https://account-openrouter.example/api/v1' }
+      )
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+      upsert_installation_config('CAPTAIN_OPENROUTER_ENDPOINT', 'https://global-openrouter.example/api/v1')
+
+      expect(described_class.account_provider_byok_allowed?('openrouter', account: account)).to be false
+      expect(described_class.account_provider_available?('openrouter', account: account)).to be false
+      expect(described_class.api_key('openrouter', account: account)).to eq('global-openrouter-key')
+      expect(described_class.api_base('openrouter', account: account)).to eq('https://global-openrouter.example/api/v1')
+    end
+
+    it 'prefers account integration hook credentials over installation credentials when workspace keys are enabled' do
+      account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(
         :integrations_hook,
         account: account,
@@ -64,6 +83,7 @@ RSpec.describe Llm::Config do
 
     it 'uses account hook settings api_key when access_token is blank' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       hook = create(
         :integrations_hook,
         account: account,
@@ -78,6 +98,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers account hook access_token over settings api_key' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(
         :integrations_hook,
         account: account,
@@ -144,6 +165,7 @@ RSpec.describe Llm::Config do
 
     it 'reuses account provider hook lookups inside the block' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
       hooks = account.hooks
 
@@ -186,6 +208,74 @@ RSpec.describe Llm::Config do
   end
 
   describe '.model_for' do
+    let(:transcription_catalog) do
+      {
+        'openai/gpt-4o-mini-transcribe' => {
+          'provider' => 'openrouter', 'type' => 'transcription', 'capabilities' => %w[audio_input transcription]
+        },
+        'openai/gpt-5.4-mini' => {
+          'provider' => 'openrouter', 'type' => 'chat',
+          'capabilities' => %w[structured_output tool_calling tool_choice image_input streaming]
+        }
+      }
+    end
+
+    it 'keeps the recognition, hint and embedding models installation-managed' do
+      expect(described_class::INSTALLATION_MANAGED_MODEL_CONFIGS).to eq(
+        'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
+        'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+        'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
+        'moderation' => 'CAPTAIN_MODERATION_MODEL',
+        'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL'
+      )
+    end
+
+    it 'uses the installation audio model instead of an account override' do
+      account = create(:account, captain_models: { 'audio_transcription' => 'whisper-1' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-4o-mini-transcribe')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'audio_transcription', account: account))
+        .to eq('openai/gpt-4o-mini-transcribe')
+    end
+
+    it 'uses the installation image recognition model instead of an account override' do
+      account = create(:account, captain_models: { 'image_recognition' => 'gpt-5.4' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'openai/gpt-5.4-mini')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'image_recognition', account: account)).to eq('openai/gpt-5.4-mini')
+    end
+
+    it 'uses the installation hint model instead of an account override' do
+      account = create(:account, captain_models: { 'label_suggestion' => 'gpt-4.1-mini' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_LABEL_SUGGESTION_MODEL', 'openai/gpt-5.4-mini')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'label_suggestion', account: account)).to eq('openai/gpt-5.4-mini')
+    end
+
+    it 'falls back to the feature default when the installation value is blank, still ignoring the account override' do
+      account = create(:account, captain_models: { 'audio_transcription' => 'whisper-1' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', '')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'audio_transcription', account: account))
+        .to eq('openai/gpt-4o-mini-transcribe')
+    end
+
+    it 'falls back to the feature default when the installation model is not usable' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/does-not-exist')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
+
+      expect(described_class.model_for(feature: 'image_recognition')).to eq('openai/gpt-5.4-mini')
+    end
+
     it 'normalizes legacy Anthropic aliases from installation config when the provider key is configured' do
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'claude-sonnet-4.6')
       upsert_installation_config('CAPTAIN_ANTHROPIC_API_KEY', 'anthropic-key')
@@ -240,6 +330,7 @@ RSpec.describe Llm::Config do
 
     it 'prefers an account-selected model when that account has provider credentials' do
       account = create(:account)
+      account.enable_features!('captain_openrouter_byok')
       create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
         'openai/gpt-4o' => {
@@ -307,6 +398,21 @@ RSpec.describe Llm::Config do
   end
 
   describe '.moderation_model' do
+    it 'ignores an account moderation model override: the guard model is chosen by the platform' do
+      account = create(:account, captain_models: { 'moderation' => 'omni-moderation-latest' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_MODERATION_MODEL', 'openai/gpt-oss-safeguard-20b')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-oss-safeguard-20b' => {
+          'provider' => 'openrouter',
+          'type' => 'chat',
+          'capabilities' => %w[text_input text_output structured_output moderation streaming]
+        }
+      )
+
+      expect(described_class.moderation_model(account: account)).to eq('openai/gpt-oss-safeguard-20b')
+    end
+
     it 'defaults moderation to an OpenRouter guard model when OpenRouter is primary' do
       upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(

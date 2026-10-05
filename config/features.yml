@@ -271,3 +271,7 @@
   display_name: Deferred Touch Materialization
   enabled: false
   chatwoot_internal: true
+- name: captain_openrouter_byok
+  display_name: AI Agents - Workspace OpenRouter Key
+  enabled: false
+  chatwoot_internal: true

@@ -64,6 +64,52 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.errors.of_kind?(:config, :assistant_model_not_allowed)).to be(true)
     end
 
+    context 'with a short model list curated by the platform' do
+      let(:account) { create(:account) }
+      let(:listed_model) { 'openai/gpt-5.6-luna' }
+      let(:unlisted_model) { 'openai/gpt-6-luna' }
+
+      def curate_list
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', JSON.generate([listed_model]))
+      end
+
+      it 'accepts a newly chosen model from the list' do
+        curate_list
+
+        expect(build(:captain_assistant, account: account, config: { 'model' => listed_model })).to be_valid
+      end
+
+      it 'rejects a newly chosen model outside the list' do
+        curate_list
+        assistant = build(:captain_assistant, account: account, config: { 'model' => unlisted_model })
+
+        expect(assistant).not_to be_valid
+        expect(assistant.errors.of_kind?(:config, :assistant_model_not_allowed)).to be(true)
+      end
+
+      it 'keeps an agent that already uses a model outside the list valid and editable' do
+        stored_assistant = create(:captain_assistant, account: account, config: { 'model' => unlisted_model })
+        curate_list
+        assistant = described_class.find(stored_assistant.id)
+
+        assistant.name = 'Renamed agent'
+        expect(assistant).to be_valid
+        expect(assistant.resolved_agent_model).to eq(unlisted_model)
+
+        assistant.config = assistant.config.merge('model' => listed_model)
+        expect(assistant).to be_valid
+      end
+
+      it 'does not let an agent move to another model outside the list' do
+        stored_assistant = create(:captain_assistant, account: account, config: { 'model' => unlisted_model })
+        curate_list
+        assistant = described_class.find(stored_assistant.id)
+
+        assistant.config = assistant.config.merge('model' => 'gpt-5.1')
+        expect(assistant).not_to be_valid
+      end
+    end
+
     it 'allows follow-up chains with more than five steps' do
       steps = Array.new(7) do |index|
         { 'mode' => 'static', 'message' => "Follow-up #{index + 1}", 'delay_seconds' => 60 }

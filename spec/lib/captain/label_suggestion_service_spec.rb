@@ -77,8 +77,9 @@ RSpec.describe Captain::LabelSuggestionService do
         service.perform
       end
 
-      it 'uses the account label suggestion model when configured' do
-        account.update!(captain_models: { 'label_suggestion' => 'gpt-4.1-nano' })
+      it 'uses the label suggestion model chosen by the platform and ignores an account override' do
+        account.update!(captain_models: { 'label_suggestion' => 'gpt-4.1-mini' })
+        upsert_installation_config('CAPTAIN_LABEL_SUGGESTION_MODEL', 'gpt-4.1-nano')
 
         expect(mock_context).to receive(:chat).with(model: 'gpt-4.1-nano').and_return(mock_chat)
 

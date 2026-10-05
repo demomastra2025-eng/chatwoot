@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::BaseController
-  HELP_CENTER_SEARCH_FEATURE = 'help_center_search'.freeze
   OPENROUTER_PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
+  INSTALLATION_MANAGED_MODEL_KEYS = Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.keys.freeze
   RELEASE_GATE_INTEGER_KEYS = %w[
     min_request_count
     max_avg_duration_ms
@@ -38,6 +38,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   before_action :current_account
   before_action :authorize_account_update, only: [:show, :update]
+  before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
 
   def show
     render json: preferences_payload
@@ -46,10 +47,10 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   def update
     params_to_update = captain_params
     Account.transaction do
+      remove_stale_installation_managed_model_overrides
       @current_account.captain_models = params_to_update[:captain_models] if params_to_update[:captain_models]
       @current_account.captain_features = params_to_update[:captain_features] if params_to_update[:captain_features]
       @current_account.captain_runtime = params_to_update[:captain_runtime] if params_to_update[:captain_runtime]
-      reconcile_help_center_search_model_for_runtime_change(params_to_update)
       @current_account.captain_observability = params_to_update[:captain_observability] if params_to_update[:captain_observability]
       update_provider_credentials if provider_credentials_update?
       @current_account.save!
@@ -65,10 +66,11 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     Llm::Config.with_runtime_cache do
       Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
         Llm::OpenRouterEndpointCatalog.with_endpoint_configs_snapshot do
+          features = features_with_account_preferences
           {
             providers: Llm::ProviderVisibilityPolicy.visible_providers,
-            models: visible_models_payload,
-            features: features_with_account_preferences,
+            models: visible_models_payload(features),
+            features: features,
             runtime: runtime_with_account_preferences,
             observability: observability_with_account_preferences,
             provider_credentials: provider_credentials_payload,
@@ -84,6 +86,31 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     authorize @current_account, :update?
   end
 
+  # The models of the recognition, guardrail, embedding and hint features are chosen by the platform.
+  def reject_installation_managed_models
+    locked_model_keys = requested_installation_managed_model_keys
+    return if locked_model_keys.empty?
+
+    render json: { error: 'installation_managed_models', fields: locked_model_keys }, status: :unprocessable_content
+  end
+
+  def reject_unselectable_models
+    unselectable_model_keys = requested_unselectable_model_keys
+    return if unselectable_model_keys.empty?
+
+    render json: { error: 'model_not_allowed', fields: unselectable_model_keys }, status: :unprocessable_content
+  end
+
+  # Removing a stored account key stays possible so that a workspace can drop a key it may no longer use.
+  def reject_disallowed_provider_keys
+    disallowed_provider_keys = provider_credentials_params.reject do |provider_name, credentials|
+      credentials[:remove] || provider_byok_allowed?(provider_name)
+    end.keys
+    return if disallowed_provider_keys.empty?
+
+    render json: { error: 'provider_byok_disabled', providers: disallowed_provider_keys }, status: :forbidden
+  end
+
   def captain_params
     permitted = {}
     permitted[:captain_models] = merged_captain_models if params[:captain_models].present?
@@ -95,8 +122,36 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def merged_captain_models
-    existing_models = @current_account.captain_models || {}
+    existing_models = @current_account.captain_models.to_h.except(*INSTALLATION_MANAGED_MODEL_KEYS)
     existing_models.merge(permitted_captain_models)
+  end
+
+  def requested_installation_managed_model_keys
+    raw_models = params[:captain_models]
+    return [] unless raw_models.respond_to?(:keys)
+
+    raw_models.keys.map(&:to_s) & INSTALLATION_MANAGED_MODEL_KEYS
+  end
+
+  # The platform curates the short list of main agent models: a model the account already uses stays as it is, a
+  # different one has to come from the list.
+  def requested_unselectable_model_keys
+    return [] if params[:captain_models].blank?
+
+    permitted_captain_models.select do |feature_key, model_name|
+      next false if model_name.blank? || model_name == @current_account.captain_models.to_h[feature_key]
+
+      migrated_model = Llm::OpenRouterModelMigration.resolve(model_name, feature: feature_key, account: @current_account)
+      [model_name, migrated_model].compact_blank.none? { |candidate| Llm::Models.model_selectable_for_feature?(feature_key, candidate) }
+    end.keys
+  end
+
+  # Values stored before a model became platform-managed are ignored at runtime; they are dropped on the next
+  # save of the preferences so that the account validation does not trip over them.
+  def remove_stale_installation_managed_model_overrides
+    current_models = @current_account.captain_models.to_h
+    normalized_models = current_models.except(*INSTALLATION_MANAGED_MODEL_KEYS)
+    @current_account.captain_models = normalized_models if normalized_models != current_models
   end
 
   def merged_captain_features
@@ -116,33 +171,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     )
   end
 
-  def reconcile_help_center_search_model_for_runtime_change(params_to_update)
-    return unless params_to_update[:captain_runtime].to_h.key?('knowledge_chunk_size')
-    return if help_center_search_model_update_requested?
-
-    current_models = @current_account.captain_models.to_h.stringify_keys
-    current_model = current_models[HELP_CENTER_SEARCH_FEATURE]
-    return if current_model.blank?
-    return if Llm::Models.valid_model_for?(HELP_CENTER_SEARCH_FEATURE, current_model, account: @current_account)
-
-    replacement_model = Llm::Models.default_model_for(HELP_CENTER_SEARCH_FEATURE, account: @current_account).presence ||
-                        Llm::Models.models_for(HELP_CENTER_SEARCH_FEATURE, account: @current_account).first
-    @current_account.captain_models = current_models.merge(HELP_CENTER_SEARCH_FEATURE => replacement_model).compact
-  end
-
-  def help_center_search_model_update_requested?
-    raw_models = params[:captain_models]
-    return false unless raw_models.respond_to?(:to_unsafe_h) || raw_models.respond_to?(:to_h)
-
-    raw_hash = raw_models.respond_to?(:to_unsafe_h) ? raw_models.to_unsafe_h : raw_models.to_h
-    raw_hash.with_indifferent_access.key?(HELP_CENTER_SEARCH_FEATURE)
-  end
-
   def permitted_captain_models
-    params.require(:captain_models).permit(
-      :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :image_recognition, :help_center_search, :moderation
-    ).to_h.stringify_keys
+    params.require(:captain_models).permit(:editor, :assistant, :copilot).to_h.stringify_keys
   end
 
   def permitted_captain_features
@@ -262,8 +292,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     account_features = preferences[:features] || {}
 
     Llm::Models.feature_keys.index_with do |feature_key|
-      config = Llm::Models.feature_config(feature_key, account: Current.account)
       selected_model = Llm::Config.model_for(feature: feature_key, account: Current.account)
+      config = client_feature_config(feature_key, selected_model)
       selected_diagnostics = if selected_model.present?
                                Llm::Models.capability_diagnostics_for(
                                  feature_key,
@@ -274,6 +304,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
                              end
       config.merge(
         enabled: account_features[feature_key] == true,
+        managed: Llm::Config.installation_managed_model_feature?(feature_key),
         selected: selected_model,
         selected_provider: selected_model.present? ? Llm::Config.provider_for_model(selected_model, account: Current.account) : nil,
         selected_supports_thinking: Llm::Models.supports_thinking?(selected_model, account: Current.account),
@@ -281,6 +312,20 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
         selected_diagnostics: selected_diagnostics
       )
     end
+  end
+
+  # The client gets the curated list plus the model the account uses now (marked as the current one when it is
+  # off the list); never the OpenRouter catalog.
+  def client_feature_config(feature_key, selected_model)
+    curated_models = Llm::Models.curated_model_names_for(feature_key, account: Current.account)
+    config = Llm::Models.feature_config(
+      feature_key,
+      account: Current.account,
+      model_names: (curated_models + [selected_model]).compact_blank.uniq
+    )
+    return config unless Llm::Models.curated_model_feature?(feature_key)
+
+    config.merge(models: config[:models].map { |model| curated_models.include?(model[:id]) ? model : model.merge(current_only: true) })
   end
 
   def runtime_with_account_preferences
@@ -321,9 +366,14 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     Llm::Monitoring::AccountPreferences.for(Current.account)
   end
 
-  def visible_models_payload
-    Llm::Models.models(account: Current.account).select do |_model_name, model_config|
-      Llm::ProviderVisibilityPolicy.visible_provider?(model_config.to_h['provider'])
+  # Only the models the features payload refers to, so the whole catalog never reaches the client.
+  def visible_models_payload(features)
+    model_ids = features.values.flat_map do |feature|
+      feature[:models].pluck(:id) + [feature[:selected], feature[:default]]
+    end.compact_blank.uniq
+
+    model_ids.index_with { |model_id| Llm::Models.model_config(model_id, account: Current.account) }.select do |_model_id, model_config|
+      model_config.present? && Llm::ProviderVisibilityPolicy.visible_provider?(model_config.to_h['provider'])
     end
   end
 
@@ -334,6 +384,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       result[provider_name] = {
         display_name: provider_config['display_name'].presence || provider_name,
         account_configured: account_configured,
+        byok_allowed: provider_byok_allowed?(provider_name),
         global_configured: Llm::Config.installation_provider_available?(provider_name),
         provider_configured: Llm::Config.provider_available?(provider_name, account: Current.account),
         source: provider_credential_source(provider_name, hook)
@@ -352,7 +403,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def provider_credential_source(provider_name, hook)
-    return 'account' if provider_account_key_configured?(hook)
+    return 'account' if provider_byok_allowed?(provider_name) && provider_account_key_configured?(hook)
     return 'global' if Llm::Config.installation_provider_available?(provider_name)
 
     'missing'
@@ -388,6 +439,10 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def provider_credentials_update?
     params[:provider_credentials].present? || params.key?(:openrouter_api_key) || params.key?(:remove_openrouter_api_key)
+  end
+
+  def provider_byok_allowed?(provider_name)
+    Llm::Config.account_provider_byok_allowed?(provider_name, account: @current_account)
   end
 
   def update_provider_credentials

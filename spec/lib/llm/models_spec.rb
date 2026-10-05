@@ -56,6 +56,81 @@ RSpec.describe Llm::Models do
     end
   end
 
+  describe 'the short model list curated by the platform' do
+    describe '.configured_model_allowlist' do
+      it 'is nil while the platform has not curated a list' do
+        expect(described_class.configured_model_allowlist).to be_nil
+      end
+
+      it 'reads a JSON string or an array, canonicalizes and de-duplicates the entries' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["claude-sonnet-4.6", "openai/gpt-5.4", "openai/gpt-5.4", " "]')
+        expect(described_class.configured_model_allowlist).to eq(%w[claude-sonnet-4-6 openai/gpt-5.4])
+
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', ['openai/gpt-5.4-mini'])
+        expect(described_class.configured_model_allowlist).to eq(['openai/gpt-5.4-mini'])
+      end
+
+      it 'ignores a value that is not a JSON array instead of failing' do
+        ['{broken', '{"a": 1}', '"text"', '[]'].each do |value|
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', value)
+
+          expect(described_class.configured_model_allowlist).to be_nil
+        end
+      end
+    end
+
+    describe '.model_selectable_for_feature?' do
+      it 'restricts only the assistant model, and only while a list is curated' do
+        expect(described_class.model_selectable_for_feature?('assistant', 'gpt-5.1')).to be true
+
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4"]')
+
+        expect(described_class.model_selectable_for_feature?('assistant', 'openai/gpt-5.4')).to be true
+        expect(described_class.model_selectable_for_feature?('assistant', 'gpt-5.1')).to be false
+        expect(described_class.model_selectable_for_feature?('editor', 'gpt-5.1')).to be true
+      end
+    end
+
+    describe '.curated_model_names_for' do
+      it 'offers the built-in short list for the chat features and nothing for platform-managed features' do
+        %w[assistant editor copilot].each do |feature|
+          expect(described_class.curated_model_names_for(feature)).to all(satisfy do |model|
+            described_class::DEFAULT_CURATED_MODELS.include?(model)
+          end)
+        end
+        %w[audio_transcription image_recognition help_center_search moderation label_suggestion].each do |feature|
+          expect(described_class.curated_model_names_for(feature)).to eq([])
+        end
+      end
+
+      it 'offers the list of the platform when it is curated, limited to models that fit the feature' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna", "openai/gpt-6-luna", "text-embedding-3-small"]')
+
+        expect(described_class.curated_model_names_for('assistant')).to eq(%w[openai/gpt-5.6-luna openai/gpt-6-luna])
+      end
+    end
+
+    describe '.feature_config' do
+      it 'lists only the requested models and no catalog-wide diagnostics when model_names is given' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+          (1..150).to_h do |index|
+            ["vendor/model-#{index}", { 'provider' => 'openrouter', 'display_name' => "Model #{index}", 'type' => 'chat',
+                                        'capabilities' => %w[structured_output tool_calling tool_choice] }]
+          end
+        )
+        account = create(:account)
+
+        full = described_class.feature_config('assistant', account: account)
+        narrowed = described_class.feature_config('assistant', account: account, model_names: ['openai/gpt-6-luna'])
+
+        expect(full[:models].size).to be > 100
+        expect(narrowed[:models].pluck(:id)).to eq(['openai/gpt-6-luna'])
+        expect(narrowed[:diagnostic_models]).to eq([])
+      end
+    end
+  end
+
   describe '.valid_model_for?' do
     it 'checks the requested model without expanding the full feature model list' do
       account = create(:account)

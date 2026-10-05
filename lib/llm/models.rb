@@ -55,6 +55,17 @@ module Llm::Models
     ]
   }.freeze
   DIAGNOSTIC_MODEL_LIMIT = 120
+  # The platform curates one short list of conversational models (Super Admin -> AI Agents). The client sees only
+  # this list for the features below and picks the main agent model from it; recognition models are not pickable.
+  MODEL_ALLOWLIST_INSTALLATION_CONFIG = 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST'.freeze
+  CURATED_MODEL_FEATURES = %w[assistant editor copilot].freeze
+  # Used by the client lists while the platform has not curated an allowlist of its own.
+  DEFAULT_CURATED_MODELS = %w[
+    openai/gpt-6-luna
+    openai/gpt-5.6-luna
+    openai/gpt-5.4
+    openai/gpt-5.4-mini
+  ].freeze
 
   class << self
     def providers = CONFIG['providers']
@@ -146,6 +157,44 @@ module Llm::Models
 
     def valid_model_for?(feature, model_name, account: nil)
       model_allowed_for_feature?(feature, model_name, account: account)
+    end
+
+    # The allowlist curated by the platform, or nil while it is blank or unreadable (then nothing narrows the
+    # technically valid models). It limits only what an account can newly choose: a model stored before the
+    # list existed stays valid at runtime.
+    def configured_model_allowlist
+      raw_value = InstallationConfig.find_by(name: MODEL_ALLOWLIST_INSTALLATION_CONFIG)&.value
+      return if raw_value.blank?
+
+      values = raw_value.is_a?(String) ? JSON.parse(raw_value) : raw_value
+      return unless values.is_a?(Array)
+
+      values.filter_map { |model_name| canonical_model_name(model_name).presence }.uniq.presence
+    rescue JSON::ParserError
+      Rails.logger.error("[LLM] #{MODEL_ALLOWLIST_INSTALLATION_CONFIG} must be a JSON array; the allowlist is ignored")
+      nil
+    end
+
+    def curated_model_feature?(feature)
+      CURATED_MODEL_FEATURES.include?(feature.to_s)
+    end
+
+    def model_selectable_for_feature?(feature, model_name)
+      return true unless feature.to_s == 'assistant'
+
+      allowlist = configured_model_allowlist
+      allowlist.nil? || allowlist.include?(canonical_model_name(model_name))
+    end
+
+    # Model ids the client may pick from for a feature: the curated list for assistant, editor and copilot, and
+    # nothing for the other features (their model is chosen by the platform).
+    def curated_model_names_for(feature, account: nil)
+      feature_key = feature.to_s
+      return [] unless curated_model_feature?(feature_key)
+
+      (configured_model_allowlist || DEFAULT_CURATED_MODELS).select do |model_name|
+        model_allowed_for_feature?(feature_key, model_name, account: account)
+      end
     end
 
     def model_allowed_for_feature?(feature, model_name, account: nil, runtime_filtered: true)
@@ -302,13 +351,26 @@ module Llm::Models
       known || assume_exists_supported?(model_name, account: account)
     end
 
-    def feature_config(feature_key, account: nil)
+    # model_names narrows the listed models to an explicit set (the client payload); the catalog-wide
+    # diagnostic list is then left out.
+    def feature_config(feature_key, account: nil, model_names: nil)
       feature = features[feature_key.to_s]
       return nil unless feature
 
       provider_status = provider_status_by_name(account)
       runtime_preferences = runtime_preferences_for(account)
-      feature_model_names = feature_config_models_for(feature_key, account: account)
+      feature_model_names = model_names.nil? ? feature_config_models_for(feature_key, account: account) : model_names
+      diagnostic_models = if model_names.nil?
+                            diagnostic_models_for_feature(
+                              feature_key,
+                              feature_model_names,
+                              provider_status,
+                              account: account,
+                              runtime_preferences: runtime_preferences
+                            )
+                          else
+                            []
+                          end
       {
         models: feature_model_names.filter_map do |model_name|
           canonical_name = canonical_model_name(model_name)
@@ -355,13 +417,7 @@ module Llm::Models
             diagnostics: diagnostics&.to_h
           }
         end,
-        diagnostic_models: diagnostic_models_for_feature(
-          feature_key,
-          feature_model_names,
-          provider_status,
-          account: account,
-          runtime_preferences: runtime_preferences
-        ),
+        diagnostic_models: diagnostic_models,
         default: default_model_for(feature_key, account: account),
         configured_default: configured_default_model_for(feature_key),
         required_capabilities: required_capabilities_for(feature_key, runtime_preferences: runtime_preferences)

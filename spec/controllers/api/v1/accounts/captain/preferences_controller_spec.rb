@@ -77,7 +77,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response.dig(:features, :editor, :enabled)).to be(true)
       end
 
-      it 'includes OpenRouter models only in the normal Captain settings payload' do
+      it 'includes only the OpenRouter models the features refer to in the normal Captain settings payload' do
+        upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             as: :json
@@ -87,6 +89,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response[:models].keys).to include(:'openai/gpt-5.4', :'openai/gpt-5.4-mini')
         expect(json_response[:models].values).to all(include(provider: 'openrouter'))
         expect(json_response[:models].keys).not_to include(:'gpt-5.4', :'claude-sonnet-4-6', :'gemini-2.5-pro')
+        expect(json_response[:models].size).to be < 20
       end
 
       it 'includes runtime metadata for resolved providers and feature models' do
@@ -149,43 +152,101 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
-      it 'includes backend diagnostics for searchable OpenRouter models hidden from a feature' do
+      context 'with a large OpenRouter catalog' do
+        let(:chat_capabilities) { %w[text_input text_output structured_output tool_calling tool_choice] }
+        let(:catalog) do
+          bulk_models = (1..250).to_h do |index|
+            ["vendor/model-#{index}", { 'provider' => 'openrouter', 'display_name' => "Model #{index}", 'type' => 'chat',
+                                        'capabilities' => chat_capabilities }]
+          end
+          bulk_models.merge(
+            'openai/gpt-5.4' => { 'provider' => 'openrouter', 'display_name' => 'GPT 5.4', 'type' => 'chat',
+                                  'capabilities' => chat_capabilities },
+            'openai/gpt-5.4-mini' => { 'provider' => 'openrouter', 'display_name' => 'GPT 5.4 mini', 'type' => 'chat',
+                                       'capabilities' => chat_capabilities }
+          )
+        end
+
+        before do
+          upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
+          allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(catalog)
+        end
+
+        def fetch_preferences
+          get "/api/v1/accounts/#{account.id}/captain/preferences",
+              headers: admin.create_new_auth_token,
+              as: :json
+          expect(response).to have_http_status(:success)
+        end
+
+        it 'sends only the platform short list for the main agent model, never the catalog' do
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4", "openai/gpt-5.4-mini"]')
+
+          fetch_preferences
+
+          assistant_models = json_response.dig(:features, :assistant, :models)
+          expect(assistant_models.pluck(:id)).to include('openai/gpt-5.4', 'openai/gpt-5.4-mini')
+          expect(assistant_models.pluck(:id).size).to be <= 4
+          expect(json_response.dig(:features, :assistant, :diagnostic_models)).to eq([])
+          expect(json_response[:models].keys.size).to be < 20
+          expect(response.body).not_to include('vendor/model-')
+        end
+
+        it 'falls back to the built-in short list while the platform has not curated one' do
+          fetch_preferences
+
+          ids = json_response.dig(:features, :assistant, :models).pluck(:id)
+          expect(ids).to all(satisfy { |id| Llm::Models::DEFAULT_CURATED_MODELS.include?(id) })
+          expect(response.body).not_to include('vendor/model-')
+        end
+
+        it 'lists the models of the recognition features only as the one chosen by the platform' do
+          upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'openai/gpt-5.4-mini')
+
+          fetch_preferences
+
+          %i[audio_transcription image_recognition help_center_search moderation label_suggestion].each do |feature_key|
+            feature = json_response.dig(:features, feature_key)
+            expect(feature[:managed]).to be(true)
+            expect(feature[:models].pluck(:id).size).to be <= 1
+          end
+          expect(json_response.dig(:features, :image_recognition, :selected)).to eq('openai/gpt-5.4-mini')
+          expect(json_response.dig(:features, :assistant, :managed)).to be(false)
+        end
+
+        it 'keeps the workspace model outside the short list visible as the current model' do
+          account.update!(captain_models: { 'assistant' => 'vendor/model-7' })
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.4", "openai/gpt-5.4-mini"]')
+
+          fetch_preferences
+
+          assistant = json_response.dig(:features, :assistant)
+          expect(assistant[:selected]).to eq('vendor/model-7')
+          expect(assistant[:models]).to include(include(id: 'vendor/model-7', current_only: true))
+          expect(assistant[:models].reject { |model| model[:current_only] }.pluck(:id)).to contain_exactly(
+            'openai/gpt-5.4', 'openai/gpt-5.4-mini'
+          )
+        end
+      end
+
+      it 'ignores an account OpenRouter key when the platform has not enabled workspace keys' do
         upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
-        allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
-          'openai/gpt-5.4' => {
-            'provider' => 'openrouter',
-            'display_name' => 'GPT 5.4',
-            'type' => 'chat',
-            'capabilities' => %w[text_input text_output structured_output tool_calling tool_choice]
-          },
-          'openai/gpt-text-only' => {
-            'provider' => 'openrouter',
-            'display_name' => 'GPT Text Only',
-            'type' => 'chat',
-            'capabilities' => %w[text_input text_output structured_output]
-          }
-        )
+        create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
 
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response.dig(:features, :assistant, :models)).to include(include(id: 'openai/gpt-5.4'))
-        expect(json_response.dig(:features, :assistant, :models)).not_to include(include(id: 'openai/gpt-text-only'))
-        expect(json_response.dig(:features, :assistant, :diagnostic_models)).to include(
-          include(
-            id: 'openai/gpt-text-only',
-            diagnostic_only: true,
-            diagnostics: include(
-              allowed: false,
-              reasons: include(include(code: 'tool_calling_unsupported'))
-            )
-          )
+        expect(json_response.dig(:provider_credentials, :openrouter)).to include(
+          byok_allowed: false,
+          source: 'global'
         )
+        expect(response.body).not_to include('account-openrouter-key')
       end
 
       it 'reports OpenRouter credential status without exposing the account key' do
+        account.enable_features!('captain_openrouter_byok')
         create(:integrations_hook, account: account, app_id: 'openrouter', access_token: 'account-openrouter-key', settings: {})
 
         get "/api/v1/accounts/#{account.id}/captain/preferences",
@@ -272,18 +333,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
     end
 
     context 'when it is an admin' do
-      it 'updates captain_models for chat and specialized AI surfaces' do
+      it 'updates the captain_models an account may still choose' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
-            params: {
-              captain_models: {
-                editor: 'gpt-4.1-mini',
-                audio_transcription: 'whisper-1',
-                image_recognition: 'gpt-5.4-mini',
-                help_center_search: 'text-embedding-3-small',
-                moderation: 'openai/gpt-oss-safeguard-20b'
-              }
-            },
+            params: { captain_models: { editor: 'gpt-4.1-mini' } },
             as: :json
 
         expect(response).to have_http_status(:success)
@@ -292,13 +345,103 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:features)
         expect(json_response).to have_key(:runtime)
         expect(json_response).to have_key(:observability)
-        expect(account.reload.captain_models).to include(
-          'editor' => 'gpt-4.1-mini',
-          'audio_transcription' => 'whisper-1',
-          'image_recognition' => 'gpt-5.4-mini',
-          'help_center_search' => 'text-embedding-3-small',
-          'moderation' => 'openai/gpt-oss-safeguard-20b'
+        expect(account.reload.captain_models).to include('editor' => 'gpt-4.1-mini')
+      end
+
+      it 'rejects installation-managed model overrides' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_models: {
+                editor: 'gpt-4.1-mini',
+                audio_transcription: 'whisper-1',
+                image_recognition: 'gpt-5.4-mini',
+                help_center_search: 'text-embedding-3-small',
+                moderation: 'openai/gpt-oss-safeguard-20b',
+                label_suggestion: 'gpt-4.1-mini'
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response[:error]).to eq('installation_managed_models')
+        expect(json_response[:fields]).to contain_exactly(
+          'audio_transcription', 'image_recognition', 'help_center_search', 'moderation', 'label_suggestion'
         )
+        expect(account.reload.captain_models).to be_blank
+      end
+
+      it 'removes stale installation-managed overrides on the next preferences update' do
+        account.update!(captain_models: { 'audio_transcription' => 'whisper-1', 'editor' => 'gpt-4.1' })
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_features: { editor: true } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_models).to eq('editor' => 'gpt-4.1')
+      end
+
+      it 'rejects an assistant model the platform did not put on its short list' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { assistant: 'openai/gpt-6-luna' } },
+            as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(error: 'model_not_allowed', fields: ['assistant'])
+        expect(account.reload.captain_models).to be_blank
+      end
+
+      it 'accepts an assistant model from the short list' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { assistant: 'openai/gpt-5.6-luna' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_models).to include('assistant' => 'openai/gpt-5.6-luna')
+      end
+
+      it 'lets an account keep sending the assistant model it already uses even when it is off the short list' do
+        account.update!(captain_models: { 'assistant' => 'openai/gpt-6-luna' })
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { assistant: 'openai/gpt-6-luna' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'does not restrict the editor and copilot models, only what the client is shown' do
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { editor: 'gpt-4.1-mini', copilot: 'gpt-5.1' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'keeps an assistant model chosen before the short list existed when other models change' do
+        account.update!(captain_models: { 'assistant' => 'openai/gpt-6-luna' })
+        upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-5.6-luna"]')
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_models: { editor: 'gpt-4.1-mini' } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_models).to include('assistant' => 'openai/gpt-6-luna', 'editor' => 'gpt-4.1-mini')
       end
 
       it 'updates captain_features' do
@@ -443,7 +586,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
-      it 'replaces an incompatible saved embedding model when the knowledge chunk size changes' do
+      it 'leaves the platform-managed embedding model alone when the knowledge chunk size changes' do
         upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
         allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
           'openai/text-embedding-3-small' => {
@@ -463,6 +606,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             'context_length' => 10_000
           }
         )
+        upsert_installation_config('CAPTAIN_EMBEDDING_MODEL', 'openai/text-embedding-long-context')
         account.update!(
           captain_models: { 'help_center_search' => 'openai/text-embedding-3-small' },
           captain_runtime: { 'knowledge_chunk_size' => 20_000 }
@@ -470,19 +614,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
-            params: {
-              captain_models: { audio_transcription: nil },
-              captain_runtime: { knowledge_chunk_size: '40000' }
-            },
+            params: { captain_runtime: { knowledge_chunk_size: '40000' } },
             as: :json
 
         expect(response).to have_http_status(:success)
         expect(json_response.dig(:runtime, :knowledge_chunk_size)).to eq(40_000)
         expect(json_response.dig(:features, :help_center_search, :selected)).to eq('openai/text-embedding-long-context')
+        expect(json_response.dig(:features, :help_center_search, :managed)).to be(true)
 
         account.reload
         expect(account.captain_runtime['knowledge_chunk_size']).to eq(40_000)
-        expect(account.captain_models['help_center_search']).to eq('openai/text-embedding-long-context')
+        expect(account.captain_models).not_to have_key('help_center_search')
       end
 
       it 'merges with existing captain_models' do
@@ -689,7 +831,69 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
+      it 'blocks account provider keys while the platform has not enabled workspace keys' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { openrouter_api_key: 'account-openrouter-key' },
+            as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(json_response).to eq(error: 'provider_byok_disabled', providers: ['openrouter'])
+        expect(account.hooks.find_by(app_id: 'openrouter')).to be_nil
+        expect(response.body).not_to include('account-openrouter-key')
+      end
+
+      it 'blocks provider credentials sent in the grouped form as well' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { provider_credentials: { openrouter: { api_key: 'account-openrouter-key' } } },
+            as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(json_response[:error]).to eq('provider_byok_disabled')
+        expect(account.hooks.find_by(app_id: 'openrouter')).to be_nil
+      end
+
+      it 'does not apply the other changes of a request that carries a blocked provider key' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_runtime: { web_search_enabled: true }, openrouter_api_key: 'account-openrouter-key' },
+            as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(account.reload.captain_runtime.to_h).not_to include('web_search_enabled' => true)
+      end
+
+      it 'saves the on/off toggles of the recognition and web features' do
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: {
+              captain_features: { audio_transcription: true, help_center_search: true, label_suggestion: true },
+              captain_runtime: {
+                assistant_moderation: true,
+                copilot_moderation: true,
+                web_search_enabled: true,
+                web_scrape_enabled: true,
+                web_document_parse_enabled: true
+              }
+            },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_features).to include(
+          'audio_transcription' => true, 'help_center_search' => true, 'label_suggestion' => true
+        )
+        expect(account.captain_runtime).to include(
+          'assistant_moderation' => true,
+          'copilot_moderation' => true,
+          'web_search_enabled' => true,
+          'web_scrape_enabled' => true,
+          'web_document_parse_enabled' => true
+        )
+      end
+
       it 'stores an OpenRouter account key via Integrations::Hook without returning the secret' do
+        account.enable_features!('captain_openrouter_byok')
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: { openrouter_api_key: 'account-openrouter-key' },
@@ -720,6 +924,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
       end
 
       it 'stores visible provider account keys via provider credentials' do
+        account.enable_features!('captain_openrouter_byok')
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: { provider_credentials: { openrouter: { api_key: 'account-openrouter-key' } } },

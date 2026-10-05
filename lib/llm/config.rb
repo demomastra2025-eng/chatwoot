@@ -6,6 +6,15 @@ module Llm::Config
   DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
+  # Models of these features are chosen by the platform (Super Admin -> AI Agents), never by an account: the
+  # recognition models (voice, images, guardrail), the knowledge embedding and the AI hints (label suggestions).
+  INSTALLATION_MANAGED_MODEL_CONFIGS = {
+    'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
+    'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+    'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL',
+    'moderation' => 'CAPTAIN_MODERATION_MODEL',
+    'label_suggestion' => 'CAPTAIN_LABEL_SUGGESTION_MODEL'
+  }.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
   RUNTIME_CACHE_KEY = :llm_config_runtime_cache
@@ -61,8 +70,8 @@ module Llm::Config
     def model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
       feature_key = feature.to_s.presence
 
-      account_model = account_model_for(account, feature_key)
-      return account_model if account_model.present?
+      explicit_model = explicit_model_for(feature_key, account: account)
+      return explicit_model if explicit_model.present?
 
       installation_model = installation_model_for(feature_key, account: account)
       return installation_model if installation_model.present?
@@ -99,9 +108,6 @@ module Llm::Config
     end
 
     def moderation_model(account: nil)
-      account_model = account_model_for(account, DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE)
-      return account_model if account_model.present?
-
       configured_model = installation_config_value('CAPTAIN_MODERATION_MODEL').presence
 
       if openrouter_primary?(account: account)
@@ -145,6 +151,19 @@ module Llm::Config
 
     def installation_provider_available?(provider)
       installation_api_key(provider).present?
+    end
+
+    # An account may bring its own OpenRouter key only when the platform enabled the flag for it. The legacy direct
+    # providers are not offered in the settings (only OpenRouter is visible), so nothing new can be stored for them.
+    def account_provider_byok_allowed?(provider, account: nil)
+      return false if account.blank?
+      return true unless provider.to_s == 'openrouter'
+
+      account.respond_to?(:feature_enabled?) && account.feature_enabled?('captain_openrouter_byok')
+    end
+
+    def installation_managed_model_feature?(feature_key)
+      INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key.to_s)
     end
 
     def custom_api_base_configured?(provider, account: nil)
@@ -260,6 +279,8 @@ module Llm::Config
     end
 
     def account_api_key(provider, account)
+      return unless account_provider_byok_allowed?(provider, account: account)
+
       hook = account_provider_hook(account, provider)
       settings = hook&.settings.to_h.with_indifferent_access
 
@@ -267,6 +288,8 @@ module Llm::Config
     end
 
     def account_api_base(provider, account)
+      return unless account_provider_byok_allowed?(provider, account: account)
+
       settings = account_provider_hook(account, provider)&.settings.to_h.with_indifferent_access
       settings[:api_base].presence || settings[:base_url].presence || settings[:endpoint].presence
     end
@@ -287,6 +310,32 @@ module Llm::Config
       return if account.blank? || feature_key.blank?
 
       model_name = account.captain_models.to_h.with_indifferent_access[feature_key]
+      return if model_name.blank?
+
+      model_name = normal_feature_model_name(feature_key, model_name, account: account)
+      return if model_name.blank?
+      return unless feature_model_allowed?(feature_key, model_name, account: account)
+
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      return unless runtime_usable_model?(canonical_model, account: account)
+
+      provider = provider_for_model(canonical_model, account: account)
+      return unless provider_available?(provider, account: account)
+
+      canonical_model
+    end
+
+    # The model fixed for the feature: the platform's own for a platform-managed feature, else the account's choice.
+    def explicit_model_for(feature_key, account: nil)
+      if installation_managed_model_feature?(feature_key)
+        installation_managed_model_for(feature_key, account: account)
+      else
+        account_model_for(account, feature_key)
+      end
+    end
+
+    def installation_managed_model_for(feature_key, account: nil)
+      model_name = installation_config_value(INSTALLATION_MANAGED_MODEL_CONFIGS[feature_key.to_s]).presence
       return if model_name.blank?
 
       model_name = normal_feature_model_name(feature_key, model_name, account: account)

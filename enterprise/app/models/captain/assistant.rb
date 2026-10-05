@@ -785,9 +785,16 @@ class Captain::Assistant < ApplicationRecord
 
   def validate_conversational_model
     return if model.blank?
-    return if Llm::Models.valid_model_for?(:assistant, model, account: account)
+    return errors.add(:config, :assistant_model_not_allowed) unless Llm::Models.valid_model_for?(:assistant, model, account: account)
+    return unless conversational_model_changed?
+    return if Llm::Models.model_selectable_for_feature?(:assistant, model)
 
     errors.add(:config, :assistant_model_not_allowed)
+  end
+
+  # Only a newly chosen model has to be on the platform allowlist: an agent keeps the model it already has.
+  def conversational_model_changed?
+    config_in_database.to_h.with_indifferent_access[:model].to_s.strip != model
   end
 
   def validate_follow_up_settings
