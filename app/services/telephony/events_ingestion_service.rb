@@ -480,7 +480,7 @@ class Telephony::EventsIngestionService
                                      []
                                    end
 
-    [
+    user_ids = [
       call_session.agent_binding&.user_id,
       metadata.dig('operator_claim', 'user_id'),
       route_metadata['operator_candidate_user_ids'],
@@ -490,6 +490,11 @@ class Telephony::EventsIngestionService
       candidates.filter_map { |candidate| candidate['user_id'] },
       call_session.account.telephony_sip_profiles.where(id: sip_profile_ids.compact).pluck(:user_id)
     ].flatten.compact.map(&:to_i).uniq
+    return user_ids unless answered_by_other_operator_leg?(call_session)
+
+    # The closed leg is news for its own operator, not for the one who took the
+    # call: his card is the call he is answering.
+    user_ids - [*logical_group_claim_user_ids, metadata.dig('operator_claim', 'user_id')].compact.map(&:to_i)
   end
 
   def realtime_call_status_payload(call_session)

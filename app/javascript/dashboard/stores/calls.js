@@ -693,6 +693,8 @@ export const useCallsStore = defineStore('calls', {
           sipProfileId,
           janusSessionKey,
           forceLogicalTerminal: logicalCallTerminal === true,
+          // Other legs of the call are still open: only this leg is over.
+          keepOtherLegs: logicalCallTerminal === false,
         });
         return;
       }
@@ -1157,6 +1159,7 @@ export const useCallsStore = defineStore('calls', {
         janusSessionKey,
         cleanupClaimedBrowserCall: cleanupClaimed = false,
         forceLogicalTerminal = false,
+        keepOtherLegs = false,
       } = {}
     ) {
       const target = {
@@ -1188,7 +1191,7 @@ export const useCallsStore = defineStore('calls', {
         sameNativeSipLogicalCall(call, target) &&
         !preservesScopedActiveBranch(call) &&
         (forceLogicalTerminal ||
-          !call.isActive ||
+          (!call.isActive && !keepOtherLegs) ||
           (sameCallSid(call, target) && callScopeMatchesExactly(call, target)));
       const matchesTerminalCustomer = call => {
         if (!forceLogicalTerminal) return false;
