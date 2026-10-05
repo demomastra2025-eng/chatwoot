@@ -49,6 +49,27 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
       expect(payload['slots'].first['ends_at']).to eq('2026-04-20T09:30:00+05:00')
     end
 
+    it 'labels local rule windows as unverified by MedElement even for a linked resource' do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'provider-123' })
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
+                                           service_id: consultation.id, limit: 1))
+
+      expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false,
+                                 'provider_required' => true, 'service_link_status' => 'price_link_unverified')
+      expect(payload['slots']).not_to be_empty
+    end
+
+    it 'flags diagnostic resources with provider cabinets but no personal specialist code' do
+      resource.update!(custom_attributes: { 'medelement_cabinets' => [{ 'cabinetCode' => 'room-1' }] })
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
+                                           service_id: consultation.id, limit: 1))
+
+      expect(payload).to include('provider_required' => true, 'provider_checked' => false,
+                                 'service_link_status' => 'price_link_unverified', 'customer_offer_eligible' => false)
+    end
+
     it 'treats non-positive and blank service ids as an omitted filter' do
       [0, -1, ''].each do |service_id|
         payload = JSON.parse(
@@ -66,7 +87,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
       result = service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: other_service.id)
 
       expect(result).to start_with('ERROR:')
-      expect(result).to include('Service is not available for this specialist')
+      expect(result).to include('No recorded service-price link for this resource')
     end
   end
 end

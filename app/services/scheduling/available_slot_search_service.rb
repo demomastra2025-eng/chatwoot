@@ -1,6 +1,7 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
+  MISSING_LINK_ERROR = 'No recorded service-price link for requested resources; provider eligibility is unverified'.freeze
 
   def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
     @account = account
@@ -25,6 +26,7 @@ class Scheduling::AvailableSlotSearchService
       resources: resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
       slots: normalized_slots,
       total_slots: normalized_slots.length,
+      slot_count_scope: 'returned_only',
       availability: availability_payload
     }.compact
     payload.merge(availability_scope_payload)
@@ -44,7 +46,7 @@ class Scheduling::AvailableSlotSearchService
 
       if @resource_ids.present?
         missing_ids = @resource_ids - resolved.map(&:id)
-        raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
+        raise ActiveRecord::RecordNotFound, "Scheduling resources not found: #{missing_ids.join(', ')}" if missing_ids.present?
       end
 
       if service.present?
@@ -52,7 +54,7 @@ class Scheduling::AvailableSlotSearchService
 
         if @resource_ids.present?
           unsupported_ids = resolved.map(&:id) - eligible_resource_ids
-          raise ArgumentError, 'Service is not available for the requested specialists' if unsupported_ids.present?
+          raise ArgumentError, MISSING_LINK_ERROR if unsupported_ids.present?
         end
 
         resolved = resolved.select { |resource| eligible_resource_ids.include?(resource.id) }
@@ -86,6 +88,8 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def provider_checked_slots(resource, local_slots)
+    return unverified_provider_route_slots(resource) if provider_route_missing?(resource)
+
     return local_slots.tap { record_availability(resource_id: resource.id, status: 'local_only') } unless medelement_resource?(resource)
 
     result = Integrations::Medelement::ResourceAvailabilityService.new(
@@ -101,7 +105,15 @@ class Scheduling::AvailableSlotSearchService
       checked_at: result.checked_at.iso8601(6),
       reason: result.reason
     )
-    result.slots
+    return result.slots if @service_id.blank?
+
+    result.slots.map { |slot| slot.merge(service_eligibility_status: 'price_link_unverified') }
+  end
+
+  def unverified_provider_route_slots(resource)
+    record_availability(resource_id: resource.id, provider: 'medelement', status: 'unavailable',
+                        reason: 'provider_resource_route_unverified')
+    []
   end
 
   def record_availability(attributes)
@@ -131,13 +143,28 @@ class Scheduling::AvailableSlotSearchService
     {
       availability_scope: availability_scope(confirmed),
       requested_service_id: @service_id,
-      service_match: {
-        confirmed: confirmed,
-        service_id: confirmed ? service.id : nil,
-        resource_id: confirmed && resources.one? ? resources.first.id : nil,
-        resource_ids: confirmed ? resources.map(&:id) : []
-      },
-      customer_offer_eligible: confirmed
+      service_link_status: service_link_status,
+      service_match: service_match_payload(confirmed),
+      customer_offer_eligible: confirmed && normalized_slots.present?
+    }
+  end
+
+  def service_link_status
+    return 'not_requested' if @service_id.blank?
+    return 'no_recorded_link' if resources.blank?
+    return 'price_link_unverified' if resources.any? { |resource| provider_related?(resource) }
+
+    'local_configured'
+  end
+
+  def service_match_payload(confirmed)
+    {
+      confirmed: confirmed,
+      service_id: confirmed ? service.id : nil,
+      resource_id: confirmed && resources.one? ? resources.first.id : nil,
+      resource_ids: confirmed ? resources.map(&:id) : [],
+      candidate_resource_ids: resources.map(&:id),
+      reason: service_link_status
     }
   end
 
@@ -148,11 +175,20 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def service_match_confirmed?
-    @service_id.present? && service.present? && resources.present?
+    @service_id.present? && service.present? && resources.present? && resources.none? { |resource| provider_related?(resource) }
   end
 
   def medelement_resource?(resource)
     resource.custom_attributes.to_h['medelement_specialist_code'].present?
+  end
+
+  def provider_related?(resource)
+    attrs = resource.custom_attributes.to_h
+    attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
+  end
+
+  def provider_route_missing?(resource)
+    provider_related?(resource) && !medelement_resource?(resource)
   end
 
   def top_level_duration_min

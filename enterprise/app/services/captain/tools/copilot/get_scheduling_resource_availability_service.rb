@@ -5,11 +5,12 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     'get_scheduling_resource_availability'
   end
 
-  description 'Get free specialist appointment windows inside a time range, with service-aware duration when available'
-  param :resource_id, type: :number, desc: 'Specialist resource ID', required: true
+  description 'Get local-rule windows; MedElement availability is not checked by this tool'
+  param :resource_id, type: :number, desc: 'Scheduling resource ID (specialist or diagnostic resource)', required: true
   param :from, type: :string, desc: 'Range start datetime', required: true
   param :to, type: :string, desc: 'Range end datetime', required: true
-  param :service_id, type: :number, desc: 'Optional service ID to derive appointment duration and validate specialist coverage', required: false
+  param :service_id, type: :number,
+                     desc: 'Optional service ID to derive duration using a recorded price link, not provider eligibility', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes', required: false
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
@@ -30,7 +31,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
       limit: parse_limit(limit)
     ).perform
 
-    formatted_payload(payload)
+    formatted_payload(payload.merge(availability_metadata(resource, service_record, payload)))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -41,9 +42,24 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
 
   private
 
+  def availability_metadata(resource, service_record, payload)
+    attrs = resource.custom_attributes.to_h
+    provider_required = attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
+    link_status = if service_record.blank?
+                    'not_requested'
+                  elsif provider_required
+                    'price_link_unverified'
+                  else
+                    'local_configured'
+                  end
+    { availability_source: 'local_rules', provider_checked: false, provider_required: provider_required,
+      service_link_status: link_status,
+      customer_offer_eligible: !provider_required && service_record.present? && payload[:slots].present? }
+  end
+
   def find_resource!(resource_id)
     account.scheduling_resources.available_for_scheduling.find_by(id: resource_id).tap do |resource|
-      raise ActiveRecord::RecordNotFound, 'Specialist not found' if resource.blank?
+      raise ActiveRecord::RecordNotFound, 'Scheduling resource not found' if resource.blank?
     end
   end
 
@@ -54,7 +70,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     raise ActiveRecord::RecordNotFound, 'Service not found' if service_record.blank?
 
     active_price = resource.service_prices.active.find_by(service_id: service_record.id)
-    raise ArgumentError, 'Service is not available for this specialist' if active_price.blank?
+    raise ArgumentError, 'No recorded service-price link for this resource; provider eligibility is unverified' if active_price.blank?
 
     service_record
   end

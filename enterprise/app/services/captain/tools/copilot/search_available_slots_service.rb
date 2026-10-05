@@ -3,11 +3,11 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     'search_available_slots'
   end
 
-  description 'Search appointment slots for one or more specialists using explicit specialist filters or a scheduling service'
+  description 'Search local slots and provider availability; price links do not verify MedElement eligibility'
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
   param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
-  param :resource_ids, type: :array, desc: 'Optional list of specialist resource IDs', required: false
-  param :service_id, type: :number, desc: 'Optional service ID used to filter specialists and derive slot duration', required: false
+  param :resource_ids, type: :array, desc: 'Optional list of scheduling resource IDs', required: false
+  param :service_id, type: :number, desc: 'Optional service ID to filter price links and derive duration', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when no service is provided', required: false
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 

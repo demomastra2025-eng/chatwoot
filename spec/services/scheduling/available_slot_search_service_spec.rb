@@ -51,8 +51,41 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       confirmed: true,
       service_id: service_record.id,
       resource_id: resource.id,
-      resource_ids: [resource.id]
+      resource_ids: [resource.id],
+      reason: 'local_configured'
     )
+  end
+
+  it 'keeps a MedElement price link unverified even when the provider returns fresh times' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'provider-123' })
+    provider_result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [{ starts_at: from_time.iso8601, resource_id: resource.id }], reason: nil
+    )
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(
+      instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: provider_result)
+    )
+
+    payload = perform(resource_ids: [resource.id], service_id: service_record.id, limit: 1)
+
+    expect(payload[:availability][:status]).to eq('fresh')
+    expect(payload[:total_slots]).to eq(1)
+    expect(payload[:slots].first[:service_eligibility_status]).to eq('price_link_unverified')
+    expect(payload).to include(availability_scope: 'service_unconfirmed', service_link_status: 'price_link_unverified',
+                               customer_offer_eligible: false)
+    expect(payload[:service_match]).to include(confirmed: false, resource_ids: [], candidate_resource_ids: [resource.id])
+  end
+
+  it 'does not offer local-rule windows for a diagnostic provider resource without a specialist code' do
+    resource.update!(custom_attributes: { 'medelement_cabinets' => [{ 'cabinetCode' => 'room-1' }] })
+    expect(Integrations::Medelement::ResourceAvailabilityService).not_to receive(:new)
+
+    payload = perform(resource_ids: [resource.id], service_id: service_record.id, limit: 1)
+
+    expect(payload[:slots]).to be_empty
+    expect(payload[:availability]).to include(
+      status: 'degraded', resources: [include(status: 'unavailable', reason: 'provider_resource_route_unverified')]
+    )
+    expect(payload).to include(service_link_status: 'price_link_unverified', customer_offer_eligible: false)
   end
 
   it 'filters by service when no explicit specialists are provided' do
@@ -73,7 +106,8 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
       requested_service_id: unsupported_service.id,
       customer_offer_eligible: false
     )
-    expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
+    expect(payload[:service_match]).to include(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [],
+                                               candidate_resource_ids: [], reason: 'no_recorded_link')
     expect(payload[:slots]).to be_empty
   end
 
@@ -88,14 +122,15 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
         requested_service_id: nil,
         customer_offer_eligible: false
       )
-      expect(payload[:service_match]).to eq(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [])
+      expect(payload[:service_match]).to include(confirmed: false, service_id: nil, resource_id: nil, resource_ids: [],
+                                                 reason: 'not_requested')
     end
   end
 
   it 'raises when a requested specialist is outside the account or unavailable for scheduling' do
     expect do
       perform(resource_ids: [external_resource.id])
-    end.to raise_error(ActiveRecord::RecordNotFound, "Specialists not found: #{external_resource.id}")
+    end.to raise_error(ActiveRecord::RecordNotFound, "Scheduling resources not found: #{external_resource.id}")
   end
 
   it 'raises when the requested specialist cannot perform the requested service' do
@@ -104,7 +139,7 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect do
       perform(resource_ids: [other_resource.id],
               service_id: service_record.id)
-    end.to raise_error(ArgumentError, 'Service is not available for the requested specialists')
+    end.to raise_error(ArgumentError, 'No recorded service-price link for requested resources; provider eligibility is unverified')
   end
 
   it 'rejects reversed ranges and oversized ranges' do

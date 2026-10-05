@@ -48,6 +48,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       expect(payload).to include(
         'availability_scope' => 'service_confirmed',
         'requested_service_id' => consultation.id,
+        'service_link_status' => 'local_configured',
         'customer_offer_eligible' => true,
         'service_match' => include(
           'confirmed' => true,
@@ -70,12 +71,8 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
           'availability_scope' => 'generic',
           'requested_service_id' => nil,
           'customer_offer_eligible' => false,
-          'service_match' => {
-            'confirmed' => false,
-            'service_id' => nil,
-            'resource_id' => nil,
-            'resource_ids' => []
-          }
+          'service_match' => include('confirmed' => false, 'service_id' => nil, 'resource_id' => nil,
+                                     'resource_ids' => [], 'reason' => 'not_requested')
         )
       end
     end
@@ -89,7 +86,7 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       )
 
       expect(result).to start_with('ERROR:')
-      expect(result).to include('Service is not available for the requested specialists')
+      expect(result).to include('No recorded service-price link for requested resources')
     end
   end
 end
