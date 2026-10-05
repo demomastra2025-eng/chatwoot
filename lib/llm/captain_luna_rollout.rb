@@ -7,8 +7,9 @@
 #   Llm::CaptainLunaRollout.apply!(plan)           # one transaction, rows and accounts locked, refuses a stale plan
 #   Llm::CaptainLunaRollout.rollback!(plan)        # restores exactly the old rows, account choices and voice models
 #
-# The account-level model choices are cleared rather than set, so an account follows the platform default (the
-# CAPTAIN_DEFAULT_MODEL row, editable in Super Admin) and one edit of that row moves every account back as well.
+# The account-level model choices and the model an agent stores in its own config are cleared rather than set, so an
+# account and an agent follow the platform default (the CAPTAIN_DEFAULT_MODEL row, editable in Super Admin) and one edit
+# of that row moves every account and agent back as well.
 # Both directions accept a state that is already done and refuse anything that is neither the snapshot state nor the
 # done state, so running either twice is harmless. See script/onelink/LUNA_CUTOVER_RUNBOOK.md.
 class Llm::CaptainLunaRollout
@@ -16,7 +17,7 @@ class Llm::CaptainLunaRollout
   # The model the quick rollback (Super Admin default) goes back to; it must stay selectable.
   ROLLBACK_MODEL = Llm::OpenRouterRoutingProfile::LUNA_FALLBACK_MODEL
   INSTALLATION_CONFIG = 'CAPTAIN_AI_AGENT_DEFAULT_MODEL'
-  SNAPSHOT_VERSION = 2
+  SNAPSHOT_VERSION = 3
   # The chat features whose account-level choice is cleared.
   FEATURES = %w[assistant editor copilot image_recognition label_suggestion].freeze
   # name => whether the cut-over creates the row when it is absent. The agent-only default is only moved when it exists:
@@ -30,6 +31,9 @@ class Llm::CaptainLunaRollout
   DEFAULT_ROWS = ['CAPTAIN_DEFAULT_MODEL', INSTALLATION_CONFIG].freeze
 
   class StalePlan < StandardError; end
+
+  # Everything a cut-over or a rollback writes, locked in this fixed order: installation rows, accounts, voice stores, agents.
+  Locked = Struct.new(:configs, :accounts, :records, :agents)
 
   class << self
     def plan(scope: Account.all)
@@ -47,7 +51,8 @@ class Llm::CaptainLunaRollout
         effective_before: effective,
         installation: rows,
         accounts: overrides.snapshot(accounts),
-        voice: voice_stores.snapshot(accounts.map(&:id))
+        voice: voice_stores.snapshot(accounts.map(&:id)),
+        agents: agent_models.snapshot(accounts.map(&:id))
       }
     end
 
@@ -56,16 +61,13 @@ class Llm::CaptainLunaRollout
       verify_target!
 
       Account.transaction do
-        configs = installation_rows.lock
-        accounts = scope.order(:id).lock.to_a
-        records = voice_stores.lock(plan[:voice])
-        verify_state!(plan, configs, accounts, records)
-        verify_accounts!(accounts)
+        locked = lock_all(plan, scope.order(:id))
+        verify_state!(plan, locked)
+        agent_models.verify_complete!(locked.accounts.map(&:id), plan[:agents])
+        verify_accounts!(locked.accounts)
 
-        installation_rows.apply!(plan[:installation], configs)
-        voice_stores.apply!(plan[:voice], records)
-        changed = overrides.clear!(accounts, plan[:accounts])
-        verify_effective_models!(accounts)
+        changed = write_target!(plan, locked)
+        verify_effective_models!(locked.accounts)
         changed
       end
     end
@@ -74,15 +76,11 @@ class Llm::CaptainLunaRollout
       plan = validated_plan(snapshot)
 
       Account.transaction do
-        configs = installation_rows.lock
-        accounts = Account.where(id: plan[:accounts].pluck(:account_id)).order(:id).lock.to_a
-        records = voice_stores.lock(plan[:voice])
-        live = without_deleted(plan, accounts, records)
-        verify_state!(live, configs, accounts, records)
+        locked = lock_all(plan, Account.where(id: plan[:accounts].pluck(:account_id)).order(:id))
+        live = without_deleted(plan, locked)
+        verify_state!(live, locked)
 
-        installation_rows.restore!(live[:installation], configs)
-        voice_stores.restore!(live[:voice], records)
-        overrides.restore!(accounts, live[:accounts])
+        restore_state!(live, locked)
       end
     end
 
@@ -109,6 +107,10 @@ class Llm::CaptainLunaRollout
       Llm::CaptainLunaRollout::VoiceStores.new(target: TARGET_MODEL)
     end
 
+    def agent_models
+      Llm::CaptainLunaRollout::AgentModels.new
+    end
+
     def effective_models
       FEATURES.index_with { |feature| Llm::Config.model_for(feature: feature, fallback: nil) }
     end
@@ -127,7 +129,7 @@ class Llm::CaptainLunaRollout
       raise StalePlan, 'Wrong rollout target' unless plan[:target_model] == TARGET_MODEL
       raise StalePlan, 'Unsupported snapshot version' unless plan[:version] == SNAPSHOT_VERSION
 
-      %i[installation accounts voice].each { |key| raise StalePlan, "Snapshot has no #{key}" unless plan[key].is_a?(Array) }
+      %i[installation accounts voice agents].each { |key| raise StalePlan, "Snapshot has no #{key}" unless plan[key].is_a?(Array) }
       validate_snapshot_entries!(plan)
       plan
     end
@@ -144,18 +146,39 @@ class Llm::CaptainLunaRollout
     end
 
     # An account or an agent deleted since the cut-over has nothing left to restore, and must not block the rollback.
-    def without_deleted(plan, accounts, records)
-      account_ids = accounts.map(&:id)
+    def lock_all(plan, account_scope)
+      Locked.new(installation_rows.lock, account_scope.lock.to_a, voice_stores.lock(plan[:voice]), agent_models.lock(plan[:agents]))
+    end
+
+    def without_deleted(plan, locked)
+      account_ids = locked.accounts.map(&:id)
       plan.merge(
         accounts: plan[:accounts].select { |entry| account_ids.include?(entry[:account_id]) },
-        voice: plan[:voice].select { |entry| records.key?([entry[:store], entry[:id]]) }
+        voice: plan[:voice].select { |entry| locked.records.key?([entry[:store], entry[:id]]) },
+        agents: plan[:agents].select { |entry| locked.agents.key?(entry[:id]) }
       )
     end
 
-    def verify_state!(plan, configs, accounts, records)
-      installation_rows.verify!(plan[:installation], configs)
-      overrides.verify!(accounts, plan[:accounts])
-      voice_stores.verify!(plan[:voice], records)
+    def verify_state!(plan, locked)
+      installation_rows.verify!(plan[:installation], locked.configs)
+      overrides.verify!(locked.accounts, plan[:accounts])
+      voice_stores.verify!(plan[:voice], locked.records)
+      agent_models.verify!(plan[:agents], locked.agents)
+    end
+
+    # Returns the number of accounts that were written.
+    def write_target!(plan, locked)
+      installation_rows.apply!(plan[:installation], locked.configs)
+      voice_stores.apply!(plan[:voice], locked.records)
+      agent_models.clear!(plan[:agents], locked.agents)
+      overrides.clear!(locked.accounts, plan[:accounts])
+    end
+
+    def restore_state!(live, locked)
+      installation_rows.restore!(live[:installation], locked.configs)
+      voice_stores.restore!(live[:voice], locked.records)
+      agent_models.restore!(live[:agents], locked.agents)
+      overrides.restore!(locked.accounts, live[:accounts])
     end
 
     # Luna 6 has to be usable for every feature it takes over, and the allowlist has to keep both it and the model the
@@ -195,6 +218,20 @@ class Llm::CaptainLunaRollout
 
       wrong_account = accounts.find { |account| Llm::Config.model_for(feature: :assistant, account: account) != TARGET_MODEL }
       raise StalePlan, 'An account still resolves another agent model after the cut-over' if wrong_account
+
+      verify_agents_resolve_target!(accounts)
+    end
+
+    # The model an agent really runs on (its own stored model first, then the account and the installation), which the
+    # account-level check above cannot see.
+    def verify_agents_resolve_target!(accounts)
+      Llm::Config.with_runtime_cache do
+        Captain::Assistant.where(account_id: accounts.map(&:id)).find_each do |agent|
+          next if agent.resolved_agent_model == TARGET_MODEL
+
+          raise StalePlan, "Agent #{agent.id} still resolves another model after the cut-over"
+        end
+      end
     end
   end
 end

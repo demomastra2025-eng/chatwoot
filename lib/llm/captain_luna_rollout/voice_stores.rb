@@ -2,13 +2,17 @@
 
 # The stored voice-agent settings of the Luna 6 cut-over. The voice context merges the telephony routing policy
 # (ai_voice_settings) with the Captain agent (config['voice_settings']), the agent winning, and sends the result to the
-# voice runtime. Only the providers that take their LLM from the "model" key (the OpenRouter cascade) are moved; the
-# native speech-to-speech providers keep their own models. A store without a "model" key follows the provider default.
+# voice runtime. The SIP voice channel keeps a copy of the policy settings (provider_config['ai_voice_settings']) that
+# wins over the policy the next time the channel is saved (NumberBinding.sync_from_voice_channel!), so the copy is moved
+# together with the policy; otherwise any later channel save would bring the old model back. Only the providers that
+# take their LLM from the "model" key (the OpenRouter cascade) are moved; the native speech-to-speech providers keep
+# their own models. A store without a "model" key follows the provider default.
 class Llm::CaptainLunaRollout::VoiceStores
   CASCADE_PROVIDERS = %w[elevenlabs cartesia fish].freeze
   KINDS = {
     'captain_assistant' => 'Captain::Assistant',
-    'routing_policy' => 'Telephony::RoutingPolicy'
+    'routing_policy' => 'Telephony::RoutingPolicy',
+    'voice_channel' => 'Channel::Voice'
   }.freeze
 
   def initialize(target:)
@@ -17,7 +21,7 @@ class Llm::CaptainLunaRollout::VoiceStores
 
   def snapshot(account_ids)
     KINDS.flat_map do |kind, class_name|
-      class_name.constantize.where(account_id: account_ids).order(:id).filter_map do |record|
+      stores_of(kind, class_name, account_ids).order(:id).filter_map do |record|
         settings = settings_of(kind, record)
         next unless movable?(settings)
 
@@ -58,14 +62,31 @@ class Llm::CaptainLunaRollout::VoiceStores
     CASCADE_PROVIDERS.include?(settings['provider']) && settings['model'].present? && settings['model'] != @target
   end
 
+  # Only the SIP channels keep a settings copy: the others have no telephony binding.
+  def stores_of(kind, class_name, account_ids)
+    scope = class_name.constantize.where(account_id: account_ids)
+    kind == 'voice_channel' ? scope.where(provider: Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS) : scope
+  end
+
   def settings_of(kind, record)
-    raw = kind == 'captain_assistant' ? record.config.to_h['voice_settings'] : record.ai_voice_settings
+    raw = case kind
+          when 'captain_assistant' then record.config.to_h['voice_settings']
+          when 'voice_channel' then channel_config(record)['ai_voice_settings']
+          else record.ai_voice_settings
+          end
     raw.is_a?(Hash) ? raw.deep_stringify_keys : {}
   end
 
+  def channel_config(channel)
+    channel.provider_config_hash.to_h.deep_stringify_keys
+  rescue JSON::ParserError, TypeError
+    {}
+  end
+
+  # Each record is re-read first: an agent is also written by the agent-model store of the cut-over.
   def write_models!(entries, records)
     entries.count do |entry|
-      record = records.fetch([entry[:store], entry[:id]])
+      record = records.fetch([entry[:store], entry[:id]]).reload
       settings = settings_of(entry[:store], record)
       wanted = yield(entry)
       next false if settings['model'] == wanted
@@ -76,13 +97,18 @@ class Llm::CaptainLunaRollout::VoiceStores
   end
 
   # Saved without validations: the agent validations (rules, tools, voice reference) are not the business of a model
-  # switch and must not stop it.
+  # switch and must not stop it. The channel copy is written without callbacks, which would re-sync the whole telephony
+  # binding of the number for what is only a model id.
   def store!(kind, record, settings)
-    if kind == 'captain_assistant'
+    case kind
+    when 'captain_assistant'
       record.config = record.config.to_h.merge('voice_settings' => settings)
+      record.save!(validate: false)
+    when 'voice_channel'
+      record.update_columns(provider_config: channel_config(record).merge('ai_voice_settings' => settings)) # rubocop:disable Rails/SkipsModelValidations
     else
       record.ai_voice_settings = settings
+      record.save!(validate: false)
     end
-    record.save!(validate: false)
   end
 end

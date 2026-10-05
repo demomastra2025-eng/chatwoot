@@ -10,7 +10,7 @@ class Llm::CaptainLunaRollout::Preview
   end
 
   def to_s
-    [header, installation_lines, account_lines, voice_lines].flatten.join("\n")
+    [header, installation_lines, account_lines, agent_lines, voice_lines].flatten.join("\n")
   end
 
   private
@@ -46,6 +46,17 @@ class Llm::CaptainLunaRollout::Preview
   def account_line(feature, model, ids)
     outside = allowlist.include?(model) ? '' : ' [outside the allowlist]'
     "  #{feature}: #{model.inspect} x#{ids.size}#{outside} accounts #{ids.join(', ')}"
+  end
+
+  # The model an agent stores in its own config outranks the account and the installation, so it is cleared as well.
+  def agent_lines
+    choices = plan[:agents].map { |agent| { key: [agent[:before]], id: agent[:id] } }
+    lines = grouped(choices).map do |(model), group|
+      outside = allowlist.include?(model) ? '' : ' [outside the allowlist]'
+      "  #{model.inspect} x#{group.size}#{outside} agents #{group.pluck(:id).join(', ')}"
+    end
+    ["Agent models stored in the agent itself to clear, the agent then follows the platform default (#{plan[:agents].size} agents):",
+     *(lines.presence || ['  none'])]
   end
 
   def voice_lines

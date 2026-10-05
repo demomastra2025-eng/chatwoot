@@ -338,6 +338,65 @@ RSpec.describe Llm::CaptainLunaRollout do
       expect(assistant.reload.config.dig('voice_settings', 'model')).to eq('openai/gpt-5.4-mini')
     end
 
+    # RoutingService copies the policy settings into the SIP channel, and the next channel save (after_commit ->
+    # NumberBinding.sync_from_voice_channel!) lets the channel copy win over the policy.
+    describe 'the copy that a SIP voice channel keeps' do
+      let(:account) { create(:account) }
+      let(:channel) { create(:channel_voice, :sipuni, account: account) }
+      let(:policy) { Telephony::NumberBinding.find_by!(inbox_id: channel.inbox.id).routing_policy }
+
+      def channel_model
+        channel.reload.provider_config_hash.dig('ai_voice_settings', 'model')
+      end
+
+      def save_channel
+        channel.update!(provider_config: channel.reload.provider_config_hash.merge('display_name' => SecureRandom.hex(3)))
+      end
+
+      before do
+        settings = { 'provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini', 'language' => 'ru-KZ' }
+        channel.update!(provider_config: channel.provider_config_hash.merge('ai_voice_settings' => settings))
+      end
+
+      it 'is moved together with the policy, so a later channel save does not bring the old model back', :aggregate_failures do
+        scope = scope_for(account)
+        plan = described_class.plan(scope: scope)
+
+        expect(plan[:voice].pluck(:store)).to contain_exactly('routing_policy', 'voice_channel')
+        described_class.apply!(plan, scope: scope)
+        expect(channel_model).to eq(target_model)
+        expect(channel.provider_config_hash['ai_voice_settings']).to include('language' => 'ru-KZ')
+
+        save_channel
+        expect(policy.reload.ai_voice_settings['model']).to eq(target_model)
+        expect(channel_model).to eq(target_model)
+      end
+
+      it 'is put back exactly with the policy, also after a channel save' do
+        scope = scope_for(account)
+        plan = JSON.parse(described_class.plan(scope: scope).to_json)
+        described_class.apply!(plan, scope: scope)
+        save_channel
+
+        described_class.rollback!(plan)
+
+        expect(channel_model).to eq('openai/gpt-5.4-mini')
+        expect(policy.reload.ai_voice_settings['model']).to eq('openai/gpt-5.4-mini')
+      end
+
+      it 'leaves a copy of a native speech-to-speech provider and a channel of an account outside the scope alone' do
+        native = create(:channel_voice, :sipuni, account: account)
+        native.update!(provider_config: native.provider_config_hash.merge('ai_voice_settings' => { 'provider' => 'gemini-live', 'model' => 'x' }))
+        other = create(:channel_voice, :sipuni, account: create(:account))
+        cascade = { 'provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini' }
+        other.update!(provider_config: other.provider_config_hash.merge('ai_voice_settings' => cascade))
+
+        plan = described_class.plan(scope: scope_for(account))
+
+        expect(plan[:voice].pluck(:store, :id)).not_to include(['voice_channel', native.id], ['voice_channel', other.id])
+      end
+    end
+
     it 'sends the cut-over model to the voice runtime in the context payload' do
       account = create(:account)
       assistant = voice_assistant(account, 'provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini', 'voice' => 'a')
@@ -347,6 +406,118 @@ RSpec.describe Llm::CaptainLunaRollout do
       normalized = Telephony::AiVoice::VoiceSettingsDefaults.normalize(assistant.reload.config['voice_settings'])
 
       expect(normalized).to include('provider' => 'elevenlabs', 'model' => target_model)
+    end
+  end
+
+  describe 'the model an agent stores in its own config' do
+    # The agent's own model outranks the account choice and the installation rows (Agentable#agent_model), so a cut-over
+    # that left it would report success while the agent kept running on its old model.
+    def pin_model(agent, model)
+      agent.config = agent.config.to_h.merge('model' => model)
+      agent.save!(validate: false)
+      agent
+    end
+
+    let(:account) { create(:account) }
+    let(:scope) { scope_for(account) }
+
+    it 'clears the stored model, keeps the rest of the agent config and puts the model back exactly', :aggregate_failures do
+      pinned = pin_model(create(:captain_assistant, account: account, config: { 'temperature' => 0.4 }), old_model)
+      outside = pin_model(create(:captain_assistant, account: account), 'gpt-5.1')
+      with_voice = pin_model(voice_assistant(account, 'provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini', 'voice' => 'a'), 'openai/gpt-5.4')
+      unpinned = create(:captain_assistant, account: account)
+      expect(pinned.resolved_agent_model).to eq(old_model)
+      plan = JSON.parse(described_class.plan(scope: scope).to_json)
+
+      expect(plan['agents'].pluck('id')).to contain_exactly(pinned.id, outside.id, with_voice.id)
+      described_class.apply!(plan, scope: scope)
+
+      [pinned, outside, with_voice, unpinned].each do |agent|
+        expect(agent.reload.config).not_to have_key('model')
+        expect(agent.resolved_agent_model).to eq(target_model)
+      end
+      expect(pinned.config).to include('temperature' => 0.4)
+      expect(with_voice.config.dig('voice_settings', 'model')).to eq(target_model)
+
+      described_class.rollback!(plan)
+
+      expect(pinned.reload.config).to include('model' => old_model, 'temperature' => 0.4)
+      expect(outside.reload.config['model']).to eq('gpt-5.1')
+      expect(with_voice.reload.config).to include('model' => 'openai/gpt-5.4')
+      expect(with_voice.config.dig('voice_settings', 'model')).to eq('openai/gpt-5.4-mini')
+      expect(unpinned.reload.config).not_to have_key('model')
+    end
+
+    it 'follows the platform default afterwards, so the Super Admin default alone moves the agent back' do
+      agent = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      described_class.apply!(described_class.plan(scope: scope), scope: scope)
+
+      InstallationConfig.find_by!(name: 'CAPTAIN_DEFAULT_MODEL').update!(value: old_model)
+
+      expect(agent.reload.resolved_agent_model).to eq(old_model)
+    end
+
+    it 'is idempotent in both directions' do
+      agent = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      plan = JSON.parse(described_class.plan(scope: scope).to_json)
+
+      2.times { described_class.apply!(plan, scope: scope) }
+      expect(agent.reload.config).not_to have_key('model')
+      2.times { described_class.rollback!(plan) }
+      expect(agent.reload.config['model']).to eq('openai/gpt-5.4')
+    end
+
+    it 'rejects a plan when the stored model of an agent changed after the snapshot' do
+      agent = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      plan = described_class.plan(scope: scope)
+      pin_model(agent, 'openai/gpt-5.4-mini')
+
+      expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /agent #{agent.id} changed/)
+      expect(agent.reload.config['model']).to eq('openai/gpt-5.4-mini')
+      expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(old_model)
+    end
+
+    it 'rejects a plan when an agent gained a stored model after the snapshot' do
+      plan = described_class.plan(scope: scope)
+      late = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+
+      expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /Agent #{late.id} gained a model/)
+      expect(late.reload.config['model']).to eq('openai/gpt-5.4')
+    end
+
+    it 'does not touch an agent of another account outside the scope' do
+      other = pin_model(create(:captain_assistant, account: create(:account)), 'openai/gpt-5.4')
+      create(:captain_assistant, account: account)
+
+      described_class.apply!(described_class.plan(scope: scope), scope: scope)
+
+      expect(other.reload.config['model']).to eq('openai/gpt-5.4')
+    end
+
+    it 'does not let an agent deleted after the cut-over block the rollback, and refuses when one disappears before it' do
+      kept = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      gone = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      plan = described_class.plan(scope: scope)
+      gone.destroy!
+
+      expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /agent #{gone.id} changed/)
+
+      second_plan = described_class.plan(scope: scope)
+      described_class.apply!(second_plan, scope: scope)
+      kept.destroy!
+      expect { described_class.rollback!(second_plan) }.not_to raise_error
+    end
+
+    it 'rolls everything back when an agent would still resolve another model after the writes' do
+      account.update!(captain_models: { 'assistant' => old_model })
+      agent = pin_model(create(:captain_assistant, account: account), 'openai/gpt-5.4')
+      plan = described_class.plan(scope: scope)
+      allow_any_instance_of(Captain::Assistant).to receive(:resolved_agent_model).and_return('openai/gpt-5.4') # rubocop:disable RSpec/AnyInstance
+
+      expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /Agent #{agent.id} still resolves/)
+      expect(agent.reload.config['model']).to eq('openai/gpt-5.4')
+      expect(models_of(account)).to eq('assistant' => old_model)
+      expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(old_model)
     end
   end
 
@@ -365,7 +536,7 @@ RSpec.describe Llm::CaptainLunaRollout do
       content = path.read
       expect(content).not_to include('Private Name LLC')
       expect(content).not_to include('test-key')
-      expect(JSON.parse(content)).to include('target_model' => target_model, 'version' => 2)
+      expect(JSON.parse(content)).to include('target_model' => target_model, 'version' => 3)
       expect(described_class.read(path)).to eq(JSON.parse(JSON.generate(plan)))
     end
 
@@ -393,9 +564,12 @@ RSpec.describe Llm::CaptainLunaRollout do
     it 'counts the changes per feature and old model with account ids only, and flags choices outside the allowlist' do
       account = create(:account, name: 'Private Name LLC', captain_models: { 'assistant' => old_model, 'copilot' => 'claude-sonnet-4-6' })
       other = create(:account, captain_models: { 'assistant' => old_model })
+      agent = create(:captain_assistant, account: account)
+      agent.update_columns(config: { 'model' => 'openai/gpt-5.4' }) # rubocop:disable Rails/SkipsModelValidations
       plan = Llm::CaptainLunaRollout.plan(scope: Account.where(id: [account.id, other.id]))
 
       text = described_class.new(JSON.parse(JSON.generate(plan)), target: target_model).to_s
+      expect(text).to include(%("openai/gpt-5.4" x1 agents #{agent.id}))
 
       expect(text).to include("CAPTAIN_DEFAULT_MODEL: #{old_model} -> #{target_model}")
       expect(text).to include(%(assistant: "#{old_model}" x2 accounts #{account.id}, #{other.id}))
