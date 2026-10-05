@@ -2106,7 +2106,10 @@ class Telephony::EventsIngestionService
       }
     )
     message.skip_send_reply = true if call_session.direction == 'outbound'
-    message.save!
+    # A savepoint: when a sibling leg wins the race for the same source_id the
+    # unique violation must not abort the surrounding transaction, or the
+    # lookup in the rescue below would fail with InFailedSqlTransaction.
+    Message.transaction(requires_new: true) { message.save! }
     message
   rescue ActiveRecord::RecordNotUnique
     conversation.messages.voice_calls.find_by(source_id: source_id) ||
@@ -2903,7 +2906,7 @@ class Telephony::EventsIngestionService
         event_type: resolved_event_type,
         payload: payload
       )
-      event.save!
+      Telephony::Event.transaction(requires_new: true) { event.save! }
       event
     rescue ActiveRecord::RecordNotUnique
       account.telephony_events.find_by!(event_key: event_key)
@@ -2932,9 +2935,11 @@ class Telephony::EventsIngestionService
     save_call_session!(existing_call_session, yield(existing_call_session))
   end
 
+  # Runs in a savepoint: persist_call_session! looks the winner of a lost
+  # unique race up after the failure, inside the caller's transaction.
   def save_call_session!(call_session, attributes)
     call_session.assign_attributes(attributes)
-    call_session.save!
+    Telephony::CallSession.transaction(requires_new: true) { call_session.save! }
     call_session
   end
 

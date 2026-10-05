@@ -82,12 +82,16 @@ class Telephony::AiVoice::FinalizationService
 
   def persist_finalize_event!
     event = account.telephony_events.find_by(event_key: event_key)
-    event ||= account.telephony_events.create!(
-      event_key: event_key,
-      event_type: 'finalize',
-      payload: event_payload,
-      call_session: call_session
-    )
+    # A savepoint, so a lost insert race cannot abort an enclosing transaction
+    # before the retry below looks the winner up.
+    event ||= Telephony::Event.transaction(requires_new: true) do
+      account.telephony_events.create!(
+        event_key: event_key,
+        event_type: 'finalize',
+        payload: event_payload,
+        call_session: call_session
+      )
+    end
     return if event.processed?
 
     event.update!(

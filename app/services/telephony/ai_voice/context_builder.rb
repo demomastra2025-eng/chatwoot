@@ -120,20 +120,24 @@ class Telephony::AiVoice::ContextBuilder
     ensure_call_session_creation_scope!
 
     conversation = ensure_conversation
-    account.telephony_call_sessions.create!(
-      external_call_ref: call_ref,
-      provider: provider,
-      status: 'ringing',
-      direction: direction,
-      from_number: from_number_for_session,
-      to_number: to_number_for_session,
-      started_at: Time.current,
-      conversation: conversation,
-      contact: conversation&.contact || contact,
-      inbox: inbox,
-      number_binding: number_binding,
-      metadata: { 'ai_voice' => { 'context_created' => true, 'transport' => transport_name } }
-    )
+    # A savepoint: the lookup in the rescue below must still work when this
+    # runs inside a caller's transaction.
+    Telephony::CallSession.transaction(requires_new: true) do
+      account.telephony_call_sessions.create!(
+        external_call_ref: call_ref,
+        provider: provider,
+        status: 'ringing',
+        direction: direction,
+        from_number: from_number_for_session,
+        to_number: to_number_for_session,
+        started_at: Time.current,
+        conversation: conversation,
+        contact: conversation&.contact || contact,
+        inbox: inbox,
+        number_binding: number_binding,
+        metadata: { 'ai_voice' => { 'context_created' => true, 'transport' => transport_name } }
+      )
+    end
   rescue ActiveRecord::RecordNotUnique
     account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   rescue ActiveRecord::RecordInvalid => e

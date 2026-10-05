@@ -120,7 +120,9 @@ class Telephony::AiVoice::ToolExecutionService
     event = nil
     owner = false
 
-    Telephony::Event.transaction do
+    # requires_new: a lost reservation race is rescued below and must not
+    # poison a transaction the caller already has open.
+    Telephony::Event.transaction(requires_new: true) do
       event = scope.lock.first
       if event.present?
         validate_event_request!(event)
