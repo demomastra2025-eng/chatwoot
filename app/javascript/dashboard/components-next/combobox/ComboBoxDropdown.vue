@@ -17,6 +17,10 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+  inline: {
+    type: Boolean,
+    default: false,
+  },
   options: {
     type: Array,
     required: true,
@@ -25,11 +29,19 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  showSearchInput: {
+    type: Boolean,
+    default: true,
+  },
   emptyState: {
     type: String,
     default: '',
   },
   selectedLabelPreview: {
+    type: String,
+    default: '',
+  },
+  createOptionLabel: {
     type: String,
     default: '',
   },
@@ -43,7 +55,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['select', 'search']);
+const emit = defineEmits(['create', 'select', 'search']);
 
 const { t } = useI18n();
 
@@ -66,22 +78,30 @@ const onInputSearch = event => {
   emit('search', event.target.value);
 };
 
+const createOption = () => emit('create', searchValue.value.trim());
+
 defineExpose({
   focus: () => searchInput.value?.focus(),
 });
 </script>
 
 <template>
-  <Teleport :to="teleportTarget">
+  <Teleport :to="teleportTarget" :disabled="inline">
     <div
       v-show="open"
       data-modal-safe-interaction
-      class="dashboard-combobox-dropdown fixed z-[170] flex flex-col overflow-hidden rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
+      class="dashboard-combobox-dropdown flex flex-col overflow-hidden border border-n-weak bg-n-solid-2"
+      :class="
+        inline
+          ? 'absolute left-0 top-full z-30 mt-1 max-h-64 w-full rounded-md p-1 shadow-lg'
+          : 'fixed z-[170] rounded-lg bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]'
+      "
       :style="[
-        props.dropdownStyle,
+        inline ? undefined : props.dropdownStyle,
         {
-          '--combobox-dropdown-max-height':
-            props.dropdownStyle.maxHeight || '320px',
+          '--combobox-dropdown-max-height': inline
+            ? '256px'
+            : props.dropdownStyle.maxHeight || '320px',
         },
       ]"
       @mousedown.stop
@@ -96,7 +116,7 @@ defineExpose({
       >
         {{ selectedLabelPreview }}
       </div>
-      <div class="shrink-0 border-b border-n-weak pb-2">
+      <div v-if="showSearchInput" class="shrink-0 border-b border-n-weak pb-2">
         <div class="relative flex items-center">
           <span
             class="pointer-events-none absolute inset-y-0 right-3 left-auto my-auto inline-flex size-4 items-center justify-center i-lucide-search text-n-slate-10 rtl:right-auto rtl:left-3"
@@ -179,7 +199,33 @@ defineExpose({
           />
         </li>
         <li
-          v-if="options.length === 0"
+          v-if="searchValue.trim() && createOptionLabel"
+          data-testid="combobox-create-option"
+          class="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-n-slate-11 transition-colors duration-150 hover:bg-n-alpha-2 hover:text-n-slate-12"
+          role="option"
+          tabindex="0"
+          :aria-label="`${createOptionLabel} ${searchValue.trim()}`"
+          aria-selected="false"
+          @click="createOption"
+          @keydown.enter.prevent="createOption"
+          @keydown.space.prevent="createOption"
+        >
+          <span
+            class="i-lucide-plus-circle size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span class="flex min-w-0 flex-1 items-center gap-1 text-left">
+            <span class="shrink-0">{{ createOptionLabel }}</span>
+            <span
+              data-testid="combobox-create-option-value"
+              class="min-w-0 truncate font-medium text-n-blue-11"
+            >
+              {{ searchValue.trim() }}
+            </span>
+          </span>
+        </li>
+        <li
+          v-else-if="options.length === 0"
           class="px-3 py-3 text-sm text-n-slate-11"
         >
           {{ emptyState || t('COMBOBOX.EMPTY_STATE') }}

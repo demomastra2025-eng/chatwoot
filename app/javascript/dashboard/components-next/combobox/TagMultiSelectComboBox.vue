@@ -35,6 +35,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  createOptionLabel: {
+    type: String,
+    default: '',
+  },
   message: {
     type: String,
     default: '',
@@ -70,7 +74,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['open', 'search', 'update:modelValue']);
+const emit = defineEmits(['create', 'open', 'search', 'update:modelValue']);
 
 const { t } = useI18n();
 const attrs = useAttrs();
@@ -194,6 +198,12 @@ const removeTag = value => {
     selectedValues.value.splice(index, 1);
     emit('update:modelValue', selectedValues.value);
   }
+};
+
+const createOption = value => {
+  open.value = false;
+  search.value = '';
+  emit('create', value);
 };
 
 const toggleDropdown = () => {
@@ -329,9 +339,11 @@ defineExpose({
         :search-placeholder="searchPlaceholder"
         :empty-state="emptyState"
         :selected-label-preview="selectedLabelPreview"
+        :create-option-label="createOptionLabel"
         multiple
         :selected-values="selectedValues"
         :dropdown-style="dropdownStyle"
+        @create="createOption"
         @search="emit('search', $event)"
         @select="toggleOption"
       />

@@ -8,7 +8,8 @@
     "EMPTY_SEARCH_RESULTS": "No items found for the search term `{searchTerm}`",
     "EMPTY_STATE": "Ештеңе табылмады.",
     "SEARCH_PLACEHOLDER": "Іздеу...",
-    "MORE": "+{count} more"
+    "MORE": "+{count} more",
+    "OPEN_IN_NEW_TAB": "Жаңа қойындыда ашу"
   },
   "DROPDOWN_MENU": {
     "SEARCH_PLACEHOLDER": "Іздеу...",
