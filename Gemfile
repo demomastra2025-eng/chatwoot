@@ -195,7 +195,6 @@ gem 'ruby-openai'
 gem 'ruby_llm', '~> 1.16'
 gem 'ruby_llm-schema', '~> 0.4'
 gem 'ruby_llm-mcp', git: 'https://github.com/patvice/ruby_llm-mcp', ref: '4d10851994029c7d7f3246ad517b2eef483ac810'
-gem 'ruby_llm-tribunal', '~> 0.1', require: false
 
 gem 'cld3', '~> 3.7'
 

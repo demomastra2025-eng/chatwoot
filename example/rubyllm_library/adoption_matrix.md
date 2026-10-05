@@ -31,12 +31,6 @@
 - **Адаптировать в OneLink:** account-scoped MCP servers, production-safe HTTP transports, stdio allowlist, secret redaction, tool access UI.
 - **Не делать:** включать arbitrary stdio MCP в production без allowlist.
 
-### `ruby_llm-tribunal`
-
-- **Брать как основу:** datasets, judges, red-team/eval runner concepts.
-- **Адаптировать в OneLink:** Captain/AI Voice eval packs, brand voice judge, tool-choice judge, mutation safety judge, CI gates.
-- **Не делать:** заменять RSpec; evals дополняют тесты, а не заменяют runtime specs.
-
 ### `opentelemetry-instrumentation-ruby_llm`
 
 - **Брать как основу:** `gen_ai.*` semantic span attributes, chat/tool/embedding span shape, content capture off by default, per-chat custom attributes.
@@ -54,7 +48,7 @@
 - Runtime: `ruby_llm` + OneLink `Llm::ChatClient` / Captain runtime.
 - Structured output: `ruby_llm-schema` + OneLink semantic policy.
 - Tools: OneLink native tools + MCP where useful.
-- Quality: `ruby_llm-tribunal` evals + RSpec.
+- Quality: RSpec + observability release checks.
 - Observability: OTel GenAI-compatible spans + persisted AI event summaries.
 - Operations: alerts, cost/latency/error dashboards, run trace UI.
 
