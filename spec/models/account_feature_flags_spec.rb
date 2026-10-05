@@ -5,38 +5,38 @@ RSpec.describe Account, type: :model do
     let(:account) { create(:account) }
 
     it 'preserves the legacy bitmask position for advanced_assignment' do
-      account.disable_features!('scheduling', 'scheduling_finance')
+      account.disable_features!('scheduling', 'crm_deals')
       account.update_column(:feature_flags, 1 << 62)
 
       account.reload
 
       expect(account.feature_enabled?('advanced_assignment')).to be(true)
       expect(account.feature_enabled?('scheduling')).to be(false)
-      expect(account.feature_enabled?('scheduling_finance')).to be(false)
+      expect(account.feature_enabled?('crm_deals')).to be(false)
     end
 
-    it 'persists scheduling_finance in the overflow store' do
-      expect { account.enable_features!('scheduling_finance') }.not_to raise_error
+    it 'persists crm_deals in the overflow store' do
+      expect { account.enable_features!('crm_deals') }.not_to raise_error
 
-      expect(account.reload.feature_enabled?('scheduling_finance')).to be(true)
-      expect(account.selected_feature_flags).to include(:scheduling_finance)
+      expect(account.reload.feature_enabled?('crm_deals')).to be(true)
+      expect(account.selected_feature_flags).to include(:crm_deals)
     end
 
     it 'supports bulk selected_feature_flags updates across bitmask and overflow features' do
-      account.selected_feature_flags = %i[crm scheduling scheduling_finance]
+      account.selected_feature_flags = %i[crm scheduling crm_deals]
       account.save!
 
       account.reload
 
       expect(account.feature_enabled?('crm')).to be(true)
       expect(account.feature_enabled?('scheduling')).to be(true)
-      expect(account.feature_enabled?('scheduling_finance')).to be(true)
+      expect(account.feature_enabled?('crm_deals')).to be(true)
     end
 
     it 'keeps new scheduling flags out of the legacy bitmask map' do
       expect(Featurable::FEATURE_POSITIONS).not_to have_key('scheduling')
-      expect(Featurable::FEATURE_POSITIONS).not_to have_key('scheduling_finance')
-      expect(Featurable::OVERFLOW_FEATURE_NAMES).to include('scheduling', 'scheduling_finance')
+      expect(Featurable::FEATURE_POSITIONS).not_to have_key('crm_deals')
+      expect(Featurable::OVERFLOW_FEATURE_NAMES).to include('scheduling', 'crm_deals')
     end
 
     it 'supports explicit legacy setters used by enterprise extensions' do

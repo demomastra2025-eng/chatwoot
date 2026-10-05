@@ -1752,19 +1752,6 @@ class Captain::ToolRegistry
           requires_confirmation: true
         ),
         definition(
-          id: 'add_appointment_payment',
-          title: 'Add Appointment Payment',
-          description: 'Add a payment to the appointment linked to the current conversation',
-          group_name: 'Scheduling',
-          icon: 'credit-card',
-          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
-          assistant_tool_class: Captain::Tools::Copilot::AddAppointmentPaymentService,
-          required_features: %w[scheduling scheduling_finance],
-          risk_level: 'high',
-          requires_confirmation: true
-        ),
-
-        definition(
           id: 'list_macros',
           title: 'List Macros',
           description: 'List account macros with safe metadata and optionally redacted action details',

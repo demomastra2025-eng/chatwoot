@@ -15,7 +15,7 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
   end
 
   before do
-    account.enable_features!('scheduling', 'scheduling_finance')
+    account.enable_features!('scheduling')
   end
 
   def response_body

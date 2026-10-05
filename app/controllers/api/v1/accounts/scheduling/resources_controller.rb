@@ -50,16 +50,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :color,
         :timezone,
         :slot_duration_min,
-        :compensation_type,
-        :compensation_value,
-        :compensation_percent,
         :active,
         :user_id,
         custom_attributes: {}
       ),
-      :slot_duration_min,
-      :compensation_value,
-      :compensation_percent
+      :slot_duration_min
     )
   end
 
@@ -123,7 +118,6 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         {
           id: appointment.id,
           status: appointment.status,
-          payment_status: appointment.payment_status,
           starts_at: appointment.starts_at&.iso8601,
           ends_at: appointment.ends_at&.iso8601
         }

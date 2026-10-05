@@ -36,18 +36,8 @@ class AutomationRules::AppointmentActionService
   end
 
   def cancel_appointment_payment(_action_params)
-    unless @account.feature_enabled?('scheduling_finance')
-      raise Scheduling::Error.new(
-        code: 'FEATURE_DISABLED',
-        message: 'Scheduling finance is not enabled for this account',
-        status: :forbidden
-      )
-    end
-
-    @appointment = Scheduling::Appointments::FinanceSyncService.new(
-      appointment: @appointment,
-      actor: nil
-    ).cancel_all!
+    # Retain old stored actions as no-ops so editing or running those rules is safe.
+    nil
   end
 
   def apply_touch_plan(action_params)

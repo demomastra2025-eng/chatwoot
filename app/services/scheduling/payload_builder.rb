@@ -1,7 +1,7 @@
 module Scheduling::PayloadBuilder
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil, dialog_context: nil, medelement_cancellation_modes: nil)
+  def appointment(appointment, dialog_context: nil, medelement_cancellation_modes: nil)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
     legacy_chat_conversation = conversation || appointment_chat_conversation(appointment, dialog_context)
@@ -55,24 +55,11 @@ module Scheduling::PayloadBuilder
       external_ref: appointment.external_ref,
       idempotency_key: appointment.idempotency_key,
       service_amount: appointment.service_amount,
-      compensation_type_snapshot: appointment.compensation_type_snapshot,
-      compensation_value_snapshot: appointment.compensation_value_snapshot,
-      compensation_percent_snapshot: appointment.compensation_percent_snapshot,
-      prepaid_amount: appointment.prepaid_amount,
-      prepaid_payment_method: appointment.prepaid_payment_method,
-      settlement_amount: appointment.settlement_amount,
-      settlement_payment_method: appointment.settlement_payment_method,
-      payment_status: appointment.payment_status,
       custom_attributes: appointment.custom_attributes,
-      payments: Array(payments || appointment.try(:payments)).map { |item| payment(item) },
-      expense: if expense_record
-                 expense(expense_record)
-               else
-                 (appointment.try(:expense).present? ? expense(appointment.expense) : nil)
-               end,
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
-    }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).tap do |payload|
+    }.merge(appointment_compatibility_fields)
+      .merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment)).tap do |payload|
       receipt = Integrations::Medelement::ProviderCommandReceiptBuilder.build(
         command: appointment.medelement_provider_command_receipt
       )
@@ -171,10 +158,8 @@ module Scheduling::PayloadBuilder
       workday_overrides: payload[:workday_overrides].map { |item| workday_override(item) },
       time_offs: payload[:time_offs].map { |item| time_off(item) },
       appointments: appointments(payload[:appointments]),
-      payments: payload[:payments].map { |item| payment(item) },
-      expenses: payload[:expenses].map { |item| expense(item) },
       slots: payload[:slots]
-    }
+    }.merge(calendar_compatibility_fields)
   end
 
   def contact(contact)
@@ -196,21 +181,6 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def expense(expense)
-    {
-      id: expense.id,
-      account_id: expense.account_id,
-      appointment_id: expense.appointment_id,
-      resource_id: expense.resource_id,
-      amount: expense.amount,
-      status: expense.status,
-      paid_at: expense.paid_at&.iso8601,
-      paid_by_id: expense.paid_by_id,
-      created_at: expense.created_at&.iso8601,
-      updated_at: expense.updated_at&.iso8601
-    }
-  end
-
   def holiday(holiday)
     {
       id: holiday.id,
@@ -222,20 +192,6 @@ module Scheduling::PayloadBuilder
       custom_attributes: holiday.custom_attributes,
       created_at: holiday.created_at&.iso8601,
       updated_at: holiday.updated_at&.iso8601
-    }
-  end
-
-  def payment(payment)
-    {
-      id: payment.id,
-      account_id: payment.account_id,
-      appointment_id: payment.appointment_id,
-      recorded_by_id: payment.recorded_by_id,
-      amount: payment.amount,
-      payment_method: payment.payment_method,
-      payment_kind: payment.payment_kind,
-      created_at: payment.created_at&.iso8601,
-      updated_at: payment.updated_at&.iso8601
     }
   end
 
@@ -251,14 +207,11 @@ module Scheduling::PayloadBuilder
       color: resource.color,
       timezone: resource.timezone,
       slot_duration_min: resource.slot_duration_min,
-      compensation_type: resource.compensation_type,
-      compensation_value: resource.compensation_value,
-      compensation_percent: resource.compensation_percent,
       active: resource.active,
       custom_attributes: resource.custom_attributes,
       created_at: resource.created_at&.iso8601,
       updated_at: resource.updated_at&.iso8601
-    }
+    }.merge(compensation_compatibility_fields)
   end
 
   def service(service)
@@ -287,13 +240,42 @@ module Scheduling::PayloadBuilder
       service_id: price.service_id,
       resource_id: price.resource_id,
       price: price.price,
-      compensation_type: price.compensation_type,
-      compensation_value: price.compensation_value,
-      compensation_percent: price.compensation_percent,
       active: price.active,
       created_at: price.created_at&.iso8601,
       updated_at: price.updated_at&.iso8601
+    }.merge(compensation_compatibility_fields)
+  end
+
+  def appointment_compatibility_fields
+    return {} unless Scheduling::FinanceApiCompatibility.active?
+
+    {
+      compensation_type_snapshot: nil,
+      compensation_value_snapshot: 0,
+      compensation_percent_snapshot: 0,
+      prepaid_amount: 0,
+      prepaid_payment_method: nil,
+      settlement_amount: 0,
+      settlement_payment_method: nil,
+      payments: [],
+      expense: nil
     }
+  end
+
+  def compensation_compatibility_fields
+    return {} unless Scheduling::FinanceApiCompatibility.active?
+
+    {
+      compensation_type: nil,
+      compensation_value: 0,
+      compensation_percent: 0
+    }
+  end
+
+  def calendar_compatibility_fields
+    return {} unless Scheduling::FinanceApiCompatibility.active?
+
+    { payments: [], expenses: [] }
   end
 
   def time_off(time_off)

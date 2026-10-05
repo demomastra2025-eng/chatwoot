@@ -58,21 +58,6 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ).perform
   end
 
-  def add_payment_to_current_appointment(payment_method:, amount: nil)
-    ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    ensure_feature_enabled!('scheduling_finance', 'Scheduling finance is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
-    raise ArgumentError, 'payment_method is required' if payment_method.blank?
-
-    ::Scheduling::Appointments::FinanceSyncService.new(
-      appointment: current_appointment,
-      actor: actor
-    ).add_payment!(
-      amount: amount,
-      payment_method: payment_method
-    )
-  end
-
   private
 
   def persist_creation!(create_params)

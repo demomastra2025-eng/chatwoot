@@ -349,6 +349,15 @@ RSpec.describe 'MedElement boundary for local appointment statuses' do
         compensation_value_snapshot: 6_000,
         compensation_percent_snapshot: 0
       )
+      create(
+        :scheduling_payment,
+        account: appointment.account,
+        appointment: appointment,
+        amount: 20_000,
+        payment_method: 'cash',
+        payment_kind: 'adjustment',
+        recorded_by: actor
+      )
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
       appointment.reload
     end

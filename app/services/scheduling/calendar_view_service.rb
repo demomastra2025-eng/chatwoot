@@ -7,7 +7,6 @@ class Scheduling::CalendarViewService
     @requested_resource_ids = Scheduling::IdListParamParser.parse(options[:resource_ids], field_name: 'resource_ids')
     filters = options.fetch(:filters, {})
     @statuses = Array(filters[:statuses]).compact_blank
-    @payment_statuses = Array(filters[:payment_statuses]).compact_blank
     @include_slots = ActiveModel::Type::Boolean.new.cast(options[:include_slots])
     @duration_min = options[:duration_min].presence&.to_i
     @custom_attribute_filters = options[:custom_attribute_filters]
@@ -27,8 +26,8 @@ class Scheduling::CalendarViewService
       workday_overrides: workday_overrides,
       time_offs: time_offs,
       appointments: appointments,
-      payments: payments,
-      expenses: expenses,
+      payments: [],
+      expenses: [],
       slots: slots
     }
   end
@@ -39,7 +38,6 @@ class Scheduling::CalendarViewService
     @appointments ||= begin
       scope = appointment_custom_field_filter_set.apply(base_appointments_scope)
       scope = scope.where(status: @statuses) if @statuses.present?
-      scope = scope.where(payment_status: @payment_statuses) if @payment_statuses.present?
       scope.to_a
     end
   end
@@ -48,24 +46,8 @@ class Scheduling::CalendarViewService
     @break_rules ||= account.scheduling_break_rules.where(resource_id: resource_ids).ordered.to_a
   end
 
-  def expenses
-    @expenses ||= if appointment_ids.empty?
-                    []
-                  else
-                    account.scheduling_expenses.where(appointment_id: appointment_ids).ordered.to_a
-                  end
-  end
-
   def holidays
     @holidays ||= account.scheduling_holidays.ordered.to_a
-  end
-
-  def payments
-    @payments ||= if appointment_ids.empty?
-                    []
-                  else
-                    account.scheduling_payments.where(appointment_id: appointment_ids).ordered.to_a
-                  end
   end
 
   def resource_ids
@@ -113,10 +95,6 @@ class Scheduling::CalendarViewService
 
   attr_reader :account
 
-  def appointment_ids
-    @appointment_ids ||= appointments.map(&:id)
-  end
-
   def availability_for(resource)
     Scheduling::AvailabilityService.new(
       resource: resource,
@@ -135,7 +113,7 @@ class Scheduling::CalendarViewService
 
   def base_appointments_scope
     @base_appointments_scope ||= account.scheduling_appointments
-                                        .includes(:expense, :payments, :contact, :resource,
+                                        .includes(:contact, :resource,
                                                   conversation: [:communication_thread, :inbox])
                                         .where(resource_id: resource_ids)
                                         .where('starts_at < ? AND ends_at > ?', @to, @from)

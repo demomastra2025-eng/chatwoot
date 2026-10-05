@@ -3,7 +3,7 @@ require 'rails_helper'
 RSpec.describe Captain::ToolCatalog do
   let(:account) do
     create(:account).tap do |account|
-      account.enable_features!('crm_deals', 'crm_tasks', 'scheduling', 'scheduling_finance')
+      account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
     end
   end
   let(:assistant) { create(:captain_assistant, account: account) }
@@ -404,6 +404,4 @@ RSpec.describe Captain::ToolCatalog do
       )
     end
   end
-
-
 end

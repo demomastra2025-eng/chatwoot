@@ -3,18 +3,17 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     'search_appointments'
   end
 
-  description 'Search appointments by client, exact normalized IIN, status, payment status, contact, or specialist'
+  description 'Search appointments by client, exact normalized IIN, status, contact, or specialist'
   param :client_name, type: :string, desc: 'Client name query', required: false
   param :client_identifier, type: :string, desc: 'Exact client IIN; formatting characters are ignored', required: false
   param :status, type: :string, desc: 'Appointment status: scheduled, confirmed, completed, cancelled, or no_show', required: false
-  param :payment_status, type: :string, desc: 'Payment status: awaiting_payment, prepaid, paid, or cancelled', required: false
   param :contact_id, type: :number, desc: 'Contact ID', required: false
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: false
   param :from, type: :string, desc: 'Start of range datetime', required: false
   param :to, type: :string, desc: 'End of range datetime', required: false
   param :limit, type: :number, desc: 'Maximum number of appointments to return', required: false
 
-  def execute(client_name: nil, client_identifier: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil,
+  def execute(client_name: nil, client_identifier: nil, status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil,
               limit: nil)
     contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
     resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
@@ -29,7 +28,6 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     appointments = appointments.where(contact_id: contact_id) if contact_id.present?
     appointments = appointments.where(resource_id: resource_id) if resource_id.present?
     appointments = appointments.where(status: status) if status.present?
-    appointments = appointments.where(payment_status: payment_status) if payment_status.present?
     appointments = appointments.where('LOWER(client_name) ILIKE ?', "%#{client_name.to_s.downcase}%") if client_name.present?
     appointments = appointments.where(normalized_identifier_condition(client_identifier)) if client_identifier.present?
 
@@ -46,7 +44,6 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
         client_name: client_name,
         client_identifier_match: client_identifier.present? ? 'exact_normalized' : nil,
         status: status,
-        payment_status: payment_status,
         contact_id: contact_id,
         resource_id: resource_id,
         from: from,

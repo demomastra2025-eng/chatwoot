@@ -353,9 +353,7 @@ class AutomationRule < ApplicationRecord
   end
 
   def appointment_actions_attributes
-    actions = APPOINTMENT_ACTION_ATTRIBUTES.dup
-    actions.delete('cancel_appointment_payment') unless account&.feature_enabled?('scheduling_finance')
-    actions
+    APPOINTMENT_ACTION_ATTRIBUTES
   end
 
   def crm_actions_attributes

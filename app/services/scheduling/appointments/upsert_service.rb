@@ -81,6 +81,7 @@ class Scheduling::Appointments::UpsertService
     ApplicationRecord.transaction do
       verify_provider_before_cancellation!
       verify_provider_removal_not_pending!
+      was_local_medelement_cancellation = locally_cancelled_medelement_appointment?
       apply_attributes!
       Integrations::Medelement::PatientContactBinding.new(appointment: appointment).prepare!(allow_rebind: true)
       Integrations::Medelement::AppointmentPatientIdentity.ensure_write_target_unchanged!(appointment)
@@ -94,8 +95,18 @@ class Scheduling::Appointments::UpsertService
       notify_assignment!(new_record: new_record)
       auto_apply_default_touch_plan! if new_record
       sync_or_cancel_related_touches!
-      Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
+      sync_restored_local_medelement_expense!(was_local_cancellation: was_local_medelement_cancellation)
     end
+  end
+
+  def locally_cancelled_medelement_appointment?
+    appointment.status == 'cancelled' && Integrations::Medelement::LocalCancellation.marked?(appointment)
+  end
+
+  def sync_restored_local_medelement_expense!(was_local_cancellation:)
+    return unless was_local_cancellation && appointment.status != 'cancelled' && appointment.payment_status == 'paid'
+
+    Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync_expense_only!
   end
 
   def verify_provider_before_cancellation!
@@ -186,18 +197,15 @@ class Scheduling::Appointments::UpsertService
       services: services,
       resolved_price: service_snapshot[:resolved_price]
     )
-    prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
-    prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
-    settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
     client_identity = resolve_client_identity(contact, resource)
     resolve_appointment_patient_identity!(contact, resource, client_identity)
 
     requested_status = resolve_string(:status, current: appointment.status.presence || 'scheduled')
-    requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
-    if requested_status == 'cancelled' && !params.key?(:payment_status)
+    requested_payment_status = appointment.payment_status.presence || 'awaiting_payment'
+    if requested_status == 'cancelled'
       requested_payment_status = 'cancelled'
     elsif requested_status != 'cancelled' && appointment.status == 'cancelled' &&
-          !params.key?(:payment_status) && Integrations::Medelement::LocalCancellation.marked?(appointment)
+          Integrations::Medelement::LocalCancellation.marked?(appointment)
       requested_payment_status = Integrations::Medelement::LocalCancellation.restored_payment_status(appointment)
     end
 
@@ -231,29 +239,9 @@ class Scheduling::Appointments::UpsertService
       service_type_snapshot: service_snapshot[:service_type_snapshot],
       service_duration_min_snapshot: service_snapshot[:service_duration_min_snapshot],
       service_amount: service_amount,
-      compensation_type_snapshot: service_snapshot[:compensation_type_snapshot],
-      compensation_value_snapshot: service_snapshot[:compensation_value_snapshot],
-      compensation_percent_snapshot: service_snapshot[:compensation_percent_snapshot],
-      prepaid_amount: prepaid_amount,
-      prepaid_payment_method: prepaid_payment_method,
-      settlement_amount: settlement_amount,
-      settlement_payment_method: resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method),
-      payment_status: derive_payment_status(
-        service_amount: service_amount,
-        prepaid_amount: prepaid_amount,
-        settlement_amount: settlement_amount,
-        requested_status: requested_payment_status
-      ),
+      payment_status: requested_payment_status,
       custom_attributes: resolve_custom_attributes(resource: resource, services: services)
     )
-  end
-
-  def resolve_prepaid_payment_method(prepaid_amount)
-    return nil if prepaid_amount.to_i <= 0
-
-    resolve_optional_text(:prepaid_payment_method, current: appointment.prepaid_payment_method) ||
-      resolve_optional_text(:settlement_payment_method, current: appointment.settlement_payment_method) ||
-      'cash'
   end
 
   def availability_service
@@ -273,16 +261,6 @@ class Scheduling::Appointments::UpsertService
                            .to_a,
       ignore_appointment_id: appointment.id
     )
-  end
-
-  def derive_payment_status(service_amount:, prepaid_amount:, settlement_amount:, requested_status:)
-    return 'cancelled' if requested_status == 'cancelled'
-
-    total_received = prepaid_amount.to_i + settlement_amount.to_i
-    return 'awaiting_payment' if total_received <= 0
-    return 'paid' if service_amount.to_i <= 0 || total_received >= service_amount.to_i
-
-    'prepaid'
   end
 
   def resolve_client_birth_date(contact)
@@ -933,26 +911,19 @@ class Scheduling::Appointments::UpsertService
           current: appointment.service_name_snapshot
         ),
         service_type_snapshot: nil,
-        service_duration_min_snapshot: nil,
-        compensation_type_snapshot: resource.compensation_type,
-        compensation_value_snapshot: resource.compensation_value,
-        compensation_percent_snapshot: resource.compensation_percent
+        service_duration_min_snapshot: nil
       }
     end
 
     return resolve_single_service_snapshot(resource: resource, service: services.first) if services.one?
 
     items = services.map { |service| resolve_single_service_snapshot(resource: resource, service: service) }
-    total_expense = items.sum { |item| compute_snapshot_expense_amount(item) }
 
     {
       resolved_price: items.sum { |item| item[:resolved_price].to_i },
       service_name_snapshot: services.map(&:name).join(', '),
       service_type_snapshot: services.map(&:service_type).filter_map(&:presence).uniq.join(', ').presence,
-      service_duration_min_snapshot: services.sum { |service| service.duration_min.to_i },
-      compensation_type_snapshot: 'fixed',
-      compensation_value_snapshot: total_expense,
-      compensation_percent_snapshot: 0
+      service_duration_min_snapshot: services.sum { |service| service.duration_min.to_i }
     }
   end
 
@@ -972,47 +943,12 @@ class Scheduling::Appointments::UpsertService
       )
     end
 
-    compensation_type = if price&.active? && price.price.to_i.positive?
-                          price.compensation_type
-                        else
-                          resource.compensation_type
-                        end
-    compensation_value = if price&.active? && price.price.to_i.positive?
-                           price.compensation_value
-                         else
-                           resource.compensation_value
-                         end
-    compensation_percent = if price&.active? && price.price.to_i.positive?
-                             price.compensation_percent
-                           else
-                             resource.compensation_percent
-                           end
-
     {
       resolved_price: resolved_price,
       service_name_snapshot: service.name,
       service_type_snapshot: service.service_type,
-      service_duration_min_snapshot: service.duration_min,
-      compensation_type_snapshot: compensation_type,
-      compensation_value_snapshot: compensation_value,
-      compensation_percent_snapshot: compensation_percent
+      service_duration_min_snapshot: service.duration_min
     }
-  end
-
-  def compute_snapshot_expense_amount(snapshot)
-    service_amount = snapshot[:resolved_price].to_i
-
-    case snapshot[:compensation_type_snapshot]
-    when 'fixed'
-      snapshot[:compensation_value_snapshot].to_i
-    when 'fixed_plus_percent'
-      snapshot[:compensation_value_snapshot].to_i +
-        ((service_amount * snapshot[:compensation_percent_snapshot].to_i) / 100.0).round
-    when 'percent'
-      ((service_amount * snapshot[:compensation_value_snapshot].to_i) / 100.0).round
-    else
-      0
-    end
   end
 
   def resolve_string(key, current:)

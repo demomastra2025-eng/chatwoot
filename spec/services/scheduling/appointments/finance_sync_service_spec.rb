@@ -36,57 +36,57 @@ RSpec.describe Scheduling::Appointments::FinanceSyncService do
     expect(appointment.reload.expense.amount).to eq(7_000)
   end
 
-  it 'refuses to mark an appointment as paid when required managed fields are missing' do
-    create(
-      :crm_field_definition,
+  it 'cleans up the unpaid expense after cancellation without reconciling totals above the service price' do
+    actor = create(:user, account: account)
+    appointment.update!(settlement_amount: 20_000, payment_status: 'paid')
+    manual_payment = create(
+      :scheduling_payment,
       account: account,
-      entity_kind: 'appointment',
-      key: 'visit_reason',
-      label: 'Visit reason',
-      required: true
+      appointment: appointment,
+      amount: 5_000,
+      payment_kind: 'payment',
+      recorded_by: actor
     )
-    appointment.update!(
-      payment_status: 'awaiting_payment',
-      settlement_amount: 0,
-      settlement_payment_method: nil,
-      custom_attributes: {}
+    adjustment = create(
+      :scheduling_payment,
+      account: account,
+      appointment: appointment,
+      amount: 15_000,
+      payment_kind: 'adjustment',
+      recorded_by: actor
     )
+    expense = create(:scheduling_expense, account: account, appointment: appointment, resource: resource)
+    payment_audit = appointment.payments.order(:id).pluck(:id, :amount, :payment_kind, :recorded_by_id)
+    appointment.update!(service_amount: 15_000, payment_status: 'cancelled')
 
-    expect do
-      service_object.add_payment!(amount: 20_000, payment_method: 'cash')
-    end.to raise_error(
-      Scheduling::Error,
-      'Complete required fields before marking the appointment as paid: Visit reason'
-    )
+    expect { service_object.sync! }.not_to raise_error
 
-    appointment.reload
-    expect(appointment.payment_status).to eq('awaiting_payment')
-    expect(appointment.payments).to be_empty
-    expect(appointment.expense).to be_nil
+    expect(appointment.reload).to have_attributes(service_amount: 15_000, payment_status: 'cancelled', expense: nil)
+    expect(appointment.payments.order(:id)).to eq([manual_payment, adjustment])
+    expect(appointment.payments.order(:id).pluck(:id, :amount, :payment_kind, :recorded_by_id)).to eq(payment_audit)
+    expect(Scheduling::Expense.exists?(expense.id)).to be(false)
   end
 
-  it 'does not require booking intake-only fields when marking an appointment as paid' do
-    create(
-      :crm_field_definition,
+  it 'cleans up the unpaid expense after cancellation without rejecting settlement below manual payments' do
+    actor = create(:user, account: account)
+    appointment.update!(settlement_amount: 3_000, payment_status: 'paid')
+    manual_payment = create(
+      :scheduling_payment,
       account: account,
-      entity_kind: 'appointment',
-      key: 'triage_note',
-      label: 'Triage note',
-      required: true,
-      rules: { contexts: ['booking_intake'] }
+      appointment: appointment,
+      amount: 5_000,
+      payment_kind: 'payment',
+      recorded_by: actor
     )
-    appointment.update!(
-      payment_status: 'awaiting_payment',
-      settlement_amount: 0,
-      settlement_payment_method: nil,
-      custom_attributes: {}
-    )
+    expense = create(:scheduling_expense, account: account, appointment: appointment, resource: resource)
+    payment_audit = appointment.payments.order(:id).pluck(:id, :amount, :payment_kind, :recorded_by_id)
+    appointment.update!(payment_status: 'cancelled')
 
-    expect do
-      service_object.add_payment!(amount: 20_000, payment_method: 'cash')
-    end.not_to raise_error
+    expect { service_object.sync! }.not_to raise_error
 
-    appointment.reload
-    expect(appointment.payment_status).to eq('paid')
+    expect(appointment.reload).to have_attributes(service_amount: 20_000, settlement_amount: 3_000, payment_status: 'cancelled', expense: nil)
+    expect(appointment.payments).to eq([manual_payment])
+    expect(appointment.payments.order(:id).pluck(:id, :amount, :payment_kind, :recorded_by_id)).to eq(payment_audit)
+    expect(Scheduling::Expense.exists?(expense.id)).to be(false)
   end
 end

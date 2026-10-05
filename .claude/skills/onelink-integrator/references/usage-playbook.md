@@ -42,7 +42,7 @@ Use when the user knows the business object but not the exact route family.
 
 Example:
 
-`/onelink-integrator identify the likely One Link API path family for appointment payments and tell me what to confirm in the current OpenAPI reference`
+`/onelink-integrator identify the likely One Link API path family for checking appointment availability and tell me what to confirm in the current OpenAPI reference`
 
 ## Recommended Answer Shape
 

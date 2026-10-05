@@ -190,11 +190,12 @@ RSpec.describe SchedulingAutomationRuleListener do
       expect(appointment.reload.status).to eq('confirmed')
     end
 
-    it 'applies native appointment payment cancellation actions without looping' do
-      account.enable_features!('scheduling_finance')
+    it 'keeps old appointment payment cancellation actions as a no-op' do
       appointment.update!(
         prepaid_amount: 3_000,
         prepaid_payment_method: 'cash',
+        settlement_amount: 2_000,
+        settlement_payment_method: 'cash',
         payment_status: 'prepaid'
       )
 
@@ -225,10 +226,14 @@ RSpec.describe SchedulingAutomationRuleListener do
       end
 
       appointment.reload
-      expect(appointment.prepaid_amount).to eq(0)
-      expect(appointment.prepaid_payment_method).to be_nil
-      expect(appointment.payment_status).to eq('cancelled')
-      expect(appointment.status).to eq('scheduled')
+      expect(appointment).to have_attributes(
+        prepaid_amount: 3_000,
+        prepaid_payment_method: 'cash',
+        settlement_amount: 2_000,
+        settlement_payment_method: 'cash',
+        payment_status: 'prepaid',
+        status: 'scheduled'
+      )
     end
   end
 end

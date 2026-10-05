@@ -57,9 +57,6 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
     {
       resource: Current.account.scheduling_resources.not_deleted_from_scheduling.find(resource_id),
       price: normalize_integer_numeric_value(price, field_name: :price),
-      compensation_type: payload[:compensation_type],
-      compensation_value: normalize_integer_numeric_value(payload[:compensation_value], field_name: :compensation_value),
-      compensation_percent: normalize_integer_numeric_value(payload[:compensation_percent], field_name: :compensation_percent),
       active: active
     }
   end
@@ -71,8 +68,8 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
   def price_payloads
     return nil unless params.key?(:prices) || params.key?(:employee_prices)
 
-    raw_prices = params.permit(prices: [:resource_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active],
-                               employee_prices: [:employee_id, :price, :compensation_type, :compensation_value, :compensation_percent, :active])
+    raw_prices = params.permit(prices: [:resource_id, :price, :active],
+                               employee_prices: [:employee_id, :price, :active])
     raw_prices[:prices] || raw_prices[:employee_prices] || []
   end
 

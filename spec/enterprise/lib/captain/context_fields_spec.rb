@@ -103,7 +103,6 @@ RSpec.describe Captain::ContextFields do
         starts_at: '2026-03-29T10:00:00Z',
         ends_at: '2026-03-29T10:30:00Z',
         status: 'scheduled',
-        payment_status: 'awaiting_payment',
         service_name_snapshot: 'Consultation',
         custom_attributes: { visit_room: 'B12' }
       }
@@ -112,6 +111,34 @@ RSpec.describe Captain::ContextFields do
 
   before do
     account.enable_features!('crm_deals', 'crm_tasks', 'scheduling')
+  end
+
+  it 'keeps service amount but omits appointment finance fields from Captain context' do
+    appointment_keys = described_class::APPOINTMENT_STATE_ATTRIBUTES
+    appointment_field_keys = described_class::APPOINTMENT_FIELD_DEFINITIONS.pluck(:key)
+
+    expect(appointment_keys).to include(:service_amount)
+    expect(appointment_field_keys).to include('service_amount')
+    expect(appointment_keys).not_to include(
+      :payment_status,
+      :compensation_type_snapshot,
+      :compensation_value_snapshot,
+      :compensation_percent_snapshot,
+      :prepaid_amount,
+      :prepaid_payment_method,
+      :settlement_amount,
+      :settlement_payment_method
+    )
+    expect(appointment_field_keys).not_to include(
+      'payment_status',
+      'compensation_type_snapshot',
+      'compensation_value_snapshot',
+      'compensation_percent_snapshot',
+      'prepaid_amount',
+      'prepaid_payment_method',
+      'settlement_amount',
+      'settlement_payment_method'
+    )
   end
 
   describe '.prompt_state_for' do

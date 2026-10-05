@@ -228,21 +228,25 @@ RSpec.describe Reminder do
         'appointment.client_comment' => appointment.client_comment,
         'appointment.source' => appointment.source,
         'appointment.external_ref' => appointment.external_ref,
-        'appointment.payment_status' => appointment.payment_status,
         'appointment.service_name_snapshot' => appointment.service_name_snapshot,
         'appointment.service_type_snapshot' => appointment.service_type_snapshot,
         'appointment.service_duration_min_snapshot' => appointment.service_duration_min_snapshot,
         'appointment.service_amount' => appointment.service_amount,
-        'appointment.compensation_type_snapshot' => appointment.compensation_type_snapshot,
-        'appointment.compensation_value_snapshot' => appointment.compensation_value_snapshot,
-        'appointment.compensation_percent_snapshot' => appointment.compensation_percent_snapshot,
-        'appointment.prepaid_amount' => appointment.prepaid_amount,
-        'appointment.prepaid_payment_method' => appointment.prepaid_payment_method,
-        'appointment.settlement_amount' => appointment.settlement_amount,
-        'appointment.settlement_payment_method' => appointment.settlement_payment_method,
         'appointment.custom_attributes.visit_room' => 'B12'
       }
-      body = field_values.keys.map { |field_id| "#{field_id}: [#{field_id}](field://#{field_id})" }.join("\n")
+      hidden_finance_field_ids = %w[
+        appointment.payment_status
+        appointment.compensation_type_snapshot
+        appointment.compensation_value_snapshot
+        appointment.compensation_percent_snapshot
+        appointment.prepaid_amount
+        appointment.prepaid_payment_method
+        appointment.settlement_amount
+        appointment.settlement_payment_method
+      ]
+      body = (field_values.keys + hidden_finance_field_ids).map do |field_id|
+        "#{field_id}: [#{field_id}](field://#{field_id})"
+      end.join("\n")
       reminder = build(
         :reminder,
         account: account,
@@ -258,6 +262,9 @@ RSpec.describe Reminder do
 
       field_values.each do |field_id, value|
         expect(rendered).to include("#{field_id}: #{value}")
+      end
+      hidden_finance_field_ids.each do |field_id|
+        expect(rendered.lines.map(&:strip)).to include("#{field_id}:")
       end
     end
   end

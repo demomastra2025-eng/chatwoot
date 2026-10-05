@@ -33,7 +33,7 @@ RSpec.describe 'Scheduling appointments after the family number holder released 
   before do
     stub_request(:any, /evolution\.example\.com/).to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
     create(:scheduling_work_rule, resource: resource, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
-    account.enable_features!('scheduling', 'scheduling_finance')
+    account.enable_features!('scheduling')
     result = Integrations::Medelement::ResourceAvailabilityService::Result.new(status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil)
     allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new)
       .and_return(instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result))

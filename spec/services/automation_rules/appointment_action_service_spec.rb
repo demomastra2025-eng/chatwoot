@@ -53,11 +53,12 @@ RSpec.describe AutomationRules::AppointmentActionService do
     expect(appointment.reload.status).to eq('confirmed')
   end
 
-  it 'cancels payment via finance sync when the feature is enabled' do
-    account.enable_features!('scheduling_finance')
+  it 'keeps legacy appointment payment cancellation actions as a no-op' do
     appointment.update!(
       prepaid_amount: 4_000,
       prepaid_payment_method: 'cash',
+      settlement_amount: 1_000,
+      settlement_payment_method: 'cash',
       payment_status: 'prepaid'
     )
 
@@ -72,9 +73,13 @@ RSpec.describe AutomationRules::AppointmentActionService do
     described_class.new(cancel_payment_rule, account, appointment).perform
 
     appointment.reload
-    expect(appointment.prepaid_amount).to eq(0)
-    expect(appointment.prepaid_payment_method).to be_nil
-    expect(appointment.settlement_amount).to eq(0)
-    expect(appointment.payment_status).to eq('cancelled')
+    expect(appointment).to have_attributes(
+      prepaid_amount: 4_000,
+      prepaid_payment_method: 'cash',
+      settlement_amount: 1_000,
+      settlement_payment_method: 'cash',
+      payment_status: 'prepaid',
+      status: 'scheduled'
+    )
   end
 end

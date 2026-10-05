@@ -21,8 +21,7 @@ class Api::V1::Accounts::Scheduling::CalendarController < Api::V1::Accounts::Sch
 
   def appointment_filters
     {
-      statuses: parse_csv_ids(params[:status]),
-      payment_statuses: parse_csv_ids(params[:payment_status])
+      statuses: parse_csv_ids(params[:status])
     }
   end
 

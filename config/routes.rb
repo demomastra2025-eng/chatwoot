@@ -228,8 +228,6 @@ Rails.application.routes.draw do
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
               post :conversation, action: :create_conversation, on: :member
-              resources :payments, only: [:create], controller: 'appointment_payments'
-              delete :payments, on: :member, to: 'appointment_payments#destroy'
             end
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
@@ -240,15 +238,6 @@ Rails.application.routes.draw do
               post :reconcile, on: :member
               post :resolve_cancellation, on: :member
               post :retry, on: :member
-            end
-            resources :payments, only: [:index]
-            resources :expenses, only: [:index] do
-              collection do
-                post :pay_all
-              end
-              member do
-                post :pay
-              end
             end
             resources :holidays, only: [:index, :create, :update, :destroy]
             resources :workday_overrides, only: [:index, :create, :update, :destroy]

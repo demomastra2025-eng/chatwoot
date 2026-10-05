@@ -616,32 +616,8 @@ RSpec.describe AutomationRule do
       )
     end
 
-    it 'rejects appointment payment cancellation actions when scheduling finance is disabled' do
+    it 'keeps legacy appointment payment cancellation actions valid without a finance feature flag' do
       account.enable_features!('scheduling')
-      params[:event_name] = 'appointment_created'
-      params[:conditions] = [
-        {
-          attribute_key: 'status',
-          filter_operator: 'equal_to',
-          values: ['scheduled'],
-          query_operator: nil
-        }
-      ]
-      params[:actions] = [
-        {
-          action_name: :cancel_appointment_payment,
-          action_params: []
-        }
-      ]
-
-      rule = FactoryBot.build(:automation_rule, params)
-      expect(rule.valid?).to be false
-      expect(rule.errors.messages[:actions]).to eq(['Automation actions cancel_appointment_payment not supported.'])
-    end
-
-    it 'allows appointment payment cancellation actions when scheduling finance is enabled' do
-      account.enable_features!('scheduling')
-      account.enable_features!('scheduling_finance')
       params[:event_name] = 'appointment_created'
       params[:conditions] = [
         {

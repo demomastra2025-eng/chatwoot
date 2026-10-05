@@ -29,9 +29,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
   let(:path) { "/api/v1/accounts/#{account.id}/scheduling/appointments" }
 
+  around do |example|
+    with_modified_env(Scheduling::FinanceApiCompatibility::ENV_KEY.to_sym => nil) { example.run }
+  end
+
   before do
     work_rule
-    account.enable_features!('scheduling', 'scheduling_finance')
+    account.enable_features!('scheduling')
   end
 
   def response_body
@@ -797,34 +801,24 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'custom_attributes', 'services').pluck('id')).to eq([service.id])
   end
 
-  it 'creates an appointment with prepayment and defaults the payment method' do
+  it 'returns type-safe neutral compatibility fields without public payment status' do
     post path,
-         params: base_params.merge(prepaid_amount: 5_000),
-         headers: headers,
-         as: :json
-
-    expect(response).to have_http_status(:created)
-    expect(response_body.dig('payload', 'prepaid_amount')).to eq(5_000)
-    expect(response_body.dig('payload', 'prepaid_payment_method')).to eq('cash')
-    expect(response_body.dig('payload', 'payment_status')).to eq('prepaid')
-
-    appointment = Scheduling::Appointment.find(response_body.dig('payload', 'id'))
-    prepaid_payment = appointment.payments.find_by(payment_kind: 'prepaid')
-
-    expect(prepaid_payment).to be_present
-    expect(prepaid_payment.payment_method).to eq('cash')
-    expect(prepaid_payment.amount).to eq(5_000)
-  end
-
-  it 'normalizes decimal zero money amounts when creating an appointment' do
-    post path,
-         params: base_params.merge(service_amount: '20000.0', prepaid_amount: '5000.00'),
+         params: base_params.merge(service_amount: '20000.0'),
          headers: headers,
          as: :json
 
     expect(response).to have_http_status(:created)
     expect(response_body.dig('payload', 'service_amount')).to eq(20_000)
-    expect(response_body.dig('payload', 'prepaid_amount')).to eq(5_000)
+    expect(response_body.dig('payload', 'prepaid_amount')).to eq(0)
+    expect(response_body.dig('payload', 'settlement_amount')).to eq(0)
+    expect(response_body.dig('payload', 'prepaid_payment_method')).to be_nil
+    expect(response_body.dig('payload', 'settlement_payment_method')).to be_nil
+    expect(response_body.dig('payload', 'compensation_type_snapshot')).to be_nil
+    expect(response_body.dig('payload', 'compensation_value_snapshot')).to eq(0)
+    expect(response_body.dig('payload', 'compensation_percent_snapshot')).to eq(0)
+    expect(response_body.dig('payload', 'payments')).to eq([])
+    expect(response_body.dig('payload', 'expense')).to be_nil
+    expect(response_body.dig('payload')).not_to have_key('payment_status')
   end
 
   it 'rejects fractional money amounts when creating an appointment' do
@@ -1267,44 +1261,6 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.service_amount).to eq(0)
   end
 
-  it 'clears prepaid payment method and prepaid journal entry when prepayment is removed' do
-    appointment = create(
-      :scheduling_appointment,
-      resource: resource,
-      account: account,
-      contact: contact,
-      service: service,
-      prepaid_amount: 5_000,
-      prepaid_payment_method: 'bank_transfer',
-      payment_status: 'prepaid',
-      starts_at: booking_day,
-      ends_at: booking_day + 30.minutes
-    )
-    create(
-      :scheduling_payment,
-      appointment: appointment,
-      account: account,
-      amount: 5_000,
-      payment_method: 'bank_transfer',
-      payment_kind: 'prepaid'
-    )
-
-    put "#{path}/#{appointment.id}",
-        params: { prepaid_amount: 0 },
-        headers: headers,
-        as: :json
-
-    expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'prepaid_amount')).to eq(0)
-    expect(response_body.dig('payload', 'prepaid_payment_method')).to be_nil
-    expect(response_body.dig('payload', 'payment_status')).to eq('awaiting_payment')
-
-    appointment.reload
-
-    expect(appointment.prepaid_payment_method).to be_nil
-    expect(appointment.payments.find_by(payment_kind: 'prepaid')).to be_nil
-  end
-
   it 'rejects updates to imported Medelement appointments' do
     appointment = create(
       :scheduling_appointment,
@@ -1515,16 +1471,11 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       conversation: conversation,
       service: service,
       starts_at: booking_day,
-      ends_at: booking_day + 30.minutes,
-      payment_status: 'paid',
-      settlement_amount: 20_000,
-      settlement_payment_method: 'cash'
+      ends_at: booking_day + 30.minutes
     )
     create(:scheduling_holiday, account: account, date: booking_day.to_date + 1.day)
     create(:scheduling_workday_override, resource: resource, account: account, date: booking_day.to_date + 2.days)
     create(:scheduling_time_off, resource: resource, account: account, starts_at: booking_day + 3.days, ends_at: booking_day + 3.days + 2.hours)
-    create(:scheduling_payment, appointment: appointment, account: account, amount: 20_000, payment_method: 'cash', payment_kind: 'payment')
-    create(:scheduling_expense, appointment: appointment, account: account, resource: resource, amount: 8_000)
 
     get "/api/v1/accounts/#{account.id}/scheduling/calendar",
         params: {
@@ -1541,6 +1492,9 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       'resources', 'work_rules', 'break_rules', 'holidays', 'workday_overrides',
       'time_offs', 'appointments', 'payments', 'expenses', 'slots'
     )
+    expect(response_body.dig('payload', 'payments')).to eq([])
+    expect(response_body.dig('payload', 'expenses')).to eq([])
+    expect(response_body.dig('payload', 'appointments', 0)).not_to have_key('payment_status')
     expect(response_body.dig('payload', 'appointments', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
@@ -1682,31 +1636,28 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'appointments').pluck('id')).to eq([matching_appointment.id])
   end
 
-  it 'filters calendar appointments by status and payment status' do
+  it 'filters calendar appointments by status only' do
     attributes = { account: account, contact: contact, resource: resource, service: service }
     matching_appointment = create(
       :scheduling_appointment,
       **attributes,
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes,
-      status: 'confirmed',
-      payment_status: 'paid'
+      status: 'confirmed'
     )
     create(
       :scheduling_appointment,
       **attributes,
       starts_at: booking_day + 1.hour,
       ends_at: booking_day + 90.minutes,
-      status: 'scheduled',
-      payment_status: 'paid'
+      status: 'scheduled'
     )
-    create(
+    other_matching_appointment = create(
       :scheduling_appointment,
       **attributes,
       starts_at: booking_day + 2.hours,
       ends_at: booking_day + 150.minutes,
-      status: 'confirmed',
-      payment_status: 'awaiting_payment'
+      status: 'confirmed'
     )
 
     get "/api/v1/accounts/#{account.id}/scheduling/calendar",
@@ -1714,14 +1665,16 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
           view: 'week',
           from: booking_day.beginning_of_day.iso8601,
           to: (booking_day + 7.days).end_of_day.iso8601,
-          status: 'confirmed',
-          payment_status: 'paid'
+          status: 'confirmed'
         },
         headers: headers,
         as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'appointments').pluck('id')).to eq([matching_appointment.id])
+    expect(response_body.dig('payload', 'appointments').pluck('id')).to contain_exactly(
+      matching_appointment.id,
+      other_matching_appointment.id
+    )
   end
 
   it 'keeps non-matching appointments as slot blockers in the calendar availability payload' do

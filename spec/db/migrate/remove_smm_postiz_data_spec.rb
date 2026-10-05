@@ -23,7 +23,7 @@ RSpec.describe RemoveSmmPostizData do
     connection.remove_check_constraint(:integrations_hooks, name: constraint_name) if constraint_exists
 
     # rubocop:disable Rails/SkipsModelValidations -- seed legacy states rejected by the current model contract.
-    account.update_column(:feature_flags_overflow, %w[content scheduling_finance])
+    account.update_column(:feature_flags_overflow, %w[content retired_scheduling_feature])
     Integrations::Hook.where(id: legacy_postiz_hook.id).update_all(app_id: 'postiz')
     Integrations::Hook.where(id: legacy_unknown_hook.id).update_all(app_id: 'retired_connector')
     # rubocop:enable Rails/SkipsModelValidations
@@ -39,7 +39,7 @@ RSpec.describe RemoveSmmPostizData do
     expect(Integrations::Hook.exists?(legacy_postiz_hook.id)).to be(false)
     expect(Integrations::Hook.exists?(legacy_unknown_hook.id)).to be(false)
     expect(Integrations::Hook.exists?(other_hook.id)).to be(true)
-    expect(account.reload.feature_flags_overflow).to eq(['scheduling_finance'])
+    expect(account.reload.feature_flags_overflow).to eq(['retired_scheduling_feature'])
     expect(account.feature_flags).to eq(original_feature_bitmask)
     expect(feature_defaults.reload.value.pluck('name')).to eq(['scheduling'])
     expect(ActiveRecord::Base.connection.check_constraint_exists?(:integrations_hooks,
