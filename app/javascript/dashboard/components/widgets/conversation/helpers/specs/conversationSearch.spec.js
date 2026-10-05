@@ -144,6 +144,70 @@ describe('conversationMatchesLocalSearch', () => {
     });
   });
 
+  describe('what the server list search does not know about the loaded conversations', () => {
+    const profileContact = {
+      id: 8,
+      name: 'Без имени',
+      additional_attributes: {
+        social_telegram_user_name: 'ada_telegram',
+        screen_name: 'ada_screen',
+      },
+      channel_profiles: [
+        {
+          username: 'ada_channel_login',
+          display_name: 'Ада в мессенджере',
+          phone_number: '+77075550101',
+          email: 'ada@channel.example',
+        },
+      ],
+    };
+    const voiceConversation = {
+      id: 9,
+      messages: [
+        {
+          id: 1,
+          content_attributes: {
+            transcribed_text: 'расшифровка голоса про справку',
+          },
+        },
+      ],
+    };
+
+    it('matches by the Telegram user name and the screen name', () => {
+      expect(
+        conversationMatchesLocalSearch({}, profileContact, 'ada_telegram')
+      ).toBe(true);
+      expect(
+        conversationMatchesLocalSearch({}, profileContact, 'ada_screen')
+      ).toBe(true);
+    });
+
+    it('matches by the channel profile of the contact: user name, display name, e-mail and phone number', () => {
+      [
+        'ada_channel_login',
+        'в мессенджере',
+        'ada@channel',
+        '8 707 555 01 01',
+      ].forEach(query => {
+        expect(conversationMatchesLocalSearch({}, profileContact, query)).toBe(
+          true
+        );
+      });
+    });
+
+    it('matches by the transcribed text of a voice message', () => {
+      expect(
+        conversationMatchesLocalSearch(voiceConversation, {}, 'про справку')
+      ).toBe(true);
+    });
+
+    it('survives a contact without channel profiles', () => {
+      expect(
+        conversationMatchesLocalSearch({}, { channel_profiles: null }, 'x')
+      ).toBe(false);
+    });
+  });
+
   describe('text copied from somewhere else', () => {
     it('matches names with е and ё interchanged', () => {
       const yo = { name: 'Семён Киселёв' };

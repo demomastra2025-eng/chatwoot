@@ -87,5 +87,43 @@ describe('useMessageFormatter', () => {
         'This <span class="highlight">(message)</span> contains [special] characters'
       );
     });
+
+    it('does not treat е and ё as one letter unless asked to', () => {
+      const result = messageFormatter.highlightContent(
+        'Нужен приём врача',
+        'прием',
+        'highlight'
+      );
+
+      expect(result.trim()).toBe('Нужен приём врача');
+    });
+
+    it('highlights е and ё as the same letter when asked to, in both directions and with the case ignored', () => {
+      const options = { yoInsensitive: true };
+
+      expect(
+        messageFormatter
+          .highlightContent('Нужен приём врача', 'прием', 'highlight', options)
+          .trim()
+      ).toBe('Нужен <span class="highlight">приём</span> врача');
+      expect(
+        messageFormatter
+          .highlightContent('Нужен ПРИЕМ врача', 'приём', 'highlight', options)
+          .trim()
+      ).toBe('Нужен <span class="highlight">ПРИЕМ</span> врача');
+    });
+
+    it('still escapes the special characters when е and ё are unified', () => {
+      const result = messageFormatter.highlightContent(
+        'Счёт (VIP) [1]',
+        'счет (vip)',
+        'highlight',
+        { yoInsensitive: true }
+      );
+
+      expect(result.trim()).toBe(
+        '<span class="highlight">Счёт (VIP)</span> [1]'
+      );
+    });
   });
 });

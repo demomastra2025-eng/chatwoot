@@ -13,6 +13,7 @@
       "MESSAGES": "Messages",
       "ARTICLES": "Articles"
     },
+    "MESSAGES_PARTIAL": "Searching the message text took too long, only part of the results is shown. Make the search more precise.",
     "VIEW_MORE": "View more",
     "LOAD_MORE": "Load more",
     "SEARCHING_DATA": "Searching",

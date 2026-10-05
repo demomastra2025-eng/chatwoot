@@ -57,17 +57,23 @@ export const useMessageFormatter = () => {
    * @param {string} [content=''] - The content in which to search.
    * @param {string} [searchTerm=''] - The term to search for.
    * @param {string} [highlightClass=''] - The CSS class to apply to the highlighted term.
+   * @param {Object} [options] - { yoInsensitive } highlights "е" and "ё" as the same letter.
    * @returns {string} - The content with highlighted terms.
    */
   const highlightContent = (
     content = '',
     searchTerm = '',
-    highlightClass = ''
+    highlightClass = '',
+    { yoInsensitive = false } = {}
   ) => {
     const plainTextContent = getPlainText(content);
 
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-    const escapedSearchTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let escapedSearchTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // "е" and "ё" are the same letter for a person who searches (the server search treats them so too).
+    if (yoInsensitive) {
+      escapedSearchTerm = escapedSearchTerm.replace(/[еёЕЁ]/g, '[её]');
+    }
 
     return plainTextContent.replace(
       new RegExp(`(${escapedSearchTerm})`, 'ig'),

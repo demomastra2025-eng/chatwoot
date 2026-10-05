@@ -13,6 +13,7 @@
       "MESSAGES": "Messages",
       "ARTICLES": "Articles"
     },
+    "MESSAGES_PARTIAL": "Хабарлама мәтінін іздеу тым ұзақ болды, нәтижелердің бір бөлігі ғана көрсетілді. Сұранысты нақтылаңыз.",
     "VIEW_MORE": "View more",
     "LOAD_MORE": "Load more",
     "SEARCHING_DATA": "Searching",

@@ -19,6 +19,11 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  // The search of the message text was cut short by its time limit.
+  isPartial: {
+    type: Boolean,
+    default: false,
+  },
   showTitle: {
     type: Boolean,
     default: true,
@@ -62,5 +67,12 @@ const getName = message => {
         </SearchResultMessageItem>
       </li>
     </ul>
+    <p
+      v-if="isPartial && !isFetching"
+      data-test="messages-partial"
+      class="mt-3 text-xs text-n-amber-11"
+    >
+      {{ $t('SEARCH.MESSAGES_PARTIAL') }}
+    </p>
   </SearchResultSection>
 </template>

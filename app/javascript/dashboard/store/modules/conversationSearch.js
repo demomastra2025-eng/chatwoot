@@ -188,6 +188,10 @@ export const actions = {
       if (!isCurrentSearchRequest(commit, request)) return;
 
       commit(types.MESSAGE_SEARCH_SET, data.payload.messages);
+      // The server gave up the search of the message text at its time limit: what is shown may be incomplete.
+      if (data.meta?.messages_partial) {
+        commit(types.MESSAGE_SEARCH_SET_UI_FLAG, { isPartial: true });
+      }
     } catch (error) {
       // Ignore error
     } finally {

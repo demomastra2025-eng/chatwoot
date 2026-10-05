@@ -25,6 +25,23 @@ const resolveSocialProfiles = entity => {
   );
 };
 
+// What the contact is called and found by in each channel (user name, display name, login, phone number, e-mail).
+const resolveChannelProfiles = entity => {
+  const profiles = entity?.channel_profiles || entity?.channelProfiles || [];
+  return Array.isArray(profiles) ? profiles.filter(Boolean) : [];
+};
+
+const resolveChannelProfileTerms = entity =>
+  resolveChannelProfiles(entity).flatMap(profile => [
+    profile.username,
+    profile.display_name,
+    profile.displayName,
+    profile.identifier,
+    profile.email,
+    profile.phone_number,
+    profile.phoneNumber,
+  ]);
+
 const resolveMessageSearchTerms = message => {
   const contentAttributes =
     message?.content_attributes || message?.contentAttributes || {};
@@ -85,6 +102,8 @@ const resolveConversationSearchTerms = (conversation = {}, contact = {}) => {
     contactAdditionalAttributes.screenName,
     senderAdditionalAttributes.screen_name,
     senderAdditionalAttributes.screenName,
+    resolveChannelProfileTerms(contact),
+    resolveChannelProfileTerms(sender),
     messages.map(resolveMessageSearchTerms),
     lastMessages.map(resolveMessageSearchTerms),
   ]);
@@ -98,6 +117,10 @@ const resolveConversationPhones = (conversation = {}, contact = {}) => {
     contact.phoneNumber,
     sender.phone_number,
     sender.phoneNumber,
+    ...resolveChannelProfiles(contact).flatMap(profile => [
+      profile.phone_number,
+      profile.phoneNumber,
+    ]),
   ]);
 };
 

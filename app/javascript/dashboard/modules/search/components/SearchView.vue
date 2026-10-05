@@ -418,6 +418,7 @@ onUnmounted(() => {
               <SearchResultMessagesList
                 v-if="filterMessages"
                 :is-fetching="uiFlags.message.isFetching"
+                :is-partial="Boolean(uiFlags.message.isPartial)"
                 :messages="messages"
                 :query="query"
                 :show-title="isSelectedTabAll"
