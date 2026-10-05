@@ -66,7 +66,9 @@ class ContactInboxBuilder
       source_id: @source_id
     }
 
-    ::ContactInbox.where(attrs).first_or_create!(hmac_verified: hmac_verified || false)
+    ::ContactInbox.transaction(requires_new: true) do
+      ::ContactInbox.where(attrs).first_or_create!(hmac_verified: hmac_verified || false)
+    end
   rescue ActiveRecord::RecordNotUnique
     existing_contact_inbox = ::ContactInbox.find_by(attrs)
     return existing_contact_inbox if existing_contact_inbox.present?

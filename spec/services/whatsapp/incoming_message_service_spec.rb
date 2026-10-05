@@ -156,6 +156,33 @@ describe Whatsapp::IncomingMessageService do
         expect(contact_inbox.conversations.last.messages.last.content).to eq(params[:messages].first[:text][:body])
       end
 
+      it 'recovers a real duplicate insert without aborting the caller transaction' do
+        contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, source_id: wa_id)
+        conversation = create(
+          :conversation,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          contact: contact_inbox.contact,
+          contact_inbox: contact_inbox
+        )
+        duplicate = create(
+          :message,
+          account: whatsapp_channel.account,
+          inbox: whatsapp_channel.inbox,
+          conversation: conversation,
+          source_id: params[:messages].first[:id]
+        )
+        service = described_class.new(inbox: whatsapp_channel.inbox, params: params)
+        allow(service).to receive(:find_message_by_source_id).and_return(nil)
+
+        ActiveRecord::Base.transaction do
+          service.perform
+
+          expect(whatsapp_channel.inbox.messages.where(source_id: duplicate.source_id).count).to eq(1)
+          expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+        end
+      end
+
       it 'will not create duplicate messages when same message is received' do
         described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
         expect(whatsapp_channel.inbox.messages.count).to eq(1)

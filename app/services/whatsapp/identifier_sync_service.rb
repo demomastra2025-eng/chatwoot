@@ -12,7 +12,9 @@ class Whatsapp::IdentifierSyncService
     source_ids.compact_blank.uniq.each do |source_id|
       next if inbox.contact_inboxes.exists?(source_id: source_id)
 
-      inbox.contact_inboxes.create!(contact: synced_contact, source_id: source_id)
+      ContactInbox.transaction(requires_new: true) do
+        inbox.contact_inboxes.create!(contact: synced_contact, source_id: source_id)
+      end
     rescue ActiveRecord::RecordNotUnique
       # A concurrent webhook/status update inserted the same inbox/source_id row.
       # The identity already exists, so this sync can safely continue.
