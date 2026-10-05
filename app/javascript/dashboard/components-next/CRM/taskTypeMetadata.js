@@ -1,4 +1,5 @@
 import { normalizeCrmTaskTypeIcon } from './taskTypeIcons';
+import { taskTypeLabel } from './taskCatalogLabels';
 
 const legacyIcons = {
   call: 'i-lucide-phone',
@@ -27,7 +28,7 @@ export const buildTaskTypeResolver = (taskTypes, t) => {
   const metadata = type => ({
     icon: normalizeCrmTaskTypeIcon(type.icon || legacy.get(type.code)?.icon),
     label:
-      type.name ||
+      taskTypeLabel(type, t) ||
       legacy.get(type.code)?.label ||
       type.code ||
       legacy.get('task').label,

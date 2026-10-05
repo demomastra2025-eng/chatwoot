@@ -533,6 +533,12 @@
         "rescheduled": "Перенесена",
         "sent": "Отправлено"
       },
+      "STATUS_NAMES": {
+        "cancelled": "Отменено",
+        "done": "Завершено",
+        "in_progress": "В процессе",
+        "todo": "К выполнению"
+      },
       "SUCCESS_ARCHIVED": "Задача отправлена в архив",
       "SUCCESS_CREATED": "Задача создана",
       "SUCCESS_UNARCHIVED": "Задача восстановлена",

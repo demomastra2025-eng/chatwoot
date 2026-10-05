@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import DropdownMenu from 'dashboard/components-next/dropdown-menu/DropdownMenu.vue';
 import { DEFAULT_TASK_STATUS_COLOR } from 'dashboard/stores/crm/taskStatusColors';
+import { taskStatusLabel } from 'dashboard/components-next/CRM/taskCatalogLabels';
 
 const props = defineProps({
   disabled: {
@@ -45,7 +46,7 @@ const statusMetaById = computed(() =>
     result[Number(status.id)] = {
       category: status.category || 'open',
       color: status.color || fallbackTaskStatusColor,
-      label: status.name,
+      label: taskStatusLabel(status, t),
     };
     return result;
   }, {})
@@ -67,7 +68,7 @@ const menuItems = computed(() =>
     action: 'select',
     color: status.color || fallbackTaskStatusColor,
     isSelected: Number(status.id) === currentStatusId.value,
-    label: status.name,
+    label: taskStatusLabel(status, t),
     value: status.id,
   }))
 );

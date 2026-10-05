@@ -36,6 +36,11 @@ import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
 import { buildTaskTypeResolver } from 'dashboard/components-next/CRM/taskTypeMetadata';
+import {
+  taskOutcomeLabel,
+  taskStatusLabel,
+  taskTypeLabel,
+} from 'dashboard/components-next/CRM/taskCatalogLabels';
 import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
 import CrmTaskCancelDialog from 'dashboard/components-next/CRM/CrmTaskCancelDialog.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
@@ -390,7 +395,7 @@ const advancedTaskFieldDefinitions = computed(() =>
 
 const statusNameById = computed(() =>
   referencesStore.taskStatuses.reduce((result, status) => {
-    result[status.id] = status.name;
+    result[status.id] = taskStatusLabel(status, t);
     return result;
   }, {})
 );
@@ -464,14 +469,14 @@ const activityTypeOptions = computed(() =>
   availableTaskTypes.value.map(taskType => ({
     icon:
       taskType.icon || legacyActivityTypeMetaByValue.value[taskType.code]?.icon,
-    label: taskType.name,
+    label: taskTypeLabel(taskType, t),
     value: taskType.code,
   }))
 );
 
 const activityTypeLabelByValue = computed(() =>
   availableTaskTypes.value.reduce((result, taskType) => {
-    result[taskType.code] = taskType.name;
+    result[taskType.code] = taskTypeLabel(taskType, t);
     return result;
   }, {})
 );
@@ -497,7 +502,10 @@ const buildOutcomeOptions = (activityType, currentOutcome = '') => {
     .filter(
       outcome => outcome.active !== false || outcome.code === currentOutcome
     )
-    .map(outcome => ({ label: outcome.name, value: outcome.code }));
+    .map(outcome => ({
+      label: taskOutcomeLabel(outcome, t),
+      value: outcome.code,
+    }));
 
   if (
     currentOutcome &&

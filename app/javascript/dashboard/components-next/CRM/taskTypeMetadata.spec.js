@@ -42,6 +42,29 @@ describe('task type metadata', () => {
     expect(resolve({ activityType: 'custom' }).label).toBe('custom');
   });
 
+  it('shows system types by code through i18n, not the seeded database name', () => {
+    const resolve = buildTaskTypeResolver(
+      [
+        { id: 1, code: 'touch', name: 'Touch' },
+        { id: 2, code: 'call', name: 'Звонок' },
+        { id: 3, code: 'meeting', name: 'Visit to the client' },
+      ],
+      t
+    );
+    expect(resolve({ taskTypeId: 1 }).label).toBe(
+      'CRM.TASKS.ACTIVITY_TYPE.touch'
+    );
+    expect(resolve({ taskTypeId: 2 }).label).toBe(
+      'CRM.TASKS.ACTIVITY_TYPE.call'
+    );
+    expect(resolve({ taskTypeId: 3 }).label).toBe('Visit to the client');
+    expect(
+      resolve({
+        taskType: { code: 'touch', name: 'Touch', icon: 'i-lucide-x' },
+      }).label
+    ).toBe('CRM.TASKS.ACTIVITY_TYPE.touch');
+  });
+
   it('does not accept arbitrary CSS classes from historical metadata', () => {
     const resolve = buildTaskTypeResolver([], t);
     expect(

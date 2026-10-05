@@ -517,7 +517,7 @@
         "meeting": "Meeting",
         "message": "Message",
         "task": "Task",
-        "touch": "Follow-up"
+        "touch": "Reminder"
       },
       "OUTCOME": {
         "answered": "Answered",
@@ -532,6 +532,12 @@
         "other": "Other",
         "rescheduled": "Rescheduled",
         "sent": "Sent"
+      },
+      "STATUS_NAMES": {
+        "cancelled": "Cancelled",
+        "done": "Done",
+        "in_progress": "In progress",
+        "todo": "To do"
       },
       "SUCCESS_ARCHIVED": "Task archived",
       "SUCCESS_CREATED": "Task created",
@@ -603,13 +609,13 @@
         "TITLE": "Additional fields"
       },
       "DEFAULT_TOUCH_PLAN": {
-        "DEAL_TITLE": "Default follow-up plan for deals",
+        "DEAL_TITLE": "Default reminder plan for deals",
         "DEAL_DESCRIPTION": "Apply this reminder plan automatically when a new deal is created.",
-        "TASK_TITLE": "Default follow-up plan for tasks",
+        "TASK_TITLE": "Default reminder plan for tasks",
         "TASK_DESCRIPTION": "Apply this reminder plan automatically when a new CRM task is created.",
-        "LABEL": "Follow-up plan",
+        "LABEL": "Reminder plan",
         "NOTE": "Only plans that support this entity type are shown here.",
-        "PLACEHOLDER": "No default follow-up plan",
+        "PLACEHOLDER": "No default reminder plan",
         "SAVE": "Save default plan"
       },
       "LOADING": "Loading CRM settings...",

@@ -10,6 +10,7 @@ import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { useAlert } from 'dashboard/composables';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 import { CRM_TASK_TYPE_ICONS, normalizeCrmTaskTypeIcon } from './taskTypeIcons';
+import { taskOutcomeLabel, taskTypeLabel } from './taskCatalogLabels';
 
 const props = defineProps({
   canManage: {
@@ -59,7 +60,7 @@ const openTypeDialog = (taskType = null) => {
     default: taskType?.default ?? false,
     icon: normalizeCrmTaskTypeIcon(taskType?.icon),
     id: taskType?.id || null,
-    name: taskType?.name || '',
+    name: taskType ? taskTypeLabel(taskType, t) : '',
   });
   typeDialogRef.value?.open();
 };
@@ -70,7 +71,7 @@ const openOutcomeDialog = (taskType, outcome = null) => {
     active: outcome?.active ?? true,
     default: outcome?.default ?? false,
     id: outcome?.id || null,
-    name: outcome?.name || '',
+    name: outcome ? taskOutcomeLabel(outcome, t) : '',
     requiresNote: outcome?.requiresNote ?? false,
     taskTypeId: taskType.id,
   });
@@ -164,7 +165,7 @@ const toggleTaskType = async taskType => {
             <div class="min-w-0">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="font-medium text-n-slate-12">{{
-                  taskType.name
+                  taskTypeLabel(taskType, t)
                 }}</span>
                 <span
                   v-if="taskType.default"
@@ -179,7 +180,6 @@ const toggleTaskType = async taskType => {
                   {{ t('CRM.SETTINGS.TASK_CATALOGS.INACTIVE') }}
                 </span>
               </div>
-              <span class="text-xs text-n-slate-10">{{ taskType.code }}</span>
             </div>
           </div>
           <div v-if="canManage" class="flex items-center gap-2">
@@ -215,7 +215,7 @@ const toggleTaskType = async taskType => {
             :disabled="!canManage"
             @click="openOutcomeDialog(taskType, outcome)"
           >
-            {{ outcome.name }}
+            {{ taskOutcomeLabel(outcome, t) }}
             <span
               v-if="outcome.requiresNote"
               class="i-lucide-asterisk ml-0.5 inline-block size-3"

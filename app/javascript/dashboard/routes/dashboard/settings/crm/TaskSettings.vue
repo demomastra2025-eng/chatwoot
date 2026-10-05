@@ -11,6 +11,7 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import CrmTaskCatalogSettings from 'dashboard/components-next/CRM/CrmTaskCatalogSettings.vue';
+import { taskStatusLabel } from 'dashboard/components-next/CRM/taskCatalogLabels';
 
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -266,7 +267,7 @@ const openTaskStatusDrawer = taskStatus => {
         taskStatus.color ||
         defaultTaskStatusColor({ currentTaskStatusId: taskStatus.id }),
       id: taskStatus.id,
-      name: taskStatus.name,
+      name: taskStatusLabel(taskStatus, t),
     });
   } else {
     resetTaskStatusForm();
@@ -468,7 +469,9 @@ onMounted(async () => {
                                 row.color || DEFAULT_TASK_STATUS_COLOR,
                             }"
                           />
-                          <span class="truncate">{{ row.name }}</span>
+                          <span class="truncate">{{
+                            taskStatusLabel(row, t)
+                          }}</span>
                         </span>
                       </div>
                     </div>
@@ -542,7 +545,7 @@ onMounted(async () => {
       :title="$t('CRM.SETTINGS.TASK_STATUSES.DELETE_TITLE')"
       :description="
         $t('CRM.SETTINGS.TASK_STATUSES.DELETE_DESCRIPTION', {
-          name: taskStatusPendingDelete?.name || '',
+          name: taskStatusLabel(taskStatusPendingDelete, t),
         })
       "
       :confirm-button-label="$t('CRM.SETTINGS.TASK_STATUSES.DELETE_CONFIRM')"

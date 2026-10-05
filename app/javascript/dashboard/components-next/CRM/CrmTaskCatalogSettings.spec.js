@@ -1,5 +1,5 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -47,6 +47,43 @@ const openOutcome = async () => {
   await wrapper.get('article button').trigger('click');
   return { wrapper, dialog: wrapper.findAllComponents(Dialog)[1] };
 };
+
+describe('seeded catalog names', () => {
+  const originalTaskTypes = store.taskTypes;
+  afterEach(() => {
+    store.taskTypes = originalTaskTypes;
+  });
+
+  it('shows system types and outcomes through i18n and never the seeded English name', () => {
+    store.taskTypes = [
+      {
+        id: 1,
+        code: 'touch',
+        name: 'Touch',
+        active: true,
+        outcomes: [
+          { id: 2, code: 'no_answer', name: 'No answer', active: true },
+          {
+            id: 3,
+            code: 'completed',
+            name: 'Reached the client',
+            active: true,
+          },
+        ],
+      },
+    ];
+    const wrapper = shallowMount(CrmTaskCatalogSettings, {
+      props: { canManage: true },
+    });
+    const text = wrapper.text();
+
+    expect(text).toContain('CRM.TASKS.ACTIVITY_TYPE.touch');
+    expect(text).toContain('CRM.TASKS.OUTCOME.no_answer');
+    expect(text).toContain('Reached the client');
+    expect(text).not.toContain('Touch');
+    expect(text).not.toContain('No answer');
+  });
+});
 
 describe('outcome form saving', () => {
   beforeEach(() => {

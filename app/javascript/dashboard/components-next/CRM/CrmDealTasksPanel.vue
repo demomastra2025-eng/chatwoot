@@ -26,6 +26,7 @@ import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskComple
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import { taskTypeLabel } from 'dashboard/components-next/CRM/taskCatalogLabels';
 import {
   assertTaskEditCurrent,
   buildTaskFormSavePayload,
@@ -170,7 +171,7 @@ const activityTypeOptions = computed(() =>
   ).map(taskType => ({
     icon: taskType.icon || activityTypeMetaByValue.value[taskType.code]?.icon,
     label:
-      taskType.name ||
+      taskTypeLabel(taskType, t) ||
       activityTypeMetaByValue.value[taskType.code]?.label ||
       taskType.code,
     value: taskType.code,
@@ -200,8 +201,12 @@ const taskTypeByCode = computed(() =>
 );
 
 const activityTypeLabel = task =>
-  task.taskType?.name ||
-  taskTypeByCode.value[task.activityType]?.name ||
+  taskTypeLabel(
+    task.taskType?.name
+      ? { code: task.activityType, ...task.taskType }
+      : taskTypeByCode.value[task.activityType],
+    t
+  ) ||
   activityTypeMetaByValue.value[task.activityType || 'task']?.label ||
   task.activityType;
 

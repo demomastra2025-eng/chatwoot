@@ -7,6 +7,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { canConfirmTaskCompletion } from './taskCompletion';
+import { taskOutcomeLabel } from './taskCatalogLabels';
 
 const props = defineProps({
   isLoading: {
@@ -42,7 +43,10 @@ const outcomeOptions = computed(() =>
         outcome.active !== false ||
         Number(outcome.id) === Number(outcomeId.value)
     )
-    .map(outcome => ({ label: outcome.name, value: outcome.id }))
+    .map(outcome => ({
+      label: taskOutcomeLabel(outcome, t),
+      value: outcome.id,
+    }))
 );
 const selectedOutcome = computed(() =>
   (selectedTaskType.value?.outcomes || []).find(

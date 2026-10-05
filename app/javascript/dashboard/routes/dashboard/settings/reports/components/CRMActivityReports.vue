@@ -5,6 +5,7 @@ import format from 'date-fns/format';
 
 import CrmReportsAPI from 'dashboard/api/crm/reports';
 import { normalizeMeta, normalizePayload } from 'dashboard/stores/crm/shared';
+import { taskCatalogLabel } from 'dashboard/components-next/CRM/taskCatalogLabels';
 
 const props = defineProps({
   from: {
@@ -56,8 +57,8 @@ const lifecycleLabel = lifecycle => {
   }
 };
 
-const taskDimension = value =>
-  value?.name ||
+const taskDimension = (value, kind) =>
+  taskCatalogLabel(kind, value, t) ||
   value?.code ||
   (value?.kind === 'not_configured'
     ? t('CRM_DEAL_REPORTS.ACTIVITY.NOT_CONFIGURED')
@@ -112,8 +113,8 @@ const taskRows = computed(() => {
   const groupedRows = new Map();
 
   (reports.taskResults.data?.rows || []).forEach(row => {
-    const taskTypeLabel = taskDimension(row.taskType);
-    const taskOutcomeLabel = taskDimension(row.taskOutcome);
+    const taskTypeLabel = taskDimension(row.taskType, 'type');
+    const taskOutcomeLabel = taskDimension(row.taskOutcome, 'outcome');
     const lifecycleType = row.lifecycleType;
     const key = JSON.stringify([
       dimensionIdentity(row.taskType),
