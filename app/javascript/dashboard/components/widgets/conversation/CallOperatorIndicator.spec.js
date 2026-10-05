@@ -181,6 +181,28 @@ describe('CallOperatorIndicator', () => {
     wrapper.unmount();
   });
 
+  it('asks once the inbox list arrives after the chat is mounted', async () => {
+    const inboxes = ref(() => undefined);
+    mocks.getters['inboxes/getInbox'] = inboxes;
+    mocks.getOperatorActivity.mockResolvedValue([activity()]);
+
+    const wrapper = mountIndicator();
+    await flushPromises();
+    expect(mocks.getOperatorActivity).not.toHaveBeenCalled();
+
+    inboxes.value = id => (id === 4 ? voiceInbox : { id });
+    await flushPromises();
+
+    expect(mocks.getOperatorActivity).toHaveBeenCalledTimes(1);
+    expect(mocks.getOperatorActivity).toHaveBeenCalledWith({
+      conversationId: 627,
+    });
+    expect(wrapper.get('[data-testid="call-operator-activity"] p').text()).toBe(
+      'CONVERSATION.OPERATOR_CALL_ACTIVITY.CALLING|Ayan'
+    );
+    wrapper.unmount();
+  });
+
   it('does not ask for chats without a voice channel', async () => {
     const wrapper = mountIndicator({ id: 12, inbox_id: 9 });
     await flushPromises();

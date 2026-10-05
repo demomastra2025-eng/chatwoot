@@ -68,7 +68,11 @@ const fetchActivity = async () => {
   }
 };
 
-watch(() => props.chat?.id, fetchActivity, { immediate: true });
+// The inbox list can arrive after the chat on a hard reload, so the check also
+// runs again when the chat turns out to be a voice one.
+watch([() => props.chat?.id, hasVoiceChannel], fetchActivity, {
+  immediate: true,
+});
 useEmitter(BUS_EVENTS.WEBSOCKET_RECONNECT_COMPLETED, fetchActivity);
 
 onMounted(() => {

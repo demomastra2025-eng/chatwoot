@@ -113,7 +113,7 @@ RSpec.describe Telephony::OperatorActivity do
       account.enable_features!('communication_threads')
       thread = conversation.refresh_communication_thread!
 
-      expect(described_class.new(build_session).payload).to include(communication_thread_id: thread.display_id)
+      expect(described_class.new(build_session.reload).payload).to include(communication_thread_id: thread.display_id)
     end
   end
 
