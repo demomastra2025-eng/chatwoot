@@ -504,6 +504,8 @@ class Telephony::InboundRoutingService
       explicit_key = explicit_logical_call_key
       if explicit_key.present?
         explicit_key
+      elsif sibling_root_leg.present?
+        Telephony::SiblingLegGrouping.group_key(sibling_root_leg)
       else
         digest = Digest::SHA256.hexdigest(logical_call_key_parts.join('|'))[0, 32]
         "janus-inbound:#{digest}"
@@ -548,10 +550,29 @@ class Telephony::InboundRoutingService
       explicit_ref = explicit_ref.to_s.strip.presence
       if useful_explicit_logical_group_ref?(explicit_ref)
         explicit_ref
+      elsif sibling_root_leg.present?
+        Telephony::SiblingLegGrouping.group_ref(sibling_root_leg)
       else
         logical_bridge_call_ref_for_context.presence || call_ref
       end
     end
+  end
+
+  # Another operator's browser already reported this same physical call (see
+  # Telephony::SiblingLegGrouping): this leg joins its logical call.
+  def sibling_root_leg
+    return @sibling_root_leg if defined?(@sibling_root_leg)
+
+    @sibling_root_leg = find_sibling_root_leg
+  end
+
+  def find_sibling_root_leg
+    return if number_binding.blank?
+    return unless payload_value('direction').to_s == 'inbound'
+    return unless metadata_value('source').to_s == 'browser_janus_sip'
+    return unless Telephony::SiblingLegGrouping.applies?(provider: number_binding.provider)
+
+    Telephony::SiblingLegGrouping.root_leg(number_binding: number_binding, caller_number: caller_number, call_ref: call_ref)
   end
 
   def useful_explicit_logical_group_ref?(value)
