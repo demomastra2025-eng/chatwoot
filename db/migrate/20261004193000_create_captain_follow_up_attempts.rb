@@ -1,5 +1,13 @@
 class CreateCaptainFollowUpAttempts < ActiveRecord::Migration[7.1]
+  # The table is created without foreign keys and each key is added NOT VALID in its own short transaction under a lock
+  # timeout (retried), like 20260928110050: a long transaction on conversations or messages, which every inbound message
+  # touches, can then neither stall this DDL for the full statement timeout nor queue the writers behind it. A missing
+  # index is built concurrently, and an INVALID one left by an interrupted build is rebuilt instead of being accepted.
+  disable_ddl_transaction!
+
   TABLE_NAME = :captain_follow_up_attempts
+  LOCK_TIMEOUT = '5s'.freeze
+  LOCK_ATTEMPTS = 5
 
   COLUMN_CONTRACT = [
     { name: 'id', type: :integer, limit: 8, null: false, primary_key: true },
@@ -54,20 +62,22 @@ class CreateCaptainFollowUpAttempts < ActiveRecord::Migration[7.1]
   private
 
   def create_attempts_table
-    create_table TABLE_NAME do |t|
-      t.references :account, null: false, foreign_key: { on_delete: :cascade }
-      t.references :assistant, null: false, foreign_key: { to_table: :captain_assistants, on_delete: :cascade }
-      t.references :conversation, null: false, foreign_key: { on_delete: :cascade }
-      t.references :anchor_message, null: false, foreign_key: { to_table: :messages, on_delete: :cascade }
-      t.integer :step_index, null: false
-      t.string :attempt_key, null: false, limit: 64
-      t.text :generated_content
-      t.string :status, null: false, default: 'processing'
-      t.datetime :processing_started_at, null: false
-      t.datetime :generated_at
-      t.datetime :completed_at
-      t.datetime :expires_at, null: false
-      t.timestamps
+    transaction do
+      create_table TABLE_NAME do |t|
+        t.references :account, null: false, foreign_key: false
+        t.references :assistant, null: false, foreign_key: false
+        t.references :conversation, null: false, foreign_key: false
+        t.references :anchor_message, null: false, foreign_key: false
+        t.integer :step_index, null: false
+        t.string :attempt_key, null: false, limit: 64
+        t.text :generated_content
+        t.string :status, null: false, default: 'processing'
+        t.datetime :processing_started_at, null: false
+        t.datetime :generated_at
+        t.datetime :completed_at
+        t.datetime :expires_at, null: false
+        t.timestamps
+      end
     end
   end
 
@@ -127,51 +137,75 @@ class CreateCaptainFollowUpAttempts < ActiveRecord::Migration[7.1]
   def ensure_attempt_indexes!
     INDEX_CONTRACT.each do |expected|
       existing = connection.indexes(TABLE_NAME).find { |index| index.name == expected.fetch(:name) }
-      if existing
-        unless index_matches?(existing, expected)
-          raise ActiveRecord::MigrationError,
-                "Existing index #{expected.fetch(:name)} does not match the Captain attempt contract"
-        end
-        next
-      end
-
-      conflicting = connection.indexes(TABLE_NAME).find do |index|
-        index.columns.map(&:to_s) == expected.fetch(:columns)
-      end
-      if conflicting
-        raise ActiveRecord::MigrationError,
-              "Existing index #{conflicting.name} conflicts with the Captain attempt contract"
-      end
-
-      add_index TABLE_NAME, expected.fetch(:columns), name: expected.fetch(:name), unique: expected.fetch(:unique)
+      existing ? verify_existing_index!(existing, expected) : create_missing_index!(expected)
     end
   end
 
+  def verify_existing_index!(existing, expected)
+    unless index_matches?(existing, expected)
+      raise ActiveRecord::MigrationError,
+            "Existing index #{expected.fetch(:name)} does not match the Captain attempt contract"
+    end
+
+    execute("REINDEX INDEX CONCURRENTLY #{quote_table_name(existing.name)}") unless existing.valid?
+  end
+
+  def create_missing_index!(expected)
+    conflicting = connection.indexes(TABLE_NAME).find { |index| index.columns.map(&:to_s) == expected.fetch(:columns) }
+    if conflicting
+      raise ActiveRecord::MigrationError,
+            "Existing index #{conflicting.name} conflicts with the Captain attempt contract"
+    end
+
+    add_index TABLE_NAME, expected.fetch(:columns),
+              name: expected.fetch(:name), unique: expected.fetch(:unique), algorithm: :concurrently
+  end
+
   def index_matches?(index, expected)
-    index.columns.map(&:to_s) == expected.fetch(:columns) &&
-      index.unique == expected.fetch(:unique) && index.where.nil? &&
-      (!index.respond_to?(:valid) || index.valid)
+    index.columns.map(&:to_s) == expected.fetch(:columns) && index.unique == expected.fetch(:unique) && index.where.nil?
   end
 
   def ensure_attempt_foreign_keys!
     FOREIGN_KEY_CONTRACT.each do |expected|
-      existing = connection.foreign_keys(TABLE_NAME).select do |foreign_key|
-        foreign_key.column == expected.fetch(:column)
-      end
-      if existing.any?
-        matching = existing.one? && existing.first.to_table == expected.fetch(:to_table) &&
-                   existing.first.primary_key.to_s == 'id' &&
-                   existing.first.on_delete == :cascade &&
-                   existing.first.validated?
-        unless matching
-          column_name = expected.fetch(:column)
-          raise ActiveRecord::MigrationError,
-                "Existing #{TABLE_NAME}.#{column_name} foreign key does not match the Captain attempt contract"
-        end
-        next
-      end
+      existing = connection.foreign_keys(TABLE_NAME).select { |key| key.column == expected.fetch(:column) }
+      existing.any? ? verify_existing_foreign_key!(existing, expected) : add_foreign_key_without_lock_queue!(expected)
+    end
+  end
 
-      add_foreign_key TABLE_NAME, expected.fetch(:to_table), column: expected.fetch(:column), on_delete: :cascade
+  def verify_existing_foreign_key!(existing, expected)
+    matching = existing.one? && existing.first.to_table == expected.fetch(:to_table) &&
+               existing.first.primary_key.to_s == 'id' &&
+               existing.first.on_delete == :cascade
+    unless matching
+      raise ActiveRecord::MigrationError,
+            "Existing #{TABLE_NAME}.#{expected.fetch(:column)} foreign key does not match the Captain attempt contract"
+    end
+
+    # A key left NOT VALID by an interrupted run is validated; VALIDATE CONSTRAINT lets writers continue.
+    validate_foreign_key(TABLE_NAME, name: existing.first.name) unless existing.first.validated?
+  end
+
+  def add_foreign_key_without_lock_queue!(expected)
+    column_name = expected.fetch(:column)
+    with_short_lock_timeout do
+      add_foreign_key TABLE_NAME, expected.fetch(:to_table), column: column_name, on_delete: :cascade, validate: false
+    end
+    validate_foreign_key TABLE_NAME, column: column_name
+  end
+
+  def with_short_lock_timeout
+    attempt = 0
+    begin
+      attempt += 1
+      transaction do
+        execute("SET LOCAL lock_timeout = '#{LOCK_TIMEOUT}'")
+        yield
+      end
+    rescue ActiveRecord::LockWaitTimeout
+      raise if attempt >= LOCK_ATTEMPTS
+
+      sleep(attempt)
+      retry
     end
   end
 end
