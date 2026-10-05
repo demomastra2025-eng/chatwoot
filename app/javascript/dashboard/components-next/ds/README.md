@@ -117,6 +117,8 @@ tokens instead of its own stale copy). Rules for ERB views:
 1. Build new or restyled pages only from these classes plus layout utilities
    (`flex`, `grid`, `gap-*`, `p-*`). Colours come from the classes or n-*
    utilities (`text-n-slate-11`), never from palette names or hex.
+   Every `ds-*` class is safelisted in `tailwind.config.js`, so a name built at
+   render time (`ds-status--<%= state %>`) is not purged from the CSS.
 2. Card: `<section class="ds-card">` with optional
    `<header class="ds-card__header"><h2 class="ds-card__title">…</h2><span class="ds-card__subtitle">…</span></header>`
    and `<div class="ds-card__body">`. A table inside a card goes directly

@@ -23,6 +23,11 @@ const brandMonoFonts = ['"Geist Mono"', ...defaultTheme.fontFamily.mono];
 
 const tailwindConfig = {
   darkMode: 'class',
+  // The .ds-* classes live in @layer components (super_admin/_ds.scss). Tailwind
+  // drops layer rules whose class name it cannot find in a content file, and
+  // ERB views compose names at render time (ds-status--<%= state %>), so keep
+  // every one of them.
+  safelist: [{ pattern: /^ds-/ }],
   content: [
     './enterprise/app/views/**/*.html.erb',
     './app/javascript/widget/**/*.vue',
