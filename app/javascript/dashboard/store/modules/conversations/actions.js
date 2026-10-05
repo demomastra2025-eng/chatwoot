@@ -24,6 +24,7 @@ import {
   handleVoiceCallCreated,
   handleVoiceCallUpdated,
 } from 'dashboard/helper/voice';
+import { isCaptainToolActivityMessage } from 'dashboard/components-next/message/timelineMessageVisibility';
 
 let conversationListRequestGeneration = 0;
 const communicationThreadListUpdates = new Map();
@@ -1114,6 +1115,9 @@ const actions = {
   },
 
   addMessage({ commit, rootGetters, state }, message) {
+    // Hidden timeline events must not move the open conversation or its unread state.
+    if (isCaptainToolActivityMessage(message)) return;
+
     commit(types.ADD_MESSAGE, message);
     addMessageToCommunicationThreads(commit, state, message);
     if (message.message_type === MESSAGE_TYPE.INCOMING) {
@@ -1132,6 +1136,8 @@ const actions = {
   },
 
   updateMessage({ commit, rootGetters, state }, message) {
+    if (isCaptainToolActivityMessage(message)) return;
+
     commit(types.ADD_MESSAGE, message);
     addMessageToCommunicationThreads(commit, state, message);
     if (message.attachments?.length) {

@@ -34,6 +34,27 @@ const NOISY_SOURCE_ACTION_PATTERN = new RegExp(
   `:(${[...NOISY_ACTIVITY_ACTIONS].join('|')}):`
 );
 
+// Captain writes one activity line per executed tool. Its details live in the
+// collapsed trace block of the AI reply and in the agent logs, so the line
+// itself is never shown. The projector tags these rows with its own data type
+// and source_id namespace; the localized text is never inspected.
+const CAPTAIN_TOOL_EVENT_TYPE = 'captain_tool_event';
+const CAPTAIN_TOOL_SOURCE_PREFIX = 'captain-tool:';
+
+// Accepts raw (snake_case) store/websocket payloads and camelCased messages.
+export const isCaptainToolActivityMessage = message => {
+  const messageType = message?.messageType ?? message?.message_type;
+  if (Number(messageType) !== MESSAGE_TYPES.ACTIVITY) return false;
+
+  const attributes = message.contentAttributes ?? message.content_attributes;
+  const sourceId = message.sourceId ?? message.source_id ?? '';
+
+  return (
+    attributes?.data?.type === CAPTAIN_TOOL_EVENT_TYPE ||
+    String(sourceId).startsWith(CAPTAIN_TOOL_SOURCE_PREFIX)
+  );
+};
+
 const activityAction = message => {
   const data = message.contentAttributes?.data || {};
   return data.action || data.type;
@@ -48,6 +69,7 @@ export const isUsefulTimelineMessage = message => {
   if (message.messageType !== MESSAGE_TYPES.ACTIVITY) return true;
 
   return (
+    !isCaptainToolActivityMessage(message) &&
     !noisySourceAction(message) &&
     !NOISY_ACTIVITY_ACTIONS.has(activityAction(message))
   );

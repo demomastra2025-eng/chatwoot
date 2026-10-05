@@ -461,6 +461,32 @@ describe('#actions', () => {
       expect(commit.mock.calls).toEqual([[types.ADD_MESSAGE, message]]);
     });
 
+    it('ignores a realtime Captain tool line so it cannot move the open chat', () => {
+      const localCommit = vi.fn();
+
+      actions.addMessage(
+        { commit: localCommit },
+        {
+          id: 1,
+          message_type: 2,
+          conversation_id: 1,
+          source_id: 'captain-tool:5f2c',
+          content_attributes: { data: { type: 'captain_tool_event' } },
+        }
+      );
+
+      expect(localCommit).not.toHaveBeenCalled();
+    });
+
+    it('still adds the handoff activity to the open chat', () => {
+      const localCommit = vi.fn();
+      const message = { id: 2, message_type: 2, conversation_id: 1 };
+
+      actions.addMessage({ commit: localCommit }, message);
+
+      expect(localCommit.mock.calls).toEqual([[types.ADD_MESSAGE, message]]);
+    });
+
     it('updates the attachment panel for outgoing realtime messages with attachments', () => {
       const localCommit = vi.fn();
       const message = {
@@ -477,6 +503,25 @@ describe('#actions', () => {
         [types.ADD_MESSAGE, message],
         [types.ADD_CONVERSATION_ATTACHMENTS, message],
       ]);
+    });
+  });
+
+  describe('#updateMessage', () => {
+    it('ignores updates of a Captain tool line', () => {
+      const localCommit = vi.fn();
+
+      actions.updateMessage(
+        { commit: localCommit },
+        {
+          id: 1,
+          message_type: 2,
+          conversation_id: 1,
+          source_id: 'captain-tool:5f2c',
+          content_attributes: { data: { type: 'captain_tool_event' } },
+        }
+      );
+
+      expect(localCommit).not.toHaveBeenCalled();
     });
   });
 

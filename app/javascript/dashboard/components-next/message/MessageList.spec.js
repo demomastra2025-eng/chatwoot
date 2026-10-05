@@ -156,6 +156,120 @@ describe('MessageList', () => {
     expect(renderedMessages[0].attributes('id')).toBe('2');
   });
 
+  describe('Captain tool lines', () => {
+    const toolLine = overrides =>
+      message({
+        message_type: MESSAGE_TYPES.ACTIVITY,
+        source_id: `captain-tool:${overrides.id}`,
+        content: 'ИИ Агент выполнил инструмент «search_scheduling_services»',
+        content_attributes: {
+          data: { type: 'captain_tool_event', event: 'completed' },
+        },
+        ...overrides,
+      });
+
+    const renderedIds = wrapper =>
+      wrapper
+        .findAllComponents({ name: 'Message' })
+        .map(item => item.attributes('id'));
+
+    it('hides the lines and keeps the handoff activity and the AI answer', () => {
+      const createdAt = atLocalNoon(2026, 6, 24);
+      const wrapper = createWrapper({
+        messages: [
+          message({ id: 1, created_at: createdAt }),
+          toolLine({ id: 2, created_at: createdAt + 1 }),
+          toolLine({
+            id: 3,
+            created_at: createdAt + 2,
+            content_attributes: {
+              data: { type: 'captain_tool_event', event: 'failed' },
+            },
+          }),
+          message({
+            id: 4,
+            created_at: createdAt + 3,
+            message_type: MESSAGE_TYPES.OUTGOING,
+            content: 'AI answer',
+          }),
+          message({
+            id: 5,
+            created_at: createdAt + 4,
+            message_type: MESSAGE_TYPES.ACTIVITY,
+            content: 'Conversation was marked open by AI Agent',
+          }),
+        ],
+      });
+
+      expect(renderedIds(wrapper)).toEqual(['1', '4', '5']);
+    });
+
+    it('keeps a human message that only has the same text', () => {
+      const createdAt = atLocalNoon(2026, 6, 24);
+      const wrapper = createWrapper({
+        messages: [
+          message({
+            id: 1,
+            created_at: createdAt,
+            content:
+              'ИИ Агент выполнил инструмент «search_scheduling_services»',
+          }),
+        ],
+      });
+
+      expect(renderedIds(wrapper)).toEqual(['1']);
+    });
+
+    it('creates no date divider for a day that has only hidden lines', () => {
+      const wrapper = createWrapper({
+        messages: [
+          message({ id: 1, created_at: atLocalNoon(2026, 6, 24) }),
+          toolLine({ id: 2, created_at: atLocalNoon(2026, 6, 25) }),
+          toolLine({ id: 3, created_at: atLocalNoon(2026, 6, 25) + 5 }),
+        ],
+      });
+
+      expect(wrapper.findAll('time')).toHaveLength(1);
+      expect(renderedIds(wrapper)).toEqual(['1']);
+    });
+
+    it('still groups the messages around a hidden line', () => {
+      const createdAt = atLocalNoon(2026, 6, 24);
+      const wrapper = createWrapper({
+        messages: [
+          message({ id: 1, created_at: createdAt }),
+          toolLine({ id: 2, created_at: createdAt + 10 }),
+          message({ id: 3, created_at: createdAt + 20 }),
+        ],
+      });
+
+      const rendered = wrapper.findAllComponents({ name: 'Message' });
+      expect(rendered).toHaveLength(2);
+      expect(rendered[0].props('groupWithNext')).toBe(true);
+    });
+
+    it('hides the lines of every channel in a communication thread', () => {
+      currentChat.value = { is_communication_thread: true, channels: [] };
+      const createdAt = atLocalNoon(2026, 6, 24);
+      const wrapper = createWrapper({
+        messages: [
+          message({ id: 1, conversation_id: 20, created_at: createdAt }),
+          toolLine({ id: 2, conversation_id: 20, created_at: createdAt + 1 }),
+          toolLine({ id: 3, conversation_id: 21, created_at: createdAt + 2 }),
+          message({
+            id: 4,
+            conversation_id: 21,
+            created_at: createdAt + 3,
+            message_type: MESSAGE_TYPES.ACTIVITY,
+            content: 'Conversation was marked open by AI Agent',
+          }),
+        ],
+      });
+
+      expect(renderedIds(wrapper)).toEqual(['1', '4']);
+    });
+  });
+
   it('deduplicates the same cross-channel activity in a communication thread', () => {
     currentChat.value = { is_communication_thread: true, channels: [] };
     const createdAt = atLocalNoon(2026, 6, 24);
