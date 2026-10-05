@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_05_190000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1226,7 +1226,9 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
     t.bigint "company_id"
     t.bigint "owner_id"
     t.index "account_id, ((custom_attributes ->> 'medelement_patient_code'::text))", name: "idx_contacts_account_medelement_patient_code", unique: true, where: "((custom_attributes ->> 'medelement_patient_code'::text) IS NOT NULL)"
+    t.index "account_id, \"right\"(regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text), 10)", name: "index_contacts_on_account_id_and_phone_national"
     t.index "lower((email)::text), account_id", name: "index_contacts_on_lower_email_account_id"
+    t.index "regexp_replace((phone_number)::text, '[^0-9]'::text, ''::text, 'g'::text) gin_trgm_ops", name: "index_contacts_on_phone_digits_trgm", using: :gin
     t.index ["account_id", "contact_type"], name: "index_contacts_on_account_id_and_contact_type"
     t.index ["account_id", "email", "phone_number", "identifier"], name: "index_contacts_on_nonempty_fields", where: "(((email)::text <> ''::text) OR ((phone_number)::text <> ''::text) OR ((identifier)::text <> ''::text))"
     t.index ["account_id", "last_activity_at"], name: "index_contacts_on_account_id_and_last_activity_at", order: { last_activity_at: "DESC NULLS LAST" }
