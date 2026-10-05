@@ -281,7 +281,7 @@ RSpec.describe 'Accounts API', type: :request do
         expect(account.reload.custom_attributes['onboarding_step']).to be_nil
       end
 
-      it 'Throws error 422' do
+      it 'Throws error 422', locale: :en do
         params[:name] = 'test' * 999
 
         patch "/api/v1/accounts/#{account.id}",
