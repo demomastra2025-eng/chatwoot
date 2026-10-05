@@ -155,6 +155,14 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     [numeric, max].min
   end
 
+  def parse_offset(value)
+    return 0 if value.blank?
+
+    raise ArgumentError, 'offset must be a non-negative integer' unless value.to_s.match?(/\A\d+\z/)
+
+    value.to_i
+  end
+
   def permissible_conversations
     Conversations::PermissionFilterService.new(account.conversations, @user, account).perform
   end

@@ -23,7 +23,8 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
         :search_by,
         :service_id,
         :include_inactive,
-        :limit
+        :limit,
+        :offset
       )
     end
   end
@@ -69,6 +70,30 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
 
       expect(payload['filters']).to include('service_id' => service_record.id, 'search_by' => 'all', 'include_inactive' => false)
       expect(payload['resources'].map { |item| item['id'] }).to eq([therapist.id])
+      expect(payload['link_status']).to eq('price_link_unverified')
+    end
+
+    it 'reports missing recorded links without claiming that no specialists exist' do
+      other_service = create(:scheduling_service, account: account, name: 'Other examination')
+      payload = JSON.parse(service.execute(service_id: other_service.id))
+
+      expect(payload).to include('total_count' => 0, 'search_status' => 'no_recorded_link', 'link_status' => 'no_recorded_link')
+    end
+
+    it 'paginates resources without losing the total number of candidates' do
+      first_page = JSON.parse(service.execute(limit: 1))
+      second_page = JSON.parse(service.execute(limit: 1, offset: first_page['next_offset']))
+
+      expect(first_page).to include('total_count' => 2, 'returned_count' => 1, 'has_more' => true)
+      expect(second_page).to include('total_count' => 2, 'returned_count' => 1, 'has_more' => false)
+      expect(first_page['resources'].first['id']).not_to eq(second_page['resources'].first['id'])
+      expect(JSON.parse(service.execute(offset: 100))).to include(
+        'total_count' => 2, 'returned_count' => 0, 'page_status' => 'offset_out_of_range'
+      )
+    end
+
+    it 'rejects invalid offsets instead of treating them as the first page' do
+      expect(service.execute(offset: -1)).to include('offset must be a non-negative integer')
     end
 
     it 'treats non-positive and blank service ids as an omitted filter' do
