@@ -128,6 +128,10 @@ CRM_DATA_INTEGRITY_INSTRUCTION = (
     "нейтральное название и сразу вызови инструмент; не задавай тот же вопрос снова. Не сообщай "
     "об успешной записи до успешного результата инструмента. Фактический источник: {source}."
 )
+# OpenRouter model ids of the GPT-5 and GPT-6 (Luna included) families: their voice turns run with reasoning switched
+# off and without a temperature setting, as proven for Luna 5.6 in production.
+OPENROUTER_REASONING_MODEL_PREFIXES = ("openai/gpt-5", "openai/gpt-6")
+
 GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
 GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
     {
@@ -669,7 +673,7 @@ def build_pipeline(
         # endpoints and makes the voice agent completely silent. Pipecat groups
         # a batch into one follow-up response, while SessionState preserves
         # tool-call idempotency and fences repeated mutating actions.
-        if context.ai.model.startswith("openai/gpt-5"):
+        if context.ai.model.startswith(OPENROUTER_REASONING_MODEL_PREFIXES):
             # GPT-5 voice turns are latency-sensitive. OpenRouter's normalized
             # contract supports disabling reasoning for this model family.
             openrouter_extra_body["reasoning"] = {"effort": "none", "exclude": True}
@@ -681,7 +685,7 @@ def build_pipeline(
             "max_tokens": context.ai.max_output_tokens,
             "extra": {"extra_body": openrouter_extra_body},
         }
-        if not context.ai.model.startswith("openai/gpt-5"):
+        if not context.ai.model.startswith(OPENROUTER_REASONING_MODEL_PREFIXES):
             openrouter_settings["temperature"] = context.ai.temperature
         llm = OpenRouterLLMService(
             api_key=credentials["openrouter_api_key"],
