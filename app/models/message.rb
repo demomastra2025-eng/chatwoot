@@ -136,7 +136,8 @@ class Message < ApplicationRecord
     return none if references.empty?
 
     patterns = references.map { |reference| "%#{sanitize_sql_like(reference.to_s)}%" }
-    where("(#{patterns.map { "content_attributes #>> '{}' LIKE ?" }.join(' OR ')})", *patterns)
+    serialized_root = Arel::Nodes::InfixOperation.new('#>>', arel_table[:content_attributes], Arel::Nodes.build_quoted('{}'))
+    where(serialized_root.matches_any(patterns, nil, true))
   end
 
   store :external_source_ids, accessors: [:slack], coder: JSON, prefix: :external_source_id
