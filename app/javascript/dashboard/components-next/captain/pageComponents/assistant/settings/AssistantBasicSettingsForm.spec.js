@@ -21,12 +21,17 @@ vi.mock('vue-i18n', () => ({
   }),
 }));
 
-const storeState = vi.hoisted(() => ({ models: [], selected: null }));
+const storeState = vi.hoisted(() => ({
+  models: [],
+  selected: null,
+  runtimeMetadata: {},
+}));
 
 vi.mock('dashboard/store/captain/preferences', () => ({
   useCaptainConfigStore: () => ({
     getModelsForFeature: () => storeState.models,
     getSelectedModelForFeature: () => storeState.selected,
+    runtimeMetadata: storeState.runtimeMetadata,
     fetch: vi.fn().mockResolvedValue(),
   }),
 }));
@@ -37,7 +42,6 @@ const buildWrapper = props =>
     global: {
       stubs: {
         Avatar: true,
-        AssistantUsageModeSelector: true,
         Button: true,
         Editor: true,
         Input: true,
@@ -52,6 +56,7 @@ describe('AssistantBasicSettingsForm', () => {
     vi.clearAllMocks();
     storeState.models = [];
     storeState.selected = null;
+    storeState.runtimeMetadata = {};
   });
 
   describe('model choice', () => {
@@ -181,13 +186,18 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config).toEqual({
+      temperature: 1,
+      model: null,
+      message_collapse_window_seconds: 0,
+      history_message_limit: 0,
+      auto_reply_on_last_incoming: false,
       feature_faq: false,
       feature_memory: false,
       feature_citation: false,
       feature_web: true,
       feature_document_reading: true,
       feature_image_understanding: true,
-      model: null,
+      handoff_enabled: true,
       use_audio_transcriptions: true,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
@@ -205,38 +215,192 @@ describe('AssistantBasicSettingsForm', () => {
     });
   });
 
-  it('groups capabilities while keeping mode-specific controls visible', () => {
-    const externalAgent = buildWrapper({
+  it('offers every capability of an AI agent as a switch', () => {
+    const wrapper = buildWrapper({
       assistant: { usage_mode: 'external_agent', config: {} },
       showSubmitButton: false,
     });
+    const text = wrapper.text();
 
-    expect(externalAgent.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
-    );
-    expect(externalAgent.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
-    );
-    expect(externalAgent.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
-    );
+    [
+      'AUTO_REPLY_ON_LAST_INCOMING.TITLE',
+      'FEATURES.ALLOW_CONVERSATION_FAQS',
+      'FEATURES.ALLOW_MEMORIES',
+      'FEATURES.ALLOW_NOTES',
+      'FEATURES.ALLOW_CITATIONS',
+      'FEATURES.ALLOW_FAQ_LOOKUP',
+      'FEATURES.ALLOW_HUMAN_HANDOFF',
+    ].forEach(key => {
+      expect(text).toContain(`CAPTAIN.ASSISTANTS.FORM.${key}`);
+    });
+    expect(
+      wrapper.find('[data-testid="internal-assistant-label"]').exists()
+    ).toBe(false);
+  });
 
-    const internalAssistant = buildWrapper({
+  it('shows an internal assistant with only the controls that apply to it and a quiet kind label', () => {
+    const wrapper = buildWrapper({
       assistant: { usage_mode: 'internal_assistant', config: {} },
       showSubmitButton: false,
     });
+    const text = wrapper.text();
 
-    expect(internalAssistant.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS'
+    expect(wrapper.get('[data-testid="internal-assistant-label"]').text()).toBe(
+      'CAPTAIN.ASSISTANTS.INTERNAL_LABEL'
     );
-    expect(internalAssistant.text()).not.toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT'
-    );
-    expect(internalAssistant.text()).not.toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE'
-    );
+    expect(text).toContain('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES');
+    expect(text).toContain('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS');
+    expect(text).not.toContain('FEATURES.WEB_SEARCH');
+    expect(text).not.toContain('FEATURES.ALLOW_HUMAN_HANDOFF');
+    // no model picker for an assistant that does not answer customers
+    expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(0);
   });
 
+  it('renders no selector of the assistant kind', () => {
+    ['external_agent', 'internal_assistant'].forEach(usageMode => {
+      const wrapper = buildWrapper({
+        assistant: { usage_mode: usageMode, config: {} },
+      });
+
+      expect(wrapper.html()).not.toContain('USAGE_MODE');
+      expect(wrapper.findAllComponents({ name: 'Select' }).length).toBeLessThan(
+        2
+      );
+    });
+  });
+
+  it('never sends the kind of the assistant when saving', async () => {
+    const payloads = await Promise.all(
+      ['external_agent', 'internal_assistant'].map(usageMode =>
+        buildWrapper({
+          assistant: {
+            id: 58,
+            name: 'Мөлдір',
+            description: 'Поприветствуй клиента.',
+            usage_mode: usageMode,
+            config: {},
+          },
+        }).vm.buildPayload()
+      )
+    );
+
+    payloads.forEach(payload => {
+      expect(payload.assistant).not.toHaveProperty('usage_mode');
+    });
+  });
+
+  it('saves an internal assistant without the settings of an AI agent', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Помогай сотрудникам.',
+        usage_mode: 'internal_assistant',
+        config: { temperature: 0.4 },
+      },
+    });
+
+    const { config } = (await wrapper.vm.buildPayload()).assistant;
+
+    expect(config.temperature).toBe(0.4);
+    [
+      'model',
+      'handoff_enabled',
+      'auto_reply_on_last_incoming',
+      'feature_document_reading',
+      'feature_image_understanding',
+      'message_collapse_window_seconds',
+      'history_message_limit',
+    ].forEach(key => expect(config).not.toHaveProperty(key));
+  });
+
+  it('keeps the model and the temperature apart from the capabilities', async () => {
+    const assistant = {
+      id: 58,
+      name: 'Мөлдір',
+      description: 'Поприветствуй клиента.',
+      usage_mode: 'external_agent',
+      config: { model: 'openai/gpt-5.4', temperature: 0.3 },
+    };
+
+    const core = buildWrapper({ assistant, showCapabilities: false });
+    const corePayload = await core.vm.buildPayload();
+    expect(Object.keys(corePayload.assistant.config).sort()).toEqual([
+      'history_message_limit',
+      'message_collapse_window_seconds',
+      'model',
+      'temperature',
+    ]);
+    expect(corePayload.assistant.config.temperature).toBe(0.3);
+
+    const capabilities = buildWrapper({
+      assistant,
+      showCoreSettings: false,
+      showIdentityFields: false,
+    });
+    const capabilitiesPayload = await capabilities.vm.buildPayload();
+    expect(capabilitiesPayload.assistant).not.toHaveProperty('name');
+    expect(capabilitiesPayload.assistant.config).not.toHaveProperty('model');
+    expect(capabilitiesPayload.assistant.config).not.toHaveProperty(
+      'temperature'
+    );
+    expect(capabilitiesPayload.assistant.config).toHaveProperty('tool_access');
+  });
+
+  it('shows hand-over to a human as off when the server config turns it off', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {
+          handoff_enabled: false,
+          tool_access: {
+            [AGENT_TOOL_SCOPE]: {
+              enabled: true,
+              tool_ids: [FAQ_LOOKUP_TOOL_ID, HANDOFF_TOOL_ID],
+            },
+          },
+        },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.handoff_enabled).toBe(false);
+    expect(
+      payload.assistant.config.tool_access[AGENT_TOOL_SCOPE].tool_ids
+    ).toEqual([FAQ_LOOKUP_TOOL_ID]);
+    expect(wrapper.emitted('handoffCapabilityChange').at(-1)).toEqual([false]);
+  });
+
+  it('keeps a web option that is already on switchable, but not a new one, without a web provider', () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        usage_mode: 'external_agent',
+        config: {
+          feature_document_reading: true,
+          feature_image_understanding: true,
+          tool_access: {
+            [AGENT_TOOL_SCOPE]: {
+              enabled: true,
+              tool_ids: [WEB_SEARCH_TOOL_ID],
+            },
+          },
+        },
+      },
+      showSubmitButton: false,
+    });
+    const switches = wrapper.findAllComponents({ name: 'Switch' });
+    const disabled = switches.map(item => item.props('disabled'));
+
+    // web search is on (stays enabled), page reading is off (disabled until a provider exists)
+    expect(disabled.filter(Boolean)).toHaveLength(1);
+    expect(wrapper.text()).toContain(
+      'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED'
+    );
+  });
   it('persists an explicit empty agent scope when all default capability checkboxes are disabled', async () => {
     const wrapper = buildWrapper({
       assistant: {
@@ -432,7 +596,6 @@ describe('AssistantBasicSettingsForm', () => {
         },
       },
       showNameField: false,
-      showUsageModeField: false,
       showFeatureFlags: false,
     });
 

@@ -11,7 +11,6 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
-import AssistantUsageModeSelector from '../AssistantUsageModeSelector.vue';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
@@ -44,10 +43,6 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  showUsageModeField: {
-    type: Boolean,
-    default: true,
-  },
   showDescriptionField: {
     type: Boolean,
     default: true,
@@ -68,6 +63,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showCoreSettings: {
+    type: Boolean,
+    default: true,
+  },
+  showCapabilities: {
+    type: Boolean,
+    default: true,
+  },
   showSubmitButton: {
     type: Boolean,
     default: true,
@@ -78,15 +81,21 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['submit', 'update:usageMode']);
+const emit = defineEmits(['submit', 'handoffCapabilityChange']);
 
 const { t } = useI18n();
 
+// The kind of the assistant is read from the record and never edited here: new
+// assistants are always AI agents, the few internal ones keep their own scope.
 const initialState = {
   name: '',
   description: '',
   usageMode: 'external_agent',
   model: '',
+  temperature: 1,
+  autoReplyOnLastIncoming: false,
+  messageCollapseWindowSeconds: 0,
+  historyMessageLimit: 0,
   features: {
     conversationFaqs: false,
     memories: false,
@@ -131,13 +140,17 @@ const assistantModelOptions = computed(() => {
 
   return options;
 });
-const isExternalAgent = computed(
-  () => state.usageMode !== 'internal_assistant'
+const isInternalAssistant = computed(
+  () => state.usageMode === 'internal_assistant'
 );
+const isExternalAgent = computed(() => !isInternalAssistant.value);
 const activeToolScope = computed(() =>
-  state.usageMode === 'internal_assistant'
-    ? ASSISTANT_TOOL_SCOPE
-    : AGENT_TOOL_SCOPE
+  isInternalAssistant.value ? ASSISTANT_TOOL_SCOPE : AGENT_TOOL_SCOPE
+);
+// Web search, page and document reading need the web provider that the platform administrator connects.
+// An option that is already on stays switchable, so that it can still be turned off.
+const isWebProviderConfigured = computed(
+  () => captainConfigStore.runtimeMetadata?.web_access?.configured === true
 );
 const validationRules = {
   name: { required, minLength: minLength(1) },
@@ -209,6 +222,7 @@ const handoffToHumanEnabled = computed({
       enabled,
       state.usageMode
     );
+    emit('handoffCapabilityChange', enabled);
   },
 });
 
@@ -260,6 +274,18 @@ const audioTranscriptionsLabel = computed(() =>
     : t('CAPTAIN.ASSISTANTS.FORM.FEATURES.USE_AUDIO_TRANSCRIPTIONS_DISABLED')
 );
 
+const formattedTemperature = computed(() =>
+  Number(state.temperature || 0).toFixed(1)
+);
+const temperatureOrDefault = value =>
+  value === null || value === undefined || value === '' ? 1 : Number(value);
+const normalizeNonNegativeInteger = value => {
+  const normalizedValue = Number(value);
+  return Number.isFinite(normalizedValue) && normalizedValue > 0
+    ? Math.floor(normalizedValue)
+    : 0;
+};
+
 const notesEnabled = computed({
   get: () => {
     const scopeName = activeToolScope.value;
@@ -269,10 +295,7 @@ const notesEnabled = computed({
     );
   },
   set: enabled => {
-    const scopeName =
-      state.usageMode === 'internal_assistant'
-        ? ASSISTANT_TOOL_SCOPE
-        : AGENT_TOOL_SCOPE;
+    const scopeName = activeToolScope.value;
 
     state.toolAccess = setToolEnabled(
       state.toolAccess,
@@ -301,6 +324,12 @@ const updateStateFromAssistant = assistant => {
   state.model = config.model || '';
   state.description = resolveInstructionText(assistant);
   state.usageMode = assistant.usage_mode || 'external_agent';
+  state.temperature = temperatureOrDefault(config.temperature);
+  state.autoReplyOnLastIncoming = Boolean(config.auto_reply_on_last_incoming);
+  state.messageCollapseWindowSeconds = Number(
+    config.message_collapse_window_seconds || 0
+  );
+  state.historyMessageLimit = Number(config.history_message_limit || 0);
   state.features = {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
@@ -337,6 +366,11 @@ const updateStateFromAssistant = assistant => {
     webSearchEnabled.value = true;
     webPageReadingEnabled.value = true;
   }
+  if (isExternalAgent.value) {
+    // The server lets an explicit handoff_enabled=false win over the tool list: show what really happens.
+    if (config.handoff_enabled === false) handoffToHumanEnabled.value = false;
+    emit('handoffCapabilityChange', handoffToHumanEnabled.value);
+  }
   state.avatarFile = null;
   state.avatarUrl = assistant.avatar_url || '';
   state.removeAvatar = false;
@@ -368,12 +402,27 @@ const buildPayload = async () => {
     assistantPayload.description = state.description;
   }
 
-  if (props.showIdentityFields && props.showUsageModeField) {
-    assistantPayload.usage_mode = state.usageMode;
+  if (props.showFeatureFlags && props.showCoreSettings) {
+    assistantPayload.config = {
+      temperature: temperatureOrDefault(state.temperature),
+    };
+
+    if (isExternalAgent.value) {
+      Object.assign(assistantPayload.config, {
+        model: state.model || null,
+        message_collapse_window_seconds: normalizeNonNegativeInteger(
+          state.messageCollapseWindowSeconds
+        ),
+        history_message_limit: normalizeNonNegativeInteger(
+          state.historyMessageLimit
+        ),
+      });
+    }
   }
 
-  if (props.showFeatureFlags) {
+  if (props.showFeatureFlags && props.showCapabilities) {
     assistantPayload.config = {
+      ...(assistantPayload.config || {}),
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
@@ -385,9 +434,10 @@ const buildPayload = async () => {
 
     if (isExternalAgent.value) {
       Object.assign(assistantPayload.config, {
+        auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
         feature_document_reading: state.features.documentReading,
         feature_image_understanding: state.features.imageUnderstanding,
-        model: state.model || null,
+        handoff_enabled: handoffToHumanEnabled.value,
       });
     }
 
@@ -432,19 +482,6 @@ watch(
   { immediate: true }
 );
 
-watch(
-  () => state.usageMode,
-  newUsageMode => {
-    state.toolAccess = resolveToolAccessForUsageMode(
-      state.toolAccess,
-      newUsageMode
-    );
-
-    emit('update:usageMode', newUsageMode);
-  },
-  { immediate: true }
-);
-
 defineExpose({
   buildPayload,
 });
@@ -468,36 +505,121 @@ defineExpose({
     </div>
 
     <template v-if="showIdentityFields">
-      <Input
-        v-if="showNameField"
-        v-model="state.name"
-        :label="t('CAPTAIN.ASSISTANTS.FORM.NAME.LABEL')"
-        :placeholder="t('CAPTAIN.ASSISTANTS.FORM.NAME.PLACEHOLDER')"
-        :message="formErrors.name"
-        :message-type="formErrors.name ? 'error' : 'info'"
-      />
-
-      <AssistantUsageModeSelector
-        v-if="showUsageModeField"
-        v-model="state.usageMode"
-      />
-
-      <div
-        v-if="showFeatureFlags && isExternalAgent"
-        class="flex flex-col gap-2"
-      >
-        <label class="text-sm font-medium text-n-slate-12">
-          {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.LABEL') }}
-        </label>
-        <Select
-          v-model="state.model"
-          :options="assistantModelOptions"
-          class="w-full"
+      <div v-if="showNameField" class="flex flex-col gap-1">
+        <Input
+          v-model="state.name"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.NAME.LABEL')"
+          :placeholder="t('CAPTAIN.ASSISTANTS.FORM.NAME.PLACEHOLDER')"
+          :message="formErrors.name"
+          :message-type="formErrors.name ? 'error' : 'info'"
         />
-        <p class="m-0 text-xs text-n-slate-11">
-          {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.DESCRIPTION') }}
+        <p
+          v-if="isInternalAssistant"
+          class="m-0 text-xs text-n-slate-11"
+          data-testid="internal-assistant-label"
+        >
+          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
         </p>
       </div>
+
+      <section
+        v-if="showFeatureFlags && showCoreSettings"
+        class="flex flex-col gap-5"
+      >
+        <div v-if="isExternalAgent" class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.LABEL') }}
+          </label>
+          <Select
+            v-model="state.model"
+            :options="assistantModelOptions"
+            class="w-full"
+          />
+          <p class="m-0 text-xs text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.DESCRIPTION') }}
+          </p>
+        </div>
+
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.LABEL') }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.DESCRIPTION') }}
+            </p>
+          </div>
+          <div class="flex w-72 shrink-0 items-center gap-3">
+            <input
+              v-model.number="state.temperature"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              class="min-w-0 flex-1 cursor-pointer accent-n-brand"
+            />
+            <span
+              class="inline-flex w-12 shrink-0 justify-center rounded-full bg-n-alpha-2 px-2 py-1 text-sm font-medium tabular-nums text-n-slate-12"
+            >
+              {{ formattedTemperature }}
+            </span>
+          </div>
+        </div>
+
+        <template v-if="isExternalAgent">
+          <div class="flex items-center justify-between gap-6">
+            <div class="min-w-0">
+              <label class="text-sm font-medium text-n-slate-12">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL'
+                  )
+                }}
+              </label>
+              <p class="mt-1 text-xs text-n-slate-11">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
+                  )
+                }}
+              </p>
+            </div>
+            <Input
+              v-model="state.messageCollapseWindowSeconds"
+              type="number"
+              min="0"
+              :placeholder="
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+                )
+              "
+              class="w-36 shrink-0"
+            />
+          </div>
+
+          <div class="flex items-center justify-between gap-6">
+            <div class="min-w-0">
+              <label class="text-sm font-medium text-n-slate-12">
+                {{ t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL') }}
+              </label>
+              <p class="mt-1 text-xs text-n-slate-11">
+                {{
+                  t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
+                }}
+              </p>
+            </div>
+            <Input
+              v-model="state.historyMessageLimit"
+              type="number"
+              min="0"
+              :placeholder="
+                t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
+              "
+              class="w-36 shrink-0"
+            />
+          </div>
+        </template>
+      </section>
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
         <div class="flex w-full flex-wrap items-center justify-between gap-2">
@@ -548,128 +670,144 @@ defineExpose({
       </div>
     </template>
 
-    <section
-      v-if="showFeatureFlags"
-      class="rounded-2xl border border-n-weak bg-n-solid-1 px-4 py-3"
-    >
-      <h3 class="mb-2 text-sm font-semibold text-n-slate-12">
-        {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
-      </h3>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <section
+    <section v-if="showFeatureFlags && showCapabilities">
+      <div class="flex flex-col divide-y divide-n-weak">
+        <label
           v-if="isExternalAgent"
-          class="rounded-xl bg-n-slate-1 px-3 py-2.5"
+          class="flex items-center justify-between gap-3 py-3 first:pt-0"
         >
-          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.CUSTOMER_CONTEXT') }}
-          </h4>
-          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
-            <label class="flex items-center justify-between gap-3">
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS')
-              }}</span>
-              <Switch v-model="state.features.conversationFaqs" />
-            </label>
-            <label class="flex items-center justify-between gap-3">
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES')
-              }}</span>
-              <Switch v-model="state.features.memories" />
-            </label>
-          </div>
-        </section>
-
-        <section class="rounded-xl bg-n-slate-1 px-3 py-2.5">
-          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.TOOLS') }}
-          </h4>
-          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
-            <label class="flex items-center justify-between gap-3">
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES')
-              }}</span>
-              <Switch v-model="notesEnabled" />
-            </label>
-            <label class="flex items-center justify-between gap-3">
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS')
-              }}</span>
-              <Switch v-model="state.features.citations" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH')
-              }}</span>
-              <Switch v-model="webSearchEnabled" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING')
-              }}</span>
-              <Switch v-model="webPageReadingEnabled" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING')
-              }}</span>
-              <Switch v-model="state.features.documentReading" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING')
-              }}</span>
-              <Switch v-model="state.features.imageUnderstanding" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP')
-              }}</span>
-              <Switch v-model="faqLookupEnabled" />
-            </label>
-            <label
-              v-if="isExternalAgent"
-              class="flex items-center justify-between gap-3"
-            >
-              <span>{{
-                t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF')
-              }}</span>
-              <Switch v-model="handoffToHumanEnabled" />
-            </label>
-          </div>
-        </section>
-
-        <section
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.DESCRIPTION'
+                )
+              }}
+            </span>
+          </span>
+          <Switch v-model="state.autoReplyOnLastIncoming" />
+        </label>
+        <label
           v-if="isExternalAgent"
-          class="rounded-xl bg-n-slate-1 px-3 py-2.5 sm:col-span-2"
+          class="flex items-center justify-between gap-3 py-3"
         >
-          <h4 class="mb-2 text-xs font-semibold text-n-slate-11">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.GROUPS.VOICE') }}
-          </h4>
-          <div class="capability-list flex flex-col divide-y divide-n-weak/50">
-            <label class="flex items-center justify-between gap-3">
-              <span>{{ audioTranscriptionsLabel }}</span>
-              <Switch
-                v-model="state.features.useAudioTranscriptions"
-                :disabled="!audioTranscriptionsAvailable"
-              />
-            </label>
-          </div>
-        </section>
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
+          </span>
+          <Switch v-model="state.features.conversationFaqs" />
+        </label>
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3 py-3"
+        >
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
+          </span>
+          <Switch v-model="state.features.memories" />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES') }}
+          </span>
+          <Switch v-model="notesEnabled" />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+          </span>
+          <Switch v-model="state.features.citations" />
+        </label>
+        <template v-if="isExternalAgent">
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
+              <span class="block text-xs text-n-slate-11">
+                {{
+                  t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH_DESCRIPTION')
+                }}
+              </span>
+            </span>
+            <Switch
+              v-model="webSearchEnabled"
+              :disabled="!isWebProviderConfigured && !webSearchEnabled"
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING') }}
+              <span class="block text-xs text-n-slate-11">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING_DESCRIPTION'
+                  )
+                }}
+              </span>
+            </span>
+            <Switch
+              v-model="webPageReadingEnabled"
+              :disabled="!isWebProviderConfigured && !webPageReadingEnabled"
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
+              <span class="block text-xs text-n-slate-11">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING_DESCRIPTION'
+                  )
+                }}
+              </span>
+            </span>
+            <Switch
+              v-model="state.features.documentReading"
+              :disabled="
+                !isWebProviderConfigured && !state.features.documentReading
+              "
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING') }}
+              <span class="block text-xs text-n-slate-11">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING_DESCRIPTION'
+                  )
+                }}
+              </span>
+            </span>
+            <Switch v-model="state.features.imageUnderstanding" />
+          </label>
+          <p
+            v-if="!isWebProviderConfigured"
+            class="m-0 py-3 text-xs text-n-slate-11"
+          >
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
+          </p>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ audioTranscriptionsLabel }}
+            </span>
+            <Switch
+              v-model="state.features.useAudioTranscriptions"
+              :disabled="!audioTranscriptionsAvailable"
+            />
+          </label>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
+            </span>
+            <Switch v-model="faqLookupEnabled" />
+          </label>
+          <label class="flex items-center justify-between gap-3 py-3">
+            <span class="text-sm text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
+            </span>
+            <Switch v-model="handoffToHumanEnabled" />
+          </label>
+        </template>
       </div>
     </section>
 

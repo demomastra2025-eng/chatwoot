@@ -58,10 +58,6 @@ describe('AssistantSystemSettingsForm', () => {
     expect(payload.assistant.config).toEqual({
       handoff_message: 'Передаю диалог коллеге.',
       resolution_message: 'Спасибо, вопрос закрыт.',
-      temperature: 0.4,
-      auto_reply_on_last_incoming: true,
-      message_collapse_window_seconds: 3,
-      history_message_limit: 15,
       voice_settings: {
         provider: 'gemini-live',
         model: 'gemini-3.1-flash-live-preview',

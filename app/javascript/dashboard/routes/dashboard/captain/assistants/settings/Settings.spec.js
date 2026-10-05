@@ -6,7 +6,9 @@ const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
 const routerPushMock = vi.fn();
 const basicBuildPayloadMock = vi.fn();
+const capabilitiesBuildPayloadMock = vi.fn();
 const systemBuildPayloadMock = vi.fn();
+const outcomeBuildPayloadMock = vi.fn();
 
 const assistantRecord = {
   id: 57,
@@ -14,6 +16,7 @@ const assistantRecord = {
   usage_mode: 'external_agent',
   config: {
     feature_faq: true,
+    use_audio_transcriptions: true,
     handoff_message: 'old handoff',
     voice_settings: {
       provider: 'gemini-live',
@@ -39,8 +42,18 @@ const ButtonStub = defineComponent({
 
 const AssistantBasicSettingsFormStub = defineComponent({
   name: 'AssistantBasicSettingsForm',
-  setup(_props, { expose }) {
-    expose({ buildPayload: basicBuildPayloadMock });
+  props: {
+    showCoreSettings: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  setup(props, { expose }) {
+    expose({
+      buildPayload: props.showCoreSettings
+        ? basicBuildPayloadMock
+        : capabilitiesBuildPayloadMock,
+    });
     return () => h('div', 'basic-form');
   },
 });
@@ -50,6 +63,14 @@ const AssistantSystemSettingsFormStub = defineComponent({
   setup(_props, { expose }) {
     expose({ buildPayload: systemBuildPayloadMock });
     return () => h('div', 'system-form');
+  },
+});
+
+const AssistantOutcomeSettingsFormStub = defineComponent({
+  name: 'AssistantOutcomeSettingsForm',
+  setup(_props, { expose }) {
+    expose({ buildPayload: outcomeBuildPayloadMock });
+    return () => h('div', 'outcome-form');
   },
 });
 
@@ -123,6 +144,10 @@ vi.mock(
   () => ({ default: AssistantSystemSettingsFormStub })
 );
 
+vi.mock('../outcomes/Index.vue', () => ({
+  default: AssistantOutcomeSettingsFormStub,
+}));
+
 vi.mock(
   'dashboard/components-next/captain/pageComponents/DeleteDialog.vue',
   () => ({
@@ -161,9 +186,20 @@ describe('Captain assistant settings page', () => {
       assistant: {
         name: 'Voice assistant',
         description: 'Updated description',
-        usage_mode: 'external_agent',
         config: {
-          feature_faq: true,
+          temperature: 0.4,
+        },
+      },
+    });
+
+    capabilitiesBuildPayloadMock.mockReset();
+    capabilitiesBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        config: {
+          feature_faq: false,
+          handoff_enabled: false,
+          tool_access: { custom_tools: false },
+          use_audio_transcriptions: false,
         },
       },
     });
@@ -173,7 +209,6 @@ describe('Captain assistant settings page', () => {
       assistant: {
         config: {
           handoff_message: '',
-          temperature: 0.4,
           voice_settings: {
             provider: 'gemini-live',
             model: 'gemini-3.1-flash-live-preview',
@@ -188,9 +223,52 @@ describe('Captain assistant settings page', () => {
         },
       },
     });
+
+    outcomeBuildPayloadMock.mockReset();
+    outcomeBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        config: {
+          auto_completion_enabled: true,
+          outcome_reason_settings: {
+            completion_reasons: [{ id: 'other', label: 'Other', active: true }],
+            handoff_reasons: [{ id: 'other', label: 'Other', active: true }],
+          },
+        },
+      },
+    });
   });
 
-  it('keeps existing voice settings when saving the profile tab', async () => {
+  it('saves the general tab from its sections without changing the kind of the assistant', async () => {
+    const wrapper = mountComponent();
+
+    await clickUpdate(wrapper);
+
+    const [action, payload] = dispatchMock.mock.calls.find(
+      ([name]) => name === 'captainAssistants/update'
+    );
+    expect(action).toBe('captainAssistants/update');
+    expect(payload).toEqual({
+      id: 57,
+      name: 'Voice assistant',
+      description: 'Updated description',
+      config: expect.objectContaining({
+        feature_faq: false,
+        handoff_message: '',
+        handoff_enabled: false,
+        tool_access: { custom_tools: false },
+        auto_completion_enabled: true,
+        outcome_reason_settings: expect.objectContaining({
+          completion_reasons: expect.any(Array),
+          handoff_reasons: expect.any(Array),
+        }),
+        temperature: 0.4,
+        voice_settings: assistantRecord.config.voice_settings,
+      }),
+    });
+    expect(payload).not.toHaveProperty('usage_mode');
+  });
+
+  it('persists disabling audio transcriptions for the assistant', async () => {
     const wrapper = mountComponent();
 
     await clickUpdate(wrapper);
@@ -199,14 +277,51 @@ describe('Captain assistant settings page', () => {
       id: 57,
       name: 'Voice assistant',
       description: 'Updated description',
-      usage_mode: 'external_agent',
       config: expect.objectContaining({
-        feature_faq: true,
-        handoff_message: '',
-        temperature: 0.4,
-        voice_settings: assistantRecord.config.voice_settings,
+        use_audio_transcriptions: false,
       }),
     });
+  });
+
+  it('does not render a selector of the assistant kind', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.html()).not.toContain('USAGE_MODE');
+    expect(wrapper.text()).not.toContain('AssistantUsageModeSelector');
+  });
+
+  it('shows an AI agent with its outcomes and runtime sections', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('outcome-form');
+    expect(wrapper.text()).toContain('system-form');
+    expect(wrapper.text().match(/basic-form/g)).toHaveLength(2);
+  });
+
+  it('saves an internal assistant without the sections of an AI agent', async () => {
+    const original = { ...assistantRecord };
+    assistantRecord.usage_mode = 'internal_assistant';
+
+    try {
+      const wrapper = mountComponent();
+
+      expect(wrapper.text()).not.toContain('outcome-form');
+      expect(wrapper.text()).not.toContain('system-form');
+
+      await clickUpdate(wrapper);
+
+      const [, payload] = dispatchMock.mock.calls.find(
+        ([name]) => name === 'captainAssistants/update'
+      );
+      expect(payload).not.toHaveProperty('usage_mode');
+      // the AI agent sections are not rendered, so their saved values are kept as they are
+      expect(payload.config.handoff_message).toBe('old handoff');
+      expect(payload.config).not.toHaveProperty('auto_completion_enabled');
+      expect(outcomeBuildPayloadMock).not.toHaveBeenCalled();
+      expect(systemBuildPayloadMock).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(assistantRecord, original);
+    }
   });
 
   it('saves voice agent settings from the dedicated voice tab', async () => {

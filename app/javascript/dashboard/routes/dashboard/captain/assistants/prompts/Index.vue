@@ -211,7 +211,6 @@ watch(
                 :assistant="assistant"
                 :show-avatar-section="false"
                 :show-name-field="false"
-                :show-usage-mode-field="false"
                 :show-feature-flags="false"
                 :show-submit-button="false"
                 :description-max-length="PROMPT_INSTRUCTION_MAX_LENGTH"

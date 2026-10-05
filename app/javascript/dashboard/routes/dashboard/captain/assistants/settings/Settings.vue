@@ -13,12 +13,7 @@ import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageCo
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
 import VoiceAgentPreview from 'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue';
 import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
-import {
-  AGENT_TOOL_SCOPE,
-  HANDOFF_TOOL_ID,
-  isToolEnabled,
-  resolveToolAccessForUsageMode,
-} from 'dashboard/components-next/captain/pageComponents/assistant/toolAccessDefaults';
+
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
@@ -29,10 +24,12 @@ const store = useStore();
 
 const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
+const generalCapabilitiesFormRef = ref(null);
 const generalOutcomeFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
-const draftUsageMode = ref('external_agent');
+// Kept in step with the "hand over to a human" switch of the capabilities form.
+const handoffEnabled = ref(true);
 const activeSettingsTab = ref('profile');
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
@@ -42,29 +39,11 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-const effectiveUsageMode = computed(
-  () => draftUsageMode.value || assistant.value?.usage_mode || 'external_agent'
+// The kind of an assistant is only read: the page never changes it.
+const isExternalAgent = computed(
+  () => assistant.value?.usage_mode !== 'internal_assistant'
 );
-const isInternalAssistant = computed(
-  () => effectiveUsageMode.value === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
 const assistantConfig = computed(() => assistant.value?.config || {});
-const handoffEnabled = computed(() => {
-  if (
-    Object.prototype.hasOwnProperty.call(
-      assistantConfig.value,
-      'handoff_enabled'
-    )
-  ) {
-    return assistantConfig.value.handoff_enabled !== false;
-  }
-  const access = resolveToolAccessForUsageMode(
-    assistantConfig.value.tool_access || {},
-    'external_agent'
-  );
-  return isToolEnabled(access, AGENT_TOOL_SCOPE, HANDOFF_TOOL_ID);
-});
 const legacyOutcomeReasons = computed(() => {
   const getAccount = store.getters['accounts/getAccount'];
   const account =
@@ -99,26 +78,32 @@ const activeSettingsTabIndex = computed(() =>
 );
 
 const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'model',
+  'temperature',
+  'message_collapse_window_seconds',
+  'history_message_limit',
+]);
+
+const CAPABILITY_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'auto_reply_on_last_incoming',
   'feature_faq',
   'feature_memory',
   'feature_citation',
   'feature_web',
   'feature_document_reading',
   'feature_image_understanding',
-  'model',
-  'handoff_enabled',
-  'use_audio_transcriptions',
   'context_access',
+  'handoff_enabled',
   'tool_access',
+  'use_audio_transcriptions',
 ]);
 
 const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'handoff_message',
   'resolution_message',
-  'temperature',
-  'auto_reply_on_last_incoming',
-  'message_collapse_window_seconds',
-  'history_message_limit',
+]);
+
+const OUTCOME_SETTINGS_CONFIG_KEYS = Object.freeze([
   'auto_completion_enabled',
   'outcome_reason_settings',
 ]);
@@ -133,14 +118,6 @@ watch(
     }
 
     store.dispatch('captainAssistants/show', currentAssistantId);
-  },
-  { immediate: true }
-);
-
-watch(
-  assistant,
-  currentAssistant => {
-    draftUsageMode.value = currentAssistant?.usage_mode || 'external_agent';
   },
   { immediate: true }
 );
@@ -210,27 +187,31 @@ const pickConfigKeys = (config = {}, keys = []) =>
 
 const mergeAssistantPayloads = (
   basicPayload,
+  capabilitiesPayload,
   systemPayload,
   outcomePayload
 ) => {
   const basicAssistant = basicPayload?.assistant || {};
-  const systemAssistant = systemPayload?.assistant || {};
 
   return {
     assistant: {
-      ...basicAssistant,
-      ...systemAssistant,
       name: basicAssistant.name,
       description: basicAssistant.description,
-      usage_mode: basicAssistant.usage_mode,
       config: {
         ...assistantConfig.value,
         ...pickConfigKeys(basicAssistant.config, BASIC_SETTINGS_CONFIG_KEYS),
-        ...pickConfigKeys(systemAssistant.config, SYSTEM_SETTINGS_CONFIG_KEYS),
-        ...pickConfigKeys(outcomePayload?.assistant?.config, [
-          'auto_completion_enabled',
-          'outcome_reason_settings',
-        ]),
+        ...pickConfigKeys(
+          capabilitiesPayload?.assistant?.config,
+          CAPABILITY_SETTINGS_CONFIG_KEYS
+        ),
+        ...pickConfigKeys(
+          systemPayload?.assistant?.config,
+          SYSTEM_SETTINGS_CONFIG_KEYS
+        ),
+        ...pickConfigKeys(
+          outcomePayload?.assistant?.config,
+          OUTCOME_SETTINGS_CONFIG_KEYS
+        ),
       },
     },
     avatar: basicPayload?.avatar ?? null,
@@ -242,8 +223,14 @@ const handleGeneralSave = async () => {
   const basicPayload = await generalBasicFormRef.value?.buildPayload?.();
   if (!basicPayload) return;
 
-  const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
-  if (!systemPayload) return;
+  const capabilitiesPayload =
+    await generalCapabilitiesFormRef.value?.buildPayload?.();
+  if (!capabilitiesPayload) return;
+
+  const systemPayload = isExternalAgent.value
+    ? await generalSystemFormRef.value?.buildPayload?.()
+    : null;
+  if (isExternalAgent.value && !systemPayload) return;
 
   const outcomePayload = isExternalAgent.value
     ? await generalOutcomeFormRef.value?.buildPayload?.()
@@ -254,7 +241,12 @@ const handleGeneralSave = async () => {
   }
 
   await handleSubmit(
-    mergeAssistantPayloads(basicPayload, systemPayload, outcomePayload)
+    mergeAssistantPayloads(
+      basicPayload,
+      capabilitiesPayload,
+      systemPayload,
+      outcomePayload
+    )
   );
 };
 
@@ -279,12 +271,12 @@ const handleDelete = () => {
   deleteAssistantDialog.value.dialogRef.open();
 };
 
-const handleUsageModeUpdate = nextUsageMode => {
-  draftUsageMode.value = nextUsageMode || 'external_agent';
-};
-
 const handleSettingsTabChanged = tab => {
   activeSettingsTab.value = tab?.key || 'profile';
+};
+
+const handleHandoffCapabilityChange = enabled => {
+  handoffEnabled.value = enabled;
 };
 
 const handleDeleteSuccess = () => {
@@ -332,12 +324,30 @@ const handleDeleteSuccess = () => {
               <AssistantBasicSettingsForm
                 ref="generalBasicFormRef"
                 :assistant="assistant"
+                :show-description-field="false"
+                :show-capabilities="false"
+                :show-submit-button="false"
+              />
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <div class="flex flex-col gap-6">
+              <SettingsHeader
+                :heading="t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE')"
+                :description="t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DESCRIPTION')"
+              />
+              <AssistantBasicSettingsForm
+                ref="generalCapabilitiesFormRef"
+                :assistant="assistant"
                 :audio-transcriptions-available="
                   workspaceAudioTranscriptionsEnabled
                 "
-                :show-description-field="false"
+                :show-avatar-section="false"
+                :show-identity-fields="false"
+                :show-core-settings="false"
                 :show-submit-button="false"
-                @update:usage-mode="handleUsageModeUpdate"
+                @handoff-capability-change="handleHandoffCapabilityChange"
               />
             </div>
           </div>
@@ -354,7 +364,10 @@ const handleDeleteSuccess = () => {
             />
           </div>
 
-          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+          <div
+            v-if="isExternalAgent"
+            class="rounded-2xl bg-n-solid-1 p-5 md:p-6"
+          >
             <div class="flex flex-col gap-6">
               <SettingsHeader
                 :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"
@@ -365,8 +378,6 @@ const handleDeleteSuccess = () => {
               <AssistantSystemSettingsForm
                 ref="generalSystemFormRef"
                 :assistant="assistant"
-                :show-conversation-messages="isExternalAgent"
-                :show-automation-settings="isExternalAgent"
                 :show-voice-settings="false"
                 :show-submit-button="false"
               />
@@ -403,8 +414,6 @@ const handleDeleteSuccess = () => {
                 ref="voiceSystemFormRef"
                 :assistant="assistant"
                 :show-conversation-messages="false"
-                :show-temperature-setting="false"
-                :show-automation-settings="false"
                 show-voice-settings
                 :show-submit-button="false"
               />
