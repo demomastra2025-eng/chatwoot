@@ -47,10 +47,11 @@ RSpec.describe Llm::Models do
 
   describe '.features' do
     it 'uses OpenRouter model ids as normal Captain feature defaults' do
-      expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-5.4-mini')
+      expect(described_class.features.dig('editor', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('assistant', 'default')).to eq('openai/gpt-6-luna')
-      expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-5.4')
-      expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-5.4-mini')
+      expect(described_class.features.dig('copilot', 'default')).to eq('openai/gpt-6-luna')
+      expect(described_class.features.dig('label_suggestion', 'default')).to eq('openai/gpt-6-luna')
+      expect(described_class.features.dig('image_recognition', 'default')).to eq('openai/gpt-6-luna')
       expect(described_class.features.dig('audio_transcription', 'default')).to eq('openai/gpt-4o-mini-transcribe')
       expect(described_class.features.dig('moderation', 'default')).to eq('openai/gpt-oss-safeguard-20b')
     end
@@ -547,7 +548,7 @@ RSpec.describe Llm::Models do
         hash_including(id: 'openai/gpt-4o-mini-transcribe', provider: 'openrouter', capabilities: include('audio_input', 'transcription')),
         hash_including(id: 'openai/gpt-audio-mini', provider: 'openrouter', capabilities: include('audio_input', 'transcription'))
       )
-      expect(image_config[:default]).to eq('openai/gpt-5.4-mini')
+      expect(image_config[:default]).to eq('openai/gpt-6-luna')
       expect(image_config[:models]).to include(
         hash_including(id: 'openai/gpt-5.4-mini', provider: 'openrouter', capabilities: include('image_input'))
       )

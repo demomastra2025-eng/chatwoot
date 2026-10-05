@@ -9,7 +9,7 @@ RSpec.describe Llm::Config do
 
   describe 'defaults' do
     it 'uses an OpenRouter-routed GPT model as the global fallback model' do
-      expect(described_class::DEFAULT_MODEL).to eq('openai/gpt-5.4-mini')
+      expect(described_class::DEFAULT_MODEL).to eq('openai/gpt-6-luna')
     end
   end
 
@@ -273,7 +273,16 @@ RSpec.describe Llm::Config do
       upsert_installation_config('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/does-not-exist')
       allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(transcription_catalog)
 
-      expect(described_class.model_for(feature: 'image_recognition')).to eq('openai/gpt-5.4-mini')
+      expect(described_class.model_for(feature: 'image_recognition')).to eq('openai/gpt-6-luna')
+    end
+
+    it 'defaults every chat-completion feature to Luna 6 before any catalog refresh when the platform chose nothing' do
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return({})
+
+      %w[assistant editor copilot label_suggestion image_recognition].each do |feature|
+        expect(described_class.model_for(feature: feature)).to eq('openai/gpt-6-luna')
+      end
     end
 
     it 'normalizes legacy Anthropic aliases from installation config when the provider key is configured' do

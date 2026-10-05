@@ -2,7 +2,7 @@ require 'ruby_llm'
 
 # rubocop:disable Metrics/ModuleLength
 module Llm::Config
-  DEFAULT_MODEL = 'openai/gpt-5.4-mini'.freeze
+  DEFAULT_MODEL = 'openai/gpt-6-luna'.freeze
   DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
