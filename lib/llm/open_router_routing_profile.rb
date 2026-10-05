@@ -64,6 +64,7 @@ class Llm::OpenRouterRoutingProfile
   }.freeze
   LUNA_PRIMARY_MODEL = 'openai/gpt-6-luna'
   LUNA_FALLBACK_MODEL = 'openai/gpt-5.6-luna'
+  LUNA_CHAT_FEATURES = %w[copilot editor label_suggestion image_recognition].freeze
   EXCLUDED_CAPTAIN_PROVIDER_ENDPOINTS = %w[openai/fast openai/priority openai/flex].freeze
 
   NATIVE_ENDPOINTS = {
@@ -175,12 +176,17 @@ class Llm::OpenRouterRoutingProfile
   end
 
   def build_models
-    fallback_models = if model_fallbacks_allowed?
-                        feature_key == 'captain_agent' && model == LUNA_PRIMARY_MODEL ? [LUNA_FALLBACK_MODEL] : FALLBACK_MODELS.fetch(feature_key, [])
-                      else
-                        []
-                      end
+    fallback_models = model_fallbacks_allowed? ? fallback_models_for_feature : []
     ([model] + fallback_models).compact_blank.uniq
+  end
+
+  # The agent falls back only to Luna 5.6. The other chat features, when they run on Luna 6, try Luna 5.6 before
+  # their own cheaper fallbacks, so a Luna 6 outage does not silently move them to a much smaller model.
+  def fallback_models_for_feature
+    return [LUNA_FALLBACK_MODEL] if feature_key == 'captain_agent' && model == LUNA_PRIMARY_MODEL
+    return FALLBACK_MODELS.fetch(feature_key, []) unless model == LUNA_PRIMARY_MODEL && LUNA_CHAT_FEATURES.include?(feature_key)
+
+    [LUNA_FALLBACK_MODEL] + FALLBACK_MODELS.fetch(feature_key, [])
   end
 
   def build_provider_preferences
@@ -230,8 +236,12 @@ class Llm::OpenRouterRoutingProfile
     end
   end
 
+  # The model the platform chose is tried first; the fallbacks are used only when it fails. Without this the
+  # price or latency sort of the editor, hints and copilot would rank all the listed models together and could
+  # send every request to a cheaper fallback instead of the chosen model.
   def preserve_model_priority!(provider_preferences)
-    return unless feature_key == 'captain_agent' && models.length > 1
+    return unless feature_key == 'captain_agent' || (model == LUNA_PRIMARY_MODEL && LUNA_CHAT_FEATURES.include?(feature_key))
+    return unless models.length > 1
     return unless provider_preferences[:sort].is_a?(Hash)
 
     provider_preferences[:sort] = provider_preferences[:sort].merge(partition: 'model')

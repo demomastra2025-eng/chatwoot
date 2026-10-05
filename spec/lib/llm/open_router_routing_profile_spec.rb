@@ -161,6 +161,30 @@ RSpec.describe Llm::OpenRouterRoutingProfile do
       expect(editor_profile.provider_preferences[:require_parameters]).to be(false)
     end
 
+    it 'tries Luna 5.6 before the cheaper fallbacks when another chat feature runs on Luna 6' do
+      %i[copilot editor label_suggestion image_recognition].each do |feature|
+        profile = described_class.for(feature: feature, model: 'openai/gpt-6-luna')
+
+        expect(profile.models.first(2)).to eq(%w[openai/gpt-6-luna openai/gpt-5.6-luna])
+        expect(profile.models).to include('openai/gpt-5.4-mini')
+      end
+      expect(described_class.for(feature: :editor, model: 'openai/gpt-5.4-mini').models).to eq(%w[openai/gpt-5.4-mini openai/gpt-4.1-mini])
+    end
+
+    it 'keeps Luna 6 first for the editor, hints and copilot instead of ranking all listed models together' do
+      %i[editor label_suggestion copilot].each do |feature|
+        profile = described_class.for(feature: feature, model: 'openai/gpt-6-luna')
+
+        expect(profile.provider_preferences[:sort]).to include(partition: 'model')
+      end
+    end
+
+    it 'does not fall back from Luna 6 for another chat feature when the workspace forbids model fallbacks' do
+      profile = described_class.for(feature: :editor, model: 'openai/gpt-6-luna', runtime_preferences: { openrouter_allow_model_fallbacks: false })
+
+      expect(profile.models).to eq(['openai/gpt-6-luna'])
+    end
+
     it 'marks native endpoint profiles for embeddings, transcription, and rerank' do
       expect(described_class.for(feature: :embedding, model: 'openai/text-embedding-3-small').native_endpoint).to eq('/embeddings')
       expect(described_class.for(feature: :audio_transcription,
