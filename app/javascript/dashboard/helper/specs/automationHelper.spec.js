@@ -23,6 +23,56 @@ import {
   AUTOMATIONS,
 } from 'dashboard/routes/dashboard/settings/automation/constants';
 
+describe('withRowScopedLegacyOption', () => {
+  it('shows legacy choices only on rows that already use them', () => {
+    const conditionOptions = [{ attributeKey: 'status' }];
+    const legacyCondition = { attributeKey: 'payment_status' };
+    const actionOptions = [{ key: 'send_webhook_event' }];
+    const legacyAction = { key: 'cancel_appointment_payment' };
+
+    expect(
+      helpers.withRowScopedLegacyOption(
+        conditionOptions,
+        'status',
+        [legacyCondition],
+        'attributeKey'
+      )
+    ).toBe(conditionOptions);
+    expect(
+      helpers.withRowScopedLegacyOption(
+        conditionOptions,
+        undefined,
+        [legacyCondition],
+        'attributeKey'
+      )
+    ).toBe(conditionOptions);
+    expect(
+      helpers.withRowScopedLegacyOption(
+        conditionOptions,
+        'payment_status',
+        [legacyCondition],
+        'attributeKey'
+      )
+    ).toEqual([...conditionOptions, legacyCondition]);
+    expect(
+      helpers.withRowScopedLegacyOption(
+        actionOptions,
+        undefined,
+        [legacyAction],
+        'key'
+      )
+    ).toBe(actionOptions);
+    expect(
+      helpers.withRowScopedLegacyOption(
+        actionOptions,
+        'cancel_appointment_payment',
+        [legacyAction],
+        'key'
+      )
+    ).toEqual([...actionOptions, legacyAction]);
+  });
+});
+
 describe('getCustomAttributeInputType', () => {
   it('returns the attribute input type', () => {
     expect(helpers.getCustomAttributeInputType('date')).toEqual('date');
@@ -179,7 +229,6 @@ const BACKEND_CONVERSATION_CONDITIONS = [
 const BACKEND_APPOINTMENT_ACTIONS = [
   'send_webhook_event',
   'change_appointment_status',
-  'cancel_appointment_payment',
   'apply_touch_plan',
   'create_touch',
   'cancel_touches',
@@ -254,6 +303,7 @@ const EXPECTED_BACKEND_ACTION_UNION = [
   ...new Set([
     ...BACKEND_CONVERSATION_ACTIONS,
     ...BACKEND_APPOINTMENT_ACTIONS,
+    'cancel_appointment_payment',
     ...BACKEND_DEAL_ACTIONS,
     ...BACKEND_TASK_ACTIONS,
   ]),
@@ -382,6 +432,19 @@ describe('AUTOMATIONS backend parity', () => {
     expect(
       AUTOMATION_ACTION_TYPES.find(action => action.key === 'cancel_touches')
     ).toMatchObject({ inputType: null });
+    expect(
+      AUTOMATIONS.appointment_created.conditions.find(
+        condition => condition.key === 'payment_status'
+      )
+    ).toMatchObject({ legacyOnly: true });
+    expect(
+      AUTOMATIONS.appointment_created.actions.map(action => action.key)
+    ).not.toContain('cancel_appointment_payment');
+    expect(
+      AUTOMATION_ACTION_TYPES.find(
+        action => action.key === 'cancel_appointment_payment'
+      )
+    ).toMatchObject({ inputType: null, legacyOnly: true });
   });
 });
 

@@ -13,6 +13,7 @@ import {
   getAttributes,
   getFileName,
   showActionInput,
+  withRowScopedLegacyOption,
 } from 'dashboard/helper/automationHelper';
 import { validateAutomation } from 'dashboard/helper/validations';
 import { AUTOMATION_RULE_EVENTS, AUTOMATION_ACTION_TYPES } from './constants';
@@ -138,12 +139,6 @@ const getTranslatedAttributes = (type, event) => {
 
 const eventName = computed(() => automation.value?.event_name);
 const currentAccountId = computed(() => getters.getCurrentAccountId.value);
-const isSchedulingFinanceEnabled = computed(() =>
-  getters['accounts/isFeatureEnabledonAccount'].value(
-    currentAccountId.value,
-    'scheduling_finance'
-  )
-);
 const isSchedulingEnabled = computed(() =>
   getters['accounts/isFeatureEnabledonAccount'].value(
     currentAccountId.value,
@@ -163,46 +158,66 @@ const isCrmTasksEnabled = computed(() =>
   )
 );
 
-const filterTypes = computed(() => {
+const buildFilterType = (attr, event) => {
+  if (attr.disabled) {
+    return { value: attr.key, label: attr.name, disabled: true };
+  }
+
+  const mappedInputType = INPUT_TYPE_MAP[attr.inputType] || 'plainText';
+  const options = props.getConditionDropdownValues(attr.key, event) || [];
+
+  const filterOperators = (attr.filterOperators || []).map(op => {
+    const enriched = operators.value[op.value];
+    if (enriched) return enriched;
+    return {
+      value: op.value,
+      label: filterOperatorTranslations.value[op.value] || op.label || op.value,
+      hasInput: true,
+      inputOverride: null,
+      icon: h('span', { class: 'i-ph-equals-bold !text-n-blue-11' }),
+    };
+  });
+
+  return {
+    attributeKey: attr.key,
+    value: attr.key,
+    attributeName: attr.name,
+    label: attr.name,
+    inputType: mappedInputType,
+    options,
+    filterOperators,
+    dataType: 'text',
+    attributeModel: attr.customAttributeType || 'standard',
+  };
+};
+
+const translatedAttributes = () => {
   const event = eventName.value;
   if (!event || !props.automationTypes[event]) return [];
 
-  const attributes = getTranslatedAttributes(props.automationTypes, event);
+  return getTranslatedAttributes(props.automationTypes, event);
+};
 
-  return attributes.map(attr => {
-    if (attr.disabled) {
-      return { value: attr.key, label: attr.name, disabled: true };
-    }
-
-    const mappedInputType = INPUT_TYPE_MAP[attr.inputType] || 'plainText';
-    const options = props.getConditionDropdownValues(attr.key, event) || [];
-
-    const filterOperators = (attr.filterOperators || []).map(op => {
-      const enriched = operators.value[op.value];
-      if (enriched) return enriched;
-      return {
-        value: op.value,
-        label:
-          filterOperatorTranslations.value[op.value] || op.label || op.value,
-        hasInput: true,
-        inputOverride: null,
-        icon: h('span', { class: 'i-ph-equals-bold !text-n-blue-11' }),
-      };
-    });
-
-    return {
-      attributeKey: attr.key,
-      value: attr.key,
-      attributeName: attr.name,
-      label: attr.name,
-      inputType: mappedInputType,
-      options,
-      filterOperators,
-      dataType: 'text',
-      attributeModel: attr.customAttributeType || 'standard',
-    };
-  });
+const filterTypes = computed(() => {
+  const event = eventName.value;
+  return translatedAttributes()
+    .filter(attribute => !attribute.legacyOnly)
+    .map(attribute => buildFilterType(attribute, event));
 });
+
+const getConditionFilterTypes = condition => {
+  const event = eventName.value;
+  const configuredLegacyAttributes = translatedAttributes()
+    .filter(attribute => attribute.legacyOnly)
+    .map(attribute => buildFilterType(attribute, event));
+
+  return withRowScopedLegacyOption(
+    filterTypes.value,
+    condition.attribute_key,
+    configuredLegacyAttributes,
+    'attributeKey'
+  );
+};
 
 const automationRuleEvents = computed(() =>
   AUTOMATION_RULE_EVENTS.filter(event => {
@@ -242,31 +257,33 @@ const automationActionTypes = computed(() => {
   const actionTypes = isCloudFeatureEnabled('sla')
     ? AUTOMATION_ACTION_TYPES
     : AUTOMATION_ACTION_TYPES.filter(({ key }) => key !== 'add_sla');
-  const legacyActionKeys = new Set(
-    actionTypes.filter(action => action.legacyOnly).map(action => action.key)
-  );
-  const configuredLegacyActions = (automation.value?.actions || [])
-    .map(action => action.action_name)
-    .filter(actionName => legacyActionKeys.has(actionName));
-  const allowedActions = new Set([
-    ...(props.automationTypes[eventName.value]?.actions || []).map(
-      action => action.key
-    ),
-    ...configuredLegacyActions,
-  ]);
-
   return actionTypes
-    .filter(
-      action =>
-        action.key !== 'cancel_appointment_payment' ||
-        isSchedulingFinanceEnabled.value
+    .filter(action => !action.legacyOnly)
+    .filter(action =>
+      (props.automationTypes[eventName.value]?.actions || []).some(
+        eventAction => eventAction.key === action.key
+      )
     )
-    .filter(action => allowedActions.has(action.key))
     .map(action => ({
       ...action,
       label: automationActionTranslations.value[action.label] || action.label,
     }));
 });
+
+const legacyAutomationActionTypes = computed(() =>
+  AUTOMATION_ACTION_TYPES.filter(action => action.legacyOnly).map(action => ({
+    ...action,
+    label: automationActionTranslations.value[action.label] || action.label,
+  }))
+);
+
+const getActionTypesForAction = action =>
+  withRowScopedLegacyOption(
+    automationActionTypes.value,
+    action.action_name,
+    legacyAutomationActionTypes.value,
+    'key'
+  );
 
 const hasConditionErrors = computed(() =>
   Object.keys(errors.value).some(key => key.startsWith('condition_'))
@@ -475,7 +492,7 @@ defineExpose({ open, close });
               v-model:attribute-key="automation.conditions[i].attribute_key"
               v-model:filter-operator="automation.conditions[i].filter_operator"
               v-model:values="automation.conditions[i].values"
-              :filter-types="filterTypes"
+              :filter-types="getConditionFilterTypes(condition)"
               :external-error-message="getConditionErrorMessage(i)"
               :show-query-operator="false"
               @remove="removeFilter(i)"
@@ -489,7 +506,7 @@ defineExpose({ open, close });
                 automation.conditions[i - 1].query_operator
               "
               v-model:values="automation.conditions[i].values"
-              :filter-types="filterTypes"
+              :filter-types="getConditionFilterTypes(condition)"
               :external-error-message="getConditionErrorMessage(i)"
               show-query-operator
               @remove="removeFilter(i)"
@@ -525,13 +542,16 @@ defineExpose({ open, close });
             v-for="(action, i) in automation.actions"
             :key="i"
             v-model="automation.actions[i]"
-            :action-types="automationActionTypes"
+            :action-types="getActionTypesForAction(action)"
             dropdown-max-height="max-h-[10rem]"
             :dropdown-values="
               getActionDropdownValues(action.action_name, eventName)
             "
             :show-action-input="
-              showActionInput(automationActionTypes, action.action_name)
+              showActionInput(
+                getActionTypesForAction(action),
+                action.action_name
+              )
             "
             :error-message="getActionErrorMessage(i)"
             :event-name="eventName"

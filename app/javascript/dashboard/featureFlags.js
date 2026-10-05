@@ -48,7 +48,6 @@ export const FEATURE_FLAGS = {
   ADVANCED_SEARCH: 'advanced_search',
   CONVERSATION_REQUIRED_ATTRIBUTES: 'conversation_required_attributes',
   SCHEDULING: 'scheduling',
-  SCHEDULING_FINANCE: 'scheduling_finance',
   WHATSAPP_CALL: 'whatsapp_call',
   COMMUNICATION_THREADS: 'communication_threads',
 };

@@ -237,6 +237,26 @@ export const generateConditionOptions = (options, key = 'id') => {
   });
 };
 
+export const withRowScopedLegacyOption = (
+  options,
+  selectedValue,
+  legacyOptions,
+  optionKey
+) => {
+  const availableOptions = options || [];
+  if (availableOptions.some(option => option[optionKey] === selectedValue)) {
+    return availableOptions;
+  }
+
+  const selectedLegacyOption = (legacyOptions || []).find(
+    option => option[optionKey] === selectedValue
+  );
+
+  return selectedLegacyOption
+    ? [...availableOptions, selectedLegacyOption]
+    : availableOptions;
+};
+
 export const getActionOptions = ({
   agents,
   appointmentStatusOptions,

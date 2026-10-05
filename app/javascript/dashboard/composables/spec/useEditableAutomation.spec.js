@@ -1,8 +1,13 @@
 import { useEditableAutomation } from '../useEditableAutomation';
+import * as automationHelpers from 'dashboard/helper/automationHelper';
 
 const getConditionDropdownValues = vi.fn((type, eventName) => {
-  if (eventName === 'appointment_created' && type === 'status') {
+  if (eventName?.startsWith('appointment_') && type === 'status') {
     return [{ id: 'scheduled', name: 'Scheduled' }];
+  }
+
+  if (eventName?.startsWith('appointment_') && type === 'payment_status') {
+    return [{ id: 'paid', name: 'Paid' }];
   }
 
   if (eventName === 'appointment_created' && type === 'visit_reason') {
@@ -198,7 +203,7 @@ describe('useEditableAutomation', () => {
     ]);
   });
 
-  it('hydrates native appointment actions with appointment-aware dropdown values', () => {
+  it('preserves legacy appointment conditions and actions when formatting for edit', () => {
     const { formatAutomation } = useEditableAutomation();
 
     const automation = {
@@ -208,6 +213,13 @@ describe('useEditableAutomation', () => {
           attribute_key: 'status',
           filter_operator: 'equal_to',
           values: ['scheduled'],
+          query_operator: 'and',
+          custom_attribute_type: '',
+        },
+        {
+          attribute_key: 'payment_status',
+          filter_operator: 'equal_to',
+          values: ['paid'],
           query_operator: null,
           custom_attribute_type: '',
         },
@@ -232,6 +244,11 @@ describe('useEditableAutomation', () => {
             inputType: 'multi_select',
             filterOperators: [],
           },
+          {
+            key: 'payment_status',
+            inputType: 'multi_select',
+            filterOperators: [],
+          },
         ],
       },
     };
@@ -245,6 +262,32 @@ describe('useEditableAutomation', () => {
       { id: 'confirmed', name: 'Confirmed' },
     ]);
     expect(formatted.actions[1].action_params).toEqual([]);
+    expect(formatted.conditions[0].values).toEqual([
+      { id: 'scheduled', name: 'Scheduled' },
+    ]);
+    expect(formatted.conditions[1].values).toEqual([
+      { id: 'paid', name: 'Paid' },
+    ]);
+
+    const payload = automationHelpers.generateAutomationPayload(formatted);
+    expect(payload.conditions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          attribute_key: 'payment_status',
+          custom_attribute_type: '',
+          filter_operator: 'equal_to',
+          values: ['paid'],
+        }),
+      ])
+    );
+    expect(payload.actions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action_name: 'cancel_appointment_payment',
+          action_params: [],
+        }),
+      ])
+    );
   });
 
   it('formats deal standard and managed conditions with CRM-aware dropdown values', () => {
