@@ -18,15 +18,17 @@ class Reminders::EnrollGroupService
 
     definitions = normalized_definitions
     digest = Digest::SHA256.hexdigest(definitions.to_json)
-    enrollment = account.touch_plan_enrollments.create!(
-      remindable: remindable,
-      reminder_group: reminder_group,
-      plan_snapshot: definitions,
-      plan_digest: digest,
-      activated_at: Time.current,
-      idempotency_key: SecureRandom.uuid,
-      metadata: provenance_metadata
-    )
+    enrollment = account.touch_plan_enrollments.transaction(requires_new: true) do
+      account.touch_plan_enrollments.create!(
+        remindable: remindable,
+        reminder_group: reminder_group,
+        plan_snapshot: definitions,
+        plan_digest: digest,
+        activated_at: Time.current,
+        idempotency_key: SecureRandom.uuid,
+        metadata: provenance_metadata
+      )
+    end
     Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
     enrollment.reload
   rescue ActiveRecord::RecordNotUnique

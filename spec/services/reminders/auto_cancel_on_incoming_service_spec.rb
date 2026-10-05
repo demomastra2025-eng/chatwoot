@@ -295,6 +295,64 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
     expect(account.reminders.where(remindable: appointment)).to be_empty
   end
 
+  it 'recovers a database duplicate skipped claim while holding the enrollment lock' do
+    account.enable_features!('deferred_touch_materialization')
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      conversation: conversation,
+      starts_at: 2.days.from_now,
+      ends_at: 2.days.from_now + 30.minutes
+    )
+    plan = create(
+      :reminder_group,
+      account: account,
+      touches: [{
+        body: 'Do not send after reply',
+        timing_mode: 'relative',
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -1.day.to_i,
+        timezone: 'UTC',
+        auto_cancel_on_incoming: true
+      }]
+    )
+    enrollment = Reminders::EnrollGroupService.new(
+      account: account,
+      reminder_group: plan,
+      remindable: appointment,
+      actor: nil
+    ).perform
+    message = incoming_message
+    race_inserted = false
+
+    allow_any_instance_of(Reminders::EnrollmentScheduleService).to receive(:pending_steps).and_wrap_original do |original, *args|
+      steps = original.call(*args)
+      if !race_inserted && steps.present?
+        race_inserted = true
+        step = steps.first
+        create(
+          :touch_occurrence_claim,
+          account: account,
+          touch_plan_enrollment: enrollment,
+          step_key: step.step_key,
+          occurrence_key: step.occurrence_key,
+          due_at: step.due_at
+        )
+        allow_any_instance_of(TouchOccurrenceClaim).to receive(:valid?).and_return(true)
+      end
+      steps
+    end
+
+    ActiveRecord::Base.transaction do
+      expect(described_class.new(message: message).perform).to eq(0)
+      expect(enrollment.touch_occurrence_claims.count).to eq(1)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+
+    expect(race_inserted).to be(true)
+  end
+
   it 'cancels a deferred reminder materialized between the initial scan and enrollment lock' do
     account.enable_features!('deferred_touch_materialization')
     appointment = create(
