@@ -378,29 +378,46 @@ class Telephony::EventsIngestionService
       return if answered_by_other_operator_leg?(call_session)
 
       skipped = false
+      failure = nil
+      recovered_terminal_message = nil
       # All the writes of an inbound native SIP call run under its intake lock,
       # so the sibling legs of one physical call never meet on the same
       # conversation rows. Jobs are enqueued after the lock is released.
-      with_call_intake_lock(call_session, account) do
-        call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
-        call_session.reload
+      # Every step runs in its own savepoint: a step that fails undoes only
+      # itself, the steps before it stay, the ones after it are skipped, and
+      # the error is raised once the lock is released - as when each step
+      # committed on its own.
+      step = lambda do |&block|
+        next if failure
 
-        recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
-        if recovered_terminal_message.in?([false, :nonterminal])
-          skipped = true
-          next
+        Telephony::CallSession.transaction(requires_new: true, &block)
+      rescue StandardError => e
+        failure = e
+      end
+      with_call_intake_lock(call_session, account) do
+        step.call do
+          call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
+          call_session.reload
         end
+        step.call do
+          recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
+          skipped = recovered_terminal_message.in?([false, :nonterminal])
+        end
+        next if skipped
 
         unless recovered_terminal_message
-          call_session.reload
-          ensure_conversation!(call_session, account)
-          call_session.reload
-          apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
-          sync_voice_message!(call_session)
+          step.call do
+            call_session.reload
+            ensure_conversation!(call_session, account)
+            call_session.reload
+          end
+          step.call { apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session) }
+          step.call { sync_voice_message!(call_session) }
         end
-        linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
-        collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal?
+        step.call { linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) } }
+        step.call { collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal? }
       end
+      raise failure if failure
       return if skipped
 
       enqueue_external_recording_cache(call_session)
