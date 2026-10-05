@@ -82,6 +82,21 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
     expect(search).to include('match_status' => 'catalog_listing', 'ambiguous' => false, 'total_count' => 3)
   end
 
+  it 'never calls the opposite service one clear match when the query carries a negation or a before/after word' do
+    create_service('МРТ головного мозга с контрастом')
+    create_service('МРТ головного мозга')
+    create_service('Консультация после операции')
+
+    without_contrast = search(query: 'МРТ головного мозга без контраста')
+    before_operation = search(query: 'консультация до операции')
+    without_operation = search(query: 'консультация без операции')
+
+    expect(without_contrast).to include('match_status' => 'partial_candidates', 'total_count' => 2)
+    expect(names_of(without_contrast)).to match_array(['МРТ головного мозга с контрастом', 'МРТ головного мозга'])
+    expect(before_operation).to include('match_status' => 'partial_candidates')
+    expect(without_operation).to include('match_status' => 'partial_candidates')
+  end
+
   it 'does not keep state between two calls of the same tool instance' do
     create_service('УЗИ почек')
 

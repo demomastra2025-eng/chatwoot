@@ -5,7 +5,13 @@ class Scheduling::ServiceSearch
   SEARCH_TEXT = 'search_text'.freeze
   SEARCH_VECTOR = 'search_vector'.freeze
   # Prepositions and conjunctions never decide which service is meant ("УЗИ для беременных" = "УЗИ беременных").
-  STOP_WORDS = %w[для при без про или как что это из от до на по со].freeze
+  STOP_WORDS = %w[для при про или как что это из на по со].freeze
+  # Small words that change the meaning of a name: "без контраста" is the opposite of "с контрастом" and "до операции"
+  # of "после операции". They stay in the query as required words, matched as whole words only because "до" or "от"
+  # also sit inside almost any other word. The Russian dictionary drops them as stop words, so no stemming is used.
+  WHOLE_WORDS = %w[без до от].freeze
+  # A letter, as a range of code points: it does not depend on the locale of the database.
+  NOT_LETTER = '[^а-яa-z0-9]'.freeze
   TOKEN_ALIASES = {
     /\Aмрт\z/i => ['мрт', 'магнитно резонансная томография'],
     /\Aузи\z/i => ['узи', 'ультразвуковое исследование'],
@@ -122,9 +128,15 @@ class Scheduling::ServiceSearch
   # same word.
   def alternatives_condition(alternatives, text_sql, vector_sql)
     connection = scope.connection
+    return whole_word_condition(alternatives.first, text_sql) if alternatives.size == 1 && WHOLE_WORDS.include?(alternatives.first)
+
     patterns = alternatives.map { |value| "#{text_sql} ILIKE #{connection.quote("%#{escaped(value)}%")}" }
     tsquery = alternatives.map { |value| "plainto_tsquery('russian', #{connection.quote(value)})" }.join(' || ')
     "(#{patterns.join(' OR ')} OR #{vector_sql} @@ (#{tsquery}))"
+  end
+
+  def whole_word_condition(word, text_sql)
+    "#{text_sql} ~* #{scope.connection.quote("(^|#{NOT_LETTER})#{word}(#{NOT_LETTER}|$)")}"
   end
 
   def exact_name_condition

@@ -110,6 +110,52 @@ RSpec.describe Scheduling::ServiceSearch do
 
       expect(names('УЗИ для беременных')).to eq(['УЗИ беременных'])
     end
+
+    it 'does not offer the service with contrast as a full match for a query without contrast' do
+      with_contrast = create_service('МРТ головного мозга с контрастом')
+      plain = create_service('МРТ головного мозга')
+
+      payload = search('МРТ головного мозга без контраста')
+
+      expect(payload.call.to_a).to contain_exactly(with_contrast, plain)
+      expect(payload.match_kind).to eq('partial')
+    end
+
+    it 'finds the name that states the negation as a full match' do
+      create_service('МРТ головного мозга с контрастом')
+      create_service('МРТ головного мозга')
+      negated = create_service('МРТ головного мозга без контраста')
+
+      payload = search('МРТ головного мозга без контраста')
+
+      expect(payload.call.to_a).to eq([negated])
+      expect(payload.match_kind).to eq('all_concepts')
+    end
+
+    it 'keeps до and без as required words so that before-operation never finds after-operation' do
+      after = create_service('Консультация после операции')
+      before = create_service('Консультация до операции')
+
+      payload = search('консультация до операции')
+      expect(payload.call.to_a).to eq([before])
+      expect(payload.match_kind).to eq('all_concepts')
+
+      payload = search('консультация без операции')
+      expect(payload.call.to_a).to contain_exactly(after, before)
+      expect(payload.match_kind).to eq('partial')
+    end
+
+    it 'does not read a small word as a part of a longer word' do
+      create_service('Консультация дополнительная операции')
+
+      before_operation = search('консультация до операции')
+      from_operation = search('консультация от операции')
+
+      expect(before_operation.call.to_a.size).to eq(1)
+      expect(before_operation.match_kind).to eq('partial')
+      expect(from_operation.call.to_a.size).to eq(1)
+      expect(from_operation.match_kind).to eq('partial')
+    end
   end
 
   describe 'spelling variants' do
