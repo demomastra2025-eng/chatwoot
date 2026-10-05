@@ -73,7 +73,7 @@ class Whatsapp::IncomingMessageBaseService
 
     process_in_reply_to(messages_data.first)
 
-    ActiveRecord::Base.transaction do
+    ActiveRecord::Base.transaction(requires_new: true) do
       set_conversation
       create_messages
     end

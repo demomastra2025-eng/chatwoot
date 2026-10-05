@@ -447,15 +447,20 @@ describe ContactInboxBuilder do
         relation = ContactInbox.where(attrs)
         allow(ContactInbox).to receive(:where).and_call_original
         allow(ContactInbox).to receive(:where).with(attrs).and_return(relation)
-        allow(relation).to receive(:first_or_create!).and_raise(ActiveRecord::RecordNotUnique, 'same-contact race')
+        allow(relation).to receive(:first_or_create!) do
+          relation.new(attrs).save!(validate: false)
+        end
 
-        contact_inbox = described_class.new(
-          contact: whatsapp_contact,
-          inbox: whatsapp_inbox,
-          source_id: whatsapp_source_id
-        ).perform
+        ActiveRecord::Base.transaction do
+          contact_inbox = described_class.new(
+            contact: whatsapp_contact,
+            inbox: whatsapp_inbox,
+            source_id: whatsapp_source_id
+          ).perform
 
-        expect(contact_inbox).to eq(existing_contact_inbox)
+          expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+          expect(contact_inbox).to eq(existing_contact_inbox)
+        end
         expect(existing_contact_inbox.reload.source_id).to eq(whatsapp_source_id)
       end
 
