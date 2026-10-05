@@ -23,6 +23,18 @@ RSpec.describe 'Super Admin Dashboard', type: :request do
         expect(response.body).to include('Agent Dashboard')
         expect(response.body).to include('href="/app"')
       end
+
+      it 'does not render a hard-coded DEV badge or release SHA' do
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/'
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).not_to include('93611c27')
+        expect(response.body).not_to match(/>\s*DEV\s*</)
+        expect(response.body).to include('data-testid="environment-badge"')
+        expect(response.body).to include("#{Rails.env.upcase}</span>")
+      end
     end
   end
 end

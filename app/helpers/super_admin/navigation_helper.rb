@@ -3,6 +3,13 @@ module SuperAdmin::NavigationHelper
     params[:controller].in? %w[super_admin/settings super_admin/app_configs]
   end
 
+  # Label of the environment badge in the sidebar. Production shows nothing.
+  def super_admin_environment_label
+    return if Rails.env.production?
+
+    Rails.env.upcase
+  end
+
   def super_admin_resource_label(resource)
     resource_name = resource.respond_to?(:resource) ? resource.resource.to_s : resource.to_s
 
