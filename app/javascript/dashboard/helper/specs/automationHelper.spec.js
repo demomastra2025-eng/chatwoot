@@ -259,7 +259,13 @@ const EXPECTED_BACKEND_ACTION_UNION = [
   ]),
 ];
 
-const LEGACY_BACKEND_ONLY_ACTIONS = ['apply_touch_plan'];
+// The backend still evaluates these, but the rule editor no longer offers them
+// (rate and prepayment UI removed); existing rules keep working.
+const LEGACY_BACKEND_ONLY_ACTIONS = [
+  'apply_touch_plan',
+  'cancel_appointment_payment',
+];
+const LEGACY_BACKEND_ONLY_APPOINTMENT_CONDITIONS = ['payment_status'];
 const publicAutomationActions = actions =>
   actions.filter(action => !LEGACY_BACKEND_ONLY_ACTIONS.includes(action));
 
@@ -320,7 +326,9 @@ describe('AUTOMATIONS backend parity', () => {
         publicAutomationActions(BACKEND_APPOINTMENT_ACTIONS)
       );
       expect(AUTOMATIONS[eventName].conditions.map(({ key }) => key)).toEqual(
-        BACKEND_APPOINTMENT_CONDITIONS
+        BACKEND_APPOINTMENT_CONDITIONS.filter(
+          key => !LEGACY_BACKEND_ONLY_APPOINTMENT_CONDITIONS.includes(key)
+        )
       );
     });
   });
@@ -604,7 +612,6 @@ describe('getConditionOptions', () => {
 
   it('returns appointment-specific options when the event is appointment-based', () => {
     const appointmentStatusOptions = [{ id: 'scheduled', name: 'Scheduled' }];
-    const appointmentPaymentStatusOptions = [{ id: 'paid', name: 'Paid' }];
     const appointmentServiceOptions = [{ id: 7, name: 'Consultation' }];
     const appointmentWeekdayOptions = [{ id: '1', name: 'Monday' }];
 
@@ -616,15 +623,6 @@ describe('getConditionOptions', () => {
         type: 'status',
       })
     ).toEqual(appointmentStatusOptions);
-
-    expect(
-      helpers.getConditionOptions({
-        customAttributes,
-        eventName: 'appointment_created',
-        appointmentPaymentStatusOptions,
-        type: 'payment_status',
-      })
-    ).toEqual(appointmentPaymentStatusOptions);
 
     expect(
       helpers.getConditionOptions({
