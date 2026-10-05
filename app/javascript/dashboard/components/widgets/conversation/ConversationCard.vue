@@ -14,7 +14,10 @@ import {
   conversationListReturnPath,
   rememberConversationListReturnPath,
 } from 'dashboard/helper/conversationListReturnContext';
-import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import {
+  getCommunicationReplyInboxId,
+  isCommunicationThread,
+} from 'dashboard/helper/communicationThreadHelper';
 import { resolveOutgoingDeliveryStatus } from 'dashboard/helper/messageDeliveryStatus';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
@@ -344,7 +347,13 @@ const voiceCallData = computed(() => {
   return voiceCallDataFromLastMessage.value;
 });
 
+// For a thread chat.inbox_id is the inbox where the dialog happens (the icon),
+// not the channel selected for replying.
 const inboxId = computed(() => props.chat.inbox_id);
+
+const contextMenuInboxId = computed(() =>
+  getCommunicationReplyInboxId(props.chat)
+);
 
 const fallbackInboxId = computed(() => {
   if (activeInbox.value) return activeInbox.value;
@@ -881,7 +890,7 @@ const togglePinnedConversation = async nextPinnedState => {
     >
       <ConversationContextMenu
         :status="chat.status"
-        :inbox-id="inbox.id"
+        :inbox-id="contextMenuInboxId"
         :priority="chat.priority"
         :chat-id="chat.id"
         :has-unread-messages="hasUnread"

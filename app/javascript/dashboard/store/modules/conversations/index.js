@@ -10,6 +10,7 @@ import { CONTENT_TYPES } from 'dashboard/components-next/message/constants.js';
 import {
   buildCommunicationChannelFromRealtimePayload,
   buildCommunicationChannelFromMessage,
+  getCommunicationThreadDisplayInboxId,
   getDefaultReplyChannel,
   getPrimaryCommunicationChannel,
   getUniqueCommunicationChannels,
@@ -392,7 +393,8 @@ const refreshCommunicationThreadReplyState = chat => {
     replyChannel?.conversation_id || null;
   chat.active_reply_channel_key = replyChannel?.channel_key || null;
   chat.active_reply_channel_inbox_id = replyChannel?.inbox_id || null;
-  chat.inbox_id = replyChannel?.inbox_id || null;
+  // The list item shows where the dialog happens, not the reply channel.
+  chat.inbox_id = getCommunicationThreadDisplayInboxId(chat) || null;
   chat.can_reply = channels.some(isCommunicationChannelReplyable);
 };
 

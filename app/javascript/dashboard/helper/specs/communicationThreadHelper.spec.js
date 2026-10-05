@@ -8,8 +8,10 @@ import {
   getCommunicationContactIdentityLabel,
   getCommunicationReplyChannel,
   getCommunicationReplyChannels,
+  getCommunicationReplyInboxId,
   getCommunicationThreadChannelFilterInboxes,
   getCommunicationThreadChannelInboxes,
+  getCommunicationThreadDisplayInboxId,
   getCommunicationThreadTypingTargetIds,
   isCommunicationCallChannel,
   isCommunicationWhatsappCallChannel,
@@ -115,6 +117,33 @@ const disabledApiChannel = {
   requires_template: false,
   last_activity_at: 500,
   channel_key: 'conversation:55',
+};
+
+// A thread whose only dialog is in Instagram (closed reply window) while the
+// contact phone number gives a WhatsApp reply capability without a dialog.
+const instagramDialogChannel = {
+  conversation_id: 77,
+  inbox_id: 707,
+  inbox_name: 'Instagram',
+  channel: 'Channel::Instagram',
+  can_reply: false,
+  can_send_text: false,
+  last_activity_at: 400,
+  primary: true,
+  channel_key: 'conversation:77',
+};
+
+const whatsappCapabilityChannel = {
+  conversation_id: null,
+  inbox_id: 101,
+  inbox_name: 'WhatsApp',
+  channel: 'Channel::WhatsappWeb',
+  medium: 'whatsapp_web',
+  can_reply: true,
+  can_send_text: true,
+  last_activity_at: 0,
+  primary: false,
+  channel_key: 'inbox:101',
 };
 
 describe('communicationThreadHelper', () => {
@@ -553,6 +582,28 @@ describe('communicationThreadHelper', () => {
   });
 
   describe('#decoratePayloadWithCommunicationThread', () => {
+    it('sends through the selected reply channel, not the list inbox of the thread', () => {
+      const chat = {
+        id: 8,
+        is_communication_thread: true,
+        inbox_id: 707,
+        channels: [instagramDialogChannel, whatsappCapabilityChannel],
+        messages: [],
+      };
+
+      expect(
+        decoratePayloadWithCommunicationThread(
+          { message: 'Hi' },
+          chat,
+          'inbox:101'
+        )
+      ).toMatchObject({
+        communicationThreadId: 8,
+        targetInboxId: 101,
+        inbox_id: 101,
+      });
+    });
+
     it('sends through the selected child conversation and keeps thread id for optimistic UI', () => {
       const chat = {
         id: 7,
@@ -750,6 +801,127 @@ describe('communicationThreadHelper', () => {
         conversation_ids: [22, 11],
         meta: { sender: { id: 5, name: 'Customer' } },
       });
+    });
+
+    it('keeps the list inbox on the dialog channel when only another channel is replyable', () => {
+      const thread = {
+        id: 8,
+        channels: [instagramDialogChannel, whatsappCapabilityChannel],
+        messages: [
+          { id: 5, conversation_id: 77, message_type: 0, created_at: 400 },
+        ],
+      };
+
+      expect(buildCommunicationThreadConversation(thread)).toMatchObject({
+        inbox_id: 707,
+        active_reply_channel_inbox_id: 101,
+        active_reply_channel_key: 'inbox:101',
+      });
+    });
+  });
+
+  describe('#getCommunicationThreadDisplayInboxId', () => {
+    it('uses the dialog channel even when a reply capability is the default reply channel', () => {
+      const thread = {
+        channels: [instagramDialogChannel, whatsappCapabilityChannel],
+        messages: [],
+      };
+
+      expect(getCommunicationReplyChannel(thread)).toMatchObject({
+        inbox_id: 101,
+      });
+      expect(getCommunicationThreadDisplayInboxId(thread)).toBe(707);
+    });
+
+    it('follows the latest message of the thread', () => {
+      const thread = {
+        channels: [instagramDialogChannel, whatsappChannel],
+        messages: [
+          { id: 1, conversation_id: 77, message_type: 0, created_at: 10 },
+          { id: 2, conversation_id: 11, message_type: 0, created_at: 20 },
+        ],
+      };
+
+      expect(getCommunicationThreadDisplayInboxId(thread)).toBe(101);
+    });
+
+    it('uses last_non_activity_message when no messages are loaded', () => {
+      const thread = {
+        channels: [instagramDialogChannel, whatsappChannel],
+        messages: [],
+        last_non_activity_message: {
+          id: 2,
+          conversation_id: 11,
+          inbox_id: 101,
+          message_type: 1,
+          created_at: 20,
+        },
+      };
+
+      expect(getCommunicationThreadDisplayInboxId(thread)).toBe(101);
+    });
+
+    it('ignores activity messages and private notes', () => {
+      const thread = {
+        channels: [instagramDialogChannel, whatsappChannel],
+        messages: [
+          { id: 1, conversation_id: 77, message_type: 0, created_at: 10 },
+          { id: 2, conversation_id: 11, message_type: 2, created_at: 20 },
+          {
+            id: 3,
+            conversation_id: 11,
+            message_type: 1,
+            private: true,
+            created_at: 30,
+          },
+        ],
+      };
+
+      expect(getCommunicationThreadDisplayInboxId(thread)).toBe(707);
+    });
+
+    it('skips messages of conversations that are no longer linked', () => {
+      const thread = {
+        channels: [instagramDialogChannel, whatsappCapabilityChannel],
+        messages: [],
+        last_non_activity_message: {
+          id: 9,
+          conversation_id: 999,
+          inbox_id: 303,
+          message_type: 0,
+          created_at: 500,
+        },
+      };
+
+      expect(getCommunicationThreadDisplayInboxId(thread)).toBe(707);
+    });
+
+    it('falls back to the most recent linked conversation, then to the primary channel', () => {
+      expect(
+        getCommunicationThreadDisplayInboxId({
+          channels: [whatsappCapabilityChannel, instagramDialogChannel],
+          messages: [],
+        })
+      ).toBe(707);
+      expect(
+        getCommunicationThreadDisplayInboxId({
+          channels: [whatsappCapabilityChannel],
+          messages: [],
+        })
+      ).toBe(101);
+      expect(getCommunicationThreadDisplayInboxId({})).toBeUndefined();
+    });
+  });
+
+  describe('#getCommunicationReplyInboxId', () => {
+    it('prefers the reply channel inbox over the list inbox', () => {
+      expect(
+        getCommunicationReplyInboxId({
+          inbox_id: 707,
+          active_reply_channel_inbox_id: 101,
+        })
+      ).toBe(101);
+      expect(getCommunicationReplyInboxId({ inbox_id: 707 })).toBe(707);
     });
   });
 });

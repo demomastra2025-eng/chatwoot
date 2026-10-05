@@ -2007,4 +2007,131 @@ describe('#mutations', () => {
       expect(state.syncConversationsMessages[1]).toBeUndefined();
     });
   });
+
+  describe('communication thread list inbox', () => {
+    // The only dialog is in Instagram (reply window closed). WhatsApp is just a
+    // reply capability through the contact phone number, so it is the default
+    // reply channel but must never become the inbox of the list item.
+    const instagramMessage = {
+      id: 5,
+      conversation_id: 77,
+      inbox_id: 707,
+      message_type: 0,
+      created_at: 400,
+    };
+
+    const buildThreadState = () => ({
+      allConversations: [
+        {
+          id: 3,
+          is_communication_thread: true,
+          communication_thread_id: 3,
+          conversation_ids: [77],
+          inbox_id: 707,
+          updated_at: 400,
+          channels: [
+            {
+              conversation_id: 77,
+              inbox_id: 707,
+              channel: 'Channel::Instagram',
+              can_reply: false,
+              can_send_text: false,
+              last_activity_at: 400,
+              channel_key: 'conversation:77',
+            },
+            {
+              conversation_id: null,
+              inbox_id: 101,
+              channel: 'Channel::WhatsappWeb',
+              can_reply: true,
+              can_send_text: true,
+              last_activity_at: 0,
+              channel_key: 'inbox:101',
+            },
+          ],
+          messages: [instagramMessage],
+          last_non_activity_message: instagramMessage,
+          meta: { sender: { id: 42, name: 'Customer' } },
+        },
+      ],
+      selectedChatId: 3,
+      selectedChatType: 'communication_thread',
+    });
+
+    it('keeps the Instagram inbox after the thread history is loaded', () => {
+      const state = buildThreadState();
+
+      mutations[types.SET_PREVIOUS_CONVERSATIONS](state, {
+        id: 3,
+        conversationType: 'communication_thread',
+        data: [{ ...instagramMessage, id: 4, created_at: 300 }],
+      });
+
+      const thread = state.allConversations[0];
+      expect(thread.inbox_id).toBe(707);
+      expect(thread.active_reply_channel_inbox_id).toBe(101);
+    });
+
+    it('keeps the Instagram inbox when the missing messages are synced', () => {
+      const state = buildThreadState();
+
+      mutations[types.SET_MISSING_MESSAGES](state, {
+        id: 3,
+        conversationType: 'communication_thread',
+        data: [instagramMessage],
+      });
+
+      expect(state.allConversations[0].inbox_id).toBe(707);
+    });
+
+    it('keeps the Instagram inbox on realtime thread patches', () => {
+      const state = buildThreadState();
+
+      mutations[types.UPDATE_CONVERSATION](state, {
+        id: 3,
+        communication_thread_id: 3,
+        is_communication_thread: true,
+        status: 'open',
+        unread_count: 2,
+        updated_at: 500,
+        timestamp: 500,
+      });
+
+      const thread = state.allConversations[0];
+      expect(thread.unread_count).toBe(2);
+      expect(thread.inbox_id).toBe(707);
+      expect(thread.active_reply_channel_inbox_id).toBe(101);
+    });
+
+    it('keeps the Instagram inbox for a new Instagram message', () => {
+      const state = buildThreadState();
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, {
+        chatId: 3,
+        message: { ...instagramMessage, id: 6, created_at: 500 },
+      });
+
+      expect(state.allConversations[0].inbox_id).toBe(707);
+    });
+
+    it('shows WhatsApp once the latest message came through WhatsApp', () => {
+      const state = buildThreadState();
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, {
+        chatId: 3,
+        message: {
+          id: 7,
+          conversation_id: 88,
+          communication_thread_id: 3,
+          inbox_id: 101,
+          message_type: 0,
+          created_at: 600,
+        },
+      });
+
+      const thread = state.allConversations[0];
+      expect(thread.inbox_id).toBe(101);
+      expect(thread.active_reply_channel_inbox_id).toBe(101);
+    });
+  });
 });

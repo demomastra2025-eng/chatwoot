@@ -840,4 +840,32 @@ describe('ConversationCard', () => {
       wrapper.findComponent({ name: 'MessageStatus' }).props('status')
     ).toBe('delivered');
   });
+
+  it('shows the dialog inbox of a thread, not the selected reply channel', () => {
+    mocks.storeGetters['inboxes/getInbox'] = vi.fn(id => ({
+      id,
+      name: `Inbox ${id}`,
+      channel_type: id === 707 ? 'Channel::Instagram' : 'Channel::Whatsapp',
+    }));
+    const wrapper = mountComponent({
+      chat: {
+        ...baseChat,
+        id: 5,
+        communication_thread_id: 5,
+        is_communication_thread: true,
+        inbox_id: 707,
+        active_reply_channel_inbox_id: 101,
+        channels: [
+          { conversation_id: 77, inbox_id: 707 },
+          { conversation_id: null, inbox_id: 101 },
+        ],
+      },
+    });
+
+    expect(
+      wrapper.findComponent({ name: 'ChannelIcon' }).props('inbox')
+    ).toEqual(
+      expect.objectContaining({ id: 707, channel_type: 'Channel::Instagram' })
+    );
+  });
 });

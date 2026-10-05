@@ -403,6 +403,68 @@ export const getDefaultReplyChannel = (channels, messages = []) => {
   return getPrimaryCommunicationChannel(uniqueChannels);
 };
 
+const isActivityMessage = message =>
+  message?.message_type === MESSAGE_TYPE.ACTIVITY ||
+  message?.message_type === 'activity';
+
+const displayChannelForMessage = (channels, message) => {
+  if (message?.conversation_id) {
+    const exactChannel = channels.find(
+      channel =>
+        String(channel.conversation_id) === String(message.conversation_id)
+    );
+    if (exactChannel) return exactChannel;
+  }
+  if (!message?.inbox_id) return null;
+
+  return (
+    channels.find(
+      channel =>
+        channel.inbox_id &&
+        String(channel.inbox_id) === String(message.inbox_id)
+    ) || null
+  );
+};
+
+// The inbox a thread list item shows. It describes where the dialog really
+// happens: the channel of the latest message, then the most recent linked
+// conversation. It must not follow the channel picked for replying, because a
+// reply capability without a dialog (WhatsApp by the contact phone number, a
+// call) can be the default reply channel of a thread that lives in Instagram.
+export const getCommunicationThreadDisplayInboxId = thread => {
+  const channels = getUniqueCommunicationChannels(thread?.channels);
+  const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+  const latestMessage = [thread?.last_non_activity_message, ...messages]
+    .filter(
+      message => message && !message.private && !isActivityMessage(message)
+    )
+    .sort(sortByNewestMessage)
+    .find(message => {
+      if (!channels.length) return Boolean(message.inbox_id);
+      return Boolean(displayChannelForMessage(channels, message));
+    });
+
+  if (latestMessage) {
+    return (
+      displayChannelForMessage(channels, latestMessage)?.inbox_id ||
+      latestMessage.inbox_id
+    );
+  }
+
+  const dialogChannel = channels.find(
+    channel => channel.conversation_id && channel.inbox_id
+  );
+  return (
+    dialogChannel?.inbox_id ||
+    getPrimaryCommunicationChannel(channels)?.inbox_id
+  );
+};
+
+// The inbox the agent replies through. For a thread it is the reply channel,
+// not chat.inbox_id (which only describes the thread on the list).
+export const getCommunicationReplyInboxId = chat =>
+  chat?.active_reply_channel_inbox_id || chat?.inbox_id;
+
 const sameCommunicationChannel = (channel, identifier) => {
   const { baseKey: identifierBaseKey, action: identifierAction } =
     splitCommunicationChannelActionKey(identifier);
@@ -640,7 +702,9 @@ export const buildCommunicationThreadConversation = thread => {
     display_id: thread.id,
     communication_thread_id: thread.id,
     is_communication_thread: true,
-    inbox_id: replyChannel?.inbox_id || primaryChannel?.inbox_id || null,
+    inbox_id:
+      getCommunicationThreadDisplayInboxId({ ...thread, channels, messages }) ||
+      null,
     active_reply_channel_conversation_id: replyChannel?.conversation_id || null,
     active_reply_channel_key: replyChannel?.channel_key || null,
     active_reply_channel_inbox_id: replyChannel?.inbox_id || null,
