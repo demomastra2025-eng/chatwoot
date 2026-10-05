@@ -212,12 +212,13 @@ const DraggableStub = {
 
 const SelectMenuStub = {
   props: {
+    actionLabel: { type: String, default: '' },
     label: { type: String, default: '' },
     modelValue: { type: String, default: '' },
     options: { type: Array, default: () => [] },
     subMenuPosition: { type: String, default: 'right' },
   },
-  emits: ['update:modelValue'],
+  emits: ['action', 'update:modelValue'],
   template: `
     <button
       type="button"
@@ -225,6 +226,14 @@ const SelectMenuStub = {
       @click="$emit('update:modelValue', options[1]?.value)"
     >
       {{ label }}
+      <span
+        v-if="actionLabel"
+        data-testid="select-menu-action"
+        role="button"
+        @click.stop="$emit('action')"
+      >
+        {{ actionLabel }}
+      </span>
     </button>
   `,
 };
@@ -241,10 +250,6 @@ const mountComponent = () =>
         SchedulingColorPicker: true,
         SchedulingDrawer: SchedulingDrawerStub,
         SchedulingErrorState: true,
-        SchedulingPageHeader: {
-          template:
-            '<header><slot name="title" /><slot name="actions" /></header>',
-        },
         SelectMenu: SelectMenuStub,
         SettingsLayout: {
           template:
@@ -618,5 +623,51 @@ describe('CRM pipeline settings', () => {
       id: 1,
       name: 'Direct Sales',
     });
+  });
+
+  it('renders the pipeline name editor through the real header title slot', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const header = wrapper.get('header');
+    expect(header.find('h1').exists()).toBe(false);
+    expect(header.find('[data-testid="pipeline-name-input"]').exists()).toBe(
+      true
+    );
+    expect(header.find('[data-testid="select-menu-action"]').text()).toBe(
+      'CRM.SETTINGS.PIPELINES.ADD'
+    );
+  });
+
+  it('switches the pipeline from the header selector', async () => {
+    testState.pipelineList = [
+      pipeline,
+      { active: true, default: false, id: 2, name: 'Support', stages: [] },
+    ];
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper.get('header [data-position="bottom"]').trigger('click');
+
+    expect(testState.router.replace).toHaveBeenCalledWith({
+      query: { pipelineId: '2' },
+    });
+  });
+
+  it('opens the create pipeline drawer from the header selector action', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    expect(wrapper.find('[data-testid="scheduling-drawer"]').exists()).toBe(
+      false
+    );
+
+    await wrapper
+      .get('header [data-testid="select-menu-action"]')
+      .trigger('click');
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="scheduling-drawer"]').exists()).toBe(
+      true
+    );
   });
 });
