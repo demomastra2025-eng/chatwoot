@@ -231,6 +231,51 @@ describe('AI Agent logs', () => {
     expect(openEventMock).toHaveBeenCalledWith(event);
   });
 
+  it('keeps unknown metrics distinct from explicit zero values', async () => {
+    const unknownMetrics = {
+      ...event,
+      id: 18,
+      prompt_tokens: null,
+      completion_tokens: null,
+      estimated_cost: null,
+      duration_ms: null,
+    };
+    const zeroMetrics = {
+      ...event,
+      id: 19,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      estimated_cost: 0,
+      duration_ms: 0,
+    };
+    getMock.mockResolvedValue({
+      data: {
+        ...response.data,
+        payload: [unknownMetrics, zeroMetrics],
+        meta: { count: 2, current_page: 1, per_page: 25 },
+      },
+    });
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    const rows = wrapper.findAll('table tbody tr');
+    expect(rows).toHaveLength(2);
+    const unknownCells = rows[0].findAll('td');
+    expect(unknownCells[5].text()).toBe('—');
+    expect(unknownCells[6].text()).toBe('—');
+    expect(unknownCells[7].text()).toBe('—');
+    expect(unknownCells[8].text()).toBe('—');
+
+    const zeroCells = rows[1].findAll('td');
+    expect(zeroCells[5].text()).toBe('0');
+    expect(zeroCells[6].text()).toBe('0');
+    expect(zeroCells[7].text()).toBe('$0.000000');
+    expect(zeroCells[8].text()).toBe(
+      '0 CAPTAIN.OBSERVABILITY.LOGS.MILLISECONDS'
+    );
+  });
+
   it('opens the requested full trace without adding completion-only filters', async () => {
     routeQuery.value = {
       tab: 'traces',
