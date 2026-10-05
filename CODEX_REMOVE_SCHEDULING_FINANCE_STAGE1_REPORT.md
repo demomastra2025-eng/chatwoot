@@ -6,7 +6,7 @@
 - Branch: codex/remove-scheduling-finance-stage1
 - Base: rc/e-stage2 at 48990f08fdf86f61199dbf681df80255fab28321
 - Package: 2 of 2 independent packages; includes the backend/API/Swagger work and the frontend commits cherry-picked onto this branch.
-- Work stayed in this branch. No push, pull request, merge, PROD/DEV/SSH, credentials, or database access was performed.
+- Work stayed in this branch. At report time there was no push, pull request, or merge; root will publish only the codex branch after review. No PROD/DEV/app-server SSH, secret, or database access was performed.
 
 ## Changes
 
@@ -87,9 +87,9 @@ Exact backend commands:
 
 ### Frontend validation
 
-All commands below used the project's local Node dependencies. ESLint commands exited 0 with no errors. The full ESLint invocation used --quiet, which suppresses warnings.
+ESLint used the project's local Node dependencies. Root's final non-quiet sweep at integrated source 26428a6072d3a125041b82df7a59390fd0d6f9a4 covered 21 changed JS/Vue files: 0 errors, 434 warnings, exit 0. Receipt: outputs/cleanup-packages-20261006/finance-eslint-final.json. The per-agent targeted --quiet commands below also exited 0 with no errors.
 
-Full changed-file ESLint command:
+Targeted changed-file ESLint command:
 
     node ./node_modules/eslint/bin/eslint.js --quiet app/javascript/dashboard/components-next/Scheduling/SchedulingAppointmentCard.vue app/javascript/dashboard/components-next/Scheduling/SchedulingVueCalCalendar.spec.js app/javascript/dashboard/components-next/Scheduling/SchedulingVueCalCalendar.vue app/javascript/dashboard/composables/spec/useEditableAutomation.spec.js app/javascript/dashboard/featureFlags.js app/javascript/dashboard/helper/automationHelper.js app/javascript/dashboard/helper/specs/automationHelper.spec.js app/javascript/dashboard/stores/scheduling/shared.spec.js app/javascript/dashboard/routes/dashboard/scheduling/constants.js app/javascript/dashboard/routes/dashboard/scheduling/pages/SchedulingCalendarPage.vue app/javascript/dashboard/routes/dashboard/scheduling/pages/SchedulingResourcesPage.vue app/javascript/dashboard/routes/dashboard/scheduling/pages/SchedulingServicesPage.vue app/javascript/dashboard/routes/dashboard/scheduling/servicePricing.js app/javascript/dashboard/routes/dashboard/scheduling/servicePricing.spec.js app/javascript/dashboard/routes/dashboard/settings/automation/AutomationRuleForm.vue app/javascript/dashboard/routes/dashboard/settings/automation/constants.js app/javascript/dashboard/routes/dashboard/settings/reports/DealReports.vue app/javascript/dashboard/stores/scheduling/appointmentForm.js app/javascript/dashboard/stores/scheduling/appointmentForm.spec.js app/javascript/dashboard/stores/scheduling/calendar.js app/javascript/dashboard/stores/scheduling/calendar.spec.js app/javascript/dashboard/stores/scheduling/shared.js app/javascript/dashboard/stores/scheduling/shared.spec.js
 
@@ -113,4 +113,7 @@ Vitest commands used PowerShell environment variables TEST=true and TZ=UTC and w
 
 The first broad frontend invocation accidentally omitted the Vitest run subcommand and entered watch mode: 9 files completed with 119 passing tests and 2 failing cases. The failures were stale test fixtures/expectations in automation-row hydration and metadata. Both were fixed and the affected suites passed in the explicit 5-file rerun above; the watch process was stopped. These initial results are recorded as intermediate only and are not added to later batch totals.
 
-The frontend owner also ran a non-quiet ESLint pass earlier that reported 435 pre-existing localization warnings and three Prettier errors; the three formatting errors were fixed. The final quiet ESLint commands above have no errors. Vitest batches overlap and should not be summed as unique tests.
+Reproducible full non-quiet ESLint file selection and run at the integrated source SHA:
+
+    $taskJsFiles = @(git diff --name-only --diff-filter=ACMR 48990f08fdf86f61199dbf681df80255fab28321..26428a6072d3a125041b82df7a59390fd0d6f9a4 -- app/javascript | Where-Object { $_ -match '\.(js|vue)$' })
+    node ./node_modules/eslint/bin/eslint.js --format json --output-file outputs/cleanup-packages-20261006/finance-eslint-final.json @taskJsFiles
