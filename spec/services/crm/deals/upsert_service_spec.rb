@@ -205,7 +205,7 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(updated_deal.owner).to be_nil
   end
 
-  it 'keeps an explicit deal owner independent from the primary contact owner' do
+  it 'syncs the deal owner to the primary contact when an explicit owner is provided' do
     create(:crm_stage, account: account, pipeline: pipeline, default: true)
     owner = create(:user, account: account, role: :agent)
     contact = create(:contact, account: account, owner: nil)
@@ -222,7 +222,40 @@ RSpec.describe Crm::Deals::UpsertService do
     ).perform
 
     expect(deal.owner).to eq(owner)
-    expect(contact.reload.owner).to be_nil
+    expect(contact.reload.owner).to eq(owner)
+  end
+
+  it 'hands the primary contact over when the owner of an existing deal changes' do
+    previous_owner = create(:user, account: account, role: :agent)
+    new_owner = create(:user, account: account, role: :agent)
+    contact = create(:contact, account: account, owner: previous_owner)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, owner: previous_owner)
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+
+    updated_deal = described_class.new(
+      account: account,
+      deal: deal,
+      params: { owner_id: new_owner.id, lock_version: deal.lock_version }
+    ).perform
+
+    expect(updated_deal.owner).to eq(new_owner)
+    expect(contact.reload.owner).to eq(new_owner)
+  end
+
+  it 'leaves the primary contact alone when an update does not touch the owner' do
+    previous_owner = create(:user, account: account, role: :agent)
+    contact_owner = create(:user, account: account, role: :agent)
+    contact = create(:contact, account: account, owner: contact_owner)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, owner: previous_owner)
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+
+    described_class.new(
+      account: account,
+      deal: deal,
+      params: { title: 'Renamed deal', lock_version: deal.lock_version }
+    ).perform
+
+    expect(contact.reload.owner).to eq(contact_owner)
   end
 
   it 'updates closed_at when an existing deal changes between open and closed stages' do

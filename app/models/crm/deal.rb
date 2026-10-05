@@ -123,6 +123,9 @@ class Crm::Deal < ApplicationRecord
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
+  after_save :remember_owner_change
+  after_commit :sync_primary_contact_owner, if: :owner_changed_in_transaction?
+  after_rollback :forget_owner_change
   after_update_commit :sync_deferred_touch_enrollments
 
   def primary_contact
@@ -150,6 +153,25 @@ class Crm::Deal < ApplicationRecord
   end
 
   private
+
+  # after_commit only sees the last save of the transaction, and the upsert
+  # service reloads the deal inside it, so the owner change is noted per save.
+  def remember_owner_change
+    @owner_changed_in_transaction = true if saved_change_to_owner_id?
+  end
+
+  def forget_owner_change
+    @owner_changed_in_transaction = false
+  end
+
+  def owner_changed_in_transaction?
+    @owner_changed_in_transaction == true
+  end
+
+  def sync_primary_contact_owner
+    forget_owner_change
+    Crm::Deals::ContactOwnerSync.call([self])
+  end
 
   def sync_deferred_touch_enrollments
     Reminders::SyncEnrollmentService.new(remindable: self).perform
