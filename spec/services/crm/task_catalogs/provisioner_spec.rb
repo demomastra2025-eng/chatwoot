@@ -79,4 +79,59 @@ RSpec.describe Crm::TaskCatalogs::Provisioner do
       expect(account.crm_task_types.find_by!(code: 'call').name).to eq('Звонок')
     end
   end
+
+  # Migration 20261004120250 seeds the task catalogs with the bare system code as the name.
+  describe 'rows named by their bare system code' do
+    let(:account) { create(:account, locale: 'ru') }
+
+    def outcome_of(type_code, code)
+      account.crm_task_outcomes.joins(:task_type).find_by!(code: code, crm_task_types: { code: type_code })
+    end
+
+    before { described_class.new(account: account).perform }
+
+    it 'renames a type, an outcome and a status that still carry their code' do
+      account.crm_task_types.find_by!(code: 'touch').update_columns(name: 'touch') # rubocop:disable Rails/SkipsModelValidations
+      outcome_of('call', 'no_answer').update_columns(name: 'no_answer') # rubocop:disable Rails/SkipsModelValidations
+      account.crm_task_statuses.find_by!(code: 'todo').update_columns(name: 'todo') # rubocop:disable Rails/SkipsModelValidations
+
+      described_class.new(account: account).perform
+
+      expect(account.crm_task_types.find_by!(code: 'touch').name).to eq('Напоминание')
+      expect(outcome_of('call', 'no_answer').name).to eq('Нет ответа')
+      expect(account.crm_task_statuses.find_by!(code: 'todo').name).to eq('К выполнению')
+      expect(catalog_names(account).grep(forbidden_wording)).to be_empty
+    end
+
+    it 'renames only the rows named by their code and keeps edited and neutral names' do
+      outcome_of('call', 'no_answer').update_columns(name: 'no_answer') # rubocop:disable Rails/SkipsModelValidations
+      outcome_of('touch', 'no_answer').update!(name: 'Did not pick up')
+
+      described_class.new(account: account).perform
+
+      expect(outcome_of('call', 'no_answer').name).to eq('Нет ответа')
+      expect(outcome_of('touch', 'no_answer').name).to eq('Did not pick up')
+      expect(account.crm_task_types.find_by!(code: 'call').name).to eq('Звонок')
+    end
+
+    it 'renames a code that equals the English default of an English account' do
+      english_account = create(:account, locale: 'en')
+      described_class.new(account: english_account).perform
+      english_account.crm_task_types.find_by!(code: 'touch').update_columns(name: 'touch') # rubocop:disable Rails/SkipsModelValidations
+      english_account.crm_task_types.find_by!(code: 'task').update_columns(name: 'task') # rubocop:disable Rails/SkipsModelValidations
+
+      described_class.new(account: english_account).perform
+
+      expect(english_account.crm_task_types.find_by!(code: 'touch').name).to eq('Reminder')
+      expect(english_account.crm_task_types.find_by!(code: 'task').name).to eq('Task')
+    end
+
+    it 'is idempotent after the repair' do
+      account.crm_task_types.find_by!(code: 'meeting').update_columns(name: 'meeting') # rubocop:disable Rails/SkipsModelValidations
+      described_class.new(account: account).perform
+
+      expect { described_class.new(account: account).perform }
+        .not_to(change { account.crm_task_types.order(:id).pluck(:name, :updated_at) })
+    end
+  end
 end
