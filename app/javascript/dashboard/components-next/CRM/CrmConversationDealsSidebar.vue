@@ -1410,22 +1410,18 @@ onBeforeUnmount(() => {
   @apply text-sm font-normal text-n-slate-12 !important;
 }
 
-@media (min-width: 768px) {
-  .crm-deal-drawer-row {
-    align-items: center;
-    grid-template-columns: minmax(6.5rem, 1fr) minmax(8rem, 14rem);
-  }
+/* The panel is 320-420px wide at every viewport size, so the label always sits
+   above its field. The shared custom-field rows switch to two columns on a
+   wide viewport; keep them stacked here as well. */
+.crm-deal-drawer-form :deep(.crm-custom-fields-section-row) {
+  grid-template-columns: minmax(0, 1fr);
+}
 
-  .crm-deal-drawer-row--start {
-    align-items: start;
-  }
-
-  .crm-deal-drawer-label {
-    @apply text-left;
-  }
-
-  .crm-deal-drawer-row--start > .crm-deal-drawer-label {
-    padding-top: 0.5rem;
-  }
+.crm-deal-drawer-form
+  :deep(
+    .crm-custom-fields-section-row--start
+      > .crm-custom-fields-section-label-block
+  ) {
+  padding-top: 0;
 }
 </style>

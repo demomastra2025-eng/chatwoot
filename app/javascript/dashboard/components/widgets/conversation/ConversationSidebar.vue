@@ -110,7 +110,7 @@ const closeAppointmentsSidebar = () => {
       },
     ]"
   >
-    <div class="flex flex-1 overflow-auto">
+    <div class="flex flex-1 overflow-y-auto overflow-x-hidden">
       <ContactPanel
         v-if="activeTab === 'contact'"
         :conversation-id="activeConversationId"

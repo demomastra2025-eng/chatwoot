@@ -18,6 +18,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
+import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
@@ -1217,9 +1218,12 @@ watch(
         <Spinner class="!h-8 !w-8" />
       </div>
 
-      <div v-else-if="ui.error" class="px-4 py-6 text-sm text-n-ruby-11">
-        {{ $t('SCHEDULING.DIALOGS.ERROR') }}
-      </div>
+      <SchedulingErrorState
+        v-else-if="ui.error"
+        class="m-3"
+        :title="$t('SCHEDULING.DIALOGS.ERROR')"
+        @retry="loadAppointments"
+      />
 
       <div
         v-else-if="!appointments.length && !isCreating"
@@ -2372,16 +2376,5 @@ watch(
 
 .scheduling-appointment-drawer-value {
   @apply min-w-0 truncate text-sm font-normal text-n-slate-12;
-}
-
-@media (min-width: 768px) {
-  .scheduling-appointment-drawer-row {
-    align-items: center;
-    grid-template-columns: minmax(6.5rem, 1fr) minmax(8rem, 14rem);
-  }
-
-  .scheduling-appointment-drawer-label {
-    @apply text-left;
-  }
 }
 </style>
