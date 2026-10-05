@@ -387,6 +387,14 @@ RSpec.describe DeleteObjectJob, type: :job do
 
       it 'detaches conversation-scoped dependencies before destroying the conversation' do
         reminder = create(:reminder, account: account, touch_conversation: conversation)
+        post_delivery_reminder = create(
+          :reminder,
+          account: account,
+          touch_conversation: conversation,
+          conversation: conversation,
+          remindable: conversation,
+          post_delivery_action: Reminder::POST_DELIVERY_ACTION_RESOLVE_CONVERSATION
+        )
         delivery_message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation)
         resolved_message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation)
         confirmation_request = create(
@@ -427,6 +435,13 @@ RSpec.describe DeleteObjectJob, type: :job do
           target_conversation_id: nil,
           remindable_id: nil,
           remindable_type: nil
+        )
+        expect(post_delivery_reminder.reload).to have_attributes(
+          conversation_id: nil,
+          target_conversation_id: nil,
+          remindable_id: nil,
+          remindable_type: nil,
+          post_delivery_action: nil
         )
         expect(confirmation_request.reload).to have_attributes(
           conversation_id: nil,
