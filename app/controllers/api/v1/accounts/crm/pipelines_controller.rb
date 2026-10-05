@@ -84,7 +84,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   private
 
   def bootstrap_defaults!
-    ::Crm::Bootstrap::AccountService.new(account: Current.account).perform
+    ::Crm::Bootstrap::AccountService.new(account: Current.account).perform_if_needed
   end
 
   def pipeline_params

@@ -45,6 +45,11 @@ module Api::V1::Accounts::Crm::Concerns::DealsWriteHelpers
     ::Crm::Bootstrap::AccountService.new(account: Current.account).perform
   end
 
+  # Read-only requests skip the write-capable bootstrap once it has succeeded recently.
+  def bootstrap_defaults_if_needed!
+    ::Crm::Bootstrap::AccountService.new(account: Current.account).perform_if_needed
+  end
+
   def create_deal_params
     params.permit(*CREATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
   end

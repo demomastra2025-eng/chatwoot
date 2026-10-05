@@ -1,5 +1,7 @@
 class Crm::Bootstrap::AccountService
   DEFAULT_PIPELINE_NAME = 'Sales Pipeline'.freeze
+  BOOTSTRAPPED_MARKER_TTL = 1.hour
+  BOOTSTRAPPED_MARKER_KEY = 'CRM_BOOTSTRAP::%<account_id>d::%<created_at>s::%<features>s'.freeze
 
   attr_reader :account
 
@@ -14,7 +16,42 @@ class Crm::Bootstrap::AccountService
     end
   end
 
+  # For read-only endpoints. The full bootstrap checks (and may write) system fields, pipelines, stages
+  # and task catalogs inside a transaction, which is far too much to repeat on every GET. After a
+  # successful run a short-lived marker in Redis skips it; if the marker is missing (expiry, Redis
+  # restart or outage) the full bootstrap simply runs again, so the defaults are still always provisioned.
+  def perform_if_needed
+    return if bootstrapped?
+
+    perform
+    mark_bootstrapped
+  end
+
   private
+
+  # The marker is tied to the account instance and to the enabled features, so a recreated account or a
+  # newly enabled CRM feature never inherits a stale marker.
+  def bootstrapped_marker_key
+    features = %w[crm_deals crm_tasks].map { |feature| account.feature_enabled?(feature) ? '1' : '0' }.join
+    format(
+      BOOTSTRAPPED_MARKER_KEY,
+      account_id: account.id,
+      created_at: account.created_at.strftime('%s%6N'),
+      features: features
+    )
+  end
+
+  def bootstrapped?
+    Redis::Alfred.exists?(bootstrapped_marker_key)
+  rescue Redis::BaseError
+    false
+  end
+
+  def mark_bootstrapped
+    Redis::Alfred.set(bootstrapped_marker_key, '1', ex: BOOTSTRAPPED_MARKER_TTL.to_i)
+  rescue Redis::BaseError
+    nil
+  end
 
   def bootstrap_deal_settings
     ensure_system_field_definitions_for('deal')

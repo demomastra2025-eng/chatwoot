@@ -12,7 +12,8 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     { tasks: :status }
   ].freeze
   before_action :ensure_crm_deals_enabled!
-  before_action :bootstrap_defaults!, only: [:index, :create]
+  before_action :bootstrap_defaults_if_needed!, only: :index
+  before_action :bootstrap_defaults!, only: :create
   before_action :set_deal, only: [
     :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
     :set_waiting, :clear_waiting, :archive, :unarchive

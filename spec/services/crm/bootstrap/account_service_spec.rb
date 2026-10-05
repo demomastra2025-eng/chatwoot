@@ -164,4 +164,67 @@ RSpec.describe Crm::Bootstrap::AccountService do
       end
     end
   end
+
+  describe '#perform_if_needed' do
+    let(:service) { described_class.new(account: account) }
+
+    before { account.enable_features!('crm_tasks') }
+
+    it 'provisions the defaults on the first call' do
+      service.perform_if_needed
+
+      expect(account.crm_pipelines.pluck(:code)).to eq(['sales_pipeline'])
+      expect(account.crm_task_types.pluck(:code)).to include('task', 'call')
+      expect(account.crm_task_statuses.pluck(:code)).to include('todo', 'done')
+    end
+
+    it 'does not touch the database again while the marker is set' do
+      service.perform_if_needed
+      allow(ApplicationRecord).to receive(:transaction).and_call_original
+
+      queries = sql_queries_during { described_class.new(account: account).perform_if_needed }
+
+      expect(queries).to be_empty
+      expect(ApplicationRecord).not_to have_received(:transaction)
+    end
+
+    it 'bootstraps again once the marker is gone' do
+      service.perform_if_needed
+      account.crm_pipelines.destroy_all
+      Redis::Alfred.delete(service.send(:bootstrapped_marker_key))
+
+      service.perform_if_needed
+
+      expect(account.crm_pipelines.pluck(:code)).to eq(['sales_pipeline'])
+    end
+
+    it 'bootstraps again when the set of enabled CRM features changes' do
+      account.disable_features!('crm_tasks')
+      service.perform_if_needed
+      expect(account.crm_task_types).to be_empty
+
+      account.enable_features!('crm_tasks')
+      described_class.new(account: account).perform_if_needed
+
+      expect(account.crm_task_types.pluck(:code)).to include('task')
+    end
+
+    it 'does not share the marker between accounts' do
+      other_account = create(:account)
+      other_account.enable_features!('crm_deals', 'crm_tasks')
+      service.perform_if_needed
+
+      described_class.new(account: other_account).perform_if_needed
+
+      expect(other_account.crm_pipelines.pluck(:code)).to eq(['sales_pipeline'])
+    end
+
+    it 'falls back to the full bootstrap when Redis is unavailable' do
+      allow(Redis::Alfred).to receive(:exists?).and_raise(Redis::CannotConnectError)
+      allow(Redis::Alfred).to receive(:set).and_raise(Redis::CannotConnectError)
+
+      expect { service.perform_if_needed }.not_to raise_error
+      expect(account.crm_pipelines.pluck(:code)).to eq(['sales_pipeline'])
+    end
+  end
 end
