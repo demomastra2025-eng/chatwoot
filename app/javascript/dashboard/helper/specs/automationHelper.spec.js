@@ -259,13 +259,12 @@ const EXPECTED_BACKEND_ACTION_UNION = [
   ]),
 ];
 
-// The backend still evaluates these, but the rule editor no longer offers them
-// (rate and prepayment UI removed); existing rules keep working.
+// The backend still evaluates this action, but the rule editor no longer offers
+// it (prepayment UI removed); existing rules keep it via legacyOnly.
 const LEGACY_BACKEND_ONLY_ACTIONS = [
   'apply_touch_plan',
   'cancel_appointment_payment',
 ];
-const LEGACY_BACKEND_ONLY_APPOINTMENT_CONDITIONS = ['payment_status'];
 const publicAutomationActions = actions =>
   actions.filter(action => !LEGACY_BACKEND_ONLY_ACTIONS.includes(action));
 
@@ -326,9 +325,7 @@ describe('AUTOMATIONS backend parity', () => {
         publicAutomationActions(BACKEND_APPOINTMENT_ACTIONS)
       );
       expect(AUTOMATIONS[eventName].conditions.map(({ key }) => key)).toEqual(
-        BACKEND_APPOINTMENT_CONDITIONS.filter(
-          key => !LEGACY_BACKEND_ONLY_APPOINTMENT_CONDITIONS.includes(key)
-        )
+        BACKEND_APPOINTMENT_CONDITIONS
       );
     });
   });
@@ -390,6 +387,50 @@ describe('AUTOMATIONS backend parity', () => {
     expect(
       AUTOMATION_ACTION_TYPES.find(action => action.key === 'cancel_touches')
     ).toMatchObject({ inputType: null });
+  });
+});
+
+describe('legacy-only appointment conditions', () => {
+  it('keeps payment_status defined for existing rules but flags it legacy-only', () => {
+    APPOINTMENT_EVENTS.forEach(eventName => {
+      const condition = AUTOMATIONS[eventName].conditions.find(
+        ({ key }) => key === 'payment_status'
+      );
+      expect(condition).toMatchObject({
+        inputType: 'multi_select',
+        legacyOnly: true,
+      });
+      expect(
+        helpers.getStandardAttributeInputType(
+          AUTOMATIONS,
+          eventName,
+          'payment_status'
+        )
+      ).toBe('multi_select');
+    });
+  });
+
+  it('hides legacy-only conditions from the picker unless the rule uses them', () => {
+    const attributes = AUTOMATIONS.appointment_created.conditions;
+    const offered = keys => keys.map(({ key }) => key);
+
+    expect(
+      offered(helpers.getVisibleConditionAttributes(attributes, []))
+    ).not.toContain('payment_status');
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(attributes, [
+          { attribute_key: 'status' },
+        ])
+      )
+    ).not.toContain('payment_status');
+    expect(
+      offered(
+        helpers.getVisibleConditionAttributes(attributes, [
+          { attribute_key: 'payment_status' },
+        ])
+      )
+    ).toContain('payment_status');
   });
 });
 
@@ -612,6 +653,7 @@ describe('getConditionOptions', () => {
 
   it('returns appointment-specific options when the event is appointment-based', () => {
     const appointmentStatusOptions = [{ id: 'scheduled', name: 'Scheduled' }];
+    const appointmentPaymentStatusOptions = [{ id: 'paid', name: 'Paid' }];
     const appointmentServiceOptions = [{ id: 7, name: 'Consultation' }];
     const appointmentWeekdayOptions = [{ id: '1', name: 'Monday' }];
 
@@ -623,6 +665,15 @@ describe('getConditionOptions', () => {
         type: 'status',
       })
     ).toEqual(appointmentStatusOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        customAttributes,
+        eventName: 'appointment_created',
+        appointmentPaymentStatusOptions,
+        type: 'payment_status',
+      })
+    ).toEqual(appointmentPaymentStatusOptions);
 
     expect(
       helpers.getConditionOptions({

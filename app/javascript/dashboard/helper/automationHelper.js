@@ -193,6 +193,7 @@ const getManagedFieldDefinitionsForEvent = (
 };
 
 const getManagedConditionFilterMaps = ({
+  appointmentPaymentStatusOptions,
   appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
@@ -207,6 +208,7 @@ const getManagedConditionFilterMaps = ({
 }) => ({
   appointment: {
     status: appointmentStatusOptions,
+    payment_status: appointmentPaymentStatusOptions,
     appointment_type: appointmentTypeOptions,
     starts_at_weekday: appointmentWeekdayOptions,
     service_id: appointmentServiceOptions,
@@ -277,6 +279,7 @@ export const getActionOptions = ({
 export const getConditionOptions = ({
   agents,
   appointmentFieldDefinitions,
+  appointmentPaymentStatusOptions,
   appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
@@ -335,6 +338,7 @@ export const getConditionOptions = ({
   }
 
   const managedConditionFilterMaps = getManagedConditionFilterMaps({
+    appointmentPaymentStatusOptions,
     appointmentServiceOptions,
     appointmentStatusOptions,
     appointmentTypeOptions,
@@ -493,6 +497,22 @@ export const generateCustomAttributes = (
  */
 export const getAttributes = (automationTypes, key) => {
   return automationTypes[key].conditions;
+};
+
+/**
+ * Drop legacy-only conditions from the picker unless the rule being edited
+ * already uses them (the backend still evaluates those conditions).
+ * @param {Array} attributes - Condition definitions of an event.
+ * @param {Array} conditions - Conditions of the automation being edited.
+ * @returns {Array} The conditions the editor should offer.
+ */
+export const getVisibleConditionAttributes = (attributes, conditions = []) => {
+  const usedKeys = new Set(
+    (conditions || []).map(condition => condition.attribute_key)
+  );
+  return attributes.filter(
+    attribute => !attribute.legacyOnly || usedKeys.has(attribute.key)
+  );
 };
 
 /**

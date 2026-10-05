@@ -17,6 +17,13 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     filterOperators: OPERATOR_TYPES_1,
   },
   {
+    key: 'payment_status',
+    name: 'PAYMENT_STATUS',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+    legacyOnly: true,
+  },
+  {
     key: 'appointment_type',
     name: 'APPOINTMENT_TYPE',
     inputType: 'multi_select',

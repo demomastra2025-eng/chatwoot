@@ -118,6 +118,22 @@ export default function useAutomationValues() {
     )
   );
 
+  const appointmentPaymentStatusOptions = computed(() =>
+    ['awaiting_payment', 'prepaid', 'paid', 'cancelled'].map(status => {
+      const translatedLabels = {
+        awaiting_payment: t('SCHEDULING.PAYMENT_STATUS.awaiting_payment'),
+        prepaid: t('SCHEDULING.PAYMENT_STATUS.prepaid'),
+        paid: t('SCHEDULING.PAYMENT_STATUS.paid'),
+        cancelled: t('SCHEDULING.PAYMENT_STATUS.cancelled'),
+      };
+
+      return {
+        id: status,
+        name: translatedLabels[status] || status,
+      };
+    })
+  );
+
   const appointmentTypeOptions = computed(() =>
     ['primary', 'secondary', 'other'].map(typeKey => {
       const translatedLabels = {
@@ -208,6 +224,7 @@ export default function useAutomationValues() {
     return getConditionOptions({
       agents: agents.value,
       appointmentFieldDefinitions: appointmentFieldDefinitions.value,
+      appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
       appointmentServiceOptions: appointmentServiceOptions.value,
       appointmentStatusOptions: appointmentStatusOptions.value,
       appointmentTypeOptions: appointmentTypeOptions.value,
@@ -274,6 +291,7 @@ export default function useAutomationValues() {
     statusFilterItems,
     statusFilterOptions,
     appointmentStatusOptions,
+    appointmentPaymentStatusOptions,
     appointmentServiceOptions,
     appointmentTypeOptions,
     appointmentWeekdayOptions,

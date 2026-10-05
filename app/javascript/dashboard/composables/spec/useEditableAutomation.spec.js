@@ -1,8 +1,16 @@
 import { useEditableAutomation } from '../useEditableAutomation';
+import { AUTOMATIONS } from 'dashboard/routes/dashboard/settings/automation/constants';
 
 const getConditionDropdownValues = vi.fn((type, eventName) => {
   if (eventName === 'appointment_created' && type === 'status') {
     return [{ id: 'scheduled', name: 'Scheduled' }];
+  }
+
+  if (eventName === 'appointment_created' && type === 'payment_status') {
+    return [
+      { id: 'prepaid', name: 'Prepaid' },
+      { id: 'paid', name: 'Paid' },
+    ];
   }
 
   if (eventName === 'appointment_created' && type === 'visit_reason') {
@@ -387,6 +395,33 @@ describe('useEditableAutomation', () => {
         attribute_key: 'private_note',
         filter_operator: 'equal_to',
         values: { id: false, name: 'False' },
+        query_operator: 'and',
+      },
+    ]);
+  });
+
+  it('opens an appointment rule that still has a payment_status condition and keeps its values', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const automation = {
+      event_name: 'appointment_created',
+      conditions: [
+        {
+          attribute_key: 'payment_status',
+          filter_operator: 'equal_to',
+          values: ['paid'],
+          query_operator: null,
+        },
+      ],
+      actions: [],
+    };
+
+    const formatted = formatAutomation(automation, [], AUTOMATIONS, []);
+
+    expect(formatted.conditions).toEqual([
+      {
+        attribute_key: 'payment_status',
+        filter_operator: 'equal_to',
+        values: [{ id: 'paid', name: 'Paid' }],
         query_operator: 'and',
       },
     ]);

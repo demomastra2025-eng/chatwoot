@@ -11,6 +11,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import {
   generateAutomationPayload,
   getAttributes,
+  getVisibleConditionAttributes,
   getFileName,
   showActionInput,
 } from 'dashboard/helper/automationHelper';
@@ -167,7 +168,10 @@ const filterTypes = computed(() => {
   const event = eventName.value;
   if (!event || !props.automationTypes[event]) return [];
 
-  const attributes = getTranslatedAttributes(props.automationTypes, event);
+  const attributes = getVisibleConditionAttributes(
+    getTranslatedAttributes(props.automationTypes, event),
+    automation.value?.conditions
+  );
 
   return attributes.map(attr => {
     if (attr.disabled) {
