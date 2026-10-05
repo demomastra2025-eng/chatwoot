@@ -97,7 +97,7 @@ RSpec.describe CreateCaptainFollowUpAttempts do
     )
   end
 
-  it 'rejects an existing attempt foreign key that is not validated', :captain_migration_schema_ddl do
+  it 'validates an attempt foreign key that an interrupted run left NOT VALID', :captain_migration_schema_ddl do
     connection = ActiveRecord::Base.connection
     foreign_key = connection.foreign_keys(:captain_follow_up_attempts).find do |candidate|
       candidate.column == 'account_id'
@@ -111,6 +111,20 @@ RSpec.describe CreateCaptainFollowUpAttempts do
       validate: false,
       name: foreign_key.name
     )
+
+    described_class.new.up
+
+    validated = connection.foreign_keys(:captain_follow_up_attempts).find { |candidate| candidate.column == 'account_id' }
+    expect(validated.validated?).to be(true)
+  end
+
+  it 'rejects an existing attempt foreign key with a different delete rule', :captain_migration_schema_ddl do
+    connection = ActiveRecord::Base.connection
+    foreign_key = connection.foreign_keys(:captain_follow_up_attempts).find do |candidate|
+      candidate.column == 'account_id'
+    end
+    connection.remove_foreign_key(:captain_follow_up_attempts, name: foreign_key.name)
+    connection.add_foreign_key(:captain_follow_up_attempts, :accounts, column: :account_id, name: foreign_key.name)
 
     expect { described_class.new.up }.to raise_error(
       ActiveRecord::MigrationError, /foreign key does not match the Captain attempt contract/
