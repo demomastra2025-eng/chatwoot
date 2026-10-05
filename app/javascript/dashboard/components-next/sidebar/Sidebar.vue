@@ -1,5 +1,5 @@
 <script setup>
-import { h, ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { h, ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { provideSidebarContext } from './provider';
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -12,7 +12,7 @@ import { useI18n } from 'vue-i18n';
 import { useSidebarKeyboardShortcuts } from './useSidebarKeyboardShortcuts';
 import { vOnClickOutside } from '@vueuse/components';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { useWindowSize, useEventListener } from '@vueuse/core';
+import { useWindowSize } from '@vueuse/core';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 
@@ -46,22 +46,9 @@ import {
   filterItemsByPermission,
   getUserPermissions,
 } from 'dashboard/helper/permissionsHelper';
-import {
-  getInboxFlowRouteNames,
-  INBOX_FLOW_ROUTE_NAMES,
-} from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import { employeeSettingsTabs } from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
 import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
 import { canAccessSLASettings } from 'dashboard/routes/dashboard/settings/sla/slaSettingsPolicy';
-import {
-  isInboxPendingDeletion,
-  isWhatsappWebInbox,
-  isWhatsappWebConnected,
-} from 'dashboard/helper/whatsappWeb';
-import {
-  isTelegramPersonalInbox,
-  isTelegramPersonalConnected,
-} from 'dashboard/helper/telegramPersonal';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveVisibleConversationPipelines } from './conversationPipelineVisibility';
 import { conversationListContextState } from 'dashboard/helper/conversationListContext';
@@ -89,9 +76,6 @@ const emit = defineEmits([
   'showCreateAccountModal',
   'closeMobileSidebar',
 ]);
-
-const SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS = 60 * 1000;
-const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 
 const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
 const route = useRoute();
@@ -293,7 +277,6 @@ provideSidebarContext({
   sidebarWidth,
 });
 
-const inboxes = useMapGetter('inboxes/getInboxes');
 const labels = useMapGetter('labels/getLabelsOnSidebar');
 const teams = useMapGetter('teams/getMyTeams');
 const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
@@ -304,10 +287,6 @@ const conversationSidebarUnreadCounts = useMapGetter(
   'getConversationSidebarUnreadCounts'
 );
 const conversationStats = useMapGetter('conversationStats/getStats');
-
-const sortedInboxes = computed(() =>
-  inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
-);
 
 const getSidebarUnreadCount = (collection, key) => {
   if (!key) return 0;
@@ -326,13 +305,6 @@ const conversationAssigneeTypes = [
   wootConstants.ASSIGNEE_TYPE.ME,
   wootConstants.ASSIGNEE_TYPE.UNASSIGNED,
 ];
-const isDialogConversationRoute = routeName =>
-  typeof routeName === 'string' &&
-  (routeName === 'home' ||
-    routeName === 'inbox_dashboard' ||
-    routeName.startsWith('communication_thread') ||
-    routeName.startsWith('conversation') ||
-    routeName.startsWith('conversations'));
 
 const conversationStatusActiveOn = [
   'home',
@@ -514,39 +486,6 @@ const resolveConversationRouteName = name => {
 
   return name;
 };
-
-const conversationSidebarRoute = computed(() => {
-  if (isDialogConversationRoute(route.name)) {
-    return true;
-  }
-
-  return (
-    route.name === INBOX_FLOW_ROUTE_NAMES.dialog.show ||
-    route.name === INBOX_FLOW_ROUTE_NAMES.dialog.new ||
-    route.name === INBOX_FLOW_ROUTE_NAMES.dialog.agents ||
-    route.name === INBOX_FLOW_ROUTE_NAMES.dialog.page ||
-    route.name === INBOX_FLOW_ROUTE_NAMES.dialog.finish
-  );
-});
-
-const inboxFlowRouteNames = computed(() =>
-  conversationSidebarRoute.value
-    ? INBOX_FLOW_ROUTE_NAMES.dialog
-    : getInboxFlowRouteNames(route)
-);
-
-const hasDedicatedInboxRuntimePolling = computed(() => {
-  return route.name === inboxFlowRouteNames.value.finish;
-});
-
-const dedicatedRuntimePollingInboxId = computed(() => {
-  if (!hasDedicatedInboxRuntimePolling.value) {
-    return null;
-  }
-
-  const inboxId = Number(route.params.inboxId || route.params.inbox_id);
-  return Number.isFinite(inboxId) && inboxId > 0 ? inboxId : null;
-});
 
 const withConversationStatus = (name, params = {}, queryOverrides = {}) =>
   accountScopedRoute(
@@ -751,222 +690,6 @@ const conversationAssigneeStatusItems = computed(() =>
   })
 );
 
-const whatsappWebInboxes = computed(() => {
-  return sortedInboxes.value.filter(
-    inbox => isWhatsappWebInbox(inbox) && !isInboxPendingDeletion(inbox)
-  );
-});
-
-const whatsappWebHealthyInboxes = computed(() => {
-  return whatsappWebInboxes.value.filter(inbox =>
-    isWhatsappWebConnected(inbox)
-  );
-});
-
-const whatsappWebAttentionInboxes = computed(() => {
-  return whatsappWebInboxes.value.filter(
-    inbox => !isWhatsappWebConnected(inbox)
-  );
-});
-
-const telegramPersonalInboxes = computed(() => {
-  return sortedInboxes.value.filter(inbox => isTelegramPersonalInbox(inbox));
-});
-
-const telegramPersonalHealthyInboxes = computed(() => {
-  return telegramPersonalInboxes.value.filter(inbox =>
-    isTelegramPersonalConnected(inbox)
-  );
-});
-
-const telegramPersonalAttentionInboxes = computed(() => {
-  return telegramPersonalInboxes.value.filter(
-    inbox => !isTelegramPersonalConnected(inbox)
-  );
-});
-
-const excludeDedicatedRuntimePollingInbox = inboxList => {
-  if (!dedicatedRuntimePollingInboxId.value) {
-    return inboxList;
-  }
-
-  return inboxList.filter(
-    inbox => Number(inbox.id) !== dedicatedRuntimePollingInboxId.value
-  );
-};
-
-const sidebarWhatsappWebHealthyInboxes = computed(() =>
-  excludeDedicatedRuntimePollingInbox(whatsappWebHealthyInboxes.value)
-);
-
-const sidebarWhatsappWebAttentionInboxes = computed(() =>
-  excludeDedicatedRuntimePollingInbox(whatsappWebAttentionInboxes.value)
-);
-
-const sidebarTelegramPersonalHealthyInboxes = computed(() =>
-  excludeDedicatedRuntimePollingInbox(telegramPersonalHealthyInboxes.value)
-);
-
-const sidebarTelegramPersonalAttentionInboxes = computed(() =>
-  excludeDedicatedRuntimePollingInbox(telegramPersonalAttentionInboxes.value)
-);
-
-const canManageWhatsappWebLifecycle = computed(() => {
-  return checkPermissions(['administrator']);
-});
-
-const sidebarRuntimePollingTimers = {
-  whatsappHealthy: null,
-  whatsappAttention: null,
-  telegramHealthy: null,
-  telegramAttention: null,
-};
-
-const isSidebarRuntimePollingAllowed = () => {
-  if (typeof document === 'undefined') {
-    return true;
-  }
-
-  return document.visibilityState === 'visible';
-};
-
-const stopSidebarRuntimePollingTimer = key => {
-  if (!sidebarRuntimePollingTimers[key]) {
-    return;
-  }
-
-  window.clearInterval(sidebarRuntimePollingTimers[key]);
-  sidebarRuntimePollingTimers[key] = null;
-};
-
-const stopSidebarRuntimePolling = () => {
-  Object.keys(sidebarRuntimePollingTimers).forEach(
-    stopSidebarRuntimePollingTimer
-  );
-};
-
-const startSidebarRuntimePollingTimer = (key, callback, interval) => {
-  if (sidebarRuntimePollingTimers[key]) {
-    return;
-  }
-
-  sidebarRuntimePollingTimers[key] = window.setInterval(callback, interval);
-};
-
-const syncWhatsappWebStatuses = async inboxList => {
-  if (
-    !canManageWhatsappWebLifecycle.value ||
-    !isSidebarRuntimePollingAllowed() ||
-    !inboxList.length
-  ) {
-    return;
-  }
-
-  await Promise.allSettled(
-    inboxList.map(inbox =>
-      store.dispatch('inboxes/refreshWhatsappWebQr', {
-        inboxId: inbox.id,
-        statusOnly: true,
-        includeQrCode: false,
-      })
-    )
-  );
-};
-
-const syncTelegramPersonalStatuses = async inboxList => {
-  if (!isSidebarRuntimePollingAllowed() || !inboxList.length) {
-    return;
-  }
-
-  await Promise.allSettled(
-    inboxList.map(inbox =>
-      store.dispatch('inboxes/getTelegramPersonalDiagnostics', inbox.id)
-    )
-  );
-};
-
-const syncSidebarRuntimePolling = () => {
-  stopSidebarRuntimePolling();
-
-  if (!isSidebarRuntimePollingAllowed()) {
-    return;
-  }
-
-  if (canManageWhatsappWebLifecycle.value) {
-    if (sidebarWhatsappWebHealthyInboxes.value.length) {
-      syncWhatsappWebStatuses(sidebarWhatsappWebHealthyInboxes.value);
-      startSidebarRuntimePollingTimer(
-        'whatsappHealthy',
-        () => syncWhatsappWebStatuses(sidebarWhatsappWebHealthyInboxes.value),
-        SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS
-      );
-    }
-
-    if (sidebarWhatsappWebAttentionInboxes.value.length) {
-      syncWhatsappWebStatuses(sidebarWhatsappWebAttentionInboxes.value);
-      startSidebarRuntimePollingTimer(
-        'whatsappAttention',
-        () => syncWhatsappWebStatuses(sidebarWhatsappWebAttentionInboxes.value),
-        SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS
-      );
-    }
-  }
-
-  if (sidebarTelegramPersonalHealthyInboxes.value.length) {
-    syncTelegramPersonalStatuses(sidebarTelegramPersonalHealthyInboxes.value);
-    startSidebarRuntimePollingTimer(
-      'telegramHealthy',
-      () =>
-        syncTelegramPersonalStatuses(
-          sidebarTelegramPersonalHealthyInboxes.value
-        ),
-      SIDEBAR_RUNTIME_HEALTHY_POLL_INTERVAL_MS
-    );
-  }
-
-  if (sidebarTelegramPersonalAttentionInboxes.value.length) {
-    syncTelegramPersonalStatuses(sidebarTelegramPersonalAttentionInboxes.value);
-    startSidebarRuntimePollingTimer(
-      'telegramAttention',
-      () =>
-        syncTelegramPersonalStatuses(
-          sidebarTelegramPersonalAttentionInboxes.value
-        ),
-      SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS
-    );
-  }
-};
-
-const handleSidebarRuntimeVisibilityChange = () => {
-  syncSidebarRuntimePolling();
-};
-
-useEventListener(
-  document,
-  'visibilitychange',
-  handleSidebarRuntimeVisibilityChange
-);
-
-watch(
-  () =>
-    [
-      canManageWhatsappWebLifecycle.value,
-      hasDedicatedInboxRuntimePolling.value,
-      dedicatedRuntimePollingInboxId.value,
-      sidebarWhatsappWebHealthyInboxes.value.map(inbox => inbox.id).join(':'),
-      sidebarWhatsappWebAttentionInboxes.value.map(inbox => inbox.id).join(':'),
-      sidebarTelegramPersonalHealthyInboxes.value
-        .map(inbox => inbox.id)
-        .join(':'),
-      sidebarTelegramPersonalAttentionInboxes.value
-        .map(inbox => inbox.id)
-        .join(':'),
-    ].join('|'),
-  () => {
-    syncSidebarRuntimePolling();
-  }
-);
-
 const loadSidebarCrmPipelines = () => {
   if (!hasCrmDeals.value) {
     return Promise.resolve();
@@ -993,12 +716,6 @@ onMounted(async () => {
     store.dispatch('customViews/get', 'contact'),
     loadSidebarCrmPipelines(),
   ]);
-
-  syncSidebarRuntimePolling();
-});
-
-onBeforeUnmount(() => {
-  stopSidebarRuntimePolling();
 });
 
 const closeMobileSidebar = () => {
