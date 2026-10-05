@@ -32,6 +32,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
   navigationLabel: {
     type: String,
     default: null,
@@ -59,6 +63,19 @@ const formatDateRange = computed(() => {
   return `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d, yyyy')}`;
 });
 
+const compactDateRange = computed(() => {
+  const startDate = props.selectedStartDate;
+  const endDate = props.selectedEndDate;
+
+  if (!isValid(startDate) || !isValid(endDate)) return '';
+
+  if (isSameYear(startDate, endDate)) {
+    return `${format(startDate, 'dd.MM')} – ${format(endDate, 'dd.MM')}`;
+  }
+
+  return `${format(startDate, 'dd.MM.yy')}–${format(endDate, 'dd.MM.yy')}`;
+});
+
 const activeDateRange = computed(
   () =>
     props.ranges?.find(range => range.value === props.selectedRange)?.label ||
@@ -71,10 +88,11 @@ const openDatePicker = () => {
 </script>
 
 <template>
-  <div class="inline-flex items-center gap-1">
+  <div class="inline-flex max-w-full min-w-0 items-center gap-1">
     <button
       type="button"
-      class="inline-flex relative items-center rounded-lg gap-2 py-1.5 px-3 h-8 bg-n-alpha-2 hover:bg-n-alpha-1 active:bg-n-alpha-1 flex-shrink-0"
+      class="relative inline-flex h-8 items-center gap-2 rounded-lg bg-n-alpha-2 px-3 py-1.5 hover:bg-n-alpha-1 active:bg-n-alpha-1"
+      :class="props.compact ? 'min-w-0 max-w-full' : 'flex-shrink-0'"
       @click="openDatePicker"
     >
       <Icon
@@ -84,11 +102,16 @@ const openDatePicker = () => {
       <span class="text-sm font-medium text-n-slate-12 truncate">
         {{
           active
-            ? navigationLabel || $t(activeDateRange)
+            ? props.compact && selectedRange === 'custom'
+              ? compactDateRange
+              : navigationLabel || $t(activeDateRange)
             : inactiveLabel || $t('DATE_PICKER.DATE_RANGE_OPTIONS.ALL_TIME')
         }}
       </span>
-      <span v-if="active" class="text-sm font-medium text-n-slate-11 truncate">
+      <span
+        v-if="active && !props.compact"
+        class="truncate text-sm font-medium text-n-slate-11"
+      >
         {{ formatDateRange }}
       </span>
       <Icon
