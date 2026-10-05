@@ -3,7 +3,9 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     'search_available_slots'
   end
 
-  description 'Search local slots and provider availability; price links do not verify MedElement eligibility'
+  description 'Search appointment slots; the answer states whether MedElement was asked or only local rules were used and ' \
+              'whether the service link is price-based, local or missing; price links do not verify MedElement eligibility; ' \
+              'total_slots counts only the returned slots'
   param :from, type: :string, desc: 'Range start datetime in ISO 8601 format', required: true
   param :to, type: :string, desc: 'Range end datetime in ISO 8601 format', required: true
   param :resource_ids, type: :array, desc: 'Optional list of scheduling resource IDs', required: false
@@ -25,6 +27,8 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
     publish_service_match(payload)
 
     formatted_payload(payload)
+  rescue Scheduling::AvailableSlotSearchService::MissingServiceLinkError => e
+    tool_failure(ArgumentError.new("#{e.message}: no recorded service-price link for these resources; provider eligibility is unverified"))
   rescue StandardError => e
     tool_failure(e)
   end

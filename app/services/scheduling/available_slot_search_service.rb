@@ -1,7 +1,15 @@
 class Scheduling::AvailableSlotSearchService
   MAX_LIMIT = 100
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
-  MISSING_LINK_ERROR = 'No recorded service-price link for requested resources; provider eligibility is unverified'.freeze
+  # Kept identical to the message pinned by the MedElement contract specs; the tool adds the explanation.
+  MISSING_LINK_ERROR = 'Service is not available for the requested specialists'.freeze
+
+  class MissingServiceLinkError < ArgumentError; end
+
+  def self.provider_related?(resource)
+    attrs = resource.custom_attributes.to_h
+    attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
+  end
 
   def initialize(account:, from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
     @account = account
@@ -46,7 +54,7 @@ class Scheduling::AvailableSlotSearchService
 
       if @resource_ids.present?
         missing_ids = @resource_ids - resolved.map(&:id)
-        raise ActiveRecord::RecordNotFound, "Scheduling resources not found: #{missing_ids.join(', ')}" if missing_ids.present?
+        raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
       end
 
       if service.present?
@@ -54,7 +62,7 @@ class Scheduling::AvailableSlotSearchService
 
         if @resource_ids.present?
           unsupported_ids = resolved.map(&:id) - eligible_resource_ids
-          raise ArgumentError, MISSING_LINK_ERROR if unsupported_ids.present?
+          raise MissingServiceLinkError, MISSING_LINK_ERROR if unsupported_ids.present?
         end
 
         resolved = resolved.select { |resource| eligible_resource_ids.include?(resource.id) }
@@ -144,6 +152,7 @@ class Scheduling::AvailableSlotSearchService
       availability_scope: availability_scope(confirmed),
       requested_service_id: @service_id,
       service_link_status: service_link_status,
+      candidate_resource_ids: resources.map(&:id),
       service_match: service_match_payload(confirmed),
       customer_offer_eligible: confirmed && normalized_slots.present?
     }
@@ -162,9 +171,7 @@ class Scheduling::AvailableSlotSearchService
       confirmed: confirmed,
       service_id: confirmed ? service.id : nil,
       resource_id: confirmed && resources.one? ? resources.first.id : nil,
-      resource_ids: confirmed ? resources.map(&:id) : [],
-      candidate_resource_ids: resources.map(&:id),
-      reason: service_link_status
+      resource_ids: confirmed ? resources.map(&:id) : []
     }
   end
 
@@ -183,8 +190,7 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def provider_related?(resource)
-    attrs = resource.custom_attributes.to_h
-    attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
+    self.class.provider_related?(resource)
   end
 
   def provider_route_missing?(resource)

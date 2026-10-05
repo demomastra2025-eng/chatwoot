@@ -5,7 +5,8 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     'get_scheduling_resource_availability'
   end
 
-  description 'Get local-rule windows; MedElement availability is not checked by this tool'
+  description 'Get free windows of one resource from local scheduling rules only (MedElement is not asked); ' \
+              'check provider_required and service_link_status before offering a time to a customer'
   param :resource_id, type: :number, desc: 'Scheduling resource ID (specialist or diagnostic resource)', required: true
   param :from, type: :string, desc: 'Range start datetime', required: true
   param :to, type: :string, desc: 'Range end datetime', required: true
@@ -43,8 +44,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
   private
 
   def availability_metadata(resource, service_record, payload)
-    attrs = resource.custom_attributes.to_h
-    provider_required = attrs['medelement_specialist_code'].present? || attrs['medelement_cabinets'].present?
+    provider_required = Scheduling::AvailableSlotSearchService.provider_related?(resource)
     link_status = if service_record.blank?
                     'not_requested'
                   elsif provider_required
