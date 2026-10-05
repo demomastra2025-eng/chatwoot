@@ -24,6 +24,24 @@ describe('formatCrmErrorMessage', () => {
     expect(t).toHaveBeenCalledWith(translationKey);
   });
 
+  it.each([
+    ['PIPELINE_HAS_DEALS', 'CRM.ERRORS.PIPELINE_HAS_DEALS'],
+    ['STAGE_HAS_DEALS', 'CRM.ERRORS.STAGE_HAS_DEALS'],
+  ])('passes the number of deals to %s', (code, translationKey) => {
+    const t = vi.fn(key => `translated:${key}`);
+    const error = {
+      response: {
+        data: { code, details: { deal_count: 7, archived_deal_count: 1 } },
+        status: 422,
+      },
+    };
+
+    expect(formatCrmErrorMessage(error, t)).toBe(
+      `translated:${translationKey}`
+    );
+    expect(t).toHaveBeenCalledWith(translationKey, { count: 7 });
+  });
+
   it('always returns a string for a native request error', () => {
     const t = vi.fn(key => `translated:${key}`);
 

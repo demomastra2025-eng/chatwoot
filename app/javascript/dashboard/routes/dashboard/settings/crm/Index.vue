@@ -826,10 +826,9 @@ const saveInlineStageColor = (stage, color) => {
   stage.color = color;
 };
 
-const stageDeletionBlockerMessage = blockReason => {
-  if (blockReason === 'STAGE_HAS_DEALS') return t('CRM.ERRORS.STAGE_HAS_DEALS');
-  if (blockReason === 'STAGE_HAS_HISTORY') {
-    return t('CRM.ERRORS.STAGE_HAS_HISTORY');
+const stageDeletionBlockerMessage = (blockReason, dealCount) => {
+  if (blockReason === 'STAGE_HAS_DEALS') {
+    return t('CRM.ERRORS.STAGE_HAS_DEALS', { count: dealCount ?? 0 });
   }
   if (blockReason === 'STANDARD_STAGE_LOCKED')
     return t('CRM.ERRORS.STANDARD_STAGE_LOCKED');
@@ -850,7 +849,12 @@ const openDeleteStageDialog = async stage => {
         deletionCheck?.can_delete === false ||
         deletionCheck?.deletable === false
       ) {
-        useAlert(stageDeletionBlockerMessage(deletionCheck.block_reason));
+        useAlert(
+          stageDeletionBlockerMessage(
+            deletionCheck.block_reason,
+            deletionCheck.deal_count
+          )
+        );
         return;
       }
     }
