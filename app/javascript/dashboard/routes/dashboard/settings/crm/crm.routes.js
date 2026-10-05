@@ -4,8 +4,8 @@ import store from '../../../../store';
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
-export const TaskCatalogSettingsPage = () =>
-  import('./TaskCatalogSettingsPage.vue');
+// Task statuses, the default reminder plan and the task type/outcome catalog.
+export const TaskSettingsPage = () => import('./TaskSettings.vue');
 
 const hasCrmDealsEnabled = accountId =>
   store.getters['accounts/isFeatureEnabledonAccount'](
@@ -40,6 +40,18 @@ const taskSettingsTabs = [
 ];
 
 const redirectToCrmLanding = (to, _from, next) => {
+  if (
+    to.query.action === 'create-task-status' &&
+    hasCrmTasksEnabled(to.params.accountId)
+  ) {
+    next({
+      name: 'crm_task_settings_index',
+      params: to.params,
+      query: to.query,
+    });
+    return;
+  }
+
   if (hasCrmDealsEnabled(to.params.accountId)) {
     next();
     return;
@@ -92,7 +104,7 @@ export default {
         {
           path: '',
           name: 'crm_task_settings_index',
-          component: TaskCatalogSettingsPage,
+          component: TaskSettingsPage,
           meta: crmSettingsMeta,
           beforeEnter: requireCrmTasks,
         },
