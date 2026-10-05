@@ -73,6 +73,11 @@ RSpec.describe Telephony::SiblingLegCloser do
           user.pubsub_token,
           hash_including(event: 'voice_call.status_changed', data: hash_including(callSid: leg.external_call_ref, status: 'no_answer'))
         )
+        # The winner's card is the call he answers: a closed sibling is no news for him.
+        expect(ActionCable.server).not_to have_received(:broadcast).with(
+          winner_user.pubsub_token,
+          hash_including(event: 'voice_call.status_changed', data: hash_including(callSid: leg.external_call_ref))
+        )
         expect(ActionCable.server).to have_received(:broadcast).with(
           user.pubsub_token,
           hash_including(

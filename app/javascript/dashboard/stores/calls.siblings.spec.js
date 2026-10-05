@@ -114,6 +114,62 @@ describe('useCallsStore sibling legs of one physical call', () => {
       expect(store.calls).toEqual([]);
     });
 
+    it.each(['ringing', 'connecting'])(
+      'keeps the %s card of the call the employee answers when another leg of it ends',
+      status => {
+        const store = useCallsStore();
+        store.addCall(
+          keyed('beeline:janus:103:call-id-c', {
+            status,
+            sipProfileId: 103,
+            janusSessionKey: 'sip_profile:103',
+          })
+        );
+
+        [
+          { sipProfileId: 102 },
+          { sipProfileId: 103 },
+          { sipProfileId: undefined },
+        ].forEach(scope => {
+          store.handleCallStatusChanged({
+            callSid: 'beeline:janus:102:call-id-b',
+            status: 'no_answer',
+            provider: 'beeline',
+            callDirection: 'inbound',
+            accountId: 1,
+            inboxId: 5,
+            logicalCallKey: 'janus-inbound:one-call',
+            logicalCallTerminal: false,
+            currentUserId: 7,
+            ...scope,
+          });
+        });
+
+        expect(store.calls.map(call => call.callSid)).toEqual([
+          'beeline:janus:103:call-id-c',
+        ]);
+      }
+    );
+
+    it('removes the card of the leg that ended while the others are still open', () => {
+      const store = useCallsStore();
+      store.addCall(keyed('beeline:janus:101:call-id-a'));
+
+      store.handleCallStatusChanged({
+        callSid: 'beeline:janus:101:call-id-a',
+        status: 'no_answer',
+        provider: 'beeline',
+        callDirection: 'inbound',
+        accountId: 1,
+        inboxId: 5,
+        logicalCallKey: 'janus-inbound:one-call',
+        logicalCallTerminal: false,
+        currentUserId: 7,
+      });
+
+      expect(store.calls).toEqual([]);
+    });
+
     it('keeps the card of a different call of the same client', () => {
       const store = useCallsStore();
       store.addCall(keyed('beeline:janus:101:call-id-a'));
