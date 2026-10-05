@@ -23,6 +23,7 @@ import { ATTACHMENT_TYPES } from '../constants';
  * @property {number|null} height - Height of the image if applicable
  * @property {string|null} parsedText - Extracted document text if available
  * @property {string|null} transcribedText - Extracted audio or document text if available
+ * @property {boolean} [filePurged] - The file was deleted by an administrator; the texts are kept
  */
 const props = defineProps({
   attachments: {
@@ -48,9 +49,20 @@ const classToApply = computed(() => {
   return baseClasses;
 });
 
-const allAttachments = computed(() => {
+const attachmentList = computed(() => {
   return Array.isArray(props.attachments) ? props.attachments : [];
 });
+
+const purgedAttachments = computed(() => {
+  return attachmentList.value.filter(attachment => attachment.filePurged);
+});
+
+const allAttachments = computed(() => {
+  return attachmentList.value.filter(attachment => !attachment.filePurged);
+});
+
+const purgedText = attachment =>
+  attachment.transcribedText || attachment.parsedText || '';
 
 const mediaAttachments = computed(() => {
   const allowedTypes = [ATTACHMENT_TYPES.IMAGE, ATTACHMENT_TYPES.VIDEO];
@@ -104,5 +116,21 @@ const files = computed(() => {
       :key="attachment.id"
       :attachment="attachment"
     />
+  </div>
+  <div
+    v-for="attachment in purgedAttachments"
+    :key="attachment.id"
+    class="flex flex-col gap-1 text-sm"
+    data-attachment-purged
+  >
+    <span class="italic text-n-slate-11">
+      {{ $t('CONVERSATION.ATTACHMENT_FILE_PURGED') }}
+    </span>
+    <p
+      v-if="purgedText(attachment)"
+      class="whitespace-pre-wrap break-words text-n-slate-12"
+    >
+      {{ purgedText(attachment) }}
+    </p>
   </div>
 </template>

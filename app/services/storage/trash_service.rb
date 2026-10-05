@@ -1375,7 +1375,8 @@ class Storage::TrashService
 
       bytes = trashed_attachment_bytes(attachment)
       attachment.file.purge if attachment.file.attached?
-      attachment.destroy!
+      attachment.meta = attachment.meta.to_h.deep_dup.except('trash').merge('file_purged_at' => Time.current.iso8601)
+      attachment.save!(validate: false)
       purged = true
     end
     { count: purged ? 1 : 0, bytes: purged ? bytes : 0 }

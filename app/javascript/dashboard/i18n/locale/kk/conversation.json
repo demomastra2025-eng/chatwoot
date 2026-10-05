@@ -76,6 +76,7 @@
     },
     "UPLOADING_ATTACHMENTS": "Uploading attachments...",
     "REPLIED_TO_STORY": "Replied to your story",
+    "ATTACHMENT_FILE_PURGED": "Файлды әкімші жойды",
     "UNSUPPORTED_MESSAGE": "This message is unsupported. To view it, please open it on the original platform.",
     "UNSUPPORTED_MESSAGE_WHATSAPP": "This WhatsApp message is unavailable. You can view it in WhatsApp.",
     "UNSUPPORTED_MESSAGE_FACEBOOK": "This message is unsupported. You can view this message on the Facebook Messenger app.",

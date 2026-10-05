@@ -395,6 +395,9 @@ const componentToRender = computed(() => {
   if (Array.isArray(props.attachments) && props.attachments.length === 1) {
     const fileType = props.attachments[0].fileType;
 
+    // A file purged from the storage trash has no media to play; the text bubble shows the note and transcript.
+    if (props.attachments[0].filePurged) return TextBubble;
+
     if (
       isVoiceNote.value &&
       [ATTACHMENT_TYPES.AUDIO, ATTACHMENT_TYPES.FILE].includes(fileType)

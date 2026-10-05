@@ -54,8 +54,14 @@ class Attachment < ApplicationRecord
 
   def push_event_data
     return unless file_type
+    return base_data.merge(purged_file_metadata) if file_purged?
 
     base_data.merge(metadata_for_file_type)
+  end
+
+  # An administrator purged the file from the storage trash; transcripts and recognised text stay in meta.
+  def file_purged?
+    meta.to_h['file_purged_at'].present?
   end
 
   # NOTE: the URl returned does a 301 redirect to the actual file
@@ -115,6 +121,18 @@ class Attachment < ApplicationRecord
   def embed_data
     {
       data_url: external_url
+    }
+  end
+
+  def purged_file_metadata
+    {
+      file_purged: true,
+      extension: extension,
+      data_url: '',
+      thumb_url: '',
+      transcribed_text: meta&.[]('transcribed_text') || '',
+      parsed_text: meta&.[]('parsed_text') || '',
+      document_parse_status: meta&.dig('document_parse', 'status') || ''
     }
   end
 

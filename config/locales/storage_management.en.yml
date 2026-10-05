@@ -4,6 +4,7 @@ en:
     no_channel: 'Unassigned storage'
     item_labels:
       audio_recording: Audio recording
+      original_recording: Original call recording
       file: File
     errors:
       confirmation_required: Explicit confirmation is required.
@@ -16,6 +17,7 @@ en:
         and retry.
       recording_reference_ambiguous: The recording reference is ambiguous across provider folders. Resolve it before moving this recording.
       trash_path_rejected: The file path is outside this account’s storage.
+      invalid_path: Invalid file path. Refresh and retry.
       recording_changed: The recording changed while this action was running. Refresh
         and retry.
       trash_item_required: A valid item type and item id are required.

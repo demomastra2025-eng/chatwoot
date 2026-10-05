@@ -4,9 +4,11 @@ require 'rails_helper'
 require 'fileutils'
 
 RSpec.describe Storage::TrashService, type: :service do
+  include_context 'with isolated recording storage'
+
   let(:account) { create(:account) }
   let(:service) { described_class.new(account: account) }
-  let(:storage_dir) { Rails.root.join('storage', 'voice-recordings', 'test_trash', account.id.to_s) }
+  let(:storage_dir) { Storage::RecordingPaths.root.join('voice-recordings', 'test_trash', account.id.to_s) }
   let(:storage_test_cache) { ActiveSupport::Cache::MemoryStore.new }
 
   def approved_move_to_trash!(**)
@@ -17,11 +19,6 @@ RSpec.describe Storage::TrashService, type: :service do
   before do
     allow(Rails).to receive(:cache).and_return(storage_test_cache)
     FileUtils.mkdir_p(storage_dir)
-  end
-
-  after do
-    FileUtils.rm_rf(storage_dir)
-    FileUtils.rm_rf(Rails.root.join('storage', 'trash', account.id.to_s))
   end
 
   describe '#preview' do
@@ -124,7 +121,7 @@ RSpec.describe Storage::TrashService, type: :service do
     it 'purges only expired items older than 30 days' do
       test_file1 = storage_dir.join('expired.mp3')
       File.write(test_file1, 'expired audio')
-      trash_dir = Rails.root.join('storage', 'trash', account.id.to_s, 'recordings')
+      trash_dir = Storage::RecordingPaths.trash_root.join(account.id.to_s, 'recordings')
       FileUtils.mkdir_p(trash_dir)
       trash_path1 = trash_dir.join('1_expired.mp3')
       FileUtils.mv(test_file1, trash_path1)
@@ -274,6 +271,24 @@ RSpec.describe Storage::TrashService, type: :service do
 
       expect(described_class.purge_expired_all!).to include(purged_count: 0, failed_count: 1)
       expect(File.exist?(victim)).to be(true)
+      expect(session.reload.metadata['trash']).to be_present
+    end
+
+    it 'rolls back with a translated error when a restore destination turns unsafe mid-restore' do
+      file = storage_dir.join('unsafe-restore.mp3')
+      File.write(file, 'restore me')
+      session = create(:telephony_call_session, account: account, recording_ref: "voice-recordings/test_trash/#{account.id}/unsafe-restore.mp3",
+                                                created_at: 8.months.ago)
+      approved_move_to_trash!(older_than_months: 6)
+      trash_path = session.reload.metadata.dig('trash', 'trash_path')
+      allow(Storage::RecordingPaths).to receive(:within_account?).and_call_original
+      allow(Storage::RecordingPaths).to receive(:within_account?).with(file.to_s, account_id: account.id).and_return(true, false)
+
+      %w[ru en kk].each { |locale| expect(I18n.exists?('storage_management.errors.invalid_path', locale)).to be(true) }
+      expect { service.restore!(item_type: 'recording', item_id: session.id) }
+        .to raise_error(described_class::InvalidParams, I18n.t('storage_management.errors.invalid_path'))
+      expect(File.exist?(trash_path)).to be(true)
+      expect(File.exist?(file)).to be(false)
       expect(session.reload.metadata['trash']).to be_present
     end
 
@@ -520,7 +535,7 @@ RSpec.describe Storage::TrashService, type: :service do
 
       approved_move_to_trash!(older_than_months: 6)
 
-      second_root = Rails.root.join('storage', 'voice-recordings', 'sipuni', account.id.to_s)
+      second_root = Storage::RecordingPaths.root.join('voice-recordings', 'sipuni', account.id.to_s)
       second_path = second_root.join('legacy-alias.mp3')
       FileUtils.mkdir_p(second_root)
       File.write(second_path, 'different provider recording')
@@ -545,19 +560,17 @@ RSpec.describe Storage::TrashService, type: :service do
         key_matches_other: Storage::RecordingPaths.same_physical_file?(key, second_path, account_id: account.id)
       }
       expect(restored_references.values).to eq([key, key, nil, true, false])
-    ensure
-      FileUtils.rm_rf(second_root) if second_root
     end
 
     it 'does not move a file while its basename is ambiguous across provider roots' do
       first_path = storage_dir.join('collision.mp3')
-      second_root = Rails.root.join('storage', 'voice-recordings', 'sipuni', account.id.to_s)
+      second_root = Storage::RecordingPaths.root.join('voice-recordings', 'sipuni', account.id.to_s)
       second_path = second_root.join('collision.mp3')
       FileUtils.mkdir_p(second_root)
       File.write(first_path, 'first physical recording')
       File.write(second_path, 'second physical recording')
 
-      selected_key = first_path.relative_path_from(Rails.root.join('storage')).to_s
+      selected_key = first_path.relative_path_from(Storage::RecordingPaths.root).to_s
       selected_session = create(
         :telephony_call_session, account: account, recording_ref: selected_key, created_at: 8.months.ago
       )
@@ -577,20 +590,18 @@ RSpec.describe Storage::TrashService, type: :service do
       expect(Storage::RecordingPaths.resolve('collision.mp3', account_id: account.id)).to be_nil
       expect(File.exist?(first_path)).to be(true)
       expect(File.exist?(second_path)).to be(true)
-    ensure
-      FileUtils.rm_rf(second_root) if defined?(second_root)
     end
 
     it 'uses a qualified reference to keep a different same-name provider file from blocking trash' do
       first_path = storage_dir.join('qualified-collision.mp3')
-      second_root = Rails.root.join('storage', 'voice-recordings', 'sipuni', account.id.to_s)
+      second_root = Storage::RecordingPaths.root.join('voice-recordings', 'sipuni', account.id.to_s)
       second_path = second_root.join('qualified-collision.mp3')
       FileUtils.mkdir_p(second_root)
       File.write(first_path, 'selected source recording')
       File.write(second_path, 'other provider recording')
 
-      selected_key = first_path.relative_path_from(Rails.root.join('storage')).to_s
-      other_key = second_path.relative_path_from(Rails.root.join('storage')).to_s
+      selected_key = first_path.relative_path_from(Storage::RecordingPaths.root).to_s
+      other_key = second_path.relative_path_from(Storage::RecordingPaths.root).to_s
       create(:telephony_call_session, account: account, recording_ref: selected_key, created_at: 8.months.ago)
       other_conversation = create(:conversation, account: account)
       message = create(
@@ -608,8 +619,6 @@ RSpec.describe Storage::TrashService, type: :service do
       expect(File.exist?(second_path)).to be(true)
       expect(message.reload.content_attributes.dig('data', 'recording_ref')).to eq('qualified-collision.mp3')
       expect(message.content_attributes.dig('data', 'recording', 'storage_key')).to eq(other_key)
-    ensure
-      FileUtils.rm_rf(second_root) if defined?(second_root)
     end
 
     it 'does not trash a recording referenced by absolute path in another conversation' do
@@ -855,7 +864,7 @@ RSpec.describe Storage::TrashService, type: :service do
 
     it 'cannot restore or purge another account’s trash file' do
       other_account = create(:account)
-      other_trash = Rails.root.join('storage', 'trash', other_account.id.to_s, 'recordings')
+      other_trash = Storage::RecordingPaths.trash_root.join(other_account.id.to_s, 'recordings')
       FileUtils.mkdir_p(other_trash)
       foreign_file = other_trash.join('foreign.mp3')
       File.write(foreign_file, 'foreign bytes')
@@ -872,8 +881,6 @@ RSpec.describe Storage::TrashService, type: :service do
         .to raise_error(described_class::InvalidParams)
       expect(File.exist?(foreign_file)).to be(true)
       expect(session.reload.metadata['trash']).to be_present
-    ensure
-      FileUtils.rm_rf(other_trash) if other_trash
     end
   end
 
@@ -923,13 +930,62 @@ RSpec.describe Storage::TrashService, type: :service do
 
       approved_move_to_trash!(file_type: 'all', older_than_months: 6)
       expect(service.empty_trash!(item_type: 'attachment', item_id: old_attachment.id)).to include(purged_count: 1)
-      expect(Attachment.exists?(old_attachment.id)).to be(false)
+      old_attachment.reload
+      expect(old_attachment.file).not_to be_attached
+      expect(old_attachment.meta['trash']).to be_nil
+      expect(old_attachment.meta['file_purged_at']).to be_present
+    end
+
+    it 'keeps the attachment row with its transcript and parsed text when the file is purged' do
+      voice = message.attachments.new(account_id: account.id, file_type: :audio,
+                                      meta: { 'transcribed_text' => 'voice words', 'parsed_text' => 'document words' })
+      voice.file.attach(io: StringIO.new('a' * 512), filename: 'voice.ogg', content_type: 'audio/ogg')
+      voice.save!
+      voice.update_columns(created_at: 8.months.ago) # rubocop:disable Rails/SkipsModelValidations
+      blob_id = voice.file.blob.id
+
+      approved_move_to_trash!(file_type: 'audio', older_than_months: 6)
+      result = service.empty_trash!(item_type: 'attachment', item_id: voice.id)
+
+      expect(result).to include(purged_count: 1, purged_bytes: 512)
+      voice.reload
+      expect(voice.meta).to include('transcribed_text' => 'voice words', 'parsed_text' => 'document words')
+      expect(voice.file).not_to be_attached
+      expect(ActiveStorage::Blob.exists?(blob_id)).to be(false)
+      expect(voice.push_event_data).to include(file_purged: true, transcribed_text: 'voice words', data_url: '')
+      expect(service.list_trash[:items].map { |item| item[:id] }).not_to include(voice.id)
+    end
+
+    it 'keeps the transcript when the expired trash is purged by the nightly job' do
+      old_attachment.update_columns(meta: { 'transcribed_text' => 'kept forever' }) # rubocop:disable Rails/SkipsModelValidations
+      approved_move_to_trash!(file_type: 'all', older_than_months: 6)
+      expired_meta = old_attachment.reload.meta.deep_dup
+      expired_meta['trash']['expires_at'] = 1.day.ago.iso8601
+      old_attachment.update_columns(meta: expired_meta) # rubocop:disable Rails/SkipsModelValidations
+
+      expect(described_class.purge_expired_all!).to include(purged_count: 1, failed_count: 0)
+      expect(old_attachment.reload.meta['transcribed_text']).to eq('kept forever')
+      expect(old_attachment.file).not_to be_attached
+    end
+
+    it 'keeps a blob that another message still uses' do
+      shared_blob = old_attachment.file.blob
+      other = create(:message, account: account).attachments.new(account_id: account.id, file_type: :file)
+      other.file.attach(shared_blob)
+      other.save!
+
+      approved_move_to_trash!(file_type: 'all', older_than_months: 6)
+      service.empty_trash!(item_type: 'attachment', item_id: old_attachment.id)
+
+      expect(old_attachment.reload.file).not_to be_attached
+      expect(other.reload.file).to be_attached
+      expect(ActiveStorage::Blob.exists?(shared_blob.id)).to be(true)
     end
   end
 
   describe '.purge_expired_all! failure isolation' do
     it 'keeps going when one item cannot be purged' do
-      trash_dir = Rails.root.join('storage', 'trash', account.id.to_s, 'recordings')
+      trash_dir = Storage::RecordingPaths.trash_root.join(account.id.to_s, 'recordings')
       FileUtils.mkdir_p(trash_dir)
       paths = %w[a b].map { |name| trash_dir.join("#{name}.mp3").tap { |path| File.write(path, 'audio') } }
       sessions = paths.map do |path|
