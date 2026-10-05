@@ -141,22 +141,38 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.form.serviceAmount).toBe(26000);
   });
 
-  it('hydrates prepaid fields when editing an appointment', () => {
+  it('does not carry or send payment fields when editing a paid appointment', () => {
     const store = useSchedulingAppointmentFormStore();
 
     store.openEdit({
       endsAt: '2026-03-09T10:30:00.000Z',
       id: 11,
+      paymentStatus: 'prepaid',
       prepaidAmount: 5000,
       prepaidPaymentMethod: 'bank_transfer',
       resourceId: 3,
       serviceAmount: 20000,
       serviceId: 5,
+      settlementAmount: 3000,
+      settlementPaymentMethod: 'cash',
       startsAt: '2026-03-09T10:00:00.000Z',
     });
+    store.updateField('clientComment', 'Перенос');
 
-    expect(store.form.prepaidAmount).toBe(5000);
-    expect(store.form.prepaidPaymentMethod).toBe('bank_transfer');
+    expect(store.form).not.toHaveProperty('prepaidAmount');
+    expect(store.form).not.toHaveProperty('prepaidPaymentMethod');
+    expect(store.validationErrors).not.toHaveProperty('prepaidAmount');
+    // Omitted keys keep the stored amounts on the backend (it resolves them
+    // from the current record), so an edit never zeroes a prepayment.
+    const payload = store.buildPayload();
+    [
+      'payment_status',
+      'prepaid_amount',
+      'prepaid_payment_method',
+      'settlement_amount',
+      'settlement_payment_method',
+    ].forEach(key => expect(payload).not.toHaveProperty(key));
+    expect(payload).toMatchObject({ client_comment: 'Перенос' });
   });
 
   it('persists the selected Medelement cabinet in appointment custom attributes', () => {
@@ -767,19 +783,6 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.selectedAppointment.conversationId).toBe(12002);
   });
 
-  it('defaults prepaid payment method to cash when prepaid amount is positive', () => {
-    const store = useSchedulingAppointmentFormStore();
-
-    store.openCreate();
-    store.updateField('prepaidAmount', 4000);
-
-    expect(store.form.prepaidPaymentMethod).toBe('cash');
-    expect(store.buildPayload()).toMatchObject({
-      prepaid_amount: 4000,
-      prepaid_payment_method: 'cash',
-    });
-  });
-
   it('sends a manual service name snapshot when creating without configured services', () => {
     const store = useSchedulingAppointmentFormStore();
 
@@ -818,29 +821,6 @@ describe('useSchedulingAppointmentFormStore', () => {
       service_name_snapshot: 'Консультация',
     });
     expect(store.buildPayload()).not.toHaveProperty('service_id');
-  });
-
-  it('clears prepaid payment method when prepaid amount is zeroed out', () => {
-    const store = useSchedulingAppointmentFormStore();
-
-    store.openEdit({
-      endsAt: '2026-03-09T10:30:00.000Z',
-      id: 11,
-      prepaidAmount: 5000,
-      prepaidPaymentMethod: 'cash',
-      resourceId: 3,
-      serviceAmount: 20000,
-      serviceId: 5,
-      startsAt: '2026-03-09T10:00:00.000Z',
-    });
-
-    store.updateField('prepaidAmount', 0);
-
-    expect(store.form.prepaidPaymentMethod).toBe('');
-    expect(store.buildPayload()).toMatchObject({
-      prepaid_amount: 0,
-    });
-    expect(store.buildPayload()).not.toHaveProperty('prepaid_payment_method');
   });
 
   it('deletes a cancelled appointment and resets the form state', async () => {

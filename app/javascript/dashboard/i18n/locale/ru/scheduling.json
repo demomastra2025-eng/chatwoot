@@ -111,7 +111,6 @@
     "TOOLBAR": {
       "ALL_RESOURCES": "Все специалисты",
       "FILTERS": "Фильтры",
-      "PAYMENT_STATUS": "Статус оплаты",
       "RESET_FILTERS": "Сбросить фильтры",
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
@@ -142,7 +141,6 @@
       "ERROR": "Не удалось загрузить записи",
       "OPEN_CALENDAR": "Открыть календарь",
       "PANEL_TITLE": "Записи",
-      "PAYMENT": "Оплата",
       "RESOURCE": "Специалист",
       "SERVICE": "Услуга",
       "SIDEBAR_TITLE": "Записи",
@@ -208,7 +206,6 @@
       "INTAKE_FIELDS_TITLE": "Данные при записи",
       "NOTES_DESCRIPTION": "Фиксируйте дополнительные инструкции и контекст по визиту.",
       "NOTES_TITLE": "Заметки",
-      "PREPAID_AMOUNT": "Предоплата",
       "RESOURCE": "Специалист",
       "SERVICE": "Услуга",
       "SERVICE_EMPTY": "Услуги не найдены",
@@ -237,7 +234,6 @@
         "MEDELEMENT_LAST_NAME_REQUIRED": "Укажите фамилию для записи MedElement",
         "MEDELEMENT_PHONE_REQUIRED": "Укажите номер Казахстана в формате +7XXXXXXXXXX",
         "MEDELEMENT_SERVICE_REQUIRED": "Выберите услугу из каталога MedElement",
-        "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Предоплата не может превышать стоимость услуги",
         "RESOURCE_REQUIRED": "Выберите специалиста",
         "START_REQUIRED": "Укажите время начала"
       }
@@ -297,7 +293,6 @@
       "BREAK_TITLE": "Название перерыва",
       "COLOR": "Цвет",
       "COLOR_UNAVAILABLE": "Недоступен",
-      "COMPENSATION": "Компенсация",
       "DESCRIPTION": "Создавайте специалистов и настраивайте их поведение в календаре.",
       "DESCRIPTION_HELP": "Добавьте описание, которое поможет операторам быстрее ориентироваться.",
       "EDIT": "Редактировать специалиста",
@@ -305,7 +300,7 @@
       "EMPTY_DESCRIPTION": "Специалисты определяют, кто может быть забронирован в календаре.",
       "EMPTY_TITLE": "Специалистов пока нет",
       "CUSTOM_COLOR": "Свой цвет",
-      "LIST_DESCRIPTION": "Держите занятость, активность и параметры компенсации в одном месте.",
+      "LIST_DESCRIPTION": "Держите занятость и активность специалистов в одном месте.",
       "LIST_TITLE": "Специалисты",
       "LINKED_USER": "Связанный сотрудник",
       "LINKED_USER_HELP": "Специалиста можно привязать к существующему сотруднику аккаунта.",
@@ -391,13 +386,6 @@
         "OTHER": "Другое"
       }
     },
-    "COMPENSATION": {
-      "percent": "Процент",
-      "fixed": "Фиксировано",
-      "fixed_plus_percent": "Фикс + процент",
-      "fixed_value": "Фикс",
-      "percent_value": "Процент"
-    },
     "ERRORS": {
       "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Заполните обязательные поля перед переводом записи в статус «Оплачено»: {fields}.",
       "GENERIC": "Что-то пошло не так. Попробуйте еще раз.",
@@ -442,7 +430,6 @@
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Выберите специалиста для цены по специалисту.",
       "SERVICE_AMOUNT_REQUIRED": "Укажите стоимость услуги больше 0.",
       "SERVICE_NOT_AVAILABLE_FOR_RESOURCE": "Эта услуга недоступна для выбранного специалиста.",
-      "SETTLEMENT_BELOW_RECORDED_PAYMENTS": "Сумма окончательного расчета не может быть меньше уже записанных оплат.",
       "SET_SERVICE_AMOUNT_FIRST": "Сначала укажите стоимость услуги, затем добавляйте оплату.",
       "SINGLE_DAY_REQUIRED": "Запись должна укладываться в один локальный день.",
       "SLOT_CONFLICT": "Этот слот уже занят.",

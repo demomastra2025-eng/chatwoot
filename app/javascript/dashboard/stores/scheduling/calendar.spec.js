@@ -55,7 +55,6 @@ describe('useSchedulingCalendarStore', () => {
 
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
-    store.setPaymentStatusFilters(['paid']);
 
     const payload = await store.fetchCalendar();
 
@@ -65,7 +64,6 @@ describe('useSchedulingCalendarStore', () => {
     expect(showMock).toHaveBeenCalledWith(
       expect.objectContaining({
         include_slots: true,
-        payment_status: 'paid',
         resource_ids: '5,8',
         status: 'confirmed',
         view: 'day',
@@ -217,7 +215,6 @@ describe('useSchedulingCalendarStore', () => {
   it('resets all appointment filters without changing calendar navigation', () => {
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
-    store.setPaymentStatusFilters(['paid']);
     store.setCustomAttributeFilters({ visit_reason: ['follow_up'] });
     store.setShowInactiveAppointments(true);
     store.setView('month');
@@ -225,7 +222,6 @@ describe('useSchedulingCalendarStore', () => {
     store.resetFilters();
 
     expect(store.statusFilters).toEqual([]);
-    expect(store.paymentStatusFilters).toEqual([]);
     expect(store.customAttributeFilters).toEqual({});
     expect(store.showInactiveAppointments).toBe(false);
     expect(store.currentView).toBe('month');

@@ -79,7 +79,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     currentView: 'week',
 
     initialized: false,
-    paymentStatusFilters: [],
     payload: defaultPayload(),
     selectedResourceIds: [],
     showInactiveAppointments: false,
@@ -225,17 +224,12 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.persistPreferences();
     },
 
-    setPaymentStatusFilters(statuses) {
-      this.paymentStatusFilters = [...statuses];
-    },
-
     setCustomAttributeFilters(filters = {}) {
       this.customAttributeFilters = { ...(filters || {}) };
     },
 
     clearQuickFilters() {
       this.statusFilters = [];
-      this.paymentStatusFilters = [];
     },
 
     resetFilters() {
@@ -277,10 +271,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         );
         if (effectiveStatusFilters.length) {
           params.status = effectiveStatusFilters.join(',');
-        }
-
-        if (this.paymentStatusFilters.length) {
-          params.payment_status = this.paymentStatusFilters.join(',');
         }
 
         const customAttributeFilters =
@@ -357,8 +347,6 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         ) &&
         (!effectiveStatusFilters.length ||
           effectiveStatusFilters.includes(appointment.status)) &&
-        (!this.paymentStatusFilters.length ||
-          this.paymentStatusFilters.includes(appointment.paymentStatus)) &&
         matchesCustomFields &&
         appointmentIntersectsRange(appointment, currentRange)
       );

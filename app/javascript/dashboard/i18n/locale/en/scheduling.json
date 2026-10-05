@@ -111,7 +111,6 @@
     "TOOLBAR": {
       "ALL_RESOURCES": "All specialists",
       "FILTERS": "Filters",
-      "PAYMENT_STATUS": "Payment status",
       "RESET_FILTERS": "Reset filters",
       "RESOURCES": "Specialists",
       "RESOURCES_SELECTED": "{count} selected",
@@ -142,7 +141,6 @@
       "ERROR": "Unable to load appointments",
       "OPEN_CALENDAR": "Open calendar",
       "PANEL_TITLE": "Appointments",
-      "PAYMENT": "Payment",
       "RESOURCE": "Specialist",
       "SERVICE": "Service",
       "SIDEBAR_TITLE": "Appointments",
@@ -208,7 +206,6 @@
       "INTAKE_FIELDS_TITLE": "Booking intake",
       "NOTES_DESCRIPTION": "Keep any extra instructions or context for the visit.",
       "NOTES_TITLE": "Notes",
-      "PREPAID_AMOUNT": "Prepayment",
       "RESOURCE": "Specialist",
       "SERVICE": "Service",
       "SERVICE_EMPTY": "No services found",
@@ -237,7 +234,6 @@
         "MEDELEMENT_LAST_NAME_REQUIRED": "Enter the last name for a MedElement appointment",
         "MEDELEMENT_PHONE_REQUIRED": "Enter a Kazakhstan phone number in +7XXXXXXXXXX format",
         "MEDELEMENT_SERVICE_REQUIRED": "Select a service from the MedElement catalog",
-        "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Prepayment cannot exceed the service amount",
         "RESOURCE_REQUIRED": "Select a specialist",
         "START_REQUIRED": "Choose a start time"
       }
@@ -297,7 +293,6 @@
       "BREAK_TITLE": "Break title",
       "COLOR": "Color",
       "COLOR_UNAVAILABLE": "Unavailable",
-      "COMPENSATION": "Compensation",
       "DESCRIPTION": "Create specialists and configure how they appear in the shared calendar.",
       "DESCRIPTION_HELP": "Add notes that help operators identify this specialist.",
       "EDIT": "Edit specialist",
@@ -305,7 +300,7 @@
       "EMPTY_DESCRIPTION": "Specialists define who can be booked in the calendar.",
       "EMPTY_TITLE": "No specialists yet",
       "CUSTOM_COLOR": "Custom color",
-      "LIST_DESCRIPTION": "Keep specialist capacity, activity, and compensation settings in sync.",
+      "LIST_DESCRIPTION": "Keep specialist capacity and activity in sync.",
       "LIST_TITLE": "Specialists",
       "LINKED_USER": "Linked employee",
       "LINKED_USER_HELP": "A specialist can optionally be linked to an existing employee profile from the account.",
@@ -391,13 +386,6 @@
         "OTHER": "Other"
       }
     },
-    "COMPENSATION": {
-      "percent": "Percent",
-      "fixed": "Fixed",
-      "fixed_plus_percent": "Fixed + percent",
-      "fixed_value": "Fixed amount",
-      "percent_value": "Percent"
-    },
     "ERRORS": {
       "APPOINTMENT_PAYMENT_REQUIRES_FIELDS": "Fill required fields before marking the appointment as paid: {fields}.",
       "GENERIC": "Something went wrong. Try again.",
@@ -442,7 +430,6 @@
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Select a specialist for specialist pricing.",
       "SERVICE_AMOUNT_REQUIRED": "Enter a service amount greater than 0.",
       "SERVICE_NOT_AVAILABLE_FOR_RESOURCE": "This service is not available for the selected specialist.",
-      "SETTLEMENT_BELOW_RECORDED_PAYMENTS": "Settlement amount cannot be lower than the recorded payments.",
       "SET_SERVICE_AMOUNT_FIRST": "Set the service amount before recording a payment.",
       "SINGLE_DAY_REQUIRED": "Appointment must stay within one local day.",
       "SLOT_CONFLICT": "This slot is already occupied.",

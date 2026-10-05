@@ -20,15 +20,9 @@ import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDra
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
-import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import SchedulingPercentInput from 'dashboard/components-next/Scheduling/SchedulingPercentInput.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import {
-  COMPENSATION_TYPE_VALUES,
-  RESOURCE_COLORS,
-  WEEKDAY_VALUES,
-} from '../constants';
+import { RESOURCE_COLORS, WEEKDAY_VALUES } from '../constants';
 import {
   formatSchedulingErrorMessage,
   toIntegerNumeric,
@@ -59,9 +53,6 @@ const resourcePendingDelete = ref(null);
 const resourceForm = reactive({
   active: true,
   color: RESOURCE_COLORS[0],
-  compensationPercent: 0,
-  compensationType: 'percent',
-  compensationValue: 40,
   description: '',
   id: null,
   name: '',
@@ -96,12 +87,6 @@ const staffOptions = computed(() =>
   }))
 );
 
-const compensationTypeLabels = computed(() => ({
-  fixed: t('SCHEDULING.COMPENSATION.fixed'),
-  fixed_plus_percent: t('SCHEDULING.COMPENSATION.fixed_plus_percent'),
-  percent: t('SCHEDULING.COMPENSATION.percent'),
-}));
-
 const weekDayLabels = computed(() => ({
   0: t('SCHEDULING.WEEKDAYS.0'),
   1: t('SCHEDULING.WEEKDAYS.1'),
@@ -111,13 +96,6 @@ const weekDayLabels = computed(() => ({
   5: t('SCHEDULING.WEEKDAYS.5'),
   6: t('SCHEDULING.WEEKDAYS.6'),
 }));
-
-const compensationTypeOptions = computed(() =>
-  COMPENSATION_TYPE_VALUES.map(value => ({
-    label: compensationTypeLabels.value[value] || value,
-    value,
-  }))
-);
 
 const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
 
@@ -174,24 +152,6 @@ const standardColorTitle = color => {
   return `${color} · ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`;
 };
 
-const compensationPrimaryLabel = type => {
-  if (type === 'percent') return t('SCHEDULING.COMPENSATION.percent_value');
-
-  return t('SCHEDULING.COMPENSATION.fixed_value');
-};
-
-const compensationSummary = resource => {
-  if (resource.compensationType === 'fixed_plus_percent') {
-    return `${resource.compensationValue} ₸ + ${resource.compensationPercent}%`;
-  }
-
-  if (resource.compensationType === 'percent') {
-    return `${resource.compensationValue}%`;
-  }
-
-  return `${resource.compensationValue} ₸`;
-};
-
 const timeToMinute = value => {
   if (!value) return null;
   const [hours = '0', minutes = '0'] = value.split(':');
@@ -209,9 +169,6 @@ const resetResourceForm = () => {
   Object.assign(resourceForm, {
     active: true,
     color: defaultResourceColor(),
-    compensationPercent: 0,
-    compensationType: 'percent',
-    compensationValue: 40,
     description: '',
     id: null,
     name: '',
@@ -408,9 +365,6 @@ const openEditResource = resource => {
   Object.assign(resourceForm, {
     active: resource.active,
     color: resource.color || RESOURCE_COLORS[0],
-    compensationPercent: resource.compensationPercent || 0,
-    compensationType: resource.compensationType || 'percent',
-    compensationValue: resource.compensationValue || 0,
     description: resource.description || '',
     id: resource.id,
     name: resource.name,
@@ -433,15 +387,6 @@ const saveResource = async () => {
     await referencesStore.saveResource({
       active: resourceForm.active,
       color: resourceForm.color,
-      compensation_percent: toIntegerNumeric(
-        resourceForm.compensationPercent,
-        'compensation_percent'
-      ),
-      compensation_type: resourceForm.compensationType,
-      compensation_value: toIntegerNumeric(
-        resourceForm.compensationValue,
-        'compensation_value'
-      ),
       description: resourceForm.description,
       id: resourceForm.id,
       name: resourceForm.name,
@@ -466,9 +411,6 @@ const toggleResourceActive = async resource => {
     await referencesStore.saveResource({
       active: !resource.active,
       color: resource.color,
-      compensation_percent: resource.compensationPercent,
-      compensation_type: resource.compensationType,
-      compensation_value: resource.compensationValue,
       description: resource.description,
       id: resource.id,
       name: resource.name,
@@ -690,17 +632,6 @@ onMounted(async () => {
                 {{ $t('SCHEDULING.GENERAL.MINUTES') }}
               </span>
             </div>
-
-            <div
-              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
-            >
-              <span class="text-xs text-n-slate-10">
-                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-              </span>
-              <span class="truncate text-sm font-medium text-n-slate-12">
-                {{ compensationSummary(resource) }}
-              </span>
-            </div>
           </div>
 
           <p
@@ -833,45 +764,6 @@ onMounted(async () => {
                 @update:model-value="handleUserSelection($event)"
               />
             </div>
-          </div>
-
-          <div
-            class="grid gap-4 md:items-end"
-            :class="
-              resourceForm.compensationType === 'fixed_plus_percent'
-                ? 'md:grid-cols-[minmax(0,1fr)_112px_88px]'
-                : resourceForm.compensationType === 'percent'
-                  ? 'md:grid-cols-[minmax(0,1fr)_88px]'
-                  : 'md:grid-cols-[minmax(0,1fr)_112px]'
-            "
-          >
-            <div class="grid gap-1">
-              <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-              </span>
-              <SchedulingSelectField
-                :model-value="resourceForm.compensationType"
-                :options="compensationTypeOptions"
-                :placeholder="$t('SCHEDULING.RESOURCES.COMPENSATION')"
-                @update:model-value="resourceForm.compensationType = $event"
-              />
-            </div>
-            <SchedulingPercentInput
-              v-if="resourceForm.compensationType === 'percent'"
-              v-model="resourceForm.compensationValue"
-              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
-            />
-            <SchedulingMoneyInput
-              v-else
-              v-model="resourceForm.compensationValue"
-              min="0"
-              :label="compensationPrimaryLabel(resourceForm.compensationType)"
-            />
-            <SchedulingPercentInput
-              v-if="resourceForm.compensationType === 'fixed_plus_percent'"
-              v-model="resourceForm.compensationPercent"
-              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
-            />
           </div>
 
           <div class="grid gap-3">

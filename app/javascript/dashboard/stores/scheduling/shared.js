@@ -91,8 +91,6 @@ const ERROR_KEY_BY_MESSAGE = {
     'SCHEDULING.ERRORS.RESOURCE_REQUIRED_FOR_SERVICE_PRICE',
   'service_amount is required and must be greater than 0':
     'SCHEDULING.ERRORS.SERVICE_AMOUNT_REQUIRED',
-  'settlement_amount cannot be less than the total of recorded payments':
-    'SCHEDULING.ERRORS.SETTLEMENT_BELOW_RECORDED_PAYMENTS',
 };
 
 const ERROR_FIELD_KEY_BY_NAME = {
@@ -100,11 +98,8 @@ const ERROR_FIELD_KEY_BY_NAME = {
   break_end_minute: 'SCHEDULING.EXCEPTIONS.BREAK_END',
   break_start_minute: 'SCHEDULING.EXCEPTIONS.BREAK_START',
   client_name: 'SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME',
-  compensation_percent: 'SCHEDULING.COMPENSATION.percent_value',
-  compensation_value: 'SCHEDULING.COMPENSATION.fixed_value',
   duration_min: 'SCHEDULING.SERVICES.DURATION',
   ends_at: 'SCHEDULING.APPOINTMENT_FORM.ENDS_AT',
-  prepaid_amount: 'SCHEDULING.APPOINTMENT_FORM.PREPAID_AMOUNT',
   price: 'SCHEDULING.SERVICES.PRICE',
   resource_id: 'SCHEDULING.APPOINTMENT_FORM.RESOURCE',
   service_amount: 'SCHEDULING.APPOINTMENT_FORM.SERVICE_AMOUNT',
