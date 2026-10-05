@@ -1,5 +1,9 @@
 class Telephony::OperatorCallClaimService
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  CLAIM_FENCE_RETRIES = 2
+
+  # The leg that carries the claim ended while the claim waited for its lock.
+  class FenceMoved < StandardError; end
 
   def initialize(account:, user:, call_ref:)
     @account = account
@@ -10,9 +14,7 @@ class Telephony::OperatorCallClaimService
   def perform
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
-    operator_availability.with_lock do
-      claim_fence_session.with_lock { with_requested_call_lock { claim_locked_call! } }
-    end
+    lock_and_claim_call!
 
     call_session.reload
     validate_call_session_tenant_links!
@@ -40,8 +42,39 @@ class Telephony::OperatorCallClaimService
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
   end
 
+  # The fence is picked before its lock is taken; when its leg ended in
+  # between, another leg of the call takes over and the claim runs again.
+  def lock_and_claim_call!
+    attempts = 0
+    begin
+      operator_availability.with_lock do
+        claim_fence_session.with_lock { with_requested_call_lock { claim_locked_call! } }
+      end
+    rescue FenceMoved
+      attempts += 1
+      raise_terminal_call! if attempts > CLAIM_FENCE_RETRIES
+
+      @claim_fence_session = nil
+      retry
+    end
+  end
+
+  # The oldest leg of the call. On a Beeline channel, where every operator has a
+  # leg of his own, the oldest leg that is still open: a leg that ended (its
+  # operator declined, its browser dropped) cannot answer for the others.
   def claim_fence_session
-    @claim_fence_session ||= call_session.canonical_logical_call_session
+    @claim_fence_session ||= begin
+      canonical = call_session.canonical_logical_call_session
+      if canonical.terminal? && fence_can_move?
+        call_session.logical_group_sessions.reject(&:terminal?).min_by { |leg| [leg.started_at || leg.created_at, leg.id] } || canonical
+      else
+        canonical
+      end
+    end
+  end
+
+  def fence_can_move?
+    Telephony::SiblingLegGrouping.applies?(provider: call_session.provider, direction: call_session.direction)
   end
 
   def with_requested_call_lock(&)
@@ -54,7 +87,12 @@ class Telephony::OperatorCallClaimService
     call_session.reload
     claim_fence_session.reload
     validate_call_session_tenant_links!
-    raise_terminal_call! if call_session.terminal? || claim_fence_session.terminal?
+    raise_terminal_call! if call_session.terminal?
+    if claim_fence_session.terminal?
+      raise FenceMoved if fence_can_move?
+
+      raise_terminal_call!
+    end
     raise_not_candidate! unless candidate_user?
 
     if claimed_by_other?
@@ -321,8 +359,8 @@ class Telephony::OperatorCallClaimService
   def claim_details
     {
       agent_binding_id: claim_fence_session.agent_binding_id,
-      sip_profile_id: claim_fence_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
-      internal_extension: claim_fence_session.metadata.to_h.dig('operator_claim', 'internal_extension'),
+      sip_profile_id: claim_source_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
+      internal_extension: claim_source_session.metadata.to_h.dig('operator_claim', 'internal_extension'),
       user_id: claim_fence_session.agent_binding&.user_id || operator_claim_user_id,
       user_name: claimed_user_name
     }.compact
@@ -359,13 +397,22 @@ class Telephony::OperatorCallClaimService
   end
 
   def claimed_user_name
-    claim_fence_session.metadata.to_h.dig('operator_claim', 'user_name').presence ||
+    claim_source_session.metadata.to_h.dig('operator_claim', 'user_name').presence ||
       claim_fence_session.agent_binding&.user&.name ||
       account.users.find_by(id: operator_claim_user_id)&.name
   end
 
   def operator_claim_user_id
-    claim_fence_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
+    claim_source_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
+  end
+
+  # The claim sits on the fence. When the fence moved to another leg, the claim
+  # stays on the leg that held it: whoever claimed any leg of the call has it.
+  def claim_source_session
+    return claim_fence_session if claim_fence_session.metadata.to_h.dig('operator_claim', 'user_id').present?
+    return claim_fence_session unless fence_can_move?
+
+    call_session.logical_group_sessions.find { |leg| leg.metadata.to_h.dig('operator_claim', 'user_id').present? } || claim_fence_session
   end
 
   def broadcast_claimed_call!

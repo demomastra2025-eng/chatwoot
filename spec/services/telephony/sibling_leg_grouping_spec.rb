@@ -77,16 +77,25 @@ RSpec.describe Telephony::SiblingLegGrouping do
       expect(root_leg).to be_nil
     end
 
-    it 'does not merge two calls of the same client when the first is over and older than the terminal window' do
+    it 'does not merge two calls of the same client when the first is over' do
       create_leg('beeline:janus:1:a', created_at: now - 8.seconds, status: 'cancelled')
 
       expect(root_leg).to be_nil
     end
 
-    it 'still counts a leg that is already over when it was created within the terminal window' do
-      first = create_leg('beeline:janus:1:a', created_at: now - 3.seconds, status: 'no_answer')
+    it 'never counts a leg that is already over, however recent: a caller who dials again has a call of its own' do
+      create_leg('beeline:janus:1:a', created_at: now - 2.seconds, status: 'cancelled')
+      create_leg('beeline:janus:2:b', created_at: now - 1.second, status: 'no_answer')
 
-      expect(root_leg).to eq(first)
+      expect(root_leg).to be_nil
+    end
+
+    it 'joins the oldest leg that is still open and passes over the ones that are over' do
+      create_leg('beeline:janus:1:a', created_at: now - 4.seconds, status: 'rejected')
+      open_leg = create_leg('beeline:janus:2:b', created_at: now - 3.seconds)
+      create_leg('beeline:janus:3:c', created_at: now - 2.seconds)
+
+      expect(root_leg).to eq(open_leg)
     end
 
     it 'keeps an unanswered leg of a long ringing call in the group until the window ends' do
