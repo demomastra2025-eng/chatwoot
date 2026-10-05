@@ -1623,6 +1623,7 @@ class Telephony::EventsIngestionService
     conversation = call_session.conversation
     return if conversation.blank?
 
+    update_status = native_sip_call_updates_conversation_status?(conversation, call_session)
     prepare_reused_native_sip_conversation_for_call!(conversation, call_session)
 
     if resolved_status.present?
@@ -1652,8 +1653,23 @@ class Telephony::EventsIngestionService
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
-    update_attrs[:status] = native_sip_conversation_status(call_session) if native_sip_call_session?(call_session)
+    update_attrs[:status] = native_sip_conversation_status(call_session) if update_status
     conversation.update!(update_attrs)
+  end
+
+  # The first event of a NEW call puts the conversation back in the queue (open,
+  # or pending for the AI voice agent). The later events of the same call - the
+  # recording, a repeated completion - update the call data and leave the status
+  # alone: an operator who resolved the chat right after the call must not see it
+  # open again. The one exception is the AI voice agent handing the call over to
+  # an operator, which turns the pending conversation into an open one.
+  def native_sip_call_updates_conversation_status?(conversation, call_session)
+    return false unless native_sip_call_session?(call_session)
+
+    attrs = (conversation.additional_attributes || {}).deep_stringify_keys
+    return true if native_sip_conversation_call_ref(attrs) != call_session.external_call_ref
+
+    conversation.pending? && !ai_voice_inbound_call?(call_session) && !post_finalize_recording_event?
   end
 
   def native_sip_conversation_status(call_session)
