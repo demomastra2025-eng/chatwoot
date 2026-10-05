@@ -17,6 +17,16 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  // Pages with their own back button (CRM pipelines) turn the wrapper's off.
+  showBackButton: {
+    type: Boolean,
+    default: true,
+  },
+  // Editors that need the whole content area instead of the narrow column.
+  fullWidth: {
+    type: Boolean,
+    default: false,
+  },
   tabs: {
     type: Array,
     required: true,
@@ -110,11 +120,15 @@ const onBack = () => {
 
 <template>
   <div
-    class="flex flex-col w-full h-full m-0 pb-8 pt-4 px-6 overflow-auto bg-n-surface-1"
+    class="flex flex-col w-full h-full m-0 overflow-auto bg-n-surface-1"
+    :class="fullWidth ? 'p-0' : 'pb-8 pt-4 px-6'"
   >
-    <div class="flex flex-col w-full max-w-5xl mx-auto gap-6">
+    <div
+      class="flex flex-col w-full mx-auto gap-6"
+      :class="fullWidth ? 'max-w-none' : 'max-w-5xl'"
+    >
       <NextButton
-        v-if="settingsBackRoute"
+        v-if="showBackButton && settingsBackRoute"
         :label="t('GENERAL_SETTINGS.BACK')"
         icon="i-lucide-chevron-left"
         faded

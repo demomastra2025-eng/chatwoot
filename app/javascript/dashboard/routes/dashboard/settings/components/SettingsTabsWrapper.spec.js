@@ -47,6 +47,8 @@ const TabBarStub = {
 const mountComponent = ({
   routeName = 'a',
   showTabs = true,
+  showBackButton = true,
+  fullWidth = false,
   featureEnabled = () => true,
   tabs = [
     { labelKey: 'TAB.A', routeName: 'a', activeOn: ['a'] },
@@ -70,11 +72,12 @@ const mountComponent = ({
   });
 
   const wrapper = shallowMount(SettingsTabsWrapper, {
-    props: { tabs, keepAlive: false, showTabs },
+    props: { tabs, keepAlive: false, showTabs, showBackButton, fullWidth },
     global: {
       stubs: {
         RouterView: RouterViewStub,
         TabBar: TabBarStub,
+        NextButton: { template: '<button data-test="back-button" />' },
       },
     },
   });
@@ -123,5 +126,26 @@ describe('SettingsTabsWrapper', () => {
 
     const { wrapper } = mountComponent({ showTabs: false });
     expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(false);
+  });
+
+  it('shows its back button on settings pages and lets a page opt out', () => {
+    const { wrapper } = mountComponent({ routeName: 'crm_settings_index' });
+    expect(wrapper.find('[data-test="back-button"]').exists()).toBe(true);
+
+    const { wrapper: withoutBack } = mountComponent({
+      routeName: 'crm_settings_index',
+      showBackButton: false,
+    });
+    expect(withoutBack.find('[data-test="back-button"]').exists()).toBe(false);
+  });
+
+  it('keeps the content in a narrow column unless the page asks for full width', () => {
+    const { wrapper } = mountComponent();
+    expect(wrapper.find('.max-w-5xl').exists()).toBe(true);
+    expect(wrapper.find('.max-w-none').exists()).toBe(false);
+
+    const { wrapper: fullWidth } = mountComponent({ fullWidth: true });
+    expect(fullWidth.find('.max-w-5xl').exists()).toBe(false);
+    expect(fullWidth.find('.max-w-none').exists()).toBe(true);
   });
 });
