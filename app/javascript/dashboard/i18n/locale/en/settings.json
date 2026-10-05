@@ -1821,7 +1821,7 @@
       "WARNING_TITLE": "Warning: storage is {percentage}% full",
       "WARNING_MESSAGE": "Used {used} of {limit}. Files remain available; review storage usage if needed.",
       "CRITICAL_TITLE": "High storage usage: {percentage}%",
-      "CRITICAL_MESSAGE": "Used {used} of {limit}. The displayed usage is informational and does not change upload behavior.",
+      "CRITICAL_MESSAGE": "Used {used} of {limit}. Above the limit, uploads by staff, imports and Captain documents are blocked; incoming messages and calls keep working.",
       "CLEAN_BUTTON": "Clean storage",
       "DISMISS": "Dismiss for 24 hours"
     }

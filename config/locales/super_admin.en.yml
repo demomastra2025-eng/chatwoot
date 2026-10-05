@@ -81,7 +81,7 @@ en:
         status_normal: "Within limit"
         title: "Storage usage"
         description: "Chat attachments, call recordings, retained originals, avatars and knowledge base documents."
-        informational_notice: "Storage is informational. Uploads remain available above the displayed limit. Trash and retained recording originals continue to use physical space until they expire or are purged."
+        informational_notice: "The storage limit applies to uploads by staff, imports and Captain documents; it never blocks incoming messages or calls. Trash and retained recording originals continue to use physical space until they expire or are purged."
         unlimited: "∞ (Unlimited)"
         unlimited_limit: "No storage limit"
         used: "Used %{percent}%"
