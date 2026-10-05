@@ -830,6 +830,9 @@ const stageDeletionBlockerMessage = (blockReason, dealCount) => {
   if (blockReason === 'STAGE_HAS_DEALS') {
     return t('CRM.ERRORS.STAGE_HAS_DEALS', { count: dealCount ?? 0 });
   }
+  if (blockReason === 'STAGE_HAS_HISTORY') {
+    return t('CRM.ERRORS.STAGE_HAS_HISTORY');
+  }
   if (blockReason === 'STANDARD_STAGE_LOCKED')
     return t('CRM.ERRORS.STANDARD_STAGE_LOCKED');
   if (blockReason === 'DEFAULT_STAGE_REQUIRES_FALLBACK') {
@@ -846,13 +849,14 @@ const openDeleteStageDialog = async stage => {
     if (!stage.draft) {
       const deletionCheck = await referencesStore.checkStageDeletion(stage.id);
       if (
-        deletionCheck?.can_delete === false ||
+        deletionCheck?.canDelete === false ||
         deletionCheck?.deletable === false
       ) {
+        // The store camelCases the payload (blockReason, dealCount).
         useAlert(
           stageDeletionBlockerMessage(
-            deletionCheck.block_reason,
-            deletionCheck.deal_count
+            deletionCheck.blockReason,
+            deletionCheck.dealCount
           )
         );
         return;

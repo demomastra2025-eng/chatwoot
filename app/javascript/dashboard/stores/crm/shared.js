@@ -100,10 +100,14 @@ export const formatCrmErrorMessage = (error, t) => {
       });
     case 'PIPELINE_MUST_BE_ARCHIVED':
       return t('CRM.ERRORS.PIPELINE_MUST_BE_ARCHIVED');
+    case 'PIPELINE_HAS_HISTORY':
+      return t('CRM.ERRORS.PIPELINE_HAS_HISTORY');
     case 'STAGE_HAS_DEALS':
       return t('CRM.ERRORS.STAGE_HAS_DEALS', {
         count: payload.details?.dealCount ?? 0,
       });
+    case 'STAGE_HAS_HISTORY':
+      return t('CRM.ERRORS.STAGE_HAS_HISTORY');
     case 'RECORD_NOT_DESTROYABLE':
       return t('CRM.ERRORS.RECORD_NOT_DESTROYABLE');
     case 'STANDARD_STAGE_LOCKED':

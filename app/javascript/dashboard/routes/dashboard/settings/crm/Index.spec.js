@@ -8,6 +8,9 @@ const testState = vi.hoisted(() => ({
   batchUpdateStages: vi.fn(() => Promise.resolve()),
   checkStageDeletion: vi.fn(() => Promise.resolve({ deletable: true })),
   useAlert: vi.fn(),
+  translate: vi.fn(key =>
+    key === 'CRM.SETTINGS.STAGES.NEW_NAME' ? 'New stage' : key
+  ),
   deleteStage: vi.fn(() => Promise.resolve()),
   loadPipelines: vi.fn(() => Promise.resolve()),
   loadFieldDefinitions: vi.fn(() => Promise.resolve()),
@@ -29,7 +32,7 @@ const testState = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key => (key === 'CRM.SETTINGS.STAGES.NEW_NAME' ? 'New stage' : key),
+    t: (...args) => testState.translate(...args),
   }),
 }));
 
@@ -270,6 +273,7 @@ describe('CRM pipeline settings', () => {
     testState.checkStageDeletion.mockReset();
     testState.checkStageDeletion.mockResolvedValue({ deletable: true });
     testState.useAlert.mockReset();
+    testState.translate.mockClear();
     testState.batchUpdateStages.mockReset();
     testState.batchUpdateStages.mockResolvedValue(pipeline);
     testState.deleteStage.mockClear();
@@ -452,10 +456,37 @@ describe('CRM pipeline settings', () => {
   });
 
   it('keeps a stage and explains a successful preflight blocker response', async () => {
+    // The references store camelCases the preflight payload before it reaches the page.
     testState.checkStageDeletion.mockResolvedValueOnce({
-      can_delete: false,
-      block_reason: 'STAGE_HAS_DEALS',
-      deal_count: 2,
+      canDelete: false,
+      blockReason: 'STAGE_HAS_DEALS',
+      dealCount: 2,
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-stage-id="13"]')
+      .findAll('button')
+      .at(-1)
+      .trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('[data-stage-id="13"]').exists()).toBe(true);
+    expect(testState.translate).toHaveBeenCalledWith(
+      'CRM.ERRORS.STAGE_HAS_DEALS',
+      { count: 2 }
+    );
+    expect(testState.useAlert).toHaveBeenCalledWith(
+      'CRM.ERRORS.STAGE_HAS_DEALS'
+    );
+    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+  });
+
+  it('keeps a stage that deals have passed through and says to deactivate it', async () => {
+    testState.checkStageDeletion.mockResolvedValueOnce({
+      canDelete: false,
+      blockReason: 'STAGE_HAS_HISTORY',
     });
     const wrapper = mountComponent();
     await flushPromises();
@@ -469,7 +500,7 @@ describe('CRM pipeline settings', () => {
 
     expect(wrapper.find('[data-stage-id="13"]').exists()).toBe(true);
     expect(testState.useAlert).toHaveBeenCalledWith(
-      'CRM.ERRORS.STAGE_HAS_DEALS'
+      'CRM.ERRORS.STAGE_HAS_HISTORY'
     );
     expect(testState.batchUpdateStages).not.toHaveBeenCalled();
   });
