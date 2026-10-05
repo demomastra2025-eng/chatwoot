@@ -224,7 +224,7 @@ class DeleteObjectJob < ApplicationJob # rubocop:disable Metrics/ClassLength -- 
     message_ids = Message.where(conversation_id: conversation_ids).select(:id)
 
     delete_communication_thread_links(conversation_ids)
-    nullify_records(Reminder.where(conversation_id: conversation_ids), conversation_id: nil)
+    nullify_records(Reminder.where(conversation_id: conversation_ids), conversation_id: nil, post_delivery_action: nil)
     nullify_records(Reminder.where(target_conversation_id: conversation_ids), target_conversation_id: nil)
     nullify_records(Reminder.where(remindable_type: 'Conversation', remindable_id: conversation_ids), remindable_type: nil, remindable_id: nil)
     nullify_records(ConfirmationRequest.where(conversation_id: conversation_ids), conversation_id: nil)
