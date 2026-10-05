@@ -851,43 +851,41 @@ class Telephony::WebphoneService
     ).perform
   end
 
-  def with_browser_sip_incoming_group_lock(context)
-    lock_id = browser_sip_incoming_group_lock_id(context)
-
-    Telephony::CallSession.transaction do
-      ActiveRecord::Base.connection.execute(
-        "SELECT pg_advisory_xact_lock(#{lock_id})"
-      )
-      yield
-    end
+  # Every operator browser reports its own leg of one physical call, within
+  # seconds of each other. The legs take turns on the caller's intake lock, and
+  # the lock comes before any contact, conversation or message row is touched.
+  def with_browser_sip_incoming_group_lock(context, &)
+    Telephony::CallIntakeLock.with_lock(
+      account_id: account.id,
+      phone_number: browser_sip_incoming_from(context.fetch(:params)),
+      &
+    )
   end
 
   def process_browser_sip_incoming(context, params)
-    with_browser_sip_incoming_group_lock(context) do
-      decision = perform_browser_sip_incoming_route(context)
-      session = ensure_browser_sip_incoming_call_session!(context, decision)
-      session = persist_browser_sip_incoming_metadata!(session, context, decision)
-      session = attach_browser_sip_ai_voice!(session, decision, context[:profile], params)
-      [decision, session]
+    retries = 0
+
+    begin
+      with_browser_sip_incoming_group_lock(context) do
+        decision = perform_browser_sip_incoming_route(context)
+        session = ensure_browser_sip_incoming_call_session!(context, decision)
+        session = persist_browser_sip_incoming_metadata!(session, context, decision)
+        session = attach_browser_sip_ai_voice!(session, decision, context[:profile], params)
+        [decision, session]
+      end
+    rescue *Telephony::EventsIngestionService::RETRYABLE_DATABASE_ERRORS => e
+      # A lost deadlock rolled the whole report back: run it again instead of
+      # answering the browser with a 500.
+      retries += 1
+      raise if retries > Telephony::EventsIngestionService::SIDE_EFFECT_CONFLICT_RETRIES
+
+      Rails.logger.warn(
+        "TELEPHONY_WEBPHONE_INCOMING_RETRY inbox_id=#{context.fetch(:inbox).id} " \
+        "retry=#{retries} error_class=#{e.class.name}"
+      )
+      sleep(0.05 * retries) unless Rails.env.test?
+      retry
     end
-  end
-
-  def browser_sip_incoming_group_lock_id(context)
-    params = context.fetch(:params)
-    identity = [
-      account.id,
-      context.fetch(:inbox).id,
-      context.fetch(:binding).id,
-      context.fetch(:provider),
-      browser_sip_incoming_from(params).to_s.gsub(/\D/, ''),
-      browser_sip_incoming_to(
-        params,
-        context.fetch(:inbox),
-        context.fetch(:binding)
-      ).to_s.gsub(/\D/, '')
-    ].join(':')
-
-    Digest::SHA256.digest(identity).unpack1('q>')
   end
 
   def browser_sip_incoming_profile!(user, inbox, params)
@@ -1034,7 +1032,9 @@ class Telephony::WebphoneService
     conversation = browser_sip_incoming_decision_conversation(decision)
     binding = context.fetch(:binding)
     params = context.fetch(:params)
-    account.telephony_call_sessions.find_or_create_by!(external_call_ref: context.fetch(:call_ref)) do |session|
+    sessions = account.telephony_call_sessions
+    call_ref = context.fetch(:call_ref)
+    sessions.find_by(external_call_ref: call_ref) || sessions.create_or_find_by!(external_call_ref: call_ref) do |session|
       session.assign_attributes(
         inbox: context.fetch(:inbox),
         number_binding: binding,

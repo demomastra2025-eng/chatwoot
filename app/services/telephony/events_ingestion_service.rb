@@ -217,6 +217,7 @@ class Telephony::EventsIngestionService
       end
 
       call_session = resolve_call_session!(account)
+      lock_call_intake!(call_session, account)
       call_session.with_lock do
         call_session.reload
         validate_call_session_tenant_links!(call_session, account)
@@ -268,6 +269,21 @@ class Telephony::EventsIngestionService
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
     call_session
+  end
+
+  # Legs of one inbound call take turns: the caller's intake lock goes before
+  # the call session row, the conversation and its messages.
+  def lock_call_intake!(call_session, account)
+    return unless native_sip_call_session?(call_session)
+    return unless call_session.direction == 'inbound' || resolved_direction == 'inbound'
+
+    Telephony::CallIntakeLock.acquire!(account_id: account.id, phone_number: call_session.from_number.presence || caller_number)
+  end
+
+  def with_call_intake_lock(call_session, account, &)
+    return yield unless native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+
+    Telephony::CallIntakeLock.with_lock(account_id: account.id, phone_number: call_session.from_number, &)
   end
 
   def immutable_ai_finalized_late_event?(call_session)
@@ -337,21 +353,32 @@ class Telephony::EventsIngestionService
 
     begin
       call_session.reload
-      call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
-      call_session.reload
-
-      recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
-      return if recovered_terminal_message.in?([false, :nonterminal])
-
-      unless recovered_terminal_message
+      skipped = false
+      # All the writes of an inbound native SIP call run under its intake lock,
+      # so the sibling legs of one physical call never meet on the same
+      # conversation rows. Jobs are enqueued after the lock is released.
+      with_call_intake_lock(call_session, account) do
+        call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
         call_session.reload
-        ensure_conversation!(call_session, account)
-        call_session.reload
-        apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
-        sync_voice_message!(call_session)
+
+        recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
+        if recovered_terminal_message.in?([false, :nonterminal])
+          skipped = true
+          next
+        end
+
+        unless recovered_terminal_message
+          call_session.reload
+          ensure_conversation!(call_session, account)
+          call_session.reload
+          apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
+          sync_voice_message!(call_session)
+        end
+        linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
+        collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal?
       end
-      linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
-      collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal?
+      return if skipped
+
       enqueue_external_recording_cache(call_session)
       enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
     rescue *RETRYABLE_DATABASE_ERRORS => e
@@ -1773,6 +1800,7 @@ class Telephony::EventsIngestionService
     lock_id = Digest::SHA256.digest(identity).unpack1('q>')
 
     Telephony::CallSession.transaction do
+      Telephony::CallIntakeLock.acquire!(account_id: call_session.account_id, phone_number: call_session.from_number)
       ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
       yield
     end

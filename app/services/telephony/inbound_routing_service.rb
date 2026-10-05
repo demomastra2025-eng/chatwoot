@@ -6,6 +6,7 @@ class Telephony::InboundRoutingService
   DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   PBX_SELECTED_SIP_PROVIDERS = %w[beeline wazo].freeze
+  FAST_INCOMING_SESSION_RETRIES = 1
 
   OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
     def agent_binding_id
@@ -182,7 +183,7 @@ class Telephony::InboundRoutingService
     return if diagnostic_route_probe?
     return if sipuni_pre_operator_leg?
 
-    call_session, should_broadcast = ensure_fast_incoming_call_session!(decision)
+    call_session, should_broadcast = ensure_fast_incoming_call_session_with_retry!(decision)
     return if call_session.blank? || call_session.terminal? || !should_broadcast
 
     targets = fast_incoming_call_pubsub_targets
@@ -211,6 +212,22 @@ class Telephony::InboundRoutingService
     end.uniq { |target| target[:token] }
   end
 
+  # The caller (the browser's incoming report) holds an open transaction. The
+  # fast card is a nice-to-have, so a deadlock or a lost insert race here must
+  # roll back only this savepoint and be retried once, never abort the caller.
+  def ensure_fast_incoming_call_session_with_retry!(decision)
+    attempts = 0
+
+    begin
+      Telephony::CallSession.transaction(requires_new: true) { ensure_fast_incoming_call_session!(decision) }
+    rescue *Telephony::EventsIngestionService::RETRYABLE_DATABASE_ERRORS
+      attempts += 1
+      retry if attempts <= FAST_INCOMING_SESSION_RETRIES
+
+      raise
+    end
+  end
+
   def ensure_fast_incoming_call_session!(decision)
     call_session = find_or_create_fast_incoming_call_session!
     should_broadcast = false
@@ -233,7 +250,8 @@ class Telephony::InboundRoutingService
   end
 
   def find_or_create_fast_incoming_call_session!
-    number_binding.account.telephony_call_sessions.find_or_create_by!(external_call_ref: call_ref) do |session|
+    sessions = number_binding.account.telephony_call_sessions
+    sessions.find_by(external_call_ref: call_ref) || sessions.create_or_find_by!(external_call_ref: call_ref) do |session|
       session.assign_attributes(
         provider: number_binding.provider.presence,
         status: 'ringing',
