@@ -272,7 +272,6 @@ describe('Sidebar', () => {
         'Follow-up scenarios',
         'Tools',
         'Observability',
-        'Evaluations',
         'Knowledge Base',
         'AI expenses',
       ]);
@@ -309,7 +308,7 @@ describe('Sidebar', () => {
       ]);
     });
 
-    it('hides «Тестирование» and «Расходы» from employees', async () => {
+    it('hides «Расходы» from employees', async () => {
       const wrapper = await mountSidebar({
         permissions: AGENT,
         routeName: 'contacts_dashboard_index',
