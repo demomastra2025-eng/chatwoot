@@ -736,6 +736,52 @@ RSpec.describe Message do
       expect { message.save! }.to(change { message.sender.last_activity_at })
     end
 
+    it 'does not fire contact.updated when only the contact last activity moves' do
+      dispatched = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) { |name, *| dispatched << name }
+      sender = create(:contact, account: message.account)
+      message.sender = sender
+
+      expect { message.save! }.to(change { sender.reload.last_activity_at })
+
+      expect(dispatched).to include('message.created')
+      expect(dispatched).not_to include('contact.updated')
+      expect(sender.updated_at).to be_within(5.seconds).of(Time.current)
+    end
+
+    it 'still fires contact.updated when the contact has other pending changes' do
+      dispatched = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) { |name, *| dispatched << name }
+      sender = create(:contact, account: message.account)
+      message.sender = sender
+      sender.name = 'Renamed with the message'
+
+      message.save!
+
+      expect(sender.reload.name).to eq('Renamed with the message')
+      expect(dispatched).to include('contact.updated')
+    end
+
+    it 'keeps the contact list ordered by the latest inbound message without a contact update event' do
+      account = message.account
+      older_contact = create(:contact, account: account)
+      newer_contact = create(:contact, account: account)
+      inbox = create(:inbox, account: account)
+      [older_contact, newer_contact].each_with_index do |contact, index|
+        conversation = create(:conversation, account: account, inbox: inbox, contact: contact,
+                                             contact_inbox: create(:contact_inbox, contact: contact, inbox: inbox))
+        travel_to((10 - index).minutes.ago) { create(:message, account: account, conversation: conversation, sender: contact) }
+      end
+      expect(account.contacts.order_on_last_activity_at('desc').first(2)).to eq([newer_contact, older_contact])
+
+      dispatched = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) { |name, *| dispatched << name }
+      create(:message, account: account, conversation: older_contact.conversations.first, sender: older_contact)
+
+      expect(account.contacts.order_on_last_activity_at('desc').first(2)).to eq([older_contact, newer_contact])
+      expect(dispatched).not_to include('contact.updated')
+    end
+
     it 'triggers ::MessageTemplates::HookExecutionService' do
       hook_execution_service = double
       allow(MessageTemplates::HookExecutionService).to receive(:new).and_return(hook_execution_service)

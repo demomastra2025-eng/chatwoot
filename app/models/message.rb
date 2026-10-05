@@ -429,10 +429,13 @@ class Message < ApplicationRecord
     current_activity = sender[:last_activity_at]
     return if current_activity.present? && current_activity >= activity_time
 
-    if runtime_events
+    # An inbound message only moves the contact's last activity. Writing it with update_columns skips the
+    # contact callbacks, so it does not fire contact.updated (a job plus a broadcast to every open dashboard)
+    # on each message. The dashboard orders contacts on the server and contact.updated carries no activity time.
+    if runtime_events && sender.changed?
       sender.update(last_activity_at: activity_time)
     else
-      sender.update_columns(last_activity_at: activity_time, updated_at: Time.current)
+      sender.update_columns(last_activity_at: activity_time, updated_at: Time.current) # rubocop:disable Rails/SkipsModelValidations
     end
   end
 
