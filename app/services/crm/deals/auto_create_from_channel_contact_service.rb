@@ -34,11 +34,13 @@ class Crm::Deals::AutoCreateFromChannelContactService
     stage = default_stage_for(pipeline)
     return if stage.blank?
 
-    ::Crm::Deals::UpsertService.new(
-      account: account,
-      params: deal_params(pipeline: pipeline, stage: stage),
-      actor: nil
-    ).perform
+    ApplicationRecord.transaction(requires_new: true) do
+      ::Crm::Deals::UpsertService.new(
+        account: account,
+        params: deal_params(pipeline: pipeline, stage: stage),
+        actor: nil
+      ).perform
+    end
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
     nil
   end

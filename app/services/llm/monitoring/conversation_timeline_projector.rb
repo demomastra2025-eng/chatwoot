@@ -16,7 +16,7 @@ class Llm::Monitoring::ConversationTimelineProjector
     return unless projectable?
     return existing_message if existing_message.present?
 
-    conversation.messages.create!(message_attributes)
+    Message.transaction(requires_new: true) { conversation.messages.create!(message_attributes) }
   rescue ActiveRecord::RecordNotUnique
     existing_message
   end

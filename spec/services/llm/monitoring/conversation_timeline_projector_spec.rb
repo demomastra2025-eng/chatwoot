@@ -60,6 +60,35 @@ RSpec.describe Llm::Monitoring::ConversationTimelineProjector do
     end.to change { conversation.messages.activity.count }.by(1)
   end
 
+  it 'recovers a database source-id collision without aborting the outer transaction' do
+    event = create(:llm_event, **event_attributes)
+    projector = described_class.new(event)
+    existing_message = create(
+      :message,
+      account: account,
+      inbox: conversation.inbox,
+      conversation: conversation,
+      message_type: :activity,
+      source_id: projector.send(:source_id)
+    )
+    lookups = 0
+    allow(projector).to receive(:existing_message).and_wrap_original do |original, *args|
+      if lookups.zero?
+        lookups += 1
+        nil
+      else
+        original.call(*args)
+      end
+    end
+
+    ActiveRecord::Base.transaction do
+      expect(projector.call).to eq(existing_message)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+
+    expect(lookups).to eq(1)
+  end
+
   it 'keeps separate executions of the same tool in the timeline' do
     first_event = create(:llm_event, **event_attributes)
     second_event = create(

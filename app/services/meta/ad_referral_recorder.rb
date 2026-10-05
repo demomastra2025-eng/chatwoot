@@ -24,9 +24,11 @@ class Meta::AdReferralRecorder
   private
 
   def upsert_referral!
-    MetaAdReferral.find_or_initialize_by(unique_attributes).tap do |referral|
-      referral.assign_attributes(record_attributes)
-      referral.save!
+    MetaAdReferral.transaction(requires_new: true) do
+      MetaAdReferral.find_or_initialize_by(unique_attributes).tap do |referral|
+        referral.assign_attributes(record_attributes)
+        referral.save!
+      end
     end
   rescue ActiveRecord::RecordNotUnique
     @upsert_retry_count ||= 0
@@ -91,17 +93,17 @@ class Meta::AdReferralRecorder
   def communication_thread
     return @communication_thread if defined?(@communication_thread)
 
-    @communication_thread = begin
+    @communication_thread = CommunicationThread.transaction(requires_new: true) do
       conversation = message.conversation
       if conversation&.account&.feature_enabled?('communication_threads')
         conversation.communication_thread || conversation.refresh_communication_thread!
       else
         conversation&.communication_thread
       end
-    rescue StandardError => e
-      Rails.logger.warn("[MetaAdReferral] communication thread link failed: #{e.class}: #{e.message}")
-      nil
     end
+  rescue StandardError => e
+    Rails.logger.warn("[MetaAdReferral] communication thread link failed: #{e.class}: #{e.message}")
+    @communication_thread = nil
   end
 
   def persist_message_summary!(summary)
