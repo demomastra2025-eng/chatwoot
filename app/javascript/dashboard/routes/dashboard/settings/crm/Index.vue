@@ -1480,9 +1480,7 @@ onMounted(async () => {
                         <div class="flex items-center justify-between gap-3">
                           <span class="text-xs font-medium text-n-slate-11">
                             {{
-                              $t(
-                                'CRM.SETTINGS.STAGES.FORM.CLOSING_REASON_REQUIRED'
-                              )
+                              $t('CRM.SETTINGS.STAGES.CLOSING_REASON_REQUIRED')
                             }}
                           </span>
                           <Switch
@@ -1593,7 +1591,7 @@ onMounted(async () => {
             class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
           >
             <span>{{
-              $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASON_REQUIRED')
+              $t('CRM.SETTINGS.STAGES.TRANSITION_REASON_REQUIRED')
             }}</span>
             <Switch
               :model-value="

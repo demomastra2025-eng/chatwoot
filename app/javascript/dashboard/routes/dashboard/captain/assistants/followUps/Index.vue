@@ -210,9 +210,9 @@ const save = async () => {
     });
     draftBaseline.value = submittedSnapshot;
     await store.dispatch('captainAssistants/get');
-    useAlert(t('CAPTAIN.ASSISTANTS.EDIT.API.SUCCESS_MESSAGE'));
+    useAlert(t('CAPTAIN.ASSISTANTS.EDIT.SUCCESS_MESSAGE'));
   } catch {
-    useAlert(t('CAPTAIN.ASSISTANTS.EDIT.API.ERROR_MESSAGE'));
+    useAlert(t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE'));
   } finally {
     state.isSaving = false;
   }
