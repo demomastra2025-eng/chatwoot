@@ -89,31 +89,34 @@ RSpec.describe AccountLimits::StorageUsageService do
       File.write(recordings_dir.join('call.wav'), 'x' * 4096)
     end
 
-    it 'counts local recordings as part of informational physical usage' do
-      expect(described_class.new(account: account).usage_bytes).to eq(4096)
+    it 'leaves local recordings out of the quota by default' do
+      account.update!(limits: { 'storage_bytes' => 5000 })
+      service = described_class.new(account: account)
+
+      expect(service.usage_bytes).to eq(0)
+      expect(service.within_limit?(extra_bytes: 5000)).to be(true)
+    end
+
+    it 'counts local recordings when STORAGE_QUOTA_INCLUDE_RECORDINGS is true' do
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+        expect(described_class.new(account: account).usage_bytes).to eq(4096)
+      end
     end
 
     it 'counts a hard-linked recording only once within the tenant tree' do
       File.link(recordings_dir.join('call.wav'), recordings_dir.join('call-copy.wav'))
 
-      expect(described_class.new(account: account).usage_bytes).to eq(4096)
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+        expect(described_class.new(account: account).usage_bytes).to eq(4096)
+      end
     end
 
-    it 'rejects an upload when recordings plus the new file exceed the configured limit' do
+    it 'rejects an upload when recordings plus the new file exceed the limit if recordings are included' do
       account.update!(limits: { 'storage_bytes' => 5000 })
 
-      expect(described_class.new(account: account).within_limit?(extra_bytes: 904)).to be(true)
-      expect(described_class.new(account: account).within_limit?(extra_bytes: 905)).to be(false)
-    end
-
-    it 'leaves recordings out of the quota when STORAGE_QUOTA_INCLUDE_RECORDINGS is false' do
-      account.update!(limits: { 'storage_bytes' => 5000 })
-
-      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'false') do
-        service = described_class.new(account: account)
-
-        expect(service.usage_bytes).to eq(0)
-        expect(service.within_limit?(extra_bytes: 5000)).to be(true)
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+        expect(described_class.new(account: account).within_limit?(extra_bytes: 904)).to be(true)
+        expect(described_class.new(account: account).within_limit?(extra_bytes: 905)).to be(false)
       end
     end
   end

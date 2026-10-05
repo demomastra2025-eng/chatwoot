@@ -33,10 +33,10 @@ class AccountLimits::StorageUsageService
     active_storage_blob_scope.sum(:byte_size).to_i
   end
 
-  # Local call recordings live outside ActiveStorage and are included in physical usage totals.
-  # STORAGE_QUOTA_INCLUDE_RECORDINGS=false leaves them out of the quota (and therefore out of the upload check).
+  # Local call recordings live outside ActiveStorage. They stay out of the quota (and the upload check) by default,
+  # as before; STORAGE_QUOTA_INCLUDE_RECORDINGS=true opts them in once the accounts with a limit have been reviewed.
   def count_recordings?
-    ActiveModel::Type::Boolean.new.cast(ENV.fetch('STORAGE_QUOTA_INCLUDE_RECORDINGS', 'true'))
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('STORAGE_QUOTA_INCLUDE_RECORDINGS', 'false'))
   end
 
   def recordings_bytes
