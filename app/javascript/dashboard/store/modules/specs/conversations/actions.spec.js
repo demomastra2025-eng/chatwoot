@@ -1,6 +1,7 @@
 import axios from 'axios';
 import MessageApi from 'dashboard/api/inbox/message';
 import CommunicationThreadApi from 'dashboard/api/inbox/communicationThread';
+import ConversationApi from 'dashboard/api/inbox/conversation';
 import actions, {
   hasMessageFailedWithExternalError,
 } from '../../conversations/actions';
@@ -607,23 +608,63 @@ describe('#actions', () => {
             })
         );
 
-      const firstRequest = actions.fetchSidebarUnreadCounts({
-        commit: localCommit,
-      });
-      const secondRequest = actions.fetchSidebarUnreadCounts({
-        commit: localCommit,
-      });
+      const firstRequest = actions.fetchSidebarUnreadCounts(
+        { commit: localCommit },
+        { status: 'open' }
+      );
+      const secondRequest = actions.fetchSidebarUnreadCounts(
+        { commit: localCommit },
+        { status: 'pending' }
+      );
 
-      resolveSecond({ data: { counts: { all: 3 } } });
+      resolveSecond({ data: { meta: { unread_counts: { all: 3 } } } });
       await secondRequest;
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
         { all: 3 }
       );
 
-      resolveFirst({ data: { counts: { all: 1 } } });
+      resolveFirst({ data: { meta: { unread_counts: { all: 1 } } } });
       await firstRequest;
       expect(localCommit).toHaveBeenCalledTimes(1);
+    });
+
+    it('shares one request between overlapping refreshes and repeats it once afterwards', async () => {
+      const localCommit = vi.fn();
+      let resolveFirst;
+      axios.get
+        .mockImplementationOnce(
+          () =>
+            new Promise(resolve => {
+              resolveFirst = resolve;
+            })
+        )
+        .mockResolvedValueOnce({ data: { counts: { all: 3 } } });
+
+      const firstRequest = actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
+      const secondRequest = actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
+      const thirdRequest = actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
+      expect(axios.get).toHaveBeenCalledTimes(1);
+
+      resolveFirst({ data: { counts: { all: 1 } } });
+      const results = await Promise.all([
+        firstRequest,
+        secondRequest,
+        thirdRequest,
+      ]);
+
+      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(results).toEqual([{ all: 3 }, { all: 3 }, { all: 3 }]);
+      expect(localCommit).toHaveBeenLastCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        { all: 3 }
+      );
     });
 
     it('invalidates a pending thread meta response when another list starts', async () => {
@@ -668,6 +709,31 @@ describe('#actions', () => {
       expect(staleDispatch).not.toHaveBeenCalled();
       expect(staleCommit).not.toHaveBeenCalled();
       metaSpy.mockRestore();
+    });
+  });
+
+  describe('#fetchAllConversations', () => {
+    it('asks for the counts only with the first page', async () => {
+      const getSpy = vi
+        .spyOn(ConversationApi, 'get')
+        .mockResolvedValue({ data: { data: { meta: {}, payload: [] } } });
+      const context = {
+        commit: vi.fn(),
+        dispatch: vi.fn(),
+        state: { conversationFilters: { page: 3, status: 'open' } },
+      };
+
+      await actions.fetchAllConversations(context);
+      expect(getSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 3, includeMeta: false })
+      );
+
+      context.state.conversationFilters = { page: 1, status: 'open' };
+      await actions.fetchAllConversations(context);
+      expect(getSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, includeMeta: true })
+      );
+      getSpy.mockRestore();
     });
   });
 
@@ -1084,6 +1150,32 @@ describe('#actions', () => {
           dataReceived.payload.map(chat => chat.meta.sender),
         ],
       ]);
+    });
+
+    it('asks for the counts only with the first page of native filtered conversations', async () => {
+      const filterSpy = vi
+        .spyOn(ConversationApi, 'filter')
+        .mockResolvedValue({ data: { payload: [], meta: {} } });
+      const context = { commit: vi.fn(), dispatch: vi.fn() };
+
+      await actions.fetchFilteredConversations(context, {
+        ...dataToSend,
+        page: 2,
+      });
+      expect(filterSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2 }),
+        { includeMeta: false }
+      );
+
+      await actions.fetchFilteredConversations(context, {
+        ...dataToSend,
+        page: 1,
+      });
+      expect(filterSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1 }),
+        { includeMeta: true }
+      );
+      filterSpy.mockRestore();
     });
 
     it('loads the first filtered thread page without waiting for meta', async () => {

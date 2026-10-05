@@ -1,11 +1,14 @@
 /* global axios */
 import ApiClient from '../ApiClient';
 
+const inFlightMetaRequests = new Map();
+
 class ConversationApi extends ApiClient {
   constructor() {
     super('conversations', { accountScoped: true });
   }
 
+  // The counts are only needed with the first page, later pages are sent with includeMeta false.
   get({
     inboxId,
     status,
@@ -22,6 +25,7 @@ class ConversationApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    includeMeta = true,
   }) {
     return axios.get(this.url, {
       params: {
@@ -40,11 +44,12 @@ class ConversationApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        include_meta: includeMeta ? undefined : false,
       },
     });
   }
 
-  filter(payload) {
+  filter(payload, { includeMeta = true } = {}) {
     return axios.post(`${this.url}/filter`, payload.queryData, {
       params: {
         page: payload.page,
@@ -55,6 +60,7 @@ class ConversationApi extends ApiClient {
         labels_scope: payload.labelsScope || payload.labels_scope,
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
+        include_meta: includeMeta ? undefined : false,
       },
     });
   }
@@ -138,23 +144,34 @@ class ConversationApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
-  }) {
-    return axios.get(`${this.url}/meta`, {
-      params: {
-        inbox_id: inboxId,
-        status,
-        assignee_type: assigneeType,
-        labels,
-        team_id: teamId,
-        conversation_type: conversationType,
-        crm_pipeline_id: crmPipelineId,
-        crm_stage_id: crmStageId,
-        appointment_status: appointmentStatus,
-        labels_scope: labelsScope,
-        team_scope: teamScope,
-        unread,
-      },
+  } = {}) {
+    const url = `${this.url}/meta`;
+    const params = {
+      inbox_id: inboxId,
+      status,
+      assignee_type: assigneeType,
+      labels,
+      team_id: teamId,
+      conversation_type: conversationType,
+      crm_pipeline_id: crmPipelineId,
+      crm_stage_id: crmStageId,
+      appointment_status: appointmentStatus,
+      labels_scope: labelsScope,
+      team_scope: teamScope,
+      unread,
+    };
+    // Identical requests that overlap (stats and sidebar counters ask for the same /meta) share one call.
+    const requestKey = JSON.stringify([url, params]);
+    const currentRequest = inFlightMetaRequests.get(requestKey);
+    if (currentRequest) return currentRequest;
+
+    const request = axios.get(url, { params }).finally(() => {
+      if (inFlightMetaRequests.get(requestKey) === request) {
+        inFlightMetaRequests.delete(requestKey);
+      }
     });
+    inFlightMetaRequests.set(requestKey, request);
+    return request;
   }
 
   sidebarUnreadCounts() {

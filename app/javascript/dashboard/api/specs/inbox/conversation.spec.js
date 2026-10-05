@@ -178,6 +178,56 @@ describe('#ConversationAPI', () => {
       });
     });
 
+    it('#get asks the server to skip the counts only when includeMeta is false', () => {
+      conversationAPI.get({ status: 'open', page: 2, includeMeta: false });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params).toMatchObject({
+        page: 2,
+        include_meta: false,
+      });
+
+      conversationAPI.get({ status: 'open', page: 1 });
+      expect(axiosMock.get.mock.calls.at(-1)[1].params.include_meta).toBe(
+        undefined
+      );
+    });
+
+    it('#filter asks the server to skip the counts only when includeMeta is false', () => {
+      const payload = { page: 3, queryData: { payload: [] } };
+
+      conversationAPI.filter(payload, { includeMeta: false });
+      expect(axiosMock.post.mock.calls.at(-1)[2].params).toMatchObject({
+        page: 3,
+        include_meta: false,
+      });
+
+      conversationAPI.filter(payload);
+      expect(axiosMock.post.mock.calls.at(-1)[2].params.include_meta).toBe(
+        undefined
+      );
+    });
+
+    it('#meta shares one request between overlapping identical calls', async () => {
+      let resolveRequest;
+      axiosMock.get.mockClear();
+      axiosMock.get.mockReturnValueOnce(
+        new Promise(resolve => {
+          resolveRequest = resolve;
+        })
+      );
+
+      const first = conversationAPI.meta({ status: 'open' });
+      const duplicate = conversationAPI.meta({ status: 'open' });
+      const other = conversationAPI.meta({ status: 'resolved' });
+      resolveRequest({ data: { meta: {} } });
+      await Promise.all([first, duplicate, other]);
+
+      expect(first).toBe(duplicate);
+      expect(axiosMock.get).toHaveBeenCalledTimes(2);
+
+      await conversationAPI.meta({ status: 'open' });
+      expect(axiosMock.get).toHaveBeenCalledTimes(3);
+    });
+
     it('#sendEmailTranscript', () => {
       conversationAPI.sendEmailTranscript({
         conversationId: 45,

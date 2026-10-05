@@ -1,7 +1,6 @@
 import types from '../mutation-types';
 import ConversationApi from '../../api/inbox/conversation';
 import CommunicationThreadApi from '../../api/inbox/communicationThread';
-import { debounce } from '@chatwoot/utils';
 
 const state = {
   mineCount: 0,
@@ -19,17 +18,38 @@ const state = {
   allUnreadCount: 0,
 };
 
+// Bumped whenever newer stats are known (a new request starts or `set` is called),
+// so a response that was requested before that can no longer overwrite them.
 let conversationStatsRequestGeneration = 0;
+
+// Every refresh request goes through this one trailing debounce: a burst of events, or the same
+// event seen by several components, ends in a single /meta request. The wait grows with the
+// account size to spare the server on big inboxes.
+const refreshTiming = allCount => {
+  if (allCount > 2000) return { wait: 10000, maxWait: 20000 };
+  if (allCount > 100) return { wait: 5000, maxWait: 10000 };
+  return { wait: 1500, maxWait: 5000 };
+};
+
+const refreshScheduler = {
+  context: null,
+  params: undefined,
+  timer: null,
+  firstRequestedAt: 0,
+  isInFlight: false,
+  runAgain: false,
+  refreshOnVisible: false,
+};
+
+const isTabHidden = () =>
+  typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
 export const getters = {
   getStats: $state => $state,
 };
 
-// Create a debounced version of the actual API call function
 const fetchMetaData = async (context, params, requestGeneration) => {
   try {
-    if (requestGeneration !== conversationStatsRequestGeneration) return;
-
     const { commit } = context;
     const statsApi = params?.communicationThreadMode
       ? CommunicationThreadApi
@@ -51,30 +71,92 @@ const fetchMetaData = async (context, params, requestGeneration) => {
   }
 };
 
-const debouncedFetchMetaData = debounce(fetchMetaData, 1500, false, 5000);
-const longDebouncedFetchMetaData = debounce(fetchMetaData, 5000, false, 10000);
-const superLongDebouncedFetchMetaData = debounce(
-  fetchMetaData,
-  10000,
-  false,
-  20000
-);
+const runMetaRefresh = async () => {
+  refreshScheduler.timer = null;
+  refreshScheduler.firstRequestedAt = 0;
+  // A hidden tab does not poll the server on events; it refreshes once when it is shown again.
+  if (isTabHidden()) {
+    refreshScheduler.refreshOnVisible = true;
+    return;
+  }
+  if (refreshScheduler.isInFlight) {
+    refreshScheduler.runAgain = true;
+    return;
+  }
+
+  refreshScheduler.isInFlight = true;
+  conversationStatsRequestGeneration += 1;
+  const { context, params } = refreshScheduler;
+  try {
+    await fetchMetaData(context, params, conversationStatsRequestGeneration);
+  } finally {
+    refreshScheduler.isInFlight = false;
+    if (refreshScheduler.runAgain) {
+      refreshScheduler.runAgain = false;
+      // eslint-disable-next-line no-use-before-define
+      scheduleMetaRefresh(refreshScheduler.context, refreshScheduler.params);
+    }
+  }
+};
+
+const scheduleMetaRefresh = (context, params) => {
+  refreshScheduler.context = context;
+  refreshScheduler.params = params;
+  clearTimeout(refreshScheduler.timer);
+  refreshScheduler.timer = null;
+  if (isTabHidden()) {
+    refreshScheduler.refreshOnVisible = true;
+    return;
+  }
+
+  const now = Date.now();
+  if (!refreshScheduler.firstRequestedAt) {
+    refreshScheduler.firstRequestedAt = now;
+  }
+  const { wait, maxWait } = refreshTiming(context?.state?.allCount ?? 0);
+  const delay = Math.max(
+    0,
+    Math.min(wait, refreshScheduler.firstRequestedAt + maxWait - now)
+  );
+  refreshScheduler.timer = setTimeout(runMetaRefresh, delay);
+};
+
+const onVisibilityChange = () => {
+  if (isTabHidden() || !refreshScheduler.refreshOnVisible) return;
+
+  refreshScheduler.refreshOnVisible = false;
+  clearTimeout(refreshScheduler.timer);
+  runMetaRefresh();
+};
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', onVisibilityChange);
+}
+
+// Drops any pending refresh. Used by the unit tests to isolate the module level scheduler.
+export const resetMetaRefresh = () => {
+  clearTimeout(refreshScheduler.timer);
+  Object.assign(refreshScheduler, {
+    context: null,
+    params: undefined,
+    timer: null,
+    firstRequestedAt: 0,
+    isInFlight: false,
+    runAgain: false,
+    refreshOnVisible: false,
+  });
+  conversationStatsRequestGeneration += 1;
+};
 
 export const actions = {
   get: async (context, params) => {
-    const { state: $state } = context;
-    conversationStatsRequestGeneration += 1;
-    const requestGeneration = conversationStatsRequestGeneration;
-    if ($state.allCount > 2000) {
-      superLongDebouncedFetchMetaData(context, params, requestGeneration);
-    } else if ($state.allCount > 100) {
-      longDebouncedFetchMetaData(context, params, requestGeneration);
-    } else {
-      debouncedFetchMetaData(context, params, requestGeneration);
-    }
+    scheduleMetaRefresh(context, params);
   },
+  // Exact stats that arrive together with a list. They invalidate a response that is still on its
+  // way (it was requested earlier), but never cancel a refresh that is waiting to run.
   set({ commit }, meta) {
     conversationStatsRequestGeneration += 1;
+    if (refreshScheduler.isInFlight) refreshScheduler.runAgain = true;
     commit(types.SET_CONV_TAB_META, meta);
   },
 };

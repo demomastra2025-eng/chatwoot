@@ -1,24 +1,30 @@
 import axios from 'axios';
-import { actions } from '../../conversationStats';
+import { actions, resetMetaRefresh } from '../../conversationStats';
 import * as types from '../../../mutation-types';
 
 const commit = vi.fn();
 global.axios = axios;
 vi.mock('axios');
 
-vi.mock('@chatwoot/utils', () => ({
-  debounce: vi.fn(fn => {
-    return fn;
-  }),
-}));
+const setTabVisibility = visibilityState => {
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    value: visibilityState,
+  });
+  document.dispatchEvent(new Event('visibilitychange'));
+};
 
 describe('#actions', () => {
   beforeEach(() => {
     vi.useFakeTimers(); // Set up fake timers
     commit.mockClear();
+    axios.get.mockReset();
+    resetMetaRefresh();
   });
 
   afterEach(() => {
+    resetMetaRefresh();
+    setTabVisibility('visible');
     vi.useRealTimers(); // Reset to real timers after each test
   });
 
@@ -90,7 +96,8 @@ describe('#actions', () => {
         { commit, state: { allCount: 0 } },
         { communicationThreadMode: true, status: 'open' }
       );
-      await vi.waitFor(() => expect(axios.get).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(axios.get).toHaveBeenCalledOnce();
 
       const exactMeta = { mine_count: 1, all_count: 2 };
       actions.set({ commit }, exactMeta);
@@ -101,6 +108,166 @@ describe('#actions', () => {
       expect(commit.mock.calls).toEqual([
         [types.default.SET_CONV_TAB_META, exactMeta],
       ]);
+    });
+
+    describe('trailing debounce', () => {
+      const context = { commit, state: { allCount: 0 } };
+
+      beforeEach(() => {
+        axios.get.mockResolvedValue({ data: { meta: { mine_count: 1 } } });
+      });
+
+      it('turns a burst of calls into one request with the latest filters', async () => {
+        actions.get(context, { status: 'open', inboxId: 1 });
+        await vi.advanceTimersByTimeAsync(500);
+        actions.get(context, { status: 'open', inboxId: 2 });
+        await vi.advanceTimersByTimeAsync(500);
+        actions.get(context, { status: 'open', inboxId: 3 });
+
+        await vi.advanceTimersByTimeAsync(1499);
+        expect(axios.get).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(axios.get).toHaveBeenCalledOnce();
+        expect(axios.get.mock.calls[0][1].params).toMatchObject({
+          inbox_id: 3,
+        });
+      });
+
+      it('still fires within the maximum wait while calls keep arriving', async () => {
+        actions.get(context, { status: 'open', inboxId: 4 });
+        for (let second = 1; second <= 4; second += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          await vi.advanceTimersByTimeAsync(1000);
+          actions.get(context, { status: 'open', inboxId: 4 });
+        }
+        expect(axios.get).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(axios.get).toHaveBeenCalledOnce();
+      });
+
+      it('waits longer on bigger accounts', async () => {
+        actions.get(
+          { commit, state: { allCount: 150 } },
+          { status: 'open', inboxId: 5 }
+        );
+        await vi.advanceTimersByTimeAsync(4999);
+        expect(axios.get).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(axios.get).toHaveBeenCalledOnce();
+        await vi.advanceTimersByTimeAsync(0);
+
+        axios.get.mockClear();
+        actions.get(
+          { commit, state: { allCount: 2500 } },
+          { status: 'open', inboxId: 6 }
+        );
+        await vi.advanceTimersByTimeAsync(9999);
+        expect(axios.get).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(axios.get).toHaveBeenCalledOnce();
+      });
+
+      it('does not run a second request while one is in flight and refreshes once afterwards', async () => {
+        let resolveFirst;
+        axios.get.mockImplementationOnce(
+          () =>
+            new Promise(resolve => {
+              resolveFirst = resolve;
+            })
+        );
+        const params = { status: 'open', inboxId: 7 };
+
+        actions.get(context, params);
+        await vi.advanceTimersByTimeAsync(1500);
+        expect(axios.get).toHaveBeenCalledOnce();
+
+        actions.get(context, params);
+        actions.get(context, params);
+        await vi.advanceTimersByTimeAsync(1500);
+        expect(axios.get).toHaveBeenCalledOnce();
+
+        resolveFirst({ data: { meta: { mine_count: 2 } } });
+        await vi.advanceTimersByTimeAsync(2000);
+
+        expect(axios.get).toHaveBeenCalledTimes(2);
+      });
+
+      it('does not let a list refresh cancel a pending debounced fetch', async () => {
+        actions.get(context, { status: 'open', inboxId: 8 });
+        await vi.advanceTimersByTimeAsync(700);
+
+        const listMeta = { mine_count: 5, all_count: 5 };
+        actions.set({ commit }, listMeta);
+        await vi.advanceTimersByTimeAsync(800);
+        await vi.waitFor(() => expect(commit).toHaveBeenCalledTimes(2));
+
+        expect(axios.get).toHaveBeenCalledOnce();
+        expect(commit.mock.calls).toEqual([
+          [types.default.SET_CONV_TAB_META, listMeta],
+          [types.default.SET_CONV_TAB_META, { mine_count: 1 }],
+        ]);
+      });
+    });
+
+    describe('hidden tab', () => {
+      const context = { commit, state: { allCount: 0 } };
+
+      beforeEach(() => {
+        axios.get.mockResolvedValue({ data: { meta: { mine_count: 1 } } });
+      });
+
+      it('does not call the server on events while the tab is hidden', async () => {
+        setTabVisibility('hidden');
+
+        actions.get(context, { status: 'open', inboxId: 9 });
+        actions.get(context, { status: 'open', inboxId: 9 });
+        await vi.advanceTimersByTimeAsync(60000);
+
+        expect(axios.get).not.toHaveBeenCalled();
+      });
+
+      it('refreshes once when the tab becomes visible again', async () => {
+        setTabVisibility('hidden');
+        actions.get(context, { status: 'open', inboxId: 10 });
+        actions.get(context, { status: 'open', inboxId: 10 });
+        actions.get(context, { status: 'open', inboxId: 10 });
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(axios.get).not.toHaveBeenCalled();
+
+        setTabVisibility('visible');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(axios.get).toHaveBeenCalledOnce();
+        expect(axios.get.mock.calls[0][1].params).toMatchObject({
+          inbox_id: 10,
+        });
+
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(axios.get).toHaveBeenCalledOnce();
+      });
+
+      it('does not refresh on visibility changes when nothing happened while hidden', async () => {
+        setTabVisibility('hidden');
+        setTabVisibility('visible');
+        await vi.advanceTimersByTimeAsync(5000);
+
+        expect(axios.get).not.toHaveBeenCalled();
+      });
+
+      it('skips the request when the tab is hidden by the time the wait ends', async () => {
+        actions.get(context, { status: 'open', inboxId: 11 });
+        await vi.advanceTimersByTimeAsync(1000);
+        setTabVisibility('hidden');
+        await vi.advanceTimersByTimeAsync(2000);
+
+        expect(axios.get).not.toHaveBeenCalled();
+
+        setTabVisibility('visible');
+        await vi.advanceTimersByTimeAsync(0);
+        expect(axios.get).toHaveBeenCalledOnce();
+      });
     });
   });
 

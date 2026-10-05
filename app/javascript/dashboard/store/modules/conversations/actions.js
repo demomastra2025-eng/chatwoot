@@ -4,6 +4,7 @@ import CommunicationThreadApi from '../../../api/inbox/communicationThread';
 import MessageApi from '../../../api/inbox/message';
 import { MESSAGE_STATUS, MESSAGE_TYPE } from 'shared/constants/messages';
 import { createPendingMessage } from 'dashboard/helper/commons';
+import { createSingleFlight } from 'dashboard/helper/singleFlight';
 import {
   buildCommunicationThreadConversation,
   isCommunicationThread,
@@ -42,6 +43,7 @@ const replayCommunicationThreadListUpdates = (generation, context, apply) => {
   });
 };
 let sidebarUnreadCountsRequestId = 0;
+const sidebarUnreadCountsFlight = createSingleFlight();
 
 const startConversationListRequest = () => {
   conversationListRequestGeneration += 1;
@@ -288,6 +290,56 @@ const commitCommunicationThreadUpdate = (
   return communicationThread;
 };
 
+const refreshSidebarUnreadCounts = async (
+  { commit, dispatch, state = {} },
+  params = null
+) => {
+  sidebarUnreadCountsRequestId += 1;
+  const requestId = sidebarUnreadCountsRequestId;
+  const requestGeneration = conversationListRequestGeneration;
+  try {
+    const requestParams = params || state.conversationFilters || {};
+    let counts = {};
+    let metaData;
+
+    if (hasSidebarUnreadCountFilters(requestParams)) {
+      let meta;
+      if (requestParams.communicationThreadMode && requestParams.queryData) {
+        const response = await CommunicationThreadApi.filterMeta(requestParams);
+        meta = response.data?.data?.meta;
+      } else {
+        const statsApi = requestParams.communicationThreadMode
+          ? CommunicationThreadApi
+          : ConversationApi;
+        const response = await statsApi.meta(requestParams);
+        meta = response.data?.meta;
+      }
+      metaData = meta;
+      counts = meta?.unread_counts || {};
+    } else {
+      const {
+        data: { counts: globalCounts },
+      } = await ConversationApi.sidebarUnreadCounts();
+      counts = globalCounts;
+    }
+
+    if (requestGeneration !== conversationListRequestGeneration) {
+      return undefined;
+    }
+
+    if (requestParams.communicationThreadMode && metaData) {
+      dispatch('conversationStats/set', metaData);
+    }
+    if (requestId !== sidebarUnreadCountsRequestId) return undefined;
+
+    commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
+    return counts || {};
+  } catch (error) {
+    // Keep the last known sidebar counts if the refresh fails.
+    return undefined;
+  }
+};
+
 export const hasMessageFailedWithExternalError = pendingMessage => {
   // This helper is used to check if the message has failed with an external error.
   // We have two cases
@@ -365,9 +417,10 @@ const actions = {
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
+      const isFirstPage = Number(params.page || 1) === 1;
       const {
         data: { data },
-      } = await ConversationApi.get(params);
+      } = await ConversationApi.get({ ...params, includeMeta: isFirstPage });
       if (requestGeneration !== conversationListRequestGeneration) return;
       if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) {
         commit(types.CLEAR_LIST_LOADING_STATUS);
@@ -378,7 +431,7 @@ const actions = {
         params,
         data,
         params.assigneeType,
-        Number(params.page || 1) === 1
+        isFirstPage
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
@@ -477,55 +530,12 @@ const actions = {
     }
   },
 
-  fetchSidebarUnreadCounts: async (
-    { commit, dispatch, state = {} },
-    params = null
-  ) => {
-    sidebarUnreadCountsRequestId += 1;
-    const requestId = sidebarUnreadCountsRequestId;
-    const requestGeneration = conversationListRequestGeneration;
-    try {
-      const requestParams = params || state.conversationFilters || {};
-      let counts = {};
-      let metaData;
-
-      if (hasSidebarUnreadCountFilters(requestParams)) {
-        let meta;
-        if (requestParams.communicationThreadMode && requestParams.queryData) {
-          const response =
-            await CommunicationThreadApi.filterMeta(requestParams);
-          meta = response.data?.data?.meta;
-        } else {
-          const statsApi = requestParams.communicationThreadMode
-            ? CommunicationThreadApi
-            : ConversationApi;
-          const response = await statsApi.meta(requestParams);
-          meta = response.data?.meta;
-        }
-        metaData = meta;
-        counts = meta?.unread_counts || {};
-      } else {
-        const {
-          data: { counts: globalCounts },
-        } = await ConversationApi.sidebarUnreadCounts();
-        counts = globalCounts;
-      }
-
-      if (requestGeneration !== conversationListRequestGeneration) {
-        return undefined;
-      }
-
-      if (requestParams.communicationThreadMode && metaData) {
-        dispatch('conversationStats/set', metaData);
-      }
-      if (requestId !== sidebarUnreadCountsRequestId) return undefined;
-
-      commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
-      return counts || {};
-    } catch (error) {
-      // Keep the last known sidebar counts if the refresh fails.
-      return undefined;
-    }
+  // Overlapping refreshes with the same filters share one request instead of each asking the server.
+  fetchSidebarUnreadCounts: (context, params = null) => {
+    const requestParams = params || context.state?.conversationFilters || {};
+    return sidebarUnreadCountsFlight(JSON.stringify(requestParams), () =>
+      refreshSidebarUnreadCounts(context, params)
+    );
   },
 
   fetchRealtimeSidebarUnreadCounts: async (
@@ -577,7 +587,10 @@ const actions = {
       const filterApi = requestParams?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
-      const { data } = await filterApi.filter(requestParams);
+      // Thread filters never carry counts (fetched apart); native ones only on the first page.
+      const { data } = requestParams?.communicationThreadMode
+        ? await filterApi.filter(requestParams)
+        : await filterApi.filter(requestParams, { includeMeta: isFirstPage });
       if (requestGeneration !== conversationListRequestGeneration) return;
       if (!isExpectedRouteCurrent(rootState, expectedRouteFullPath)) {
         commit(types.CLEAR_LIST_LOADING_STATUS);
