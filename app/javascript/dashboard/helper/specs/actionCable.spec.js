@@ -1240,7 +1240,7 @@ describe('ActionCableConnector', () => {
       );
     });
 
-    it('should refresh dialog CRM counters after CRM deal ActionCable events', async () => {
+    it('should refresh the CRM pipelines but no dialog counters after CRM deal ActionCable events', async () => {
       vi.useFakeTimers();
       const crmReferencesStore = useCrmReferencesStore();
       const loadPipelinesSpy = vi
@@ -1266,9 +1266,10 @@ describe('ActionCableConnector', () => {
         expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
         expect(loadPipelinesSpy).toHaveBeenCalledTimes(1);
 
-        await vi.advanceTimersByTimeAsync(500);
+        // Deals no longer have a dialog counter, so a deal event does not recount the sidebar.
+        await vi.advanceTimersByTimeAsync(5000);
 
-        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
       } finally {
         vi.useRealTimers();
       }

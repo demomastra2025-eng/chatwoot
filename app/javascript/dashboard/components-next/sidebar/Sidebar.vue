@@ -296,8 +296,6 @@ const getSidebarUnreadCount = (collection, key) => {
 };
 
 const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
-const appointmentStatusCount = status =>
-  getSidebarUnreadCount('appointment_statuses', status);
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved', 'all'];
 const conversationAssigneeTypes = [
@@ -599,8 +597,6 @@ const appointmentStatusSidebarItems = computed(() => {
         icon: APPOINTMENT_STATUS_ICONS[status],
         iconClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
         labelClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
-        countClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
-        count: appointmentStatusCount(status),
         active: currentAppointmentStatus.value === status,
         activeOn: conversationStatusActiveOn,
         to: withCurrentConversationScopeAppointmentStatus(status),

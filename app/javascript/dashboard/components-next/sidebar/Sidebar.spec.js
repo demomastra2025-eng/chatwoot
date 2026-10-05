@@ -440,7 +440,7 @@ describe('Sidebar', () => {
       });
     });
 
-    it('shows «Записи» as a plain label and keeps the status counters', async () => {
+    it('shows «Записи» as a plain label and no longer counts dialogs per appointment status', async () => {
       mocks.sidebarUnreadCounts = {
         appointment_statuses: { any: 9, scheduled: 3, confirmed: 2 },
       };
@@ -453,13 +453,9 @@ describe('Sidebar', () => {
       expect(appointments.to).toBeUndefined();
       expect(appointments.count).toBeUndefined();
       expect(appointments.active).toBeUndefined();
-      expect(
-        Object.fromEntries(
-          appointments.children.map(child => [child.name, child.count])
-        )
-      ).toMatchObject({
-        'AppointmentStatus:scheduled': 3,
-        'AppointmentStatus:confirmed': 2,
+      expect(appointments.children).toHaveLength(5);
+      appointments.children.forEach(child => {
+        expect(child.count).toBeUndefined();
       });
       expect(appointments.children[0].to.query).toMatchObject({
         appointment_status: 'scheduled',

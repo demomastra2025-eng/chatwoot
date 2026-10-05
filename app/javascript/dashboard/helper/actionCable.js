@@ -229,7 +229,6 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   onCrmDealRealtimeEvent = (event, data) => {
     emitter.emit(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, { event, ...data });
-    this.fetchSidebarUnreadCounts();
     this.fetchCrmPipelines();
   };
 
