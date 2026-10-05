@@ -15,7 +15,6 @@ const testState = vi.hoisted(() => ({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     },
   },
   currentAccount: { __v_isRef: true, value: { settings: {} } },
@@ -76,7 +75,6 @@ describe('SidepanelSwitch', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     };
     testState.isFeatureEnabledonAccount.value = () => true;
     testState.currentAccount.value = { settings: {} };
@@ -97,7 +95,6 @@ describe('SidepanelSwitch', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     });
   });
 
@@ -115,7 +112,6 @@ describe('SidepanelSwitch', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: true,
-      is_touch_sidebar_open: false,
     });
   });
 
@@ -181,12 +177,12 @@ describe('SidepanelSwitch', () => {
     );
   });
 
-  // The Copilot chat switch is removed (copilot2); the touch switch stays.
-  it('keeps the existing touch switch without the Copilot chat switch', () => {
+  // Reminders are no longer a tab of the right panel; they stay in the timeline.
+  it('renders no reminders switch and no Copilot chat switch', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-icon="i-lucide-timer-reset"]').exists()).toBe(
-      true
+      false
     );
     expect(wrapper.find('[data-icon="i-woot-captain"]').exists()).toBe(false);
   });

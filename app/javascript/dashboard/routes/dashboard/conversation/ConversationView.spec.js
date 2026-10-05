@@ -41,7 +41,6 @@ describe('ConversationView', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     };
 
     it.each(['contact', 'deals', 'appointments'])(
@@ -71,7 +70,7 @@ describe('ConversationView', () => {
       );
     });
 
-    it('keeps the existing touch panel behaviour', () => {
+    it('ignores a persisted reminders panel flag', () => {
       const context = {
         currentChat: { id: 42 },
         activePanel: null,
@@ -79,7 +78,7 @@ describe('ConversationView', () => {
       };
 
       expect(ConversationView.computed.shouldShowSidebar.call(context)).toBe(
-        true
+        false
       );
     });
 

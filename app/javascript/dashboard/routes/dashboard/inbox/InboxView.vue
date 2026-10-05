@@ -72,10 +72,7 @@ const activeNotificationIndex = computed(() => {
 const isConversationSidebarOpen = computed(() => {
   if (!currentChat.value.id) return false;
 
-  return (
-    Boolean(activePanel.value) ||
-    Boolean(uiSettings.value?.is_touch_sidebar_open)
-  );
+  return Boolean(activePanel.value);
 });
 
 const findConversation = () => {

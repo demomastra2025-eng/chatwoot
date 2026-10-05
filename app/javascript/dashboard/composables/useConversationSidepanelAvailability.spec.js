@@ -110,7 +110,7 @@ describe('useConversationSidepanelAvailability', () => {
     stop();
   });
 
-  it('leaves the touch panel to its own handling', () => {
+  it('ignores a persisted reminders panel flag', () => {
     testState.uiSettings.value = { is_touch_sidebar_open: true };
     const { activePanel, stop } = buildAvailability();
 

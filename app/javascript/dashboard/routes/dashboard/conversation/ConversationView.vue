@@ -103,10 +103,7 @@ export default {
         return false;
       }
 
-      return (
-        Boolean(this.activePanel) ||
-        Boolean(this.uiSettings?.is_touch_sidebar_open)
-      );
+      return Boolean(this.activePanel);
     },
   },
   watch: {

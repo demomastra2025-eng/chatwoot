@@ -71,7 +71,6 @@ const closedPanels = {
   is_contact_sidebar_open: false,
   is_crm_deal_panel_open: false,
   is_scheduling_appointments_panel_open: false,
-  is_touch_sidebar_open: false,
 };
 
 const mountInboxView = async () => {
@@ -143,7 +142,6 @@ describe('InboxView', () => {
     'is_contact_sidebar_open',
     'is_crm_deal_panel_open',
     'is_scheduling_appointments_panel_open',
-    'is_touch_sidebar_open',
   ])('renders the conversation sidebar for %s', async setting => {
     mocks.uiSettings.value = { ...closedPanels, [setting]: true };
 

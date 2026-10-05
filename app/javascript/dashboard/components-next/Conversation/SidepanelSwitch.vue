@@ -4,8 +4,6 @@ import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useConversationSidepanelAvailability } from 'dashboard/composables/useConversationSidepanelAvailability';
 import { computed } from 'vue';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
-import { useMapGetter } from 'dashboard/composables/store';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 
 const { uiSettings, updateUISettings } = useUISettings();
@@ -13,18 +11,6 @@ const {
   dealsAvailable: showDealAction,
   appointmentsAvailable: showAppointmentAction,
 } = useConversationSidepanelAvailability();
-
-const currentAccountId = useMapGetter('getCurrentAccountId');
-const isFeatureEnabledonAccount = useMapGetter(
-  'accounts/isFeatureEnabledonAccount'
-);
-
-const showTouchAction = computed(() =>
-  isFeatureEnabledonAccount.value(
-    currentAccountId.value,
-    FEATURE_FLAGS.CAMPAIGNS
-  )
-);
 
 const isContactSidebarOpen = computed(
   () => uiSettings.value.is_contact_sidebar_open
@@ -35,16 +21,12 @@ const isDealsSidebarOpen = computed(
 const isAppointmentsSidebarOpen = computed(
   () => uiSettings.value.is_scheduling_appointments_panel_open
 );
-const isTouchSidebarOpen = computed(
-  () => uiSettings.value.is_touch_sidebar_open
-);
 
 const toggleConversationSidebarToggle = () => {
   updateUISettings({
     is_contact_sidebar_open: !isContactSidebarOpen.value,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
   });
 };
 
@@ -53,7 +35,6 @@ const handleConversationSidebarToggle = () => {
     is_contact_sidebar_open: true,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
   });
 };
 
@@ -62,7 +43,6 @@ const openDealsSidebar = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: true,
     is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
   });
 };
 
@@ -71,16 +51,6 @@ const openAppointmentsSidebar = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: true,
-    is_touch_sidebar_open: false,
-  });
-};
-
-const openTouchEditor = () => {
-  updateUISettings({
-    is_contact_sidebar_open: false,
-    is_crm_deal_panel_open: false,
-    is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: true,
   });
 };
 
@@ -120,19 +90,6 @@ useKeyboardEvents(keyboardEvents);
       }"
       icon="i-lucide-briefcase-business"
       @click="openDealsSidebar"
-    />
-    <Button
-      v-if="showTouchAction"
-      v-tooltip.bottom="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
-      ghost
-      slate
-      sm
-      class="!rounded-full transition-all duration-[250ms] ease-out active:!scale-95 active:duration-75"
-      :class="{
-        'bg-n-alpha-2 active:shadow-sm': isTouchSidebarOpen,
-      }"
-      icon="i-lucide-timer-reset"
-      @click="openTouchEditor"
     />
     <Button
       v-if="showAppointmentAction"

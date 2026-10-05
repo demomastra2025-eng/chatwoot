@@ -67,11 +67,6 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
           name: 'SchedulingConversationAppointmentsSidebar',
           template: '<div />',
         },
-        EntityTouchesCard: {
-          name: 'EntityTouchesCard',
-          props: ['conversationId', 'remindableType', 'remindableId'],
-          template: '<div />',
-        },
       },
     },
   });
@@ -92,7 +87,6 @@ describe('ConversationSidebar', () => {
   it('moves the mobile drawer off-canvas when no sidebar tab is open', () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -105,7 +99,6 @@ describe('ConversationSidebar', () => {
   it('keeps the mobile drawer visible when contact sidebar is open', () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: true,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -118,7 +111,6 @@ describe('ConversationSidebar', () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -150,7 +142,6 @@ describe('ConversationSidebar', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -174,7 +165,6 @@ describe('ConversationSidebar', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: true,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -194,7 +184,6 @@ describe('ConversationSidebar', () => {
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
       is_scheduling_appointments_panel_open: true,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
@@ -214,7 +203,6 @@ describe('ConversationSidebar', () => {
   it('uses the active reply conversation for communication thread contact sidebar', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: true,
-      is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent({
@@ -233,30 +221,7 @@ describe('ConversationSidebar', () => {
     expect(contactPanel.props('inboxId')).toBe(202);
   });
 
-  it('renders communication thread touches with the active reply and thread reminder context', async () => {
-    mocks.uiSettings = ref({
-      is_contact_sidebar_open: false,
-      is_touch_sidebar_open: true,
-    });
-
-    const wrapper = mountComponent({
-      id: 10,
-      inbox_id: 2,
-      is_communication_thread: true,
-      active_reply_channel: {
-        conversation_id: 101,
-        inbox_id: 202,
-      },
-    });
-    await flushPromises();
-
-    const touchesCard = wrapper.findComponent({ name: 'EntityTouchesCard' });
-    expect(touchesCard.props('conversationId')).toBe(101);
-    expect(touchesCard.props('remindableType')).toBe('CommunicationThread');
-    expect(touchesCard.props('remindableId')).toBe(10);
-  });
-
-  it('renders regular conversation touches with conversation reminder context', async () => {
+  it('keeps the drawer closed for a persisted reminders panel flag', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_touch_sidebar_open: true,
@@ -265,9 +230,11 @@ describe('ConversationSidebar', () => {
     const wrapper = mountComponent({ id: 12, inbox_id: 2 });
     await flushPromises();
 
-    const touchesCard = wrapper.findComponent({ name: 'EntityTouchesCard' });
-    expect(touchesCard.props('conversationId')).toBe(12);
-    expect(touchesCard.props('remindableType')).toBe('Conversation');
-    expect(touchesCard.props('remindableId')).toBe(12);
+    expect(wrapper.classes()).toContain('ltr:translate-x-full');
+    expect(wrapper.classes()).toContain('pointer-events-none');
+    expect(wrapper.findComponent({ name: 'ContactPanel' }).exists()).toBe(
+      false
+    );
+    expect(wrapper.text()).toBe('');
   });
 });

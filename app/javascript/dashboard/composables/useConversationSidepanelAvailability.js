@@ -12,7 +12,7 @@ import { hasPermissions } from 'dashboard/helper/permissionsHelper';
 // account features and user permissions. Deals and appointments are available
 // only when the feature is enabled and the user has the matching permission,
 // so a panel flag persisted in UI settings can never open a panel the user
-// cannot use. The touch panel and Copilot keep their own handling.
+// cannot use.
 export const useConversationSidepanelAvailability = () => {
   const { uiSettings } = useUISettings();
   const currentAccountId = useMapGetter('getCurrentAccountId');

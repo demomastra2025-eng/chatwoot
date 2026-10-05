@@ -24,9 +24,6 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
       'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue'
     )
 );
-const EntityTouchesCard = defineAsyncComponent(
-  () => import('dashboard/components-next/Outbound/EntityTouchesCard.vue')
-);
 
 const { uiSettings, updateUISettings } = useUISettings();
 const { activePanel } = useConversationSidepanelAvailability();
@@ -41,18 +38,10 @@ const clickOutsideOptions = {
   ],
 };
 
-// Contact, deals and appointments come from the shared availability rules; the
-// touch panel keeps its existing behaviour.
-const activeTab = computed(() => {
-  if (activePanel.value) return activePanel.value;
-  if (uiSettings.value?.is_touch_sidebar_open) return 'touch';
-  return null;
-});
+// Contact, deals and appointments come from the shared availability rules.
+const activeTab = computed(() => activePanel.value || null);
 const sidebarSizeClass =
   'max-w-sm md:w-[320px] md:min-w-[320px] 2xl:min-w-[360px] 2xl:w-[360px]';
-const isCommunicationThread = computed(() =>
-  Boolean(props.currentChat?.is_communication_thread)
-);
 const activeReplyChannel = computed(
   () => props.currentChat?.active_reply_channel || {}
 );
@@ -69,10 +58,6 @@ const activeInboxId = computed(
     props.currentChat?.active_reply_channel_inbox_id ||
     props.currentChat?.inbox_id
 );
-const remindableType = computed(() =>
-  isCommunicationThread.value ? 'CommunicationThread' : 'Conversation'
-);
-const remindableId = computed(() => props.currentChat?.id);
 
 const isSmallScreen = computed(
   () => windowWidth.value < wootConstants.SMALL_SCREEN_BREAKPOINT
@@ -83,14 +68,12 @@ const closeSidebar = () => {
     isSmallScreen.value &&
     (uiSettings.value?.is_contact_sidebar_open ||
       uiSettings.value?.is_crm_deal_panel_open ||
-      uiSettings.value?.is_scheduling_appointments_panel_open ||
-      uiSettings.value?.is_touch_sidebar_open)
+      uiSettings.value?.is_scheduling_appointments_panel_open)
   ) {
     updateUISettings({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
-      is_touch_sidebar_open: false,
     });
   }
 };
@@ -100,7 +83,6 @@ const closeDealsSidebar = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
   });
 };
 
@@ -109,7 +91,6 @@ const closeAppointmentsSidebar = () => {
     is_contact_sidebar_open: false,
     is_crm_deal_panel_open: false,
     is_scheduling_appointments_panel_open: false,
-    is_touch_sidebar_open: false,
   });
 };
 </script>
@@ -145,13 +126,6 @@ const closeAppointmentsSidebar = () => {
         <SchedulingConversationAppointmentsSidebar
           :current-chat="currentChat"
           @close="closeAppointmentsSidebar"
-        />
-      </div>
-      <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
-        <EntityTouchesCard
-          :conversation-id="activeConversationId"
-          :remindable-type="remindableType"
-          :remindable-id="remindableId"
         />
       </div>
     </div>
