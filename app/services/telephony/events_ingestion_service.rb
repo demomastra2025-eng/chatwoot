@@ -372,6 +372,10 @@ class Telephony::EventsIngestionService
 
     begin
       call_session.reload
+      # A leg closed because another operator took the call changes nothing in
+      # the chat: the call follows the leg that was answered.
+      return if answered_by_other_operator_leg?(call_session)
+
       skipped = false
       # All the writes of an inbound native SIP call run under its intake lock,
       # so the sibling legs of one physical call never meet on the same
@@ -581,6 +585,8 @@ class Telephony::EventsIngestionService
       call_session.reload
       next :nonterminal unless call_session.terminal?
       next unless native_sip_call_session?(call_session)
+      # Closed for another operator: no conversation and no message of its own.
+      next if answered_by_other_operator_leg?(call_session)
       next if duplicate_broadcast_branch?(call_session)
       next unless stale_terminal_voice_message?(call_session)
 
@@ -1670,12 +1676,20 @@ class Telephony::EventsIngestionService
     attrs = (conversation.additional_attributes || {}).deep_stringify_keys
     current_call_ref = native_sip_conversation_call_ref(attrs)
     return false if current_call_ref.blank? || current_call_ref == call_session.external_call_ref
+    return false if sibling_leg_ref?(call_session, current_call_ref)
 
     current_call_started_at = native_sip_conversation_call_started_at(conversation, current_call_ref, attrs)
     call_session_started_at = call_session.started_at || call_session.created_at
     return false if current_call_started_at.blank? || call_session_started_at.blank?
 
     current_call_started_at > call_session_started_at
+  end
+
+  # The legs of one Beeline call are not different calls: the newest leg does
+  # not take the conversation away from the leg that was answered.
+  def sibling_leg_ref?(call_session, call_ref)
+    Telephony::SiblingLegGrouping.applies?(provider: call_session.provider, direction: call_session.direction) &&
+      call_session.logical_group_sessions.any? { |leg| leg.external_call_ref == call_ref }
   end
 
   def suppress_native_sip_conversation_update?(call_session)
@@ -1858,6 +1872,9 @@ class Telephony::EventsIngestionService
   end
 
   def native_sip_answer_evidence?(session)
+    # A leg closed for another operator carries a copy of the winner's claim.
+    return false if answered_by_other_operator_leg?(session)
+
     session.answered_at.present? ||
       session.metadata.to_h['operator_claim'].present? ||
       %w[in_progress completed].include?(session.canonical_status)
