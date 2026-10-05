@@ -15,14 +15,13 @@ import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
-  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
   WEB_SCRAPE_URL_TOOL_ID,
   WEB_SEARCH_TOOL_ID,
-  buildDefaultToolAccessForUsageMode,
+  buildDefaultAgentToolAccess,
   isToolEnabled,
-  resolveToolAccessForUsageMode,
+  resolveAgentToolAccess,
   setToolEnabled,
 } from '../toolAccessDefaults';
 
@@ -85,12 +84,9 @@ const emit = defineEmits(['submit', 'handoffCapabilityChange']);
 
 const { t } = useI18n();
 
-// The kind of the assistant is read from the record and never edited here: new
-// assistants are always AI agents, the few internal ones keep their own scope.
 const initialState = {
   name: '',
   description: '',
-  usageMode: 'external_agent',
   model: '',
   temperature: 1,
   autoReplyOnLastIncoming: false,
@@ -100,13 +96,12 @@ const initialState = {
     conversationFaqs: false,
     memories: false,
     citations: false,
-    web: false,
     documentReading: false,
     imageUnderstanding: false,
     useAudioTranscriptions: true,
   },
   contextAccess: {},
-  toolAccess: buildDefaultToolAccessForUsageMode(),
+  toolAccess: buildDefaultAgentToolAccess(),
   avatarFile: null,
   avatarUrl: '',
   removeAvatar: false,
@@ -140,13 +135,6 @@ const assistantModelOptions = computed(() => {
 
   return options;
 });
-const isInternalAssistant = computed(
-  () => state.usageMode === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
-const activeToolScope = computed(() =>
-  isInternalAssistant.value ? ASSISTANT_TOOL_SCOPE : AGENT_TOOL_SCOPE
-);
 // Web search, page and document reading need the web provider that the platform administrator connects.
 // An option that is already on stays switchable, so that it can still be turned off.
 const isWebProviderConfigured = computed(
@@ -219,8 +207,7 @@ const handoffToHumanEnabled = computed({
       state.toolAccess,
       AGENT_TOOL_SCOPE,
       HANDOFF_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
     emit('handoffCapabilityChange', enabled);
   },
@@ -234,8 +221,7 @@ const faqLookupEnabled = computed({
       state.toolAccess,
       AGENT_TOOL_SCOPE,
       FAQ_LOOKUP_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
   },
 });
@@ -248,8 +234,7 @@ const webSearchEnabled = computed({
       state.toolAccess,
       AGENT_TOOL_SCOPE,
       WEB_SEARCH_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
   },
 });
@@ -262,8 +247,7 @@ const webPageReadingEnabled = computed({
       state.toolAccess,
       AGENT_TOOL_SCOPE,
       WEB_SCRAPE_URL_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
   },
 });
@@ -287,29 +271,25 @@ const normalizeNonNegativeInteger = value => {
 };
 
 const notesEnabled = computed({
-  get: () => {
-    const scopeName = activeToolScope.value;
-    return (
-      isToolEnabled(state.toolAccess, scopeName, ADD_CONTACT_NOTE_TOOL_ID) &&
-      isToolEnabled(state.toolAccess, scopeName, ADD_PRIVATE_NOTE_TOOL_ID)
-    );
-  },
+  get: () =>
+    isToolEnabled(
+      state.toolAccess,
+      AGENT_TOOL_SCOPE,
+      ADD_CONTACT_NOTE_TOOL_ID
+    ) &&
+    isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, ADD_PRIVATE_NOTE_TOOL_ID),
   set: enabled => {
-    const scopeName = activeToolScope.value;
-
     state.toolAccess = setToolEnabled(
       state.toolAccess,
-      scopeName,
+      AGENT_TOOL_SCOPE,
       ADD_CONTACT_NOTE_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
     state.toolAccess = setToolEnabled(
       state.toolAccess,
-      scopeName,
+      AGENT_TOOL_SCOPE,
       ADD_PRIVATE_NOTE_TOOL_ID,
-      enabled,
-      state.usageMode
+      enabled
     );
   },
 });
@@ -323,7 +303,6 @@ const updateStateFromAssistant = assistant => {
   state.name = assistant.name;
   state.model = config.model || '';
   state.description = resolveInstructionText(assistant);
-  state.usageMode = assistant.usage_mode || 'external_agent';
   state.temperature = temperatureOrDefault(config.temperature);
   state.autoReplyOnLastIncoming = Boolean(config.auto_reply_on_last_incoming);
   state.messageCollapseWindowSeconds = Number(
@@ -334,7 +313,6 @@ const updateStateFromAssistant = assistant => {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
-    web: config.feature_web || false,
     documentReading: Object.prototype.hasOwnProperty.call(
       config,
       'feature_document_reading'
@@ -350,27 +328,21 @@ const updateStateFromAssistant = assistant => {
     useAudioTranscriptions: config.use_audio_transcriptions !== false,
   };
   state.contextAccess = {};
-  state.toolAccess = resolveToolAccessForUsageMode(
-    config.tool_access || {},
-    state.usageMode
-  );
+  state.toolAccess = resolveAgentToolAccess(config.tool_access || {});
   const hasAgentToolScope = Boolean(config.tool_access?.[AGENT_TOOL_SCOPE]);
   if (
-    state.usageMode !== 'internal_assistant' &&
     !hasAgentToolScope &&
     Object.prototype.hasOwnProperty.call(config, 'feature_web')
   ) {
     webSearchEnabled.value = config.feature_web === true;
     webPageReadingEnabled.value = config.feature_web === true;
-  } else if (state.usageMode !== 'internal_assistant' && !hasAgentToolScope) {
+  } else if (!hasAgentToolScope) {
     webSearchEnabled.value = true;
     webPageReadingEnabled.value = true;
   }
-  if (isExternalAgent.value) {
-    // The server lets an explicit handoff_enabled=false win over the tool list: show what really happens.
-    if (config.handoff_enabled === false) handoffToHumanEnabled.value = false;
-    emit('handoffCapabilityChange', handoffToHumanEnabled.value);
-  }
+  // The server lets an explicit handoff_enabled=false win over the tool list: show what really happens.
+  if (config.handoff_enabled === false) handoffToHumanEnabled.value = false;
+  emit('handoffCapabilityChange', handoffToHumanEnabled.value);
   state.avatarFile = null;
   state.avatarUrl = assistant.avatar_url || '';
   state.removeAvatar = false;
@@ -405,19 +377,14 @@ const buildPayload = async () => {
   if (props.showFeatureFlags && props.showCoreSettings) {
     assistantPayload.config = {
       temperature: temperatureOrDefault(state.temperature),
+      model: state.model || null,
+      message_collapse_window_seconds: normalizeNonNegativeInteger(
+        state.messageCollapseWindowSeconds
+      ),
+      history_message_limit: normalizeNonNegativeInteger(
+        state.historyMessageLimit
+      ),
     };
-
-    if (isExternalAgent.value) {
-      Object.assign(assistantPayload.config, {
-        model: state.model || null,
-        message_collapse_window_seconds: normalizeNonNegativeInteger(
-          state.messageCollapseWindowSeconds
-        ),
-        history_message_limit: normalizeNonNegativeInteger(
-          state.historyMessageLimit
-        ),
-      });
-    }
   }
 
   if (props.showFeatureFlags && props.showCapabilities) {
@@ -426,20 +393,13 @@ const buildPayload = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
-      feature_web: isExternalAgent.value
-        ? webSearchEnabled.value && webPageReadingEnabled.value
-        : state.features.web,
+      feature_web: webSearchEnabled.value && webPageReadingEnabled.value,
       tool_access: state.toolAccess,
+      auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
+      feature_document_reading: state.features.documentReading,
+      feature_image_understanding: state.features.imageUnderstanding,
+      handoff_enabled: handoffToHumanEnabled.value,
     };
-
-    if (isExternalAgent.value) {
-      Object.assign(assistantPayload.config, {
-        auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
-        feature_document_reading: state.features.documentReading,
-        feature_image_understanding: state.features.imageUnderstanding,
-        handoff_enabled: handoffToHumanEnabled.value,
-      });
-    }
 
     if (props.audioTranscriptionsAvailable) {
       assistantPayload.config.use_audio_transcriptions =
@@ -513,20 +473,13 @@ defineExpose({
           :message="formErrors.name"
           :message-type="formErrors.name ? 'error' : 'info'"
         />
-        <p
-          v-if="isInternalAssistant"
-          class="m-0 text-xs text-n-slate-11"
-          data-testid="internal-assistant-label"
-        >
-          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
-        </p>
       </div>
 
       <section
         v-if="showFeatureFlags && showCoreSettings"
         class="flex flex-col gap-5"
       >
-        <div v-if="isExternalAgent" class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2">
           <label class="text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.LABEL') }}
           </label>
@@ -566,59 +519,57 @@ defineExpose({
           </div>
         </div>
 
-        <template v-if="isExternalAgent">
-          <div class="flex items-center justify-between gap-6">
-            <div class="min-w-0">
-              <label class="text-sm font-medium text-n-slate-12">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL'
-                  )
-                }}
-              </label>
-              <p class="mt-1 text-xs text-n-slate-11">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
-                  )
-                }}
-              </p>
-            </div>
-            <Input
-              v-model="state.messageCollapseWindowSeconds"
-              type="number"
-              min="0"
-              :placeholder="
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
                 t(
-                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL'
                 )
-              "
-              class="w-36 shrink-0"
-            />
+              }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
+                )
+              }}
+            </p>
           </div>
+          <Input
+            v-model="state.messageCollapseWindowSeconds"
+            type="number"
+            min="0"
+            :placeholder="
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+              )
+            "
+            class="w-36 shrink-0"
+          />
+        </div>
 
-          <div class="flex items-center justify-between gap-6">
-            <div class="min-w-0">
-              <label class="text-sm font-medium text-n-slate-12">
-                {{ t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL') }}
-              </label>
-              <p class="mt-1 text-xs text-n-slate-11">
-                {{
-                  t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
-                }}
-              </p>
-            </div>
-            <Input
-              v-model="state.historyMessageLimit"
-              type="number"
-              min="0"
-              :placeholder="
-                t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
-              "
-              class="w-36 shrink-0"
-            />
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL') }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{
+                t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
+              }}
+            </p>
           </div>
-        </template>
+          <Input
+            v-model="state.historyMessageLimit"
+            type="number"
+            min="0"
+            :placeholder="
+              t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
+            "
+            class="w-36 shrink-0"
+          />
+        </div>
       </section>
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
@@ -665,17 +616,14 @@ defineExpose({
           :captain-context-assistant-id="assistant.id"
           :captain-context-access="state.contextAccess"
           :captain-tool-access="state.toolAccess"
-          :captain-tool-scope="activeToolScope"
+          :captain-tool-scope="AGENT_TOOL_SCOPE"
         />
       </div>
     </template>
 
     <section v-if="showFeatureFlags && showCapabilities">
       <div class="flex flex-col divide-y divide-n-weak">
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3 py-3 first:pt-0"
-        >
+        <label class="flex items-center justify-between gap-3 py-3 first:pt-0">
           <span class="text-sm text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
             <span class="block text-xs text-n-slate-11">
@@ -688,19 +636,13 @@ defineExpose({
           </span>
           <Switch v-model="state.autoReplyOnLastIncoming" />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3 py-3"
-        >
+        <label class="flex items-center justify-between gap-3 py-3">
           <span class="text-sm text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
           </span>
           <Switch v-model="state.features.conversationFaqs" />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3 py-3"
-        >
+        <label class="flex items-center justify-between gap-3 py-3">
           <span class="text-sm text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
           </span>
@@ -718,96 +660,92 @@ defineExpose({
           </span>
           <Switch v-model="state.features.citations" />
         </label>
-        <template v-if="isExternalAgent">
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
-              <span class="block text-xs text-n-slate-11">
-                {{
-                  t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH_DESCRIPTION')
-                }}
-              </span>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
+            <span class="block text-xs text-n-slate-11">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH_DESCRIPTION') }}
             </span>
-            <Switch
-              v-model="webSearchEnabled"
-              :disabled="!isWebProviderConfigured && !webSearchEnabled"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING') }}
-              <span class="block text-xs text-n-slate-11">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING_DESCRIPTION'
-                  )
-                }}
-              </span>
+          </span>
+          <Switch
+            v-model="webSearchEnabled"
+            :disabled="!isWebProviderConfigured && !webSearchEnabled"
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING_DESCRIPTION'
+                )
+              }}
             </span>
-            <Switch
-              v-model="webPageReadingEnabled"
-              :disabled="!isWebProviderConfigured && !webPageReadingEnabled"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
-              <span class="block text-xs text-n-slate-11">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING_DESCRIPTION'
-                  )
-                }}
-              </span>
+          </span>
+          <Switch
+            v-model="webPageReadingEnabled"
+            :disabled="!isWebProviderConfigured && !webPageReadingEnabled"
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING_DESCRIPTION'
+                )
+              }}
             </span>
-            <Switch
-              v-model="state.features.documentReading"
-              :disabled="
-                !isWebProviderConfigured && !state.features.documentReading
-              "
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING') }}
-              <span class="block text-xs text-n-slate-11">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING_DESCRIPTION'
-                  )
-                }}
-              </span>
+          </span>
+          <Switch
+            v-model="state.features.documentReading"
+            :disabled="
+              !isWebProviderConfigured && !state.features.documentReading
+            "
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING_DESCRIPTION'
+                )
+              }}
             </span>
-            <Switch v-model="state.features.imageUnderstanding" />
-          </label>
-          <p
-            v-if="!isWebProviderConfigured"
-            class="m-0 py-3 text-xs text-n-slate-11"
-          >
-            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
-          </p>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ audioTranscriptionsLabel }}
-            </span>
-            <Switch
-              v-model="state.features.useAudioTranscriptions"
-              :disabled="!audioTranscriptionsAvailable"
-            />
-          </label>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
-            </span>
-            <Switch v-model="faqLookupEnabled" />
-          </label>
-          <label class="flex items-center justify-between gap-3 py-3">
-            <span class="text-sm text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
-            </span>
-            <Switch v-model="handoffToHumanEnabled" />
-          </label>
-        </template>
+          </span>
+          <Switch v-model="state.features.imageUnderstanding" />
+        </label>
+        <p
+          v-if="!isWebProviderConfigured"
+          class="m-0 py-3 text-xs text-n-slate-11"
+        >
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
+        </p>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ audioTranscriptionsLabel }}
+          </span>
+          <Switch
+            v-model="state.features.useAudioTranscriptions"
+            :disabled="!audioTranscriptionsAvailable"
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
+          </span>
+          <Switch v-model="faqLookupEnabled" />
+        </label>
+        <label class="flex items-center justify-between gap-3 py-3">
+          <span class="text-sm text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
+          </span>
+          <Switch v-model="handoffToHumanEnabled" />
+        </label>
       </div>
     </section>
 

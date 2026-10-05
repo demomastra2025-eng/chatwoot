@@ -6,7 +6,6 @@ import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
-  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
   WEB_SCRAPE_URL_TOOL_ID,
@@ -233,85 +232,29 @@ describe('AssistantBasicSettingsForm', () => {
     ].forEach(key => {
       expect(text).toContain(`CAPTAIN.ASSISTANTS.FORM.${key}`);
     });
-    expect(
-      wrapper.find('[data-testid="internal-assistant-label"]').exists()
-    ).toBe(false);
-  });
-
-  it('shows an internal assistant with only the controls that apply to it and a quiet kind label', () => {
-    const wrapper = buildWrapper({
-      assistant: { usage_mode: 'internal_assistant', config: {} },
-      showSubmitButton: false,
-    });
-    const text = wrapper.text();
-
-    expect(wrapper.get('[data-testid="internal-assistant-label"]').text()).toBe(
-      'CAPTAIN.ASSISTANTS.INTERNAL_LABEL'
-    );
-    expect(text).toContain('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES');
-    expect(text).toContain('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS');
-    expect(text).not.toContain('FEATURES.WEB_SEARCH');
-    expect(text).not.toContain('FEATURES.ALLOW_HUMAN_HANDOFF');
-    // no model picker for an assistant that does not answer customers
-    expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(0);
   });
 
   it('renders no selector of the assistant kind', () => {
-    ['external_agent', 'internal_assistant'].forEach(usageMode => {
-      const wrapper = buildWrapper({
-        assistant: { usage_mode: usageMode, config: {} },
-      });
-
-      expect(wrapper.html()).not.toContain('USAGE_MODE');
-      expect(wrapper.findAllComponents({ name: 'Select' }).length).toBeLessThan(
-        2
-      );
+    const wrapper = buildWrapper({
+      assistant: { usage_mode: 'external_agent', config: {} },
     });
+
+    expect(wrapper.html()).not.toContain('USAGE_MODE');
+    expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(1);
   });
 
   it('never sends the kind of the assistant when saving', async () => {
-    const payloads = await Promise.all(
-      ['external_agent', 'internal_assistant'].map(usageMode =>
-        buildWrapper({
-          assistant: {
-            id: 58,
-            name: 'Мөлдір',
-            description: 'Поприветствуй клиента.',
-            usage_mode: usageMode,
-            config: {},
-          },
-        }).vm.buildPayload()
-      )
-    );
-
-    payloads.forEach(payload => {
-      expect(payload.assistant).not.toHaveProperty('usage_mode');
-    });
-  });
-
-  it('saves an internal assistant without the settings of an AI agent', async () => {
-    const wrapper = buildWrapper({
+    const payload = await buildWrapper({
       assistant: {
         id: 58,
         name: 'Мөлдір',
-        description: 'Помогай сотрудникам.',
-        usage_mode: 'internal_assistant',
-        config: { temperature: 0.4 },
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {},
       },
-    });
+    }).vm.buildPayload();
 
-    const { config } = (await wrapper.vm.buildPayload()).assistant;
-
-    expect(config.temperature).toBe(0.4);
-    [
-      'model',
-      'handoff_enabled',
-      'auto_reply_on_last_incoming',
-      'feature_document_reading',
-      'feature_image_understanding',
-      'message_collapse_window_seconds',
-      'history_message_limit',
-    ].forEach(key => expect(config).not.toHaveProperty(key));
+    expect(payload.assistant).not.toHaveProperty('usage_mode');
   });
 
   it('keeps the model and the temperature apart from the capabilities', async () => {
@@ -541,37 +484,6 @@ describe('AssistantBasicSettingsForm', () => {
     expect(payload.assistant.config).not.toHaveProperty(
       'use_audio_transcriptions'
     );
-  });
-
-  it('preserves internal assistant tool access from the instruction/tool-reference flow', async () => {
-    const wrapper = buildWrapper({
-      assistant: {
-        id: 58,
-        name: 'Мөлдір',
-        description: 'Помогай сотрудникам.',
-        usage_mode: 'internal_assistant',
-        config: {
-          feature_faq: false,
-          feature_memory: false,
-          feature_citation: true,
-          tool_access: {
-            [ASSISTANT_TOOL_SCOPE]: {
-              enabled: true,
-              tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
-            },
-          },
-        },
-      },
-    });
-
-    const payload = await wrapper.vm.buildPayload();
-
-    expect(payload.assistant.config.tool_access).toEqual({
-      [ASSISTANT_TOOL_SCOPE]: {
-        enabled: true,
-        tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
-      },
-    });
   });
 
   it('builds a prompt payload without unrelated config sections like rules or tool access', async () => {

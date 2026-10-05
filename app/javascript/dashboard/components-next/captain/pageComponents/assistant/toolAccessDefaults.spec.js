@@ -6,7 +6,7 @@ import {
   AGENT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
-  buildDefaultToolAccessForUsageMode,
+  buildDefaultAgentToolAccess,
   isToolEnabled,
   normalizeCapabilityToolAccess,
   setToolEnabled,
@@ -14,20 +14,17 @@ import {
 
 describe('toolAccessDefaults', () => {
   it('preserves multiple enabled capability tools during normalization', () => {
-    const normalized = normalizeCapabilityToolAccess(
-      {
-        agent: {
-          enabled: true,
-          tool_ids: [
-            FAQ_LOOKUP_TOOL_ID,
-            HANDOFF_TOOL_ID,
-            ADD_CONTACT_NOTE_TOOL_ID,
-            ADD_PRIVATE_NOTE_TOOL_ID,
-          ],
-        },
+    const normalized = normalizeCapabilityToolAccess({
+      agent: {
+        enabled: true,
+        tool_ids: [
+          FAQ_LOOKUP_TOOL_ID,
+          HANDOFF_TOOL_ID,
+          ADD_CONTACT_NOTE_TOOL_ID,
+          ADD_PRIVATE_NOTE_TOOL_ID,
+        ],
       },
-      'external_agent'
-    );
+    });
 
     expect(normalized).toEqual({
       agent: {
@@ -43,21 +40,19 @@ describe('toolAccessDefaults', () => {
   });
 
   it('keeps existing tools when enabling notes capability step by step', () => {
-    let toolAccess = buildDefaultToolAccessForUsageMode('external_agent');
+    let toolAccess = buildDefaultAgentToolAccess();
 
     toolAccess = setToolEnabled(
       toolAccess,
       AGENT_TOOL_SCOPE,
       ADD_CONTACT_NOTE_TOOL_ID,
-      true,
-      'external_agent'
+      true
     );
     toolAccess = setToolEnabled(
       toolAccess,
       AGENT_TOOL_SCOPE,
       ADD_PRIVATE_NOTE_TOOL_ID,
-      true,
-      'external_agent'
+      true
     );
 
     expect(toolAccess).toEqual({
@@ -74,21 +69,19 @@ describe('toolAccessDefaults', () => {
   });
 
   it('keeps an explicit empty scope when disabling all default tools', () => {
-    let toolAccess = buildDefaultToolAccessForUsageMode('external_agent');
+    let toolAccess = buildDefaultAgentToolAccess();
 
     toolAccess = setToolEnabled(
       toolAccess,
       AGENT_TOOL_SCOPE,
       FAQ_LOOKUP_TOOL_ID,
-      false,
-      'external_agent'
+      false
     );
     toolAccess = setToolEnabled(
       toolAccess,
       AGENT_TOOL_SCOPE,
       HANDOFF_TOOL_ID,
-      false,
-      'external_agent'
+      false
     );
 
     expect(toolAccess).toEqual({
@@ -113,8 +106,7 @@ describe('toolAccessDefaults', () => {
       },
       AGENT_TOOL_SCOPE,
       HANDOFF_TOOL_ID,
-      true,
-      'external_agent'
+      true
     );
 
     expect(toolAccess).toEqual({

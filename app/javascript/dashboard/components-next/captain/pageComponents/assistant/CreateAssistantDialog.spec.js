@@ -64,25 +64,18 @@ describe('CreateAssistantDialog', () => {
 
   const mountCreate = () =>
     shallowMount(CreateAssistantDialog, {
-      props: {
-        type: 'create',
-      },
       global: {
         stubs: {
           Dialog: dialogStub,
           Input: inputStub,
-          AssistantForm: true,
         },
       },
     });
 
-  it('renders the compact create flow instead of the full assistant form', () => {
+  it('renders the compact create flow with a name field only', () => {
     const wrapper = mountCreate();
 
     expect(wrapper.findComponent({ name: 'Input' }).exists()).toBe(true);
-    expect(wrapper.findComponent({ name: 'AssistantForm' }).exists()).toBe(
-      false
-    );
   });
 
   it('asks only for the name: there is no choice between an agent and an assistant', () => {
@@ -142,36 +135,5 @@ describe('CreateAssistantDialog', () => {
     await flushPromises();
 
     expect(dispatchMock).not.toHaveBeenCalled();
-  });
-
-  it('saves edits of an existing assistant without touching its kind', async () => {
-    dispatchMock.mockResolvedValue({ id: 8, name: 'Team helper' });
-
-    const wrapper = shallowMount(CreateAssistantDialog, {
-      props: {
-        type: 'edit',
-        selectedAssistant: { id: 8, usage_mode: 'internal_assistant' },
-      },
-      global: {
-        stubs: {
-          Dialog: dialogStub,
-          Input: inputStub,
-          AssistantForm: true,
-        },
-      },
-    });
-
-    wrapper.findComponent({ name: 'AssistantForm' }).vm.$emit('submit', {
-      assistant: { name: 'Team helper', config: {} },
-      avatar: null,
-      removeAvatar: false,
-    });
-    await flushPromises();
-
-    expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/update', {
-      id: 8,
-      name: 'Team helper',
-      config: {},
-    });
   });
 });
