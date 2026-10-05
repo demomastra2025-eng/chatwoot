@@ -585,27 +585,6 @@ const effectivenessSummaryCards = computed(() => [
     label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.WON'),
     value: formatNumber(managerTotals.value.wonCount),
   },
-  {
-    key: 'payments',
-    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.CARDS.PAYMENTS'),
-    value: formatMoney(managerTotals.value.paymentsAmountMinor),
-  },
-]);
-
-const effectivenessMoneyColumns = computed(() => [
-  {
-    key: 'cashAmountMinor',
-    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.CASH'),
-  },
-  {
-    key: 'nonCashAmountMinor',
-    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.NON_CASH'),
-  },
-
-  {
-    key: 'tradeInAmountMinor',
-    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.TRADE_IN'),
-  },
 ]);
 
 const effectivenessNumberColumns = computed(() => [
@@ -693,8 +672,6 @@ const effectivenessExportHeader = computed(() => [
   ...effectivenessPercentColumns.value.map(column => column.label),
   t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.DEAL_AMOUNT'),
   t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.WON_AMOUNT'),
-  t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.PAYMENTS'),
-  ...effectivenessMoneyColumns.value.map(column => column.label),
 ]);
 
 const effectivenessExportRowFor = (row, label) => [
@@ -705,8 +682,6 @@ const effectivenessExportRowFor = (row, label) => [
   ),
   csvMoney(row.dealAmountMinor),
   csvMoney(row.wonAmountMinor),
-  csvMoney(row.paymentsAmountMinor),
-  ...effectivenessMoneyColumns.value.map(column => csvMoney(row[column.key])),
 ];
 
 const effectivenessExportRows = computed(() => [
@@ -1216,20 +1191,6 @@ const onFilterChange = payload => {
                           )
                         }}
                       </th>
-                      <th class="px-3 py-3 text-right font-medium">
-                        {{
-                          $t(
-                            'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.PAYMENTS'
-                          )
-                        }}
-                      </th>
-                      <th
-                        v-for="column in effectivenessMoneyColumns"
-                        :key="column.key"
-                        class="px-3 py-3 text-right font-medium"
-                      >
-                        {{ column.label }}
-                      </th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-n-weak">
@@ -1278,16 +1239,6 @@ const onFilterChange = payload => {
                       <td class="px-3 py-3 text-right tabular-nums">
                         {{ formatMoney(row.wonAmountMinor) }}
                       </td>
-                      <td class="px-3 py-3 text-right tabular-nums">
-                        {{ formatMoney(row.paymentsAmountMinor) }}
-                      </td>
-                      <td
-                        v-for="column in effectivenessMoneyColumns"
-                        :key="column.key"
-                        class="px-3 py-3 text-right tabular-nums"
-                      >
-                        {{ formatMoney(row[column.key]) }}
-                      </td>
                     </tr>
                   </tbody>
                   <tfoot
@@ -1316,16 +1267,6 @@ const onFilterChange = payload => {
                       </td>
                       <td class="px-3 py-3 text-right tabular-nums">
                         {{ formatMoney(managerTotals.wonAmountMinor) }}
-                      </td>
-                      <td class="px-3 py-3 text-right tabular-nums">
-                        {{ formatMoney(managerTotals.paymentsAmountMinor) }}
-                      </td>
-                      <td
-                        v-for="column in effectivenessMoneyColumns"
-                        :key="column.key"
-                        class="px-3 py-3 text-right tabular-nums"
-                      >
-                        {{ formatMoney(managerTotals[column.key]) }}
                       </td>
                     </tr>
                   </tfoot>
@@ -1362,13 +1303,6 @@ const onFilterChange = payload => {
                     {{
                       $t(
                         'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.MEETINGS'
-                      )
-                    }}
-                  </p>
-                  <p>
-                    {{
-                      $t(
-                        'CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.NOTES.PAYMENTS'
                       )
                     }}
                   </p>
