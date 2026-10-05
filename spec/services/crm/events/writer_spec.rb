@@ -85,6 +85,36 @@ RSpec.describe Crm::Events::Writer do
     expect(account.crm_events.where(command_key: 'request-123').count).to eq(1)
   end
 
+  it 'recovers a database command-key collision without aborting the outer transaction' do
+    attributes = {
+      account: account,
+      eventable: deal,
+      actor: actor,
+      event_type: 'deal_updated',
+      command_key: 'request-race'
+    }
+    existing_event = described_class.record!(**attributes)
+    association = account.crm_events
+    identity = { eventable: deal, event_type: 'deal_updated', command_key: 'request-race' }
+    scope = association.where(identity)
+    first_lookup = true
+    allow(account).to receive(:crm_events).and_return(association)
+    allow(association).to receive(:where).with(identity).and_return(scope)
+    allow(scope).to receive(:first).and_wrap_original do |original, *args|
+      if first_lookup
+        first_lookup = false
+        nil
+      else
+        original.call(*args)
+      end
+    end
+
+    ActiveRecord::Base.transaction do
+      expect(described_class.record!(**attributes)).to eq(existing_event)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+  end
+
   it 'persists automation provenance for asynchronous publication' do
     rule = create(:automation_rule, account: account)
     Current.executed_by = rule

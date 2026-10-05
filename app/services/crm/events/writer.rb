@@ -93,7 +93,7 @@ class Crm::Events::Writer
       command_key: attributes[:command_key]
     }
     scope = account.crm_events.where(identity)
-    scope.first || account.crm_events.create!(attributes)
+    scope.first || account.crm_events.transaction(requires_new: true) { account.crm_events.create!(attributes) }
   rescue ActiveRecord::RecordNotUnique
     scope.first!
   end

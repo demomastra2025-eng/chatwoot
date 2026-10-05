@@ -52,6 +52,34 @@ describe ConversationBuilder do
       expect(deal.idempotency_key).to eq("auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{conversation.id}")
     end
 
+    it 'recovers a database idempotency collision without aborting the caller transaction' do
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: api_inbox,
+        contact: contact,
+        contact_inbox: contact_api_inbox
+      )
+      account.enable_features!('crm_deals')
+      pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
+      stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      idempotency_key = "auto_channel_contact:pipeline:#{pipeline.id}:conversation:#{conversation.id}"
+      create(:crm_deal, account: account, pipeline: pipeline, stage: stage, idempotency_key: idempotency_key)
+      allow_any_instance_of(Crm::Deals::UpsertService).to receive(:ensure_unique_reference!)
+      allow_any_instance_of(Crm::Deal).to receive(:valid?).and_return(true)
+
+      ActiveRecord::Base.transaction do
+        expect(
+          Crm::Deals::AutoCreateFromChannelContactService.new(
+            contact_inbox: contact_api_inbox,
+            conversation: conversation
+          ).perform
+        ).to be_empty
+        expect(account.crm_deals.count).to eq(1)
+        expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+      end
+    end
+
     it 'auto-creates a CRM deal for an existing contact that starts a new channel conversation' do
       account.enable_features!('crm_deals')
       pipeline = create(

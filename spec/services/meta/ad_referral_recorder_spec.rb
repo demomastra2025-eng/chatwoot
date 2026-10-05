@@ -57,4 +57,33 @@ RSpec.describe Meta::AdReferralRecorder do
     expect(referral).to be_persisted
     expect(MetaAdReferral.where(provider: 'whatsapp', inbox: message.inbox, provider_message_id: 'wamid.meta-referral-1').count).to eq(1)
   end
+
+  it 'keeps the outer transaction usable when the optional thread refresh loses a unique-index race' do
+    account.enable_features!('communication_threads')
+    conversation.refresh_communication_thread!
+    allow_any_instance_of(CommunicationThreadConversation).to receive(:valid?).and_return(true)
+    allow(conversation).to receive(:communication_thread).and_return(nil)
+
+    link_lookup_calls = 0
+    allow(CommunicationThreadConversation).to receive(:find_by).and_wrap_original do |original, *args, **kwargs|
+      attributes = kwargs.presence || args.first
+      if attributes&.key?(:conversation_id) && link_lookup_calls.zero?
+        link_lookup_calls += 1
+        nil
+      else
+        original.call(*args, **kwargs)
+      end
+    end
+
+    referral = nil
+    ActiveRecord::Base.transaction do
+      referral = described_class.new(message: message, payload: payload).perform
+
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+
+    expect(link_lookup_calls).to eq(1)
+    expect(referral).to be_persisted
+    expect(referral.communication_thread_id).to be_nil
+  end
 end
