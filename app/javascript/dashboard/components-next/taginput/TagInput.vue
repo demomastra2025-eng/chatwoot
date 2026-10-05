@@ -78,11 +78,12 @@ const showInput = computed(() =>
     : isFocused.value || !tags.value.length
 );
 
-const showDropdownMenu = computed(() =>
-  props.mode === MODE.SINGLE && tags.value.length >= 1
-    ? false
-    : props.showDropdown && isFocused.value
-);
+const showDropdownMenu = computed(() => {
+  if (props.disabled) return false;
+  if (props.mode === MODE.SINGLE && tags.value.length >= 1) return false;
+
+  return props.showDropdown && isFocused.value;
+});
 
 const filteredMenuItems = computed(() => {
   const items = buildTagMenuItems({
@@ -117,6 +118,7 @@ const updateValueAndFocus = value => {
 };
 
 const addTag = async () => {
+  if (props.disabled) return;
   const trimmedTag = newTag.value?.trim();
   if (!trimmedTag) return;
 
@@ -139,6 +141,7 @@ const addTag = async () => {
 };
 
 const removeTag = index => {
+  if (props.disabled) return;
   tags.value.splice(index, 1);
   modelValue.value = tags.value;
   emit('remove', index);
@@ -150,6 +153,7 @@ const handleDropdownAction = async ({
   label,
   ...rest
 }) => {
+  if (props.disabled) return;
   if (props.mode === MODE.SINGLE && tags.value.length >= 1) return;
   if (!props.showDropdown) return;
 
@@ -169,6 +173,7 @@ const handleDropdownAction = async ({
 };
 
 const handleFocus = () => {
+  if (props.disabled) return;
   emit('focus');
   tagInputRef.value?.focus();
   isFocused.value = true;
@@ -210,7 +215,7 @@ const handleBlur = e => emit('blur', e);
   <div
     v-on-click-outside="() => handleClickOutside()"
     class="flex flex-wrap w-full gap-2 border border-transparent focus:outline-none"
-    tabindex="0"
+    :tabindex="disabled ? -1 : 0"
     @focus="handleFocus"
     @click="handleFocus"
   >
@@ -227,6 +232,7 @@ const handleBlur = e => emit('blur', e);
         {{ tag }}
       </span>
       <span
+        v-if="!disabled"
         class="i-lucide-x size-3.5 flex-shrink-0 cursor-pointer text-n-blue-10 hover:text-n-blue-12"
         @click.stop="removeTag(index)"
       />
