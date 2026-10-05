@@ -1,6 +1,6 @@
 # Отчёт: удаление Captain «Тестирование»
 
-Ветка `codex/remove-testing-evals` создана от `rc/e-stage2` (`48990f08fdf86f61199dbf681df80255fab28321`). Изменения находятся только в этой рабочей копии; push, PR и merge не выполнялись.
+Ветка `codex/remove-testing-evals` создана от `rc/e-stage2` (`48990f08fdf86f61199dbf681df80255fab28321`). Изменения находятся только в этой рабочей копии. На момент подготовки этого отчёта push/PR/merge не выполнялись; публикацию отдельной ветки после ревью выполняет root.
 
 ## Удалено
 
@@ -38,7 +38,21 @@
 - Сверка diff подтвердила отсутствие изменений в `db/`, `config/brakeman.ignore` и `db/migrate`; grep по исходному SHA подтвердил область использования Tribunal.
 - Не выполнены `bundle lock`, RSpec, RuboCop, Brakeman и `rails zeitwerk:check`: в среде нет Ruby/Bundler, Docker или WSL. Поэтому результат Brakeman и загрузку Rails/lockfile следует подтвердить в release-проверке.
 
-## Коммиты
+Команды проверок:
+
+```powershell
+$env:TEST='true'; $env:TZ='UTC'; node ./node_modules/vitest/vitest.mjs run app/javascript/dashboard/routes/dashboard/captain/captain.routes.spec.js app/javascript/dashboard/components-next/sidebar/Sidebar.spec.js app/javascript/dashboard/components-next/sidebar/sidebarVisibility.spec.js app/javascript/dashboard/i18n/specs --maxWorkers=2 --minWorkers=1
+
+node ./node_modules/eslint/bin/eslint.js app/javascript/dashboard/routes/dashboard/captain/captain.routes.js app/javascript/dashboard/routes/dashboard/captain/captain.routes.spec.js app/javascript/dashboard/components-next/sidebar/Sidebar.vue app/javascript/dashboard/components-next/sidebar/Sidebar.spec.js
+
+node 'C:/Users/khamz/Documents/Codex/onelink-cleanup-tooling-20261006/check-ruby-syntax.mjs' 'C:/Users/khamz/Documents/Codex/onelink-remove-testing-evals-20261006' '48990f08fdf86f61199dbf681df80255fab28321' 'C:/Users/khamz/Documents/Codex/2026-10-01/files-mentioned-by-the-user-onelink/outputs/cleanup-packages-20261006/testing-prism-final.json'
+
+git -c safe.directory=C:/Users/khamz/Documents/Codex/onelink-remove-testing-evals-20261006 diff --check 48990f08fdf86f61199dbf681df80255fab28321 bdf032ea63f08dd3f5010e3a66415b1a7724cf34
+```
+
+Vitest, ESLint, Prism и diff-check команды приведены с фактическими путями/аргументами. Prism проверил исходники на SHA `bdf032ea`; последующее изменение затронуло только этот отчёт.
+
+## Коммиты реализации
 
 - `7e4b392ab` — `Remove the Captain evaluations UI`
 - `91ac35e2a` — `Remove the Captain evaluations API`
