@@ -132,7 +132,7 @@ RSpec.describe 'Conversations API', type: :request do
         expect(body[:data][:payload].first[:unread_count]).to eq(12)
       end
 
-      it 'returns sidebar unread dialog counts scoped by agent inbox access' do
+      it 'returns only the team unread counts scoped by agent inbox access and keeps the other keys empty' do
         team = create(:team, account: account, allow_auto_assign: false)
         pipeline = create(:crm_pipeline, account: account)
         stage = create(:crm_stage, account: account, pipeline: pipeline)
@@ -191,14 +191,14 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         body = JSON.parse(response.body, symbolize_names: true)
         expect(body[:counts]).to eq(
-          all: 2,
-          statuses: { pending: 2 },
-          inboxes: { conversation.inbox_id.to_s.to_sym => 2 },
+          all: 0,
+          statuses: {},
+          inboxes: {},
           teams: { team.id.to_s.to_sym => 2 },
-          labels: { vip: 2 },
-          pipelines: { pipeline.id.to_s.to_sym => 1 },
-          stages: { stage.id.to_s.to_sym => 1 },
-          appointment_statuses: { any: 2, confirmed: 1, scheduled: 1 }
+          labels: {},
+          pipelines: {},
+          stages: {},
+          appointment_statuses: {}
         )
       end
 
@@ -361,7 +361,7 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response_data.count).to eq(2)
       end
 
-      it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
+      it 'applies the sidebar CRM stage context to advanced filters without counting unread dialogs per stage' do
         pipeline = create(:crm_pipeline, account: account)
         matching_stage = create(:crm_stage, account: account, pipeline: pipeline)
         other_stage = create(:crm_stage, account: account, pipeline: pipeline)
@@ -390,10 +390,8 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:success)
         response_data = JSON.parse(response.body, symbolize_names: true)
         expect(response_data[:payload].pluck(:id)).to contain_exactly(matching_conversation.display_id)
-        expect(response_data.dig(:meta, :unread_counts, :stages)).to include(
-          matching_stage.id.to_s.to_sym => 1,
-          other_stage.id.to_s.to_sym => 1
-        )
+        expect(response_data.dig(:meta, :unread_counts, :stages)).to eq({})
+        expect(response_data.dig(:meta, :unread_counts, :pipelines)).to eq({})
       end
 
       it 'returns error if the filters contain invalid attributes' do

@@ -145,7 +145,7 @@ RSpec.describe CommunicationThreadFinder do
       expect(result[:communication_threads].map(&:id)).not_to include(no_appointment_thread.id)
     end
 
-    it 'keeps appointment status counts as dialog counts scoped by thread context' do
+    it 'no longer counts unread threads per appointment status' do
       _confirmed_thread, confirmed_conversation = create_thread_with_conversation(unread_count: 1)
       _scheduled_thread, scheduled_conversation = create_thread_with_conversation(unread_count: 1)
       _read_thread, read_conversation = create_thread_with_conversation(unread_count: 0)
@@ -182,14 +182,10 @@ RSpec.describe CommunicationThreadFinder do
 
       result = finder.perform
 
-      expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
-        'any' => 2,
-        'confirmed' => 1,
-        'scheduled' => 1
-      )
+      expect(result[:count].dig(:unread_counts, :appointment_statuses)).to eq({})
     end
 
-    it 'counts unread thread and linked conversation statuses in one query' do
+    it 'keeps the unread status counter service counting thread and linked conversation statuses in one query' do
       thread, first_conversation = create_thread_with_conversation(unread_count: 1)
       second_conversation = create(:conversation, account: account, inbox: inbox, contact: first_conversation.contact, status: :pending)
       create(
@@ -206,11 +202,14 @@ RSpec.describe CommunicationThreadFinder do
       subscriber = lambda do |_name, _start, _finish, _id, payload|
         sql << payload[:sql] unless payload[:cached] || payload[:name] == 'SCHEMA'
       end
-      status_finder = described_class.new(user, status: 'all', assignee_type: 'all')
+      status_counter = CommunicationThreads::UnreadStatusCountService.new(
+        account: account,
+        thread_scope: CommunicationThread.where(account_id: account.id, id: thread.id),
+        conversation_scope: account.conversations
+      )
 
       counts = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
-        status_finder.send(:set_up)
-        status_finder.send(:status_unread_counts)
+        status_counter.perform
       end
 
       expect(counts).to include('open' => 1, 'pending' => 1, 'resolved' => 1, 'snoozed' => 0)
@@ -283,32 +282,27 @@ RSpec.describe CommunicationThreadFinder do
                                       contact: inaccessible_conversation.contact, status: 'cancelled')
     end
 
-    it 'returns every authorized unread facet while evaluating the unread base scope once' do
-      sql_queries = []
-      subscriber = lambda do |*, payload|
-        next if payload[:name] == 'SCHEMA' || payload[:cached]
-
-        sql_queries << payload[:sql].to_s.squish
-      end
-      counts = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
-        described_class.new(user, status: 'all', assignee_type: 'all').perform_sidebar_unread_counts
+    it 'returns only the authorized unread team counts without materializing the unread threads' do
+      counts = nil
+      sql_queries = sql_queries_during do
+        counts = described_class.new(user, status: 'all', assignee_type: 'all').perform_sidebar_unread_counts
       end
 
       expect(counts).to eq(
-        all: 2,
-        statuses: { 'open' => 1, 'pending' => 1, 'snoozed' => 0, 'resolved' => 1 },
-        inboxes: { inbox.id.to_s => 1, second_inbox.id.to_s => 2 },
+        all: 0,
+        statuses: {},
+        inboxes: {},
         teams: { first_team.id.to_s => 1, second_team.id.to_s => 1 },
-        labels: { 'vip' => 1, 'priority' => 1 },
-        pipelines: { first_pipeline.id.to_s => 1, second_pipeline.id.to_s => 1 },
-        stages: { first_stage.id.to_s => 1, second_stage.id.to_s => 1 },
-        appointment_statuses: { 'confirmed' => 1, 'scheduled' => 1, 'any' => 2 }
+        labels: {},
+        pipelines: {},
+        stages: {},
+        appointment_statuses: {}
       )
       expect(sql_queries.grep(/conversation_user_read_states/)).to be_empty
-      expect(sql_queries.size).to be <= 13
+      expect(sql_queries.size).to be <= 4
     end
 
-    it 'preserves status-overlap and facet-specific filter semantics' do
+    it 'preserves status-overlap and facet-specific filter semantics for the team counts' do
       filtered_counts = described_class.new(
         user,
         {
@@ -324,14 +318,14 @@ RSpec.describe CommunicationThreadFinder do
       ).perform_sidebar_unread_counts
 
       expect(filtered_counts).to eq(
-        all: 1,
-        statuses: { 'open' => 1, 'pending' => 1, 'snoozed' => 0, 'resolved' => 0 },
-        inboxes: { inbox.id.to_s => 1, second_inbox.id.to_s => 1 },
+        all: 0,
+        statuses: {},
+        inboxes: {},
         teams: { first_team.id.to_s => 1 },
-        labels: { 'vip' => 1 },
-        pipelines: { first_pipeline.id.to_s => 1 },
-        stages: { first_stage.id.to_s => 1 },
-        appointment_statuses: { 'confirmed' => 1, 'any' => 1 }
+        labels: {},
+        pipelines: {},
+        stages: {},
+        appointment_statuses: {}
       )
     end
   end

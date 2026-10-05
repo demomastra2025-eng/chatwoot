@@ -412,11 +412,8 @@ RSpec.describe 'Communication Threads API', type: :request do
         contact_conversation.reload.communication_thread.display_id,
         direct_thread_conversation.reload.communication_thread.display_id
       )
-      expect(body.dig(:data, :meta, :unread_counts, :pipelines)).to include(pipeline.id.to_s.to_sym => 3)
-      expect(body.dig(:data, :meta, :unread_counts, :stages)).to include(
-        stage.id.to_s.to_sym => 2,
-        other_stage.id.to_s.to_sym => 1
-      )
+      expect(body.dig(:data, :meta, :unread_counts, :pipelines)).to eq({})
+      expect(body.dig(:data, :meta, :unread_counts, :stages)).to eq({})
     end
 
     it 'returns CRM deal stage accents for thread and contact deals' do
@@ -526,9 +523,10 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'returns ownership, status, and channel facet counts with the expected filter scope' do
+    it 'returns ownership and team facet counts with the expected filter scope' do
       first_inbox = create(:inbox, account: account)
       second_inbox = create(:inbox, account: account)
+      team = create(:team, account: account)
       create(:inbox_member, user: agent, inbox: first_inbox)
       create(:inbox_member, user: agent, inbox: second_inbox)
 
@@ -543,6 +541,9 @@ RSpec.describe 'Communication Threads API', type: :request do
       [first_open, second_open].each do |conversation|
         create_shared_unread_message(conversation)
       end
+      [first_open, second_open, second_pending].each do |conversation|
+        conversation.reload.communication_thread.update!(team: team)
+      end
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
           params: { status: 'open', assignee_type: 'me', inbox_id: first_inbox.id },
@@ -556,11 +557,15 @@ RSpec.describe 'Communication Threads API', type: :request do
         'unassigned_count' => 1,
         'all_count' => 4
       )
-      expect(meta.dig('unread_counts', 'statuses')).to include('open' => 1)
-      expect(meta['unread_counts']).to include('all' => 2)
-      expect(meta.dig('unread_counts', 'inboxes')).to include(
-        first_inbox.id.to_s => 1,
-        second_inbox.id.to_s => 1
+      expect(meta['unread_counts']).to eq(
+        'all' => 0,
+        'statuses' => {},
+        'inboxes' => {},
+        'teams' => { team.id.to_s => 1 },
+        'labels' => {},
+        'pipelines' => {},
+        'stages' => {},
+        'appointment_statuses' => {}
       )
     end
 
@@ -738,15 +743,18 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/sidebar_unread_counts' do
-    it 'returns unread facets scoped to the current user without full list metadata' do
+    it 'returns the unread team counts scoped to the current user without full list metadata' do
+      team = create(:team, account: account)
       accessible_conversation = create(:conversation, account: account, status: :pending)
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
       accessible_thread = accessible_conversation.reload.communication_thread
       accessible_thread.update!(status: :pending)
       create_shared_unread_message(accessible_conversation)
+      accessible_thread.reload.update!(team: team)
 
       inaccessible_conversation = create(:conversation, account: account, status: :open)
       create_shared_unread_message(inaccessible_conversation)
+      inaccessible_conversation.reload.communication_thread.update!(team: team)
 
       get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts",
           params: { status: 'all', assignee_type: 'all' },
@@ -754,10 +762,15 @@ RSpec.describe 'Communication Threads API', type: :request do
           as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body.fetch('counts')).to include(
-        'all' => 1,
-        'statuses' => include('pending' => 1),
-        'inboxes' => include(accessible_conversation.inbox_id.to_s => 1)
+      expect(response.parsed_body.fetch('counts')).to eq(
+        'all' => 0,
+        'statuses' => {},
+        'inboxes' => {},
+        'teams' => { team.id.to_s => 1 },
+        'labels' => {},
+        'pipelines' => {},
+        'stages' => {},
+        'appointment_statuses' => {}
       )
     end
 
@@ -848,9 +861,11 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'returns only unread facets for lightweight advanced-filter refreshes' do
+    it 'returns only the unread team counts for lightweight advanced-filter refreshes' do
+      team = create(:team, account: account)
       create_shared_unread_message(matching_conversation)
       create_shared_unread_message(wrong_stage_conversation)
+      matching_conversation.reload.communication_thread.update!(team: team)
 
       post "/api/v1/accounts/#{account.id}/communication_threads/filter_sidebar_unread_counts?crm_stage_id=#{matching_stage.id}",
            params: { payload: [advanced_filter_payload.first.merge(query_operator: nil)] },
@@ -858,13 +873,19 @@ RSpec.describe 'Communication Threads API', type: :request do
            as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body.fetch('counts')).to include(
-        'all' => 1,
-        'stages' => include(matching_stage.id.to_s => 1, other_stage.id.to_s => 1)
+      expect(response.parsed_body.fetch('counts')).to eq(
+        'all' => 0,
+        'statuses' => {},
+        'inboxes' => {},
+        'teams' => { team.id.to_s => 1 },
+        'labels' => {},
+        'pipelines' => {},
+        'stages' => {},
+        'appointment_statuses' => {}
       )
     end
 
-    it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
+    it 'applies the sidebar CRM stage context to advanced filters without counting unread threads per stage' do
       [matching_conversation, wrong_stage_conversation, wrong_status_conversation].each do |conversation|
         create_shared_unread_message(conversation)
       end
@@ -881,10 +902,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body.dig(:data, :payload).pluck(:id)).to contain_exactly(
         matching_conversation.reload.communication_thread.display_id
       )
-      expect(body.dig(:data, :meta, :unread_counts, :stages)).to include(
-        matching_stage.id.to_s.to_sym => 1,
-        other_stage.id.to_s.to_sym => 1
-      )
+      expect(body.dig(:data, :meta, :unread_counts, :stages)).to eq({})
     end
 
     it 'sorts advanced filter results by public non-activity messages by default' do

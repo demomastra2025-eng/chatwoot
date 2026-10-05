@@ -192,52 +192,39 @@ class CommunicationThreads::FilterService < FilterService
 
   def thread_counts
     assignee_counts = assignee_counts_for(@communication_threads)
+    unread_assignee_counts = assignee_counts_for(unread_thread_scope(@communication_threads))
     {
       mine_count: assignee_counts[:mine_count],
       assigned_count: assignee_counts[:assigned_count],
       unassigned_count: assignee_counts[:unassigned_count],
       all_count: assignee_counts[:all_count],
-      mine_unread_count: unread_thread_count(@communication_threads.where(assignee_id: @user.id)),
-      assigned_unread_count: unread_thread_count(@communication_threads.where.not(assignee_id: nil)),
-      unassigned_unread_count: unread_thread_count(@communication_threads.where(assignee_id: nil)),
-      all_unread_count: unread_thread_count(@communication_threads),
+      mine_unread_count: unread_assignee_counts[:mine_count],
+      assigned_unread_count: unread_assignee_counts[:assigned_count],
+      unassigned_unread_count: unread_assignee_counts[:unassigned_count],
+      all_unread_count: unread_assignee_counts[:all_count],
       assignee_counts: assignee_counts,
       unread_counts: unread_counts
     }
   end
 
+  # Only the team badge is shown in the dashboard, see Conversations::SidebarUnreadCountService.
   def unread_counts
     unread_scope = unread_thread_scope(@communication_threads)
-    crm_count_scope = unread_thread_scope(crm_unread_count_base_scope)
-    appointment_count_scope = unread_thread_scope(appointment_unread_count_base_scope)
 
-    {
-      all: unread_scope.count,
-      statuses: normalize_enum_counts(unread_scope.group(:status).count, CommunicationThread.statuses),
-      inboxes: channel_unread_counts(unread_scope),
-      teams: normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).count),
-      labels: label_unread_counts(unread_scope),
-      pipelines: crm_unread_count_service(crm_count_scope).communication_thread_pipeline_counts,
-      stages: crm_unread_count_service(crm_count_scope).communication_thread_stage_counts,
-      appointment_statuses: scheduling_appointment_count_service(appointment_count_scope).communication_thread_status_counts
-    }
+    Conversations::SidebarUnreadCountService.unread_counts_with(
+      teams: normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).count)
+    )
   end
 
   def assignee_counts_for(scope)
-    mine_count = scope.where(assignee_id: @user.id).count
-    unassigned_count = scope.where(assignee_id: nil).count
-    all_count = scope.count
+    counts = Conversations::AssigneeCountsAggregator.new(scope, user_id: @user.id).perform
 
     {
-      mine_count: mine_count,
-      assigned_count: all_count - unassigned_count,
-      unassigned_count: unassigned_count,
-      all_count: all_count
+      mine_count: counts[:mine_count],
+      assigned_count: counts[:all_count] - counts[:unassigned_count],
+      unassigned_count: counts[:unassigned_count],
+      all_count: counts[:all_count]
     }
-  end
-
-  def unread_thread_count(scope)
-    unread_thread_scope(scope).count
   end
 
   def unread_thread_scope(scope)
@@ -251,76 +238,12 @@ class CommunicationThreads::FilterService < FilterService
     scope.where(id: unread_thread_ids)
   end
 
-  def channel_unread_counts(scope)
-    CommunicationThreadConversation
-      .where(
-        account_id: @account.id,
-        communication_thread_id: scope.select(:id),
-        conversation_id: base_relation.select(:id)
-      )
-      .group(:inbox_id)
-      .distinct
-      .count(:communication_thread_id)
-      .transform_keys(&:to_s)
-  end
-
-  def label_unread_counts(scope)
-    normalize_counts(
-      CommunicationThreadConversation
-        .where(
-          account_id: @account.id,
-          communication_thread_id: scope.select(:id),
-          conversation_id: base_relation.select(:id)
-        )
-        .joins(
-          'INNER JOIN taggings ON taggings.taggable_id = communication_thread_conversations.conversation_id ' \
-          "AND taggings.taggable_type = 'Conversation' " \
-          "AND taggings.context = 'labels'"
-        )
-        .joins('INNER JOIN tags ON tags.id = taggings.tag_id')
-        .group('tags.name')
-        .distinct
-        .count(:communication_thread_id)
-    )
-  end
-
   def normalize_counts(counts)
     counts.each_with_object({}) do |(key, value), result|
       next if key.blank?
 
       result[key.to_s] = value
     end
-  end
-
-  def normalize_enum_counts(counts, enum_mapping)
-    counts.each_with_object({}) do |(key, value), result|
-      enum_key = enum_mapping.key(key) || key.to_s
-      next if enum_key.blank?
-
-      result[enum_key] = value
-    end
-  end
-
-  def crm_unread_count_service(scope)
-    Crm::DealDialogUnreadCountService.new(account: @account, communication_thread_scope: scope)
-  end
-
-  def scheduling_appointment_count_service(scope)
-    Scheduling::AppointmentDialogCountService.new(account: @account, communication_thread_scope: scope)
-  end
-
-  def crm_unread_count_base_scope
-    apply_thread_scopes(
-      apply_scheduling_appointment_context(@base_thread_scope),
-      include_unread: false
-    )
-  end
-
-  def appointment_unread_count_base_scope
-    apply_thread_scopes(
-      apply_crm_deal_context(@base_thread_scope),
-      include_unread: false
-    )
   end
 
   def scheduling_appointment_status

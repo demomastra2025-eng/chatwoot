@@ -313,11 +313,15 @@ describe ConversationFinder do
     context 'with facet counts' do
       let(:params) { { status: 'open', assignee_type: 'me', inbox_id: inbox.id } }
 
-      it 'keeps ownership counts independent from secondary filters and scopes facets by active filters' do
+      it 'keeps ownership counts independent from secondary filters and counts unread dialogs per team only' do
         second_inbox = create(:inbox, account: account, enable_auto_assignment: false)
+        team = create(:team, account: account)
         create(:inbox_member, user: user_1, inbox: second_inbox)
         create(:conversation, account: account, inbox: second_inbox, assignee: user_1, status: 'open')
         create(:conversation, account: account, inbox: second_inbox, assignee: user_1, status: 'pending')
+        # Assigning a team through the model could unassign the agent, so the team is written directly.
+        Conversation.where(account: account, assignee: user_1, inbox: inbox, status: 'open')
+                    .update_all(team_id: team.id) # rubocop:disable Rails/SkipsModelValidations
         Conversation.where(account: account, assignee: user_1).find_each do |conversation|
           status = conversation.status
           conversation.update!(agent_last_seen_at: 1.hour.ago)
@@ -332,14 +336,23 @@ describe ConversationFinder do
           unassigned_count: 1,
           all_count: 7
         )
-        expect(result[:count].dig(:unread_counts, :statuses)).to include(
-          'open' => 2,
-          'resolved' => 1
+        # Only the team badge is counted; the second inbox is excluded by the inbox filter.
+        expect(result[:count][:unread_counts]).to eq(
+          all: 0,
+          statuses: {},
+          inboxes: {},
+          teams: { team.id.to_s => 2 },
+          labels: {},
+          pipelines: {},
+          stages: {},
+          appointment_statuses: {}
         )
-        expect(result[:count][:unread_counts]).to include(
-          all: 3,
-          inboxes: include(inbox.id.to_s => 2, second_inbox.id.to_s => 1)
-        )
+      end
+
+      it 'skips the counts when the first page is not requested with include_meta' do
+        result = described_class.new(user_1, params.merge(include_meta: 'false', page: 2)).perform
+
+        expect(result[:count]).to eq({})
       end
     end
 
@@ -417,7 +430,7 @@ describe ConversationFinder do
         expect(result[:conversations].map(&:id)).to contain_exactly(contact_conversation.id, direct_conversation.id)
       end
 
-      it 'filters conversations by deal stage and returns pipeline and stage unread counts' do
+      it 'filters conversations by deal stage and no longer counts unread dialogs per pipeline and stage' do
         matching_conversation = create(
           :conversation,
           account: account,
@@ -442,11 +455,8 @@ describe ConversationFinder do
         ).perform
 
         expect(stage_result[:conversations].map(&:id)).to contain_exactly(matching_conversation.id)
-        expect(stage_result[:count].dig(:unread_counts, :pipelines)).to include(pipeline.id.to_s => 2)
-        expect(stage_result[:count].dig(:unread_counts, :stages)).to include(
-          stage.id.to_s => 1,
-          other_stage.id.to_s => 1
-        )
+        expect(stage_result[:count].dig(:unread_counts, :pipelines)).to eq({})
+        expect(stage_result[:count].dig(:unread_counts, :stages)).to eq({})
       end
     end
 
@@ -506,7 +516,7 @@ describe ConversationFinder do
         expect(result[:conversations].map(&:id)).not_to include(no_appointment_conversation.id)
       end
 
-      it 'keeps appointment status counts as dialog counts scoped by dialog context' do
+      it 'no longer counts unread dialogs per appointment status' do
         confirmed_conversation = create(
           :conversation,
           account: account,
@@ -560,11 +570,7 @@ describe ConversationFinder do
 
         result = conversation_finder.perform
 
-        expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
-          'any' => 2,
-          'confirmed' => 1,
-          'scheduled' => 1
-        )
+        expect(result[:count].dig(:unread_counts, :appointment_statuses)).to eq({})
       end
     end
 

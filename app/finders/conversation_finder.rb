@@ -45,14 +45,13 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def initialize(current_user, params)
     @current_user = current_user
     @current_account = current_user.account
-    @is_admin = current_account.account_users.find_by(user_id: current_user.id)&.administrator?
     @params = params
   end
 
   def perform
     set_up
 
-    count = conversation_counts
+    count = include_meta? ? conversation_counts : {}
 
     filter_by_assignee_type
 
@@ -212,43 +211,19 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def assignee_counts_for(scope)
-    mine_count = scope.assigned_to(current_user).count
-    unassigned_count = scope.unassigned.count
-    all_count = scope.count
+    counts = Conversations::AssigneeCountsAggregator.new(scope, user_id: current_user.id).perform
 
     {
-      mine_count: mine_count,
-      assigned_count: all_count - unassigned_count,
-      unassigned_count: unassigned_count,
-      all_count: all_count
+      mine_count: counts[:mine_count],
+      assigned_count: counts[:all_count] - counts[:unassigned_count],
+      unassigned_count: counts[:unassigned_count],
+      all_count: counts[:all_count]
     }
   end
 
+  # Only the team badge is shown in the dashboard, see Conversations::SidebarUnreadCountService.
   def unread_counts
-    {
-      all: unread_dialog_count(scoped_count_relation(include_inbox: false, include_assignee: true, include_unread: false)),
-      statuses: status_unread_counts,
-      inboxes: inbox_unread_counts,
-      teams: team_unread_counts,
-      labels: label_unread_counts,
-      pipelines: pipeline_unread_counts,
-      stages: stage_unread_counts,
-      appointment_statuses: appointment_status_unread_counts
-    }
-  end
-
-  def status_unread_counts
-    scope = scoped_count_relation(include_status: false, include_assignee: true, include_unread: false)
-    unread_scope = unread_conversation_scope(scope)
-
-    normalize_enum_counts(unread_scope.group(:status).distinct.count('conversations.id'), Conversation.statuses)
-  end
-
-  def inbox_unread_counts
-    scope = scoped_count_relation(include_inbox: false, include_assignee: true, include_unread: false)
-    unread_scope = unread_conversation_scope(scope)
-
-    normalize_counts(unread_scope.group(:inbox_id).distinct.count('conversations.id'))
+    Conversations::SidebarUnreadCountService.unread_counts_with(teams: team_unread_counts)
   end
 
   def team_unread_counts
@@ -258,42 +233,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     normalize_counts(unread_scope.where.not(team_id: nil).group(:team_id).distinct.count('conversations.id'))
   end
 
-  def label_unread_counts
-    scope = scoped_count_relation(include_labels: false, include_assignee: true, include_unread: false)
-    unread_scope = unread_conversation_scope(scope)
-
-    normalize_counts(label_counts(unread_scope))
-  end
-
-  def pipeline_unread_counts
-    crm_unread_count_service.conversation_pipeline_counts
-  end
-
-  def stage_unread_counts
-    crm_unread_count_service.conversation_stage_counts
-  end
-
-  def appointment_status_unread_counts
-    scheduling_appointment_count_service.conversation_status_counts
-  end
-
   def unread_conversation_scope(scope)
     Conversations::UnreadScopeBuilder.new(scope: scope, account: current_account).perform
-  end
-
-  def unread_dialog_count(scope)
-    unread_conversation_scope(scope).distinct.count('conversations.id')
-  end
-
-  def label_counts(scope)
-    scope.joins(
-      'INNER JOIN taggings ON taggings.taggable_id = conversations.id ' \
-      "AND taggings.taggable_type = 'Conversation' " \
-      "AND taggings.context = 'labels'"
-    ).joins('INNER JOIN tags ON tags.id = taggings.tag_id')
-         .group('tags.name')
-         .distinct
-         .count('conversations.id')
   end
 
   def normalize_counts(counts)
@@ -304,13 +245,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     end
   end
 
-  def normalize_enum_counts(counts, enum_mapping)
-    counts.each_with_object({}) do |(key, value), result|
-      enum_key = enum_mapping.key(key) || key.to_s
-      next if enum_key.blank?
-
-      result[enum_key] = value
-    end
+  def include_meta?
+    !params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(params[:include_meta])
   end
 
   def scoped_count_relation(filters = {})
@@ -467,19 +403,6 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     )
   end
 
-  def crm_unread_count_service
-    @crm_unread_count_service ||= Crm::DealDialogUnreadCountService.new(
-      account: current_account,
-      conversation_scope: crm_unread_conversation_scope
-    )
-  end
-
-  def crm_unread_conversation_scope
-    @crm_unread_conversation_scope ||= unread_conversation_scope(
-      scoped_count_relation(include_crm_deal_context: false, include_assignee: true, include_unread: false)
-    )
-  end
-
   def current_scheduling_appointment_dialog_scope
     scheduling_appointment_dialog_scope(status: scheduling_appointment_status)
   end
@@ -488,23 +411,6 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     Scheduling::AppointmentDialogScopeBuilder.new(
       account: current_account,
       status: status
-    )
-  end
-
-  def scheduling_appointment_count_service
-    @scheduling_appointment_count_service ||= Scheduling::AppointmentDialogCountService.new(
-      account: current_account,
-      conversation_scope: scheduling_appointment_count_conversation_scope
-    )
-  end
-
-  def scheduling_appointment_count_conversation_scope
-    @scheduling_appointment_count_conversation_scope ||= unread_conversation_scope(
-      scoped_count_relation(
-        include_scheduling_appointment_context: false,
-        include_assignee: true,
-        include_unread: false
-      )
     )
   end
 

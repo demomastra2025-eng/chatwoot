@@ -268,7 +268,9 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     counts = basic_assignment_counts(relation)
     return counts unless include_unread
 
-    unread_counts = basic_assignment_counts(unread_thread_scope(relation))
+    # With the unread filter on, every thread of the scope is already unread: recounting would only nest the
+    # unread subqueries once more.
+    unread_counts = unread_only? ? counts : basic_assignment_counts(unread_thread_scope(relation))
     counts.merge(
       all_unread_count: unread_counts[:all_count],
       mine_unread_count: unread_counts[:mine_count],
@@ -289,97 +291,15 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     ]
   end
 
+  # Only the team badge is shown in the dashboard, see Conversations::SidebarUnreadCountService.
   def unread_counts
-    channel_counts = channel_unread_counts
-
-    {
-      all: channel_counts[:all],
-      statuses: status_unread_counts,
-      inboxes: channel_counts[:inboxes],
-      teams: team_unread_counts,
-      labels: label_unread_counts,
-      pipelines: pipeline_unread_counts,
-      stages: stage_unread_counts,
-      appointment_statuses: appointment_status_unread_counts
-    }
-  end
-
-  def status_unread_counts
-    scope = unread_scoped_thread_relation(include_status: false, include_assignee: true)
-
-    CommunicationThreads::UnreadStatusCountService.new(
-      account: current_account,
-      thread_scope: scope,
-      conversation_scope: accessible_conversations
-    ).perform
-  end
-
-  def channel_unread_counts
-    scope = unread_scoped_thread_relation(include_inbox: false, include_assignee: true)
-
-    channel_unread_count_rows(scope).each_with_object({ all: 0, inboxes: {} }) do |(inbox_id, count, total_row), result|
-      if total_row.to_i == 1
-        result[:all] = count.to_i
-      else
-        result[:inboxes][inbox_id.to_s] = count.to_i
-      end
-    end
-  end
-
-  def channel_unread_count_rows(scope)
-    CommunicationThreadConversation
-      .where(
-        account_id: current_account.id,
-        communication_thread_id: scope.select(:id),
-        conversation_id: accessible_conversations.select(:id)
-      )
-      .group(Arel.sql('GROUPING SETS ((communication_thread_conversations.inbox_id), ())'))
-      .pluck(
-        :inbox_id,
-        Arel.sql('COUNT(DISTINCT communication_thread_conversations.communication_thread_id)'),
-        Arel.sql('GROUPING(communication_thread_conversations.inbox_id)')
-      )
+    Conversations::SidebarUnreadCountService.unread_counts_with(teams: team_unread_counts)
   end
 
   def team_unread_counts
     scope = unread_scoped_thread_relation(include_team: false, include_assignee: true)
 
     normalize_counts(scope.where.not(team_id: nil).group(:team_id).count)
-  end
-
-  def label_unread_counts
-    scope = unread_scoped_thread_relation(include_labels: false, include_assignee: true)
-    thread_ids = scope.select(:id)
-
-    normalize_counts(
-      CommunicationThreadConversation
-        .where(
-          account_id: current_account.id,
-          communication_thread_id: thread_ids,
-          conversation_id: accessible_conversations.select(:id)
-        )
-        .joins(
-          'INNER JOIN taggings ON taggings.taggable_id = communication_thread_conversations.conversation_id ' \
-          "AND taggings.taggable_type = 'Conversation' " \
-          "AND taggings.context = 'labels'"
-        )
-        .joins('INNER JOIN tags ON tags.id = taggings.tag_id')
-        .group('tags.name')
-        .distinct
-        .count(:communication_thread_id)
-    )
-  end
-
-  def pipeline_unread_counts
-    crm_unread_count_service.communication_thread_pipeline_counts
-  end
-
-  def stage_unread_counts
-    crm_unread_count_service.communication_thread_stage_counts
-  end
-
-  def appointment_status_unread_counts
-    scheduling_appointment_count_service.communication_thread_status_counts
   end
 
   def unread_thread_scope(scope)
@@ -408,16 +328,8 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def unread_scoped_thread_relation(filters = {})
     scoped_thread_relation(
       filters.merge(include_unread: false),
-      base_scope: materialized_unread_thread_scope
+      base_scope: unread_thread_scope(base_thread_scope)
     )
-  end
-
-  def materialized_unread_thread_scope
-    CommunicationThread.where(account_id: current_account.id, id: materialized_unread_thread_ids)
-  end
-
-  def materialized_unread_thread_ids
-    @materialized_unread_thread_ids ||= unread_thread_scope(base_thread_scope).distinct.pluck(:id)
   end
 
   def scoped_thread_relation(filters = {}, base_scope: base_thread_scope)
@@ -635,17 +547,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     )
   end
 
-  def crm_unread_count_service
-    @crm_unread_count_service ||= Crm::DealDialogUnreadCountService.new(
-      account: current_account,
-      communication_thread_scope: crm_unread_thread_scope
-    )
-  end
-
-  def crm_unread_thread_scope
-    @crm_unread_thread_scope ||= unread_scoped_thread_relation(include_crm_deal_context: false, include_assignee: true)
-  end
-
   def current_scheduling_appointment_dialog_scope
     scheduling_appointment_dialog_scope(status: scheduling_appointment_status)
   end
@@ -654,20 +555,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     Scheduling::AppointmentDialogScopeBuilder.new(
       account: current_account,
       status: status
-    )
-  end
-
-  def scheduling_appointment_count_service
-    @scheduling_appointment_count_service ||= Scheduling::AppointmentDialogCountService.new(
-      account: current_account,
-      communication_thread_scope: scheduling_appointment_count_thread_scope
-    )
-  end
-
-  def scheduling_appointment_count_thread_scope
-    @scheduling_appointment_count_thread_scope ||= unread_scoped_thread_relation(
-      include_scheduling_appointment_context: false,
-      include_assignee: true
     )
   end
 end
