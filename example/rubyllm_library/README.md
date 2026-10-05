@@ -6,7 +6,7 @@
 
 1. **OneLink — основной фреймворк и product runtime.**
    - Не заменяем Captain orchestration, `Llm::EventBus`, product-specific tools, account routing, UI и security policy внешними demo-движками.
-   - Все внешние библиотеки проходят через OneLink-контракты: account scope, permissions, confirmations, redaction, audit, evals, admin UX.
+   - Все внешние библиотеки проходят через OneLink-контракты: account scope, permissions, confirmations, redaction, audit, quality checks, admin UX.
 
 2. **`ruby_llm` — primary source.**
    - Сначала берём core runtime capabilities из `ruby_llm`: chat, models, tools, context, attachments/content, embeddings/transcription surfaces, model metadata.
@@ -31,10 +31,10 @@
 ## Что это меняет в финальной архитектуре
 
 - `ruby_llm` остаётся базой runtime.
-- `ruby_llm-schema`, `ruby_llm-mcp`, `ruby_llm-tribunal` остаются функциональными слоями Captain.
+- `ruby_llm-schema` и `ruby_llm-mcp` остаются функциональными слоями Captain.
 - `opentelemetry-instrumentation-ruby_llm` добавляет эталонную форму OTel/GenAI spans.
 - `ruby_llm-monitoring` добавляет эталонную форму persisted metrics/alerts.
-- OneLink должен объединить это в один product-native наблюдаемый AI runtime: trace + metrics + evals + tools + confirmations + admin UI.
+- OneLink должен объединить это в один product-native наблюдаемый AI runtime: trace + metrics + release checks + tools + confirmations + admin UI.
 
 ## Файлы
 
