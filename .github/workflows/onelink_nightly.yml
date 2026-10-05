@@ -163,10 +163,13 @@ jobs:
         run: |
           # CVE-2026-67991 is backported from upstream commit 9d75b033 in
           # config/initializers/ruby_llm_cve_2026_67991.rb and pinned by a
-          # regression/performance spec. RubyLLM 2.0 requires a separate
-          # persisted-data migration, so it is intentionally not mixed into
-          # this security release.
-          bundle exec bundler-audit check --update --ignore CVE-2026-67991
+          # regression/performance spec. CVE-2026-67987 and CVE-2026-67989 are
+          # backported from upstream commits 5e88411f and dd3c8481 in
+          # config/initializers/ruby_llm_cve_2026_67987_67989.rb and pinned by
+          # spec/lib/llm/one_link_ruby_llm_redos_backport_spec.rb. RubyLLM 2.0
+          # requires a separate persisted-data migration, so it is intentionally
+          # not mixed into this security release.
+          bundle exec bundler-audit check --update --ignore CVE-2026-67991 CVE-2026-67987 CVE-2026-67989
           bundle exec brakeman --no-pager --ensure-ignore-notes --ensure-no-obsolete-ignore-entries
 
   ai-voice:
