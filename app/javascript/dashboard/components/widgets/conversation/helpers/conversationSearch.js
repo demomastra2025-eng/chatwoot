@@ -1,7 +1,8 @@
+import { cleanSearchText, phoneMatchesQuery } from './phoneSearch';
+
+// Exotic spaces and invisible marks of copied text are removed and "ё" is "е", so that "Семён" finds "Семен".
 const normalizeSearchValue = value =>
-  String(value || '')
-    .trim()
-    .toLowerCase();
+  cleanSearchText(value).toLowerCase().replace(/ё/g, 'е');
 
 const compactValues = values =>
   values.flatMap(value => {
@@ -89,6 +90,17 @@ const resolveConversationSearchTerms = (conversation = {}, contact = {}) => {
   ]);
 };
 
+const resolveConversationPhones = (conversation = {}, contact = {}) => {
+  const sender = conversation?.meta?.sender || {};
+
+  return compactValues([
+    contact.phone_number,
+    contact.phoneNumber,
+    sender.phone_number,
+    sender.phoneNumber,
+  ]);
+};
+
 export const conversationMatchesLocalSearch = (
   conversation = {},
   contact = {},
@@ -100,7 +112,16 @@ export const conversationMatchesLocalSearch = (
     return true;
   }
 
-  return resolveConversationSearchTerms(conversation, contact).some(value =>
-    normalizeSearchValue(value).includes(normalizedQuery)
+  const matchesText = resolveConversationSearchTerms(
+    conversation,
+    contact
+  ).some(value => normalizeSearchValue(value).includes(normalizedQuery));
+
+  // A phone number typed in any format (8 707 ..., +7 (707) ...) is also matched by its digits.
+  return (
+    matchesText ||
+    resolveConversationPhones(conversation, contact).some(phone =>
+      phoneMatchesQuery(phone, query)
+    )
   );
 };
