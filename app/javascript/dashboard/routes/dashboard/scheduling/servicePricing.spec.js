@@ -31,9 +31,6 @@ describe('servicePricing', () => {
       buildServicePricePayload(
         {
           active: true,
-          compensationPercent: 0,
-          compensationType: 'percent',
-          compensationValue: 40,
           price: '',
           resourceId: 7,
         },
@@ -41,22 +38,16 @@ describe('servicePricing', () => {
       )
     ).toEqual({
       active: true,
-      compensation_percent: 0,
-      compensation_type: 'percent',
-      compensation_value: 40,
       price: 18000,
       resource_id: 7,
     });
   });
 
-  it('normalizes decimal-zero price and compensation values', () => {
+  it('normalizes decimal-zero price values', () => {
     expect(
       buildServicePricePayload(
         {
           active: true,
-          compensationPercent: '10.00',
-          compensationType: 'fixed_plus_percent',
-          compensationValue: '3000.0',
           price: '21000.00',
           resourceId: 7,
         },
@@ -64,9 +55,6 @@ describe('servicePricing', () => {
       )
     ).toEqual({
       active: true,
-      compensation_percent: 10,
-      compensation_type: 'fixed_plus_percent',
-      compensation_value: 3000,
       price: 21000,
       resource_id: 7,
     });
@@ -77,9 +65,6 @@ describe('servicePricing', () => {
       buildServicePricePayload(
         {
           active: true,
-          compensationPercent: 0,
-          compensationType: 'percent',
-          compensationValue: 40,
           price: '21000.50',
           resourceId: 7,
         },

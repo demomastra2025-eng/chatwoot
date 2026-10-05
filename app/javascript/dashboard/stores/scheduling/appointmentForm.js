@@ -1,10 +1,7 @@
 import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
-import {
-  DEFAULT_WORKSPACE_TIMEZONE,
-  PAYMENT_METHOD_VALUES,
-} from 'dashboard/routes/dashboard/scheduling/constants';
+import { DEFAULT_WORKSPACE_TIMEZONE } from 'dashboard/routes/dashboard/scheduling/constants';
 import { schedulingContactNameParts } from './contactName';
 import {
   compactPayload,
@@ -30,10 +27,6 @@ const toFormDateTime = value =>
 const fromFormDateTime = value =>
   fromDateTimeInputValue(value, SCHEDULING_TIMEZONE);
 
-const DEFAULT_PREPAID_PAYMENT_METHOD =
-  PAYMENT_METHOD_VALUES.find(value => value === 'cash') ||
-  PAYMENT_METHOD_VALUES[0] ||
-  'cash';
 const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
   'service_ids',
   'services',
@@ -85,15 +78,6 @@ const editableCustomAttributes = attributes =>
     })
   );
 
-const resolveAmount = value => {
-  if (value === '' || value === null || value === undefined) {
-    return 0;
-  }
-
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : 0;
-};
-
 const normalizeIdArray = values => {
   const normalizedValues = Array.isArray(values) ? values : [values];
 
@@ -115,14 +99,6 @@ const haveEqualIds = (left = [], right = []) => {
     (value, index) => value === normalizedRight[index]
   );
 };
-
-const normalizePrepaymentForm = form => ({
-  ...form,
-  prepaidPaymentMethod:
-    resolveAmount(form.prepaidAmount) > 0
-      ? form.prepaidPaymentMethod || DEFAULT_PREPAID_PAYMENT_METHOD
-      : '',
-});
 
 export const isKazakhstanE164Phone = value => {
   let digits = String(value || '').replace(/\D/g, '');
@@ -154,8 +130,6 @@ const createDefaultForm = () => ({
   customAttributes: {},
   endsAt: '',
   medelementCabinetCode: '',
-  prepaidAmount: '',
-  prepaidPaymentMethod: '',
   resourceId: '',
   serviceAmount: '',
   serviceId: '',
@@ -200,11 +174,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           state.form.startsAt &&
           new Date(state.form.endsAt) <= new Date(state.form.startsAt)
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
-            : '',
-        prepaidAmount:
-          resolveAmount(state.form.prepaidAmount) >
-          resolveAmount(state.form.serviceAmount)
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.PREPAID_EXCEEDS_SERVICE_AMOUNT'
             : '',
         clientName: !state.form.clientFirstName?.trim()
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
@@ -261,7 +230,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resourceId: slot.resourceId || defaults.resourceId || '',
           startsAt: toFormDateTime(slot.startsAt),
         };
-        this.form = normalizePrepaymentForm(this.form);
       },
 
       openEdit(appointment) {
@@ -299,8 +267,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
             appointment.customAttributes?.medelement_cabinet_code ||
             appointment.customAttributes?.medelementCabinetCode ||
             '',
-          prepaidAmount: appointment.prepaidAmount ?? '',
-          prepaidPaymentMethod: appointment.prepaidPaymentMethod || '',
           resourceId: appointment.resourceId || '',
           serviceAmount: appointment.serviceAmount ?? '',
           serviceId: appointment.serviceId || '',
@@ -313,7 +279,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
           startsAt: toFormDateTime(appointment.startsAt),
           status: appointment.status || 'scheduled',
         };
-        this.form = normalizePrepaymentForm(this.form);
       },
 
       close() {
@@ -364,7 +329,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           updatedForm.clientName = fullPatientName(updatedForm);
           updatedForm.clientNameStructured = true;
         }
-        this.form = normalizePrepaymentForm(updatedForm);
+        this.form = updatedForm;
       },
 
       applyContact(contact) {
@@ -543,7 +508,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       buildPayload() {
-        const normalizedForm = normalizePrepaymentForm(this.form);
+        const normalizedForm = this.form;
         const serviceIds = normalizeIdArray(normalizedForm.serviceIds);
         const serviceId = toNumeric(normalizedForm.serviceId);
         const hasSelectedService = serviceIds.length || serviceId;
@@ -578,11 +543,6 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : {}),
           },
           ends_at: fromFormDateTime(normalizedForm.endsAt),
-          prepaid_amount:
-            toIntegerNumeric(normalizedForm.prepaidAmount, 'prepaid_amount') ||
-            0,
-          prepaid_payment_method:
-            normalizedForm.prepaidPaymentMethod || undefined,
           resource_id: toNumeric(normalizedForm.resourceId),
           service_amount:
             toIntegerNumeric(normalizedForm.serviceAmount, 'service_amount') ||

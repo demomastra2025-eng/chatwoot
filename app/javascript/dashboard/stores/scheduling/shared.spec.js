@@ -73,6 +73,33 @@ describe('scheduling shared helpers', () => {
   });
 
   it.each([
+    [
+      'Total received amount cannot exceed service_amount',
+      'TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
+    ],
+    [
+      'total received amount cannot exceed service_amount',
+      'TOTAL_RECEIVED_EXCEEDS_SERVICE_AMOUNT',
+    ],
+    [
+      'settlement_amount cannot be less than the total of recorded payments',
+      'SETTLEMENT_BELOW_RECORDED_PAYMENTS',
+    ],
+  ])('keeps shared MedElement error localization for %s', (message, key) => {
+    const error = {
+      response: {
+        data: { error: message },
+        status: 422,
+      },
+    };
+    const translation = ruScheduling.SCHEDULING.ERRORS[key];
+    const t = lookupKey => lookupMessage(ruScheduling, lookupKey) ?? lookupKey;
+
+    expect(translation).toEqual(expect.any(String));
+    expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
+  });
+
+  it.each([
     ['en', enScheduling],
     ['ru', ruScheduling],
     ['kk', kkScheduling],

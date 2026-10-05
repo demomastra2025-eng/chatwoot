@@ -1096,7 +1096,6 @@ const appointmentEvents = computed(() => {
       statusLabel: providerBookingStatusKey(appointment)
         ? providerBookingStatusMessage(appointment, t)
         : appointment.statusLabel || '',
-      paymentStatus: appointment.paymentStatus,
       clientName,
       serviceNameSnapshot: subtitle,
       accentColor: tone.accent,
