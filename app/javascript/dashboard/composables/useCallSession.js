@@ -11,6 +11,7 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+const STALE_INCOMING_CALL_CHECK_MS = 15_000;
 // A SIP provider that rejects the line's credentials (401/403/407) keeps
 // rejecting them: retrying every few seconds only floods the provider with
 // REGISTERs and the server with webphone tokens. Same pace as the webphone's
@@ -1317,7 +1318,28 @@ export function useCallSession() {
     { immediate: true }
   );
 
+  // A ringing card the server has not spoken about for two and a half minutes
+  // lost its terminal event (the PBX stops ringing after about two minutes).
+  // A card whose own browser SIP session still rings is never removed.
+  const hasLiveLocalIncomingSession = call => {
+    const provider = resolveCallProvider(call);
+    if (!NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) return true;
+
+    return WebphoneClient.hasPendingIncomingCall(
+      janusWebphoneCallScope({ ...call, provider })
+    );
+  };
+  const expireStaleIncomingCalls = () =>
+    callsStore.expireStaleIncomingCalls({
+      isLocalSessionLive: hasLiveLocalIncomingSession,
+    });
+  let staleIncomingCallTimer = null;
+
   onMounted(() => {
+    staleIncomingCallTimer = setInterval(
+      expireStaleIncomingCalls,
+      STALE_INCOMING_CALL_CHECK_MS
+    );
     WebphoneClient.addEventListener('call:connected', handleClientConnected);
     WebphoneClient.addEventListener(
       'call:disconnected',
@@ -1334,6 +1356,8 @@ export function useCallSession() {
   });
 
   onUnmounted(() => {
+    clearInterval(staleIncomingCallTimer);
+    staleIncomingCallTimer = null;
     durationTimer.stop();
     clearBootstrapRetry();
     pendingBootstrapInboxId = undefined;

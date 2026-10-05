@@ -2634,4 +2634,60 @@ describe('useCallSession', () => {
     expect(rejectBackendCallMock).not.toHaveBeenCalled();
     expect(callsStore.calls).toEqual([]);
   });
+
+  describe('ringing cards that lost their terminal event', () => {
+    const addRingingCall = callsStore =>
+      callsStore.addCall({
+        callSid: 'beeline:janus:101:call-id-stale',
+        provider: 'beeline',
+        callDirection: 'inbound',
+        status: 'ringing',
+        sipProfileId: 101,
+        janusSessionKey: 'sip_profile:101',
+      });
+
+    it('removes the card after 150 seconds without events when its SIP session is gone', async () => {
+      vi.useFakeTimers();
+      const callsStore = useCallsStore();
+      addRingingCall(callsStore);
+      mountUseCallSession();
+
+      await vi.advanceTimersByTimeAsync(140_000);
+      expect(callsStore.calls).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(callsStore.calls).toEqual([]);
+    });
+
+    it('keeps the card of the leg whose own SIP session still rings', async () => {
+      vi.useFakeTimers();
+      const callsStore = useCallsStore();
+      addRingingCall(callsStore);
+      hasPendingIncomingCallMock.mockReturnValue(true);
+      mountUseCallSession();
+
+      await vi.advanceTimersByTimeAsync(300_000);
+
+      expect(callsStore.calls).toHaveLength(1);
+    });
+
+    it('stops checking when the phone is unmounted', async () => {
+      vi.useFakeTimers();
+      const callsStore = useCallsStore();
+      const expireSpy = vi.spyOn(callsStore, 'expireStaleIncomingCalls');
+      mountUseCallSession();
+      await vi.advanceTimersByTimeAsync(16_000);
+      const checksWhileMounted = expireSpy.mock.calls.length;
+
+      mountedApps.forEach(({ app, element }) => {
+        app.unmount();
+        element.remove();
+      });
+      mountedApps = [];
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(checksWhileMounted).toBeGreaterThan(0);
+      expect(expireSpy).toHaveBeenCalledTimes(checksWhileMounted);
+    });
+  });
 });
