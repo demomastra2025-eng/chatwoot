@@ -3162,7 +3162,161 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
-  it 'allows an inbox member to cancel a pending outbound native SIP call' do
+  describe 'ending an outbound call that another operator started' do
+    let(:colleague) { create(:user, account: account, role: :agent) }
+    let(:colleague_headers) { colleague.create_new_auth_token }
+    let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
+
+    def create_outbound_call(owner_metadata:, status: 'in_progress')
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: conversation.contact,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        external_call_ref: "outbound-owned-#{SecureRandom.hex(4)}",
+        status: status,
+        direction: 'outbound',
+        metadata: {
+          'telephony_call_ref' => 'outbound-owned',
+          'metadata' => { 'route_action' => 'operator', 'direction' => 'outbound' }.merge(owner_metadata)
+        }
+      )
+    end
+
+    before do
+      create(:inbox_member, inbox: voice_inbox, user: administrator)
+      create(:inbox_member, inbox: voice_inbox, user: colleague)
+    end
+
+    it 'does not let a colleague with access to the inbox hang up the operator\'s call' do
+      call_session = create_outbound_call(owner_metadata: { 'chatwoot_user_id' => administrator.id })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: colleague_headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body['code']).to eq('OPERATOR_NOT_CANDIDATE')
+      expect(call_session.reload).to have_attributes(status: 'in_progress', ended_by: nil)
+    end
+
+    it 'does not let a colleague cancel the operator\'s call while it is still ringing' do
+      call_session = create_outbound_call(owner_metadata: { 'chatwoot_user_id' => administrator.id }, status: 'ringing')
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'cancelled', reason: 'operator_cancelled' },
+           headers: colleague_headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(call_session.reload.status).to eq('ringing')
+    end
+
+    it 'does not let anyone end an outbound call that has no recorded operator' do
+      call_session = create_outbound_call(owner_metadata: {})
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(call_session.reload.status).to eq('in_progress')
+    end
+
+    it 'lets the operator who started the call hang it up' do
+      call_session = create_outbound_call(owner_metadata: { 'chatwoot_user_id' => administrator.id })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(call_session.reload).to have_attributes(status: 'completed', ended_by: "user:#{administrator.id}")
+    end
+  end
+
+  describe 'releasing an incoming call' do
+    let(:colleague) { create(:user, account: account, role: :agent) }
+    let(:colleague_headers) { colleague.create_new_auth_token }
+
+    def create_inbound_call(metadata:, status: 'ringing')
+      create(
+        :telephony_call_session,
+        account: account,
+        external_call_ref: "inbound-release-#{SecureRandom.hex(4)}",
+        status: status,
+        direction: 'inbound',
+        metadata: metadata
+      )
+    end
+
+    it 'does not let a registered colleague decline a call that rings for other operators only' do
+      create(:telephony_agent_binding, :registered, account: account, user: colleague, provider: 'sipuni')
+      binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
+      call_session = create_inbound_call(
+        metadata: {
+          'metadata' => {
+            'route_action' => 'operator',
+            'operator_candidate_user_ids' => [administrator.id],
+            'operator_candidate_agent_refs' => [binding.agent_ref]
+          }
+        }
+      )
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
+           headers: colleague_headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(call_session.reload.status).to eq('ringing')
+    end
+
+    it 'does not let a registered colleague decline a call that is not addressed to any operator' do
+      create(:telephony_agent_binding, :registered, account: account, user: colleague, provider: 'sipuni')
+      call_session = create_inbound_call(metadata: { 'metadata' => { 'route_action' => 'operator' } })
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, reason: 'operator_declined' },
+           headers: colleague_headers,
+           as: :json
+
+      expect(response).to have_http_status(:forbidden)
+      expect(call_session.reload.status).to eq('ringing')
+    end
+
+    it 'does not let a colleague end a call another operator has taken' do
+      colleague_binding = create(:telephony_agent_binding, :registered, account: account, user: colleague, provider: 'sipuni')
+      binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
+      call_session = create_inbound_call(
+        status: 'in_progress',
+        metadata: {
+          'operator_claim' => { 'user_id' => administrator.id },
+          'metadata' => {
+            'route_action' => 'operator',
+            'operator_candidate_user_ids' => [administrator.id, colleague.id],
+            'operator_candidate_agent_refs' => [binding.agent_ref, colleague_binding.agent_ref]
+          }
+        }
+      )
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+           params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+           headers: colleague_headers,
+           as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body['code']).to eq('CALL_ALREADY_CLAIMED')
+      expect(call_session.reload).to have_attributes(status: 'in_progress', ended_by: nil)
+    end
+  end
+
+  it 'allows the operator who started a pending outbound native SIP call to cancel it' do
     create(:inbox_member, inbox: voice_inbox, user: administrator)
     conversation = create(:conversation, account: account, inbox: voice_inbox)
     call_session = create(
@@ -3178,7 +3332,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       from_number: voice_channel.phone_number,
       to_number: conversation.contact.phone_number || '+15551230001',
       metadata: {
-        'telephony_call_ref' => 'outbound-pending-cancel-1'
+        'telephony_call_ref' => 'outbound-pending-cancel-1',
+        'metadata' => { 'chatwoot_user_id' => administrator.id }
       }
     )
     message = conversation.messages.create!(
