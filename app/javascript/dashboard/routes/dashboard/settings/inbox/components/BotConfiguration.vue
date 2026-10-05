@@ -60,13 +60,9 @@ const isFetching = computed(() =>
 );
 
 const sortedAssistants = computed(() => {
-  return [...(assistants.value || [])]
-    .filter(
-      assistant =>
-        assistant?.usage_mode !== 'internal_assistant' ||
-        Number(assistant?.id) === connectedAssistantId.value
-    )
-    .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
+  return [...(assistants.value || [])].sort((a, b) =>
+    (a?.name || '').localeCompare(b?.name || '')
+  );
 });
 
 const selectedAssistant = computed(() =>
@@ -440,12 +436,6 @@ const updateAutoReplyMode = async event => {
                           class="min-w-0 truncate text-sm font-medium text-n-slate-12"
                         >
                           {{ assistant.name || `#${assistant.id}` }}
-                        </span>
-                        <span
-                          v-if="assistant.usage_mode === 'internal_assistant'"
-                          class="text-xs text-n-slate-11"
-                        >
-                          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
                         </span>
                       </span>
                     </span>

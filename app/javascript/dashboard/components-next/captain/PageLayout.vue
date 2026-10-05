@@ -296,7 +296,6 @@ watch(
     </footer>
     <CreateAssistantDialog
       ref="createAssistantDialogRef"
-      type="create"
       @created="handleAssistantCreated"
     />
   </section>

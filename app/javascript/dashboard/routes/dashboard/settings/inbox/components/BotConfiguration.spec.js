@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { computed, defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
+import assistantStore from 'dashboard/store/captain/assistant';
+
 const mockState = vi.hoisted(() => ({
   dispatch: vi.fn(),
   useAlert: vi.fn(),
@@ -140,7 +142,10 @@ vi.mock('dashboard/composables/store', () => ({
   }),
   useMapGetter: key => {
     if (key === 'captainAssistants/getRecords') {
-      return computed(() => mockState.assistants);
+      // The real getter of the assistant store decides what the picker sees.
+      return computed(() =>
+        assistantStore.getters.getRecords({ records: mockState.assistants })
+      );
     }
     if (key === 'captainAssistants/getUIFlags') {
       return computed(() => mockState.assistantFlags);
@@ -313,7 +318,7 @@ describe('Inbox BotConfiguration Captain settings', () => {
     ).toBe(false);
   });
 
-  it('lists AI agents without a kind badge and keeps internal assistants out of the choice', async () => {
+  it('lists only AI agents: internal assistants are hidden by the assistant store', async () => {
     mockState.assistants = [
       ...mockState.assistants,
       {
@@ -331,14 +336,18 @@ describe('Inbox BotConfiguration Captain settings', () => {
       .trigger('click');
 
     expect(wrapper.text()).toContain('Sales assistant');
+    expect(wrapper.text()).toContain('Support assistant');
     expect(wrapper.text()).not.toContain('Team helper');
     expect(wrapper.text()).not.toContain('USAGE_MODE');
-    expect(wrapper.text()).not.toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
+    expect(
+      wrapper
+        .find('[data-testid="captain-inbox-assistant-option-103"]')
+        .exists()
+    ).toBe(false);
   });
 
-  it('marks an internal assistant that is already connected with a quiet label', async () => {
+  it('offers no assistant choice when the account only has an internal assistant', async () => {
     mockState.assistants = [
-      ...mockState.assistants,
       {
         id: 103,
         name: 'Team helper',
@@ -346,10 +355,6 @@ describe('Inbox BotConfiguration Captain settings', () => {
         usage_mode: 'internal_assistant',
       },
     ];
-    mockState.inbox = {
-      ...mockState.inbox,
-      captain_assistant: { id: 103, name: 'Team helper' },
-    };
     const wrapper = buildWrapper({ inbox: mockState.inbox });
     await flushPromises();
 
@@ -357,8 +362,11 @@ describe('Inbox BotConfiguration Captain settings', () => {
       .get('[data-testid="captain-inbox-assistant"]')
       .trigger('click');
 
-    expect(wrapper.text()).toContain('Team helper');
-    expect(wrapper.text()).toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
-    expect(wrapper.text()).not.toContain('USAGE_MODE');
+    expect(wrapper.text()).not.toContain('Team helper');
+    expect(
+      wrapper
+        .find('[data-testid="captain-inbox-assistant-option-103"]')
+        .exists()
+    ).toBe(false);
   });
 });

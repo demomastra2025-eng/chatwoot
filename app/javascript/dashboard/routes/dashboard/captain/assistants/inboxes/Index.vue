@@ -20,16 +20,10 @@ const route = useRoute();
 const { t } = useI18n();
 
 const assistantId = computed(() => Number(route.params.assistantId));
-const assistant = computed(() =>
-  store.getters['captainAssistants/getRecord'](assistantId.value)
-);
 const assistantUiFlags = useMapGetter('captainAssistants/getUIFlags');
 const isFetchingAssistant = computed(() => assistantUiFlags.value.fetchingItem);
 const inboxUiFlags = useMapGetter('inboxes/getUIFlags');
 const isFetching = computed(() => inboxUiFlags.value.isFetching);
-const isInternalAssistant = computed(
-  () => assistant.value?.usage_mode === 'internal_assistant'
-);
 
 const inboxes = useMapGetter('inboxes/getInboxes');
 const connectionStateByInboxId = reactive({});
@@ -132,11 +126,7 @@ watch(
 );
 
 const toggleInboxConnection = async (inbox, nextValue) => {
-  if (
-    !inbox?.id ||
-    isLockedToAnotherAssistant(inbox) ||
-    isInternalAssistant.value
-  ) {
+  if (!inbox?.id || isLockedToAnotherAssistant(inbox)) {
     return;
   }
 
@@ -217,7 +207,7 @@ const autoReplyModeDisabled = inbox => {
   <PageLayout
     :header-title="$t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.CHANNELS.LABEL')"
     :is-fetching="isFetchingAssistant || isFetching"
-    :is-empty="!isInternalAssistant && !sortedInboxes.length"
+    :is-empty="!sortedInboxes.length"
     :show-pagination-footer="false"
     :show-know-more="false"
     :feature-flag="FEATURE_FLAGS.CAPTAIN"
@@ -235,22 +225,7 @@ const autoReplyModeDisabled = inbox => {
           "
         />
 
-        <div
-          v-if="isInternalAssistant"
-          class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-6 py-10 text-center"
-        >
-          <h3 class="text-base font-medium text-n-slate-12">
-            {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_TITLE') }}
-          </h3>
-          <p class="mt-2 text-sm text-n-slate-11">
-            {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_DESCRIPTION') }}
-          </p>
-        </div>
-
-        <CardLayout
-          v-for="inbox in isInternalAssistant ? [] : sortedInboxes"
-          :key="inbox.id"
-        >
+        <CardLayout v-for="inbox in sortedInboxes" :key="inbox.id">
           <div class="flex justify-between items-center w-full gap-4">
             <div class="min-w-0">
               <span

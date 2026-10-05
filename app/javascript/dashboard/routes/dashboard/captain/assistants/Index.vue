@@ -19,7 +19,6 @@ const uiFlags = useMapGetter('captainAssistants/getUIFlags');
 const assistants = useMapGetter('captainAssistants/getRecords');
 const isFetching = computed(() => uiFlags.value.fetchingList);
 
-const selectedAssistant = ref(null);
 const createAssistantDialog = ref(null);
 const router = useRouter();
 
@@ -30,7 +29,6 @@ const handleCreate = () => {
 
 const handleCreateClose = () => {
   dialogType.value = '';
-  selectedAssistant.value = null;
 };
 
 const navigateToAssistantSettings = assistantId => {
@@ -89,7 +87,6 @@ const handleAssistantAction = ({ id }) => {
           :key="assistant.id"
           :name="assistant.name"
           :description="assistant.description || ''"
-          :usage-mode="assistant.usage_mode"
           :updated-at="assistant.updated_at || assistant.created_at"
           @action="handleAssistantAction"
         />
@@ -99,8 +96,6 @@ const handleAssistantAction = ({ id }) => {
     <CreateAssistantDialog
       v-if="dialogType"
       ref="createAssistantDialog"
-      :type="dialogType"
-      :selected-assistant="selectedAssistant"
       @close="handleCreateClose"
       @created="handleAfterCreate"
     />

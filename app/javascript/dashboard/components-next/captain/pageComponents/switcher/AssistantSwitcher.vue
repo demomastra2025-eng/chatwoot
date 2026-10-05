@@ -129,12 +129,6 @@ const handleAssistantChange = async assistant => {
           <span class="text-sm font-medium truncate text-n-slate-12">
             {{ assistant.name || '' }}
           </span>
-          <span
-            v-if="assistant?.usage_mode === 'internal_assistant'"
-            class="shrink-0 text-xs text-n-slate-11"
-          >
-            {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
-          </span>
         </span>
         <Avatar
           v-if="assistant"

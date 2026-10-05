@@ -298,32 +298,6 @@ describe('Captain assistant settings page', () => {
     expect(wrapper.text().match(/basic-form/g)).toHaveLength(2);
   });
 
-  it('saves an internal assistant without the sections of an AI agent', async () => {
-    const original = { ...assistantRecord };
-    assistantRecord.usage_mode = 'internal_assistant';
-
-    try {
-      const wrapper = mountComponent();
-
-      expect(wrapper.text()).not.toContain('outcome-form');
-      expect(wrapper.text()).not.toContain('system-form');
-
-      await clickUpdate(wrapper);
-
-      const [, payload] = dispatchMock.mock.calls.find(
-        ([name]) => name === 'captainAssistants/update'
-      );
-      expect(payload).not.toHaveProperty('usage_mode');
-      // the AI agent sections are not rendered, so their saved values are kept as they are
-      expect(payload.config.handoff_message).toBe('old handoff');
-      expect(payload.config).not.toHaveProperty('auto_completion_enabled');
-      expect(outcomeBuildPayloadMock).not.toHaveBeenCalled();
-      expect(systemBuildPayloadMock).not.toHaveBeenCalled();
-    } finally {
-      Object.assign(assistantRecord, original);
-    }
-  });
-
   it('saves voice agent settings from the dedicated voice tab', async () => {
     const wrapper = mountComponent();
 

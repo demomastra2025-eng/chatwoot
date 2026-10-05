@@ -39,15 +39,16 @@ describe('AssistantCard', () => {
     const wrapper = mountCard();
 
     expect(wrapper.text()).toContain('Мөлдір');
-    expect(wrapper.text()).not.toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
     expect(wrapper.text()).not.toContain('USAGE_MODE');
   });
 
-  it('marks one of the few internal assistants with a quiet label', () => {
-    const wrapper = mountCard({ usageMode: 'internal_assistant' });
+  it('offers the connected inboxes, edit and delete actions to an administrator', () => {
+    const wrapper = mountCard();
 
-    expect(wrapper.text()).toContain('Мөлдір');
-    expect(wrapper.text()).toContain('CAPTAIN.ASSISTANTS.INTERNAL_LABEL');
-    expect(wrapper.text()).not.toContain('USAGE_MODE');
+    expect(wrapper.vm.menuItems.map(item => item.action)).toEqual([
+      'viewConnectedInboxes',
+      'edit',
+      'delete',
+    ]);
   });
 });

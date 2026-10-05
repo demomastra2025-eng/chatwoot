@@ -1,12 +1,11 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
 import { useMapGetter } from 'dashboard/composables/store';
 
-import NextButton from 'dashboard/components-next/button/Button.vue';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantRulesManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRulesManager.vue';
@@ -16,7 +15,6 @@ import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
 const { t } = useI18n();
 const route = useRoute();
-const router = useRouter();
 const store = useStore();
 
 const promptDescriptionFormRef = ref(null);
@@ -29,33 +27,13 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-const isInternalAssistant = computed(
-  () => assistant.value?.usage_mode === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
-// The employee Copilot chat is retired, and it was the only consumer of an
-// internal assistant's instructions and scenarios. MCP still reads its tool
-// access, which lives on the assistant settings page.
-const openAssistantSettings = () => {
-  router.push({
-    name: 'captain_assistants_settings_index',
-    params: {
-      accountId: route.params.accountId,
-      assistantId: assistantId.value,
-    },
-  });
-};
 const PROMPT_TAB_RULES = 'rules';
 const PROMPT_TAB_SCENARIOS = 'scenarios';
 const promptTabs = computed(() => [
-  ...(isExternalAgent.value
-    ? [
-        {
-          key: PROMPT_TAB_RULES,
-          label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
-        },
-      ]
-    : []),
+  {
+    key: PROMPT_TAB_RULES,
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
+  },
   {
     key: PROMPT_TAB_SCENARIOS,
     label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.SCENARIOS'),
@@ -163,44 +141,14 @@ watch(
     :is-fetching="isFetching"
     :show-pagination-footer="false"
     :show-know-more="false"
-    :button-label="isInternalAssistant ? '' : t('CAPTAIN.ASSISTANTS.FORM.SAVE')"
+    :button-label="t('CAPTAIN.ASSISTANTS.FORM.SAVE')"
     button-icon=""
     @click="handlePromptsSave"
   >
     <template #body>
-      <div
-        v-if="isInternalAssistant"
-        class="flex max-w-3xl flex-col gap-3 rounded-2xl border border-n-weak bg-n-solid-1 p-5 md:p-6"
-        data-testid="internal-assistant-mcp-notice"
-      >
-        <h3 class="text-sm font-medium text-n-slate-12">
-          {{ t('CAPTAIN.ASSISTANTS.SETTINGS.INTERNAL_ASSISTANT_NOTICE.TITLE') }}
-        </h3>
-        <p class="text-sm text-n-slate-11">
-          {{
-            t(
-              'CAPTAIN.ASSISTANTS.SETTINGS.INTERNAL_ASSISTANT_NOTICE.DESCRIPTION'
-            )
-          }}
-        </p>
-        <div>
-          <NextButton
-            :label="
-              t('CAPTAIN.ASSISTANTS.SETTINGS.INTERNAL_ASSISTANT_NOTICE.ACTION')
-            "
-            size="sm"
-            data-testid="internal-assistant-open-settings"
-            @click="openAssistantSettings"
-          />
-        </div>
-      </div>
-      <div v-else class="flex flex-col gap-6">
+      <div class="flex flex-col gap-6">
         <div
-          class="grid gap-6"
-          :class="{
-            'lg:grid-cols-[minmax(0,1.02fr)_minmax(24rem,1fr)]':
-              isExternalAgent,
-          }"
+          class="grid gap-6 lg:grid-cols-[minmax(0,1.02fr)_minmax(24rem,1fr)]"
         >
           <div class="flex h-full flex-col gap-6">
             <div
@@ -220,7 +168,7 @@ watch(
             </div>
           </div>
 
-          <div v-if="isExternalAgent" class="lg:self-start">
+          <div class="lg:self-start">
             <PromptInspector
               :assistant-id="assistant?.id"
               :assistant="assistant"

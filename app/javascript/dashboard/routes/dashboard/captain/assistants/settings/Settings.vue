@@ -39,10 +39,6 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-// The kind of an assistant is only read: the page never changes it.
-const isExternalAgent = computed(
-  () => assistant.value?.usage_mode !== 'internal_assistant'
-);
 const assistantConfig = computed(() => assistant.value?.config || {});
 const legacyOutcomeReasons = computed(() => {
   const getAccount = store.getters['accounts/getAccount'];
@@ -227,15 +223,11 @@ const handleGeneralSave = async () => {
     await generalCapabilitiesFormRef.value?.buildPayload?.();
   if (!capabilitiesPayload) return;
 
-  const systemPayload = isExternalAgent.value
-    ? await generalSystemFormRef.value?.buildPayload?.()
-    : null;
-  if (isExternalAgent.value && !systemPayload) return;
+  const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
+  if (!systemPayload) return;
 
-  const outcomePayload = isExternalAgent.value
-    ? await generalOutcomeFormRef.value?.buildPayload?.()
-    : null;
-  if (isExternalAgent.value && !outcomePayload) {
+  const outcomePayload = await generalOutcomeFormRef.value?.buildPayload?.();
+  if (!outcomePayload) {
     useAlert(t('CAPTAIN.ASSISTANTS.OUTCOMES.VALIDATION'));
     return;
   }
@@ -352,10 +344,7 @@ const handleDeleteSuccess = () => {
             </div>
           </div>
 
-          <div
-            v-if="isExternalAgent"
-            class="rounded-2xl bg-n-solid-1 p-5 md:p-6"
-          >
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
             <AssistantOutcomeSettingsForm
               ref="generalOutcomeFormRef"
               :assistant="assistant"
@@ -364,10 +353,7 @@ const handleDeleteSuccess = () => {
             />
           </div>
 
-          <div
-            v-if="isExternalAgent"
-            class="rounded-2xl bg-n-solid-1 p-5 md:p-6"
-          >
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
             <div class="flex flex-col gap-6">
               <SettingsHeader
                 :heading="t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.RUNTIME.LABEL')"

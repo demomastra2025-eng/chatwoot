@@ -22,10 +22,6 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  usageMode: {
-    type: String,
-    default: 'external_agent',
-  },
   updatedAt: {
     type: Number,
     required: true,
@@ -39,21 +35,15 @@ const { t } = useI18n();
 
 const [showActionsDropdown, toggleDropdown] = useToggle();
 
-const isInternalAssistant = computed(
-  () => props.usageMode === 'internal_assistant'
-);
-
 const menuItems = computed(() => {
-  const allOptions = [];
-
-  if (!isInternalAssistant.value) {
-    allOptions.push({
+  const allOptions = [
+    {
       label: t('CAPTAIN.ASSISTANTS.OPTIONS.VIEW_CONNECTED_INBOXES'),
       value: 'viewConnectedInboxes',
       action: 'viewConnectedInboxes',
       icon: 'i-lucide-link',
-    });
-  }
+    },
+  ];
 
   if (checkPermissions(['administrator'])) {
     allOptions.push(
@@ -92,12 +82,6 @@ const handleAction = ({ action, value }) => {
         >
           {{ name }}
         </h6>
-        <span
-          v-if="isInternalAssistant"
-          class="shrink-0 text-xs text-n-slate-11"
-        >
-          {{ t('CAPTAIN.ASSISTANTS.INTERNAL_LABEL') }}
-        </span>
       </div>
       <div class="flex items-center gap-2">
         <div

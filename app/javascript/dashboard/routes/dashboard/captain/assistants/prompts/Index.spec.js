@@ -5,7 +5,6 @@ import { flushPromises, mount } from '@vue/test-utils';
 const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
 const rulesBuildPayloadMock = vi.fn();
-const routerPushMock = vi.fn();
 const assistantRecord = {
   id: 58,
   usage_mode: 'external_agent',
@@ -49,20 +48,6 @@ const PageLayoutStub = defineComponent({
           : null,
         slots.body?.(),
       ]);
-  },
-});
-
-const NextButtonStub = defineComponent({
-  name: 'NextButton',
-  props: {
-    label: {
-      type: String,
-      default: '',
-    },
-  },
-  emits: ['click'],
-  setup(props, { emit }) {
-    return () => h('button', { onClick: () => emit('click') }, props.label);
   },
 });
 
@@ -144,9 +129,6 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({
     params: { accountId: '7', assistantId: '58' },
   }),
-  useRouter: () => ({
-    push: routerPushMock,
-  }),
 }));
 
 vi.mock('dashboard/composables', () => ({
@@ -172,9 +154,7 @@ vi.mock('dashboard/composables/store', () => ({
 vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
   default: PageLayoutStub,
 }));
-vi.mock('dashboard/components-next/button/Button.vue', () => ({
-  default: NextButtonStub,
-}));
+
 vi.mock(
   'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue',
   () => ({ default: AssistantBasicSettingsFormStub })
@@ -211,11 +191,9 @@ const buildWrapper = () => mount(PromptsIndex);
 
 describe('Captain prompts page', () => {
   beforeEach(() => {
-    assistantRecord.usage_mode = 'external_agent';
     dispatchMock.mockReset();
     dispatchMock.mockResolvedValue({});
     useAlertMock.mockReset();
-    routerPushMock.mockReset();
     rulesBuildPayloadMock.mockReset();
     rulesBuildPayloadMock.mockImplementation(() => ({
       assistant: {
@@ -290,60 +268,17 @@ describe('Captain prompts page', () => {
     expect(promptForm.props('descriptionMinHeight')).toBe('26rem');
   });
 
-  it('keeps the instructions editor and rules for customer-facing AI agents', () => {
+  it('keeps the instructions editor, rules and the prompt inspector of an AI agent', () => {
     const wrapper = buildWrapper();
 
     expect(
       wrapper.findComponent({ name: 'AssistantBasicSettingsForm' }).exists()
     ).toBe(true);
     expect(wrapper.find('[data-testid="rules-manager"]').exists()).toBe(true);
+    expect(wrapper.findComponent({ name: 'PromptInspector' }).exists()).toBe(
+      true
+    );
     expect(wrapper.find('[data-testid="page-save"]').exists()).toBe(true);
-    expect(
-      wrapper.find('[data-testid="internal-assistant-mcp-notice"]').exists()
-    ).toBe(false);
-  });
-
-  it('replaces instructions and scenarios with the MCP tool-access notice for internal assistants', async () => {
-    assistantRecord.usage_mode = 'internal_assistant';
-
-    const wrapper = buildWrapper();
-
-    expect(
-      wrapper.find('[data-testid="internal-assistant-mcp-notice"]').text()
-    ).toContain('CAPTAIN.ASSISTANTS.SETTINGS.INTERNAL_ASSISTANT_NOTICE.TITLE');
-    expect(
-      wrapper.findComponent({ name: 'AssistantBasicSettingsForm' }).exists()
-    ).toBe(false);
-    expect(wrapper.find('[data-testid="scenarios-manager"]').exists()).toBe(
-      false
-    );
-    expect(wrapper.find('[data-testid="rules-manager"]').exists()).toBe(false);
-    expect(wrapper.find('[data-testid="page-save"]').exists()).toBe(false);
-
-    await wrapper
-      .get('[data-testid="internal-assistant-open-settings"]')
-      .trigger('click');
-
-    expect(routerPushMock).toHaveBeenCalledWith({
-      name: 'captain_assistants_settings_index',
-      params: { accountId: '7', assistantId: 58 },
-    });
-    expect(dispatchMock).not.toHaveBeenCalledWith(
-      'captainAssistants/update',
-      expect.anything()
-    );
-  });
-
-  it('shows the prompt inspector only for customer-facing AI agents', () => {
-    expect(
-      buildWrapper().findComponent({ name: 'PromptInspector' }).exists()
-    ).toBe(true);
-
-    assistantRecord.usage_mode = 'internal_assistant';
-
-    expect(
-      buildWrapper().findComponent({ name: 'PromptInspector' }).exists()
-    ).toBe(false);
   });
 
   it('shows the rules validation error and skips update when page-level save cannot build the rules payload', async () => {
