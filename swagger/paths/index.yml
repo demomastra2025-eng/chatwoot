@@ -3122,7 +3122,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Create a CRM pipeline
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean }, stages: { type: array, items: { type: object } } } } } } }
-    responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } }, '422': { description: Invalid pipeline, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid pipeline, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 /api/v1/accounts/{account_id}/crm/pipelines/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
@@ -3137,7 +3137,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a CRM pipeline
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, auto_create_deal_on_channel_contact: { type: boolean }, restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } }
-    responses: { '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } }, '422': { description: Invalid update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_pipeline' } } } } } }, '422': { description: Invalid update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
     operationId: delete-crm-pipeline
@@ -3153,7 +3153,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Create a pipeline stage
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, outcome: { type: string, enum: [open, won, lost] }, active: { type: boolean }, closing_reason_options: { type: array, items: { type: string } }, closing_reason_required: { type: boolean }, transition_reason_options: { type: array, items: { type: string } }, transition_reason_required: { type: boolean }, field_requirements: { type: array, items: { type: object } } } } } } }
-    responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } }, '422': { description: Invalid stage, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid stage, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/pipelines/{pipeline_id}/stages/batch_update:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: pipeline_id, required: true, schema: { type: integer } }]
   patch:
@@ -3163,7 +3163,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Submits the ordered open stage list and stage-rule settings together. System stages and stages referenced by deals remain subject to server validation; legacy imported positions are not automatically cleaned.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stages: { type: array, items: { type: object } }, deleted_stage_ids: { type: array, items: { type: integer } }, pipeline: { type: object, properties: { restrict_stage_skipping: { type: boolean }, restrict_backward_move: { type: boolean }, allow_stage_rule_override: { type: boolean } } } } } } } }
-    responses: { '200': { description: Updated stages, content: { application/json: { schema: { type: object, properties: { payload: { type: array, items: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid stage set, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated stages, content: { application/json: { schema: { type: object, properties: { payload: { type: array, items: { $ref: '#/components/schemas/crm_stage' } } } } } } }, '422': { description: Invalid stage set, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 
 /api/v1/accounts/{account_id}/crm/stages/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3173,7 +3173,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a CRM stage
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, outcome: { type: string, enum: [open, won, lost] }, active: { type: boolean }, default: { type: boolean }, closing_reason_options: { type: array, items: { type: string } }, closing_reason_required: { type: boolean }, transition_reason_options: { type: array, items: { type: string } }, transition_reason_required: { type: boolean } } } } } }
-    responses: { '200': { description: Updated stage, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } }, '422': { description: Invalid stage update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated stage, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid stage update, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
     operationId: delete-crm-stage
@@ -3196,7 +3196,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a stage's managed-field requirements
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { field_requirements: { type: array, items: { type: object, properties: { field_key: { type: string }, required: { type: boolean }, validation: { type: object }, role_exemptions: { type: array, items: { type: string } } } } } } } } } }
-    responses: { '200': { description: Updated stage, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } }, '422': { description: Invalid requirement, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated stage, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_stage' } } } } } }, '422': { description: Invalid requirement, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 
 /api/v1/accounts/{account_id}/crm/task_statuses:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
@@ -3212,7 +3212,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Create a CRM task status
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, category: { type: string, enum: [open, in_progress, completed, cancelled] }, active: { type: boolean }, default: { type: boolean } } } } } }
-    responses: { '201': { description: Created status, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_status' } } } } }, '422': { description: Invalid status, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created status, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_status' } } } } } }, '422': { description: Invalid status, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/task_statuses/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   patch:
@@ -3221,7 +3221,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a CRM task status
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, color: { type: string }, position: { type: integer }, category: { type: string, enum: [open, in_progress, completed, cancelled] }, active: { type: boolean }, default: { type: boolean } } } } } }
-    responses: { '200': { description: Updated status, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_status' } } } } }, '422': { description: Invalid status, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated status, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_status' } } } } } }, '422': { description: Invalid status, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
     operationId: delete-crm-task-status
@@ -3243,7 +3243,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Create a CRM task type
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, icon: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean } } } } } }
-    responses: { '201': { description: Created type, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_type' } } } } }, '422': { description: Invalid type, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created type, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_type' } } } } } }, '422': { description: Invalid type, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/task_types/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   patch:
@@ -3252,7 +3252,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a CRM task type
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, code: { type: string }, icon: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean } } } } } }
-    responses: { '200': { description: Updated type, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_type' } } } } }, '422': { description: Invalid type, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated type, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_type' } } } } } }, '422': { description: Invalid type, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
     operationId: delete-crm-task-type
@@ -3274,7 +3274,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Create a CRM task outcome
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { task_type_id: { type: integer }, name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, requires_note: { type: boolean } } } } } }
-    responses: { '201': { description: Created outcome, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_outcome' } } } } }, '422': { description: Invalid outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created outcome, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_outcome' } } } } } }, '422': { description: Invalid outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/task_outcomes/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   patch:
@@ -3283,7 +3283,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Update a CRM task outcome
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { task_type_id: { type: integer }, name: { type: string }, code: { type: string }, position: { type: integer }, active: { type: boolean }, default: { type: boolean }, requires_note: { type: boolean } } } } } }
-    responses: { '200': { description: Updated outcome, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_outcome' } } } } }, '422': { description: Invalid outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated outcome, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task_outcome' } } } } } }, '422': { description: Invalid outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
   delete:
     tags: [CRM]
     operationId: delete-crm-task-outcome
@@ -3315,7 +3315,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: An account idempotency_key returns the matching existing deal; related records and assignment remain subject to authorization.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { pipeline_id: { type: integer }, stage_id: { type: integer }, owner_id: { type: integer }, creator_id: { type: integer }, team_id: { type: integer }, company_id: { type: integer }, originating_conversation_id: { type: integer }, originating_communication_thread_id: { type: integer }, title: { type: string }, description: { type: string }, amount_minor: { type: integer }, currency: { type: string }, expected_close_on: { type: string, format: date }, position: { type: integer }, win_probability: { type: number }, external_ref: { type: string }, idempotency_key: { type: string }, primary_contact_id: { type: integer }, contact_ids: { type: array, items: { type: integer } }, closing_reasons: { type: array, items: { type: string } }, custom_attributes: { type: object, additionalProperties: true } } } } } }
-    responses: { '201': { description: Created deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid deal, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid deal, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
@@ -3323,7 +3323,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: get-crm-deal
     summary: Get a CRM deal
     security: [{ userApiKey: [] }]
-    responses: { '200': { description: Deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '404': { description: Not found or not visible, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '404': { description: Not found or not visible, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
   patch:
     tags: [CRM]
     operationId: update-crm-deal
@@ -3331,7 +3331,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Stage, close/reopen, waiting, reorder and archive fields use lifecycle commands. lock_version enables stale-write detection.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { owner_id: { type: integer }, creator_id: { type: integer }, team_id: { type: integer }, company_id: { type: integer }, title: { type: string }, description: { type: string }, amount_minor: { type: integer }, currency: { type: string }, expected_close_on: { type: string, format: date }, win_probability: { type: number }, external_ref: { type: string }, idempotency_key: { type: string }, primary_contact_id: { type: integer }, contact_ids: { type: array, items: { type: integer } }, closing_reasons: { type: array, items: { type: string } }, custom_attributes: { type: object, additionalProperties: true }, lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Updated deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '409': { description: Stale update or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid deal, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '409': { description: Stale update or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid deal, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 /api/v1/accounts/{account_id}/crm/deals/{id}/timeline:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
@@ -3351,7 +3351,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Stage policy validates stage-skipping/backward moves and transition reasons; required closing reasons are checked on terminal stages. Override is available only where pipeline rules permit.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stage_id: { type: integer }, position: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string }, transition_reason: { type: string }, override: { type: boolean }, override_reason: { type: string }, closing_reasons: { type: array, items: { type: string } } } } } } }
-    responses: { '200': { description: Deal after transition, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '409': { description: Stale state or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Transition or reason rejected, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Deal after transition, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '409': { description: Stale state or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Transition or reason rejected, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/close_won:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3361,7 +3361,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Validates the stage's configured closing reasons and whether a reason is required.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { closing_reasons: { type: array, items: { type: string } }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
-    responses: { '200': { description: Won deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Won deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/close_lost:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3371,7 +3371,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Validates the stage's configured closing reasons and whether a reason is required.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { closing_reasons: { type: array, items: { type: string } }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
-    responses: { '200': { description: Lost deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Lost deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid or missing required closing reason, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/undo_transition:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3380,7 +3380,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Undo the last reversible deal transition
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { event_id: { type: string }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Deal after undo, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Transition cannot be undone, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Deal after undo, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Transition cannot be undone, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/reopen:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3389,7 +3389,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Reopen a closed deal
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { stage_id: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string }, event_id: { type: string } } } } } }
-    responses: { '200': { description: Reopened deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Reopen rejected by pipeline policy, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Reopened deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Reopen rejected by pipeline policy, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/reorder:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3398,7 +3398,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Reorder a deal within its stage
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { position: { type: integer }, lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Reordered deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid position, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Reordered deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid position, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 
 /api/v1/accounts/{account_id}/crm/deals/{id}/set_waiting:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3408,7 +3408,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Set a deal to waiting
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { waiting_until: { type: string, format: date-time }, waiting_reason: { type: string }, create_wake_up_task: { type: boolean }, wake_up_task_title: { type: string }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Waiting deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid waiting period, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Waiting deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid waiting period, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/clear_waiting:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3417,7 +3417,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Clear a deal's waiting state
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Deal after clearing waiting, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '422': { description: Invalid state, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Deal after clearing waiting, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '422': { description: Invalid state, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/archive:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3426,7 +3426,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Archive a CRM deal
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Archived deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Archived deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/deals/{id}/unarchive:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3435,7 +3435,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Restore an archived CRM deal
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Restored deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Restored deal, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_deal' } } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 
 /api/v1/accounts/{account_id}/crm/tasks:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
@@ -3465,7 +3465,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Idempotency keys return a matching existing account task. Lifecycle changes are recorded as terminal-event snapshots for later reports.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { context_kind: { type: string }, deal_id: { type: integer }, status_id: { type: integer }, assignee_id: { type: integer }, creator_id: { type: integer }, team_id: { type: integer }, originating_conversation_id: { type: integer }, title: { type: string }, description: { type: string }, task_type_id: { type: integer }, task_outcome_id: { type: integer }, activity_type: { type: string, description: Legacy compatibility field }, outcome: { type: string }, outcome_note: { type: string }, priority: { type: string }, all_day: { type: boolean }, due_on: { type: string, format: date }, schedule_timezone: { type: string }, start_at: { type: string, format: date-time }, due_at: { type: string, format: date-time }, position: { type: integer }, external_ref: { type: string }, idempotency_key: { type: string }, custom_attributes: { type: object, additionalProperties: true } } } } } }
-    responses: { '201': { description: Created task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Invalid task/catalog relation, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '201': { description: Created task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Invalid task/catalog relation, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
@@ -3473,7 +3473,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: get-crm-task
     summary: Get a CRM task and its catalog snapshots
     security: [{ userApiKey: [] }]
-    responses: { '200': { description: Task payload with task type/outcome projections and lifecycle fields, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '404': { description: Not found or not visible, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Task payload with task type/outcome projections and lifecycle fields, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '404': { description: Not found or not visible, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
   patch:
     tags: [CRM]
     operationId: update-crm-task
@@ -3481,7 +3481,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Status, completion, cancellation, and outcome lifecycle fields must use task commands; generic updates return TASK_COMMAND_REQUIRED. lock_version detects stale writes.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { context_kind: { type: string }, deal_id: { type: integer }, assignee_id: { type: integer }, creator_id: { type: integer }, team_id: { type: integer }, originating_conversation_id: { type: integer }, title: { type: string }, description: { type: string }, task_type_id: { type: integer }, activity_type: { type: string }, priority: { type: string }, all_day: { type: boolean }, due_on: { type: string, format: date }, schedule_timezone: { type: string }, start_at: { type: string, format: date-time }, due_at: { type: string, format: date-time }, position: { type: integer }, external_ref: { type: string }, idempotency_key: { type: string }, lock_version: { type: integer }, custom_attributes: { type: object, additionalProperties: true } } } } } }
-    responses: { '200': { description: Updated task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid task or command-only field, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }}
+    responses: { '200': { description: Updated task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '409': { description: Stale version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid task or command-only field, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } } }
 /api/v1/accounts/{account_id}/crm/tasks/{id}/timeline:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   get:
@@ -3501,7 +3501,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Saves catalog type/outcome and lifecycle snapshots. Reopening and completing again records another terminal event for reporting.
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { task_outcome_id: { type: integer }, outcome: { type: string }, outcome_note: { type: string }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Completed task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Invalid or required outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Completed task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Invalid or required outcome, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/cancel:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3510,7 +3510,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Cancel a task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { cancellation_reason: { type: string }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Cancelled task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Invalid cancellation, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Cancelled task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Invalid cancellation, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/reopen:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3519,7 +3519,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Reopen a completed or cancelled task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Reopened task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Task cannot be reopened, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Reopened task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Task cannot be reopened, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/assign:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3528,7 +3528,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Assign a CRM task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { assignee_id: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Assigned task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '403': { description: Caller is not authorized to assign, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid assignee, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Assigned task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '403': { description: Caller is not authorized to assign, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid assignee, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 
 /api/v1/accounts/{account_id}/crm/tasks/{id}/reschedule:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
@@ -3538,7 +3538,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Reschedule a task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { all_day: { type: boolean }, due_on: { type: string, format: date }, due_at: { type: string, format: date-time }, start_at: { type: string, format: date-time }, schedule_timezone: { type: string }, lock_version: { type: integer }, idempotency_key: { type: string } } } } } }
-    responses: { '200': { description: Rescheduled task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Invalid schedule, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Rescheduled task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Invalid schedule, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/change_status:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3547,7 +3547,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Change a task's status
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { status_id: { type: integer }, position: { type: integer }, lock_version: { type: integer }, idempotency_key: { type: string }, task_outcome_id: { type: integer }, outcome: { type: string }, outcome_note: { type: string }, cancellation_reason: { type: string } } } } } }
-    responses: { '200': { description: Task after transition, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '409': { description: Stale version or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid lifecycle transition, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Task after transition, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '409': { description: Stale version or idempotency conflict, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }, '422': { description: Invalid lifecycle transition, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/save_form:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3556,7 +3556,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Save task form fields and optional status
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { title: { type: string }, description: { type: string }, task_type_id: { type: integer }, task_outcome_id: { type: integer }, outcome: { type: string }, outcome_note: { type: string }, status_id: { type: integer }, cancellation_reason: { type: string }, custom_attributes: { type: object, additionalProperties: true } } } } } }
-    responses: { '200': { description: Updated task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '422': { description: Invalid form, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Updated task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '422': { description: Invalid form, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/archive:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3565,7 +3565,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Archive a CRM task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Archived task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '409': { description: Stale task version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Archived task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '409': { description: Stale task version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/tasks/{id}/unarchive:
   parameters: [{ $ref: '#/components/parameters/account_id' }, { in: path, name: id, required: true, schema: { type: integer } }]
   post:
@@ -3574,7 +3574,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Restore an archived CRM task
     security: [{ userApiKey: [] }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { lock_version: { type: integer } } } } } }
-    responses: { '200': { description: Restored task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } }, '409': { description: Stale task version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Restored task, content: { application/json: { schema: { type: object, properties: { payload: { $ref: '#/components/schemas/crm_task' } } } } } }, '409': { description: Stale task version, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 
 # CRM reports use the caller's CRM policy scopes.
 /api/v1/accounts/{account_id}/crm/reports/deals:
@@ -3585,7 +3585,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Get CRM deal funnel report
     security: [{ userApiKey: [] }]
     parameters: [{ in: query, name: since, schema: { type: string, format: date } }, { in: query, name: until, schema: { type: string, format: date } }, { in: query, name: group_by, schema: { type: string } }, { in: query, name: currency, schema: { type: string } }, { in: query, name: pipeline_id, schema: { type: integer } }]
-    responses: { '200': { description: Funnel report and metadata, content: { application/json: { schema: { type: object, properties: { payload: { type: object, additionalProperties: true }, meta: { $ref: '#/components/schemas/crm_report_meta' } } } } }, '422': { description: Invalid filters, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}}
+    responses: { '200': { description: Funnel report and metadata, content: { application/json: { schema: { type: object, properties: { payload: { type: object, additionalProperties: true }, meta: { $ref: '#/components/schemas/crm_report_meta' } } } } } }, '422': { description: Invalid filters, content: { application/json: { schema: { $ref: '#/components/schemas/crm_error' } } } }}
 /api/v1/accounts/{account_id}/crm/reports/funnels:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   get:
@@ -3661,7 +3661,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: List deals without a next action
     security: [{ userApiKey: [] }]
     parameters: [{ in: query, name: pipeline_id, schema: { type: integer } }, { in: query, name: stage_id, schema: { type: integer } }, { in: query, name: owner_id, schema: { type: integer } }, { in: query, name: team_id, schema: { type: integer } }, { in: query, name: page, schema: { type: integer, default: 1 } }, { in: query, name: per_page, schema: { type: integer, default: 25, maximum: 100 } }]
-    responses: { '200': { description: Paginated deal rows with pipeline, stage and owner data, content: { application/json: { schema: { $ref: '#/components/schemas/crm_report_rows_response' } } } }}
+    responses: { '200': { description: 'Paginated deal rows with pipeline, stage and owner data', content: { application/json: { schema: { $ref: '#/components/schemas/crm_report_rows_response' } } } }}
 
 # Account administrator only. These are account storage endpoints, not internal SuperAdmin APIs.
 /api/v1/accounts/{account_id}/storage:
@@ -3672,7 +3672,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     summary: Show account storage usage
     description: Requires account administrator access. Shared quota is informational and does not block uploads, imports, messages or attachments.
     security: [{ userApiKey: [] }]
-    responses: { '200': { description: Usage and physical breakdown, content: { application/json: { schema: { type: object, properties: { storage: { $ref: '#/components/schemas/crm_storage_summary' } } } } }, '403': { description: Account administrator access required } }}
+    responses: { '200': { description: Usage and physical breakdown, content: { application/json: { schema: { type: object, properties: { storage: { $ref: '#/components/schemas/crm_storage_summary' } } } } } }, '403': { description: Account administrator access required } }
 /api/v1/accounts/{account_id}/storage/heavy_files:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   get:
@@ -3682,7 +3682,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Account administrator only; results are account-scoped and sorted by physical size.
     security: [{ userApiKey: [] }]
     parameters: [{ in: query, name: file_type, schema: { type: string, enum: [all, images, audio, videos, documents, recordings] } }, { in: query, name: inbox_id, schema: { type: integer } }, { in: query, name: conversation_id, schema: { type: integer } }, { in: query, name: date_from, schema: { type: string, format: date } }, { in: query, name: date_to, schema: { type: string, format: date } }, { in: query, name: limit, schema: { type: integer, default: 50, minimum: 1, maximum: 100 } }]
-    responses: { '200': { description: File list, content: { application/json: { schema: { type: object, properties: { files: { type: array, items: { $ref: '#/components/schemas/crm_storage_file' } } } } } }, '422': { description: Invalid filter, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } }}}}
+    responses: { '200': { description: File list, content: { application/json: { schema: { type: object, properties: { files: { type: array, items: { $ref: '#/components/schemas/crm_storage_file' } } } } } } }, '422': { description: Invalid filter, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } }}}
 /api/v1/accounts/{account_id}/storage/refresh:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   post:
@@ -3690,7 +3690,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: refresh-account-storage
     summary: Refresh account storage usage
     security: [{ userApiKey: [] }]
-    responses: { '200': { description: Updated storage summary, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, storage: { $ref: '#/components/schemas/crm_storage_summary' } } } } }, '403': { description: Account administrator access required } }}
+    responses: { '200': { description: Updated storage summary, content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, storage: { $ref: '#/components/schemas/crm_storage_summary' } } } } } }, '403': { description: Account administrator access required } }
 /api/v1/accounts/{account_id}/storage/preview_cleanup:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   post:
@@ -3700,7 +3700,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     description: Admin-only read-only preview. Defaults to items older than six months and returns an actor/account-bound token for the exact manifest; token expires after five minutes.
     security: [{ userApiKey: [] }]
     requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { file_type: { type: string, enum: [all, recordings, attachments] }, older_than_months: { type: integer, default: 6 }, inbox_id: { type: integer } } } } } }
-    responses: { '200': { description: Preview count, bytes, sample and confirmation_token, content: { application/json: { schema: { type: object, additionalProperties: true } } } }, '422': { description: Invalid cleanup filter } }
+    responses: { '200': { description: 'Preview count, bytes, sample and confirmation_token', content: { application/json: { schema: { type: object, additionalProperties: true } } } }, '422': { description: Invalid cleanup filter } }
 /api/v1/accounts/{account_id}/storage/move_to_trash:
   parameters: [{ $ref: '#/components/parameters/account_id' }]
   post:
@@ -3769,7 +3769,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
     operationId: get-captain-assistant
     summary: Get an account Captain assistant
     security: [{ userApiKey: [] }]
-    responses: { '200': { description: Assistant configuration, content: { application/json: { schema: { $ref: '#/components/schemas/captain_assistant' } } }, '404': { description: Assistant not found } }}
+    responses: { '200': { description: Assistant configuration, content: { application/json: { schema: { $ref: '#/components/schemas/captain_assistant' } } } }, '404': { description: Assistant not found } }
   patch:
     tags: [Captain Assistants]
     operationId: update-captain-assistant

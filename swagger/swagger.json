@@ -19858,14 +19858,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid pipeline",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid pipeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -19980,14 +19980,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid update",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20121,14 +20121,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid stage",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid stage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20217,14 +20217,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid stage set",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid stage set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20327,14 +20327,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid stage update",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid stage update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20488,14 +20488,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid requirement",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid requirement",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20608,14 +20608,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid status",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20701,14 +20701,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid status",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20839,14 +20839,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid type",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -20923,14 +20923,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid type",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21073,14 +21073,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid outcome",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21160,14 +21160,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid outcome",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21405,14 +21405,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid deal",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid deal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21459,14 +21459,14 @@
                   }
                 }
               }
-            },
-            "404": {
-              "description": "Not found or not visible",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21570,24 +21570,24 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale update or idempotency conflict",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale update or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
-            },
-            "422": {
-              "description": "Invalid deal",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid deal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21743,24 +21743,24 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale state or idempotency conflict",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale state or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
-            },
-            "422": {
-              "description": "Transition or reason rejected",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Transition or reason rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21835,14 +21835,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid or missing required closing reason",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid or missing required closing reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21917,14 +21917,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid or missing required closing reason",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid or missing required closing reason",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -21992,14 +21992,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Transition cannot be undone",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Transition cannot be undone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22070,14 +22070,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Reopen rejected by pipeline policy",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Reopen rejected by pipeline policy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22142,14 +22142,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid position",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid position",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22227,14 +22227,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid waiting period",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid waiting period",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22299,14 +22299,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid state",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22368,14 +22368,14 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale version",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22437,14 +22437,14 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale version",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22691,14 +22691,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid task/catalog relation",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid task/catalog relation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22745,14 +22745,14 @@
                   }
                 }
               }
-            },
-            "404": {
-              "description": "Not found or not visible",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "404": {
+            "description": "Not found or not visible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -22864,24 +22864,24 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale version",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
-            },
-            "422": {
-              "description": "Invalid task or command-only field",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid task or command-only field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23022,14 +23022,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid or required outcome",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid or required outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23097,14 +23097,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid cancellation",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid cancellation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23169,14 +23169,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Task cannot be reopened",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Task cannot be reopened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23244,24 +23244,24 @@
                   }
                 }
               }
-            },
-            "403": {
-              "description": "Caller is not authorized to assign",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "403": {
+            "description": "Caller is not authorized to assign",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
-            },
-            "422": {
-              "description": "Invalid assignee",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid assignee",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23344,14 +23344,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid schedule",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23434,24 +23434,24 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale version or idempotency conflict",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale version or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
-            },
-            "422": {
-              "description": "Invalid lifecycle transition",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23538,14 +23538,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid form",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23607,14 +23607,14 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale task version",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale task version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23676,14 +23676,14 @@
                   }
                 }
               }
-            },
-            "409": {
-              "description": "Stale task version",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "409": {
+            "description": "Stale task version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -23765,14 +23765,14 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid filters",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/crm_error"
-                  }
+            }
+          },
+          "422": {
+            "description": "Invalid filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/crm_error"
                 }
               }
             }
@@ -24446,8 +24446,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Paginated deal rows with pipeline",
-            "stage and owner data": null,
+            "description": "Paginated deal rows with pipeline, stage and owner data",
             "content": {
               "application/json": {
                 "schema": {
@@ -24491,10 +24490,10 @@
                   }
                 }
               }
-            },
-            "403": {
-              "description": "Account administrator access required"
             }
+          },
+          "403": {
+            "description": "Account administrator access required"
           }
         }
       }
@@ -24591,17 +24590,17 @@
                   }
                 }
               }
-            },
-            "422": {
-              "description": "Invalid filter",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "object",
-                    "properties": {
-                      "message": {
-                        "type": "string"
-                      }
+            }
+          },
+          "422": {
+            "description": "Invalid filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
                     }
                   }
                 }
@@ -24645,10 +24644,10 @@
                   }
                 }
               }
-            },
-            "403": {
-              "description": "Account administrator access required"
             }
+          },
+          "403": {
+            "description": "Account administrator access required"
           }
         }
       }
@@ -24700,9 +24699,7 @@
         },
         "responses": {
           "200": {
-            "description": "Preview count",
-            "bytes": null,
-            "sample and confirmation_token": null,
+            "description": "Preview count, bytes, sample and confirmation_token",
             "content": {
               "application/json": {
                 "schema": {
@@ -25093,10 +25090,10 @@
                   "$ref": "#/components/schemas/captain_assistant"
                 }
               }
-            },
-            "404": {
-              "description": "Assistant not found"
             }
+          },
+          "404": {
+            "description": "Assistant not found"
           }
         }
       },
