@@ -75,7 +75,7 @@ class Llm::Monitoring::EventsQuery
 
   def scoped_without_date_range
     @scoped_without_date_range ||= @scope
-                                   .for_feature(@params[:feature])
+                                   .for_feature(@params[:features].presence || @params[:feature])
                                    .for_model(@params[:model])
                                    .for_event_name(@params[:event_name])
                                    .for_runtime_mode(@params[:runtime_mode])
@@ -108,6 +108,7 @@ class Llm::Monitoring::EventsQuery
   def applied_filters
     {
       feature: @params[:feature],
+      features: Array(@params[:features]).presence,
       model: @params[:model],
       event_name: @params[:event_name],
       runtime_mode: @params[:runtime_mode],
