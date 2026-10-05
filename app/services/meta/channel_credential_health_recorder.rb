@@ -89,11 +89,14 @@ class Meta::ChannelCredentialHealthRecorder
   end
 
   def find_or_create_health
-    Meta::ChannelCredentialHealth.find_or_create_by!(channel: @channel) do |health|
-      health.account_id = @channel.account_id
+    health = Meta::ChannelCredentialHealth.find_by(channel: @channel)
+    return health if health
+
+    Meta::ChannelCredentialHealth.transaction(requires_new: true) do
+      Meta::ChannelCredentialHealth.create!(channel: @channel, account_id: @channel.account_id)
     end
   rescue ActiveRecord::RecordNotUnique
-    retry
+    Meta::ChannelCredentialHealth.find_by!(channel: @channel)
   end
 
   def persisted_status(status, metadata)
