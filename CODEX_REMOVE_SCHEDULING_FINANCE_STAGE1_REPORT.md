@@ -33,7 +33,7 @@ Appointment create/update no longer accepts payment_status, prepaid, settlement,
 
 Scheduling pages, stores, cards, calendar forms, and pricing forms no longer show compensation or prepayment/payment controls. Service price and service_amount editing/display and normal appointment status CRUD remain. The deal-effectiveness payment/trade-in cards, columns, and CSV values were removed.
 
-Automation compatibility is explicit: new rules cannot select payment_status conditions or cancel_appointment_payment. A previously saved payment_status condition or cancel_appointment_payment action is still hydrated; the old action runs as a no-op. The UI retains payment_status labels only for those legacy rows. The RU finance translations were removed; EN/KK strings were not changed.
+Automation compatibility is explicit: new rules cannot select payment_status conditions or cancel_appointment_payment. A previously saved payment_status condition or cancel_appointment_payment action is still hydrated; the old action runs as a no-op. The UI retains payment_status labels for those legacy automation rows, and the unchanged MedElement conflict card keeps its labels. The RU finance translations were removed; EN/KK strings were not changed.
 
 ### Seven-day API compatibility window
 
