@@ -38,6 +38,16 @@ describe('ChatListCount', () => {
     expect(wrapper.text()).toBe('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT:3');
   });
 
+  it('shows a plus after the number of a search that read only the newest matches', () => {
+    const wrapper = mountComponent({
+      conversationCount: 100,
+      isSearchResult: true,
+      isCountApproximate: true,
+    });
+
+    expect(wrapper.text()).toBe('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT:100+');
+  });
+
   it('keeps the row height but hides the number while the list is loading', () => {
     const wrapper = mountComponent({
       conversationCount: 12,

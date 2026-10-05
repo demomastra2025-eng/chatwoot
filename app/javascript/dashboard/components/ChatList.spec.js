@@ -1,26 +1,8 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ChatList from './ChatList.vue';
-
-const ConversationBulkActionsStub = {
-  name: 'ConversationBulkActions',
-  props: [
-    'canSelectAllMatching',
-    'selectedCount',
-    'selectionVersion',
-    'selectionContextKey',
-    'allConversationsSelected',
-    'selectableConversationsCount',
-    'selectedInboxes',
-    'isSelectingAll',
-    'showOpenAction',
-    'showResolvedAction',
-    'showSnoozedAction',
-  ],
-  emits: ['selectAllMatching'],
-  template: '<div />',
-};
+import { SERVER_SEARCH_DELAY } from 'dashboard/composables/chatlist/useConversationListSearch';
 
 const ACCOUNT_ID = 1;
 
@@ -35,14 +17,6 @@ const mocks = vi.hoisted(() => ({
     pipelines: [],
     ui: { isLoadingPipelines: false },
     loadPipelines: vi.fn(() => Promise.resolve()),
-  },
-  appliedFilters: [],
-  savedFolders: [],
-  bulkMatchingSelectionRef: null,
-  conversationStats: { allCount: 30, mineCount: 0, unAssignedCount: 0 },
-  bulkSelectionIds: [],
-  bulkActionMethods: {
-    selectAllMatching: vi.fn(),
   },
 }));
 
@@ -71,24 +45,14 @@ vi.mock('dashboard/composables/chatlist/useChatListKeyboardEvents', () => ({
 }));
 
 vi.mock('dashboard/composables/chatlist/useBulkActions', async () => {
-  const { computed, ref } = await import('vue');
-  const selectedConversations = ref([...mocks.bulkSelectionIds]);
-  const allMatchingSelection = ref(null);
-  mocks.bulkSelectedRef = selectedConversations;
-  mocks.bulkMatchingSelectionRef = allMatchingSelection;
+  const { ref } = await import('vue');
   return {
     useBulkActions: () => ({
-      selectedConversations,
-      selectedCount: computed(() => selectedConversations.value.length),
+      selectedConversations: ref([]),
       selectedInboxes: ref([]),
-      allMatchingSelection,
-      isSelectingAll: ref(false),
-      selectionVersion: ref(0),
       selectConversation: vi.fn(),
       deSelectConversation: vi.fn(),
       selectAllConversations: vi.fn(),
-      selectAllMatching: mocks.bulkActionMethods.selectAllMatching,
-      setSelectionContext: vi.fn(),
       resetBulkActions: vi.fn(),
       isConversationSelected: vi.fn(() => false),
       onAssignAgent: vi.fn(),
@@ -164,10 +128,10 @@ const buildStore = () => ({
     getChatListLoadingStatus: false,
     getChatListLoadingError: null,
     getSelectedInbox: null,
-    'conversationStats/getStats': mocks.conversationStats,
+    'conversationStats/getStats': {},
     getConversationSidebarUnreadCounts: {},
-    getAppliedConversationFiltersV2: mocks.appliedFilters,
-    'customViews/getConversationCustomViews': mocks.savedFolders,
+    getAppliedConversationFiltersV2: [],
+    'customViews/getConversationCustomViews': [],
     'agents/getAgents': [],
     'teams/getTeams': [],
     'inboxes/getInboxes': [],
@@ -199,27 +163,17 @@ const storePlugin = store => ({
   },
 });
 
-const mountChatList = async (query, componentProps = {}) => {
+const mountChatList = async query => {
   mocks.route = {
     name: 'home',
     path: `/app/accounts/${ACCOUNT_ID}/dashboard`,
     params: { accountId: String(ACCOUNT_ID) },
     query,
   };
-  if (mocks.bulkSelectedRef) {
-    mocks.bulkSelectedRef.value = [...mocks.bulkSelectionIds];
-  }
-  if (mocks.bulkMatchingSelectionRef) {
-    mocks.bulkMatchingSelectionRef.value = null;
-  }
   const store = buildStore();
   const wrapper = shallowMount(ChatList, {
-    props: componentProps,
     global: {
       plugins: [storePlugin(store)],
-      stubs: {
-        ConversationBulkActions: ConversationBulkActionsStub,
-      },
     },
   });
   await flushPromises();
@@ -245,18 +199,6 @@ describe('ChatList', () => {
     mocks.crmStore.pipelines = [];
     mocks.crmStore.ui.isLoadingPipelines = false;
     mocks.crmStore.loadPipelines = vi.fn(() => Promise.resolve());
-    mocks.appliedFilters = [];
-    mocks.savedFolders = [];
-    if (mocks.bulkMatchingSelectionRef) {
-      mocks.bulkMatchingSelectionRef.value = null;
-    }
-    mocks.conversationStats = {
-      allCount: 30,
-      mineCount: 0,
-      unAssignedCount: 0,
-    };
-    mocks.bulkSelectionIds = [];
-    mocks.bulkActionMethods.selectAllMatching.mockClear();
   });
 
   describe('assignee list', () => {
@@ -610,6 +552,123 @@ describe('ChatList', () => {
       expect(bulkActions.props('canSelectAllMatching')).toBe(false);
       bulkActions.vm.$emit('selectAllMatching');
       expect(mocks.bulkActionMethods.selectAllMatching).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('search', () => {
+    const searchResponse = (ids, meta = {}) => ({
+      conversations: ids.map(id => ({ id, meta: { sender: { id } } })),
+      meta: { total_count: ids.length, per_page: 25, current_page: 1, ...meta },
+    });
+
+    const mountForSearch = async (
+      query = { assignee_type: 'me', status: 'open' }
+    ) => {
+      const mounted = await mountChatList(query);
+      mounted.store.dispatch.mockImplementation(name =>
+        Promise.resolve(
+          name === 'fetchListSearchResults' ? searchResponse([4, 5]) : undefined
+        )
+      );
+      return mounted;
+    };
+
+    const typeSearch = async (wrapper, value) => {
+      wrapper
+        .findComponent({ name: 'ChatListHeader' })
+        .vm.$emit('update:localSearchQuery', value);
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(SERVER_SEARCH_DELAY);
+      await flushPromises();
+    };
+
+    const countProps = wrapper =>
+      wrapper.findComponent({ name: 'ChatListCount' }).props();
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('asks the server for the typed query only, whatever the list is filtered by', async () => {
+      const { wrapper, store } = await mountForSearch({
+        assignee_type: 'me',
+        status: 'open',
+        labels_scope: 'any',
+        team_scope: 'any',
+        unread: 'true',
+      });
+
+      await typeSearch(wrapper, '  87072817060 ');
+
+      expect(dispatchedPayloads(store, 'fetchListSearchResults')).toEqual([
+        { q: '87072817060', page: 1, communicationThreadMode: false },
+      ]);
+    });
+
+    it('shows how many conversations the server found and leaves the list and its filters alone', async () => {
+      const { wrapper, store } = await mountForSearch();
+      const listRequestsBefore = dispatchedPayloads(
+        store,
+        'fetchAllConversations'
+      ).length;
+      const filtersBefore = lastListFilters(store);
+
+      await typeSearch(wrapper, 'иван');
+
+      expect(countProps(wrapper)).toMatchObject({
+        conversationCount: 2,
+        isSearchResult: true,
+        isCountApproximate: false,
+      });
+      expect(dispatchedPayloads(store, 'fetchAllConversations')).toHaveLength(
+        listRequestsBefore
+      );
+      expect(lastListFilters(store)).toEqual(filtersBefore);
+    });
+
+    it('marks the count as approximate when the search was cut at its limit', async () => {
+      const { wrapper, store } = await mountForSearch();
+      store.dispatch.mockImplementation(name =>
+        Promise.resolve(
+          name === 'fetchListSearchResults'
+            ? searchResponse([4], { total_count: 100, capped: true })
+            : undefined
+        )
+      );
+
+      await typeSearch(wrapper, 'иван');
+
+      expect(countProps(wrapper)).toMatchObject({
+        conversationCount: 100,
+        isCountApproximate: true,
+      });
+    });
+
+    it('does not ask the server for a query shorter than three characters', async () => {
+      const { wrapper, store } = await mountForSearch();
+
+      await typeSearch(wrapper, 'ив');
+
+      expect(dispatchedPayloads(store, 'fetchListSearchResults')).toHaveLength(
+        0
+      );
+      expect(countProps(wrapper).isSearchResult).toBe(true);
+    });
+
+    it('goes back to the list when the search is cleared', async () => {
+      const { wrapper, store } = await mountForSearch();
+      await typeSearch(wrapper, 'иван');
+
+      await typeSearch(wrapper, '');
+
+      expect(countProps(wrapper).isSearchResult).toBe(false);
+      expect(dispatchedPayloads(store, 'fetchListSearchResults')).toHaveLength(
+        1
+      );
     });
   });
 });

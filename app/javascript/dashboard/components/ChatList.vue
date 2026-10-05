@@ -35,6 +35,7 @@ import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
 import { useChatListKeyboardEvents } from 'dashboard/composables/chatlist/useChatListKeyboardEvents';
 import { useBulkActions } from 'dashboard/composables/chatlist/useBulkActions';
+import { useConversationListSearch } from 'dashboard/composables/chatlist/useConversationListSearch';
 import { useFilter } from 'shared/composables/useFilter';
 import { useTrack } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
@@ -291,6 +292,25 @@ const activeFolderName = computed(() => {
 
 const hasLocalSearch = computed(() => {
   return Boolean(localSearchQuery.value.trim());
+});
+
+// From three characters the search also runs on the server over all statuses and assignees, whatever the list is
+// filtered by; what is already loaded is still matched locally (it also knows social handles, screen names and
+// transcribed text), and shorter queries only use the loaded list.
+const {
+  isActive: isServerSearch,
+  results: serverSearchResults,
+  total: serverSearchTotal,
+  isCapped: isServerSearchCapped,
+  isPartial: isServerSearchPartial,
+  hasMore: serverSearchHasMore,
+  isLoading: isServerSearchLoading,
+  hasError: hasServerSearchError,
+  loadMore: loadMoreServerSearch,
+  retry: retryServerSearch,
+} = useConversationListSearch({
+  query: localSearchQuery,
+  communicationThreadMode: computed(() => props.communicationThreadMode),
 });
 
 const hasActiveFolders = computed(() => {
@@ -788,9 +808,10 @@ const conversationList = computed(() => {
   );
 });
 
-const displayedConversationList = computed(() => {
+// The loaded conversations that match the typed text.
+const locallyFoundConversations = computed(() => {
   if (!hasLocalSearch.value) {
-    return conversationList.value;
+    return [];
   }
 
   return conversationList.value.filter(conversation => {
@@ -805,11 +826,42 @@ const displayedConversationList = computed(() => {
   });
 });
 
+// While the server search is on, its results come first (newest activity first) and the loaded conversations that match
+// only locally follow them, so nothing the old local search found is lost.
+const displayedConversationList = computed(() => {
+  if (!hasLocalSearch.value) {
+    return conversationList.value;
+  }
+
+  if (!isServerSearch.value) {
+    return locallyFoundConversations.value;
+  }
+
+  const serverIds = new Set(serverSearchResults.value.map(chat => chat.id));
+  return [
+    ...serverSearchResults.value,
+    ...locallyFoundConversations.value.filter(chat => !serverIds.has(chat.id)),
+  ];
+});
+
+// Loading, error and end-of-list state of what the list shows: the search results while the server search is on.
+const isListLoading = computed(() =>
+  isServerSearch.value ? isServerSearchLoading.value : chatListLoading.value
+);
+const hasListLoadingError = computed(() =>
+  isServerSearch.value ? hasServerSearchError.value : chatListLoadingError.value
+);
+const hasListEndReached = computed(() =>
+  isServerSearch.value
+    ? !serverSearchHasMore.value
+    : hasCurrentPageEndReached.value
+);
+
 const showEndOfListMessage = computed(() => {
   return (
     displayedConversationList.value.length &&
-    hasCurrentPageEndReached.value &&
-    !chatListLoading.value
+    hasListEndReached.value &&
+    !isListLoading.value
   );
 });
 
@@ -821,6 +873,13 @@ const shownConversationCount = computed(
 // assignment stats with the filtered result meta, so `allCount` is the total
 // of the filtered list there; plain lists use the active assignee tab total.
 const totalConversationCount = computed(() => {
+  if (isServerSearch.value) {
+    // everything the server found, plus the loaded conversations that only the local search found
+    const localOnlyCount =
+      displayedConversationList.value.length - serverSearchResults.value.length;
+    return serverSearchTotal.value + localOnlyCount;
+  }
+
   if (hasLocalSearch.value) {
     return shownConversationCount.value;
   }
@@ -906,8 +965,10 @@ const canSelectAllMatching = computed(
     totalConversationCount.value > selectedConversations.value.length
 );
 
-const isInitialListLoading = computed(
-  () => Boolean(chatListLoading.value) && !conversationList.value.length
+const isInitialListLoading = computed(() =>
+  isServerSearch.value
+    ? isServerSearchLoading.value && !displayedConversationList.value.length
+    : Boolean(chatListLoading.value) && !conversationList.value.length
 );
 
 const allConversationsSelected = computed(() => {
@@ -1412,6 +1473,15 @@ async function onToggleAdvanceFiltersModal() {
 }
 
 function loadMoreConversations({ retry = false } = {}) {
+  if (isServerSearch.value) {
+    if (retry) {
+      retryServerSearch();
+    } else {
+      loadMoreServerSearch();
+    }
+    return;
+  }
+
   if (
     hasCurrentPageEndReached.value ||
     chatListLoading.value ||
@@ -2108,6 +2178,7 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       :conversation-count="totalConversationCount"
       :is-list-loading="isInitialListLoading"
       :is-search-result="hasLocalSearch"
+      :is-count-approximate="isServerSearch && isServerSearchCapped"
     />
 
     <div
@@ -2213,16 +2284,23 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
         />
       </Virtualizer>
       <p
-        v-else-if="!chatListLoading && hasLocalSearch"
+        v-else-if="!isListLoading && !hasListLoadingError && hasLocalSearch"
         class="flex overflow-auto justify-center items-center p-4 text-center text-n-slate-11"
       >
         {{ $t('CHAT_LIST.LOCAL_SEARCH.EMPTY') }}
       </p>
-      <div v-if="chatListLoading" class="flex justify-center my-4">
+      <p
+        v-if="isServerSearch && isServerSearchPartial && !isListLoading"
+        data-test="search-partial"
+        class="p-4 text-center text-xs text-n-amber-11"
+      >
+        {{ $t('CHAT_LIST.LOCAL_SEARCH.PARTIAL') }}
+      </p>
+      <div v-if="isListLoading" class="flex justify-center my-4">
         <Spinner class="text-n-brand" />
       </div>
       <ConversationListLoadError
-        v-else-if="chatListLoadingError"
+        v-else-if="hasListLoadingError"
         @retry="loadMoreConversations({ retry: true })"
       />
       <p

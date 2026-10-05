@@ -6,10 +6,15 @@ const props = defineProps({
   conversationCount: { type: Number, default: 0 },
   isListLoading: { type: Boolean, default: false },
   isSearchResult: { type: Boolean, default: false },
+  // The search found more than it returns (it only reads the newest matches): shown as "100+".
+  isCountApproximate: { type: Boolean, default: false },
 });
 
-const formattedConversationCount = computed(() =>
-  formatNumber(props.conversationCount || 0)
+const formattedConversationCount = computed(
+  () =>
+    `${formatNumber(props.conversationCount || 0)}${
+      props.isCountApproximate ? '+' : ''
+    }`
 );
 </script>
 

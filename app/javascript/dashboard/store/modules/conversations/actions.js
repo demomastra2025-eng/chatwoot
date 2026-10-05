@@ -12,6 +12,7 @@ import {
 } from 'dashboard/helper/communicationThreadHelper';
 import {
   buildConversationList,
+  setContacts,
   isOnMentionsView,
   isOnParticipatingView,
   isOnUnattendedView,
@@ -569,6 +570,29 @@ const actions = {
       // Keep the last known sidebar counts if the lightweight refresh fails.
       return undefined;
     }
+  },
+
+  // Search box of the conversation list. The server searches all statuses and assignees, so the results are only
+  // added to the store (to open them and keep them live); the list, its pagination and its counters stay as they were.
+  fetchListSearchResults: async (
+    { commit, dispatch },
+    { q, page = 1, communicationThreadMode = false }
+  ) => {
+    const api = communicationThreadMode
+      ? CommunicationThreadApi
+      : ConversationApi;
+    const {
+      data: { data },
+    } = await api.listSearch({ q, page });
+    const payload = data.payload || [];
+    const conversations = communicationThreadMode
+      ? payload.map(buildCommunicationThreadConversation)
+      : payload;
+
+    commit(types.SET_ALL_CONVERSATION, conversations);
+    dispatch('conversationLabels/setBulkConversationLabels', conversations);
+    setContacts(commit, conversations);
+    return { conversations, meta: data.meta || {} };
   },
 
   fetchFilteredConversations: async (

@@ -68,6 +68,11 @@ class CommunicationThreadApi extends ApiClient {
     );
   }
 
+  // Search box of the conversation list: the server ignores every list filter, so only the query and page are sent.
+  listSearch({ q, page = 1 }) {
+    return axios.get(`${this.url}/list_search`, { params: { q, page } });
+  }
+
   meta({
     inboxId,
     status,
