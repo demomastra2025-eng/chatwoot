@@ -42,6 +42,7 @@ import {
 import {
   getCommunicationThreadTypingTargetIds,
   getCommunicationReplyChannels,
+  getCommunicationReplyInboxId,
   isCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
 
@@ -135,7 +136,7 @@ export default {
       );
     },
     inboxId() {
-      return this.currentChat.inbox_id;
+      return getCommunicationReplyInboxId(this.currentChat);
     },
     inbox() {
       return this.$store.getters['inboxes/getInbox'](this.inboxId);

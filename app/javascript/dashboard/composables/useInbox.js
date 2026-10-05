@@ -2,6 +2,7 @@ import { computed, unref } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useCamelCase } from 'dashboard/composables/useTransformKeys';
 import { API_LIKE_INBOX_TYPES, INBOX_TYPES } from 'dashboard/helper/inbox';
+import { getCommunicationReplyInboxId } from 'dashboard/helper/communicationThreadHelper';
 
 export const INBOX_FEATURES = {
   REPLY_TO: 'replyTo',
@@ -46,7 +47,8 @@ export const useInbox = (inboxId = null) => {
   const inboxGetter = useMapGetter('inboxes/getInboxById');
 
   const inbox = computed(() => {
-    const targetInboxId = unref(inboxId) || currentChat.value?.inbox_id;
+    const targetInboxId =
+      unref(inboxId) || getCommunicationReplyInboxId(currentChat.value);
 
     if (!targetInboxId) return null;
 

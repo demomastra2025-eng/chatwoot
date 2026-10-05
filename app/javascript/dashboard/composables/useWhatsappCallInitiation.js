@@ -6,6 +6,7 @@ import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { getCommunicationReplyInboxId } from 'dashboard/helper/communicationThreadHelper';
 import {
   useWhatsappCallsStore,
   setOutboundCallProperty,
@@ -63,7 +64,8 @@ export const useWhatsappCallInitiation = (options = {}) => {
     () => unref(options.conversationId) || currentChat.value?.id
   );
   const selectedInboxId = computed(
-    () => unref(options.inboxId) || currentChat.value?.inbox_id
+    () =>
+      unref(options.inboxId) || getCommunicationReplyInboxId(currentChat.value)
   );
   const selectedChannel = computed(() => unref(options.channel) || {});
   const inbox = computed(() => {

@@ -4,6 +4,7 @@ import ConversationHeader from './ConversationHeader.vue';
 import DashboardAppFrame from '../DashboardApp/Frame.vue';
 import EmptyState from './EmptyState/EmptyState.vue';
 import MessagesView from './MessagesView.vue';
+import { getCommunicationReplyInboxId } from 'dashboard/helper/communicationThreadHelper';
 
 export default {
   components: {
@@ -56,6 +57,11 @@ export default {
     showContactPanel() {
       return this.isContactPanelOpen && this.currentChat.id;
     },
+    // Agents are assignable per inbox of the channel the agent replies through;
+    // for a thread chat.inbox_id only describes where the dialog happens.
+    currentChatReplyInboxId() {
+      return getCommunicationReplyInboxId(this.currentChat);
+    },
     // A thread and a channel conversation can share an id: the labels are
     // reloaded whenever the label target (type and id) changes.
     currentChatLabelTarget() {
@@ -66,7 +72,7 @@ export default {
     },
   },
   watch: {
-    'currentChat.inbox_id': {
+    currentChatReplyInboxId: {
       immediate: true,
       handler(inboxId) {
         if (inboxId) {

@@ -5,6 +5,7 @@ import {
   getAgentsByUpdatedPresence,
   getSortedAgentsByAvailability,
 } from 'dashboard/helper/agentHelper';
+import { getCommunicationReplyInboxId } from 'dashboard/helper/communicationThreadHelper';
 
 /**
  * A composable function that provides a list of agents for assignment.
@@ -19,7 +20,9 @@ export function useAgentsList(includeNoneAgent = true) {
   const currentAccountId = useMapGetter('getCurrentAccountId');
   const assignable = useMapGetter('inboxAssignableAgents/getAssignableAgents');
 
-  const inboxId = computed(() => currentChat.value?.inbox_id);
+  const inboxId = computed(() =>
+    getCommunicationReplyInboxId(currentChat.value)
+  );
   const isAgentSelected = computed(() => currentChat.value?.meta?.assignee);
 
   /**
