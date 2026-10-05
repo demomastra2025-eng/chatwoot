@@ -1,135 +1,183 @@
 # frozen_string_literal: true
 
+# The reviewed cut-over of the whole platform to Luna 6 (agent, editor, copilot, label hints, image recognition and
+# the OpenRouter voice agents) that can be put back exactly as it was.
+#
+#   plan = Llm::CaptainLunaRollout.plan            # read only; Snapshot.write(plan, path) keeps it as a 0600 file
+#   Llm::CaptainLunaRollout.apply!(plan)           # one transaction, rows and accounts locked, refuses a stale plan
+#   Llm::CaptainLunaRollout.rollback!(plan)        # restores exactly the old rows, account choices and voice models
+#
+# The account-level model choices are cleared rather than set, so an account follows the platform default (the
+# CAPTAIN_DEFAULT_MODEL row, editable in Super Admin) and one edit of that row moves every account back as well.
+# Both directions accept a state that is already done and refuse anything that is neither the snapshot state nor the
+# done state, so running either twice is harmless. See script/onelink/LUNA_CUTOVER_RUNBOOK.md.
 class Llm::CaptainLunaRollout
   TARGET_MODEL = 'openai/gpt-6-luna'
+  # The model the quick rollback (Super Admin default) goes back to; it must stay selectable.
+  ROLLBACK_MODEL = Llm::OpenRouterRoutingProfile::LUNA_FALLBACK_MODEL
   INSTALLATION_CONFIG = 'CAPTAIN_AI_AGENT_DEFAULT_MODEL'
+  SNAPSHOT_VERSION = 2
+  # The chat features whose account-level choice is cleared.
+  FEATURES = %w[assistant editor copilot image_recognition label_suggestion].freeze
+  # name => whether the cut-over creates the row when it is absent. The agent-only default is only moved when it exists:
+  # the general default already covers the agent, and a second row would be a second switch to remember.
+  INSTALLATION_ROWS = {
+    'CAPTAIN_DEFAULT_MODEL' => true,
+    INSTALLATION_CONFIG => false,
+    'CAPTAIN_IMAGE_RECOGNITION_MODEL' => true,
+    'CAPTAIN_LABEL_SUGGESTION_MODEL' => true
+  }.freeze
+  DEFAULT_ROWS = ['CAPTAIN_DEFAULT_MODEL', INSTALLATION_CONFIG].freeze
 
   class StalePlan < StandardError; end
 
   class << self
     def plan(scope: Account.all)
-      installation = InstallationConfig.find_by(name: INSTALLATION_CONFIG)
-      raise StalePlan, 'Capture the snapshot before installing the Luna 6 default' if installation&.value == TARGET_MODEL
+      rows = installation_rows.snapshot
+      effective = effective_models
+      ensure_not_cut_over!(rows, effective)
+      verify_target!
+      accounts = scope.order(:id).to_a
+      verify_accounts!(accounts)
 
       {
+        version: SNAPSHOT_VERSION,
         target_model: TARGET_MODEL,
-        installation_default: { before: installation&.value, was_present: installation.present? },
-        entries: scope.order(:id).map do |account|
-          models = account.captain_models.to_h.stringify_keys
-          effective_model = Llm::Config.model_for(feature: :assistant, account: account)
-          if !models.key?('assistant') && (effective_model.blank? || effective_model == TARGET_MODEL)
-            raise StalePlan, 'Previous effective assistant model is unavailable for an unset account'
-          end
-
-          { account_id: account.id, before: models['assistant'], was_present: models.key?('assistant'), before_effective: effective_model }
-        end
+        created_at: Time.current.utc.iso8601,
+        effective_before: effective,
+        installation: rows,
+        accounts: overrides.snapshot(accounts),
+        voice: voice_stores.snapshot(accounts.map(&:id))
       }
     end
 
     def apply!(snapshot, scope: Account.all)
       plan = validated_plan(snapshot)
-      entries = plan[:entries]
-      raise StalePlan, 'Luna 6 is absent from the model catalog' unless Llm::Models.configured_models.key?(TARGET_MODEL)
+      verify_target!
 
       Account.transaction do
-        installation = locked_installation
-        verify_installation!(installation, plan[:installation_default])
+        configs = installation_rows.lock
         accounts = scope.order(:id).lock.to_a
-        verify_accounts!(accounts, entries)
-        install_target_default!(installation)
-        apply_to_accounts!(accounts)
+        records = voice_stores.lock(plan[:voice])
+        verify_state!(plan, configs, accounts, records)
+        verify_accounts!(accounts)
+
+        installation_rows.apply!(plan[:installation], configs)
+        voice_stores.apply!(plan[:voice], records)
+        changed = overrides.clear!(accounts, plan[:accounts])
+        verify_effective_models!(accounts)
+        changed
       end
     end
 
     def rollback!(snapshot)
       plan = validated_plan(snapshot)
-      entries = plan[:entries].reject { |entry| entry[:was_present] && entry[:before] == TARGET_MODEL }
 
       Account.transaction do
-        installation = locked_installation
-        raise StalePlan, 'Agent-only default changed since rollout' unless installation&.value == TARGET_MODEL
+        configs = installation_rows.lock
+        accounts = Account.where(id: plan[:accounts].pluck(:account_id)).order(:id).lock.to_a
+        records = voice_stores.lock(plan[:voice])
+        live = without_deleted(plan, accounts, records)
+        verify_state!(live, configs, accounts, records)
 
-        restore_accounts!(entries, installation, plan[:installation_default])
+        installation_rows.restore!(live[:installation], configs)
+        voice_stores.restore!(live[:voice], records)
+        overrides.restore!(accounts, live[:accounts])
+      end
+    end
+
+    # What differs from the effective installation-level models the snapshot was taken with; empty when all is as
+    # before. Meant for the check after a rollback: it reports, it does not block.
+    def restored_differences(snapshot)
+      expected = validated_plan(snapshot)[:effective_before].to_h.stringify_keys
+      effective_models.stringify_keys.filter_map do |feature, model|
+        "#{feature}: #{model.inspect}, the snapshot had #{expected[feature].inspect}" if expected[feature] != model
       end
     end
 
     private
 
+    def installation_rows
+      Llm::CaptainLunaRollout::InstallationRows.new(rows: INSTALLATION_ROWS, target: TARGET_MODEL)
+    end
+
+    def overrides
+      Llm::CaptainLunaRollout::AccountOverrides.new(features: FEATURES)
+    end
+
+    def voice_stores
+      Llm::CaptainLunaRollout::VoiceStores.new(target: TARGET_MODEL)
+    end
+
+    def effective_models
+      FEATURES.index_with { |feature| Llm::Config.model_for(feature: feature, fallback: nil) }
+    end
+
+    # The snapshot has to be taken before the cut-over: afterwards it could not tell what to go back to.
+    def ensure_not_cut_over!(rows, effective)
+      installed = rows.any? { |row| DEFAULT_ROWS.include?(row[:name]) && row[:before] == TARGET_MODEL }
+      raise StalePlan, 'The Luna 6 default is already installed; the snapshot has to be taken before it' if installed
+      return if effective['assistant'].present? && effective['assistant'] != TARGET_MODEL
+
+      raise StalePlan, 'The previous installation-level agent model is unknown or already Luna 6; set CAPTAIN_DEFAULT_MODEL first'
+    end
+
     def validated_plan(snapshot)
       plan = snapshot.to_h.deep_symbolize_keys
       raise StalePlan, 'Wrong rollout target' unless plan[:target_model] == TARGET_MODEL
+      raise StalePlan, 'Unsupported snapshot version' unless plan[:version] == SNAPSHOT_VERSION
 
-      entries = plan.fetch(:entries)
-      validate_snapshot_entries!(entries)
-      installation = plan.fetch(:installation_default)
-      raise StalePlan, 'Invalid installation snapshot' unless [true, false].include?(installation[:was_present])
-      raise StalePlan, 'Snapshot was taken after Luna 6 default' if installation[:before] == TARGET_MODEL
-
+      %i[installation accounts voice].each { |key| raise StalePlan, "Snapshot has no #{key}" unless plan[key].is_a?(Array) }
+      validate_snapshot_entries!(plan)
       plan
     end
 
-    def validate_snapshot_entries!(entries)
-      ids = entries.pluck(:account_id)
-      raise StalePlan, 'Duplicate account in snapshot' unless ids.uniq.size == ids.size
-      return unless entries.any? { |entry| !entry[:was_present] && entry[:before_effective].blank? }
+    def validate_snapshot_entries!(plan)
+      account_ids = plan[:accounts].pluck(:account_id)
+      raise StalePlan, 'Duplicate account in snapshot' unless account_ids.uniq.size == account_ids.size
 
-      raise StalePlan, 'Previous effective assistant model is missing from snapshot'
+      row_names = plan[:installation].pluck(:name)
+      raise StalePlan, 'Snapshot installation rows do not match this release' unless row_names.sort == INSTALLATION_ROWS.keys.sort
+
+      overrides = plan[:accounts].flat_map { |entry| entry[:overrides].pluck(:feature) }
+      raise StalePlan, 'Snapshot names a feature this release does not move' unless (overrides - FEATURES).empty?
     end
 
-    def locked_installation
-      InstallationConfig.where(name: INSTALLATION_CONFIG).lock.first
+    # An account or an agent deleted since the cut-over has nothing left to restore, and must not block the rollback.
+    def without_deleted(plan, accounts, records)
+      account_ids = accounts.map(&:id)
+      plan.merge(
+        accounts: plan[:accounts].select { |entry| account_ids.include?(entry[:account_id]) },
+        voice: plan[:voice].select { |entry| records.key?([entry[:store], entry[:id]]) }
+      )
     end
 
-    def install_target_default!(installation)
-      if installation
-        installation.update!(value: TARGET_MODEL)
-      else
-        InstallationConfig.create!(name: INSTALLATION_CONFIG, value: TARGET_MODEL)
-      end
+    def verify_state!(plan, configs, accounts, records)
+      installation_rows.verify!(plan[:installation], configs)
+      overrides.verify!(accounts, plan[:accounts])
+      voice_stores.verify!(plan[:voice], records)
     end
 
-    def apply_to_accounts!(accounts)
-      accounts.count do |account|
-        models = account.captain_models.to_h.stringify_keys
-        next false if models['assistant'] == TARGET_MODEL
+    # Luna 6 has to be usable for every feature it takes over, and the allowlist has to keep both it and the model the
+    # quick rollback returns to, otherwise Super Admin could not set that model back.
+    def verify_target!
+      raise StalePlan, 'Luna 6 is absent from the model catalog' unless Llm::Models.configured_models.key?(TARGET_MODEL)
 
-        account.update!(captain_models: models.merge('assistant' => TARGET_MODEL))
-        true
-      end
+      unsuitable = FEATURES.reject { |feature| Llm::Models.model_allowed_for_feature?(feature, TARGET_MODEL) }
+      raise StalePlan, "Luna 6 does not fit these features: #{unsuitable.join(', ')}" if unsuitable.any?
+
+      allowlist = Llm::Models.configured_model_allowlist
+      return if allowlist.blank? || ([TARGET_MODEL, ROLLBACK_MODEL] - allowlist).empty?
+
+      raise StalePlan, "The model allowlist must keep #{TARGET_MODEL} and #{ROLLBACK_MODEL}"
     end
 
-    def restore_accounts!(entries, installation, snapshot)
-      accounts = Account.where(id: entries.pluck(:account_id)).order(:id).lock.to_a
-      raise StalePlan, 'Account list changed' unless accounts.map(&:id) == entries.pluck(:account_id)
-
-      restore_installation!(installation, snapshot)
-      accounts.each_with_index { |account, index| restore_account!(account, entries[index]) }
-      accounts.size
-    end
-
-    def verify_installation!(installation, snapshot)
-      return if installation.present? == snapshot[:was_present] && installation&.value == snapshot[:before]
-
-      raise StalePlan, 'Agent-only default changed since snapshot'
-    end
-
-    def restore_installation!(installation, snapshot)
-      if snapshot[:was_present]
-        installation.update!(value: snapshot[:before])
-      else
-        installation.destroy!
-      end
-    end
-
-    def verify_accounts!(accounts, entries)
-      raise StalePlan, 'Account list changed' unless accounts.map(&:id) == entries.pluck(:account_id)
-
-      accounts.each_with_index do |account, index|
-        models = account.captain_models.to_h.stringify_keys
-        original = entries[index]
-        raise StalePlan, 'Assistant model changed since snapshot' unless matches_snapshot?(models, original)
-        raise StalePlan, 'OpenRouter is not configured for account' unless Llm::Config.provider_available?('openrouter', account: account)
-        raise StalePlan, 'Luna 6 provider/model fallback is unavailable for account' unless luna_route_available?(account)
+    def verify_accounts!(accounts)
+      accounts.each do |account|
+        unless Llm::Config.provider_available?('openrouter', account: account)
+          raise StalePlan, "OpenRouter is not configured for account #{account.id}"
+        end
+        raise StalePlan, "Luna 6 provider/model fallback is unavailable for account #{account.id}" unless luna_route_available?(account)
       end
     end
 
@@ -140,27 +188,13 @@ class Llm::CaptainLunaRollout
         profile.provider_preferences[:sort] == { by: 'latency', partition: 'model' }
     end
 
-    def matches_snapshot?(models, original)
-      models.key?('assistant') == original[:was_present] && models['assistant'] == original[:before]
-    end
+    # Inside the transaction, after the writes: whatever is not Luna 6 now rolls the whole cut-over back.
+    def verify_effective_models!(accounts)
+      wrong = effective_models.reject { |_feature, model| model == TARGET_MODEL }
+      raise StalePlan, "The installation-level #{wrong.keys.join(', ')} model is not Luna 6 after the cut-over" if wrong.any?
 
-    def restore_account!(account, original)
-      models = account.captain_models.to_h.stringify_keys
-      raise StalePlan, 'Assistant model changed since rollout' unless models['assistant'] == TARGET_MODEL
-
-      if original[:was_present]
-        models['assistant'] = original[:before]
-      else
-        models.delete('assistant')
-      end
-      account.update!(captain_models: models)
-      return if original[:was_present]
-      return if Llm::Config.model_for(feature: :assistant, account: account.reload) == original[:before_effective]
-
-      account.update!(captain_models: models.merge('assistant' => original[:before_effective]))
-      return if Llm::Config.model_for(feature: :assistant, account: account.reload) == original[:before_effective]
-
-      raise StalePlan, 'Cannot restore the previous effective assistant model'
+      wrong_account = accounts.find { |account| Llm::Config.model_for(feature: :assistant, account: account) != TARGET_MODEL }
+      raise StalePlan, 'An account still resolves another agent model after the cut-over' if wrong_account
     end
   end
 end
