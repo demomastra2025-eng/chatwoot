@@ -382,6 +382,34 @@ RSpec.describe 'Super Admin accounts API', locale: :en, type: :request do
         expect(audit.audited_changes).to include('impersonated_user_id' => user.id)
       end
 
+      it 'enters the account as the requested member instead of the first administrator' do
+        create(:user, account: account, role: :administrator)
+        agent = create(:user, account: account, role: :agent)
+        sign_in(super_admin, scope: :super_admin)
+
+        post "/super_admin/accounts/#{account.id}/impersonate", params: { user_id: agent.id }
+
+        expect(response).to have_http_status(:redirect)
+        expect(response.redirect_url).to include(CGI.escape(agent.email))
+        audit = Audited::Audit.order(:id).last
+        expect(audit).to have_attributes(action: 'impersonate', auditable_id: account.id, user_id: super_admin.id)
+        expect(audit.audited_changes).to include('impersonated_user_id' => agent.id)
+      end
+
+      it 'refuses a requested user who is not a member of the account' do
+        create(:user, account: account, role: :administrator)
+        outsider = create(:user, account: create(:account), role: :administrator)
+        sign_in(super_admin, scope: :super_admin)
+
+        expect do
+          post "/super_admin/accounts/#{account.id}/impersonate", params: { user_id: outsider.id }
+        end.not_to change(Audited::Audit, :count)
+
+        expect(response).to have_http_status(:redirect)
+        expect(response.redirect_url).not_to include('impersonation=true')
+        expect(flash[:alert]).to eq(I18n.t('super_admin.accounts.flashes.no_users_to_impersonate', locale: admin_request_locale))
+      end
+
       it 'does not mint a one-time login token just by opening the account page' do
         create(:user, account: account, role: :administrator)
         sign_in(super_admin, scope: :super_admin)

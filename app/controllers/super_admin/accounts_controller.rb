@@ -107,7 +107,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   def impersonate
-    target_user = requested_resource.administrators.first || requested_resource.users.first
+    target_user = impersonation_target_user
     if target_user.present?
       grant = SuperAdmin::ImpersonationService.issue_grant!(
         actor: current_super_admin, account: requested_resource, target_user: target_user
@@ -326,6 +326,14 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def csv_safe(value)
     text = value.to_s
     text.start_with?(*CSV_FORMULA_PREFIXES) ? "'#{text}" : value
+  end
+
+  # The account page impersonates its first administrator; the user page names the member explicitly. A user who
+  # is not a member of this account is never picked, so the grant stays scoped to one account membership.
+  def impersonation_target_user
+    return requested_resource.users.find_by(id: params[:user_id]) if params[:user_id].present?
+
+    requested_resource.administrators.first || requested_resource.users.first
   end
 
   # Operator actions that change an account or reach into it leave an explicit entry in the audit log.

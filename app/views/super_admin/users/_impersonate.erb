@@ -2,6 +2,15 @@
  <hr/>
   <div class="form-actions">
   <p class="text-color-red">Внимание: любые действия после входа будут выполняться от имени пользователя [<%= page.resource.name %>].</p>
-    <a class='button' target='_blank' rel='noopener noreferrer' href='<%= page.resource.generate_sso_link_with_impersonation %>'>🔑 Войти под пользователем (Impersonate)</a>
+    <%# POST on purpose: the one-time login grant is only created (and audited) when a button is pressed, not on every page view. %>
+    <%# Every grant is scoped to one account membership, so the user is entered through each of their accounts separately. %>
+    <% accounts = page.resource.accounts.order(:name) %>
+    <% if accounts.any? %>
+      <% accounts.each do |account| %>
+        <%= button_to("🔑 Войти под пользователем (Impersonate) — #{account.name}", [:impersonate, :super_admin, account], params: { user_id: page.resource.id }, method: :post, form: { target: "_blank" }, class: "button button--secondary") %>
+      <% end %>
+    <% else %>
+      <p>Пользователь не состоит ни в одном аккаунте, вход под ним недоступен.</p>
+    <% end %>
   </div>
 </section>

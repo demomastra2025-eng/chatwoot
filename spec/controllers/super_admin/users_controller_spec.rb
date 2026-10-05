@@ -167,5 +167,50 @@ RSpec.describe 'Super Admin Users API', type: :request do
       expect(response.body).to include('Enabled')
       expect(response.body).to include(CGI.escapeHTML(user.name))
     end
+
+    context 'when the user belongs to accounts' do
+      let!(:first_account) { create(:account, name: 'First Impersonation Account') }
+      let!(:second_account) { create(:account, name: 'Second Impersonation Account') }
+
+      before do
+        create(:account_user, account: first_account, user: user, role: :agent)
+        create(:account_user, account: second_account, user: user, role: :administrator)
+        sign_in(super_admin, scope: :super_admin)
+      end
+
+      it 'offers one audited impersonation button per account without minting a login token' do
+        get "/super_admin/users/#{user.id}"
+        doc = Nokogiri::HTML(response.body)
+        forms = doc.css('form').select { |form| form['action'].to_s.end_with?('/impersonate') }
+
+        expect(response).to have_http_status(:success)
+        expect(forms.map { |form| form['action'] }).to contain_exactly(
+          "/super_admin/accounts/#{first_account.id}/impersonate",
+          "/super_admin/accounts/#{second_account.id}/impersonate"
+        )
+        expect(forms.map { |form| form.at_css('input[name="user_id"]')['value'] }.uniq).to eq([user.id.to_s])
+        expect(forms.map { |form| form['method'] }.uniq).to eq(['post'])
+        expect(response.body).not_to include('sso_auth_token')
+      end
+
+      it 'impersonates the opened user through the chosen account' do
+        post "/super_admin/accounts/#{second_account.id}/impersonate", params: { user_id: user.id }
+
+        expect(response).to have_http_status(:redirect)
+        expect(response.redirect_url).to include('impersonation=true').and include(CGI.escape(user.email))
+        audit = Audited::Audit.order(:id).last
+        expect(audit).to have_attributes(action: 'impersonate', auditable_id: second_account.id, user_id: super_admin.id)
+        expect(audit.audited_changes).to include('impersonated_user_id' => user.id)
+      end
+    end
+
+    it 'explains that a user without accounts cannot be impersonated' do
+      sign_in(super_admin, scope: :super_admin)
+
+      get "/super_admin/users/#{user.id}"
+
+      expect(response).to have_http_status(:success)
+      expect(Nokogiri::HTML(response.body).css('form').map { |form| form['action'].to_s }).not_to include(a_string_ending_with('/impersonate'))
+    end
   end
 end
