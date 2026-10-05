@@ -1,5 +1,7 @@
+import { nextTick } from 'vue';
 import { mount } from '@vue/test-utils';
 import DsChartFrame from '../DsChartFrame.vue';
+import { PAD_LEFT, xPosition } from '../chartGeometry';
 
 const labels = ['Mon', 'Tue', 'Wed', 'Thu'];
 const answered = {
@@ -97,6 +99,131 @@ describe('DsChartFrame', () => {
       expect(wrapper.find('[data-test-id="ds-chart-tooltip"]').exists()).toBe(
         false
       );
+    });
+
+    describe('pointer hover', () => {
+      // The hover overlay is the plot area only (668 of 720 viewBox units).
+      // A pointer exactly over a data point must pick that point, on every
+      // part of the plot, for a 30 day range and a 4 day range.
+      const OVERLAY_UNITS = 668;
+      const BOX_LEFT = 100;
+      const BOX_WIDTH = 334;
+
+      const longLabels = Array.from({ length: 30 }, (_, i) => `D${i + 1}`);
+      const longSeries = {
+        key: 'answered',
+        label: 'Answered',
+        values: longLabels.map((_, i) => 10 + i),
+      };
+      const longMissed = {
+        key: 'missed',
+        label: 'Missed',
+        values: longLabels.map((_, i) => 1 + (i % 4)),
+      };
+
+      const clientXOverPoint = (index, count) =>
+        BOX_LEFT +
+        ((xPosition(index, count) - PAD_LEFT) / OVERLAY_UNITS) * BOX_WIDTH;
+
+      const mockBox = overlay => {
+        overlay.element.getBoundingClientRect = () => ({
+          left: BOX_LEFT,
+          top: 0,
+          width: BOX_WIDTH,
+          height: 100,
+          right: BOX_LEFT + BOX_WIDTH,
+          bottom: 100,
+        });
+      };
+
+      // VTU's trigger() cannot set clientX (read-only in jsdom), so dispatch a
+      // real MouseEvent with the pointermove type. The handler runs
+      // synchronously; the DOM catches up after a tick.
+      const movePointer = (overlay, clientX) =>
+        overlay.element.dispatchEvent(
+          new MouseEvent('pointermove', { clientX, bubbles: true })
+        );
+
+      const hoverEach = (overlay, indexes, count) =>
+        indexes.forEach(index =>
+          movePointer(overlay, clientXOverPoint(index, count))
+        );
+
+      it('picks the data point under the cursor on the main plot', async () => {
+        const wrapper = mountLine({
+          labels: longLabels,
+          series: [longSeries],
+        });
+        const overlay = wrapper.find(
+          '[data-test-id="ds-chart-main"] rect.fill-transparent'
+        );
+        mockBox(overlay);
+
+        const indexes = [0, 1, 2, 5, 10, 15, 20, 29];
+        hoverEach(overlay, indexes, 30);
+        await nextTick();
+
+        expect(wrapper.emitted('hover').map(([index]) => index)).toEqual(
+          indexes
+        );
+        expect(
+          wrapper.find('[data-test-id="ds-chart-tooltip"]').text()
+        ).toContain('D30');
+      });
+
+      it('picks the data point under the cursor for a short range', async () => {
+        const wrapper = mountLine();
+        const overlay = wrapper.find(
+          '[data-test-id="ds-chart-main"] rect.fill-transparent'
+        );
+        mockBox(overlay);
+
+        const indexes = [0, 1, 2, 3];
+        hoverEach(overlay, indexes, 4);
+        await nextTick();
+
+        expect(wrapper.emitted('hover').map(([index]) => index)).toEqual(
+          indexes
+        );
+      });
+
+      it('picks the data point under the cursor on the secondary panel', async () => {
+        const wrapper = mountLine({
+          labels: longLabels,
+          series: [longSeries],
+          secondary: longMissed,
+        });
+        const overlay = wrapper.find(
+          '[data-test-id="ds-chart-secondary"] rect.fill-transparent'
+        );
+        mockBox(overlay);
+
+        const indexes = [0, 1, 2, 5, 10, 15, 20, 29];
+        hoverEach(overlay, indexes, 30);
+        await nextTick();
+
+        expect(wrapper.emitted('hover').map(([index]) => index)).toEqual(
+          indexes
+        );
+      });
+
+      it('clears the tooltip when the pointer leaves', async () => {
+        const wrapper = mountLine();
+        const overlay = wrapper.find(
+          '[data-test-id="ds-chart-main"] rect.fill-transparent'
+        );
+        mockBox(overlay);
+
+        movePointer(overlay, clientXOverPoint(1, 4));
+        await nextTick();
+        expect(wrapper.find('[data-test-id="ds-chart-tooltip"]').exists()).toBe(
+          true
+        );
+        await overlay.trigger('pointerleave');
+        expect(wrapper.find('[data-test-id="ds-chart-tooltip"]').exists()).toBe(
+          false
+        );
+      });
     });
 
     it('exposes the tooltip through a scoped slot', async () => {

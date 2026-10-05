@@ -15,6 +15,7 @@ import {
   linePath,
   nearestIndex,
   niceMax,
+  pointerToX,
   rampStep,
   visibleTickIndexes,
   xPosition,
@@ -202,8 +203,7 @@ const setHover = index => {
 const onPointerMove = event => {
   const box = event.currentTarget.getBoundingClientRect();
   if (!box.width) return;
-  const x = ((event.clientX - box.left) / box.width) * CHART_WIDTH;
-  setHover(nearestIndex(x, count.value));
+  setHover(nearestIndex(pointerToX(event.clientX, box), count.value));
 };
 
 const onKeydown = event => {

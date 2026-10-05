@@ -26,6 +26,14 @@ export const xPosition = (index, count) => {
   return PAD_LEFT + (inner * index) / (count - 1);
 };
 
+// The hover overlay covers only the plot area (PAD_LEFT .. CHART_WIDTH -
+// PAD_RIGHT), so a pointer inside its box maps onto that range, not onto the
+// whole viewBox.
+export const pointerToX = (clientX, box) => {
+  const inner = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;
+  return PAD_LEFT + ((clientX - box.left) / box.width) * inner;
+};
+
 export const nearestIndex = (x, count) => {
   if (count <= 1) return 0;
   const inner = CHART_WIDTH - PAD_LEFT - PAD_RIGHT;

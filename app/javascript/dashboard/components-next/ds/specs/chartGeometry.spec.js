@@ -1,8 +1,10 @@
 import {
+  PAD_LEFT,
   columnPath,
   linePath,
   nearestIndex,
   niceMax,
+  pointerToX,
   rampStep,
   visibleTickIndexes,
   xPosition,
@@ -22,6 +24,19 @@ describe('chartGeometry', () => {
     expect(nearestIndex(last, 14)).toBe(13);
     expect(nearestIndex(xPosition(5, 14) + 3, 14)).toBe(5);
     expect(nearestIndex(-100, 14)).toBe(0);
+  });
+
+  it('maps a pointer over the plot overlay onto the plot range', () => {
+    // the overlay spans PAD_LEFT .. 708 (668 viewBox units) in a 334px box
+    const box = { left: 100, width: 334 };
+
+    expect(pointerToX(100, box)).toBe(PAD_LEFT);
+    expect(pointerToX(100 + 334, box)).toBe(708);
+    expect(pointerToX(100 + 167, box)).toBe(PAD_LEFT + 334);
+    [0, 1, 7, 14].forEach(index => {
+      const clientX = 100 + ((xPosition(index, 15) - PAD_LEFT) / 668) * 334;
+      expect(nearestIndex(pointerToX(clientX, box), 15)).toBe(index);
+    });
   });
 
   it('breaks the line at missing values', () => {
