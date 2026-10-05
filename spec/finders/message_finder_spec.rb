@@ -28,7 +28,7 @@ describe MessageFinder do
         expect(result.count).to be 6
       end
 
-      it 'keeps useful activity and hides noisy voice telemetry' do
+      it 'keeps useful activity and hides noisy voice telemetry and Captain tool lines' do
         useful_activity = create(
           :message,
           message_type: 'activity',
@@ -41,6 +41,7 @@ describe MessageFinder do
           :message,
           message_type: 'activity',
           source_id: 'captain-tool:execution-1',
+          content_attributes: { data: { type: 'captain_tool_event', event: 'completed', tool_name: 'search_deals' } },
           account: account,
           inbox: inbox,
           conversation: conversation
@@ -56,8 +57,8 @@ describe MessageFinder do
 
         result = message_finder.perform
 
-        expect(result).to include(useful_activity, captain_tool_activity)
-        expect(result).not_to include(noisy_activity)
+        expect(result).to include(useful_activity)
+        expect(result).not_to include(captain_tool_activity, noisy_activity)
       end
     end
 
@@ -103,6 +104,62 @@ describe MessageFinder do
         result = message_finder.perform
         expect(result.count).to be 5
         expect(result.last.id).to be conversation.messages[-2].id
+      end
+    end
+
+    context 'when Captain tool lines are the newest messages' do
+      # after the greeting messages that the inbox hooks create with the conversation
+      let(:base_time) { 1.day.from_now.change(usec: 0) }
+      let(:pagination_conversation) do
+        create(:conversation, account: account, inbox: inbox, assignee: user, contact: contact)
+      end
+      let!(:visible_messages) do
+        Array.new(25) do |index|
+          create(:message, account: account, inbox: inbox, conversation: pagination_conversation,
+                           created_at: base_time + index.minutes)
+        end
+      end
+      let!(:tool_lines) do
+        Array.new(30) do |index|
+          create(
+            :message,
+            message_type: 'activity',
+            source_id: "captain-tool:page-#{index}",
+            content_attributes: { data: { type: 'captain_tool_event', event: 'completed' } },
+            account: account,
+            inbox: inbox,
+            conversation: pagination_conversation,
+            created_at: base_time + 100.minutes + index.seconds
+          )
+        end
+      end
+
+      it 'fills the latest page with visible messages instead of hidden lines' do
+        result = described_class.new(pagination_conversation, {}).perform
+
+        expect(result.map(&:id)).to eq(visible_messages.last(20).map(&:id))
+      end
+
+      it 'loads the next page when the page above was made of hidden lines' do
+        first_page = described_class.new(pagination_conversation, {}).perform
+        second_page = described_class.new(pagination_conversation, { before: first_page.first.id }).perform
+
+        expect(second_page.map(&:id)).to include(*visible_messages.first(5).map(&:id))
+        expect(second_page.last.id).to eq(visible_messages[4].id)
+        expect(second_page).not_to include(*tool_lines)
+      end
+
+      it 'uses a hidden line as a cursor without returning it' do
+        result = described_class.new(pagination_conversation, { before: tool_lines.last.id }).perform
+
+        expect(result.map(&:id)).to eq(visible_messages.last(20).map(&:id))
+        expect(result).not_to include(*tool_lines)
+      end
+
+      it 'does not return hidden lines for an after cursor' do
+        result = described_class.new(pagination_conversation, { after: visible_messages.last.id }).perform
+
+        expect(result).to be_empty
       end
     end
 

@@ -7,6 +7,7 @@ class Llm::Monitoring::ConversationTimelineProjector
   FEATURE = 'assistant'
   RUNTIME_MODE = 'captain_runtime'
   SOURCE_PREFIX = 'captain-tool'
+  TOOL_EVENT_TYPE = 'captain_tool_event'
 
   def initialize(event)
     @event = event
@@ -54,7 +55,7 @@ class Llm::Monitoring::ConversationTimelineProjector
       created_at: event.created_at,
       content_attributes: {
         data: {
-          type: 'captain_tool_event',
+          type: TOOL_EVENT_TYPE,
           event: outcome,
           llm_event_id: event.id,
           request_id: event.request_id,

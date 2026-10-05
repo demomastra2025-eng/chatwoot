@@ -254,6 +254,40 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(JSON.parse(response.body, symbolize_names: true)[:meta][:contact][:id]).to eq(conversation.contact_id)
       end
 
+      it 'hides Captain tool lines but keeps the handoff activity for agents and admins' do
+        administrator = create(:user, account: account, role: :administrator)
+        regular = create(:message, account: account, conversation: conversation, content: 'Hello')
+        tool_lines = %w[completed failed].map do |outcome|
+          create(
+            :message,
+            message_type: :activity,
+            account: account,
+            conversation: conversation,
+            content: "AI Agent tool search_scheduling_services #{outcome}",
+            source_id: "captain-tool:#{outcome}",
+            content_attributes: { data: { type: 'captain_tool_event', event: outcome, tool_name: 'search_scheduling_services' } }
+          )
+        end
+        handoff = create(
+          :message,
+          message_type: :activity,
+          account: account,
+          conversation: conversation,
+          content: I18n.t('conversations.activity.captain.open', user_name: 'AI Agent')
+        )
+
+        [agent, administrator].each do |staff|
+          get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+              headers: staff.create_new_auth_token,
+              as: :json
+
+          expect(response).to have_http_status(:success)
+          ids = response.parsed_body['payload'].pluck('id')
+          expect(ids).to include(regular.id, handoff.id)
+          expect(ids).not_to include(*tool_lines.map(&:id))
+        end
+      end
+
       it 'uses the first genuine unread message for the initial cursor' do
         conversation.update!(agent_last_seen_at: 1.day.ago)
         imported_message = create(

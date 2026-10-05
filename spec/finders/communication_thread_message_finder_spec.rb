@@ -40,7 +40,7 @@ describe CommunicationThreadMessageFinder do
     conversation
   end
 
-  it 'shows useful activity and regular messages while hiding noisy telemetry' do
+  it 'shows useful activity and regular messages while hiding noisy telemetry and Captain tool lines' do
     regular_message = create(
       :message,
       conversation: first_conversation,
@@ -59,6 +59,7 @@ describe CommunicationThreadMessageFinder do
       :message,
       message_type: 'activity',
       source_id: 'captain-tool:execution-1',
+      content_attributes: { data: { type: 'captain_tool_event', event: 'failed', tool_name: 'search_deals' } },
       conversation: first_conversation,
       account: account,
       inbox: first_conversation.inbox
@@ -74,8 +75,8 @@ describe CommunicationThreadMessageFinder do
 
     result = finder.perform
 
-    expect(result).to include(regular_message, useful_activity, captain_tool_activity)
-    expect(result).not_to include(noisy_activity)
+    expect(result).to include(regular_message, useful_activity)
+    expect(result).not_to include(captain_tool_activity, noisy_activity)
   end
 
   it 'preserves distinct cross-channel activities with the same content' do

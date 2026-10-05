@@ -251,6 +251,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         expect(json_response[:payload].map { |event| event[:id] }).to eq([assistant_event.id])
       end
 
+      it 'keeps listing a tool event whose conversation timeline line is hidden from staff' do
+        conversation = create(:conversation, account: account)
+        tool_event.update!(conversation_id: conversation.id)
+        line = Llm::Monitoring::ConversationTimelineProjector.new(tool_event).call
+
+        expect(Messages::TimelineVisibility.apply(conversation.messages)).not_to include(line)
+
+        get "/api/v1/accounts/#{account.id}/captain/observability",
+            params: { session_id: 'session-1' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:payload].map { |event| event[:id] }).to include(tool_event.id)
+      end
+
       it 'caps per_page to avoid oversized responses' do
         get "/api/v1/accounts/#{account.id}/captain/observability",
             params: { per_page: 999 },

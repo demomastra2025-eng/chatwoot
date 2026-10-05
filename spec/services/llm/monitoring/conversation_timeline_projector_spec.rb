@@ -50,6 +50,16 @@ RSpec.describe Llm::Monitoring::ConversationTimelineProjector do
     )
   end
 
+  it 'writes lines that the staff timeline hides while the row and its trace link stay stored' do
+    event = create(:llm_event, **event_attributes)
+
+    message = described_class.new(event).call
+
+    expect(Messages::TimelineVisibility.apply(conversation.messages)).not_to include(message)
+    expect(conversation.messages.activity.find_by(id: message.id)).to be_present
+    expect(message.content_attributes.dig('data', 'llm_event_id')).to eq(event.id)
+  end
+
   it 'deduplicates repeated telemetry records for the same tool execution' do
     first_event = create(:llm_event, **event_attributes)
     duplicate_event = create(:llm_event, **event_attributes)
