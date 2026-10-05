@@ -229,6 +229,14 @@ const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'wazo',
 ]);
 const TERMINAL_CALL_SUPPRESSION_MS = 5 * 60 * 1000;
+// A ringing card the server stopped talking about is stale after this long:
+// the PBX stops ringing an unanswered call after about two minutes.
+export const STALE_INCOMING_CALL_TTL_MS = 150 * 1000;
+// The operator browsers of one physical call report their legs within seconds
+// of each other (the server groups them within the same window).
+export const SIBLING_LEG_WINDOW_MS = 20 * 1000;
+const CALL_SEEN_RETENTION_MS = 10 * 60 * 1000;
+const RINGING_STATUSES = ['ringing', 'created'];
 
 const isNativeBrowserSipCall = call =>
   NATIVE_BROWSER_SIP_PROVIDERS.has(call?.provider);
@@ -363,6 +371,40 @@ const sameReplaceableNativeSipIncomingCall = (call, callData) =>
       !callHasPhysicalSessionScope(callData),
     requireCompatibleLogicalKey: true,
   });
+
+const callSeenKey = call =>
+  `${call?.provider || ''}:${call?.callSid || call?.call_sid || ''}`;
+
+const isRingingIncomingCall = call =>
+  !call?.isActive &&
+  isInboundCall(call) &&
+  (!isPresent(call?.status) || RINGING_STATUSES.includes(call.status));
+
+// Ringing cards for the same caller on the same channel that carry no logical
+// call key and appeared within seconds of each other are the legs of one
+// physical call: only one of them may show.
+const sameUnkeyedIncomingCaller = (call, callData, firstSeenAt, now) => {
+  if (!isRingingIncomingCall(call) || !isRingingIncomingCall(callData)) {
+    return false;
+  }
+  if (isPresent(callLogicalKey(call)) || isPresent(callLogicalKey(callData))) {
+    return false;
+  }
+  if (!nativeSipProvidersCompatible(call, callData)) return false;
+  if (!sameKnownScopeValue(call?.accountId, callData?.accountId)) return false;
+  if (
+    !isPresent(callInboxId(call)) ||
+    !sameValue(callInboxId(call), callInboxId(callData))
+  ) {
+    return false;
+  }
+  const fromIdentity = callFromIdentity(call);
+  if (!fromIdentity || fromIdentity !== callFromIdentity(callData)) {
+    return false;
+  }
+
+  return isPresent(firstSeenAt) && now - firstSeenAt <= SIBLING_LEG_WINDOW_MS;
+};
 
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData) ||
@@ -547,6 +589,8 @@ export const useCallsStore = defineStore('calls', {
   state: () => ({
     calls: [],
     terminalCallKeys: {},
+    // When a card first appeared and when the server last spoke about it.
+    callSeenAt: {},
   }),
 
   getters: {
@@ -893,6 +937,7 @@ export const useCallsStore = defineStore('calls', {
       ) {
         return;
       }
+      this.touchCall(callData);
 
       const existingCallIndexes = this.calls.reduce((indexes, call, index) => {
         if (sameLiveCall(call, callData)) indexes.push(index);
@@ -959,7 +1004,65 @@ export const useCallsStore = defineStore('calls', {
         return;
       }
 
+      const now = Date.now();
+      const siblingIndex = this.calls.findIndex(call =>
+        sameUnkeyedIncomingCaller(
+          call,
+          callData,
+          this.callSeenAt[callSeenKey(call)]?.firstSeenAt,
+          now
+        )
+      );
+      if (siblingIndex >= 0) {
+        // The same physical call twice: keep the employee's own leg, the one
+        // that has a SIP session of his browser behind it.
+        if (
+          callHasPhysicalSessionScope(callData) &&
+          !callHasPhysicalSessionScope(this.calls[siblingIndex])
+        ) {
+          this.calls = this.calls.map((call, index) =>
+            index === siblingIndex ? buildCallState(callData) : call
+          );
+        }
+        return;
+      }
+
       this.calls.push(buildCallState(callData));
+    },
+
+    touchCall(callData) {
+      const key = callSeenKey(callData);
+      const now = Date.now();
+      this.callSeenAt[key] = {
+        firstSeenAt: this.callSeenAt[key]?.firstSeenAt ?? now,
+        lastEventAt: now,
+      };
+    },
+
+    // Removes the ringing cards the server stopped talking about. A card whose
+    // own browser SIP session still rings is never removed.
+    expireStaleIncomingCalls({
+      now = Date.now(),
+      ttlMs = STALE_INCOMING_CALL_TTL_MS,
+      isLocalSessionLive = () => false,
+    } = {}) {
+      this.callSeenAt = Object.fromEntries(
+        Object.entries(this.callSeenAt).filter(
+          ([, seen]) => now - seen.lastEventAt <= CALL_SEEN_RETENTION_MS
+        )
+      );
+      const staleCalls = this.calls.filter(call => {
+        if (!isRingingIncomingCall(call)) return false;
+        const lastEventAt = this.callSeenAt[callSeenKey(call)]?.lastEventAt;
+        if (!isPresent(lastEventAt) || now - lastEventAt <= ttlMs) return false;
+
+        return !isLocalSessionLive(call);
+      });
+      if (!staleCalls.length) return [];
+
+      staleCalls.forEach(call => this.rememberTerminalCall(call));
+      this.calls = this.calls.filter(call => !staleCalls.includes(call));
+      return staleCalls;
     },
 
     pruneTerminalCallKeys() {
