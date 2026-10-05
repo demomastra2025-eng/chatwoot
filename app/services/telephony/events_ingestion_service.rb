@@ -263,7 +263,8 @@ class Telephony::EventsIngestionService
       if duplicate_terminal_branch
         run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
       else
-        reconcile_stale_terminal_voice_message!(call_session, account, event)
+        # The session row is taken inside: the caller's intake lock goes first, as everywhere.
+        with_call_intake_lock(call_session, account) { reconcile_stale_terminal_voice_message!(call_session, account, event) }
       end
     elsif call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
@@ -581,7 +582,9 @@ class Telephony::EventsIngestionService
   end
 
   def reconcile_stale_terminal_voice_message!(call_session, account, event)
-    call_session.with_lock do
+    # A savepoint when an outer transaction is open (the intake lock's): the
+    # rescue below must still be able to write after a failure in here.
+    call_session.with_lock(requires_new: true) do
       call_session.reload
       next :nonterminal unless call_session.terminal?
       next unless native_sip_call_session?(call_session)
