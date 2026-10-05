@@ -117,6 +117,18 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends libopus0 ffmpeg
           ruby -rfiddle -e 'lib = Fiddle.dlopen("libopus.so.0"); puts Fiddle::Function.new(lib["opus_get_version_string"], [], Fiddle::TYPE_VOIDP).call.to_s'
+      - name: Build test frontend assets
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072 --openssl-legacy-provider
+        run: |
+          # Specs that render a layout otherwise trigger a vite autoBuild inside
+          # the rspec process (about 3.7 GB RSS, 4 minutes) next to the Ruby
+          # suite, Postgres on tmpfs and Redis. Build once, here, so a failure
+          # is visible in its own step and the vite_ruby build digest recorded
+          # in tmp/cache/vite makes autoBuild skip the rebuild. Measured: a 3072 MB
+          # heap cap builds in about 4 minutes with a 3.8 GB peak; 2048 MB runs out
+          # of heap.
+          bundle exec vite build --mode test
       - name: Run full Ruby suite shard
         env:
           SHARD: ${{ matrix.shard }}
@@ -128,7 +140,30 @@ jobs:
           for index in "${!all_specs[@]}"; do
             if ((index % SHARDS == SHARD)); then specs+=("${all_specs[$index]}"); fi
           done
-          bundle exec rspec --profile=10 "${specs[@]}"
+          # A shard that dies without a log has no other evidence: print the
+          # memory state every minute (stays in the job log up to the loss)
+          # and keep a documentation report that is uploaded below.
+          mkdir -p tmp
+          (while true; do echo "[mem $(date +%T)] $(free -m | awk 'NR==2 {print "used=" $3 " free=" $4 " available=" $7}')"; sleep 60; done) &
+          sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          bundle exec rspec --profile=10 --format progress \
+            --format documentation --out "tmp/rspec-shard-${SHARD}.txt" "${specs[@]}"
+      - name: Report runner resources
+        if: always()
+        run: |
+          free -m || true
+          df -h || true
+          ps -eo pid,rss,etime,args --sort=-rss | head -n 15 || true
+          sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -n 20 || true
+      - name: Upload rspec report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rspec-shard-${{ matrix.shard }}
+          path: tmp/rspec-shard-${{ matrix.shard }}.txt
+          if-no-files-found: ignore
+          retention-days: 7
 
   frontend:
     needs: resolve
