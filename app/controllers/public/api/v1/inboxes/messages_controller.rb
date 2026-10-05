@@ -10,7 +10,6 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
     return handle_existing_source_id if @message
 
     @message = @conversation.messages.new(message_params)
-    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?
 
     build_attachment
     @message.save!
@@ -35,19 +34,13 @@ class Public::Api::V1::Inboxes::MessagesController < Public::Api::V1::InboxesCon
     return if params[:attachments].blank?
 
     params[:attachments].each do |uploaded_attachment|
+      # Client messages are incoming: the account storage limit never blocks them.
       @message.attachments.new(
         account_id: @message.account_id,
         file_type: helpers.file_type(uploaded_attachment&.content_type),
         file: uploaded_attachment
-      )
+      ).skip_storage_limit_validation!
     end
-  end
-
-  def storage_limit_available?
-    return true if params[:attachments].blank?
-
-    extra_bytes = params[:attachments].sum { |uploaded_attachment| uploaded_attachment.size.to_i }
-    AccountLimits::StorageUsageService.new(account: @message.account).within_limit?(extra_bytes: extra_bytes)
   end
 
   def message_finder_params

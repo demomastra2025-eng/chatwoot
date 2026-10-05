@@ -99,10 +99,103 @@ RSpec.describe AccountLimits::StorageUsageService do
       expect(described_class.new(account: account).usage_bytes).to eq(4096)
     end
 
-    it 'keeps upload eligibility when physical usage exceeds the configured limit' do
-      account.update!(limits: { 'storage_bytes' => 1 })
+    it 'rejects an upload when recordings plus the new file exceed the configured limit' do
+      account.update!(limits: { 'storage_bytes' => 5000 })
 
-      expect(described_class.new(account: account).within_limit?(extra_bytes: 10.megabytes)).to be(true)
+      expect(described_class.new(account: account).within_limit?(extra_bytes: 904)).to be(true)
+      expect(described_class.new(account: account).within_limit?(extra_bytes: 905)).to be(false)
+    end
+
+    it 'leaves recordings out of the quota when STORAGE_QUOTA_INCLUDE_RECORDINGS is false' do
+      account.update!(limits: { 'storage_bytes' => 5000 })
+
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'false') do
+        service = described_class.new(account: account)
+
+        expect(service.usage_bytes).to eq(0)
+        expect(service.within_limit?(extra_bytes: 5000)).to be(true)
+      end
+    end
+  end
+
+  describe '#within_limit?' do
+    subject(:service) { described_class.new(account: account) }
+
+    it 'always allows uploads when no account or global limit is configured' do
+      expect(service.within_limit?(extra_bytes: 10.terabytes)).to be(true)
+    end
+
+    it 'allows an upload that fits under the account limit' do
+      account.update!(limits: { 'storage_bytes' => 10.megabytes })
+
+      expect(service.within_limit?(extra_bytes: 9.megabytes)).to be(true)
+    end
+
+    it 'rejects an upload that would push the account over its limit' do
+      account.update!(limits: { 'storage_bytes' => 10.megabytes })
+
+      expect(service.within_limit?(extra_bytes: 11.megabytes)).to be(false)
+    end
+
+    it 'counts bytes already stored against the limit' do
+      account.update!(limits: { 'storage_bytes' => 2048 })
+      account.logo.attach(io: StringIO.new('l' * 1024), filename: 'tenant-logo.png', content_type: 'image/png')
+
+      expect(service.within_limit?(extra_bytes: 1024)).to be(true)
+      expect(service.within_limit?(extra_bytes: 1025)).to be(false)
+    end
+
+    it 'credits the bytes released by a replaced file' do
+      account.update!(limits: { 'storage_bytes' => 2048 })
+      account.logo.attach(io: StringIO.new('l' * 2048), filename: 'tenant-logo.png', content_type: 'image/png')
+
+      expect(service.within_limit?(extra_bytes: 1, released_bytes: 0)).to be(false)
+      expect(service.within_limit?(extra_bytes: 1500, released_bytes: 2048)).to be(true)
+    end
+
+    it 'uses the global limit when the account has none' do
+      account
+      allow(GlobalConfig).to receive(:get).and_call_original
+      allow(GlobalConfig).to receive(:get).with('ACCOUNT_STORAGE_BYTES_LIMIT').and_return('ACCOUNT_STORAGE_BYTES_LIMIT' => 1000)
+
+      expect(service.within_limit?(extra_bytes: 1000)).to be(true)
+      expect(service.within_limit?(extra_bytes: 1001)).to be(false)
+    end
+  end
+
+  describe 'incoming attachments' do
+    let(:conversation) { create(:conversation, account: account) }
+
+    before { account.update!(limits: { 'storage_bytes' => 1 }) }
+
+    def build_attachment(skip: false)
+      message = create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :incoming)
+      attachment = message.attachments.new(account_id: account.id, file_type: :image)
+      attachment.skip_storage_limit_validation! if skip
+      attachment.file.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+      attachment
+    end
+
+    it 'blocks a regular attachment when the account is over its limit' do
+      attachment = build_attachment
+
+      expect(attachment).not_to be_valid
+      expect(attachment.errors[:file]).to include(described_class::LIMIT_EXCEEDED_MESSAGE)
+    end
+
+    it 'saves an incoming attachment that is exempt from the storage limit' do
+      attachment = build_attachment(skip: true)
+
+      expect(attachment.save).to be(true)
+      expect(attachment.reload.file).to be_attached
+    end
+
+    it 'never validates an incoming call recording against the limit' do
+      call = create(:call, account: account)
+
+      call.recording.attach(io: StringIO.new('r' * 4096), filename: 'call.ogg', content_type: 'audio/ogg')
+
+      expect(call.reload.recording).to be_attached
     end
   end
 

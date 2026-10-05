@@ -55,8 +55,27 @@ RSpec.describe '/api/v1/accounts/:account_id/conversations/:conversation_id/dire
         expect(blob.metadata).not_to include('identified', 'analyzed', 'composed')
       end
 
-      it 'allows direct uploads when account storage limit is reached' do
+      it 'rejects employee direct uploads when account storage limit is reached' do
         account.update!(limits: { storage_bytes: 1000 })
+
+        post api_v1_account_conversation_direct_uploads_path(account_id: account.id, conversation_id: conversation.display_id),
+             params: {
+               blob: {
+                 filename: 'avatar.png',
+                 byte_size: '1234',
+                 checksum: 'dsjbsdhbfif3874823mnsdbf',
+                 content_type: 'image/png'
+               }
+             },
+             headers: { api_access_token: agent.access_token.token },
+             as: :json
+
+        expect(response).to have_http_status(:payment_required)
+        expect(response.parsed_body['error']).to eq(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+      end
+
+      it 'allows employee direct uploads while the account is within its storage limit' do
+        account.update!(limits: { storage_bytes: 10.megabytes })
 
         post api_v1_account_conversation_direct_uploads_path(account_id: account.id, conversation_id: conversation.display_id),
              params: {

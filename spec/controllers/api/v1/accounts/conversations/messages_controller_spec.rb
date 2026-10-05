@@ -95,8 +95,22 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(conversation.messages.last.content_type).to eq('text')
       end
 
-      it 'accepts an employee attachment when the account is already over its storage limit' do
+      it 'rejects an employee attachment when the account is already over its storage limit' do
         account.update!(limits: { storage_bytes: 1 })
+        file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
+
+        expect do
+          post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
+               params: { content: 'test-message', attachments: [file] },
+               headers: agent.create_new_auth_token
+        end.not_to change(Message, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to include(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+      end
+
+      it 'accepts an employee attachment while the account is within its storage limit' do
+        account.update!(limits: { storage_bytes: 10.megabytes })
         file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
 
         post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),

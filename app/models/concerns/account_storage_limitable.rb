@@ -39,8 +39,7 @@ module AccountStorageLimitable
     respond_to?(:skip_storage_limit_validation?) && skip_storage_limit_validation?
   end
 
-  # Kept for compatibility with models that still validate attachment changes. Storage limits are
-  # informational, so accepted writes never enqueue an upload-rejection alert.
+  # A rejected upload asks the storage-alert job to tell the account owners; it is throttled per account.
   def trigger_storage_alert(account)
     return unless Redis::Alfred.set("account:#{account.id}:storage_alert_enqueued", '1', nx: true, ex: STORAGE_ALERT_ENQUEUE_INTERVAL)
 

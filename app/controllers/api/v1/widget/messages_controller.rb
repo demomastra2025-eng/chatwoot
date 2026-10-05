@@ -8,7 +8,6 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
 
   def create
     @message = conversation.messages.new(message_params)
-    return render_payment_required(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE) unless storage_limit_available?
 
     build_attachment
     @message.save!
@@ -35,20 +34,14 @@ class Api::V1::Widget::MessagesController < Api::V1::Widget::BaseController
     return if params[:message][:attachments].blank?
 
     params[:message][:attachments].each do |uploaded_attachment|
+      # Visitor messages are incoming: the account storage limit never blocks them.
       attachment = @message.attachments.new(
         account_id: @message.account_id,
         file: uploaded_attachment
-      )
+      ).skip_storage_limit_validation!
 
       attachment.file_type = helpers.file_type(uploaded_attachment&.content_type) if uploaded_attachment.is_a?(ActionDispatch::Http::UploadedFile)
     end
-  end
-
-  def storage_limit_available?
-    return true if params[:message][:attachments].blank?
-
-    extra_bytes = params[:message][:attachments].sum { |uploaded_attachment| uploaded_attachment.size.to_i }
-    AccountLimits::StorageUsageService.new(account: @message.account).within_limit?(extra_bytes: extra_bytes)
   end
 
   def set_conversation

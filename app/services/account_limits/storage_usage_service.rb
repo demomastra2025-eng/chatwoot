@@ -34,8 +34,9 @@ class AccountLimits::StorageUsageService
   end
 
   # Local call recordings live outside ActiveStorage and are included in physical usage totals.
+  # STORAGE_QUOTA_INCLUDE_RECORDINGS=false leaves them out of the quota (and therefore out of the upload check).
   def count_recordings?
-    true
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('STORAGE_QUOTA_INCLUDE_RECORDINGS', 'true'))
   end
 
   def recordings_bytes
@@ -48,9 +49,13 @@ class AccountLimits::StorageUsageService
     active_storage_bytes + recordings_bytes
   end
 
-  # Storage is informational: uploads, imports, messages and attachments remain available above the limit.
-  def within_limit?(**)
-    true
+  # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
+  # this check: inbound attachments carry skip_storage_limit_validation! and inbound recordings are not validated.
+  def within_limit?(extra_bytes: 0, released_bytes: 0)
+    return true if unlimited?
+
+    projected_usage = usage_bytes + extra_bytes.to_i - released_bytes.to_i
+    projected_usage <= total_limit_bytes
   end
 
   def summary
