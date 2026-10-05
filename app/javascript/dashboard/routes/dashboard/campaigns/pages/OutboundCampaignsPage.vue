@@ -27,6 +27,7 @@ import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDra
 import TouchAnalyticsDialog from 'dashboard/components-next/Outbound/TouchAnalyticsDialog.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 
 const props = defineProps({
   mode: {
@@ -276,7 +277,11 @@ const fetchTouches = async () => {
     }
 
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES'),
+        t
+      )
     );
   } finally {
     if (requestId === touchesRequestId.value) {
@@ -321,7 +326,11 @@ const approveTouch = async touch => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.ALL.APPROVE_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPROVE_TOUCH')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPROVE_TOUCH'),
+        t
+      )
     );
   } finally {
     mutatingTouchId.value = null;
@@ -337,7 +346,11 @@ const cancelTouch = async touch => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.ALL.CANCEL_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.CANCEL_TOUCH')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.CANCEL_TOUCH'),
+        t
+      )
     );
   } finally {
     mutatingTouchId.value = null;

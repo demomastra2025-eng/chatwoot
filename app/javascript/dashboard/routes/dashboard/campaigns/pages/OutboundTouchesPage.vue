@@ -11,6 +11,7 @@ import TouchEmptyState from 'dashboard/components-next/Outbound/TouchEmptyState.
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
 import TouchesAPI from 'dashboard/api/touches';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 
 const route = useRoute();
 const router = useRouter();
@@ -151,7 +152,11 @@ const fetchTouches = async () => {
     touches.value = data.payload || [];
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES'),
+        t
+      )
     );
   } finally {
     isFetchingTouches.value = false;
@@ -171,7 +176,11 @@ const approveTouch = async touch => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.ALL.APPROVE_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPROVE_TOUCH')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPROVE_TOUCH'),
+        t
+      )
     );
   } finally {
     mutatingTouchId.value = null;
@@ -187,7 +196,11 @@ const cancelTouch = async touch => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.ALL.CANCEL_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.CANCEL_TOUCH')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.CANCEL_TOUCH'),
+        t
+      )
     );
   } finally {
     mutatingTouchId.value = null;

@@ -11,6 +11,7 @@ import EmptyStateLayout from 'dashboard/components-next/EmptyStateLayout.vue';
 import OutboundWorkspaceLayout from 'dashboard/components-next/Outbound/OutboundWorkspaceLayout.vue';
 import TouchPlanEditorDrawer from 'dashboard/components-next/Outbound/TouchPlanEditorDrawer.vue';
 import TouchPlanList from 'dashboard/components-next/Outbound/TouchPlanList.vue';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 
 const route = useRoute();
 const { t } = useI18n();
@@ -102,7 +103,11 @@ const fetchTouchPlans = async () => {
     touchPlans.value = data.payload || [];
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_PLANS')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_PLANS'),
+        t
+      )
     );
   } finally {
     isFetchingTouchPlans.value = false;
@@ -143,7 +148,11 @@ const openEditTouchPlan = async touchPlan => {
     }
 
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_PLANS')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_PLANS'),
+        t
+      )
     );
   }
 };
@@ -167,7 +176,11 @@ const archiveTouchPlan = async touchPlan => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.PLANS.ARCHIVE_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.ARCHIVE_PLAN')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.ARCHIVE_PLAN'),
+        t
+      )
     );
   } finally {
     mutatingPlanId.value = null;
@@ -193,7 +206,11 @@ const applyTouchPlan = async touchPlan => {
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.PLANS.APPLY_SUCCESS'));
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPLY_PLAN')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.APPLY_PLAN'),
+        t
+      )
     );
   } finally {
     mutatingPlanId.value = null;

@@ -39,6 +39,7 @@ import {
   canUseFixedRelativeTimeForUnit,
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 import {
   buildTouchPlanStepEntityScope,
   touchPlanStepEntityKindPayload,
@@ -1068,7 +1069,11 @@ const saveTouchPlan = async () => {
     closeDrawer();
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCH_PLAN_EDITOR.ERRORS.SAVE')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCH_PLAN_EDITOR.ERRORS.SAVE'),
+        t
+      )
     );
   } finally {
     ui.isSaving = false;

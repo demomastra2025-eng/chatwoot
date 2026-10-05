@@ -7,6 +7,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchesAPI from 'dashboard/api/touches';
+import { reminderErrorMessage } from 'dashboard/components-next/Outbound/reminderErrors';
 import { useAlert } from 'dashboard/composables';
 import { useAccount } from 'dashboard/composables/useAccount';
 
@@ -201,7 +202,11 @@ async function fetchTouches() {
     enrollments.value = enrollmentsData.payload || [];
   } catch (error) {
     useAlert(
-      error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES'),
+        t
+      )
     );
   } finally {
     isLoading.value = false;
@@ -218,8 +223,11 @@ async function cancelEnrollment(enrollment) {
     await fetchTouches();
   } catch (error) {
     useAlert(
-      error?.message ||
-        t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.PLAN_CANCEL_ERROR')
+      reminderErrorMessage(
+        error,
+        t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.PLAN_CANCEL_ERROR'),
+        t
+      )
     );
   } finally {
     cancellingEnrollmentId.value = null;

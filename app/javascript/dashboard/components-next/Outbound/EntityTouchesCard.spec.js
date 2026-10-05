@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getEnrollments: vi.fn(),
   getTouches: vi.fn(),
   routerPush: vi.fn(),
+  useAlert: vi.fn(),
 }));
 
 vi.mock('vue-i18n', () => ({
@@ -29,7 +30,7 @@ vi.mock('dashboard/api/touches', () => ({
   },
 }));
 
-vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
+vi.mock('dashboard/composables', () => ({ useAlert: mocks.useAlert }));
 
 const ButtonStub = {
   name: 'Button',
@@ -59,6 +60,7 @@ describe('EntityTouchesCard', () => {
   beforeEach(() => {
     mocks.accountScopedRoute.mockClear();
     mocks.routerPush.mockClear();
+    mocks.useAlert.mockClear();
     mocks.getTouches.mockResolvedValue({ data: { payload: [] } });
     mocks.getEnrollments.mockResolvedValue({ data: { payload: [] } });
   });
@@ -94,5 +96,36 @@ describe('EntityTouchesCard', () => {
         remindable_type: 'CommunicationThread',
       },
     });
+  });
+
+  it('shows a localized message when loading fails, not the raw request error', async () => {
+    mocks.getTouches.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 500'), {
+        response: { status: 500, data: {} },
+      })
+    );
+    mountComponent();
+    await flushPromises();
+
+    expect(mocks.useAlert).toHaveBeenCalledWith(
+      'OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES'
+    );
+  });
+
+  it('maps a backend reminder error to localized text', async () => {
+    mocks.getTouches.mockRejectedValue(
+      Object.assign(new Error('Request failed with status code 422'), {
+        response: {
+          status: 422,
+          data: { error: 'An open touch with the same content already exists' },
+        },
+      })
+    );
+    mountComponent();
+    await flushPromises();
+
+    expect(mocks.useAlert).toHaveBeenCalledWith(
+      'OUTBOUND_WORKSPACE.TOUCHES.ERRORS.DUPLICATE'
+    );
   });
 });
