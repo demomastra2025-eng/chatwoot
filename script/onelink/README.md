@@ -73,6 +73,17 @@ expand-миграции; destructive contract-cleanup выполняется о�
 встроенных sidecar-сервисов пока блокируются fail-closed, чтобы не создать смешанный
 runtime из разных SHA.
 
+Миграции для PROD выполняются, пока предыдущий релиз ещё обслуживает запросы, поэтому
+«expand» означает не только аддитивность, но и короткие блокировки.
+`change_plan.py --validate-migrations` отклоняет `add_index` без `algorithm: :concurrently`,
+`add_foreign_key` и `add_check_constraint` без `validate: false`, `add_reference` с внешним
+ключом или обычным индексом, `t.references ... foreign_key: true` в новых таблицах и
+`UPDATE`/`update_all` без батчей. Безопасная форма: колонки под `SET LOCAL lock_timeout`
+с повторами, новые таблицы без ключей, ключи и проверки `NOT VALID`, отдельная миграция
+`VALIDATE`, индексы `CONCURRENTLY`, перенос данных пачками по ~5000 строк с условием
+«ещё не заполнено» (образец: `20260928110000`–`110200` и `20261004120000`–`193200`).
+Откат таких миграций: `MIGRATION_ROLLBACK_20261004.md`.
+
 ## Поведение DEV
 
 DEV deploy принимает только текущий полный SHA ветки `origin/onelink-dev`:
@@ -132,6 +143,9 @@ promote <40-character-sha> ghcr.io/demomastra2025-eng/chatwoot@sha256:<digest>
 Workflow допускает promotion только если:
 
 - этот SHA успешно работал в DEV;
+- все миграции между SHA, работающим в PROD (последний успешный deployment окружения
+  `production`), и запрошенным SHA прошли `change_plan.py --validate-migrations`
+  (job `migration-guard`);
 - authoritative digest получен напрямую из успешного `docker/build-push-action` и
   сохранён в DEV deployment proof без повторного хеширования manifest;
 - image содержит тот же SHA;
