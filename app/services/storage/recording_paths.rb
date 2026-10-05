@@ -22,7 +22,8 @@ module Storage::RecordingPaths
 
     roots = []
     voice_root = root.join('voice-recordings')
-    if safe_directory?(voice_root)
+    # safe_directory? also accepts a path that does not exist yet; a missing voice folder must not hide the trash.
+    if safe_directory?(voice_root) && voice_root.directory?
       voice_root.children.each do |provider_root|
         next unless safe_directory?(provider_root)
         next if provider_root.basename.to_s.match?(/\A\d+\z/)

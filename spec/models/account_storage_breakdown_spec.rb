@@ -4,12 +4,9 @@ require 'rails_helper'
 require 'fileutils'
 
 RSpec.describe Account, type: :model do
-  let(:account) { create(:account) }
+  include_context 'with isolated recording storage'
 
-  after do
-    FileUtils.rm_rf(Rails.root.join('storage', 'trash', account.id.to_s))
-    FileUtils.rm_rf(Rails.root.join('storage', 'voice-recordings', 'tenant', account.id.to_s))
-  end
+  let(:account) { create(:account) }
 
   it 'deduplicates shared attachment blobs across categories and inboxes' do
     inboxes = create_list(:inbox, 2, account: account)
@@ -42,7 +39,7 @@ RSpec.describe Account, type: :model do
     trash_attachment.file.attach(trash_blob)
     trash_attachment.save!
 
-    trash_path = Rails.root.join('storage/trash', account.id.to_s, 'recordings', 'retained.wav')
+    trash_path = Storage::RecordingPaths.trash_root.join(account.id.to_s, 'recordings', 'retained.wav')
     FileUtils.mkdir_p(trash_path.dirname)
     File.write(trash_path, 'trashed recording')
     create(

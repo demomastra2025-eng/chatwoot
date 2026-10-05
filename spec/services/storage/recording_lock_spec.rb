@@ -5,15 +5,17 @@ require 'fileutils'
 require 'timeout'
 
 RSpec.describe Storage::RecordingLock do
+  include_context 'with isolated recording storage'
+
   self.use_transactional_tests = false
 
   it 'serializes workers that mutate the same tenant recording' do
     account_id = SecureRandom.random_number(2**31)
     key = "voice-recordings/lock-spec/#{account_id}/shared.wav"
-    storage_file = Rails.root.join('storage', key)
+    storage_file = Storage::RecordingPaths.root.join(key)
     FileUtils.mkdir_p(storage_file.dirname)
     File.write(storage_file, 'synthetic lock fixture')
-    other_provider_file = Rails.root.join('storage', 'voice-recordings', 'sipuni', account_id.to_s, 'shared.wav')
+    other_provider_file = Storage::RecordingPaths.root.join('voice-recordings', 'sipuni', account_id.to_s, 'shared.wav')
     FileUtils.mkdir_p(other_provider_file.dirname)
     File.write(other_provider_file, 'a different physical fixture')
     other_provider_key = "voice-recordings/sipuni/#{account_id}/shared.wav"
@@ -81,8 +83,5 @@ RSpec.describe Storage::RecordingLock do
       thread.join(5)
       thread.kill if thread.alive?
     end
-    FileUtils.rm_rf(storage_file.dirname) if defined?(storage_file)
-    FileUtils.rm_rf(other_provider_file.dirname) if defined?(other_provider_file)
-    FileUtils.rm_rf(Storage::RecordingPaths.trash_root.join(account_id.to_s)) if defined?(account_id)
   end
 end

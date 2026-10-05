@@ -5,13 +5,10 @@ require 'fileutils'
 require 'open3'
 
 RSpec.describe Telephony::RecordingCompressionService do
-  let(:account) { create(:account) }
-  let(:storage_dir) { Rails.root.join('storage/voice-recordings/test_suite', account.id.to_s) }
+  include_context 'with isolated recording storage'
 
-  after do
-    FileUtils.rm_rf(storage_dir)
-    FileUtils.rm_rf(Rails.root.join('storage/voice-recordings/provider-two', account.id.to_s))
-  end
+  let(:account) { create(:account) }
+  let(:storage_dir) { Storage::RecordingPaths.root.join('voice-recordings/test_suite', account.id.to_s) }
 
   describe '#perform' do
     it 'skips compression when storage_key is blank' do
@@ -183,7 +180,7 @@ RSpec.describe Telephony::RecordingCompressionService do
         conversation.update!(
           additional_attributes: { 'recording' => { 'storage_key' => 'call.wav' }, 'keep' => true }
         )
-        collision_path = Rails.root.join('storage/voice-recordings/provider-two', account.id.to_s, 'call.wav')
+        collision_path = Storage::RecordingPaths.root.join('voice-recordings/provider-two', account.id.to_s, 'call.wav')
         FileUtils.mkdir_p(collision_path.dirname)
         File.write(collision_path, 'other provider recording')
         unrelated = create(:message, account: account, conversation: conversation, inbox: conversation.inbox,

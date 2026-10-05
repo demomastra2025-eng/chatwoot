@@ -4,6 +4,8 @@ require 'rails_helper'
 require 'fileutils'
 
 RSpec.describe Storage::RecordingPaths do
+  include_context 'with isolated recording storage'
+
   let(:account) { create(:account) }
   let(:other_account) { create(:account) }
   let(:voice_root) { described_class.root.join('voice-recordings') }
@@ -12,13 +14,21 @@ RSpec.describe Storage::RecordingPaths do
 
   before { FileUtils.mkdir_p(account_root) }
 
-  after do
-    FileUtils.rm_rf(account_root)
-    FileUtils.rm_rf(voice_root.join(account.id.to_s))
-    FileUtils.rm_rf(voice_root.join(other_account.id.to_s))
-    FileUtils.rm_rf(provider_root.join(other_account.id.to_s))
-    FileUtils.rm_rf(described_class.trash_root.join(account.id.to_s))
-    FileUtils.rm_rf(described_class.trash_root.join(other_account.id.to_s))
+  it 'keeps every spec file inside a temporary storage root' do
+    expect(described_class.root).to eq(isolated_recording_storage_root)
+    expect(described_class.root.to_s).not_to start_with(Rails.root.join('storage').to_s)
+    expect(account_root.to_s).to start_with("#{Pathname.new(Dir.tmpdir).realpath}#{File::SEPARATOR}")
+  end
+
+  it 'lists the account trash even when no voice-recordings folder exists yet' do
+    FileUtils.rm_rf(voice_root)
+    trash_file = described_class.trash_root.join(account.id.to_s, 'recordings', 'retained.wav')
+    FileUtils.mkdir_p(trash_file.dirname)
+    File.write(trash_file, 'trashed recording')
+
+    expect(voice_root.exist?).to be(false)
+    expect(described_class.files_for_account(account.id)).to eq([trash_file])
+    expect(described_class.files_for_account(account.id, include_trash: false)).to eq([])
   end
 
   it 'counts account-first and provider/account files but skips other numeric account roots' do
@@ -59,8 +69,6 @@ RSpec.describe Storage::RecordingPaths do
     expect(described_class.resolve(first_key, account_id: account.id)).to eq(first)
     expect(described_class.resolve('nested/call.wav', account_id: account.id)).to be_nil
     expect(described_class.resolve('call.wav', account_id: account.id)).to be_nil
-  ensure
-    FileUtils.rm_rf(second_root) if defined?(second_root)
   end
 
   it 'resolves safe absolute recording references only within the owning tenant root' do
@@ -89,8 +97,6 @@ RSpec.describe Storage::RecordingPaths do
   rescue NotImplementedError, Errno::EPERM
     skip 'Symlinks are not supported by this environment'
   ensure
-    FileUtils.rm_rf(account_root.join('leaf.wav'))
-    FileUtils.rm_rf(account_root.join('nested'))
     FileUtils.rm_rf(outside) if outside
   end
 
@@ -104,7 +110,6 @@ RSpec.describe Storage::RecordingPaths do
   rescue NotImplementedError, Errno::EPERM
     skip 'Symlinks are not supported by this environment'
   ensure
-    FileUtils.rm_rf(account_root.join('redirect'))
     FileUtils.rm_rf(outside) if outside
   end
 
@@ -120,7 +125,6 @@ RSpec.describe Storage::RecordingPaths do
   rescue NotImplementedError, Errno::EPERM
     skip 'Symlinks are not supported by this environment'
   ensure
-    FileUtils.rm_rf(account_trash_parent) if account_trash_parent
     FileUtils.rm_rf(outside) if outside
   end
 
@@ -131,14 +135,11 @@ RSpec.describe Storage::RecordingPaths do
     File.write(foreign_file, 'foreign audio')
 
     account_trash = described_class.trash_root.join(account.id.to_s)
-    FileUtils.rm_rf(account_trash)
     File.symlink(other_trash.to_s, account_trash.to_s)
 
     expect(described_class.resolve_trash(foreign_file.to_s, account_id: account.id)).to be_nil
     expect(described_class.files_for_account(account.id)).not_to include(foreign_file)
   rescue NotImplementedError, Errno::EPERM
     skip 'Symlinks are not supported by this environment'
-  ensure
-    FileUtils.rm_rf(described_class.trash_root.join(account.id.to_s)) if account
   end
 end

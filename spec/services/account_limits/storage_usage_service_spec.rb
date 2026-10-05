@@ -3,6 +3,8 @@
 require 'rails_helper'
 
 RSpec.describe AccountLimits::StorageUsageService do
+  include_context 'with isolated recording storage'
+
   let(:account) { create(:account) }
 
   describe 'ActiveStorage ownership queries' do
@@ -80,14 +82,12 @@ RSpec.describe AccountLimits::StorageUsageService do
   end
 
   describe 'call recordings' do
-    let(:recordings_dir) { Rails.root.join('storage', 'voice-recordings', 'janus', account.id.to_s) }
+    let(:recordings_dir) { Storage::RecordingPaths.root.join('voice-recordings', 'janus', account.id.to_s) }
 
     before do
       FileUtils.mkdir_p(recordings_dir)
       File.write(recordings_dir.join('call.wav'), 'x' * 4096)
     end
-
-    after { FileUtils.rm_rf(recordings_dir) }
 
     it 'counts local recordings as part of informational physical usage' do
       expect(described_class.new(account: account).usage_bytes).to eq(4096)
