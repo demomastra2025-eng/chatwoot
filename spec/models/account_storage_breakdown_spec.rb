@@ -66,4 +66,39 @@ RSpec.describe Account, type: :model do
     expect(inbox_total).to eq(breakdown[:total])
     expect(breakdown[:by_inbox].sum { |row| row[:files_count] }).to eq(3)
   end
+
+  describe 'inbox rows with a non-inbox byte source and a recording' do
+    let(:inbox) { create(:inbox, account: account) }
+
+    before do
+      account.logo.attach(io: StringIO.new('l' * 1000), filename: 'logo.png', content_type: 'image/png')
+      trash_path = Rails.root.join('storage/trash', account.id.to_s, 'recordings', 'retained.wav')
+      FileUtils.mkdir_p(trash_path.dirname)
+      File.write(trash_path, 'r' * 2000)
+      create(
+        :telephony_call_session,
+        account: account,
+        inbox: inbox,
+        recording_ref: nil,
+        metadata: { 'trash' => { 'files' => [{ 'trash_path' => trash_path.to_s }], 'trash_path' => trash_path.to_s, 'bytes' => 2000 } }
+      )
+    end
+
+    it 'adds up to the total with the default quota flag' do
+      breakdown = account.calculate_storage_breakdown
+
+      expect(breakdown[:total]).to eq(3000)
+      expect(breakdown[:by_inbox].sum { |row| row[:bytes] }).to eq(3000)
+      expect(breakdown[:by_inbox].find { |row| row[:id].nil? }[:bytes]).to eq(1000)
+    end
+
+    it 'adds up to the total when recordings count towards the quota' do
+      with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+        breakdown = account.calculate_storage_breakdown
+
+        expect(breakdown[:total]).to eq(3000)
+        expect(breakdown[:by_inbox].sum { |row| row[:bytes] }).to eq(3000)
+      end
+    end
+  end
 end

@@ -523,7 +523,8 @@ class Account < ApplicationRecord
     # quota. Keep them in a clearly named bucket so the inbox totals add up to the account total.
     known_bytes = rows.sum { |row| row[:bytes] }
     usage = AccountLimits::StorageUsageService.new(account: self)
-    unassigned_bytes = [usage.usage_bytes - known_bytes, 0].max
+    # Same physical total as the breakdown: it does not depend on whether recordings count towards the quota.
+    unassigned_bytes = [usage.active_storage_bytes + local_recordings_bytes.to_i - known_bytes, 0].max
     if unassigned_bytes.positive?
       rows << {
         id: nil,
