@@ -8,6 +8,7 @@ import { useAlert } from 'dashboard/composables';
 
 // components
 import ReplyBox from './ReplyBox.vue';
+import CallOperatorIndicator from './CallOperatorIndicator.vue';
 import MessageList from 'next/message/MessageList.vue';
 import ConversationLabelSuggestion from './conversation/LabelSuggestion.vue';
 import Banner from 'dashboard/components/ui/Banner.vue';
@@ -55,6 +56,7 @@ export default {
   components: {
     MessageList,
     ReplyBox,
+    CallOperatorIndicator,
     Banner,
     ConversationLabelSuggestion,
     Spinner,
@@ -902,6 +904,7 @@ export default {
           </button>
         </div>
       </div>
+      <CallOperatorIndicator :chat="currentChat" />
       <ResizableEditorWrapper
         ref="resizableEditorWrapperRef"
         :container-height="Math.max(0, containerHeight - topBannerHeight)"

@@ -231,6 +231,25 @@ RSpec.describe Voice::OutboundCallBuilder do
         end
       end
 
+      it 'tells the other operators of the inbox at once that the operator is calling the client' do
+        colleague = create(:user, account: account, role: :agent)
+        create(:inbox_member, inbox: inbox, user: user)
+        create(:inbox_member, inbox: inbox, user: colleague)
+        call_session.update!(metadata: { 'metadata' => { 'chatwoot_user_id' => user.id } })
+        allow(ActionCable.server).to receive(:broadcast)
+
+        described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+        expect(ActionCable.server).to have_received(:broadcast).with(
+          colleague.pubsub_token,
+          hash_including(
+            event: 'voice_call.operator_activity',
+            data: hash_including(operator_user_id: user.id, state: 'calling', conversation_id: existing_conversation.display_id)
+          )
+        )
+        expect(ActionCable.server).not_to have_received(:broadcast).with(user.pubsub_token, hash_including(event: 'voice_call.operator_activity'))
+      end
+
       it 'rejects a reusable conversation linked to a different contact inbox before provider side effects' do
         foreign_contact = create(:contact, account: account)
         foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: inbox, source_id: '+155****8282')

@@ -515,6 +515,7 @@ Rails.application.routes.draw do
 
               collection do
                 post :outbound
+                get :operator_activity
               end
             end
 

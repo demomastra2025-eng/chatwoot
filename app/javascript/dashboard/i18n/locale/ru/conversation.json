@@ -403,6 +403,10 @@
       "CALL_ALREADY_TAKEN": "Звонок уже принял другой оператор",
       "CALL_ALREADY_ENDED": "Звонок уже завершён"
     },
+    "OPERATOR_CALL_ACTIVITY": {
+      "CALLING": "Оператор {name} звонит клиенту",
+      "TALKING": "Оператор {name} разговаривает с клиентом"
+    },
     "UNSUPPORTED_MESSAGE_TIKTOK": "Это сообщение не поддерживается. Вы можете открыть его в приложении TikTok.",
     "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается в этом диалоге",
     "NATIVE_APP": "Нативное приложение",
