@@ -308,6 +308,29 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
         expect(conference_service).to have_received(:end_conference)
       end
 
+      it 'does not let an agent end a conference another agent joined' do
+        colleague = create(:user, account: account, role: :agent)
+        conversation.update!(additional_attributes: { 'agent_joined' => true, 'joined_by' => { 'id' => colleague.id, 'name' => colleague.name } })
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
+               headers: agent.create_new_auth_token,
+               params: { conversation_id: conversation.display_id }
+
+        expect(response).to have_http_status(:forbidden)
+        expect(conference_service).not_to have_received(:end_conference)
+      end
+
+      it 'lets the agent who joined the conference end it' do
+        conversation.update!(additional_attributes: { 'agent_joined' => true, 'joined_by' => { 'id' => agent.id, 'name' => agent.name } })
+
+        delete "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference",
+               headers: agent.create_new_auth_token,
+               params: { conversation_id: conversation.display_id }
+
+        expect(response).to have_http_status(:ok)
+        expect(conference_service).to have_received(:end_conference)
+      end
+
       it 'does not allow ending conferences for conversations from inboxes without access' do
         other_inbox = create(:inbox, account: account)
         other_conversation = create(:conversation, account: account, inbox: other_inbox, identifier: nil)

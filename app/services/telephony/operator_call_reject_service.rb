@@ -107,6 +107,21 @@ class Telephony::OperatorCallRejectService
     raise_not_candidate! unless rejectable_by_user?
     raise_claimed_by_other! if claimed_by_other?
     raise_not_candidate! unless candidate_agent?
+    raise_not_candidate! unless ringing_for_current_user?
+  end
+
+  # A call nobody took rings only for the operators it was addressed to, and a
+  # call that was taken belongs to the one who took it. With no operator
+  # recorded anywhere the call is not addressed to this user, so he cannot end it.
+  def ringing_for_current_user?
+    return true if claimed_by_current_user?
+
+    [
+      operator_candidate_binding_ids,
+      operator_candidate_sip_profile_ids,
+      operator_candidate_agent_refs,
+      operator_candidate_user_ids
+    ].any?(&:present?)
   end
 
   def validate_terminal_release!
@@ -167,11 +182,30 @@ class Telephony::OperatorCallRejectService
       ].include?(call_session.external_call_ref.to_s)
   end
 
+  # An outbound call belongs to the operator who started it: nobody else can
+  # cancel or end it, even a colleague with access to the same inbox.
   def outbound_release_allowed?
     return false unless inbox_member?
-    return true if call_session.agent_binding.blank?
 
-    call_session.agent_binding.user_id == user.id
+    outbound_owner_user_ids.include?(user.id)
+  end
+
+  def outbound_owner_user_ids
+    recorded_ids = [
+      call_session.agent_binding&.user_id,
+      operator_claim_user_id,
+      route_metadata['chatwoot_user_id'],
+      *operator_candidate_user_ids
+    ].filter_map { |value| value.presence&.to_i }.uniq
+    return recorded_ids if recorded_ids.present?
+
+    [conversation_agent_id].compact
+  end
+
+  # Older sessions: the conversation remembers who started the call.
+  def conversation_agent_id
+    attributes = (call_session.conversation&.additional_attributes || {}).deep_stringify_keys
+    attributes['agent_id'].presence&.to_i
   end
 
   def operator_route?

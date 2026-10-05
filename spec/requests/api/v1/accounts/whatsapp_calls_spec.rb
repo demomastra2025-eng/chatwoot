@@ -356,6 +356,48 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(call.reload.status).to eq('completed')
     end
+
+    context 'when a colleague took the call' do
+      let(:colleague) { create(:user, account: account, role: :agent) }
+
+      it 'does not let another agent terminate it' do
+        call.update!(accepted_by_agent_id: colleague.id)
+        expect(provider_service).not_to receive(:terminate_call)
+
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/terminate",
+             headers: headers,
+             as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(call.reload.status).to eq('in_progress')
+      end
+
+      it 'does not let another agent decline it while the colleague is accepting' do
+        ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: colleague.id)
+        expect(provider_service).not_to receive(:reject_call)
+
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/reject",
+             headers: headers,
+             as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(ringing_call.reload.status).to eq('ringing')
+      end
+
+      it 'still lets the agent who accepted the call terminate it' do
+        call.update!(accepted_by_agent_id: administrator.id)
+        allow(media_client).to receive(:terminate_session).with('session-1')
+        allow(provider_service).to receive(:terminate_call).with(call.provider_call_id).and_return(true)
+        allow(ActionCable.server).to receive(:broadcast)
+
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/terminate",
+             headers: headers,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(call.reload.status).to eq('completed')
+      end
+    end
   end
 
   describe 'POST /initiate' do

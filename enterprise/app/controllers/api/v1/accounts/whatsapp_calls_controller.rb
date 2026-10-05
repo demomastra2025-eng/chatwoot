@@ -74,6 +74,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   def reject
+    return render_call_taken_by_another_agent if call_taken_by_another_agent?
+
     call = Whatsapp::CallService.new(call: @call, agent: current_user).reject
     render json: { id: call.id, status: call.status }
   rescue StandardError => e
@@ -82,6 +84,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   def terminate
+    return render_call_taken_by_another_agent if call_taken_by_another_agent?
+
     call = Whatsapp::CallService.new(call: @call, agent: current_user).terminate
     render json: { id: call.id, status: call.status }
   rescue StandardError => e
@@ -272,6 +276,16 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       user: current_user,
       excluding_whatsapp_call: excluding_whatsapp_call
     ).with_lock(&block)
+  end
+
+  # A call that was accepted (or started) by an agent belongs to that agent:
+  # a colleague with access to the conversation can neither end nor decline it.
+  def call_taken_by_another_agent?
+    @call.accepted_by_agent_id.present? && @call.accepted_by_agent_id != current_user.id
+  end
+
+  def render_call_taken_by_another_agent
+    render json: { error: 'Call accepted by another agent' }, status: :forbidden
   end
 
   def render_operator_busy(error)
