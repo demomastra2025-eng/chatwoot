@@ -499,7 +499,9 @@ class Integrations::Medelement::ContactFieldResolutionService
   end
 
   def persist_provider_fields!(contact, attributes)
-    contact.update!(attributes)
+    Contact.transaction(requires_new: true) do
+      contact.update!(attributes)
+    end
   end
 
   def record_conflicting_contact!(error)
