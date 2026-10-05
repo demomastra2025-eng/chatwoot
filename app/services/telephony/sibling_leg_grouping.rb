@@ -7,15 +7,12 @@ require 'digest'
 # broadcasts reach only one of them and the cards of the others stay.
 #
 # Legs arrive within a few seconds of each other. A new leg joins the group of
-# the oldest leg of the same caller on the same channel by taking over its
+# the oldest open leg of the same caller on the same channel by taking over its
 # logical call key and group ref, which are what Telephony::CallSession::
 # LogicalGrouping already reads. Callers hold Telephony::CallIntakeLock while
 # they ask, so two legs arriving at the same instant end with the same key.
 class Telephony::SiblingLegGrouping
   SIBLING_LEG_WINDOW = 20.seconds
-  # A leg that is already over only counts when it was created this recently:
-  # a caller who hangs up and dials again is not the same call.
-  TERMINAL_SIBLING_WINDOW = 5.seconds
   # Providers whose legs are per-operator browser registrations.
   PER_OPERATOR_LEG_PROVIDERS = %w[beeline].freeze
   KEY_PREFIX = 'native-sip-group'.freeze
@@ -32,7 +29,7 @@ class Telephony::SiblingLegGrouping
       return if digits.blank?
 
       legs = candidate_legs(number_binding, now).select do |leg|
-        leg.external_call_ref == call_ref || sibling_candidate?(leg, digits, now)
+        leg.external_call_ref == call_ref || sibling_candidate?(leg, digits)
       end
       root = legs.min_by { |leg| [leg.created_at, leg.id] }
       root unless root&.external_call_ref == call_ref
@@ -64,10 +61,10 @@ class Telephony::SiblingLegGrouping
                             .to_a
     end
 
-    def sibling_candidate?(leg, digits, now)
-      return false unless phone_digits(leg.from_number) == digits
-
-      !leg.terminal? || leg.created_at >= now - TERMINAL_SIBLING_WINDOW
+    # A leg that is over never counts: a caller who hangs up and dials again
+    # is not the same call, and a finished leg cannot answer for anybody.
+    def sibling_candidate?(leg, digits)
+      phone_digits(leg.from_number) == digits && !leg.terminal?
     end
   end
 end
