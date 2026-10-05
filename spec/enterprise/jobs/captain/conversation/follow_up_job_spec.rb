@@ -79,6 +79,28 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
   end
 
   describe '.schedule!' do
+    it 'recovers a database idempotency collision without aborting the outer transaction' do
+      existing_reminder = scheduled_step(anchor: anchor_message)
+      lookups = 0
+      allow_any_instance_of(Reminder).to receive(:valid?).and_return(true)
+      allow(Reminder).to receive(:find_by).and_wrap_original do |original, *args, **kwargs|
+        attributes = kwargs.presence || args.first
+        if attributes&.[](:idempotency_key) == existing_reminder.idempotency_key && lookups.zero?
+          lookups += 1
+          nil
+        else
+          original.call(*args, **kwargs)
+        end
+      end
+
+      ActiveRecord::Base.transaction do
+        expect(scheduled_step(anchor: anchor_message)).to eq(existing_reminder)
+        expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+      end
+
+      expect(lookups).to eq(1)
+    end
+
     it 'rejects a same-sender public message that is not a Captain AI reply' do
       unmarked = create(
         :message,

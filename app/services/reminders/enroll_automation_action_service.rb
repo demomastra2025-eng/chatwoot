@@ -16,7 +16,9 @@ class Reminders::EnrollAutomationActionService
     existing_enrollment = open_enrollment
     return existing_enrollment if existing_enrollment.present?
 
-    enrollment = account.touch_plan_enrollments.create!(enrollment_attributes(activated_at))
+    enrollment = account.touch_plan_enrollments.transaction(requires_new: true) do
+      account.touch_plan_enrollments.create!(enrollment_attributes(activated_at))
+    end
     Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
     enrollment.reload
   rescue ActiveRecord::RecordNotUnique

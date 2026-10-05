@@ -21,7 +21,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     payload = build_schedule_payload(conversation, assistant, anchor_message, step, control_fence)
     return unless payload[:step][:delay_seconds].positive?
 
-    conversation.with_lock { schedule_reminder!(payload) }
+    conversation.with_lock(requires_new: true) { schedule_reminder!(payload) }
   rescue ActiveRecord::RecordNotUnique
     Reminder.find_by(account: conversation.account, idempotency_key: payload[:idempotency_key])
   rescue ActiveRecord::RecordInvalid => e

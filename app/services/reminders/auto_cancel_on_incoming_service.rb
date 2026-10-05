@@ -108,16 +108,18 @@ class Reminders::AutoCancelOnIncomingService
   end
 
   def create_skipped_claim!(enrollment, step)
-    enrollment.touch_occurrence_claims.create!(
-      account: enrollment.account,
-      step_key: step.step_key,
-      occurrence_key: step.occurrence_key,
-      due_at: step.due_at,
-      status: 'skipped',
-      claimed_at: Time.current,
-      last_error: CANCELLED_AFTER_INCOMING_REPLY,
-      metadata: { 'incoming_message_id' => message.id }
-    )
+    TouchOccurrenceClaim.transaction(requires_new: true) do
+      enrollment.touch_occurrence_claims.create!(
+        account: enrollment.account,
+        step_key: step.step_key,
+        occurrence_key: step.occurrence_key,
+        due_at: step.due_at,
+        status: 'skipped',
+        claimed_at: Time.current,
+        last_error: CANCELLED_AFTER_INCOMING_REPLY,
+        metadata: { 'incoming_message_id' => message.id }
+      )
+    end
   end
 
   def deferred_enrollment_scope

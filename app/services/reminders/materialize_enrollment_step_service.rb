@@ -9,7 +9,7 @@ class Reminders::MaterializeEnrollmentStepService
   end
 
   def perform
-    enrollment.with_lock do
+    enrollment.with_lock(requires_new: true) do
       enrollment.reload
       process_locked_enrollment
     end

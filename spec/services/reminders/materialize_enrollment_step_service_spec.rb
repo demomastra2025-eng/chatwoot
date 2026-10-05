@@ -88,6 +88,36 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(service.perform).to eq(claim)
   end
 
+  it 'recovers a database duplicate claim and leaves the outer transaction usable' do
+    now = enrollment.next_due_at + 1.minute
+    occurrence_key = "#{enrollment.id}:duplicate-race"
+    existing_claim = create(
+      :touch_occurrence_claim,
+      account: account,
+      touch_plan_enrollment: enrollment,
+      occurrence_key: occurrence_key,
+      step_key: 'duplicate-race'
+    )
+    service = described_class.new(enrollment: enrollment, now: now)
+    service.instance_variable_set(:@occurrence_key, occurrence_key)
+    allow(service).to receive(:process_locked_enrollment) do
+      enrollment.touch_occurrence_claims.build(
+        account: account,
+        step_key: existing_claim.step_key,
+        occurrence_key: existing_claim.occurrence_key,
+        due_at: existing_claim.due_at,
+        claimed_at: now,
+        status: 'claimed',
+        metadata: {}
+      ).save!(validate: false)
+    end
+
+    ActiveRecord::Base.transaction do
+      expect(service.perform).to eq(existing_claim)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+  end
+
   it 'keeps the materialized reminder executable after the enrollment completes' do
     claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
     claim.reminder.mark_processing!
