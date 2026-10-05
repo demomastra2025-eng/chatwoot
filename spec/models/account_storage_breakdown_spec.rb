@@ -72,7 +72,7 @@ RSpec.describe Account, type: :model do
 
     before do
       account.logo.attach(io: StringIO.new('l' * 1000), filename: 'logo.png', content_type: 'image/png')
-      trash_path = Rails.root.join('storage/trash', account.id.to_s, 'recordings', 'retained.wav')
+      trash_path = Storage::RecordingPaths.trash_root.join(account.id.to_s, 'recordings', 'retained.wav')
       FileUtils.mkdir_p(trash_path.dirname)
       File.write(trash_path, 'r' * 2000)
       create(
