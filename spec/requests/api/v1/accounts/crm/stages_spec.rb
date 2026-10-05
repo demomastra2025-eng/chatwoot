@@ -421,6 +421,54 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(account.crm_stages.exists?(stage.id)).to be(false)
   end
 
+  context 'when deals have passed through the stage' do
+    let(:pipeline) { account.crm_pipelines.find_by!(code: 'sales_pipeline') }
+    let(:stage) { create(:crm_stage, account: account, pipeline: pipeline, color: '#654321') }
+    let(:other_stage) { create(:crm_stage, account: account, pipeline: pipeline, color: '#123456') }
+
+    before do
+      deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+      create(:crm_stage_visit, deal: deal, stage: stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
+      deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    it 'rejects deleting an empty stage that still has history' do
+      delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+             headers: headers,
+             as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
+      expect(account.crm_stages.exists?(stage.id)).to be(true)
+    end
+
+    it 'reports the history in the deletion preflight' do
+      get "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}/deletion_check",
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('payload', 'can_delete')).to be(false)
+      expect(response.parsed_body.dig('payload', 'has_history')).to be(true)
+      expect(response.parsed_body.dig('payload', 'block_reason')).to eq('STAGE_HAS_HISTORY')
+    end
+
+    it 'answers 422 instead of 500 when a late dependent record blocks the destroy' do
+      allow_any_instance_of(Crm::Stage).to receive(:destroy!) do |record| # rubocop:disable RSpec/AnyInstance
+        raise ActiveRecord::RecordNotDestroyed.new('Failed to destroy the record', record)
+      end
+      empty_stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#ABCDEF')
+
+      delete "/api/v1/accounts/#{account.id}/crm/stages/#{empty_stage.id}",
+             headers: headers,
+             as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('RECORD_NOT_DESTROYABLE')
+      expect(account.crm_stages.exists?(empty_stage.id)).to be(true)
+    end
+  end
+
   it 'promotes an active open fallback when deleting the default stage' do
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     pipeline.stages.where(outcome: 'open').find_each { |stage| stage.update!(active: false, default: false) }

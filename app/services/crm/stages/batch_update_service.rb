@@ -27,19 +27,31 @@ class Crm::Stages::BatchUpdateService
 
   attr_reader :pipeline, :attributes
 
+  # The draft is applied all or nothing: every requested deletion is checked
+  # before the first one runs, and a blocked stage rejects the whole batch
+  # (422) so the other edits of the draft are never half-saved.
   def delete_stages!
-    deleted_stage_ids.each do |stage_id|
-      stage = pipeline.stages.lock.find(stage_id)
-      raise_stage_error!('STANDARD_STAGE_LOCKED', 'System stages cannot be deleted.') if stage.system_stage?
-      if stage.deals.exists?
-        raise_stage_error!(
-          'STAGE_HAS_DEALS',
-          'You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.'
-        )
-      end
+    stages = deleted_stage_ids.map { |stage_id| pipeline.stages.lock.find(stage_id) }
+    stages.each { |stage| ensure_deletable_stage!(stage) }
+    stages.each(&:destroy!)
+  end
 
-      stage.destroy!
+  def ensure_deletable_stage!(stage)
+    raise_stage_error!('STANDARD_STAGE_LOCKED', 'System stages cannot be deleted.', stage) if stage.system_stage?
+    if stage.deals.exists?
+      raise_stage_error!(
+        'STAGE_HAS_DEALS',
+        'You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first. No changes were saved.',
+        stage
+      )
     end
+    return unless stage.stage_visits.exists?
+
+    raise_stage_error!(
+      'STAGE_HAS_HISTORY',
+      'You cannot delete a stage that deals have passed through. Deactivate it instead to keep the deal history. No changes were saved.',
+      stage
+    )
   end
 
   def upsert_movable_stages!
@@ -202,7 +214,8 @@ class Crm::Stages::BatchUpdateService
     row.key?(key) ? ActiveModel::Type::Boolean.new.cast(row[key]) : fallback
   end
 
-  def raise_stage_error!(code, message)
-    raise Crm::Error.new(code: code, message: message, status: :unprocessable_content)
+  def raise_stage_error!(code, message, stage = nil)
+    details = { stage_id: stage.id } if stage
+    raise Crm::Error.new(code: code, message: message, status: :unprocessable_content, details: details)
   end
 end

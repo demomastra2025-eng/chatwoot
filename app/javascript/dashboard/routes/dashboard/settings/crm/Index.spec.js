@@ -469,6 +469,29 @@ describe('CRM pipeline settings', () => {
     expect(testState.batchUpdateStages).not.toHaveBeenCalled();
   });
 
+  it('keeps a stage that deals have passed through and says to deactivate it', async () => {
+    testState.checkStageDeletion.mockResolvedValueOnce({
+      can_delete: false,
+      block_reason: 'STAGE_HAS_HISTORY',
+      has_history: true,
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-stage-id="13"]')
+      .findAll('button')
+      .at(-1)
+      .trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('[data-stage-id="13"]').exists()).toBe(true);
+    expect(testState.useAlert).toHaveBeenCalledWith(
+      'CRM.ERRORS.STAGE_HAS_HISTORY'
+    );
+    expect(testState.batchUpdateStages).not.toHaveBeenCalled();
+  });
+
   it('keeps a stage when the deletion preflight rejects it', async () => {
     testState.checkStageDeletion.mockRejectedValueOnce({
       response: { data: { code: 'STAGE_HAS_DEALS' } },

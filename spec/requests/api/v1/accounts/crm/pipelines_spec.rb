@@ -372,6 +372,23 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
   end
 
+  it 'rejects deleting an empty pipeline that deals have passed through' do
+    pipeline = create(:crm_pipeline, account: account, active: false, default: false)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    other_pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+    other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+    create(:crm_stage_visit, deal: deal, stage: stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
+    deal.update_columns(pipeline_id: other_pipeline.id, stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+
+    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('PIPELINE_HAS_HISTORY')
+    expect(account.crm_pipelines.where(id: pipeline.id)).to exist
+    expect(account.crm_stages.where(id: stage.id)).to exist
+  end
+
   it 'promotes the next active pipeline after deleting the default pipeline' do
     get path, headers: headers, as: :json
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')

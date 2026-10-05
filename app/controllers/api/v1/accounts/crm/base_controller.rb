@@ -3,6 +3,8 @@ class Api::V1::Accounts::Crm::BaseController < Api::V1::Accounts::BaseController
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
   rescue_from ActiveRecord::RecordNotUnique, with: :render_record_not_unique
   rescue_from ActiveRecord::StaleObjectError, with: :render_stale_record
+  rescue_from ActiveRecord::RecordNotDestroyed, with: :render_record_not_destroyed
+  rescue_from ActiveRecord::DeleteRestrictionError, with: :render_record_not_destroyed
   rescue_from ActionController::ParameterMissing, with: :render_unprocessable_entity
   rescue_from ArgumentError, with: :render_unprocessable_entity
   rescue_from ::Crm::Error, with: :render_crm_error
@@ -119,6 +121,19 @@ class Api::V1::Accounts::Crm::BaseController < Api::V1::Accounts::BaseController
       code: code,
       error: code == 'VALIDATION_ERROR' ? error.message : conflict_message_for(code),
       status: code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
+    )
+  end
+
+  # Safety net for dependent: :restrict_with_error records (for example stage
+  # visits) that the pre-flight checks did not know about.
+  def render_record_not_destroyed(error)
+    record = error.try(:record)
+
+    render_error(
+      code: 'RECORD_NOT_DESTROYABLE',
+      error: 'This record cannot be deleted because other records still depend on it.',
+      details: record&.errors&.to_hash(true),
+      status: :unprocessable_content
     )
   end
 

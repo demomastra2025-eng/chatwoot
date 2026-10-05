@@ -64,6 +64,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
         deletable: blocker.nil?,
         can_delete: blocker.nil?,
         deal_count: @stage.deals.count,
+        has_history: @stage.stage_visits.exists?,
         block_reason: blocker
       }.compact
     }
@@ -143,11 +144,18 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def ensure_destroyable_stage!
-    return unless @stage.deals.exists?
+    if @stage.deals.exists?
+      raise ::Crm::Error.new(
+        code: 'STAGE_HAS_DEALS',
+        message: 'You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.',
+        status: :unprocessable_content
+      )
+    end
+    return unless @stage.stage_visits.exists?
 
     raise ::Crm::Error.new(
-      code: 'STAGE_HAS_DEALS',
-      message: 'You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.',
+      code: 'STAGE_HAS_HISTORY',
+      message: 'You cannot delete a stage that deals have passed through. Deactivate it instead to keep the deal history.',
       status: :unprocessable_content
     )
   end
@@ -175,6 +183,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   def stage_deletion_blocker
     return 'STANDARD_STAGE_LOCKED' if @stage.system_stage?
     return 'STAGE_HAS_DEALS' if @stage.deals.exists?
+    return 'STAGE_HAS_HISTORY' if @stage.stage_visits.exists?
     return 'DEFAULT_STAGE_REQUIRES_FALLBACK' if @stage.outcome_open? && @stage.default? && default_stage_fallback.blank?
 
     nil
