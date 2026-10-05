@@ -168,6 +168,125 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
       end
 
+      describe 'AI models chosen by the platform' do
+        let(:model_config_params) do
+          {
+            CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-4o-mini-transcribe',
+            CAPTAIN_IMAGE_RECOGNITION_MODEL: 'openai/gpt-5.4-mini',
+            CAPTAIN_MODERATION_MODEL: 'openai/gpt-oss-safeguard-20b',
+            CAPTAIN_EMBEDDING_MODEL: 'text-embedding-3-small',
+            CAPTAIN_LABEL_SUGGESTION_MODEL: 'gpt-5.4-mini',
+            CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", " openai/gpt-5.6-luna ", "openai/gpt-6-luna"]'
+          }
+        end
+        let(:model_config_names) { model_config_params.keys.map(&:to_s) }
+
+        before { sign_in(super_admin, scope: :super_admin) }
+
+        it 'lists the model slots and the short list on the AI agents config page' do
+          allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+
+          get '/super_admin/app_config?config=captain'
+
+          expect(response).to have_http_status(:success)
+          expect(response.body).to include(*model_config_names, 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')
+          expect(response.body).to include('Короткий список моделей для основного агента', 'Модель расшифровки голоса')
+        end
+
+        it 'lists the same fields on the community plan config page' do
+          get '/super_admin/app_config?config=captain'
+
+          expect(response).to have_http_status(:success)
+          expect(response.body).to include(*model_config_names)
+        end
+
+        it 'saves valid models and a normalized short list' do
+          allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
+
+          post '/super_admin/app_config?config=captain', params: { app_config: model_config_params }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL')&.value).to eq('openai/gpt-oss-safeguard-20b')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value)
+            .to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+        end
+
+        it 'saves the same on the community plan' do
+          post '/super_admin/app_config?config=captain', params: { app_config: model_config_params }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value)
+            .to eq('["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+        end
+
+        it 'clears a model slot and the short list when they are submitted blank' do
+          upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-4o-mini-transcribe')
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+
+          post '/super_admin/app_config?config=captain',
+               params: { app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: '', CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '  ' } }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to be_blank
+          expect(Llm::Models.configured_model_allowlist).to be_nil
+        end
+
+        it 'rejects a short list entry that is not in the model catalog and keeps the old list' do
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+
+          post '/super_admin/app_config?config=captain',
+               params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-6-luna", "vendor/not-in-catalog"]' } }
+
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+          expect(flash[:alert]).to include('vendor/not-in-catalog')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to eq('["openai/gpt-6-luna"]')
+        end
+
+        it 'rejects a short list that is not a JSON array of model ids' do
+          ['{not json', '{"model": "openai/gpt-6-luna"}', '[1, 2]'].each do |value|
+            post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: value } }
+
+            expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+            expect(flash[:alert]).to include('JSON')
+          end
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value).to be_blank
+        end
+
+        it 'rejects a short list that is not short' do
+          limit = Llm::InstallationModelConfig::ALLOWLIST_LIMIT
+          models = (1..(limit + 1)).map { |index| "vendor/model-#{index}" }
+
+          post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: models.to_json } }
+
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+          expect(flash[:alert]).to include(limit.to_s)
+        end
+
+        it 'rejects a short list without the default AI agent model' do
+          upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+          default_model = Llm::Config.model_for(feature: 'assistant', fallback: nil)
+
+          post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_ASSISTANT_MODEL_ALLOWLIST: '["openai/gpt-5.6-luna"]' } }
+
+          expect(default_model).to eq('openai/gpt-6-luna')
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+          expect(flash[:alert]).to include(default_model)
+          expect(Llm::Models.configured_model_allowlist).to be_nil
+        end
+
+        it 'rejects a model slot whose model is unknown or unfit for the feature' do
+          post '/super_admin/app_config?config=captain', params: {
+            app_config: { CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-5.4', CAPTAIN_IMAGE_RECOGNITION_MODEL: 'vendor/not-in-catalog' }
+          }
+
+          expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+          expect(flash[:alert]).to include('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'CAPTAIN_IMAGE_RECOGNITION_MODEL')
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to be_blank
+        end
+      end
+
       it 'keeps the existing OpenRouter key when the masked secret field is submitted blank' do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
         upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'test-openrouter-secret-value')

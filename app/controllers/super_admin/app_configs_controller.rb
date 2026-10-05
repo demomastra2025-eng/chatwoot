@@ -7,6 +7,8 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   CAPTAIN_CONFIG_KEYS = %w[
     CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_OPENROUTER_ENDPOINT
     CAPTAIN_FIRECRAWL_API_KEY
+    CAPTAIN_ASSISTANT_MODEL_ALLOWLIST CAPTAIN_AUDIO_TRANSCRIPTION_MODEL CAPTAIN_IMAGE_RECOGNITION_MODEL
+    CAPTAIN_MODERATION_MODEL CAPTAIN_EMBEDDING_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL
     CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT CAPTAIN_SYSTEM_PROMPTS
     ACCOUNT_CAPTAIN_TOKENS_LIMIT
   ].freeze
@@ -132,8 +134,13 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
 
   def normalize_app_config_value(key, value, errors)
     return normalize_json_object_config(key, value, errors) if WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS.include?(key)
-    return value unless key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
+    return normalize_model_config(key, value, errors) if Llm::InstallationModelConfig.manages?(key)
+    return normalize_system_prompts_config(value, errors) if key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
 
+    value
+  end
+
+  def normalize_system_prompts_config(value, errors)
     parsed_value = value.present? ? JSON.parse(value) : []
     Captain::Assistant.normalize_installation_system_prompt_entries(parsed_value).map do |entry|
       {
@@ -146,6 +153,16 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     end
   rescue JSON::ParserError
     errors << 'Captain system prompts must be valid JSON'
+    :invalid
+  end
+
+  # A blank value keeps the built-in default; a filled one must be a catalog model fit for its feature, or a short
+  # list of such models (see Llm::InstallationModelConfig).
+  def normalize_model_config(key, value, errors)
+    result = Llm::InstallationModelConfig.normalize(key, value)
+    return result.value if result.valid?
+
+    errors << "#{key}: #{result.error}"
     :invalid
   end
 
