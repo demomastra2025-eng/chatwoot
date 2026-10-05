@@ -8,7 +8,10 @@ import { useCallSession } from 'dashboard/composables/useCallSession';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
 import { useSipMicrophone } from 'dashboard/composables/useSipMicrophone';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
-import { isEmployeeOwnCall } from 'dashboard/stores/calls';
+import {
+  isCallOfAnotherParty,
+  isEmployeeOwnCall,
+} from 'dashboard/stores/calls';
 import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
   getOutboundCallStageLabelKey,
@@ -31,6 +34,7 @@ const router = useRouter();
 const store = useStore();
 const whatsappCallsStore = useWhatsappCallsStore();
 const { t } = useI18n();
+const currentUserId = computed(() => store.getters.getCurrentUser?.id);
 
 const {
   activeCall,
@@ -62,6 +66,13 @@ const operatorBusy = computed(
     whatsappCallsStore.hasActiveCall ||
     whatsappCallsStore.isAccepting
 );
+
+// What the server answers when the employee tries to take a call he cannot.
+const CLAIM_FAILURE_ALERT_KEYS = {
+  CALL_ALREADY_CLAIMED: 'CONVERSATION.VOICE_WIDGET.CALL_ALREADY_TAKEN',
+  CALL_NOT_CLAIMABLE: 'CONVERSATION.VOICE_WIDGET.CALL_ALREADY_ENDED',
+  OPERATOR_BUSY: 'CONVERSATION.VOICE_WIDGET.OPERATOR_BUSY',
+};
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
 const callCancelLabel = call =>
@@ -127,12 +138,21 @@ const isCallHidden = call => {
   const callSid = callSidFor(call);
   return callSid && hiddenCallSids.value.has(callSid);
 };
+// Only the employee's own calls get a card: a call another operator talks
+// on, or the AI voice agent handles, is not shown (and can never be ended
+// or declined from here).
 const visibleCalls = computed(() =>
   deduplicateVisibleCalls(
     (hasActiveCall.value
       ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
       : incomingCalls.value
-    ).filter(call => !isCallHidden(call))
+    ).filter(
+      call =>
+        !isCallHidden(call) &&
+        // A call this browser holds a live INVITE for is the employee's own.
+        (!isCallOfAnotherParty(call, currentUserId.value) ||
+          isIncomingCallActionableInBrowser(call))
+    )
   )
 );
 const shouldPlayIncomingCallRingtone = computed(
@@ -344,6 +364,15 @@ const browserJoinSupportedForCall = call => {
   });
 };
 
+// While the employee is on a call he cannot take another one for now: the
+// accept button of the second call is disabled and says why.
+const showBusyNote = call =>
+  operatorBusy.value &&
+  !callIsLiveActive(call) &&
+  !isOutboundCall(call) &&
+  browserJoinSupportedForCall(call) &&
+  isIncomingCallActionableInBrowser(call);
+
 const getDirectionLabel = call => {
   if (isOutboundCall(call)) {
     return t('CONVERSATION.VOICE_WIDGET.OUTBOUND_DIRECTION');
@@ -498,14 +527,6 @@ const getCallRouteParts = call => {
 
 const getCallTypeText = call => {
   if (!browserJoinSupportedForCall(call)) {
-    if (
-      call?.serverManagedVoiceCall ||
-      call?.browserJoinUnsupportedReason === 'AI_AGENT_HANDLING' ||
-      call?.browser_join_unsupported_reason === 'AI_AGENT_HANDLING'
-    ) {
-      return t('CONVERSATION.VOICE_WIDGET.HANDLED_BY_AI_AGENT');
-    }
-
     const operator = getOperatorParty(call);
     if (callHasActiveRemoteState(call)) {
       return operator
@@ -724,7 +745,6 @@ const handleCloseCall = call => {
   hideCall(call);
 };
 
-const currentUserId = computed(() => store.getters.getCurrentUser?.id);
 const isOwnCall = call =>
   callIsActive(call) || isEmployeeOwnCall(call, currentUserId.value);
 // Inside the phone the employee's own calls stay until they end (the phone's
@@ -776,6 +796,14 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   if (result?.joinSupported === false) {
     if (isOutboundCall(call)) return;
     if (result.retryable) return;
+
+    // Another operator won the call (or it ended, or this employee started
+    // another one meanwhile): say so in a few words, the card is gone.
+    const claimFailureKey = CLAIM_FAILURE_ALERT_KEYS[result.reason];
+    if (claimFailureKey) {
+      useAlert(t(claimFailureKey));
+      return;
+    }
 
     handleBrowserJoinUnavailable({
       notify: notifyOnUnavailable,
@@ -920,6 +948,14 @@ onUnmounted(stopElapsedTimer);
             >
               <i class="i-lucide-mic-off text-sm" aria-hidden="true" />
               {{ t('PHONE_WIDGET.MICROPHONE_OFF') }}
+            </p>
+
+            <p
+              v-if="showBusyNote(call)"
+              class="mt-1 mb-0 text-xs text-n-slate-11"
+              data-testid="call-busy-note"
+            >
+              {{ t('CONVERSATION.VOICE_WIDGET.BUSY_ON_CALL') }}
             </p>
 
             <div class="flex items-center gap-2 mt-2">

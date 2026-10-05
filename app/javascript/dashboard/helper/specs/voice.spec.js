@@ -62,7 +62,7 @@ describe('voice helper', () => {
     ]);
   });
 
-  it('dismisses an existing foreign claimed voice call when observer visibility is disabled', () => {
+  it('dismisses the existing ringing branches of a voice call another operator took', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'foreign-ringing-branch',
@@ -104,7 +104,6 @@ describe('voice helper', () => {
               'foreign-related-ringing-branch',
             ],
             operator_claim: { user_id: 12, user_name: 'Ayan' },
-            show_calls_handled_by_other_operators: false,
           },
         },
       },
@@ -259,7 +258,7 @@ describe('voice helper', () => {
     });
   });
 
-  it('hides foreign claimed message updates when observer visibility is disabled', () => {
+  it('hides message updates of a call another operator took', () => {
     handleVoiceCallUpdated(
       vi.fn(),
       {
@@ -275,7 +274,6 @@ describe('voice helper', () => {
             status: 'in_progress',
             logical_call_key: 'native-sip:foreign-claimed-message',
             operator_claim: { user_id: 12, user_name: 'Ayan' },
-            show_calls_handled_by_other_operators: false,
           },
         },
       },
@@ -283,6 +281,61 @@ describe('voice helper', () => {
     );
 
     expect(useCallsStore().calls).toEqual([]);
+  });
+
+  describe('calls of other operators', () => {
+    const messageFor = data => ({
+      content_type: 'voice_call',
+      conversation_id: 19,
+      inbox_id: 42,
+      sender: { id: 12 },
+      content_attributes: {
+        data: { call_sid: 'other-1', provider: 'sipuni', ...data },
+      },
+    });
+
+    it('never makes an outbound call another operator started the active call', () => {
+      handleVoiceCallUpdated(
+        vi.fn(),
+        messageFor({
+          call_direction: 'outbound',
+          status: 'in_progress',
+          operator_candidates: [{ user_id: 12, name: 'Ayan' }],
+        }),
+        99
+      );
+
+      const callsStore = useCallsStore();
+      expect(callsStore.calls).toEqual([]);
+      expect(callsStore.activeCall).toBeNull();
+    });
+
+    it('does not show a ringing call that rings for other operators only', () => {
+      const data = {
+        call_direction: 'inbound',
+        status: 'ringing',
+        operator_candidates: [{ user_id: 12 }, { user_id: 13 }],
+      };
+
+      handleVoiceCallUpdated(vi.fn(), messageFor(data), 99);
+      handleVoiceCallCreated(messageFor(data), 99);
+
+      expect(useCallsStore().calls).toEqual([]);
+    });
+
+    it('shows a ringing call that rings for the employee', () => {
+      const data = {
+        call_direction: 'inbound',
+        status: 'ringing',
+        operator_candidates: [{ user_id: 12 }, { user_id: 99 }],
+      };
+
+      handleVoiceCallUpdated(vi.fn(), messageFor(data), 99);
+
+      expect(useCallsStore().calls).toEqual([
+        expect.objectContaining({ callSid: 'other-1', status: 'ringing' }),
+      ]);
+    });
   });
 
   it('resolves inbox details from metadata when a ringing update creates the call', () => {

@@ -138,11 +138,11 @@ RSpec.describe Telephony::OperatorCallClaimService do
           account_id: account.id,
           call_sid: call_session.external_call_ref,
           related_call_sids: include(call_session.external_call_ref),
-          claimed_by_user_id: winner_user.id,
-          show_calls_handled_by_other_operators: false
+          claimed_by_user_id: winner_user.id
         )
       )
     )
+    expect(broadcasts.flat_map { |_token, event| event[:data].keys }).not_to include(:show_calls_handled_by_other_operators)
   end
 
   it 'rejects malformed foreign inbox links before claim mutation or broadcast' do
@@ -161,7 +161,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(ActionCable.server).not_to have_received(:broadcast)
   end
 
-  it 'broadcasts the claimed call to other inbox operators when visibility is enabled' do
+  it 'never sends the claimed call to inbox members that are not candidates, whatever an old channel setting says' do
     observer_user = create(:user, account: account, role: :agent)
     foreign_account = create(:account)
     foreign_member = create(:user, account: foreign_account, role: :agent)
@@ -200,14 +200,8 @@ RSpec.describe Telephony::OperatorCallClaimService do
       call_ref: voice_call.external_call_ref
     ).perform
 
-    expect(broadcasts.map(&:first)).to include(observer_user.pubsub_token)
-    expect(broadcasts.map(&:first)).not_to include(foreign_member.pubsub_token)
-    expect(broadcasts.map(&:last)).to include(
-      include(
-        event: 'voice_call.claimed',
-        data: include(show_calls_handled_by_other_operators: true)
-      )
-    )
+    expect(broadcasts.map(&:first)).to contain_exactly(winner_user.pubsub_token, other_user.pubsub_token)
+    expect(broadcasts.map(&:first)).not_to include(observer_user.pubsub_token, foreign_member.pubsub_token)
   end
 
   it 'includes the communication thread in the claim response and realtime event' do

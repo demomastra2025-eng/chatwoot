@@ -169,6 +169,7 @@ vi.mock('dashboard/composables/useSipMicrophone', () => ({
   }),
 }));
 
+import { useAlert } from 'dashboard/composables';
 import FloatingCallWidget from './FloatingCallWidget.vue';
 
 const mountComponent = (props = {}) =>
@@ -561,116 +562,133 @@ describe('FloatingCallWidget', () => {
     wrapper.unmount();
   });
 
-  it('shows active duration for calls handled by another operator', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
-    mockSession.incomingCalls = [
-      {
+  describe("calls that are not the employee's own", () => {
+    const foreignCalls = {
+      'a call another operator took': {
         callSid: 'sipuni:handled-by-other',
-        conversationId: 724,
-        inboxId: 4769,
-        provider: 'sipuni',
-        callDirection: 'inbound',
         status: 'in_progress',
         browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
         operatorClaim: {
+          user_id: 99,
           user_name: 'Ayan',
           internal_extension: '202',
         },
-        operatorInternalExtension: '207',
-        fromNumber: '+77070001002',
-        toNumber: '+77070001001',
       },
-    ];
-    storeGetters.getConversationById.mockReturnValue({
-      inbox_id: 4769,
-      meta: { sender: { name: 'Client' } },
-    });
-    storeGetters.getInbox.mockReturnValue({
-      id: 4769,
-      name: 'Sipuni',
-      provider: 'sipuni',
-    });
-
-    const wrapper = mountComponent();
-
-    await vi.advanceTimersByTimeAsync(7000);
-
-    expect(wrapper.text()).toContain('Handled by: Ayan (202)');
-    expect(wrapper.text().match(/Ayan/g)).toHaveLength(1);
-    expect(wrapper.text()).toContain('00:07');
-    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
-    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
-    wrapper.unmount();
-  });
-
-  it('does not identify the handling operator from routing candidates', () => {
-    mockSession.incomingCalls = [
-      {
-        callSid: 'sipuni:handled-without-claim',
-        conversationId: 724,
-        inboxId: 4769,
-        provider: 'sipuni',
-        callDirection: 'inbound',
+      'a call another operator is talking on, whatever its reason says': {
+        callSid: 'sipuni:handled-by-other-2',
         status: 'in_progress',
         browserJoinSupported: false,
-        operatorCandidates: [
-          { user_id: 179, name: 'Candidate', internal_extension: '502' },
-        ],
-        operatorInternalExtension: '502',
+        operatorClaim: { user_id: 99, user_name: 'Ayan' },
       },
-    ];
-    storeGetters.getConversationById.mockReturnValue({ inbox_id: 4769 });
-    storeGetters.getInbox.mockReturnValue({
-      id: 4769,
-      name: 'Sipuni',
-      provider: 'sipuni',
-    });
-
-    const wrapper = mountComponent();
-
-    expect(wrapper.text()).toContain('Handled by another operator');
-    expect(wrapper.text()).not.toContain('Handled by: Candidate');
-    wrapper.unmount();
-  });
-
-  it('shows active duration for calls handled by the AI agent', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-03T06:00:00Z'));
-    mockSession.incomingCalls = [
-      {
+      'an in-progress call nobody here claimed': {
+        callSid: 'sipuni:handled-without-claim',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+        operatorCandidates: [{ user_id: 179, name: 'Candidate' }],
+      },
+      'a call the AI agent handles': {
         callSid: 'sipuni:janus-server:49:ai-call',
-        conversationId: 724,
-        inboxId: 4769,
-        provider: 'sipuni',
-        callDirection: 'inbound',
         status: 'in_progress',
         browserJoinSupported: false,
         browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
         serverManagedVoiceCall: true,
-        fromNumber: '+77070001002',
-        toNumber: '+77070001001',
       },
-    ];
-    storeGetters.getConversationById.mockReturnValue({
-      inbox_id: 4769,
-      meta: { sender: { name: 'Client' } },
+    };
+
+    beforeEach(() => {
+      storeGetters.getCurrentUser = { id: 1 };
+      // No SIP INVITE is waiting in this browser for a call of someone else.
+      mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+        () => false
+      );
+      storeGetters.getConversationById.mockReturnValue({
+        inbox_id: 4769,
+        meta: { sender: { name: 'Client' } },
+      });
+      storeGetters.getInbox.mockReturnValue({
+        id: 4769,
+        name: 'Sipuni',
+        provider: 'sipuni',
+      });
     });
-    storeGetters.getInbox.mockReturnValue({
-      id: 4769,
-      name: 'Sipuni',
-      provider: 'sipuni',
+
+    Object.entries(foreignCalls).forEach(([description, call]) => {
+      it(`renders nothing for ${description}`, () => {
+        mockSession.incomingCalls = [
+          {
+            conversationId: 724,
+            inboxId: 4769,
+            provider: 'sipuni',
+            callDirection: 'inbound',
+            fromNumber: '+77070001002',
+            toNumber: '+77070001001',
+            ...call,
+          },
+        ];
+
+        const wrapper = mountComponent();
+
+        expect(wrapper.find('[data-testid="floating-calls"]').exists()).toBe(
+          false
+        );
+        expect(wrapper.text()).toBe('');
+        expect(ringtoneState.isActive.value).toBe(false);
+        wrapper.unmount();
+      });
     });
 
-    const wrapper = mountComponent();
+    it('offers no control to end, decline or close a call of someone else', () => {
+      mockSession.incomingCalls = Object.values(foreignCalls).map(call => ({
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        ...call,
+      }));
+      mockSession.incomingCalls.push({
+        callSid: 'sipuni:outbound-by-colleague',
+        conversationId: 725,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'outbound',
+        status: 'in_progress',
+        browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+        operatorCandidates: [{ user_id: 99 }],
+      });
 
-    await vi.advanceTimersByTimeAsync(7000);
+      const wrapper = mountComponent();
 
-    expect(wrapper.text()).toContain('Handled by AI agent');
-    expect(wrapper.text()).toContain('00:07');
-    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
-    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
-    wrapper.unmount();
+      ['Reject', 'End call', 'Call', 'Close', 'Cancel call'].forEach(label => {
+        expect(wrapper.find(`[aria-label="${label}"]`).exists()).toBe(false);
+      });
+      expect(mockSession.rejectIncomingCall).not.toHaveBeenCalled();
+      expect(mockSession.endCall).not.toHaveBeenCalled();
+      wrapper.unmount();
+    });
+
+    it('keeps the card of a call this browser holds a live INVITE for', () => {
+      mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+        () => true
+      );
+      mockSession.incomingCalls = [
+        {
+          callSid: 'sipuni:mine-but-unclear',
+          conversationId: 724,
+          inboxId: 4769,
+          provider: 'sipuni',
+          callDirection: 'inbound',
+          status: 'ringing',
+          browserJoinUnsupportedReason: 'CALL_IN_PROGRESS',
+        },
+      ];
+
+      const wrapper = mountComponent();
+
+      expect(wrapper.find('[aria-label="Call"]').exists()).toBe(true);
+      wrapper.unmount();
+    });
   });
 
   it('opens a communication thread instead of the underlying voice inbox conversation', async () => {
@@ -1197,15 +1215,14 @@ describe('FloatingCallWidget', () => {
       mockSession.hasActiveCall = true;
       mockSession.activeCall = activeCall;
       mockSession.incomingCalls = [colleagueCall];
+      mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+        () => false
+      );
 
       const wrapper = mountComponent({ embedded: true });
       const ownCard = () =>
         wrapper.get(
           '[data-testid="phone-widget-call-card"][data-own-call="true"]'
-        );
-      const colleagueCard = () =>
-        wrapper.get(
-          '[data-testid="phone-widget-call-card"][data-own-call="false"]'
         );
       expect(
         ownCard().find('[data-testid="call-microphone-off"]').exists()
@@ -1220,10 +1237,10 @@ describe('FloatingCallWidget', () => {
         expect.arrayContaining(['bg-n-ruby-9', 'text-white'])
       );
       expect(badge.find('.i-lucide-mic-off').exists()).toBe(true);
-      // Only the employee's own connected call is muted.
+      // The colleague's call has no card at all, so nothing else is muted.
       expect(
-        colleagueCard().find('[data-testid="call-microphone-off"]').exists()
-      ).toBe(false);
+        wrapper.findAll('[data-testid="call-microphone-off"]')
+      ).toHaveLength(1);
 
       microphoneState.muted.value = false;
       await wrapper.vm.$nextTick();
@@ -1261,27 +1278,70 @@ describe('FloatingCallWidget', () => {
       wrapper.unmount();
     });
 
-    it("keeps a colleague's call as a closable info card without call controls", async () => {
+    it.each([
+      ['CALL_ALREADY_CLAIMED', 'CONVERSATION.VOICE_WIDGET.CALL_ALREADY_TAKEN'],
+      ['CALL_NOT_CLAIMABLE', 'CONVERSATION.VOICE_WIDGET.CALL_ALREADY_ENDED'],
+      ['OPERATOR_BUSY', 'CONVERSATION.VOICE_WIDGET.OPERATOR_BUSY'],
+    ])(
+      'says why the call could not be taken when the server answers %s',
+      async (reason, message) => {
+        mockSession.incomingCalls = [ringingCall];
+        mockSession.joinCall.mockResolvedValue({
+          joinSupported: false,
+          reason,
+        });
+        useAlert.mockClear();
+
+        const wrapper = mountComponent({ embedded: true });
+        await wrapper.get('[aria-label="Call"]').trigger('click');
+        await flushPromises();
+
+        expect(useAlert).toHaveBeenCalledTimes(1);
+        expect(useAlert).toHaveBeenCalledWith(message);
+        wrapper.unmount();
+      }
+    );
+
+    it("shows no card for a colleague's call, only the employee's own", () => {
       mockSession.incomingCalls = [colleagueCall, ringingCall];
+      // The browser holds a live INVITE only for the call that rings here.
+      mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+        call => call.callSid === ringingCall.callSid
+      );
 
       const wrapper = mountComponent({ embedded: true });
       const cards = wrapper.findAll('[data-testid="phone-widget-call-card"]');
 
-      expect(cards).toHaveLength(2);
-      const [infoCard, ownCard] = cards;
-      expect(infoCard.attributes('data-own-call')).toBe('false');
-      expect(infoCard.text()).toContain('Handled by: Ayan');
-      expect(infoCard.find('[aria-label="Call"]').exists()).toBe(false);
-      expect(infoCard.find('[aria-label="End call"]').exists()).toBe(false);
-      expect(ownCard.attributes('data-own-call')).toBe('true');
-      expect(ownCard.find('[aria-label="Close"]').exists()).toBe(false);
+      expect(cards).toHaveLength(1);
+      expect(cards[0].attributes('data-own-call')).toBe('true');
+      expect(cards[0].find('[aria-label="Close"]').exists()).toBe(false);
+      expect(wrapper.text()).not.toContain('Ayan');
+      expect(wrapper.text()).not.toContain('Handled by');
+      wrapper.unmount();
+    });
 
-      await infoCard.get('[aria-label="Close"]').trigger('click');
+    it('tells the employee on the ringing card that he cannot take a second call', async () => {
+      mockSession.hasActiveCall = true;
+      mockSession.activeCall = activeCall;
+      mockSession.incomingCalls = [ringingCall];
+      mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+        call => call.callSid === ringingCall.callSid
+      );
 
-      expect(
-        wrapper.findAll('[data-testid="phone-widget-call-card"]')
-      ).toHaveLength(1);
-      expect(wrapper.text()).not.toContain('Handled by: Ayan');
+      const wrapper = mountComponent({ embedded: true });
+      const ringingCard = wrapper
+        .findAll('[data-testid="phone-widget-call-card"]')
+        .find(card => card.text().includes('+77070001003'));
+
+      expect(ringingCard.get('[data-testid="call-busy-note"]').text()).toBe(
+        'CONVERSATION.VOICE_WIDGET.BUSY_ON_CALL'
+      );
+      const answerButton = ringingCard.get('[aria-label="Call"]');
+      expect(answerButton.attributes('disabled')).toBeDefined();
+      await answerButton.trigger('click');
+      expect(mockSession.joinCall).not.toHaveBeenCalled();
+      // The own active call carries no such note.
+      expect(wrapper.findAll('[data-testid="call-busy-note"]')).toHaveLength(1);
       wrapper.unmount();
     });
   });

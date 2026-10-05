@@ -546,8 +546,7 @@ RSpec.describe Telephony::EventsIngestionService do
             logical_call_terminal: true,
             provider: existing_call_session.provider,
             inbox_id: existing_call_session.inbox_id,
-            operator_internal_extension: '202',
-            show_calls_handled_by_other_operators: false
+            operator_internal_extension: '202'
           )
         )
       )
@@ -560,9 +559,9 @@ RSpec.describe Telephony::EventsIngestionService do
         'sip_profile_id' => 79,
         'sipProfileId' => 79,
         'janus_session_key' => 'sip_profile:79',
-        'janusSessionKey' => 'sip_profile:79',
-        'show_calls_handled_by_other_operators' => false
+        'janusSessionKey' => 'sip_profile:79'
       )
+      expect(message_data).not_to have_key('show_calls_handled_by_other_operators')
     end
 
     it 'uses the canonical operator claim without marking the group terminal while another branch is active' do
@@ -673,7 +672,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
-    it 'includes other inbox operators in native SIP statuses when handled-call visibility is enabled' do
+    it 'keeps other inbox operators out of native SIP statuses whatever an old channel setting says' do
       target_operator = create(:user, account: account)
       other_member = create(:user, account: account)
       foreign_account = create(:account)
@@ -707,8 +706,8 @@ RSpec.describe Telephony::EventsIngestionService do
         existing_call_session
       )
 
-      expect(tokens).to include(target_operator.pubsub_token, other_member.pubsub_token)
-      expect(tokens).not_to include(foreign_member.pubsub_token)
+      expect(tokens).to include(target_operator.pubsub_token)
+      expect(tokens).not_to include(other_member.pubsub_token, foreign_member.pubsub_token)
     end
 
     it 'does not rebroadcast a realtime status update for an already processed event' do

@@ -407,26 +407,11 @@ class Telephony::EventsIngestionService
     native_sip_operator_scope = native_sip_call_session?(call_session) &&
                                 call_session.direction == 'inbound' &&
                                 user_ids.present?
-    show_to_other_operators =
-      inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true &&
-      realtime_call_status_claimed?(call_session)
-    if inbox.present? && (!native_sip_operator_scope || show_to_other_operators)
+    if inbox.present? && !native_sip_operator_scope
       member_user_ids = inbox.inbox_members.select(:user_id)
       tokens += account.users.where(id: member_user_ids).filter_map(&:pubsub_token)
     end
     tokens.uniq
-  end
-
-  def realtime_call_status_claimed?(call_session)
-    sessions = if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
-                 call_session.logical_group_sessions
-               else
-                 [call_session]
-               end
-
-    sessions.any? do |session|
-      session.metadata.to_h.deep_stringify_keys.dig('operator_claim', 'user_id').present?
-    end
   end
 
   def realtime_call_status_user_ids(call_session)
@@ -512,8 +497,6 @@ class Telephony::EventsIngestionService
       operator_claim: operator_claim,
       operator_candidates: route_metadata['operator_candidates'],
       operator_internal_extension: operator_claim['internal_extension'].presence || route_metadata['operator_internal_extension'],
-      show_calls_handled_by_other_operators:
-        presentation_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
       janus_call_ref: route_metadata['janus_call_ref'],
@@ -2177,8 +2160,7 @@ class Telephony::EventsIngestionService
       :sip_profile_id,
       :sipProfileId,
       :janus_session_key,
-      :janusSessionKey,
-      :show_calls_handled_by_other_operators
+      :janusSessionKey
     ).stringify_keys
   end
 

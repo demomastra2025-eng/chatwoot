@@ -228,6 +228,14 @@ onUnmounted(() => {
           <p class="text-xs text-n-slate-11 truncate">
             {{ t('WHATSAPP_CALL.INCOMING_WHATSAPP_CALL') }}
           </p>
+          <!-- On a call, the employee cannot take another one for now. -->
+          <p
+            v-if="operatorBusy"
+            class="text-xs text-n-slate-11 mb-0"
+            data-testid="whatsapp-call-busy-note"
+          >
+            {{ t('CONVERSATION.VOICE_WIDGET.BUSY_ON_CALL') }}
+          </p>
         </div>
         <div class="flex shrink-0 gap-2">
           <button

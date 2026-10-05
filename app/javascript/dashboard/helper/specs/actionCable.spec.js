@@ -550,9 +550,9 @@ describe('ActionCableConnector', () => {
           caller: { phone_number: '+770****8623' },
           from_number: 'client-party',
           to_number: 'support-line',
-          operator_claim: { user_id: 9, user_name: 'Ayan' },
+          operator_claim: { user_id: 7, user_name: 'Ayan' },
           operator_candidates: [
-            { user_id: 9, name: 'Ayan', internal_extension: '502' },
+            { user_id: 7, name: 'Ayan', internal_extension: '502' },
           ],
           operator_internal_extension: '502',
           sip_profile_id: 42,
@@ -578,9 +578,9 @@ describe('ActionCableConnector', () => {
         caller: { phone_number: '+770****8623' },
         fromNumber: 'client-party',
         toNumber: 'support-line',
-        operatorClaim: { user_id: 9, user_name: 'Ayan' },
+        operatorClaim: { user_id: 7, user_name: 'Ayan' },
         operatorCandidates: [
-          { user_id: 9, name: 'Ayan', internal_extension: '502' },
+          { user_id: 7, name: 'Ayan', internal_extension: '502' },
         ],
         operatorInternalExtension: '502',
         sipProfileId: 42,
@@ -591,40 +591,53 @@ describe('ActionCableConnector', () => {
       });
     });
 
-    it('stores server-managed Janus voice calls as AI-handled outside-browser calls', () => {
+    it('does not ring for a call another operator already took', () => {
       const callsStore = useCallsStore();
 
       actionCable.onReceived({
-        event: 'voice_call.status_changed',
+        event: 'voice_call.incoming',
         data: {
           account_id: 1,
-          call_sid: 'sipuni:janus-server:49:server-ai-call',
-          status: 'in_progress',
+          call_sid: 'sipuni-inbound-taken',
+          status: 'ringing',
           call_direction: 'inbound',
           provider: 'sipuni',
           inbox_id: 4593,
-          from_number: '+77000000000',
-          to_number: '+77017450000',
-          browser_join_supported: false,
-          metadata: {
-            source: 'server_janus_sip',
-            server_runtime: true,
-          },
+          operator_claim: { user_id: 9, user_name: 'Ayan' },
         },
       });
 
-      expect(callsStore.calls).toEqual([
-        expect.objectContaining({
-          callSid: 'sipuni:janus-server:49:server-ai-call',
-          status: 'in_progress',
-          browserJoinSupported: false,
-          browserJoinUnsupportedReason: 'AI_AGENT_HANDLING',
-          serverManagedVoiceCall: true,
-        }),
-      ]);
+      expect(callsStore.calls).toEqual([]);
     });
 
-    it('keeps normal browser Janus voice calls visible in the operator widget', () => {
+    it('shows no card for server-managed Janus voice calls the AI agent handles', () => {
+      const callsStore = useCallsStore();
+
+      ['voice_call.incoming', 'voice_call.status_changed'].forEach(event => {
+        actionCable.onReceived({
+          event,
+          data: {
+            account_id: 1,
+            call_sid: 'sipuni:janus-server:49:server-ai-call',
+            status: 'in_progress',
+            call_direction: 'inbound',
+            provider: 'sipuni',
+            inbox_id: 4593,
+            from_number: '+77000000000',
+            to_number: '+77017450000',
+            browser_join_supported: false,
+            metadata: {
+              source: 'server_janus_sip',
+              server_runtime: true,
+            },
+          },
+        });
+      });
+
+      expect(callsStore.calls).toEqual([]);
+    });
+
+    it('shows no card for an in-progress call nobody here claimed', () => {
       const callsStore = useCallsStore();
 
       actionCable.onReceived({
@@ -642,6 +655,28 @@ describe('ActionCableConnector', () => {
         },
       });
 
+      expect(callsStore.calls).toEqual([]);
+    });
+
+    it('keeps the in-progress call the employee took in the operator widget', () => {
+      const callsStore = useCallsStore();
+
+      actionCable.onReceived({
+        event: 'voice_call.status_changed',
+        data: {
+          account_id: 1,
+          call_sid: 'sipuni:janus:49:operator-call',
+          status: 'in_progress',
+          call_direction: 'inbound',
+          provider: 'sipuni',
+          inbox_id: 4593,
+          from_number: '+77000000001',
+          to_number: '+77017450000',
+          browser_join_supported: false,
+          operator_claim: { user_id: 7, user_name: 'Me' },
+        },
+      });
+
       expect(callsStore.calls).toEqual([
         expect.objectContaining({
           callSid: 'sipuni:janus:49:operator-call',
@@ -650,6 +685,7 @@ describe('ActionCableConnector', () => {
         }),
       ]);
     });
+
 
     it('emits browser SIP config change events to the dashboard bus', () => {
       actionCable.onReceived({

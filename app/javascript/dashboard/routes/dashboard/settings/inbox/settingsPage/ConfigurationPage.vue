@@ -90,7 +90,6 @@ export default {
         routingMode: 'operator',
         operatorDistributionMode: 'broadcast',
         maxCallDurationMinutes: 30,
-        showCallsHandledByOtherOperators: false,
         profiles: [],
       },
     };
@@ -909,8 +908,6 @@ export default {
         maxCallDurationMinutes: Math.round(
           Number(routing.max_call_duration_seconds || 1800) / 60
         ),
-        showCallsHandledByOtherOperators:
-          routing.show_calls_handled_by_other_operators === true,
         profiles: this.normalizeVirtualPbxProfiles(
           config.employees || config.profiles || []
         ),

@@ -20,10 +20,9 @@ const hiddenAccountsFrom = uiSettings => {
  * account in the UI settings; the employee's own call (incoming, active or an
  * outbound call being started) shows the phone anyway until the employee
  * hides it for that call, and afterwards the saved choice applies again.
- * Info-only call cards never bring a hidden phone back: calls a colleague took
- * (inboxes that show calls handled by other operators), calls the AI voice
- * agent handles and in-progress calls nobody here claimed (see
- * isEmployeeOwnCall).
+ * Calls that are not the employee's own (a colleague's call, the AI voice
+ * agent's call) get no card at all, and info-only cards (a call handled outside
+ * the browser) never bring a hidden phone back (see isEmployeeOwnCall).
  */
 export function usePhoneWidgetVisibility() {
   const { uiSettings, updateUISettings } = useUISettings();

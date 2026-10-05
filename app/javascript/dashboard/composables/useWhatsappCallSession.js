@@ -629,6 +629,11 @@ async function postPreparedInboundAgentAnswer(preparedAnswerPromise) {
   return true;
 }
 
+// The server refuses an accept when a colleague got the call first.
+export const isCallTakenByAnotherAgentError = error =>
+  error?.response?.status === 422 &&
+  /already accepted/i.test(error.response?.data?.error || '');
+
 /**
  * Legacy mode: creates WebRTC session and posts SDP to backend (browser ↔ Meta).
  * Can be called from anywhere — composable, widget, or bubble.
@@ -1134,10 +1139,16 @@ export function useWhatsappCallSession() {
       if (serverRelay) callsStore.clearActiveCall();
       preparedAgentAnswerPromise?.catch(() => {});
       cleanupInboundWebRTC();
-      callError.value =
-        err.name === 'NotAllowedError'
-          ? t('WHATSAPP_CALL.MIC_DENIED')
-          : t('WHATSAPP_CALL.CALL_FAILED');
+      if (isCallTakenByAnotherAgentError(err)) {
+        // Another operator won the call: the card goes and says why.
+        callsStore.removeIncomingCall(call.callId);
+        callError.value = t('CONVERSATION.VOICE_WIDGET.CALL_ALREADY_TAKEN');
+      } else {
+        callError.value =
+          err.name === 'NotAllowedError'
+            ? t('WHATSAPP_CALL.MIC_DENIED')
+            : t('WHATSAPP_CALL.CALL_FAILED');
+      }
       // eslint-disable-next-line no-console
       console.error('[WhatsApp Call] acceptCall error:', err);
       // Note: doAcceptCall already cleans up WebRTC resources on error

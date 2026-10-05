@@ -76,12 +76,6 @@ class Channel::Voice < ApplicationRecord
     end
   end
 
-  def show_calls_handled_by_other_operators?
-    ActiveModel::Type::Boolean.new.cast(
-      provider_config_hash['show_calls_handled_by_other_operators']
-    )
-  end
-
   private
 
   def twilio?
