@@ -273,6 +273,64 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(json_response[:id]).to be_nil
     end
 
+    it 'uses the 2025-03-26 transport default when the version header is absent' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: [mcp_request(id: 'default-batch-1', method: 'ping')].to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(JSON.parse(response.body, symbolize_names: true)).to eq(
+        [jsonrpc: '2.0', id: 'default-batch-1', result: {}]
+      )
+    end
+
+    it 'rejects June batches before processing any item, even with a March initializer' do
+      expect_any_instance_of(Onelink::Mcp::Server).not_to receive(:dispatch)
+      batch = [
+        mcp_request(id: 'june-batch-init', method: 'initialize', params: { protocolVersion: '2025-03-26' }),
+        mcp_request(id: 'june-batch-tool', method: 'tools/call', params: { name: 'list_account_users' }),
+        mcp_request(id: 'june-batch-ping', method: 'ping')
+      ]
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: batch.to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
+
+      expect(response).to have_http_status(:bad_request)
+      expect(json_response).to include(
+        jsonrpc: '2.0', id: nil,
+        error: include(code: -32_600)
+      )
+    end
+
+    it 'does not let invalid or notification initializers change the March batch transport' do
+      batches = [
+        [
+          { jsonrpc: '2.0', method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+          mcp_request(id: 'notification-init-ping', method: 'ping')
+        ],
+        [
+          { jsonrpc: '1.0', method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+          mcp_request(id: 'invalid-init-ping', method: 'ping')
+        ]
+      ]
+
+      batches.each_with_index do |batch, index|
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: batch.to_json,
+             headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-03-26')
+
+        expect(response).to have_http_status(:success)
+        responses = JSON.parse(response.body, symbolize_names: true)
+        expect(responses.last).to include(jsonrpc: '2.0', id: batch.last[:id], result: {})
+        if index.zero?
+          expect(responses.size).to eq(1)
+        else
+          expect(responses.first.dig(:error, :code)).to eq(-32_600)
+        end
+      end
+    end
+
     it 'acknowledges incoming JSON-RPC responses with 202 and no body' do
       response_message = { jsonrpc: '2.0', id: 'client-response-1', result: { accepted: true } }
       post "/api/v1/accounts/#{account.id}/mcp",
@@ -281,6 +339,60 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       expect(response).to have_http_status(:accepted)
       expect(response.body).to be_blank
+    end
+
+    it 'accepts only string or integer request and response IDs for both protocol versions' do
+      %w[2025-03-26 2025-06-18].each do |version|
+        [7, 'valid-id'].each do |id|
+          post "/api/v1/accounts/#{account.id}/mcp",
+               params: mcp_request(id: id, method: 'ping').to_json,
+               headers: mcp_headers(admin).merge('MCP-Protocol-Version' => version)
+
+          expect(response).to have_http_status(:success)
+          expect(json_response[:id]).to eq(id)
+        end
+
+        [nil, 1.5].each do |id|
+          post "/api/v1/accounts/#{account.id}/mcp",
+               params: mcp_request(id: id, method: 'ping').to_json,
+               headers: mcp_headers(admin).merge('MCP-Protocol-Version' => version)
+
+          expect(response).to have_http_status(:bad_request)
+          expect(json_response).to include(jsonrpc: '2.0', id: nil)
+          expect(json_response.dig(:error, :code)).to eq(-32_600)
+        end
+
+        [7, 'valid-response-id'].each do |id|
+          post "/api/v1/accounts/#{account.id}/mcp",
+               params: { jsonrpc: '2.0', id: id, result: {} }.to_json,
+               headers: mcp_headers(admin).merge('MCP-Protocol-Version' => version)
+
+          expect(response).to have_http_status(:accepted)
+          expect(response.body).to be_blank
+        end
+
+        [nil, 1.5].each do |id|
+          post "/api/v1/accounts/#{account.id}/mcp",
+               params: { jsonrpc: '2.0', id: id, result: {} }.to_json,
+               headers: mcp_headers(admin).merge('MCP-Protocol-Version' => version)
+
+          expect(response).to have_http_status(:bad_request)
+          expect(json_response).to include(jsonrpc: '2.0', id: nil)
+          expect(json_response.dig(:error, :code)).to eq(-32_600)
+        end
+      end
+    end
+
+    it 'rejects incoming successful responses unless result is an object' do
+      [nil, 1, 'value', []].each do |result|
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: { jsonrpc: '2.0', id: 'response-result-shape', result: result }.to_json,
+             headers: mcp_headers(admin)
+
+        expect(response).to have_http_status(:bad_request)
+        expect(json_response).to include(jsonrpc: '2.0', id: 'response-result-shape')
+        expect(json_response.dig(:error, :code)).to eq(-32_600)
+      end
     end
 
     it 'rejects an unsupported protocol version header with a JSON-RPC error' do
@@ -293,6 +405,20 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
         jsonrpc: '2.0', id: nil,
         error: include(code: -32_602, message: 'Unsupported MCP-Protocol-Version')
       )
+    end
+
+    it 'rejects present empty and whitespace protocol version headers' do
+      ['', '   '].each do |header_value|
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: mcp_request(id: 'blank-version-header', method: 'ping').to_json,
+             headers: mcp_headers(admin).merge('MCP-Protocol-Version' => header_value)
+
+        expect(response).to have_http_status(:bad_request)
+        expect(json_response).to include(
+          jsonrpc: '2.0', id: nil,
+          error: include(code: -32_602, message: 'Unsupported MCP-Protocol-Version')
+        )
+      end
     end
 
     it 'preserves JSON-only Accept clients and rejects requests that accept no supported response type' do
@@ -850,13 +976,27 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(tool_names).to contain_exactly('search_documentation', 'api__get_account_details')
     end
 
-    it 'rejects invalid JSON request bodies' do
+    it 'returns a generic JSON-RPC parse error for malformed JSON before framework parameter parsing' do
       post "/api/v1/accounts/#{account.id}/mcp",
            params: '{invalid-json',
            headers: mcp_headers(admin)
 
       expect(response).to have_http_status(:bad_request)
-      expect(response.body).to be_present
+      expect(json_response).to eq(
+        jsonrpc: '2.0',
+        id: nil,
+        error: { code: -32_700, message: 'Parse error' }
+      )
+
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: '{invalid-json',
+           headers: mcp_headers(admin).merge('ACCEPT' => 'text/event-stream')
+
+      expect(response).to have_http_status(:bad_request)
+      expect(response.media_type).to eq('text/event-stream')
+      expect(response.body).to eq(
+        "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}\n\n"
+      )
     end
   end
 end

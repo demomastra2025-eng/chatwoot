@@ -17,6 +17,18 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
   before_action :ensure_mcp_user_access_token!
   before_action :ensure_mcp_origin!
 
+  def process_action(*args, &block)
+    if action_name == 'handle' && request.post? && json_content_type?
+      raw_body = request.raw_post.to_s
+      JSON.parse(raw_body) if raw_body.present?
+    end
+
+    super(*args, &block)
+  rescue JSON::ParserError, ActionDispatch::Http::Parameters::ParseError
+    render_early_json_parse_error
+  end
+  private :process_action
+
   def handle
     return method_not_allowed if request.get? || request.head?
 
@@ -33,7 +45,7 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
     end
 
     payload = parsed_jsonrpc_payload
-    response_payload = mcp_server.call(payload, protocol_version: request_protocol_version)
+    response_payload = mcp_server.call(payload, transport_version: request_protocol_version)
     return head :accepted if response_payload.nil?
 
     render_mcp_payload(response_payload)
@@ -94,6 +106,23 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
     JSON.parse(raw_body)
   end
 
+  def render_early_json_parse_error
+    payload = JSON.generate(
+      jsonrpc: Onelink::Mcp::Server::JSONRPC_VERSION,
+      id: nil,
+      error: { code: -32_700, message: 'Parse error' }
+    )
+
+    response.status = 400
+    if sse_request?
+      response.content_type = 'text/event-stream'
+      self.response_body = "event: message\ndata: #{payload}\n\n"
+    else
+      response.content_type = 'application/json'
+      self.response_body = payload
+    end
+  end
+
   def mcp_server
     @mcp_server ||= Onelink::Mcp::Server.new(auth_context: mcp_auth_context)
   end
@@ -136,8 +165,8 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
   end
 
   def request_protocol_version
-    header_value = (request.headers['MCP-Protocol-Version'] || request.headers['HTTP_MCP_PROTOCOL_VERSION']).presence
-    return Onelink::Mcp::Server::DEFAULT_PROTOCOL_VERSION if header_value.blank?
+    header_value = request.get_header('HTTP_MCP_PROTOCOL_VERSION')
+    return Onelink::Mcp::Server::DEFAULT_PROTOCOL_VERSION if header_value.nil?
     return header_value if Onelink::Mcp::Server::SUPPORTED_PROTOCOL_VERSIONS.include?(header_value)
 
     raise Onelink::Mcp::Server::JsonRpcError.new(-32_602, 'Unsupported MCP-Protocol-Version')

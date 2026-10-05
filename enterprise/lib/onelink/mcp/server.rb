@@ -36,14 +36,15 @@ module Onelink
         PROTOCOL_VERSION
       end
 
-      def call(envelope, protocol_version: DEFAULT_PROTOCOL_VERSION)
-        negotiated_version = protocol_version_for(envelope, protocol_version)
-        return handle_batch(envelope) if envelope.is_a?(Array) && negotiated_version == DEFAULT_PROTOCOL_VERSION
+      def call(envelope, transport_version: DEFAULT_PROTOCOL_VERSION)
         if envelope.is_a?(Array)
+          return handle_batch(envelope) if transport_version == DEFAULT_PROTOCOL_VERSION
+
           return error_response(nil, -32_600, 'JSON-RPC batches are not supported for this protocol version')
         end
 
-        handle_request(envelope, protocol_version: negotiated_version)
+        protocol_version = protocol_version_for(envelope, transport_version)
+        handle_request(envelope, protocol_version: protocol_version)
       end
 
       def handle_batch(envelope)
@@ -73,20 +74,22 @@ module Onelink
         error_response(envelope_id(envelope), -32_603, 'Internal MCP server error')
       end
 
-      def protocol_version_for(envelope, request_protocol_version)
-        initializer = if envelope.is_a?(Array)
-                        envelope.find do |item|
-                          item.is_a?(Hash) && item.with_indifferent_access[:method] == 'initialize'
-                        end
-                      elsif envelope.is_a?(Hash) && envelope.with_indifferent_access[:method] == 'initialize'
-                        envelope
-                      end
+      def protocol_version_for(envelope, transport_version)
+        return transport_version unless valid_initialize_request?(envelope)
 
-        return request_protocol_version if initializer.blank?
-
-        params = initializer.with_indifferent_access[:params]
+        params = envelope.with_indifferent_access[:params]
         requested_version = params.is_a?(Hash) ? params.with_indifferent_access[:protocolVersion] : nil
         self.class.negotiate_protocol_version(requested_version)
+      end
+
+      def valid_initialize_request?(envelope)
+        return false unless envelope.is_a?(Hash)
+
+        normalized = envelope.with_indifferent_access
+        normalized[:jsonrpc] == JSONRPC_VERSION && normalized[:method] == 'initialize' &&
+          normalized.key?(:id) && valid_request_id?(normalized[:id]) &&
+          !normalized.key?(:result) && !normalized.key?(:error) &&
+          (!normalized.key?(:params) || normalized[:params].is_a?(Hash))
       end
 
       def response_envelope?(envelope)
@@ -100,7 +103,7 @@ module Onelink
         has_error = normalized.key?(:error)
         return false if has_result == has_error
 
-        return true if has_result
+        return true if has_result && normalized[:result].is_a?(Hash)
 
         error = normalized[:error]
         error.is_a?(Hash) && error.with_indifferent_access[:code].is_a?(Integer) &&
@@ -139,7 +142,7 @@ module Onelink
       end
 
       def valid_request_id?(id)
-        id.nil? || id.is_a?(String) || id.is_a?(Numeric)
+        id.is_a?(String) || id.is_a?(Integer)
       end
 
       def envelope_id(envelope)
