@@ -1305,6 +1305,75 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.payments.find_by(payment_kind: 'prepaid')).to be_nil
   end
 
+  it 'creates an appointment without any payment keys' do
+    post path,
+         params: base_params,
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body['payload']).to include('prepaid_amount' => 0, 'settlement_amount' => 0, 'payment_status' => 'awaiting_payment')
+    expect(Scheduling::Appointment.find(response_body.dig('payload', 'id')).payments).to be_empty
+  end
+
+  it 'keeps the prepayment and its journal entry when an update omits the payment keys' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      prepaid_amount: 5_000,
+      prepaid_payment_method: 'bank_transfer',
+      payment_status: 'prepaid',
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    create(
+      :scheduling_payment,
+      appointment: appointment,
+      account: account,
+      amount: 5_000,
+      payment_method: 'bank_transfer',
+      payment_kind: 'prepaid'
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { client_comment: 'Moved by phone' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'prepaid_amount')).to eq(5_000)
+    expect(response_body.dig('payload', 'prepaid_payment_method')).to eq('bank_transfer')
+    expect(response_body.dig('payload', 'payment_status')).to eq('prepaid')
+    expect(appointment.reload.payments.find_by(payment_kind: 'prepaid')).to be_present
+  end
+
+  it 'cancels a prepaid appointment by status without sending payment keys' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      prepaid_amount: 5_000,
+      prepaid_payment_method: 'cash',
+      payment_status: 'prepaid',
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { status: 'cancelled' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'status')).to eq('cancelled')
+    expect(response_body.dig('payload', 'payment_status')).to eq('cancelled')
+  end
+
   it 'rejects updates to imported Medelement appointments' do
     appointment = create(
       :scheduling_appointment,

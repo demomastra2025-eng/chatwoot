@@ -35,6 +35,31 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body.dig('payload', 'compensation_percent')).to eq(10)
   end
 
+  it 'creates a resource without rate keys using the default rate' do
+    post "/api/v1/accounts/#{account.id}/scheduling/resources",
+         params: { name: 'Dr. No Rate', slot_duration_min: 30, timezone: 'Asia/Almaty' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body['payload']).to include('compensation_type' => 'percent', 'compensation_value' => 0, 'compensation_percent' => 0)
+  end
+
+  it 'keeps the stored rate when a resource update omits the rate keys' do
+    resource.update!(compensation_type: 'fixed_plus_percent', compensation_value: 5_000, compensation_percent: 10)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: { name: 'Renamed', specialty: 'Therapist', active: false },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(resource.reload).to have_attributes(
+      name: 'Renamed', active: false,
+      compensation_type: 'fixed_plus_percent', compensation_value: 5_000, compensation_percent: 10
+    )
+  end
+
   it 'normalizes decimal zero resource compensation values' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
           params: {
