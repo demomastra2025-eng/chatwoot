@@ -171,6 +171,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       describe 'AI models chosen by the platform' do
         let(:model_config_params) do
           {
+            CAPTAIN_DEFAULT_MODEL: 'openai/gpt-6-luna',
             CAPTAIN_AUDIO_TRANSCRIPTION_MODEL: 'openai/gpt-4o-mini-transcribe',
             CAPTAIN_IMAGE_RECOGNITION_MODEL: 'openai/gpt-5.4-mini',
             CAPTAIN_MODERATION_MODEL: 'openai/gpt-oss-safeguard-20b',
@@ -206,6 +207,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           post '/super_admin/app_config?config=captain', params: { app_config: model_config_params }
 
           expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-6-luna')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL')&.value).to eq('openai/gpt-4o-mini-transcribe')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL')&.value).to eq('openai/gpt-5.4-mini')
           expect(InstallationConfig.find_by(name: 'CAPTAIN_MODERATION_MODEL')&.value).to eq('openai/gpt-oss-safeguard-20b')
@@ -274,6 +276,28 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
           expect(flash[:alert]).to include(default_model)
           expect(Llm::Models.configured_model_allowlist).to be_nil
+        end
+
+        it 'lets the platform move every model of the default at once and back to Luna 5.6, which stays on the short list' do
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna","openai/gpt-5.6-luna"]')
+
+          post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: 'openai/gpt-5.6-luna' } }
+
+          expect(response).to redirect_to(super_admin_settings_path)
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to eq('openai/gpt-5.6-luna')
+          expect(Llm::Config.installation_default_model).to eq('openai/gpt-5.6-luna')
+        end
+
+        it 'rejects a default model that is unknown, unfit for the agent, editor and copilot, or outside the short list' do
+          upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+
+          ['vendor/not-in-catalog', 'openai/gpt-4o-mini-transcribe', 'openai/gpt-5.6-luna'].each do |value|
+            post '/super_admin/app_config?config=captain', params: { app_config: { CAPTAIN_DEFAULT_MODEL: value } }
+
+            expect(response).to redirect_to(super_admin_app_config_path(config: 'captain'))
+            expect(flash[:alert]).to include('CAPTAIN_DEFAULT_MODEL')
+          end
+          expect(InstallationConfig.find_by(name: 'CAPTAIN_DEFAULT_MODEL')&.value).to be_blank
         end
 
         it 'rejects a model slot whose model is unknown or unfit for the feature' do

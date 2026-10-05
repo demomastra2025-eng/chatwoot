@@ -9,6 +9,7 @@ RSpec.describe Llm::InstallationModelConfig do
         expect(described_class.manages?(config_name)).to be true
       end
       expect(described_class.manages?('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')).to be true
+      expect(described_class.manages?('CAPTAIN_DEFAULT_MODEL')).to be true
       expect(described_class.manages?('CAPTAIN_OPENROUTER_API_KEY')).to be false
     end
   end
@@ -28,6 +29,32 @@ RSpec.describe Llm::InstallationModelConfig do
     it 'rejects a model that is unknown or does not fit the feature' do
       expect(described_class.normalize('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-5.4')).not_to be_valid
       expect(described_class.normalize('CAPTAIN_IMAGE_RECOGNITION_MODEL', 'vendor/unknown')).not_to be_valid
+    end
+  end
+
+  describe '.normalize for the default model' do
+    let(:config_name) { 'CAPTAIN_DEFAULT_MODEL' }
+
+    it 'treats a blank value as valid so that the built-in default applies' do
+      expect(described_class.normalize(config_name, ' ')).to have_attributes(value: '', error: nil)
+    end
+
+    it 'accepts a model that fits the agent, the editor and the copilot' do
+      expect(described_class.normalize(config_name, ' openai/gpt-5.6-luna ')).to have_attributes(value: 'openai/gpt-5.6-luna', error: nil)
+    end
+
+    it 'rejects a model that does not fit those features and names it' do
+      result = described_class.normalize(config_name, 'openai/gpt-4o-mini-transcribe')
+
+      expect(result).not_to be_valid
+      expect(result.error).to include('openai/gpt-4o-mini-transcribe', 'assistant')
+    end
+
+    it 'rejects a model that is not on the short list the platform curated' do
+      upsert_installation_config('CAPTAIN_ASSISTANT_MODEL_ALLOWLIST', '["openai/gpt-6-luna"]')
+
+      expect(described_class.normalize(config_name, 'openai/gpt-5.6-luna')).not_to be_valid
+      expect(described_class.normalize(config_name, 'openai/gpt-6-luna')).to be_valid
     end
   end
 
