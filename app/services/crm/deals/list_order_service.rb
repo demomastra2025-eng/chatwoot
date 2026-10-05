@@ -32,12 +32,12 @@ class Crm::Deals::ListOrderService
 
   attr_reader :page, :per_page, :scope, :sort_by, :sort_direction
 
-  def direction
-    sort_direction.to_s.downcase == 'desc' ? 'DESC' : 'ASC'
+  def directed(expression)
+    sort_direction.to_s.downcase == 'desc' ? expression.desc : expression.asc
   end
 
   def sorted_scope(column)
     relation = sort_by == 'stage' ? scope.left_joins(:stage) : scope
-    relation.reorder(Arel.sql("#{column} #{direction} NULLS LAST, crm_deals.id #{direction}"))
+    relation.reorder(directed(Arel.sql(column)).nulls_last, directed(Arel.sql('crm_deals.id')))
   end
 end

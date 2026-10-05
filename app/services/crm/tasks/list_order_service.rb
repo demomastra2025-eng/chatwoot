@@ -36,8 +36,8 @@ class Crm::Tasks::ListOrderService
 
   attr_reader :params, :scope
 
-  def direction
-    params[:sort_direction].to_s.downcase == 'desc' ? 'DESC' : 'ASC'
+  def directed(expression)
+    params[:sort_direction].to_s.downcase == 'desc' ? expression.desc : expression.asc
   end
 
   def sorted_scope(column)
@@ -46,7 +46,7 @@ class Crm::Tasks::ListOrderService
                when 'assignee' then scope.left_joins(:assignee)
                else scope
                end
-    relation.reorder(Arel.sql("#{column} #{direction} NULLS LAST, crm_tasks.id #{direction}"))
+    relation.reorder(directed(Arel.sql(column)).nulls_last, directed(Arel.sql('crm_tasks.id')))
   end
 
   def activity_type_catalog_join
