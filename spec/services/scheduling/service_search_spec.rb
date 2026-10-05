@@ -128,6 +128,29 @@ RSpec.describe Scheduling::ServiceSearch do
       expect(names('MРТ кисти')).to eq(['МРТ Кисть'])
     end
 
+    it 'keeps a Latin abbreviation glued to a Cyrillic word as typed, so a catalogue name finds itself' do
+      mixed_names = ['Анти-HCV', 'Rh-фактор', 'АСТ/ALT', 'ВИЧ/HIV', 'Кардио-Check', 'МРТ-3T', 'ПЦР-covid', 'Анти-HBs']
+      mixed_names.each { |name| create_service(name) }
+      create_service('Анти-HIV')
+
+      mixed_names.each do |name|
+        payload = search(name)
+
+        expect(payload.call.pluck(:name)).to eq([name])
+        expect(payload.match_kind).to eq('all_concepts')
+        expect(payload.exact_name_count).to eq(1)
+      end
+    end
+
+    it 'finds a service whose name holds a sign that Unicode compatibility folding would rewrite' do
+      ['Кабинет УЗИ №1', '½ дозы', 'Препарат™', 'Объём 5 м²'].each { |name| create_service(name) }
+
+      ['Кабинет УЗИ №1', 'кабинет №1', '№1', '½ дозы', '½', 'Препарат™', 'Объём 5 м²'].each do |query|
+        expect(names(query)).not_to be_empty, "expected a match for #{query}"
+      end
+      expect(search('Кабинет УЗИ №1').exact_name_count).to eq(1)
+    end
+
     it 'finds a service by its alias and by category or direction words' do
       create_service('Исследование А', custom_attributes: { 'aliases' => ['магнитно резонансная томография головы'] })
       create_service('Исследование Б', category: 'Диагностика', direction: 'Неврология')

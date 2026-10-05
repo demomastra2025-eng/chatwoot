@@ -12,7 +12,9 @@ module Scheduling::SearchText
 
   def normalize(value)
     text = value.to_s.encode('UTF-8', invalid: :replace, undef: :replace, replace: '').scrub('')
-    text = text.unicode_normalize(:nfkc).downcase.tr('ё', 'е')
+    # Only canonical composition: the stored text is compared as it is (case and ё aside), so a compatibility fold
+    # such as № -> No, ½ -> 1⁄2 or ™ -> TM would make a service name unfindable by its own name.
+    text = text.unicode_normalize(:nfc).downcase.tr('ё', 'е')
     text = text.gsub(/[[:cntrl:]]/, ' ').squish.first(MAX_LENGTH)
     text.split.map { |word| restore_cyrillic(word) }.join(' ')
   end
@@ -25,10 +27,14 @@ module Scheduling::SearchText
     "translate(LOWER(#{expression}), 'ё', 'е')"
   end
 
-  # A word typed with a Latin letter inside a Cyrillic word (for example "МRТ") is read as Cyrillic.
+  # A Latin look-alike letter typed inside a Cyrillic token (for example "МRТ") is read as Cyrillic. The decision is
+  # made per letters-and-digits token, so a real Latin abbreviation glued to a Cyrillic word by a hyphen or a slash
+  # ("Анти-HCV", "ВИЧ/HIV", "Rh-фактор") stays as typed. A token that holds a Latin letter without a Cyrillic twin
+  # (for example the "s" of "HBs") is left alone as well.
   def restore_cyrillic(word)
-    return word unless word.match?(/\p{Cyrillic}/)
-
-    word.gsub(/[abcehkmoptxy]/, LATIN_LOOKALIKES)
+    word.gsub(/[[:alnum:]]+/) do |token|
+      latin = token.scan(/[a-z]/)
+      token.match?(/\p{Cyrillic}/) && latin.all? { |letter| LATIN_LOOKALIKES.key?(letter) } ? token.gsub(/[a-z]/, LATIN_LOOKALIKES) : token
+    end
   end
 end

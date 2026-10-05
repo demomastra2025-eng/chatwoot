@@ -42,6 +42,18 @@ RSpec.describe Scheduling::ResourceSearchService do
       expect(ids(query: 'СЕМЁН')).to eq([semen.id])
     end
 
+    it 'finds a resource by its own name when the name holds a number sign, a symbol or a Latin abbreviation' do
+      rooms = ['Кабинет УЗИ №1', 'Кабинет №3', 'Анти-HBs кабинет', 'Лаборатория ПЦР-covid', 'Кабинет 2½ этаж']
+      created = rooms.index_with { |name| create_resource(name) }
+
+      rooms.each do |name|
+        expect(ids(query: name, search_by: 'name')).to eq([created[name].id])
+      end
+      expect(ids(query: '№3')).to eq([created['Кабинет №3'].id])
+      expect(ids(query: 'кабинет №3')).to eq([created['Кабинет №3'].id])
+      expect(ids(query: 'анти-HBs')).to eq([created['Анти-HBs кабинет'].id])
+    end
+
     it 'combines name words with the stored specialty in the all mode only' do
       expect(ids(query: 'хирург асланов', search_by: 'all')).to eq([aslanov.id])
       expect(ids(query: 'хирург асланов', search_by: 'name')).to be_empty
