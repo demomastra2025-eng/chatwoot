@@ -36,13 +36,14 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
       pages
     end
 
-    it 'reaches all 201 services of a catalogue within the budget of calls of one run' do
-      seed(201)
+    it 'reaches all 200 services of a catalogue within four calls of one run' do
+      expect(budget).to eq(4)
+      seed(200)
 
       pages = walk(query: 'УЗИ')
 
       expect(pages.size).to be <= budget
-      expect(pages.sum { |page| page['returned_count'] }).to eq(201)
+      expect(pages.sum { |page| page['returned_count'] }).to eq(200)
       expect(pages.last).to include('has_more' => false, 'next_offset' => nil)
     end
 
