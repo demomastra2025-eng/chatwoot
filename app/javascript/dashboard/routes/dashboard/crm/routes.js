@@ -91,6 +91,12 @@ export const routes = [
     meta: dealsMeta,
   },
   {
+    path: frontendURL('accounts/:accountId/crm/deals/:dealId'),
+    name: 'crm_deal_show',
+    component: CrmDealsPage,
+    meta: dealsMeta,
+  },
+  {
     path: frontendURL('accounts/:accountId/tasks'),
     name: 'crm_tasks_index',
     component: CrmTasksPage,

@@ -1,11 +1,15 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { reactive } from 'vue';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
   runtime: {
     accountId: null,
     dispatch: vi.fn(),
     routeQuery: {},
+    routeParams: null,
+    routerBack: vi.fn(),
+    routerPush: vi.fn(),
     routerReplace: vi.fn(),
   },
   referencesStore: {
@@ -40,9 +44,10 @@ vi.mock('vue-i18n', () => ({
 }));
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
-  useRoute: () => ({ query: runtime.routeQuery, params: { accountId: 1 } }),
+  useRoute: () => ({ query: runtime.routeQuery, params: runtime.routeParams }),
   useRouter: () => ({
-    push: vi.fn(),
+    back: runtime.routerBack,
+    push: runtime.routerPush,
     replace: runtime.routerReplace,
     resolve: vi.fn(),
   }),
@@ -103,6 +108,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
 import CrmDealsAPI from 'dashboard/api/crm/deals';
 import ConversationAPI from 'dashboard/api/conversations';
 import ContactAPI from 'dashboard/api/contacts';
+import CompanyAPI from 'dashboard/api/companies';
 import { useAlert } from 'dashboard/composables';
 import CrmDealsPage from './pages/CrmDealsPage.vue';
 
@@ -138,7 +144,9 @@ const mountPage = async () => {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  sessionStorage.clear();
   runtime.accountId.value = 1;
+  runtime.routeParams = reactive({ accountId: 1 });
   Object.keys(runtime.routeQuery).forEach(
     key => delete runtime.routeQuery[key]
   );
@@ -161,6 +169,8 @@ beforeEach(() => {
   CrmDealsAPI.show.mockReset();
   CrmDealsAPI.timeline.mockReset().mockResolvedValue(response([]));
   CrmDealsAPI.update.mockReset();
+  ContactAPI.get.mockResolvedValue(response([]));
+  CompanyAPI.get.mockResolvedValue(response([]));
   ConversationAPI.create.mockReset();
   ContactAPI.getCommunicationThreads
     .mockReset()
@@ -170,6 +180,7 @@ beforeEach(() => {
 
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
+  window.history.replaceState(null, '');
 });
 
 it('exposes a localized string when the initial load fails', async () => {
@@ -252,61 +263,164 @@ it('keeps loading owned by a newer list request', async () => {
   expect(state.deals.map(item => item.id)).toEqual([22]);
 });
 
-it('only opens the newest route-query deal when lookups finish in reverse', async () => {
+it('opens a board deal on its own URL and keeps the current query', async () => {
   const { state } = await mountPage();
+  runtime.routeQuery.pipelineId = '10';
+
+  state.openDealPage(deal(11));
+
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'crm_deal_show',
+    params: { accountId: 1, dealId: 11 },
+    query: { pipelineId: '10' },
+  });
+  expect(state.drawerOpen).toBe(false);
+});
+
+it('restores list scroll when returning from a deal page', async () => {
+  const { state } = await mountPage();
+  state.currentPresentation = 'list';
+  await flushPromises();
+  const scrollElement = state.dealsListScrollRef;
+  scrollElement.scrollTop = 87;
+
+  state.openDealPage(deal(11));
+  scrollElement.scrollTop = 0;
+  await state.restoreDealListScroll();
+
+  expect(scrollElement.scrollTop).toBe(87);
+});
+
+it('redirects legacy deal query links to the full page', async () => {
+  const { state } = await mountPage();
+  runtime.routeQuery.dealId = '11';
+  runtime.routeQuery.pipelineId = '10';
+
+  await state.handleDealUiActionQuery();
+
+  expect(runtime.routerReplace).toHaveBeenCalledWith({
+    name: 'crm_deal_show',
+    params: { accountId: 1, dealId: 11 },
+    query: { pipelineId: '10' },
+  });
+  expect(CrmDealsAPI.show).not.toHaveBeenCalled();
+});
+
+it('loads a deep-linked deal without loading the board', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+
+  const { state, wrapper } = await mountPage();
+
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(CrmDealsAPI.show).toHaveBeenCalledWith(11);
+  expect(state.selectedDeal.id).toBe(11);
+  expect(state.drawerOpen).toBe(true);
+  expect(wrapper.find('.modal-mask').exists()).toBe(false);
+});
+
+it('shows a retryable page error when a deep-linked deal cannot load', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockRejectedValueOnce(new Error('deal unavailable'));
+
+  const { state, wrapper } = await mountPage();
+
+  expect(state.drawerOpen).toBe(false);
+  expect(state.ui.error).toBe('deal unavailable');
+  expect(wrapper.findComponent({ name: 'SchedulingErrorState' }).exists()).toBe(
+    true
+  );
+});
+
+it('returns to the board history entry or falls back for a deep link', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  const { state } = await mountPage();
+
+  state.returnToDeals();
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'crm_deals_index',
+    params: { accountId: 1 },
+    query: {},
+  });
+
+  window.history.replaceState({ back: '/app/accounts/1/deals?q=old' }, '');
+  state.returnToDeals();
+  expect(runtime.routerBack).toHaveBeenCalledTimes(1);
+});
+
+it('opens a linked dialog on its full page route', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  const { state } = await mountPage();
+
+  state.form.originatingConversationId = 77;
+  state.form.originatingConversationDisplayId = '#19';
+  state.openLinkedConversation();
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'inbox_conversation',
+    params: { accountId: 1, conversation_id: '19' },
+  });
+
+  state.form.originatingCommunicationThreadId = 88;
+  state.form.originatingCommunicationThreadDisplayId = '#29';
+  state.openLinkedConversation();
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'communication_thread_conversation',
+    params: { accountId: 1, communication_thread_id: '29' },
+  });
+});
+
+it('only opens the newest route deal when requests finish in reverse', async () => {
+  runtime.routeParams.dealId = '11';
   const obsolete = deferred();
   const current = deferred();
   CrmDealsAPI.show
     .mockReturnValueOnce(obsolete.promise)
     .mockReturnValueOnce(current.promise);
+  const { state } = await mountPage();
 
-  runtime.routeQuery.dealId = '11';
-  const firstAction = state.handleDealUiActionQuery();
-  runtime.routeQuery.dealId = '22';
-  const secondAction = state.handleDealUiActionQuery();
+  runtime.routeParams.dealId = '22';
+  await flushPromises();
   current.resolve(response(deal(22)));
-  await secondAction;
+  await flushPromises();
   obsolete.resolve(response(deal(11)));
-  await firstAction;
+  await flushPromises();
 
   expect(state.selectedDeal.id).toBe(22);
-  expect(runtime.routerReplace).toHaveBeenCalledTimes(1);
+  expect(state.drawerOpen).toBe(true);
 });
 
-it('does not publish a pending route-query deal after an account switch', async () => {
-  const { state, wrapper } = await mountPage();
+it('does not publish a pending route deal after an account switch', async () => {
+  runtime.routeParams.dealId = '11';
   const obsolete = deferred();
   const accountBootstrap = deferred();
   CrmDealsAPI.show.mockReturnValueOnce(obsolete.promise);
-  referencesStore.loadPipelines.mockReturnValueOnce(accountBootstrap.promise);
+  const { state, wrapper } = await mountPage();
 
-  runtime.routeQuery.dealId = '11';
-  const action = state.handleDealUiActionQuery();
+  referencesStore.loadPipelines.mockReturnValueOnce(accountBootstrap.promise);
   runtime.accountId.value = 2;
   await flushPromises();
   obsolete.resolve(response(deal(11)));
-  await action;
+  await flushPromises();
 
   expect(state.selectedDeal).toBeNull();
   expect(state.drawerOpen).toBe(false);
-  expect(runtime.routerReplace).not.toHaveBeenCalled();
   wrapper.unmount();
   accountBootstrap.resolve(referencesStore.pipelines);
 });
 
-it('does not publish a pending route-query deal after unmount', async () => {
-  const { state, wrapper } = await mountPage();
+it('does not publish a pending route deal after unmount', async () => {
+  runtime.routeParams.dealId = '11';
   const obsolete = deferred();
   CrmDealsAPI.show.mockReturnValueOnce(obsolete.promise);
+  const { state, wrapper } = await mountPage();
 
-  runtime.routeQuery.dealId = '11';
-  const action = state.handleDealUiActionQuery();
   wrapper.unmount();
   obsolete.resolve(response(deal(11)));
-  await action;
+  await flushPromises();
 
   expect(state.selectedDeal).toBeNull();
-  expect(runtime.routerReplace).not.toHaveBeenCalled();
 });
 
 it('renders a filtered-empty list without a create action', async () => {

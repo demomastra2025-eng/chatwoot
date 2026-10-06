@@ -140,10 +140,12 @@ const referencesStore = useCrmReferencesStore();
 const store = useStore();
 const route = useRoute();
 const router = useRouter();
+const isDealPage = computed(() => !!route.params?.dealId);
 const { checkPermissions } = usePolicy();
 const { locale, t } = useI18n();
 
 const DEALS_PREFERENCES_STORAGE_KEY = 'crm-deals-page-preferences';
+const DEALS_RETURN_SCROLL_STORAGE_KEY = 'crm-deals-return-scroll';
 const MANUAL_BOARD_SORT_KEY = 'position';
 
 const deals = ref([]);
@@ -175,6 +177,8 @@ const filterPopoverOpen = ref(false);
 const filterPopoverStyle = ref({});
 const listCurrentPage = ref(1);
 const selectedDealIds = ref([]);
+const dealsListScrollRef = ref(null);
+const dealBoardRef = ref(null);
 const timelineItems = ref([]);
 const contactOptions = ref([]);
 const companyOptions = ref([]);
@@ -379,6 +383,7 @@ const canOpenLinkedConversation = computed(
   () =>
     !!linkedCommunicationThreadId.value ||
     !!linkedCommunicationThreadDisplayId.value ||
+    !!dealConversationDraft.communicationThreadDisplayId ||
     !!linkedConversationId.value ||
     !!linkedConversationDisplayId.value
 );
@@ -495,12 +500,18 @@ const shouldShowTeamField = computed(
   () => teamOptions.value.length > 0 || !!form.teamId
 );
 
-const drawerModalClass = computed(() => [
-  'mx-auto flex h-full w-full overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2 shadow-2xl',
-  showLinkedConversationPanel.value
-    ? 'max-w-[min(96rem,calc(100vw-1.5rem))] flex-col md:flex-row'
-    : 'max-w-[min(30rem,calc(100vw-1.5rem))] flex-col',
-]);
+const drawerModalClass = computed(() => {
+  if (isDealPage.value) {
+    return 'flex h-full w-full min-h-0 flex-col overflow-hidden bg-n-solid-2 md:flex-row';
+  }
+
+  return [
+    'mx-auto flex h-full w-full overflow-hidden rounded-2xl border border-n-weak bg-n-solid-2 shadow-2xl',
+    showLinkedConversationPanel.value && !canOpenLinkedConversation.value
+      ? 'max-w-[min(96rem,calc(100vw-1.5rem))] flex-col md:flex-row'
+      : 'max-w-[min(30rem,calc(100vw-1.5rem))] flex-col',
+  ];
+});
 const shouldRenderDealTasksPanel = computed(
   () =>
     drawerOpen.value &&
@@ -2066,6 +2077,7 @@ const openEditDrawer = async deal => {
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
   populateFormFromDeal(deal);
+  if (pendingStageEntry.value) form.stageId = pendingStageEntry.value.stageId;
   // Declared with the save boundary below; this handler only runs after setup.
   // eslint-disable-next-line no-use-before-define
   dealEditSnapshot.value = buildDealEditSnapshot(deal);
@@ -2085,6 +2097,69 @@ const openEditDrawer = async deal => {
   if (editorGeneration !== dealEditorGeneration) return false;
   captureFormBaseline();
   return true;
+};
+
+const openDealPage = deal => {
+  const scrollElement =
+    currentPresentation.value === 'board'
+      ? dealBoardRef.value?.$el
+      : dealsListScrollRef.value;
+  if (scrollElement) {
+    sessionStorage.setItem(
+      `${DEALS_RETURN_SCROLL_STORAGE_KEY}:${accountId.value}`,
+      JSON.stringify({
+        left: scrollElement.scrollLeft,
+        presentation: currentPresentation.value,
+        query: route.query,
+        top: scrollElement.scrollTop,
+      })
+    );
+  }
+
+  router.push({
+    name: 'crm_deal_show',
+    params: { accountId: accountId.value, dealId: deal.id },
+    query: route.query,
+  });
+};
+
+const restoreDealListScroll = async () => {
+  const key = `${DEALS_RETURN_SCROLL_STORAGE_KEY}:${accountId.value}`;
+  const saved = sessionStorage.getItem(key);
+  if (!saved) return;
+  sessionStorage.removeItem(key);
+
+  const position = JSON.parse(saved);
+  if (
+    position.presentation !== currentPresentation.value ||
+    JSON.stringify(position.query) !== JSON.stringify(route.query)
+  ) {
+    return;
+  }
+
+  await nextTick();
+  const scrollElement =
+    currentPresentation.value === 'board'
+      ? dealBoardRef.value?.$el
+      : dealsListScrollRef.value;
+  if (scrollElement) {
+    scrollElement.scrollTop = position.top;
+    scrollElement.scrollLeft = position.left;
+  }
+};
+
+const returnToDeals = () => {
+  const boardPath = `/app/accounts/${accountId.value}/deals`;
+  if (window.history.state?.back?.split('?')[0] === boardPath) {
+    router.back();
+    return;
+  }
+
+  router.push({
+    name: 'crm_deals_index',
+    params: { accountId: accountId.value },
+    query: route.query,
+  });
 };
 
 const closeDrawer = () => {
@@ -2107,6 +2182,40 @@ const closeDrawer = () => {
   resetDealConversationDraft();
   resetForm();
   captureFormBaseline();
+};
+
+const closeDealEditor = () => {
+  if (isDealPage.value) {
+    returnToDeals();
+    return;
+  }
+
+  closeDrawer();
+};
+
+const openLinkedConversation = () => {
+  const communicationThreadId =
+    effectiveLinkedCommunicationThreadDisplayId.value ||
+    effectiveLinkedCommunicationThreadId.value;
+  if (communicationThreadId) {
+    router.push({
+      name: 'communication_thread_conversation',
+      params: {
+        accountId: accountId.value,
+        communication_thread_id: communicationThreadId,
+      },
+    });
+    return;
+  }
+
+  const conversationId =
+    linkedConversationDisplayId.value || linkedConversationId.value;
+  if (conversationId) {
+    router.push({
+      name: 'inbox_conversation',
+      params: { accountId: accountId.value, conversation_id: conversationId },
+    });
+  }
 };
 
 const openCreateNewContactDialog = name => {
@@ -2383,14 +2492,27 @@ const createDealConversation = async ({ contactId, inbox }) => {
       inbox_id: Number(inbox.value || inbox.id),
       source_id: inbox.sourceId || undefined,
     });
-    await ConversationAPI.create(conversationPayload);
+    const { data } = await ConversationAPI.create(conversationPayload);
     if (!isCurrentEditor()) return;
     const contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
     if (!contactLinkIsCurrent || !isCurrentEditor()) return;
+    const createdConversation = normalizePayload({ payload: data?.payload || data });
+    const conversationId =
+      createdConversation?.displayId ||
+      createdConversation?.display_id ||
+      createdConversation?.id;
+    if (conversationId) {
+      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+      router.push({
+        name: 'inbox_conversation',
+        params: { accountId: accountId.value, conversation_id: conversationId },
+      });
+      return;
+    }
+
     showLinkedConversationPanel.value = true;
     await loadDealConversationContextWithRetry(normalizedContactId);
     if (!isCurrentEditor()) return;
-
     useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
   } catch (error) {
     if (!isCurrentEditor()) return;
@@ -2533,6 +2655,7 @@ const saveDeal = async () => {
     );
     pendingStageEntry.value = null;
     stageRuleOverrideReason.value = '';
+    if (!wasEditingDeal) openDealPage(deal);
   } catch (error) {
     if (!isCurrentEditor()) return;
     if (selectedDeal.value && isStaleCrmError(error)) {
@@ -2748,7 +2871,7 @@ const handleCrmDealRealtimeEvent = payload => {
 
 const startEditingDealTitle = deal => {
   if (!canManageDeals.value) {
-    openEditDrawer(deal);
+    openDealPage(deal);
     return;
   }
 
@@ -3233,8 +3356,11 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
         stageId: nextStageId,
       };
       stageRuleOverrideReason.value = '';
-      await openEditDrawer(currentDeal);
-      form.stageId = nextStageId;
+      if (isDealPage.value) {
+        await openEditDrawer(currentDeal);
+      } else {
+        openDealPage(currentDeal);
+      }
       return;
     }
 
@@ -3537,26 +3663,43 @@ const consumeDealOpenQuery = async isCurrent => {
   if (!dealId) return false;
   if (!isCurrent()) return true;
 
-  try {
-    let deal = deals.value.find(record => Number(record.id) === Number(dealId));
-    if (!deal) {
-      const { data } = await CrmDealsAPI.show(dealId);
-      if (!isCurrent()) return true;
-      deal = normalizePayload(data);
-      if (currentPresentation.value !== 'board') {
-        upsertDeal(deal);
-      }
-    }
-
-    if (!isCurrent()) return true;
-    await openEditDrawer(deal);
-  } catch (error) {
-    if (isCurrent()) useAlert(formatErrorMessage(error));
-  } finally {
-    await clearDealPrefillQuery(isCurrent);
-  }
+  const query = { ...route.query };
+  delete query.dealId;
+  await router.replace({
+    name: 'crm_deal_show',
+    params: { accountId: accountId.value, dealId },
+    query,
+  });
 
   return true;
+};
+
+const openDealFromRoute = async isCurrent => {
+  const dealId = Number(route.params.dealId);
+  if (!Number.isSafeInteger(dealId) || dealId <= 0) {
+    ui.error = t('CRM.ERRORS.LOAD_TITLE');
+    return;
+  }
+
+  ui.error = null;
+  ui.isLoading = true;
+  try {
+    let deal = deals.value.find(record => Number(record.id) === dealId);
+    if (!deal) {
+      const { data } = await CrmDealsAPI.show(dealId);
+      if (!isCurrent()) return;
+      deal = normalizePayload(data);
+    }
+    if (!isCurrent()) return;
+    await openEditDrawer(deal);
+  } catch (error) {
+    if (isCurrent()) {
+      closeDrawer();
+      ui.error = formatErrorMessage(error);
+    }
+  } finally {
+    if (isCurrent()) ui.isLoading = false;
+  }
 };
 
 watch(
@@ -3690,13 +3833,21 @@ const handleDealUiActionQuery = async () => {
   dealUiActionGeneration += 1;
   const generation = dealUiActionGeneration;
   const requestAccountId = Number(accountId.value);
+  const routeAccountId = Number(route.params?.accountId);
   const querySnapshot = JSON.stringify(route.query);
+  const routeDealId = route.params?.dealId;
   const isCurrent = () =>
     generation === dealUiActionGeneration &&
     Number(accountId.value) === requestAccountId &&
+    Number(route.params?.accountId) === routeAccountId &&
     JSON.stringify(route.query) === querySnapshot &&
+    route.params?.dealId === routeDealId &&
     !isComponentUnmounted;
 
+  if (isDealPage.value) {
+    await openDealFromRoute(isCurrent);
+    return;
+  }
   if (await consumeDealOpenQuery(isCurrent)) return;
   if (isCurrent()) await consumeDealPrefillQuery(isCurrent);
 };
@@ -3740,9 +3891,12 @@ const initializeDealsPage = async ({ reloadDirectory = false } = {}) => {
     resetForm();
     hasRestoredPreferences.value = true;
     persistDealsPreferences();
-    listLoadStarted = true;
-    const listLoadCommitted = await loadDeals();
-    if (!isCurrent() || !listLoadCommitted || ui.error) return;
+    if (!isDealPage.value) {
+      listLoadStarted = true;
+      const listLoadCommitted = await loadDeals();
+      if (!isCurrent() || !listLoadCommitted || ui.error) return;
+      await restoreDealListScroll();
+    }
     await handleDealUiActionQuery();
   } catch (error) {
     if (isCurrent()) ui.error = formatErrorMessage(error);
@@ -3795,6 +3949,20 @@ watch(accountId, async nextAccountId => {
 });
 
 watch(
+  () => route.params?.dealId,
+  async (dealId, previousDealId) => {
+    if (!hasRestoredPreferences.value || !canViewDeals.value) return;
+    if (previousDealId) closeDrawer();
+    if (dealId) {
+      await handleDealUiActionQuery();
+    } else if (previousDealId) {
+      if (!deals.value.length) await loadDeals();
+      await restoreDealListScroll();
+    }
+  }
+);
+
+watch(
   () => [route.query?.pipelineId, route.query?.stageId],
   async () => {
     if (!hasRestoredPreferences.value || !canViewDeals.value) return;
@@ -3832,7 +4000,10 @@ watch(
 
 <template>
   <section class="relative flex flex-1 min-h-0 overflow-hidden bg-n-slate-2">
-    <div class="flex min-w-0 flex-1 flex-col overflow-hidden md:order-last">
+    <div
+      v-show="!isDealPage"
+      class="flex min-w-0 flex-1 flex-col overflow-hidden md:order-last"
+    >
       <SchedulingPageHeader
         class="!bg-n-slate-2"
         center-class="flex-1 md:min-w-80"
@@ -3966,6 +4137,7 @@ watch(
       />
 
       <div
+        ref="dealsListScrollRef"
         class="flex-1"
         :class="
           shouldRenderBoard && !ui.isLoading && !ui.error
@@ -4005,6 +4177,7 @@ watch(
           />
 
           <CrmDealBoard
+            ref="dealBoardRef"
             v-else-if="currentPresentation === 'board'"
             class="min-h-0 flex-1"
             :can-manage="canManageDeals"
@@ -4025,7 +4198,7 @@ watch(
             :sort-key="boardSort.key"
             @change-stage="handleDealStageChange"
             @load-more="loadMoreDeals"
-            @select-deal="openEditDrawer"
+            @select-deal="openDealPage"
             @toggle-sort-direction="toggleBoardSortDirection"
           />
 
@@ -4109,7 +4282,7 @@ watch(
                       type="button"
                       class="min-w-0 flex-1 overflow-hidden border-0 bg-transparent p-0 text-left"
                       :title="row.title"
-                      @click="openEditDrawer(row)"
+                      @click="openDealPage(row)"
                     >
                       <span class="block truncate font-medium text-n-slate-12">
                         {{ row.title }}
@@ -4219,6 +4392,31 @@ watch(
       </div>
     </div>
 
+    <div
+      v-if="isDealPage && !drawerOpen"
+      class="flex min-h-0 flex-1 flex-col"
+    >
+      <header class="border-b border-n-weak bg-n-surface-1 px-4 py-2">
+        <Button
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          :label="$t('INBOX.BACK')"
+          @click="returnToDeals"
+        />
+      </header>
+      <div class="flex min-h-0 flex-1 items-center justify-center">
+        <SchedulingErrorState
+          v-if="ui.error"
+          :title="$t('CRM.ERRORS.LOAD_TITLE')"
+          :description="ui.error"
+          @retry="handleDealUiActionQuery"
+        />
+        <CrmPageSkeleton v-else presentation="list" />
+      </div>
+    </div>
+
     <Transition
       enter-active-class="transition-opacity duration-200 ease-out"
       enter-from-class="opacity-0"
@@ -4229,18 +4427,37 @@ watch(
     >
       <div
         v-if="drawerOpen"
-        class="modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]"
+        :class="
+          isDealPage
+            ? 'flex min-h-0 flex-1'
+            : 'modal-mask fixed inset-0 z-[110] bg-black/35 p-3 backdrop-blur-[4px]'
+        "
       >
         <div :class="drawerModalClass">
           <aside
-            class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]"
+            class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2"
             :class="{
-              'md:border-r md:border-n-weak': showLinkedConversationPanel,
+              'md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]': !isDealPage,
+              '!h-1/2 md:!h-full':
+                isDealPage &&
+                showLinkedConversationPanel &&
+                !canOpenLinkedConversation,
+              'md:border-r md:border-n-weak':
+                showLinkedConversationPanel && !canOpenLinkedConversation,
             }"
           >
             <header
               class="flex items-center gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
             >
+              <Button
+                v-if="isDealPage"
+                size="sm"
+                color="slate"
+                variant="ghost"
+                icon="i-lucide-arrow-left"
+                :label="$t('INBOX.BACK')"
+                @click="returnToDeals"
+              />
               <input
                 id="crm-deal-drawer-title"
                 class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
@@ -4281,11 +4498,20 @@ watch(
                 @click="saveDeal"
               />
               <Button
+                v-if="canOpenLinkedConversation"
+                size="sm"
+                color="slate"
+                variant="ghost"
+                icon="i-lucide-message-square"
+                :label="$t('CRM.GENERAL.CHAT')"
+                @click="openLinkedConversation"
+              />
+              <Button
                 size="sm"
                 color="slate"
                 variant="ghost"
                 icon="i-lucide-x"
-                @click="closeDrawer"
+                @click="closeDealEditor"
               />
             </header>
 
@@ -4702,7 +4928,11 @@ watch(
           </aside>
 
           <CrmDealConversationPanel
-            v-if="drawerOpen && showLinkedConversationPanel"
+            v-if="
+              drawerOpen &&
+              showLinkedConversationPanel &&
+              !canOpenLinkedConversation
+            "
             :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
               effectiveLinkedCommunicationThreadDisplayId
@@ -4720,8 +4950,9 @@ watch(
               dealConversationDraft.isLoadingCommunicationThread
             "
             visible
+            :inline="isDealPage"
             @add-contact="openCreateNewContactDialog"
-            @close="closeDrawer"
+            @close="closeDealEditor"
             @create-conversation="createDealConversation"
             @retry-context="
               loadDealConversationContext(dealConversationDraft.contactId)

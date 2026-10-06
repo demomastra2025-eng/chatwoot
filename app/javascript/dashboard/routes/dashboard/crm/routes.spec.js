@@ -19,6 +19,20 @@ describe('CRM dashboard routes', () => {
     });
   });
 
+  it('renders deal details on their own URL with deal view permissions', () => {
+    const listRoute = routes.find(route => route.name === 'crm_deals_index');
+    const detailRoute = routes.find(route => route.name === 'crm_deal_show');
+
+    expect(detailRoute).toMatchObject({
+      name: 'crm_deal_show',
+      path: expect.stringMatching(
+        /\/accounts\/:accountId\/crm\/deals\/:dealId$/
+      ),
+      meta: listRoute.meta,
+    });
+    expect(detailRoute.component).toBe(listRoute.component);
+  });
+
   it.each([
     ['crm/deals', 'crm_deals_index'],
     ['crm/tasks', 'crm_tasks_index'],

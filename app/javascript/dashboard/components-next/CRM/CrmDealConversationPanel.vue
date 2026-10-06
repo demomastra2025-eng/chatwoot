@@ -72,6 +72,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  inline: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
@@ -443,7 +447,12 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="visible"
-      class="fixed inset-0 z-[120] bg-n-solid-2 md:static md:inset-auto md:z-auto md:h-full md:min-w-0 md:flex-1 md:bg-transparent"
+      class="bg-n-solid-2 md:h-full md:min-w-0 md:flex-1 md:bg-transparent"
+      :class="
+        inline
+          ? 'relative min-h-0 flex-1'
+          : 'fixed inset-0 z-[120] md:static md:inset-auto md:z-auto'
+      "
     >
       <div class="flex h-full w-full justify-end">
         <aside
