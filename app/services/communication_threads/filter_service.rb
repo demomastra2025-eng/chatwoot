@@ -10,7 +10,7 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def perform
-    set_up
+    selection_scope
 
     {
       communication_threads: meta_only? ? CommunicationThread.none : communication_threads,
@@ -21,6 +21,13 @@ class CommunicationThreads::FilterService < FilterService
   def perform_sidebar_unread_counts
     set_up
     unread_counts
+  end
+
+  # Returns the complete matching scope using the same advanced, CRM,
+  # appointment, sidebar, and permission filters as the paginated list.
+  def selection_scope
+    set_up
+    @communication_threads
   end
 
   def base_relation

@@ -7,13 +7,7 @@ class Conversations::FilterService < FilterService
   end
 
   def perform
-    validate_query_operator
-    @base_filtered_conversations = query_builder(@filters['conversations'])
-    @conversations = apply_sidebar_scopes(
-      apply_scheduling_appointment_context(
-        apply_crm_deal_context(@base_filtered_conversations)
-      )
-    )
+    @conversations = selection_scope
     mine_count, unassigned_count, all_count, = set_count_for_all_conversations
     assigned_count = all_count - unassigned_count
     assignee_counts = {
@@ -30,6 +24,18 @@ class Conversations::FilterService < FilterService
         unread_counts: unread_counts
       )
     }
+  end
+
+  # Returns the complete matching scope using the same advanced, CRM,
+  # appointment, sidebar, and permission filters as the paginated list.
+  def selection_scope
+    validate_query_operator
+    @base_filtered_conversations = query_builder(@filters['conversations'])
+    @conversations = apply_sidebar_scopes(
+      apply_scheduling_appointment_context(
+        apply_crm_deal_context(@base_filtered_conversations)
+      )
+    )
   end
 
   def base_relation

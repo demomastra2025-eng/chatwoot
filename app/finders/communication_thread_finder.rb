@@ -108,9 +108,9 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     SQL
   end
 
-  def initialize(current_user, params)
+  def initialize(current_user, params, current_account: current_user.account)
     @current_user = current_user
-    @current_account = current_user.account
+    @current_account = current_account
     @params = params
   end
 
@@ -129,6 +129,14 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     set_up
 
     { count: thread_counts }
+  end
+
+  # Returns the full permission-filtered thread scope without loading pages or
+  # thread content. Used by bounded server-side bulk selection.
+  def selection_scope
+    set_up
+    filter_by_assignee_type
+    @communication_threads
   end
 
   def perform_sidebar_unread_counts
