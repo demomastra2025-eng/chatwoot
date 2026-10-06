@@ -145,13 +145,14 @@ class Search::ConversationLookup
     regexp = Search::QueryText.yo?(@text) || Search::QueryText.gap?(@text)
     operator = regexp ? '~*' : 'ILIKE'
     pattern = regexp ? Search::QueryText.literal_regexp(@text) : Search::QueryText.like_pattern(@text)
+    attributes = normalized_content_attributes
     sql = ActiveRecord::Base.sanitize_sql_array([<<~SQL.squish, *Array.new(7, pattern)])
       messages.processed_message_content #{operator} ?
-      OR messages.content_attributes ->> 'text' #{operator} ?
-      OR messages.content_attributes ->> 'text_content' #{operator} ?
-      OR messages.content_attributes ->> 'transcribed_text' #{operator} ?
-      OR messages.content_attributes -> 'email' ->> 'subject' #{operator} ?
-      OR messages.content_attributes -> 'email' ->> 'text_content' #{operator} ?
+      OR #{attributes} ->> 'text' #{operator} ?
+      OR #{attributes} ->> 'text_content' #{operator} ?
+      OR #{attributes} ->> 'transcribed_text' #{operator} ?
+      OR #{attributes} -> 'email' ->> 'subject' #{operator} ?
+      OR #{attributes} -> 'email' ->> 'text_content' #{operator} ?
       OR EXISTS (
         SELECT 1 FROM attachments
         WHERE attachments.message_id = messages.id AND attachments.account_id = messages.account_id
@@ -159,6 +160,16 @@ class Search::ConversationLookup
       )
     SQL
     Arel::Nodes::Grouping.new(Arel.sql(sql))
+  end
+
+  def normalized_content_attributes
+    # ActiveRecord::Store writes a JSON string; imported rows can hold a JSON object.
+    <<~SQL.squish
+      (CASE json_typeof(messages.content_attributes)
+       WHEN 'object' THEN messages.content_attributes
+       WHEN 'string' THEN (messages.content_attributes #>> '{}')::json
+       ELSE '{}'::json END)
+    SQL
   end
 
   def bounded_ids(scope)
