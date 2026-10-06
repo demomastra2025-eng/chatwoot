@@ -4591,6 +4591,109 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.metadata.dig('metadata', 'operator_candidate_user_ids')).to eq([137])
     end
 
+    context 'when a Sipuni webhook report of another operator extension reaches a Janus operator leg' do
+      let(:janus_session) do
+        create(
+          :telephony_call_session,
+          account: account,
+          provider: 'sipuni',
+          direction: 'inbound',
+          status: 'ringing',
+          external_call_ref: 'sipuni:janus:104:raw-invite@sipuni-host:8201',
+          metadata: {
+            'metadata' => {
+              'source' => 'browser_janus_sip',
+              'route_action' => 'operator',
+              'route_reason' => 'operator_route',
+              'target_user_id' => 137,
+              'target_extension' => '205',
+              'target_sip_profile_id' => 104,
+              'operator_internal_extension' => '205',
+              'operator_pool' => true,
+              'operator_pool_size' => 2,
+              'operator_candidate_user_ids' => [137, 145],
+              'operator_candidate_sip_profile_ids' => [104, 105]
+            }
+          }
+        )
+      end
+      let(:sipuni_report_metadata) do
+        {
+          source: 'sipuni_http_api',
+          sipuni_event: '1',
+          sipuni_operator_leg: true,
+          sipuni_leg_kind: 'operator',
+          operator_internal_extension: '202',
+          operator_pool: true,
+          operator_pool_size: 1,
+          operator_candidates: [{ user_id: 145, sip_profile_id: 105, internal_extension: '202' }],
+          operator_candidate_user_ids: [145],
+          operator_candidate_sip_profile_ids: [105],
+          target_user_id: 145,
+          target_extension: '202'
+        }
+      end
+
+      def report_to(call_session, metadata)
+        described_class.new(
+          payload: payload.merge(
+            event_key: 'sipuni:janus-leg-2:1:ringing',
+            call_ref: call_session.external_call_ref,
+            provider: 'sipuni',
+            event: 'session_started',
+            status: 'ringing',
+            metadata: metadata
+          )
+        ).perform
+      end
+
+      it 'keeps the target and the candidates the browser route wrote' do
+        result = report_to(janus_session, sipuni_report_metadata)
+
+        expect(result.reload.metadata.fetch('metadata')).to include(
+          'target_user_id' => 137,
+          'target_extension' => '205',
+          'target_sip_profile_id' => 104,
+          'operator_internal_extension' => '205',
+          'operator_pool_size' => 2,
+          'operator_candidate_user_ids' => [137, 145],
+          'operator_candidate_sip_profile_ids' => [104, 105]
+        )
+        expect(result.metadata.dig('metadata', 'operator_candidates')).to be_nil
+      end
+
+      it 'still merges the rest of the report' do
+        result = report_to(janus_session, sipuni_report_metadata)
+
+        expect(result.reload.metadata.dig('metadata', 'sipuni_event')).to eq('1')
+        expect(result.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('operator')
+      end
+
+      it 'lets the route of the browser itself refresh the candidates' do
+        result = report_to(janus_session, source: 'browser_janus_sip', operator_candidate_user_ids: [137],
+                                          operator_candidate_sip_profile_ids: [104])
+
+        expect(result.reload.metadata.dig('metadata', 'operator_candidate_user_ids')).to eq([137])
+        expect(result.metadata.dig('metadata', 'operator_candidate_sip_profile_ids')).to eq([104])
+      end
+
+      it 'takes the candidates of a report on a Sipuni session that did not come through the browser' do
+        provider_session = create(
+          :telephony_call_session,
+          account: account,
+          provider: 'sipuni',
+          direction: 'inbound',
+          status: 'ringing',
+          external_call_ref: 'sipuni:provider-operator-leg-1',
+          metadata: { 'metadata' => { 'route_action' => 'operator', 'operator_candidate_user_ids' => [137] } }
+        )
+
+        result = report_to(provider_session, sipuni_report_metadata)
+
+        expect(result.reload.metadata.dig('metadata', 'operator_candidate_user_ids')).to eq([145])
+      end
+    end
+
     it 'stores an external leg report on a Sipuni session that did not come through the browser' do
       provider_session = create(
         :telephony_call_session,
