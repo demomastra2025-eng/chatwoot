@@ -198,7 +198,8 @@ class WebphoneClient extends EventTarget {
 
   // Sign-out takes the session from every tab of the browser, so the phone
   // goes offline now: the owner tab unregisters and tells the server to release
-  // the lease, a follower tab asks the owner tab to do it. Never rejects.
+  // the lease, a follower tab asks the owner tab to do it. Never rejects. While
+  // the owner tab has a call in progress nothing is released.
   releaseForLogout() {
     if (this.ownsNativeSip()) return this.releaseNativeSessionsForLogout();
 
@@ -206,6 +207,10 @@ class WebphoneClient extends EventTarget {
   }
 
   releaseNativeSessionsForLogout() {
+    // A call in progress is never hung up silently: the sign-out goes on and
+    // the beforeunload guard asks the operator before the page is left.
+    if (this.hasNativeCallInProgress()) return Promise.resolve([]);
+
     return Promise.all(
       this.nativeSessionKeys().map(sessionKey =>
         this.destroyNativeSession(

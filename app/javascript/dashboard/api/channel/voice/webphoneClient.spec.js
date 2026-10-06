@@ -1971,6 +1971,57 @@ describe('webphoneClient', () => {
       }
     });
 
+    it('keeps the call and the unload guard when the owner tab signs out during a call', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      client.hasActiveCall = true;
+      try {
+        WebphoneClient.syncNativeCallUnloadGuard();
+
+        await WebphoneClient.releaseForLogout();
+
+        expect(janusDestroyMock).not.toHaveBeenCalled();
+        expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
+        expect(WebphoneClient.nativeCallUnloadGuardRegistered).toBe(true);
+        const unload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(unload);
+        expect(unload.defaultPrevented).toBe(true);
+      } finally {
+        client.hasActiveCall = false;
+        WebphoneClient.syncNativeCallUnloadGuard();
+      }
+    });
+
+    it('keeps the call of the owner tab when a follower tab signs out', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      client.hasActiveCall = true;
+      const postSpy = vi
+        .spyOn(WebphoneClient.tabLeadership, 'post')
+        .mockImplementation(() => {});
+      try {
+        WebphoneClient.handleTabMessage({
+          type: 'logout-release',
+          requestId: 'request-2',
+          from: 'tab-follower',
+        });
+
+        await vi.waitFor(() => {
+          expect(postSpy).toHaveBeenCalledWith({
+            type: 'logout-release-done',
+            requestId: 'request-2',
+            to: 'tab-follower',
+          });
+        });
+        expect(janusDestroyMock).not.toHaveBeenCalled();
+        expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
+      } finally {
+        postSpy.mockRestore();
+        client.hasActiveCall = false;
+        WebphoneClient.syncNativeCallUnloadGuard();
+      }
+    });
+
     it('gives the phone up when another user signed in in this browser', async () => {
       await registerNativeSession();
       WebphoneClient.loadedUserUid = 'asel@example.com';
