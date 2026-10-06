@@ -43,18 +43,21 @@ RSpec.describe Meta::AdReferralRecorder do
   end
 
   it 'retries once when a concurrent duplicate insert wins the unique index race' do
+    winner = described_class.new(message: message, payload: payload).perform
     calls = 0
     allow(MetaAdReferral).to receive(:find_or_initialize_by).and_wrap_original do |original, *args|
       calls += 1
-      referral = original.call(*args)
-      allow(referral).to receive(:save!).and_raise(ActiveRecord::RecordNotUnique) if calls == 1
-      referral
+      if calls == 1
+        MetaAdReferral.new(args.first).tap { |referral| allow(referral).to receive(:valid?).and_return(true) }
+      else
+        original.call(*args)
+      end
     end
 
     referral = described_class.new(message: message, payload: payload).perform
 
     expect(calls).to eq(2)
-    expect(referral).to be_persisted
+    expect(referral).to eq(winner)
     expect(MetaAdReferral.where(provider: 'whatsapp', inbox: message.inbox, provider_message_id: 'wamid.meta-referral-1').count).to eq(1)
   end
 
@@ -69,12 +72,10 @@ RSpec.describe Meta::AdReferralRecorder do
         stale_referral = MetaAdReferral.new(args.first)
         allow(stale_referral).to receive(:valid?).and_return(true)
         allow(stale_referral).to receive(:save!).and_wrap_original do |save_original, *save_args|
-          begin
-            save_original.call(*save_args)
-          rescue ActiveRecord::RecordNotUnique
-            database_collision = true
-            raise
-          end
+          save_original.call(*save_args)
+        rescue ActiveRecord::RecordNotUnique
+          database_collision = true
+          raise
         end
         stale_referral
       else
@@ -101,7 +102,10 @@ RSpec.describe Meta::AdReferralRecorder do
   it 'keeps the outer transaction usable when the optional thread refresh loses a unique-index race' do
     account.enable_features!('communication_threads')
     conversation.refresh_communication_thread!
-    allow_any_instance_of(CommunicationThreadConversation).to receive(:valid?).and_return(true)
+    allow(CommunicationThreadConversation).to receive(:create!) do |*args, **kwargs|
+      attributes = kwargs.presence || args.first
+      CommunicationThreadConversation.new(attributes).save!(validate: false)
+    end
     allow(conversation).to receive(:communication_thread).and_return(nil)
 
     link_lookup_calls = 0
