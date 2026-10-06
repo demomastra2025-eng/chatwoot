@@ -86,7 +86,8 @@ class Scheduling::ResourceSearchService
   def equal_first(scope, equal_ids)
     return scope.ordered if equal_ids.empty?
 
-    scope.order(Arel.sql("CASE WHEN scheduling_resources.id IN (#{equal_ids.map(&:to_i).join(',')}) THEN 0 ELSE 1 END"), :name, :id)
+    equal_rank = Arel::Nodes::Case.new.when(Scheduling::Resource.arel_table[:id].in(equal_ids)).then(0).else(1)
+    scope.order(equal_rank.asc, :name, :id)
   end
 
   def resource_row(resource, equal_ids)
