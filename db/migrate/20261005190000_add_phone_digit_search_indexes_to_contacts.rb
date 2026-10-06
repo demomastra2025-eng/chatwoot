@@ -11,6 +11,12 @@ class AddPhoneDigitSearchIndexesToContacts < ActiveRecord::Migration[7.1]
   # short time: when the table is busy the attempt is cancelled and repeated a few times, so that the migration never
   # queues behind a long transaction and blocks the writers that queue behind it. Both settings are put back to what the
   # session had before, not to the server default.
+  #
+  # A new expression index has NO statistics until the table is analysed, and without them the planner assumes that a
+  # number matches 0.5% of the table: for a complete number it then walks the contacts of the account in order and
+  # stops at the LIMIT instead of using the indexes (measured on 56,000 contacts of one account: 407 ms instead of
+  # 3 ms). So the table is analysed (a sample of 30,000 rows, no table rewrite, SHARE UPDATE EXCLUSIVE only) as the last
+  # step of #up, and the statistics exist from the first search after the deploy, not after the next autovacuum.
   disable_ddl_transaction!
 
   DIGITS = "regexp_replace(phone_number, '[^0-9]'::text, ''::text, 'g'::text)".freeze
@@ -26,6 +32,7 @@ class AddPhoneDigitSearchIndexesToContacts < ActiveRecord::Migration[7.1]
   def up
     with_build_timeouts do
       INDEXES.each { |name, definition| build_index(name, definition) }
+      with_retries { execute('ANALYZE contacts') }
     end
   end
 

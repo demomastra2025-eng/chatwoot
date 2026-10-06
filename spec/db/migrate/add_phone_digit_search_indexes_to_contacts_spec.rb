@@ -135,6 +135,20 @@ RSpec.describe AddPhoneDigitSearchIndexesToContacts do
     end
   end
 
+  # Without statistics the planner takes the default 0.5% estimate for an expression index and walks the account instead.
+  it 'analyses contacts after building the indexes, so that the new indexes have statistics from the first search' do
+    account = create(:account)
+    Contact.insert_all(Array.new(50) { |index| { account_id: account.id, name: "Контакт #{index}", phone_number: "+7701#{2_000_000 + index}" } })
+
+    migrate
+
+    statistics = db.select_values("SELECT DISTINCT tablename FROM pg_stats WHERE tablename IN (#{quoted_names})")
+    expect(statistics).to match_array(names)
+  ensure
+    Contact.where(account_id: account.id).delete_all
+    account.destroy
+  end
+
   it 'is reversible' do
     migrate
     migrate(:down)
@@ -184,6 +198,42 @@ RSpec.describe AddPhoneDigitSearchIndexesToContacts do
                                                                                                 "expected #{text.inspect} to use the trigram index"
         end
       end
+    end
+  end
+
+  # The statement the contacts search sends for a complete number: the whole ContactQuery condition (the name, e-mail,
+  # phone and identifier arms and the phone digit arms) with the page LIMIT, on a table of the size of production (56,000
+  # contacts of one account), with no planner setting changed and no ANALYZE other than the one of the migration. Without
+  # the statistics that the migration collects, the planner takes the default 0.5% estimate, reads the table in order and
+  # stops at the LIMIT (measured: 390 ms instead of 9 ms).
+  describe 'the plan of the whole search for a complete number, right after the migration' do
+    let(:account) { create(:account) }
+    let(:number) { '8 (701) 100-12-34' }
+
+    before do
+      db.execute(<<~SQL.squish)
+        INSERT INTO contacts (account_id, name, phone_number, created_at, updated_at)
+        SELECT #{account.id}, 'Контакт ' || series, '+7701' || (1000000 + series), now(), now() FROM generate_series(0, 55999) AS series
+      SQL
+      db.execute('VACUUM contacts') # a table that has been in use: the sizes of the other indexes are known to the planner
+      migrate
+    end
+
+    after do
+      db.execute('SET statement_timeout = 0')
+      Contact.where(account_id: account.id).delete_all
+      db.execute('RESET statement_timeout')
+      account.destroy
+    end
+
+    def plan
+      db.select_values("EXPLAIN #{Search::ContactQuery.new(number).apply(account.contacts).limit(15).to_sql}").join("\n")
+    end
+
+    it 'finds the contact and answers from the new indexes, not by reading the account in order' do
+      expect(Search::ContactQuery.new(number).apply(account.contacts).pluck(:phone_number)).to eq(['+77011001234'])
+      expect(plan).to include('index_contacts_on_account_id_and_phone_national', 'index_contacts_on_phone_digits_trgm')
+      expect(plan).not_to match(/Seq Scan|Index Scan using index_contacts_on_account_id on contacts/)
     end
   end
 end
