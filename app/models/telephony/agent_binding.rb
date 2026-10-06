@@ -54,7 +54,7 @@ class Telephony::AgentBinding < ApplicationRecord
       credentials_ref: credentials_ref,
       enabled: enabled,
       registered_for_routing: registered_for_routing?,
-      registration_state: metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state'),
+      registration_state: exposed_registration_state,
       last_presence_source: metadata_value('last_presence_source'),
       last_presence_event_at: metadata_value('last_presence_event_at'),
       last_synced_at: last_synced_at
@@ -80,17 +80,29 @@ class Telephony::AgentBinding < ApplicationRecord
   def registered_for_routing?
     return false unless enabled?
 
-    registration_state = metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
-    registered = if registration_state.blank?
-                   truthy_metadata?('registered', 'online', 'available')
-                 else
-                   %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
-                 end
-
-    registered && registration_fresh? && registration_stable?
+    reported_online? && registration_fresh? && registration_stable?
   end
 
   private
+
+  def reported_registration_state
+    metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
+  end
+
+  def reported_online?
+    state = reported_registration_state
+    return truthy_metadata?('registered', 'online', 'available') if state.blank?
+
+    %w[registered online available reachable active].include?(state.to_s.strip.downcase)
+  end
+
+  # Nothing flips the stored flags when the heartbeats stop, so the exposed
+  # state follows the freshness the routing uses.
+  def exposed_registration_state
+    return 'offline' if reported_online? && !registration_fresh?
+
+    reported_registration_state
+  end
 
   def registration_fresh?
     timestamp = registration_timestamp

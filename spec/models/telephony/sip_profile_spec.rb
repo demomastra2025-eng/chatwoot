@@ -386,4 +386,143 @@ RSpec.describe Telephony::SipProfile do
       )
     end
   end
+
+  describe 'a browser phone that follows its user' do
+    def register_browser_phone(profile, browser_instance_id: 'browser-1')
+      lease = profile.acquire_browser_registration_lease!(
+        client_instance_id: "tab-#{profile.id}", browser_instance_id: browser_instance_id, user_id: profile.user_id
+      )
+      context = {
+        registration_config_version: profile.registration_config_version,
+        registration_instance_id: lease.fetch(:registration_instance_id),
+        janus_session_id: "janus-session-#{profile.id}",
+        janus_handle_id: "janus-handle-#{profile.id}"
+      }
+      profile.update_browser_registration!(registered: true, registration_context: context)
+      context
+    end
+
+    def acquire_for_user(profile, browser_instance_id:, client_instance_id: "tab-new-#{profile.id}")
+      profile.acquire_browser_registration_lease!(
+        client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: profile.user_id
+      )
+    end
+
+    describe 'exposed registration state' do
+      it 'reports a browser phone with fresh heartbeats as registered' do
+        profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+        register_browser_phone(profile)
+
+        payload = profile.reload.to_telephony_h
+
+        expect(payload).to include(registered_for_routing: true, registration_state: 'registered')
+        expect(payload[:metadata]).to include('presence' => 'online', 'registered' => true)
+      end
+
+      it 'reports offline once the heartbeats stopped, while the stored flags stay as they were' do
+        freeze_time do
+          profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+          register_browser_phone(profile)
+          travel 3.minutes
+
+          payload = profile.reload.to_telephony_h
+
+          expect(payload).to include(registered_for_routing: false, registration_state: 'offline')
+          expect(payload[:metadata]).to include(
+            'registration_state' => 'offline', 'presence' => 'offline', 'registered' => false, 'available' => false
+          )
+          expect(profile.metadata).to include('registration_state' => 'registered', 'presence' => 'online', 'registered' => true)
+        end
+      end
+
+      it 'keeps the provider reported state of a profile that is not a browser phone' do
+        profile = create(:telephony_sip_profile, availability_mode: 'external_extension')
+        profile.update_columns(metadata: { 'registration_state' => 'registered', 'last_presence_event_at' => 1.day.ago.iso8601 })
+
+        expect(profile.reload.to_telephony_h).to include(registration_state: 'registered')
+      end
+
+      it 'does not invent a state for a browser phone that never reported one' do
+        profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+        profile.update_columns(metadata: {})
+
+        expect(profile.reload.to_telephony_h).not_to have_key(:registration_state)
+      end
+    end
+
+    describe 'one browser serves one signed-in user' do
+      let(:asel) { create(:telephony_sip_profile, availability_mode: 'browser_webphone') }
+      let(:marina) { create(:telephony_sip_profile, availability_mode: 'browser_webphone') }
+
+      it 'releases the phone of the previous user as soon as another user registers in the same browser' do
+        register_browser_phone(asel)
+        expect(asel.reload).to be_registered_for_routing
+
+        result = acquire_for_user(marina, browser_instance_id: 'browser-1')
+
+        expect(result).to include(acquired: true)
+        asel.reload
+        expect(asel).not_to be_registered_for_routing
+        expect(asel.metadata).to include('registration_state' => 'offline', 'presence' => 'offline', 'registered' => false)
+        expect(asel.metadata).not_to have_key('browser_registration_lease')
+        expect(asel.metadata['last_browser_release']).to include(
+          'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => marina.user_id
+        )
+      end
+
+      it 'does not let the released phone come back with a late heartbeat' do
+        asel_context = register_browser_phone(asel)
+        acquire_for_user(marina, browser_instance_id: 'browser-1')
+
+        expect(asel.reload.update_browser_registration!(registered: true, registration_context: asel_context)).to eq(:conflict)
+        expect(asel.reload).not_to be_registered_for_routing
+      end
+
+      it 'leaves the other profiles of the user who signs in alone' do
+        marina_second_line = create(
+          :telephony_sip_profile, availability_mode: 'browser_webphone', account: marina.account, user: marina.user
+        )
+        register_browser_phone(marina_second_line)
+
+        acquire_for_user(marina, browser_instance_id: 'browser-1')
+
+        expect(marina_second_line.reload).to be_registered_for_routing
+      end
+
+      it 'leaves a phone registered from another browser alone' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+
+        acquire_for_user(marina, browser_instance_id: 'browser-2')
+
+        expect(asel.reload).to be_registered_for_routing
+      end
+
+      it 'does not release anything when the new user does not get the lease' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+        marina.acquire_browser_registration_lease!(client_instance_id: 'tab-home', browser_instance_id: 'browser-3', user_id: marina.user_id)
+
+        result = acquire_for_user(marina, browser_instance_id: 'browser-1', client_instance_id: 'tab-office')
+
+        expect(result).to include(acquired: false)
+        expect(asel.reload).to be_registered_for_routing
+      end
+
+      it 'does nothing for a request that carries no browser identity' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+
+        acquire_for_user(marina, browser_instance_id: nil)
+
+        expect(asel.reload).to be_registered_for_routing
+      end
+
+      it 'does not touch the phone of the same user in another tab of the browser' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+
+        result = acquire_for_user(asel, browser_instance_id: 'browser-1', client_instance_id: 'tab-second')
+
+        expect(result).to include(acquired: true)
+        expect(asel.reload.metadata).not_to have_key('last_browser_release')
+      end
+    end
+  end
 end

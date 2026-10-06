@@ -14,4 +14,19 @@ RSpec.describe Telephony::AgentBinding do
       end
     end
   end
+
+  describe '#to_telephony_h' do
+    it 'reports a browser registration without fresh heartbeats as offline' do
+      freeze_time do
+        binding = create(:telephony_agent_binding, :registered)
+        expect(binding.to_telephony_h).to include(registered_for_routing: true, registration_state: 'registered')
+
+        travel 6.minutes
+        stale = binding.reload.to_telephony_h
+
+        expect(stale).to include(registered_for_routing: false, registration_state: 'offline')
+        expect(binding.metadata).to include('registration_state' => 'registered', 'presence' => 'online')
+      end
+    end
+  end
 end

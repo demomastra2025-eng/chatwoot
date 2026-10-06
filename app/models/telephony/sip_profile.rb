@@ -129,20 +129,24 @@ class Telephony::SipProfile < ApplicationRecord
       availability_mode: availability_mode,
       status: status,
       registered_for_routing: registered_for_routing?,
-      registration_state: metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state'),
+      registration_state: exposed_registration_state,
       last_presence_source: metadata_value('last_presence_source'),
       last_presence_event_at: metadata_value('last_presence_event_at'),
       last_registration_failure: metadata_value(LAST_REGISTRATION_FAILURE_KEY),
       managed_by: managed_by,
       ownership_status: ownership_status,
       last_synced_at: last_synced_at,
-      metadata: metadata
+      metadata: exposed_metadata
     }
     payload.compact
   end
 
   DEFAULT_REGISTRATION_TTL = 2.minutes
   DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
+  OFFLINE_REGISTRATION_METADATA = {
+    'registration_state' => 'offline', 'presence' => 'offline', 'registered' => false, 'available' => false
+  }.freeze
+  private_constant :OFFLINE_REGISTRATION_METADATA
   BROWSER_REGISTRATION_LEASE_KEY = 'browser_registration_lease'
   LAST_REGISTRATION_FAILURE_KEY = 'last_registration_failure'
   REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
@@ -307,7 +311,29 @@ class Telephony::SipProfile < ApplicationRecord
       result = { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
     end
 
+    release_other_users_in_browser!(browser_instance_id, user_id, occurred_at) if result[:acquired]
     result
+  end
+
+  # One browser profile shares its cookies, so it serves one signed-in user at a
+  # time: the phone another user registered from this browser goes offline now
+  # instead of waiting for its lease to expire.
+  def release_browser_registration_for_other_user!(browser_instance_id:, by_user_id:, occurred_at: Time.current)
+    with_lock do
+      reload
+      lease = browser_registration_lease
+      next unless lease['browser_instance_id'].to_s == browser_instance_id.to_s
+      next if lease['user_id'].to_s == by_user_id.to_s
+      next unless browser_registration_lease_active?(lease, occurred_at)
+
+      registration_metadata = (metadata || {}).deep_dup
+      release_browser_registration!(registration_metadata, occurred_at)
+      registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY)
+      registration_metadata['last_browser_release'] = {
+        'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => by_user_id, 'at' => occurred_at.iso8601
+      }
+      update!(metadata: registration_metadata)
+    end
   end
 
   def browser_registration_lease_valid?(registration_instance_id, occurred_at: Time.current)
@@ -387,17 +413,50 @@ class Telephony::SipProfile < ApplicationRecord
   def browser_registered?
     return false unless availability_mode == 'browser_webphone'
 
-    registered = if registration_state.blank?
-                   truthy_metadata?('registered', 'online', 'available')
-                 else
-                   %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
-                 end
-
-    registered && registration_fresh? && registration_stable? && registration_context_current? &&
+    reported_online? && registration_fresh? && registration_stable? && registration_context_current? &&
       browser_registration_instance_context_present?
   end
 
   private
+
+  def reported_online?
+    return truthy_metadata?('registered', 'online', 'available') if registration_state.blank?
+
+    %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
+  end
+
+  # Only heartbeats keep a browser phone online and nothing flips the stored
+  # flags when they stop, so what is shown follows the freshness the routing
+  # uses. The stored fields stay as they are.
+  def stale_browser_registration?
+    availability_mode == 'browser_webphone' && reported_online? && !registration_fresh?
+  end
+
+  def exposed_registration_state
+    return 'offline' if stale_browser_registration?
+
+    metadata_value('registration_state', 'registrationState', 'registration', 'presence', 'status', 'state')
+  end
+
+  def exposed_metadata
+    return metadata unless stale_browser_registration?
+
+    metadata.to_h.merge(OFFLINE_REGISTRATION_METADATA)
+  end
+
+  def release_other_users_in_browser!(browser_instance_id, user_id, occurred_at)
+    return if browser_instance_id.blank?
+
+    self.class.where.not(id: id)
+        .where("metadata -> 'browser_registration_lease' ->> 'browser_instance_id' = ?", browser_instance_id.to_s)
+        .find_each do |other_profile|
+      other_profile.release_browser_registration_for_other_user!(
+        browser_instance_id: browser_instance_id, by_user_id: user_id, occurred_at: occurred_at
+      )
+    end
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn("[Telephony::SipProfile] releasing other users of a browser failed: #{e.class}")
+  end
 
   def normalize_values
     self.profile_kind = profile_kind.to_s.strip.downcase.presence || PROFILE_KIND_HUMAN_OPERATOR
