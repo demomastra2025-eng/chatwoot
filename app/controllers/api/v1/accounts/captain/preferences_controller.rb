@@ -41,7 +41,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
 
   def show
-    render json: params[:section] == 'usage' ? { usage: usage_payload } : preferences_payload
+    render json: preferences_payload
   end
 
   def update
@@ -54,7 +54,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       @current_account.captain_observability = params_to_update[:captain_observability] if params_to_update[:captain_observability]
       update_provider_credentials if provider_credentials_update?
       @current_account.save!
-      update_account_budget_policy(params_to_update[:captain_budget]) if params_to_update.key?(:captain_budget)
     end
 
     render json: preferences_payload
@@ -75,7 +74,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
             observability: observability_with_account_preferences,
             provider_credentials: provider_credentials_payload,
             runtime_metadata: runtime_metadata_payload
-          }.tap { |payload| payload[:usage] = usage_payload unless params[:include_usage] == 'false' }
+          }
         end
       end
     end
@@ -116,7 +115,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     permitted[:captain_features] = merged_captain_features if params[:captain_features].present?
     permitted[:captain_runtime] = merged_captain_runtime if params[:captain_runtime].present?
     permitted[:captain_observability] = merged_captain_observability if params[:captain_observability].present?
-    permitted[:captain_budget] = permitted_captain_budget if params[:captain_budget].present?
     permitted
   end
 
@@ -274,18 +272,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     ).to_h.stringify_keys
   end
 
-  def permitted_captain_budget
-    permitted = params.require(:captain_budget).permit(
-      :active,
-      :hard_stop,
-      :daily_budget,
-      :monthly_budget,
-      :warning_threshold
-    ).to_h.stringify_keys
-
-    normalize_captain_budget(permitted)
-  end
-
   def features_with_account_preferences
     preferences = Current.account.captain_preferences
     account_features = preferences[:features] || {}
@@ -356,10 +342,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       document_parse_max_file_bytes: Llm::RuntimePolicy.web_document_parse_max_file_bytes,
       document_parse_provider_max_file_bytes: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_PROVIDER_MAX_FILE_BYTES
     }
-  end
-
-  def usage_payload
-    Llm::AccountUsageSummary.call(account: Current.account)
   end
 
   def observability_with_account_preferences
@@ -590,25 +572,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     config.compact
   end
 
-  def normalize_captain_budget(config)
-    %w[active hard_stop].each do |key|
-      config[key] = ActiveModel::Type::Boolean.new.cast(config[key]) if config.key?(key)
-    end
-    %w[daily_budget monthly_budget warning_threshold].each do |key|
-      config[key] = decimal_value(config[key]) if config.key?(key)
-    end
-    config
-  end
-
-  def update_account_budget_policy(config)
-    policy = LlmBudgetPolicy.find_or_initialize_by(account_id: @current_account.id, scope_type: 'account', feature: nil)
-    policy.assign_attributes(config)
-    policy.account = @current_account
-    policy.scope_type = 'account'
-    policy.feature = nil
-    policy.save!
-  end
-
   def integer_value(value)
     return nil if value.blank?
 
@@ -625,11 +588,5 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     value
   end
 
-  def decimal_value(value)
-    return nil if value.blank?
 
-    BigDecimal(value.to_s)
-  rescue ArgumentError, TypeError
-    value
-  end
 end

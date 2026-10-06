@@ -73,24 +73,6 @@ RSpec.describe Llm::OpenRouterRuntime do
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
-  it 'blocks chat provider execution when the local account budget is exhausted' do
-    persisted_account = create(:account)
-    budgeted_runtime = described_class.new(account: persisted_account)
-    request = Llm::FeatureRequest.new(
-      feature: :captain_agent,
-      account: persisted_account,
-      model: 'openai/gpt-5.4-mini',
-      messages: [{ role: 'user', content: 'Hello' }]
-    )
-    create(:llm_budget_policy, account: persisted_account, daily_budget: 1.0, hard_stop: true)
-    create(:llm_usage_event, account: persisted_account, estimated_cost: 1.01, occurred_at: Time.zone.now)
-
-    expect(Llm::ChatRequestRunner).not_to receive(:new)
-
-    expect { budgeted_runtime.chat(request) }
-      .to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
-  end
-
   it 'builds stateful chats through the compiled OpenRouter runtime profile' do
     context = instance_double(RubyLLM::Context)
     chat = instance_double(RubyLLM::Chat)
@@ -191,53 +173,21 @@ RSpec.describe Llm::OpenRouterRuntime do
     ).to eq(response)
   end
 
-  it 'blocks budget-exceeded chat requests before provider execution' do
+  it 'runs chat requests with a stored exhausted budget policy' do
     budget_account = create(:account)
-    budget_runtime = described_class.new(account: budget_account)
     create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
+    allow(Llm::Config).to receive(:api_key).with('openrouter', account: budget_account).and_return('openrouter-key')
+    allow(Llm::Config).to receive(:api_base).with('openrouter', account: budget_account).and_return('https://openrouter.example/api/v1')
     request = Llm::FeatureRequest.new(
       feature: :captain_agent,
       account: budget_account,
       model: 'openai/gpt-5.4-mini',
-      messages: [{ role: 'user', content: 'Hello' }],
-      options: { estimated_cost: 0.01 }
+      messages: [{ role: 'user', content: 'Hello' }]
     )
+    runner = instance_double(Llm::ChatRequestRunner, call: :response)
 
-    expect(Llm::ChatRequestRunner).not_to receive(:new)
-
-    expect { budget_runtime.chat(request) }
-      .to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
-  end
-
-  it 'blocks observed stateful asks when the account budget is exhausted' do
-    budget_account = create(:account)
-    budget_runtime = described_class.new(account: budget_account)
-    create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
-    chat = instance_double(RubyLLM::Chat)
-
-    expect(Llm::ChatClient).not_to receive(:ask)
-
-    expect do
-      budget_runtime.ask(
-        chat,
-        'hello',
-        model: 'openai/gpt-5.4-mini',
-        observability: { feature: 'assistant', estimated_cost: 0.01 }
-      )
-    end.to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
-  end
-
-  it 'blocks stateful asks without feature observability when the account budget is exhausted' do
-    budget_account = create(:account)
-    budget_runtime = described_class.new(account: budget_account)
-    create(:llm_budget_policy, account: budget_account, daily_budget: 0, hard_stop: true)
-    chat = instance_double(RubyLLM::Chat)
-
-    expect(Llm::ChatClient).not_to receive(:ask)
-
-    expect do
-      budget_runtime.ask(chat, 'hello', model: 'openai/gpt-5.4-mini', observability: { trace_id: 'trace-1' })
-    end.to raise_error(Llm::BudgetEvaluator::BudgetExceededError, /daily_budget_exceeded/)
+    expect(Llm::ChatRequestRunner).to receive(:new).and_return(runner)
+    expect(described_class.new(account: budget_account).chat(request)).to eq(:response)
   end
 
   it 'routes native embeddings to the OpenRouter embedding client' do
