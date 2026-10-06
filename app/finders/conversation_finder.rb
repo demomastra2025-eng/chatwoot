@@ -42,7 +42,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   # params
   # assignee_type, inbox_id, :status
 
-  def initialize(current_user, params, current_account: current_user.account)
+  def initialize(current_user, params, current_account = current_user.account)
     @current_user = current_user
     @current_account = current_account
     @is_admin = current_account.account_users.find_by(user_id: current_user.id)&.administrator?
@@ -96,10 +96,16 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def set_inboxes
     @inbox_ids = if params[:inbox_id]
-                   @current_user.assigned_inboxes.where(id: params[:inbox_id])
+                   assigned_inboxes.where(id: params[:inbox_id])
                  else
-                   @current_user.assigned_inboxes.pluck(:id)
+                   assigned_inboxes.pluck(:id)
                  end
+  end
+
+  # Same rule as User#assigned_inboxes, but for the account the finder was built
+  # with: bulk selection runs without Current.account (service and job callers).
+  def assigned_inboxes
+    @is_admin ? current_account.inboxes : @current_user.inboxes.where(account_id: current_account.id)
   end
 
   def set_assignee_type

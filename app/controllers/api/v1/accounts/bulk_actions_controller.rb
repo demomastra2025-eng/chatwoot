@@ -24,14 +24,7 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     ensure_communication_threads_feature_enabled! if normalized_type == 'CommunicationThread'
     return if performed?
 
-    result = BulkActions::SelectionSnapshot.new(
-      account: @current_account,
-      user: current_user,
-      resource_type: normalized_type,
-      filters: selection_filters
-    ).perform
-
-    render json: { payload: result.to_h }, status: :ok
+    render json: { payload: capture_selection.to_h }, status: :ok
   rescue BulkActions::SelectionSnapshot::TooManyRecords => e
     render json: { error: { code: 'selection_limit_exceeded', limit: e.limit } }, status: :unprocessable_content
   rescue BulkActions::SelectionSnapshot::EmptySelection
@@ -51,6 +44,15 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   end
 
   private
+
+  def capture_selection
+    BulkActions::SelectionSnapshot.new(
+      account: @current_account,
+      user: current_user,
+      resource_type: normalized_type,
+      filters: selection_filters
+    ).perform
+  end
 
   def normalized_type
     params[:type].to_s.camelize
@@ -128,13 +130,11 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     return 'remove_labels' if params.dig(:labels, :remove).present?
     return 'add_labels' if params.dig(:labels, :add).present?
 
-    fields = conversation_fields
-    return 'update' if (fields.keys - ['status_reason', :status_reason]).size > 1
-    return 'update_status' if fields.key?(:status) || fields.key?('status')
-    return 'assign_agent' if fields.key?(:assignee_id) || fields.key?('assignee_id')
-    return 'assign_team' if fields.key?(:team_id) || fields.key?('team_id')
+    field_keys = conversation_fields.keys.map(&:to_s) - ['status_reason']
+    return 'update' if field_keys.size > 1
 
-    'update'
+    { 'status' => 'update_status', 'assignee_id' => 'assign_agent', 'team_id' => 'assign_team' }
+      .fetch(field_keys.first, 'update')
   end
 
   def conversation_fields
@@ -151,7 +151,8 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
   def selected_snapshot
     token = params[:selection_token]
     return if token.blank?
-    raise BulkActions::SelectionSnapshot::InvalidSelection if params[:ids].present?
+
+    validate_snapshot_payload!
 
     claims = BulkActions::SelectionSnapshot.verify!(
       token,
@@ -159,13 +160,23 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
       user: current_user,
       resource_type: normalized_type
     )
+    apply_snapshot_exclusions(claims)
+  end
+
+  def validate_snapshot_payload!
+    conflicting_keys = %i[ids filters count selection_count record_ids]
+    return unless conflicting_keys.any? { |key| params.key?(key) }
+
+    raise BulkActions::SelectionSnapshot::InvalidSelection
+  end
+
+  def apply_snapshot_exclusions(claims)
     excluded_ids = Array(params[:excluded_ids]).map { |id| Integer(id) }
-    raise BulkActions::SelectionSnapshot::InvalidSelection if excluded_ids.size > claims.count
-    raise BulkActions::SelectionSnapshot::InvalidSelection unless excluded_ids.uniq == excluded_ids
-    raise BulkActions::SelectionSnapshot::InvalidSelection unless (excluded_ids - claims.ids).empty?
+    validate_excluded_ids!(claims, excluded_ids)
 
     ids = claims.ids - excluded_ids
     raise BulkActions::SelectionSnapshot::InvalidSelection if ids.empty?
+
     record_ids_by_id = claims.ids.zip(claims.record_ids).to_h
 
     BulkActions::SelectionSnapshot::Claims.new(
@@ -176,6 +187,12 @@ class Api::V1::Accounts::BulkActionsController < Api::V1::Accounts::BaseControll
     )
   rescue ArgumentError, TypeError
     raise BulkActions::SelectionSnapshot::InvalidSelection
+  end
+
+  def validate_excluded_ids!(claims, excluded_ids)
+    raise BulkActions::SelectionSnapshot::InvalidSelection if excluded_ids.size > claims.count
+    raise BulkActions::SelectionSnapshot::InvalidSelection unless excluded_ids.uniq == excluded_ids
+    raise BulkActions::SelectionSnapshot::InvalidSelection unless (excluded_ids - claims.ids).empty?
   end
 
   def ensure_communication_threads_feature_enabled!

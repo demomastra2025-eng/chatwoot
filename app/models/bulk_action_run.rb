@@ -58,19 +58,13 @@ class BulkActionRun < ApplicationRecord
   end
 
   def advance!(processed_increment: 1, failed_increment: 0, skipped_increment: 0)
-    self.class.where(id: id).update_all(
-      [
-        'processed_count = processed_count + ?, failed_count = failed_count + ?, updated_at = ?',
-        processed_increment,
-        failed_increment,
-        Time.current
-      ]
-    )
-    reload
-    return if skipped_increment.zero?
-
-    skipped_count = (metadata || {}).fetch('skipped_count', 0).to_i + skipped_increment
-    update!(metadata: (metadata || {}).merge('skipped_count' => skipped_count))
+    with_lock do
+      self.processed_count += processed_increment
+      self.failed_count += failed_increment
+      skipped_count = (metadata || {}).fetch('skipped_count', 0).to_i + skipped_increment
+      self.metadata = (metadata || {}).merge('skipped_count' => skipped_count)
+      save!
+    end
   end
 
   def complete!
@@ -105,6 +99,7 @@ class BulkActionRun < ApplicationRecord
       processed_count: processed_count,
       failed_count: failed_count,
       skipped_count: (metadata || {}).fetch('skipped_count', 0).to_i,
+      done_count: processed_count - failed_count - (metadata || {}).fetch('skipped_count', 0).to_i,
       progress_percentage: progress_percentage,
       error_message: error_message,
       metadata: metadata || {},

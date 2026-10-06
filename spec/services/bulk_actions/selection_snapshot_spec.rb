@@ -2,6 +2,75 @@ require 'rails_helper'
 
 RSpec.describe BulkActions::SelectionSnapshot do
   let(:account) { create(:account) }
+  let(:advanced_filter_fixture) do
+    team = create(:team, account: account)
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    other_stage = create(:crm_stage, account: account, pipeline: pipeline)
+
+    matching = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      team: team,
+      status: :open,
+      agent_last_seen_at: 1.hour.ago
+    )
+    other_stage_conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      team: team,
+      status: :open,
+      agent_last_seen_at: 1.hour.ago
+    )
+    other_appointment_conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      team: team,
+      status: :open,
+      agent_last_seen_at: 1.hour.ago
+    )
+    without_label = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      team: team,
+      status: :open,
+      agent_last_seen_at: 1.hour.ago
+    )
+    without_team = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      status: :open,
+      agent_last_seen_at: 1.hour.ago
+    )
+    read_conversation = create(
+      :conversation,
+      account: account,
+      inbox: inbox,
+      team: team,
+      status: :open,
+      agent_last_seen_at: 1.minute.ago
+    )
+
+    [matching, other_stage_conversation, other_appointment_conversation, without_label, without_team, read_conversation].each do |conversation|
+      create(:message, account: account, conversation: conversation, inbox: inbox, created_at: 10.minutes.ago)
+    end
+    [matching, other_stage_conversation, other_appointment_conversation, without_team, read_conversation].each do |conversation|
+      conversation.add_labels(['vip'])
+    end
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: matching)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage, originating_conversation: other_stage_conversation)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: other_appointment_conversation)
+    create(:scheduling_appointment, account: account, contact: matching.contact, conversation: matching, status: 'confirmed')
+    create(:scheduling_appointment, account: account, contact: other_appointment_conversation.contact, conversation: other_appointment_conversation,
+                                    status: 'scheduled')
+
+    [matching, pipeline, stage]
+  end
   let(:user) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account) }
 
@@ -16,26 +85,25 @@ RSpec.describe BulkActions::SelectionSnapshot do
     ).perform
   end
 
+  def create_thread_in(target_inbox)
+    contact = create(:contact, account: account)
+    thread = create(:communication_thread, account: account, contact: contact)
+    conversation = create(:conversation, account: account, inbox: target_inbox, contact: contact, status: :open)
+    CommunicationThreadConversation.where(account_id: account.id, conversation_id: conversation.id).delete_all
+    conversation.association(:communication_thread_conversation).reset
+    conversation.association(:communication_thread).reset
+    create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+    thread
+  end
+
   def insert_open_conversations(count, first_display_id: 1)
-    timestamp = Time.current
-    Conversation.insert_all!(
-      (first_display_id...(first_display_id + count)).map do |display_id|
-        {
-          account_id: account.id,
-          inbox_id: inbox.id,
-          display_id: display_id,
-          status: Conversation.statuses.fetch('open'),
-          created_at: timestamp,
-          updated_at: timestamp,
-          last_activity_at: timestamp,
-          uuid: SecureRandom.uuid
-        }
-      end
-    )
+    count.times do |offset|
+      create(:conversation, account: account, inbox: inbox, status: :open, display_id: first_display_id + offset)
+    end
   end
 
   it 'selects matching conversations beyond one page without loading card content' do
-    count = ConversationFinder::RESULTS_PER_PAGE + 7
+    count = ENV.fetch('CONVERSATION_RESULTS_PER_PAGE', '25').to_i + 7
     insert_open_conversations(count)
 
     selection = create_snapshot(filters: { inbox_id: inbox.id, status: 'all' })
@@ -94,77 +162,13 @@ RSpec.describe BulkActions::SelectionSnapshot do
 
     expect(selection.ids.size).to eq(threads.size)
     expect(selection.record_ids).to match_array(threads.map(&:id))
-    expect(selection.inbox_ids).to match_array([inbox.id, second_inbox.id])
+    expect(selection.inbox_ids).to contain_exactly(inbox.id, second_inbox.id)
     expect(selection.inbox_ids_by_id.keys).to match_array(threads.map { |thread| thread.display_id.to_s })
-    expect(selection.inbox_ids_by_id.fetch(threads.first.display_id.to_s)).to match_array([inbox.id, second_inbox.id])
+    expect(selection.inbox_ids_by_id.fetch(threads.first.display_id.to_s)).to contain_exactly(inbox.id, second_inbox.id)
   end
 
   it 'applies saved advanced filters together with CRM, appointment, unread, label, and team contexts' do
-    team = create(:team, account: account)
-    pipeline = create(:crm_pipeline, account: account)
-    stage = create(:crm_stage, account: account, pipeline: pipeline)
-    other_stage = create(:crm_stage, account: account, pipeline: pipeline)
-
-    matching = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      team: team,
-      status: :pending,
-      agent_last_seen_at: 1.hour.ago
-    )
-    other_stage_conversation = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      team: team,
-      status: :pending,
-      agent_last_seen_at: 1.hour.ago
-    )
-    other_appointment_conversation = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      team: team,
-      status: :pending,
-      agent_last_seen_at: 1.hour.ago
-    )
-    without_label = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      team: team,
-      status: :pending,
-      agent_last_seen_at: 1.hour.ago
-    )
-    without_team = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      status: :pending,
-      agent_last_seen_at: 1.hour.ago
-    )
-    read_conversation = create(
-      :conversation,
-      account: account,
-      inbox: inbox,
-      team: team,
-      status: :pending,
-      agent_last_seen_at: 1.minute.ago
-    )
-
-    [matching, other_stage_conversation, other_appointment_conversation, without_label, without_team, read_conversation].each do |conversation|
-      create(:message, account: account, conversation: conversation, inbox: inbox, created_at: 10.minutes.ago)
-    end
-    [matching, other_stage_conversation, other_appointment_conversation, without_team, read_conversation].each do |conversation|
-      conversation.add_labels(['vip'])
-    end
-    create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: matching)
-    create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage, originating_conversation: other_stage_conversation)
-    create(:crm_deal, account: account, pipeline: pipeline, stage: stage, originating_conversation: other_appointment_conversation)
-    create(:scheduling_appointment, account: account, contact: matching.contact, conversation: matching, status: 'confirmed')
-    create(:scheduling_appointment, account: account, contact: other_appointment_conversation.contact, conversation: other_appointment_conversation, status: 'scheduled')
-
+    matching, pipeline, stage = advanced_filter_fixture
     selection = create_snapshot(
       filters: {
         mode: 'advanced',
@@ -175,7 +179,7 @@ RSpec.describe BulkActions::SelectionSnapshot do
             {
               attribute_key: 'status',
               filter_operator: 'equal_to',
-              values: ['pending'],
+              values: ['open'],
               query_operator: nil
             }
           ]
@@ -192,7 +196,35 @@ RSpec.describe BulkActions::SelectionSnapshot do
     expect(selection.ids).to contain_exactly(matching.display_id)
   end
 
-  it 'accepts exactly 1000 matches and rejects 1001 without truncating' do
+  it 'never includes conversations of another account or of inboxes the user cannot access' do
+    visible = create(:conversation, account: account, inbox: inbox)
+    create(:conversation, account: account, inbox: create(:inbox, account: account))
+    create(:conversation, account: create(:account))
+
+    selection = create_snapshot(filters: { status: 'all' })
+
+    expect(selection.ids).to eq([visible.display_id])
+    expect(selection.record_ids).to eq([visible.id])
+    expect(selection.inbox_ids_by_id).to eq(visible.display_id.to_s => [inbox.id])
+  end
+
+  it 'excludes communication threads whose channels the user cannot access' do
+    account.enable_features!('communication_threads')
+    visible = create_thread_in(inbox)
+    create_thread_in(create(:inbox, account: account))
+
+    selection = create_snapshot(resource_type: 'CommunicationThread', filters: { status: 'all' })
+
+    expect(selection.record_ids).to eq([visible.id])
+    expect(selection.inbox_ids_by_id).to eq(visible.display_id.to_s => [inbox.id])
+  end
+
+  it 'allows a bounded snapshot of 10,000 conversations' do
+    expect(described_class::MAX_SELECTION_SIZE).to eq(10_000)
+  end
+
+  it 'accepts the limit and rejects one more match without truncating' do
+    stub_const('BulkActions::SelectionSnapshot::MAX_SELECTION_SIZE', 30)
     insert_open_conversations(described_class::MAX_SELECTION_SIZE)
     selection = create_snapshot(filters: { inbox_id: inbox.id, status: 'all' })
     expect(selection.count).to eq(described_class::MAX_SELECTION_SIZE)
@@ -259,15 +291,21 @@ RSpec.describe BulkActions::SelectionSnapshot do
     end.to raise_error(described_class::InvalidSelection)
   end
 
-  it 'rejects local search values rather than treating them as server filters' do
-    insert_open_conversations(2)
+  it 'selects all server search matches and ignores list filters' do
+    matching = create(:conversation, account: account, inbox: inbox, status: :open)
+    create(:message, conversation: matching, account: account, content: 'snapshot search needle')
+    create(:conversation, account: account, inbox: inbox, status: :resolved)
 
-    expect do
-      create_snapshot(filters: { mode: 'basic', status: 'all', q: 'loaded message text' })
-    end.to raise_error(described_class::InvalidFilters)
+    selection = create_snapshot(filters: {
+                                  mode: 'basic', status: 'resolved', inbox_id: -1, q: 'snapshot search needle'
+                                })
 
+    expect(selection.ids).to eq([matching.display_id])
+  end
+
+  it 'rejects an unsupported search key instead of widening the selection' do
     expect do
-      create_snapshot(filters: { mode: 'basic', status: 'all', query: 'loaded message text' })
+      create_snapshot(filters: { mode: 'basic', query: 'needle' })
     end.to raise_error(described_class::InvalidFilters)
   end
 end

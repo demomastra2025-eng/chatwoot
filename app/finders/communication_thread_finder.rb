@@ -108,7 +108,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     SQL
   end
 
-  def initialize(current_user, params, current_account: current_user.account)
+  def initialize(current_user, params, current_account = current_user.account)
     @current_user = current_user
     @current_account = current_account
     @params = params

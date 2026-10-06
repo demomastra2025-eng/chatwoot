@@ -38,16 +38,40 @@ RSpec.describe BulkActionsJob do
     conversation.association(:communication_thread).reset
     account.enable_features!('communication_threads')
     create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
-    unless InboxMember.exists?(inbox_id: conversation.inbox_id, user_id: user.id)
-      create(:inbox_member, inbox: conversation.inbox, user: user)
-    end
+    create(:inbox_member, inbox: conversation.inbox, user: user) unless InboxMember.exists?(inbox_id: conversation.inbox_id, user_id: user.id)
     [thread, conversation]
+  end
+
+  def after_run_start(run)
+    runs = account.bulk_action_runs
+    allow(account).to receive(:bulk_action_runs).and_return(runs)
+    allow(runs).to receive(:find_by).with(id: run.id).and_return(run)
+    allow(run).to receive(:start!).and_wrap_original do |original, **kwargs|
+      result = original.call(**kwargs)
+      yield
+      result
+    end
   end
 
   it 'enqueues the job' do
     expect { job }.to have_enqueued_job(described_class)
       .with(account: account, params: params, user: agent)
       .on_queue('medium')
+  end
+
+  it 'flushes progress in bounded batches for 10,000 selected records' do
+    bulk_job = described_class.new
+    bulk_job.instance_variable_set(:@record_ids, (1..10_000).to_a)
+    record = Struct.new(:id)
+    scope = double
+    allow(scope).to receive(:where) { |conditions| conditions.fetch(:id).map { |id| record.new(id) } }
+    bulk_job.records = scope
+    allow(bulk_job).to receive(:process_record)
+    allow(bulk_job).to receive(:flush_progress)
+
+    bulk_job.bulk_update
+
+    expect(bulk_job).to have_received(:flush_progress).with(100, 0, 0).exactly(100).times
   end
 
   context 'when job is triggered' do
@@ -81,10 +105,11 @@ RSpec.describe BulkActionsJob do
         ids: [conversation_1.display_id, inaccessible_conversation.display_id]
       }
 
-      described_class.perform_now(account: account, params: params, user: agent)
+      described_class.perform_now(account: account, params: params, user: agent, bulk_action_run_id: bulk_action_run.id)
 
       expect(conversation_1.reload.status).to eq('snoozed')
       expect(inaccessible_conversation.reload.status).to eq('open')
+      expect(bulk_action_run.reload.as_progress_json).to include(total_count: 2, done_count: 1, skipped_count: 1)
     end
 
     it 'bulk updates the assignee_id' do
@@ -187,16 +212,30 @@ RSpec.describe BulkActionsJob do
       expect(run.as_progress_json[:skipped_count]).to eq(1)
     end
 
+    it 'does not repeat a completed mark-read run on duplicate delivery' do
+      run = account.bulk_action_runs.create!(
+        user: agent,
+        resource_type: 'Conversation',
+        action_name: 'mark_read'
+      )
+      params = { type: 'Conversation', action_name: 'mark_read', ids: [conversation_1.display_id] }
+
+      described_class.perform_now(account: account, params: params, user: agent, bulk_action_run_id: run.id)
+      expect(run.reload).to be_completed
+
+      expect(Conversations::MarkReadService).not_to receive(:new)
+      described_class.perform_now(account: account, params: params, user: agent, bulk_action_run_id: run.id)
+      expect(run.reload.processed_count).to eq(1)
+    end
+
     it 'rechecks access revoked after run start and reports the frozen selection as skipped' do
       run = account.bulk_action_runs.create!(
         user: agent,
         resource_type: 'Conversation',
         action_name: 'update_status'
       )
-      allow_any_instance_of(BulkActionRun).to receive(:start!).and_wrap_original do |original, **kwargs|
-        result = original.call(**kwargs)
+      after_run_start(run) do
         InboxMember.where(inbox_id: conversation_1.inbox_id, user_id: agent.id).delete_all
-        result
       end
 
       described_class.perform_now(
@@ -226,10 +265,8 @@ RSpec.describe BulkActionsJob do
         resource_type: 'Conversation',
         action_name: 'update_status'
       )
-      allow_any_instance_of(BulkActionRun).to receive(:start!).and_wrap_original do |original, **kwargs|
-        result = original.call(**kwargs)
+      after_run_start(run) do
         account.account_users.where(user_id: agent.id).delete_all
-        result
       end
 
       described_class.perform_now(
@@ -371,19 +408,12 @@ RSpec.describe BulkActionsJob do
           :conversation,
           account: account,
           contact: replacement_contact,
-          inbox: thread_conversation_1.inbox
+          inbox: Inbox.find(thread_conversation_1.inbox_id)
         )
-        CommunicationThreadConversation.where(
-          account_id: account.id,
-          conversation_id: replacement_conversation.id
-        ).delete_all
+        CommunicationThreadConversation.where(account_id: account.id, conversation_id: replacement_conversation.id).delete_all
         replacement_conversation.association(:communication_thread_conversation).reset
         replacement_conversation.association(:communication_thread).reset
-        create(
-          :communication_thread_conversation,
-          communication_thread: replacement,
-          conversation: replacement_conversation
-        )
+        create(:communication_thread_conversation, communication_thread: replacement, conversation: replacement_conversation)
         expect(replacement.display_id).to eq(selected_display_id)
         expect(replacement.id).not_to eq(selected_record_id)
         run = account.bulk_action_runs.create!(
@@ -405,8 +435,7 @@ RSpec.describe BulkActionsJob do
           selection_count: snapshot.count
         )
 
-        expect(replacement.reload.status).to eq('open')
-        expect(replacement_conversation.reload.status).to eq('open')
+        expect([replacement.reload.status, replacement_conversation.reload.status]).to eq(%w[open open])
         expect(run.reload).to be_completed
         expect(run.total_count).to eq(1)
         expect(run.processed_count).to eq(1)
