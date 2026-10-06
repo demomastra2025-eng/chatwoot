@@ -86,9 +86,18 @@ RSpec.describe Captain::SkillCatalog do
       account = create(:account)
       invalid_account_skills = account.captain_skills.select('captain_skills.codex_savepoint_missing_column')
       allow(account).to receive(:captain_skills).and_return(invalid_account_skills)
-      query_failed = false
-      subscriber = ActiveSupport::Notifications.subscribe('sql.active_record') do |_name, _start, _finish, _id, payload|
-        query_failed = true if payload[:sql].to_s.include?('codex_savepoint_missing_column')
+      # PostgreSQL rejects the unknown column while the statement is prepared, which happens before Rails
+      # instruments sql.active_record, so observe the database error itself where the query is loaded.
+      query_error = nil
+      allow(invalid_account_skills).to receive(:ordered).and_wrap_original do |ordered|
+        ordered.call.tap do |relation|
+          allow(relation).to receive(:map).and_wrap_original do |map, *args, &block|
+            map.call(*args, &block)
+          rescue ActiveRecord::StatementInvalid => e
+            query_error = e
+            raise
+          end
+        end
       end
 
       Dir.mktmpdir do |dir|
@@ -113,9 +122,8 @@ RSpec.describe Captain::SkillCatalog do
         end
       end
 
-      expect(query_failed).to be(true)
-    ensure
-      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+      expect(query_error).to be_a(ActiveRecord::StatementInvalid)
+      expect(query_error.cause).to be_a(PG::UndefinedColumn)
     end
   end
 
