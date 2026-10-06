@@ -123,6 +123,18 @@ RSpec.describe Telephony::SiblingLegGrouping do
     end
   end
 
+  describe '.late_leg_decision?' do
+    it 'is true for an operator decision and for a reject (a busy operator)' do
+      expect(described_class.late_leg_decision?(action: 'operator')).to be(true)
+      expect(described_class.late_leg_decision?('action' => 'reject', 'reason' => 'target_operator_busy')).to be(true)
+    end
+
+    it 'is false for an AI decision and for no decision' do
+      expect(described_class.late_leg_decision?(action: 'ai')).to be(false)
+      expect(described_class.late_leg_decision?({})).to be(false)
+    end
+  end
+
   describe '.owner_leg' do
     let(:group_metadata) { { 'metadata' => { 'logical_call_key' => 'janus-inbound:one-call', 'logical_call_group_ref' => 'beeline:janus:1:a' } } }
     let!(:first) { create_leg('beeline:janus:1:a', created_at: now - 3.seconds, metadata: group_metadata) }

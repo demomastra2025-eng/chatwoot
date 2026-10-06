@@ -26,10 +26,19 @@ class Telephony::SiblingLegGrouping
   KEY_PREFIX = 'native-sip-group'.freeze
   # A claim moves its leg to connecting, the answer to in_progress.
   OWNING_STATUSES = %w[connecting in_progress].freeze
+  # Routing decisions for a leg that is reported after the call was taken. A
+  # busy operator gets a reject (target_operator_busy) for a leg that is as
+  # late as any other, so it is closed as well; only an AI decision keeps its
+  # own handling.
+  LATE_LEG_ACTIONS = %w[operator reject].freeze
 
   class << self
     def applies?(provider:, direction: 'inbound')
       direction.to_s == 'inbound' && provider.to_s.in?(PER_OPERATOR_LEG_PROVIDERS)
+    end
+
+    def late_leg_decision?(decision)
+      (decision[:action] || decision['action']).to_s.in?(LATE_LEG_ACTIONS)
     end
 
     # The oldest leg of the physical call this leg belongs to; nil when this

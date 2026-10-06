@@ -583,7 +583,7 @@ class Telephony::InboundRoutingService
   def sibling_group_owned?(decision)
     return @sibling_group_owned if defined?(@sibling_group_owned)
 
-    @sibling_group_owned = operator_decision?(decision) && sibling_root_leg.present? &&
+    @sibling_group_owned = Telephony::SiblingLegGrouping.late_leg_decision?(decision) && sibling_root_leg.present? &&
                            Telephony::SiblingLegGrouping.owner_leg(sibling_root_leg).present?
   end
 

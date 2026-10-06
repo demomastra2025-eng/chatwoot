@@ -893,7 +893,7 @@ class Telephony::WebphoneService
   # before it rings.
   def admit_browser_sip_incoming_leg!(call_session, context, decision)
     call_session = persist_browser_sip_incoming_metadata!(call_session, context, decision)
-    return call_session unless (decision[:action] || decision['action']).to_s == 'operator'
+    return call_session unless Telephony::SiblingLegGrouping.late_leg_decision?(decision)
 
     Telephony::SiblingLegCloser.close_late_leg(call_session)
   end
