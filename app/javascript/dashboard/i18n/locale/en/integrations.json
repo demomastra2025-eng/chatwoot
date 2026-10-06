@@ -3377,6 +3377,7 @@
           "48h": "Past 48 hours",
           "7d": "Past week",
           "30d": "Past month",
+          "ACCOUNT_DEFAULT": "Account default period",
           "1y": "Past year",
           "CUSTOM": "Custom range"
         }

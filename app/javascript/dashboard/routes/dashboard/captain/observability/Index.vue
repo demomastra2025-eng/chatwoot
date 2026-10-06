@@ -13,13 +13,30 @@ import EventDetailsDialog from './EventDetailsDialog.vue';
 
 const { t, locale } = useI18n();
 const route = useRoute();
+const routeQueryValue = value => (Array.isArray(value) ? value[0] : value);
+const traceQueryKeys = [
+  'trace_id',
+  'session_id',
+  'conversation_display_id',
+  'copilot_thread_id',
+];
+const hasTraceQueryContext = query =>
+  traceQueryKeys.some(key => Boolean(routeQueryValue(query?.[key])));
+const traceContextKey = query =>
+  JSON.stringify(
+    traceQueryKeys.map(key => routeQueryValue(query?.[key]) || '')
+  );
+let currentTraceContextKey = traceContextKey(route.query || {});
 
 const events = ref([]);
 const timeSeries = ref({ points: [], bucket: 'hour' });
 const meta = ref({ count: 0, current_page: 1, per_page: 25 });
 const isLoading = ref(false);
 const hasError = ref(false);
-const selectedRange = ref('30d');
+const selectedRange = ref(
+  hasTraceQueryContext(route.query) ? 'account_default' : '30d'
+);
+const hasManuallySelectedRange = ref(false);
 const detailsDialogRef = ref(null);
 const filters = reactive({
   assistantId: '',
@@ -57,6 +74,10 @@ const rangeOptions = computed(() => [
   { value: '48h', label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.48h') },
   { value: '7d', label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.7d') },
   { value: '30d', label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.30d') },
+  {
+    value: 'account_default',
+    label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.ACCOUNT_DEFAULT'),
+  },
   { value: '1y', label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.1y') },
   {
     value: 'custom',
@@ -68,6 +89,12 @@ const currentPage = computed(() => Number(meta.value.current_page || 1));
 const totalCount = computed(() => Number(meta.value.count || 0));
 const itemsPerPage = computed(() => Number(meta.value.per_page || 25));
 const chartPoints = computed(() => timeSeries.value?.points || []);
+const totalRequestCount = computed(() =>
+  chartPoints.value.reduce(
+    (total, point) => total + Number(point.request_count || 0),
+    0
+  )
+);
 const maxRequestCount = computed(() =>
   Math.max(
     1,
@@ -76,6 +103,8 @@ const maxRequestCount = computed(() =>
 );
 
 const requestRange = () => {
+  if (selectedRange.value === 'account_default') return {};
+
   if (selectedRange.value === 'custom') {
     const [since, until] = customDateRange.value;
     return {
@@ -92,8 +121,6 @@ const requestRange = () => {
   };
 };
 
-const routeQueryValue = value => (Array.isArray(value) ? value[0] : value);
-
 const applyRouteFilters = query => {
   filters.assistantId = routeQueryValue(query?.assistant_id) || '';
   filters.conversationDisplayId =
@@ -102,6 +129,7 @@ const applyRouteFilters = query => {
   filters.sessionId = routeQueryValue(query?.session_id) || '';
   filters.copilotThreadId = routeQueryValue(query?.copilot_thread_id) || '';
 };
+applyRouteFilters(route.query || {});
 
 const hasTraceContext = computed(
   () =>
@@ -167,6 +195,10 @@ const fetchEvents = async (page = currentPage.value) => {
 };
 
 const applyFilters = () => fetchEvents(1);
+const handleRangeSelection = value => {
+  hasManuallySelectedRange.value = true;
+  selectedRange.value = value;
+};
 const resetFilters = () => {
   filters.assistantId = '';
   filters.conversationDisplayId = '';
@@ -240,14 +272,27 @@ watch(
   () => route.query,
   query => {
     applyRouteFilters(query);
+    const nextTraceContextKey = traceContextKey(query);
+    const hasNewSharedTraceLink =
+      hasTraceQueryContext(query) &&
+      nextTraceContextKey !== currentTraceContextKey &&
+      !routeQueryValue(query?.since) &&
+      !routeQueryValue(query?.until);
+    currentTraceContextKey = nextTraceContextKey;
+    if (hasNewSharedTraceLink) hasManuallySelectedRange.value = false;
+
+    if (!hasManuallySelectedRange.value) {
+      const nextRange = hasTraceQueryContext(query) ? 'account_default' : '30d';
+      if (selectedRange.value !== nextRange) {
+        selectedRange.value = nextRange;
+        return;
+      }
+    }
     fetchEvents(1);
   },
   { deep: true }
 );
-onMounted(() => {
-  applyRouteFilters(route.query || {});
-  fetchEvents(1);
-});
+onMounted(() => fetchEvents(1));
 </script>
 
 <template>
@@ -267,9 +312,10 @@ onMounted(() => {
         <div class="flex flex-wrap items-end gap-2">
           <div class="relative min-w-48">
             <Select
-              v-model="selectedRange"
+              :model-value="selectedRange"
               :options="rangeOptions"
               class="w-full"
+              @update:model-value="handleRangeSelection"
             />
             <DatePicker
               v-if="selectedRange === 'custom'"
@@ -277,8 +323,6 @@ onMounted(() => {
               v-model:range-type="customRangeType"
               calendar-only
               compact
-              force-open
-              hide-trigger
               @date-range-changed="handleCustomDateRangeChanged"
             />
           </div>
@@ -387,7 +431,7 @@ onMounted(() => {
             <span class="text-xs text-n-slate-10">
               {{
                 t('CAPTAIN.OBSERVABILITY.LOGS.TOTAL_REQUESTS', {
-                  count: totalCount,
+                  count: totalRequestCount,
                 })
               }}
             </span>
