@@ -214,5 +214,3 @@ class SearchService
     )
   end
 end
-
-SearchService.prepend_mod_with('SearchService')
