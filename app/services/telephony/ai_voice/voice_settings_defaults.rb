@@ -17,8 +17,6 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'provider' => 'gemini-live',
     'stt_provider' => 'elevenlabs',
     'model' => 'gemini-3.1-flash-live-preview',
-    # OpenAI Responses API model id of the openai-live provider (called with OPENAI_API_KEY, not through OpenRouter),
-    # so it stays a native OpenAI id; the OpenRouter-based providers take their LLM from PROVIDER_DEFAULTS below.
     'delegation_model' => 'gpt-5.4-mini',
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
@@ -89,11 +87,11 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     }.freeze,
     'openai-live' => { 'model' => 'gpt-live-1', 'voice' => 'marin' }.freeze,
     'openai-realtime' => { 'model' => 'gpt-realtime-2', 'voice' => 'alloy' }.freeze,
-    'elevenlabs' => { 'model' => 'openai/gpt-6-luna', 'voice' => 'Xb7hH8MSUJpSbSDYk0k2' }.freeze,
+    'elevenlabs' => { 'model' => 'openai/gpt-5.4-mini', 'voice' => 'Xb7hH8MSUJpSbSDYk0k2' }.freeze,
     'cartesia' => {
-      'model' => 'openai/gpt-6-luna', 'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+      'model' => 'openai/gpt-5.4-mini', 'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
     }.freeze,
-    'fish' => { 'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-6-luna',
+    'fish' => { 'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini',
                 'voice' => '31f936a9333f4f5a99dcaaf6df091b84', 'language' => 'auto' }.freeze
   }.freeze
 

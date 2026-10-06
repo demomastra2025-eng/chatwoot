@@ -301,29 +301,6 @@ def test_non_gpt_openrouter_model_does_not_receive_gpt_reasoning_contract():
     assert "parallel_tool_calls" not in llm._settings.extra["extra_body"]
 
 
-def test_luna_6_openrouter_request_matches_the_luna_5_6_voice_contract():
-    assembly = build_pipeline(
-        context=_context(
-            "fish",
-            model="openai/gpt-6-luna",
-            voice="fish-voice-ref",
-        ),
-        state=MagicMock(),
-        recorder=None,
-        runtime_stream=_runtime_stream(),
-        settings=_settings(),
-    )
-
-    llm = cast(OpenRouterLLMService, assembly.llm)
-    request_params = llm.build_chat_completion_params({"messages": []})
-    extra_body = request_params["extra_body"]
-
-    assert str(llm._settings.temperature) == "NOT_GIVEN"
-    assert extra_body["provider"]["require_parameters"] is True
-    assert extra_body["reasoning"] == {"effort": "none", "exclude": True}
-    assert "parallel_tool_calls" not in extra_body
-
-
 def test_luna_openrouter_request_keeps_strict_routing_without_parallel_filter():
     assembly = build_pipeline(
         context=_context(

@@ -262,7 +262,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
     it 'applies ElevenLabs and OpenRouter defaults to blank values' do
       expect(described_class.normalize(provider: 'elevenlabs', model: '', voice: nil)).to include(
         'provider' => 'elevenlabs',
-        'model' => 'openai/gpt-6-luna',
+        'model' => 'openai/gpt-5.4-mini',
         'voice' => 'Xb7hH8MSUJpSbSDYk0k2'
       )
     end
@@ -270,7 +270,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
     it 'applies Cartesia and OpenRouter defaults to blank values' do
       expect(described_class.normalize(provider: 'cartesia', model: '', voice: nil)).to include(
         'provider' => 'cartesia',
-        'model' => 'openai/gpt-6-luna',
+        'model' => 'openai/gpt-5.4-mini',
         'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
       )
     end
@@ -279,7 +279,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize(provider: 'fish')).to include(
         'provider' => 'fish',
         'stt_provider' => 'elevenlabs',
-        'model' => 'openai/gpt-6-luna',
+        'model' => 'openai/gpt-5.4-mini',
         'voice' => '31f936a9333f4f5a99dcaaf6df091b84',
         'language' => 'auto'
       )
