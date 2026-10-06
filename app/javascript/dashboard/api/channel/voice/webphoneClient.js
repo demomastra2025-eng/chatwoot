@@ -145,6 +145,7 @@ class WebphoneClient extends EventTarget {
     // was loaded for and gives its phone up when another user signs in.
     this.loadedUserUid = currentUserUid();
     this.staleUserRelease = null;
+    this.staleUserReleaseDeferred = false;
     this.leadershipBootstrapPromise = null;
     this.nativeOwnershipRelease = null;
     this.nativeBootstrapRequested = false;
@@ -178,10 +179,21 @@ class WebphoneClient extends EventTarget {
   }
 
   // The browser now belongs to another user (or to nobody): this tab must not
-  // keep, nor register again, the phone of the user it was loaded for.
+  // keep, nor register again, the phone of the user it was loaded for. A call
+  // in progress is never hung up silently: the phone is kept until the call
+  // ends (releaseDeferredStaleUserPhone) and is not registered again meanwhile.
   releaseStaleUserPhone() {
-    if (!this.isSignedInUserReplaced()) return false;
+    if (!this.isSignedInUserReplaced()) {
+      this.staleUserReleaseDeferred = false;
+      return false;
+    }
 
+    if (this.hasNativeCallInProgress()) {
+      this.staleUserReleaseDeferred = true;
+      return true;
+    }
+
+    this.staleUserReleaseDeferred = false;
     if (!this.staleUserRelease) {
       this.staleUserRelease = Promise.all(
         this.nativeSessionKeys().map(sessionKey =>
@@ -194,6 +206,15 @@ class WebphoneClient extends EventTarget {
       });
     }
     return true;
+  }
+
+  releaseDeferredStaleUserPhone() {
+    if (!this.staleUserReleaseDeferred || this.hasNativeCallInProgress()) {
+      return;
+    }
+
+    // The client that reported the end of the call finishes its own handling first.
+    Promise.resolve().then(() => this.releaseStaleUserPhone());
   }
 
   // Sign-out takes the session from every tab of the browser, so the phone
@@ -652,6 +673,7 @@ class WebphoneClient extends EventTarget {
         };
         this.updateProviderRegistration(detail.provider, eventName, detail);
         this.syncNativeCallUnloadGuard();
+        this.releaseDeferredStaleUserPhone();
         this.dispatchEvent(new CustomEvent(eventName, { detail }));
       });
     });

@@ -1882,6 +1882,7 @@ describe('webphoneClient', () => {
       Cookies.remove(SESSION_COOKIE);
       WebphoneClient.loadedUserUid = '';
       WebphoneClient.staleUserRelease = null;
+      WebphoneClient.staleUserReleaseDeferred = false;
       WebphoneClient.tabLeadership.isLeader = true;
       vi.useRealTimers();
     });
@@ -2040,6 +2041,81 @@ describe('webphoneClient', () => {
       expect(WebphoneClient.sessions['sip_profile:501']).toBeUndefined();
     });
 
+    it('keeps the phone while a call is in progress when another user signed in', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      client.hasActiveCall = true;
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        SESSION_COOKIE,
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+
+      getNativeWebphoneTokenMock.mockClear();
+
+      try {
+        WebphoneClient.resumeNativeSessions();
+        await WebphoneClient.retryNativeSession('sip_profile:501');
+        await expect(
+          WebphoneClient.initializeDevice(4083, { native: true })
+        ).resolves.toBeNull();
+
+        expect(janusDestroyMock).not.toHaveBeenCalled();
+        expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
+        expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
+      } finally {
+        client.hasActiveCall = false;
+        WebphoneClient.syncNativeCallUnloadGuard();
+      }
+    });
+
+    it('keeps the phone while a call rings when another user signed in', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      client.pendingIncomingCall = { callId: 'ringing-1' };
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        SESSION_COOKIE,
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+
+      try {
+        WebphoneClient.resumeNativeSessions();
+
+        expect(janusDestroyMock).not.toHaveBeenCalled();
+        expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
+      } finally {
+        client.pendingIncomingCall = null;
+        WebphoneClient.syncNativeCallUnloadGuard();
+      }
+    });
+
+    it('gives the phone up once the call ends after another user signed in', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      const [, onCallDisconnected] = client.addEventListener.mock.calls.find(
+        ([eventName]) => eventName === 'call:disconnected'
+      );
+      client.hasActiveCall = true;
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        SESSION_COOKIE,
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+      WebphoneClient.resumeNativeSessions();
+      expect(janusDestroyMock).not.toHaveBeenCalled();
+
+      client.hasActiveCall = false;
+      onCallDisconnected({ detail: {} });
+
+      await vi.waitFor(() => {
+        expect(janusDestroyMock).toHaveBeenCalledWith({
+          keepalivePresence: true,
+        });
+      });
+      expect(WebphoneClient.sessions['sip_profile:501']).toBeUndefined();
+    });
+
     it('never registers the phone again for a tab whose user was replaced', async () => {
       WebphoneClient.loadedUserUid = 'asel@example.com';
       Cookies.set(
@@ -2090,6 +2166,7 @@ describe('webphoneClient', () => {
       delete WebphoneClient.sessions['sip_profile:777'];
       delete WebphoneClient.providerSessions.sipuni;
       delete WebphoneClient.nativeSipClients['sip_profile:777'];
+      delete WebphoneClient.nativeSessionConfigs['sip_profile:777'];
       Cookies.remove('cw_d_session_info');
       WebphoneClient.loadedUserUid = '';
       vi.useRealTimers();
@@ -2141,6 +2218,14 @@ describe('webphoneClient', () => {
     });
 
     it('does not retry the phone of a user who was replaced in this browser', async () => {
+      WebphoneClient.rememberNativeSessionConfig(
+        'sip_profile:777',
+        { provider: 'sipuni' },
+        { inboxId: 4083, provider: 'sipuni' }
+      );
+      WebphoneClient.nativeSipClients['sip_profile:777'] = {
+        destroyDevice: janusDestroyMock,
+      };
       WebphoneClient.loadedUserUid = 'asel@example.com';
       Cookies.set(
         'cw_d_session_info',
@@ -2152,6 +2237,7 @@ describe('webphoneClient', () => {
       ).resolves.toBeNull();
 
       expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
+      expect(janusDestroyMock).toHaveBeenCalledOnce();
     });
   });
 });
