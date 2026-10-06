@@ -150,9 +150,14 @@ const providerDisplayNameForKey = providerKey => {
   );
 };
 
+const clientModelLabel = label =>
+  String(label || '').replace(/openrouter/gi, 'поставщик моделей');
+
 const masterProviderDisplayName = model =>
-  model.provider_display_name ||
-  providerDisplayNameForKey(masterProviderKeyForModel(model));
+  masterProviderKeyForModel(model) === 'openrouter'
+    ? providerDisplayNameForKey('openrouter')
+    : model.provider_display_name ||
+      providerDisplayNameForKey(masterProviderKeyForModel(model));
 
 const modelProviderDisplayName = model =>
   providerDisplayNameForKey(modelProviderKeyForModel(model));
@@ -478,7 +483,7 @@ const selectModel = model => {
           v-if="selectedModelDetails"
           class="text-n-slate-12 truncate min-w-0"
         >
-          {{ selectedModelDetails.display_name }}
+          {{ clientModelLabel(selectedModelDetails.display_name) }}
         </span>
         <span v-else class="text-n-slate-10">
           {{ t('CAPTAIN_SETTINGS.MODEL_CONFIG.SELECT_MODEL') }}
@@ -580,7 +585,7 @@ const selectModel = model => {
                     <span
                       class="line-clamp-2 min-w-0 text-sm font-medium leading-5 text-n-slate-12"
                     >
-                      {{ model.display_name }}
+                      {{ clientModelLabel(model.display_name) }}
                     </span>
                     <Icon
                       v-if="selectedModelId === model.id"

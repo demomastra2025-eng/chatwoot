@@ -110,6 +110,8 @@ const initialState = {
 const state = reactive({ ...initialState });
 const instructionEditorRef = ref(null);
 const captainConfigStore = useCaptainConfigStore();
+const clientModelLabel = label =>
+  String(label || '').replace(/openrouter/gi, 'поставщик моделей');
 // Only the short list curated by the platform. A model the agent already has stays selectable and is marked as
 // the current one; it is not offered to agents that do not use it. The first option is empty: the agent has no model
 // of its own and follows the platform default, so the Super Admin default (and its rollback) reaches it.
@@ -125,7 +127,7 @@ const assistantModelOptions = computed(() => {
     value: '',
     label: platformModel
       ? t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT_WITH_MODEL', {
-          model: platformModel.display_name || platformModel.id,
+          model: clientModelLabel(platformModel.display_name || platformModel.id),
         })
       : t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT'),
   };
@@ -133,7 +135,7 @@ const assistantModelOptions = computed(() => {
     .getModelsForFeature('assistant')
     .filter(model => !model.current_only || model.id === state.model)
     .map(model => {
-      const name = model.display_name || model.id;
+      const name = clientModelLabel(model.display_name || model.id);
       return {
         value: model.id,
         label: model.current_only ? currentLabel(name) : name,
@@ -143,7 +145,7 @@ const assistantModelOptions = computed(() => {
   if (state.model && !options.some(option => option.value === state.model)) {
     options.unshift({
       value: state.model,
-      label: currentLabel(state.model),
+      label: currentLabel(clientModelLabel(state.model)),
     });
   }
 

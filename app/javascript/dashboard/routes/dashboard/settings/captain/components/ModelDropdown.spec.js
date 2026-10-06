@@ -118,6 +118,29 @@ describe('Captain model dropdown diagnostics', () => {
     expect(wrapper.emitted('change')).toBeFalsy();
   });
 
+  it('hides provider branding in model and route labels', () => {
+    const store = useCaptainConfigStore();
+    store.applyPayload({
+      features: {
+        assistant: {
+          selected: 'openai/gpt-5.4',
+          models: [{
+            id: 'openai/gpt-5.4',
+            display_name: 'GPT 5.4 via OpenRouter',
+            provider: 'openrouter',
+            provider_display_name: 'OpenRouter',
+            provider_configured: true,
+            type: 'chat',
+          }],
+        },
+      },
+    });
+
+    const wrapper = mountComponent();
+    expect(wrapper.text()).toContain('поставщик моделей');
+    expect(wrapper.text()).not.toContain('OpenRouter');
+  });
+
   describe('short list curated by the platform', () => {
     const curated = [
       ['openai/gpt-6-luna', 'GPT-6 Luna'],

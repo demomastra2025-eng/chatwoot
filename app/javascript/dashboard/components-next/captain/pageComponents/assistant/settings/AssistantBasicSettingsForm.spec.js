@@ -95,6 +95,20 @@ describe('AssistantBasicSettingsForm', () => {
       expect(wrapper.findAllComponents({ name: 'Select' })).toHaveLength(1);
     });
 
+    it('removes provider branding from model option labels', () => {
+      storeState.models = [{
+        id: 'openai/gpt-5.4',
+        display_name: 'GPT 5.4 via OpenRouter',
+      }];
+      const wrapper = buildWrapper({
+        assistant: { usage_mode: 'external_agent', config: {} },
+      });
+
+      expect(modelSelect(wrapper).props('options')[1].label).toBe(
+        'GPT 5.4 via поставщик моделей'
+      );
+    });
+
     it('keeps the agent model outside the list selectable and marks it as the current one', async () => {
       storeState.models = curatedModels;
       const wrapper = buildWrapper({
