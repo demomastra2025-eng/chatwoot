@@ -6,8 +6,8 @@ class CaptainPreferences extends ApiClient {
     super('captain/preferences', { accountScoped: true });
   }
 
-  get() {
-    return axios.get(this.url);
+  get(params) {
+    return axios.get(this.url, { params });
   }
 
   updatePreferences(data) {

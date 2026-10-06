@@ -41,7 +41,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   before_action :reject_installation_managed_models, :reject_unselectable_models, :reject_disallowed_provider_keys, only: :update
 
   def show
-    render json: preferences_payload
+    render json: params[:section] == 'usage' ? { usage: usage_payload } : preferences_payload
   end
 
   def update
@@ -74,9 +74,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
             runtime: runtime_with_account_preferences,
             observability: observability_with_account_preferences,
             provider_credentials: provider_credentials_payload,
-            usage: usage_payload,
             runtime_metadata: runtime_metadata_payload
-          }
+          }.tap { |payload| payload[:usage] = usage_payload unless params[:include_usage] == 'false' }
         end
       end
     end
@@ -333,7 +332,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def runtime_metadata_payload
-    Llm::ModelRegistryService.runtime_metadata(account: Current.account).merge(
+    metadata = params[:client_metadata_only] == 'true' ? {} : Llm::ModelRegistryService.runtime_metadata(account: Current.account)
+    metadata.merge(
       web_access: web_access_metadata_payload,
       knowledge_indexing: Captain::KnowledgeSettings.metadata_for(Current.account).merge(
         chunk_size_options: Llm::Models.knowledge_chunk_size_options(account: Current.account)

@@ -13,6 +13,7 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
+      isFetchingUsage: false,
     },
   }),
 
@@ -82,22 +83,38 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       this.features = data.features || {};
       this.runtime = data.runtime || {};
       this.observability = data.observability || {};
-      this.usage = data.usage || {};
+      if (data.usage) this.usage = data.usage;
       this.providerCredentials = data.provider_credentials || {};
       this.runtimeMetadata = data.runtime_metadata || {};
     },
 
-    async fetch() {
+    async fetch({ includeUsage = true, clientMetadataOnly = false } = {}) {
       if (this.uiFlags.isFetching) return;
 
       this.uiFlags.isFetching = true;
       try {
-        const response = await CaptainPreferencesAPI.get();
+        const response = await CaptainPreferencesAPI.get({
+          include_usage: includeUsage,
+          client_metadata_only: clientMetadataOnly,
+        });
         this.applyPayload(response.data);
       } catch (error) {
         // Ignore error
       } finally {
         this.uiFlags.isFetching = false;
+      }
+    },
+
+    async fetchUsage() {
+      this.uiFlags.isFetchingUsage = true;
+      this.usage = {};
+      try {
+        const response = await CaptainPreferencesAPI.get({ section: 'usage' });
+        this.usage = response.data.usage || {};
+      } catch (error) {
+        // The settings remain usable if the usage summary is unavailable.
+      } finally {
+        this.uiFlags.isFetchingUsage = false;
       }
     },
 

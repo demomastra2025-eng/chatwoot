@@ -45,6 +45,46 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(json_response).to have_key(:observability)
       end
 
+      it 'loads usage without resolving model preferences for the expenses page' do
+        expect(Llm::OpenRouterModelCatalog).not_to receive(:with_model_configs_snapshot)
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            params: { section: 'usage' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to have_key(:usage)
+        expect(json_response).not_to have_key(:features)
+      end
+
+      it 'skips usage aggregation when loading settings independently' do
+        expect(Llm::AccountUsageSummary).not_to receive(:call)
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            params: { include_usage: 'false' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to have_key(:features)
+        expect(json_response).not_to have_key(:usage)
+      end
+
+      it 'skips full registry metadata for the controls page' do
+        expect(Llm::ModelRegistryService).not_to receive(:runtime_metadata)
+
+        get "/api/v1/accounts/#{account.id}/captain/preferences",
+            params: { client_metadata_only: 'true' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:runtime_metadata, :web_access)).to have_key(:configured)
+        expect(json_response.dig(:runtime_metadata, :knowledge_indexing)).to have_key(:chunk_size_options)
+        expect(json_response.dig(:runtime_metadata, :registry)).to be_nil
+      end
+
       it 'reports text improvement (editor) as on while the account never switched it' do
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,

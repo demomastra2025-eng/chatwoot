@@ -155,6 +155,7 @@ const basePayload = ({ audioModel }) => ({
 
 const mountComponent = (store, props = {}) => {
   vi.spyOn(store, 'fetch').mockResolvedValue();
+  vi.spyOn(store, 'fetchUsage').mockResolvedValue();
 
   return shallowMount(Index, {
     props,
@@ -195,6 +196,25 @@ const mountComponent = (store, props = {}) => {
 describe('Captain settings OpenRouter UX', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
+  });
+
+  it('loads configuration and usage independently for AI settings', () => {
+    const store = useCaptainConfigStore();
+    mountComponent(store);
+
+    expect(store.fetch).toHaveBeenCalledWith({
+      includeUsage: false,
+      clientMetadataOnly: true,
+    });
+    expect(store.fetchUsage).toHaveBeenCalledOnce();
+  });
+
+  it('loads only usage for the expenses route', () => {
+    const store = useCaptainConfigStore();
+    mountComponent(store, { section: 'usage' });
+
+    expect(store.fetch).not.toHaveBeenCalled();
+    expect(store.fetchUsage).toHaveBeenCalledOnce();
   });
 
   it('renders only the OpenRouter provider key card in normal Captain settings', () => {

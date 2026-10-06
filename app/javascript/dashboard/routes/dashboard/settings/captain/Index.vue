@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useAlert } from 'dashboard/composables';
@@ -16,7 +16,6 @@ import { formatBytes } from 'shared/helpers/FileHelper';
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SectionLayout from '../account/components/SectionLayout.vue';
-import ModelSelector from './components/ModelSelector.vue';
 import { shouldShowAudioTranscriptionPrompt } from './helpers/modelDiagnostics';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -25,6 +24,10 @@ import NextSelect from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
+
+const ModelSelector = defineAsyncComponent(
+  () => import('./components/ModelSelector.vue')
+);
 
 // «Расходы» in the AI menu opens this page with only the usage section; the
 // full «Настройки ИИ» page keeps every section, usage included.
@@ -52,8 +55,13 @@ const {
   features,
 } = storeToRefs(captainConfigStore);
 
-const isLoading = computed(() => uiFlags.value.isFetching);
 const isUsagePage = computed(() => props.section === 'usage');
+const isLoading = computed(
+  () =>
+    uiFlags.value.isFetching ||
+    (isUsagePage.value && uiFlags.value.isFetchingUsage)
+);
+const hasUsage = computed(() => Object.keys(usage.value).length > 0);
 const audioTranscriptionPrompt = ref('');
 const knowledgeChunkSize = ref(0);
 const moderationFailureMode = ref('fail_open');
@@ -962,7 +970,15 @@ async function handleProviderApiKeyRemove(providerKey) {
 }
 
 onMounted(() => {
-  captainConfigStore.fetch();
+  if (isUsagePage.value) {
+    captainConfigStore.fetchUsage();
+  } else {
+    captainConfigStore.fetch({
+      includeUsage: false,
+      clientMetadataOnly: true,
+    });
+    captainConfigStore.fetchUsage();
+  }
 });
 </script>
 
@@ -1230,6 +1246,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
+          v-if="hasUsage && !uiFlags.isFetchingUsage"
           :title="t('CAPTAIN_SETTINGS.USAGE.TITLE')"
           :description="t('CAPTAIN_SETTINGS.USAGE.DESCRIPTION')"
           with-border
