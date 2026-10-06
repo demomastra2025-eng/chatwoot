@@ -130,7 +130,9 @@ class Captain::SkillCatalog
     def account_skills(account)
       return [] unless account&.respond_to?(:captain_skills)
 
-      account.captain_skills.ordered.map(&:to_catalog_entry)
+      ActiveRecord::Base.transaction(requires_new: true) do
+        account.captain_skills.ordered.map(&:to_catalog_entry)
+      end
     rescue ActiveRecord::StatementInvalid
       []
     end

@@ -81,6 +81,44 @@ RSpec.describe Captain::SkillCatalog do
     end
   end
 
+  describe '.available_ids' do
+    it 'falls back to file skills after an account query error without aborting the caller transaction' do
+      account = create(:account)
+      invalid_account_skills = account.captain_skills.select('captain_skills.codex_savepoint_missing_column')
+      allow(account).to receive(:captain_skills).and_return(invalid_account_skills)
+      query_failed = false
+      subscriber = ActiveSupport::Notifications.subscribe('sql.active_record') do |_name, _start, _finish, _id, payload|
+        query_failed = true if payload[:sql].to_s.include?('codex_savepoint_missing_column')
+      end
+
+      Dir.mktmpdir do |dir|
+        skill_dir = File.join(dir, 'fallback-skill')
+        FileUtils.mkdir_p(skill_dir)
+        File.write(
+          File.join(skill_dir, 'SKILL.md'),
+          <<~MARKDOWN
+            ---
+            name: Fallback Skill
+            description: Keeps file skills available when the account catalog query fails.
+            ---
+            Use this local skill.
+          MARKDOWN
+        )
+
+        with_modified_env('CAPTAIN_SKILL_DIRS' => dir) do
+          ActiveRecord::Base.transaction do
+            expect(described_class.available_ids(account: account)).to include('fallback-skill')
+            expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+          end
+        end
+      end
+
+      expect(query_failed).to be(true)
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+  end
+
   describe '.script_tools_for' do
     it 'returns tool metadata for allowlisted skill scripts' do
       Dir.mktmpdir do |dir|
