@@ -128,7 +128,7 @@ class Captain::SkillCatalog
     end
 
     def account_skills(account)
-      return [] unless account&.respond_to?(:captain_skills)
+      return [] unless account.respond_to?(:captain_skills)
 
       ActiveRecord::Base.transaction(requires_new: true) do
         account.captain_skills.ordered.map(&:to_catalog_entry)
