@@ -107,8 +107,10 @@ class CreateCrmLifecycleTables < ActiveRecord::Migration[7.1]
   def define_stage_visit_columns(table)
     table.references :account, null: false, foreign_key: false, index: false
     table.references :deal, null: false, foreign_key: false, index: false
-    table.references :pipeline, null: false, foreign_key: false, index: false
-    table.references :stage, null: false, foreign_key: false, index: false
+    # The visit outlives the pipeline and stage it passed through: their foreign keys are ON DELETE SET NULL, and the
+    # pipeline_name / stage_name snapshots below keep the history readable after the link is cleared.
+    table.references :pipeline, null: true, foreign_key: false, index: false
+    table.references :stage, null: true, foreign_key: false, index: false
     table.datetime :entered_at, null: false
     table.datetime :exited_at
     table.boolean :estimated, null: false, default: false

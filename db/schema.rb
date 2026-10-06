@@ -1530,8 +1530,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
   create_table "crm_stage_visits", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "deal_id", null: false
-    t.bigint "pipeline_id", null: false
-    t.bigint "stage_id", null: false
+    t.bigint "pipeline_id"
+    t.bigint "stage_id"
     t.datetime "entered_at", null: false
     t.datetime "exited_at"
     t.boolean "estimated", default: false, null: false
@@ -3645,8 +3645,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
   add_foreign_key "crm_stage_field_requirements", "crm_stages", column: "stage_id"
   add_foreign_key "crm_stage_visits", "accounts"
   add_foreign_key "crm_stage_visits", "crm_deals", column: "deal_id"
-  add_foreign_key "crm_stage_visits", "crm_pipelines", column: "pipeline_id"
-  add_foreign_key "crm_stage_visits", "crm_stages", column: "stage_id"
+  add_foreign_key "crm_stage_visits", "crm_pipelines", column: "pipeline_id", on_delete: :nullify
+  add_foreign_key "crm_stage_visits", "crm_stages", column: "stage_id", on_delete: :nullify
   add_foreign_key "crm_stages", "accounts"
   add_foreign_key "crm_stages", "crm_pipelines", column: "pipeline_id"
   add_foreign_key "crm_task_outcomes", "accounts"

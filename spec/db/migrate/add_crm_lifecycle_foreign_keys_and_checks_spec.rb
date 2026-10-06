@@ -27,6 +27,8 @@ RSpec.describe AddCrmLifecycleForeignKeysAndChecks, :crm_lifecycle_ddl do
       expect(key.validated?).to be(false)
     end
     expect(foreign_key(:crm_tasks, :completed_by_id).on_delete).to eq(:nullify)
+    expect(foreign_key(:crm_stage_visits, :pipeline_id).on_delete).to eq(:nullify)
+    expect(foreign_key(:crm_stage_visits, :stage_id).on_delete).to eq(:nullify)
     described_class::CHECK_CONSTRAINTS.each do |table, name, _expression|
       expect(check_constraint(table, name)).to be_present
       expect(check_constraint(table, name).validate?).to be(false)

@@ -23,6 +23,16 @@ RSpec.describe CreateCrmLifecycleTables, :crm_lifecycle_ddl do
       .to eq('gen_random_uuid()')
   end
 
+  it 'creates the stage visit pipeline and stage references nullable, the other references required' do
+    revert_to_prod_shape!
+
+    run_migration(:tables)
+
+    nullable = db.columns(:crm_stage_visits).to_h { |column| [column.name, column.null] }
+    expect(nullable.slice('pipeline_id', 'stage_id').values).to all(be(true))
+    expect(nullable.slice('account_id', 'deal_id').values).to all(be(false))
+  end
+
   it 'is idempotent' do
     revert_to_prod_shape!
     run_migration(:tables)
