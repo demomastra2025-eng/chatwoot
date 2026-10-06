@@ -157,6 +157,83 @@ describe('useCallOperatorActivityStore', () => {
     ]);
   });
 
+  describe('an answer to a request that was made earlier', () => {
+    const requestedAt = NOW + MINUTE;
+
+    it('does not bring a call back that ended after the request was made', () => {
+      const store = useCallOperatorActivityStore();
+      store.applyActivity(activity({ state: 'talking' }), ME, NOW);
+      store.applyActivity(activity({ state: 'ended' }), ME, NOW + 2 * MINUTE);
+
+      store.syncChat(
+        { id: 627 },
+        [activity({ state: 'talking' })],
+        ME,
+        NOW + 3 * MINUTE,
+        { requestedAt }
+      );
+
+      expect(store.entries).toEqual({});
+      expect(store.forChat({ id: 627 }, ME, NOW + 3 * MINUTE)).toEqual([]);
+    });
+
+    it('keeps a call that started after the request was made when the answer is empty', () => {
+      const store = useCallOperatorActivityStore();
+      store.applyActivity(activity(), ME, NOW + 2 * MINUTE);
+
+      store.syncChat({ id: 627 }, [], ME, NOW + 3 * MINUTE, { requestedAt });
+
+      expect(store.forChat({ id: 627 }, ME, NOW + 3 * MINUTE)).toEqual([
+        expect.objectContaining({
+          callId: 'sipuni:local:one',
+          state: 'calling',
+        }),
+      ]);
+    });
+
+    it('keeps what the realtime event said about a call over what the answer says', () => {
+      const store = useCallOperatorActivityStore();
+      store.applyActivity(activity({ state: 'talking' }), ME, NOW + 2 * MINUTE);
+
+      store.syncChat(
+        { id: 627 },
+        [activity({ state: 'calling' })],
+        ME,
+        NOW + 3 * MINUTE,
+        { requestedAt }
+      );
+
+      expect(store.forChat({ id: 627 }, ME, NOW + 3 * MINUTE)).toEqual([
+        expect.objectContaining({ state: 'talking' }),
+      ]);
+    });
+
+    it('still fills in the calls the realtime events did not tell about and drops older lines it no longer lists', () => {
+      const store = useCallOperatorActivityStore();
+      store.applyActivity(activity({ call_id: 'old' }), ME, NOW);
+
+      store.syncChat(
+        { id: 627 },
+        [activity({ call_id: 'fresh', state: 'talking' })],
+        ME,
+        NOW + 3 * MINUTE,
+        { requestedAt }
+      );
+
+      expect(Object.keys(store.entries)).toEqual(['fresh']);
+    });
+
+    it('forgets the ended calls after a while', () => {
+      const store = useCallOperatorActivityStore();
+      store.applyActivity(activity({ state: 'ended' }), ME, NOW);
+      expect(Object.keys(store.endedCalls)).toEqual(['sipuni:local:one']);
+
+      store.pruneStale(NOW + 11 * MINUTE);
+
+      expect(store.endedCalls).toEqual({});
+    });
+  });
+
   it('forgets everything on clear', () => {
     const store = useCallOperatorActivityStore();
     store.applyActivity(activity(), ME, NOW);

@@ -161,6 +161,50 @@ describe('CallOperatorIndicator', () => {
     wrapper.unmount();
   });
 
+  describe('when the answer of the server comes late', () => {
+    const deferredAnswer = () => {
+      let resolveAnswer;
+      mocks.getOperatorActivity.mockReturnValue(
+        new Promise(resolve => {
+          resolveAnswer = resolve;
+        })
+      );
+      return answer => resolveAnswer(answer);
+    };
+
+    it('does not show a call as talking again when it ended before the answer arrived', async () => {
+      const answer = deferredAnswer();
+      const wrapper = mountIndicator();
+      await flushPromises();
+      const store = useCallOperatorActivityStore();
+
+      store.applyActivity(activity({ state: 'ended' }), 7);
+      answer([activity({ state: 'talking' })]);
+      await flushPromises();
+
+      expect(
+        wrapper.find('[data-testid="call-operator-activity"]').exists()
+      ).toBe(false);
+      expect(store.entries).toEqual({});
+      wrapper.unmount();
+    });
+
+    it('does not erase a call that started before an older, empty answer arrived', async () => {
+      const answer = deferredAnswer();
+      const wrapper = mountIndicator();
+      await flushPromises();
+
+      useCallOperatorActivityStore().applyActivity(activity(), 7);
+      answer([]);
+      await flushPromises();
+
+      expect(
+        wrapper.get('[data-testid="call-operator-activity"] p').text()
+      ).toBe('CONVERSATION.OPERATOR_CALL_ACTIVITY.CALLING|Ayan');
+      wrapper.unmount();
+    });
+  });
+
   it('asks again for another chat and for a communication thread', async () => {
     const wrapper = mountIndicator();
     await flushPromises();

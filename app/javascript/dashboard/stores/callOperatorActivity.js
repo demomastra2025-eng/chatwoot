@@ -63,6 +63,10 @@ export const activityMatchesChat = (entry, chat) => {
 const isFresh = (entry, now) =>
   now - entry.receivedAt < (MAX_AGE_MS[entry.state] || 0);
 
+// How long the end of a call is remembered so that a snapshot that was asked
+// for before the call ended cannot bring its line back.
+const ENDED_CALL_MEMORY_MS = 10 * 60 * 1000;
+
 export const useCallOperatorActivityStore = defineStore(
   'callOperatorActivity',
   {
@@ -70,6 +74,8 @@ export const useCallOperatorActivityStore = defineStore(
       // call id -> { callId, conversationId, communicationThreadId,
       // operatorUserId, operatorName, state, receivedAt }
       entries: {},
+      // call id -> when the realtime event that ended the call arrived
+      endedCalls: {},
     }),
 
     getters: {
@@ -108,6 +114,9 @@ export const useCallOperatorActivityStore = defineStore(
         if (!isPresent(entry.callId)) return;
 
         const { [String(entry.callId)]: removed, ...rest } = this.entries;
+        if (entry.state === OPERATOR_ACTIVITY_STATES.ENDED) {
+          this.rememberEndedCall(entry.callId, now);
+        }
         const isLive =
           entry.state === OPERATOR_ACTIVITY_STATES.CALLING ||
           entry.state === OPERATOR_ACTIVITY_STATES.TALKING;
@@ -121,17 +130,44 @@ export const useCallOperatorActivityStore = defineStore(
         this.entries = { ...rest, [String(entry.callId)]: entry };
       },
 
-      // Replaces what is known about a chat with what the server says is on
-      // right now (page opened, connection came back).
-      syncChat(chat, items, currentUserId, now = Date.now()) {
+      rememberEndedCall(callId, now = Date.now()) {
+        const kept = Object.entries(this.endedCalls).filter(
+          ([, endedAt]) => now - endedAt < ENDED_CALL_MEMORY_MS
+        );
+        this.endedCalls = {
+          ...Object.fromEntries(kept),
+          [String(callId)]: now,
+        };
+      },
+
+      // Fills in a chat with what the server says is on right now (page opened,
+      // connection came back). The answer describes the moment the request was
+      // made: whatever a realtime event decided since then (requestedAt) wins,
+      // a line it created, updated or ended, so a late answer can neither bring
+      // an ended call back nor erase a call that has just started. Without
+      // requestedAt the answer replaces everything known about the chat.
+      syncChat(
+        chat,
+        items,
+        currentUserId,
+        now = Date.now(),
+        { requestedAt = Infinity } = {}
+      ) {
         this.entries = Object.fromEntries(
           Object.entries(this.entries).filter(
-            ([, entry]) => !activityMatchesChat(entry, chat)
+            ([, entry]) =>
+              !activityMatchesChat(entry, chat) ||
+              entry.receivedAt >= requestedAt
           )
         );
-        (items || []).forEach(item =>
-          this.applyActivity(item, currentUserId, now)
-        );
+        (items || []).forEach(item => {
+          const callId = String(item?.call_id ?? item?.callId);
+          const endedAt = this.endedCalls[callId];
+          if (isPresent(endedAt) && endedAt >= requestedAt) return;
+          if (this.entries[callId]) return;
+
+          this.applyActivity(item, currentUserId, now);
+        });
       },
 
       pruneStale(now = Date.now()) {
@@ -141,10 +177,17 @@ export const useCallOperatorActivityStore = defineStore(
         if (kept.length !== Object.keys(this.entries).length) {
           this.entries = Object.fromEntries(kept);
         }
+        const rememberedEnds = Object.entries(this.endedCalls).filter(
+          ([, endedAt]) => now - endedAt < ENDED_CALL_MEMORY_MS
+        );
+        if (rememberedEnds.length !== Object.keys(this.endedCalls).length) {
+          this.endedCalls = Object.fromEntries(rememberedEnds);
+        }
       },
 
       clear() {
         this.entries = {};
+        this.endedCalls = {};
       },
     },
   }

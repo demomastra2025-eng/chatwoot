@@ -54,6 +54,9 @@ const fetchActivity = async () => {
   const chat = props.chat;
   if (!hasVoiceChannel.value) return;
 
+  // The answer describes the moment of the request: realtime events that
+  // arrive after this are newer than it and win over it.
+  const requestedAt = Date.now();
   try {
     const items = await VoiceAPI.getOperatorActivity(
       chat.is_communication_thread
@@ -62,7 +65,9 @@ const fetchActivity = async () => {
     );
     // The employee may have moved to another chat while the answer came.
     if (props.chat?.id !== chat.id) return;
-    activityStore.syncChat(chat, items, currentUserId.value);
+    activityStore.syncChat(chat, items, currentUserId.value, Date.now(), {
+      requestedAt,
+    });
   } catch {
     // The realtime events keep the line current; nothing to tell the user.
   }
