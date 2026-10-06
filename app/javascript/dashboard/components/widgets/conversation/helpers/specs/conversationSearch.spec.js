@@ -300,5 +300,16 @@ describe('conversationMatchesLocalSearch', () => {
         expect(conversationMatchesLocalSearch({}, ivan, query)).toBe(true);
       });
     });
+
+    it('matches names with characters that stay as typed: №, ™, ², an ellipsis', () => {
+      [
+        ['Клиника №5', '№5'],
+        ['Acme™ Ltd', 'Acme™'],
+        ['Комната 50 м²', 'м²'],
+        ['Ждите… тут', 'Ждите…'],
+      ].forEach(([name, query]) => {
+        expect(conversationMatchesLocalSearch({}, { name }, query)).toBe(true);
+      });
+    });
   });
 });

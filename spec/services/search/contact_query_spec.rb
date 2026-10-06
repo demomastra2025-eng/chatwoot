@@ -149,4 +149,19 @@ RSpec.describe Search::ContactQuery do
       expect(found_names("Ива\xFFн")).to eq(['Иван Иванов'])
     end
   end
+
+  # NFKC would have rewritten these characters before the comparison (№ to No, ™ to TM, ² to 2, … to ...).
+  describe 'characters that are typed on purpose and stay as stored' do
+    it 'finds a contact by №, ™, ², an ellipsis or a circled digit' do
+      ['Клиника №5', 'Acme™ Ltd', 'Комната 50 м²', 'Ждите… тут', 'Фото ① кабинет'].each do |name|
+        create(:contact, account: account, name: name)
+      end
+
+      aggregate_failures do
+        { '№5' => 'Клиника №5', 'Acme™' => 'Acme™ Ltd', 'м²' => 'Комната 50 м²', 'Ждите…' => 'Ждите… тут', '①' => 'Фото ① кабинет' }.each do |text, name|
+          expect(found_names(text)).to eq([name]), "expected #{text.inspect} to find #{name.inspect}"
+        end
+      end
+    end
+  end
 end
