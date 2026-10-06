@@ -84,6 +84,81 @@ RSpec.describe Search::MessageQuery do
     end
   end
 
+  # The typed text has to occur in the message as typed: characters that Unicode compatibility folding (NFKC) would
+  # rewrite on the way in must still be found.
+  describe 'characters that stay as they are typed' do
+    it 'finds №, an ellipsis, a superscript and a trademark sign' do
+      certificate = message('Нужна справка №123')
+      wait = message('Подождите… пожалуйста')
+      area = message('Площадь 50 м² в центре')
+      brand = message('Купили Acme™ вчера')
+      message('Нужна справка No123 и ждите... и 50 м2 и AcmeTM')
+
+      aggregate_failures do
+        expect(found('№123')).to eq([certificate.id])
+        expect(found('справка №123')).to eq([certificate.id])
+        expect(found('Подождите…')).to eq([wait.id])
+        expect(found('50 м²')).to eq([area.id])
+        expect(found('Acme™')).to eq([brand.id])
+      end
+    end
+
+    it 'finds a text typed with full-width characters as its plain ASCII' do
+      plain = message('Код ABC-123 принят')
+
+      expect(found('ＡＢＣ－１２３')).to eq([plain.id])
+    end
+  end
+
+  # The old phrase search found the words in any order of separators: a comma, a line break, two spaces, a no-break space.
+  describe 'words separated by punctuation, a line break or repeated spaces' do
+    let!(:comma) { message('Добрый день, хочу записаться к кардиологу') }
+    let!(:line_break) { message("Добрый день,\nхочу записаться к кардиологу", 1) }
+    let!(:spaces) { message('здравствуйте   меня зовут Иван', 2) }
+    let!(:no_break) { message("Добрый\u00A0день хочу узнать цену", 3) }
+    let!(:bang) { message('Добрый день! Как к вам попасть?', 4) }
+    let!(:dash) { message('Добрый день - хочу записаться', 5) }
+
+    it 'finds the words however they are separated' do
+      aggregate_failures do
+        expect(found('добрый день хочу')).to contain_exactly(comma.id, line_break.id, no_break.id, dash.id)
+        expect(found('добрый день, хочу')).to contain_exactly(comma.id, line_break.id, no_break.id, dash.id)
+        expect(found('здравствуйте меня зовут')).to eq([spaces.id])
+        expect(found('день хочу записаться к')).to contain_exactly(comma.id, line_break.id)
+        expect(found('добрый день как к вам')).to eq([bang.id])
+      end
+    end
+
+    it 'still needs the words to follow each other and the other characters to be there as typed' do
+      aggregate_failures do
+        expect(found('хочу добрый день')).to be_empty
+        expect(found('день записаться')).to be_empty
+        expect(found('день - хочу')).to eq([dash.id])
+        expect(found('день — хочу')).to be_empty
+      end
+    end
+
+    # Everything the long-standing phrase search (whole words, to_tsquery with <->) finds, the literal search finds too.
+    it 'finds everything the old phrase search found' do
+      legacy = lambda do |text|
+        words = text.split.map { |word| word.gsub(/[^[:alnum:]_]/, '') }.reject(&:empty?)
+        base.where("to_tsvector('english'::regconfig, COALESCE(messages.content, '')) @@ to_tsquery('english'::regconfig, ?)", words.join(' <-> '))
+            .pluck(:id)
+      end
+      queries = ['добрый день хочу', 'добрый день, хочу', 'здравствуйте меня', 'здравствуйте, меня зовут', 'день хочу записаться к',
+                 'добрый день как к вам', 'добрый день! как', 'хочу записаться']
+
+      aggregate_failures do
+        queries.each do |text|
+          old_ids = legacy.call(text)
+
+          expect(old_ids).not_to be_empty, "the legacy search should find something for #{text.inspect}"
+          expect(found(text)).to include(*old_ids), "expected #{text.inspect} to lose nothing the old search found"
+        end
+      end
+    end
+  end
+
   describe 'the order and the pages' do
     let!(:messages) { Array.new(20) { |index| message("Нужна справка №#{index}", index) } }
 

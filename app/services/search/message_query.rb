@@ -2,7 +2,8 @@
 # text (a substring, so a word start, a word ending and a part of a word all count), ignoring the case, with "е" and
 # "ё" interchangeable. There is no stemming and no word forms: "записаться" does NOT find "записали".
 #
-# The condition is a plain ILIKE '%text%' (or a case-insensitive regular expression with [её] when the text has е or ё),
+# The condition is a plain ILIKE '%text%' (or a case-insensitive regular expression with [её] when the text has е or ё and
+# with a gap between words that accepts any punctuation or line break when the text has several words),
 # which PostgreSQL answers from the pg_trgm index on messages.content (index_messages_on_content, db/migrate/
 # 20230426130150_init_schema.rb). That index is not scoped to an account, so which of the two plans the planner picks
 # decides the speed, and it often picks the wrong one: for a word that is common in other accounts but rare in this one
@@ -42,10 +43,11 @@ class Search::MessageQuery
     text.length >= MIN_LENGTH
   end
 
-  # The literal condition, as an Arel node on messages.content.
+  # The literal condition, as an Arel node on messages.content. Words typed with a space between them are found with any
+  # run of spaces, line breaks or punctuation in between, as the old phrase search did (see Search::QueryText).
   def condition(table = Message.arel_table)
-    if Search::QueryText.yo?(text)
-      table[:content].matches_regexp(Search::QueryText.yo_regexp(text), false)
+    if Search::QueryText.yo?(text) || Search::QueryText.gap?(text)
+      table[:content].matches_regexp(Search::QueryText.literal_regexp(text), false)
     else
       table[:content].matches(Search::QueryText.like_pattern(text), nil, false)
     end

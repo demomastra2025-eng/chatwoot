@@ -1,5 +1,10 @@
 import MessageFormatter from '../helpers/MessageFormatter';
 
+const ESCAPE_CHARS = /[.*+?^${}()|[\]\\]/g;
+// Same rule as Search::QueryText::WORD_GAP_RUN on the server: a space in the typed text matches any run of spaces and
+// punctuation of the message.
+const WORD_GAP_RUN = /([.,;:!?…"'«»\s]+)/;
+
 /**
  * A composable providing utility functions for message formatting.
  *
@@ -69,10 +74,22 @@ export const useMessageFormatter = () => {
     const plainTextContent = getPlainText(content);
 
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
-    let escapedSearchTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // "е" and "ё" are the same letter for a person who searches (the server search treats them so too).
+    const escapedSearchTerm = searchTerm.replace(ESCAPE_CHARS, '\\$&');
+    // "е" and "ё" are the same letter for a person who searches (the server search treats them so too), and a space
+    // between two words matches any run of spaces and punctuation, as on the server (app/services/search/query_text.rb).
     if (yoInsensitive) {
-      escapedSearchTerm = escapedSearchTerm.replace(/[еёЕЁ]/g, '[её]');
+      const pattern = searchTerm
+        .split(WORD_GAP_RUN)
+        .map(piece =>
+          /\s/.test(piece)
+            ? '[^\\p{L}\\p{N}]+'
+            : piece.replace(ESCAPE_CHARS, '\\$&').replace(/[еёЕЁ]/g, '[её]')
+        )
+        .join('');
+      return plainTextContent.replace(
+        new RegExp(`(${pattern})`, 'iug'),
+        `<span class="${highlightClass}">$1</span>`
+      );
     }
 
     return plainTextContent.replace(

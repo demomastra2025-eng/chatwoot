@@ -16,10 +16,18 @@ const INVISIBLE_CHARS =
 // Digits with the usual separators (spaces of any kind, dots, dashes of every kind, brackets, one leading plus).
 const PHONE_INPUT = /^\+?[\s\d().\-\u2010-\u2015\u2212]+$/;
 
-// Full-width characters and exotic spaces become plain ones, invisible marks disappear.
+// Full-width ASCII (＋７ ７０７) becomes plain ASCII, exotic spaces become plain ones, invisible marks disappear. NFKC is
+// not used on purpose: it rewrites "№", "…", "²" and "™" into "No", "...", "2" and "TM", which stay as typed in the
+// stored text (the same rule as app/services/search/query_text.rb).
+const FULL_WIDTH_ASCII = /[\uFF01-\uFF5E]/g;
+const FULL_WIDTH_OFFSET = 0xfee0;
+
 export const cleanSearchText = value =>
   String(value ?? '')
-    .normalize('NFKC')
+    .normalize('NFC')
+    .replace(FULL_WIDTH_ASCII, char =>
+      String.fromCharCode(char.charCodeAt(0) - FULL_WIDTH_OFFSET)
+    )
     .replace(INVISIBLE_CHARS, '')
     .replace(/\s+/g, ' ')
     .trim();

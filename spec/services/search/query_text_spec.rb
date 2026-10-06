@@ -20,11 +20,23 @@ RSpec.describe Search::QueryText do
     end
 
     it 'composes a decomposed letter, as pasted from some systems' do
-      expect(described_class.clean("Исай")).to eq('Исай')
+      expect(described_class.clean("\u0418\u0306сай, Се\u0308мен")).to eq("\u0419сай, С\u0451мен")
     end
 
-    it 'turns full-width digits and plus into plain ones' do
+    it 'turns full-width ASCII (digits, plus, letters, punctuation) into plain ASCII' do
       expect(described_class.clean('＋７ ７０７')).to eq('+7 707')
+      expect(described_class.clean('ＡＢｃ！（１）')).to eq('ABc!(1)')
+    end
+
+    # NFKC would rewrite these: the typed text has to stay as it is stored in the messages.
+    it 'leaves characters that people type on purpose as they are: №, an ellipsis, a superscript, a trademark sign, ligatures' do
+      aggregate_failures do
+        expect(described_class.clean('справка №123')).to eq('справка №123')
+        expect(described_class.clean('ждите…')).to eq('ждите…')
+        expect(described_class.clean('50 м²')).to eq('50 м²')
+        expect(described_class.clean('Brand™')).to eq('Brand™')
+        expect(described_class.clean('ﬁne ½ ㎏ ①')).to eq('ﬁne ½ ㎏ ①')
+      end
     end
 
     it 'strips and bounds the text' do
@@ -52,6 +64,29 @@ RSpec.describe Search::QueryText do
       expect(described_class.yo_regexp('а.б (в) [г] {д} ^е$ ж|з \\ и*к+л?')).to eq(
         'а\\.б \\(в\\) \\[г\\] \\{д\\} \\^[её]\\$ ж\\|з \\\\ и\\*к\\+л\\?'
       )
+    end
+  end
+
+  describe '.literal_regexp and .gap?' do
+    it 'lets a space between words match any run of non-letters, and nothing else' do
+      expect(described_class.literal_regexp('добрый день хочу')).to eq('добрый[^[:alnum:]]+д[её]нь[^[:alnum:]]+хочу')
+      expect(described_class.gap?('добрый день')).to be(true)
+      expect(described_class.gap?('добрый')).to be(false)
+    end
+
+    it 'does not require the sentence punctuation that is typed next to a space' do
+      expect(described_class.literal_regexp('день, хочу')).to eq('д[её]нь[^[:alnum:]]+хочу')
+      expect(described_class.literal_regexp('ждите… пожалуйста!')).to eq('ждит[её][^[:alnum:]]+пожалуйста!')
+    end
+
+    it 'keeps every other character as typed, also next to a space' do
+      expect(described_class.literal_regexp('справка №123')).to eq('справка[^[:alnum:]]+№123')
+      expect(described_class.literal_regexp('(акция) 50%')).to eq('\\(акция\\)[^[:alnum:]]+50%')
+      expect(described_class.literal_regexp('ждите…')).to eq('ждит[её]…')
+    end
+
+    it 'keeps е and ё interchangeable' do
+      expect(described_class.literal_regexp('счёт врача')).to eq('сч[её]т[^[:alnum:]]+врача')
     end
   end
 end

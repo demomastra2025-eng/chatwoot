@@ -113,6 +113,36 @@ describe('useMessageFormatter', () => {
       ).toBe('Нужен <span class="highlight">ПРИЕМ</span> врача');
     });
 
+    it('highlights words typed with a space also where the message has a comma, a line break or more spaces', () => {
+      const options = { yoInsensitive: true };
+
+      expect(
+        messageFormatter
+          .highlightContent(
+            'Добрый день,\nхочу записаться',
+            'добрый день хочу',
+            'highlight',
+            options
+          )
+          .trim()
+      ).toBe('<span class="highlight">Добрый день,\nхочу</span> записаться');
+    });
+
+    it('highlights №, an ellipsis and a trademark sign as typed', () => {
+      const options = { yoInsensitive: true };
+
+      expect(
+        messageFormatter
+          .highlightContent(
+            'Справка №123 и Acme™',
+            '№123',
+            'highlight',
+            options
+          )
+          .trim()
+      ).toBe('Справка <span class="highlight">№123</span> и Acme™');
+    });
+
     it('still escapes the special characters when е and ё are unified', () => {
       const result = messageFormatter.highlightContent(
         'Счёт (VIP) [1]',

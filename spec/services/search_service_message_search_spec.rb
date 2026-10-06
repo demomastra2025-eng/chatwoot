@@ -59,6 +59,18 @@ RSpec.describe SearchService do
           end
         end
 
+        it 'finds characters that stay as typed (№, an ellipsis, a superscript) and words separated by punctuation' do
+          certificate = message('Нужна справка №123')
+          wait = message("Подождите… Добрый день,\nхочу записаться", 1)
+
+          aggregate_failures do
+            expect(found_ids('№123')).to eq([certificate.id])
+            expect(found_ids('Подождите…')).to eq([wait.id])
+            expect(found_ids('добрый день хочу')).to eq([wait.id])
+            expect(found_ids('добрый день, хочу')).to eq([wait.id])
+          end
+        end
+
         it 'does not search the messages of another account or of an inbox the user cannot open' do
           create(:message, content: 'Мы записали вас в другом аккаунте')
           create(:message, account: account, inbox: create(:inbox, account: account), content: 'Мы записали вас в чужом ящике')

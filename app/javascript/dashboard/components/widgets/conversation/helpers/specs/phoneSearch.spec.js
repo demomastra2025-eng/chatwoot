@@ -17,6 +17,18 @@ describe('phoneSearch', () => {
       expect(cleanSearchText('＋７ ７０７')).toBe('+7 707');
       expect(cleanSearchText(null)).toBe('');
     });
+
+    it('leaves characters that stay as typed in the stored text: №, an ellipsis, a superscript, a trademark sign', () => {
+      expect(cleanSearchText('справка №123')).toBe('справка №123');
+      expect(cleanSearchText('ждите…')).toBe('ждите…');
+      expect(cleanSearchText('50 м²')).toBe('50 м²');
+      expect(cleanSearchText('Brand™')).toBe('Brand™');
+    });
+
+    it('turns full-width ASCII into plain ASCII and composes decomposed letters', () => {
+      expect(cleanSearchText('ＡＢｃ！（１）')).toBe('ABc!(1)');
+      expect(cleanSearchText('\u0418\u0306сай')).toBe('\u0419сай');
+    });
   });
 
   describe('parsePhoneQuery', () => {
