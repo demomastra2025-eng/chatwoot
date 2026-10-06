@@ -2945,6 +2945,7 @@
       "ACTIONS": {
         "REFRESH": "Refresh",
         "RUN_RELEASE_CHECK": "Run release check",
+        "FILTERS": "Фильтры",
         "APPLY_FILTERS": "Apply filters",
         "RESET_FILTERS": "Reset filters",
         "COPY_LINK": "Copy current view link",
@@ -2981,6 +2982,9 @@
         "COPILOT": "Copilot"
       },
       "FILTERS": {
+        "PERIOD": "Период",
+        "SUCCESS": "Успешно",
+        "ERROR": "Ошибка",
         "ALL_FEATURES": "All features",
         "ALL_RUNTIME_MODES": "All runtime modes",
         "ALL_STATUSES": "All statuses",

@@ -2683,10 +2683,16 @@
     },
     "OBSERVABILITY": {
       "ACTIONS": {
+        "FILTERS": "Фильтры",
         "APPLY_FILTERS": "Применить фильтры",
         "RESET_FILTERS": "Сбросить фильтры"
       },
       "FILTERS": {
+        "PERIOD": "Период",
+        "STATUS": "Статус",
+        "ALL_STATUSES": "Все статусы",
+        "SUCCESS": "Успешно",
+        "ERROR": "Ошибка",
         "CONVERSATION_DISPLAY_ID": "ID диалога",
         "ASSISTANT_ID": "ID ассистента"
       },

@@ -38,9 +38,12 @@ const selectedRange = ref(
 );
 const hasManuallySelectedRange = ref(false);
 const detailsDialogRef = ref(null);
+const showFilters = ref(false);
+const calendarKey = ref(0);
 const filters = reactive({
   assistantId: '',
   conversationDisplayId: '',
+  status: '',
   traceId: '',
   sessionId: '',
   copilotThreadId: '',
@@ -84,6 +87,11 @@ const rangeOptions = computed(() => [
     label: t('CAPTAIN.OBSERVABILITY.LOGS.RANGES.CUSTOM'),
   },
 ]);
+const statusOptions = computed(() => [
+  { value: '', label: t('CAPTAIN.OBSERVABILITY.FILTERS.ALL_STATUSES') },
+  { value: 'success', label: t('CAPTAIN.OBSERVABILITY.FILTERS.SUCCESS') },
+  { value: 'error', label: t('CAPTAIN.OBSERVABILITY.FILTERS.ERROR') },
+]);
 
 const currentPage = computed(() => Number(meta.value.current_page || 1));
 const totalCount = computed(() => Number(meta.value.count || 0));
@@ -125,11 +133,15 @@ const applyRouteFilters = query => {
   filters.assistantId = routeQueryValue(query?.assistant_id) || '';
   filters.conversationDisplayId =
     routeQueryValue(query?.conversation_display_id) || '';
+  filters.status = routeQueryValue(query?.status) || '';
   filters.traceId = routeQueryValue(query?.trace_id) || '';
   filters.sessionId = routeQueryValue(query?.session_id) || '';
   filters.copilotThreadId = routeQueryValue(query?.copilot_thread_id) || '';
 };
 applyRouteFilters(route.query || {});
+showFilters.value = Boolean(
+  filters.assistantId || filters.conversationDisplayId || filters.status
+);
 
 const hasTraceContext = computed(
   () =>
@@ -152,6 +164,7 @@ const requestParams = page => {
   }
 
   if (filters.assistantId) params.assistant_id = filters.assistantId;
+  if (filters.status) params.status = filters.status;
   if (filters.conversationDisplayId) {
     params.conversation_display_id = filters.conversationDisplayId;
   }
@@ -202,6 +215,7 @@ const handleRangeSelection = value => {
 const resetFilters = () => {
   filters.assistantId = '';
   filters.conversationDisplayId = '';
+  filters.status = '';
   filters.traceId = '';
   filters.sessionId = '';
   filters.copilotThreadId = '';
@@ -210,6 +224,7 @@ const resetFilters = () => {
 
 const handleCustomDateRangeChanged = ([since, until]) => {
   customDateRange.value = [since, until];
+  calendarKey.value += 1;
   fetchEvents(1);
 };
 
@@ -272,6 +287,9 @@ watch(
   () => route.query,
   query => {
     applyRouteFilters(query);
+    if (filters.assistantId || filters.conversationDisplayId || filters.status) {
+      showFilters.value = true;
+    }
     const nextTraceContextKey = traceContextKey(query);
     const hasNewSharedTraceLink =
       hasTraceQueryContext(query) &&
@@ -307,11 +325,18 @@ onMounted(() => fetchEvents(1));
     :show-know-more="false"
     @update:current-page="fetchEvents"
   >
-    <template #search>
-      <div class="flex flex-col gap-3">
-        <div class="flex flex-wrap items-end gap-2">
-          <div class="relative min-w-48">
+    <template #subHeader>
+      <div class="border-t border-n-weak py-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="relative min-w-48 flex-1 sm:flex-none">
+            <label
+              for="observability-range"
+              class="mb-1 block text-xs text-n-slate-11"
+            >
+              {{ t('CAPTAIN.OBSERVABILITY.FILTERS.PERIOD') }}
+            </label>
             <Select
+              id="observability-range"
               :model-value="selectedRange"
               :options="rangeOptions"
               class="w-full"
@@ -319,13 +344,25 @@ onMounted(() => fetchEvents(1));
             />
             <DatePicker
               v-if="selectedRange === 'custom'"
+              :key="calendarKey"
               v-model:date-range="customDateRange"
               v-model:range-type="customRangeType"
               calendar-only
               compact
+              force-open
+              hide-trigger
               @date-range-changed="handleCustomDateRangeChanged"
             />
           </div>
+          <Button
+            :label="t('CAPTAIN.OBSERVABILITY.ACTIONS.FILTERS')"
+            icon="i-lucide-list-filter"
+            variant="outline"
+            color="slate"
+            size="sm"
+            :aria-expanded="showFilters"
+            @click="showFilters = !showFilters"
+          />
           <Button
             :label="t('CAPTAIN.OBSERVABILITY.SIMPLE.REFRESH')"
             icon="i-lucide-refresh-cw"
@@ -336,35 +373,51 @@ onMounted(() => fetchEvents(1));
             @click="fetchEvents()"
           />
         </div>
-        <div class="flex flex-wrap items-end gap-2">
+        <div v-if="showFilters" class="mt-3 flex flex-wrap items-end gap-3">
           <label
-            class="flex min-w-48 flex-1 flex-col gap-1 text-xs text-n-slate-11"
-          >
-            <span>{{ t('CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID') }}</span>
-            <input
-              v-model.trim="filters.assistantId"
-              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm text-n-slate-12 outline-none focus:ring-1 focus:ring-n-brand"
-              type="text"
-              inputmode="numeric"
-              :aria-label="t('CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID')"
-            />
-          </label>
-          <label
-            class="flex min-w-48 flex-1 flex-col gap-1 text-xs text-n-slate-11"
+            class="flex min-w-44 flex-1 flex-col gap-1 text-xs text-n-slate-11"
           >
             <span>
               {{ t('CAPTAIN.OBSERVABILITY.FILTERS.CONVERSATION_DISPLAY_ID') }}
             </span>
             <input
               v-model.trim="filters.conversationDisplayId"
-              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm text-n-slate-12 outline-none focus:ring-1 focus:ring-n-brand"
+              class="h-9 rounded-lg border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:ring-1 focus:ring-n-brand"
               type="text"
               inputmode="numeric"
               :aria-label="
                 t('CAPTAIN.OBSERVABILITY.FILTERS.CONVERSATION_DISPLAY_ID')
               "
+              @keyup.enter="applyFilters"
             />
           </label>
+          <label
+            class="flex min-w-44 flex-1 flex-col gap-1 text-xs text-n-slate-11"
+          >
+            <span>{{ t('CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID') }}</span>
+            <input
+              v-model.trim="filters.assistantId"
+              class="h-9 rounded-lg border border-n-weak bg-n-solid-1 px-3 text-sm text-n-slate-12 outline-none focus:ring-1 focus:ring-n-brand"
+              type="text"
+              inputmode="numeric"
+              :aria-label="t('CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID')"
+              @keyup.enter="applyFilters"
+            />
+          </label>
+          <div class="min-w-44 flex-1">
+            <label
+              for="observability-status"
+              class="mb-1 block text-xs text-n-slate-11"
+            >
+              {{ t('CAPTAIN.OBSERVABILITY.FILTERS.STATUS') }}
+            </label>
+            <Select
+              id="observability-status"
+              v-model="filters.status"
+              :options="statusOptions"
+              class="w-full"
+            />
+          </div>
           <Button
             :label="t('CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS')"
             size="sm"

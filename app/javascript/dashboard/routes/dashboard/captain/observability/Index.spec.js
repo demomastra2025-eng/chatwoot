@@ -2,12 +2,14 @@
 import { defineComponent, h, reactive, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
-const { getMock, alertMock, routeQuery, openEventMock } = vi.hoisted(() => ({
-  getMock: vi.fn(),
-  alertMock: vi.fn(),
-  routeQuery: { value: {} },
-  openEventMock: vi.fn(),
-}));
+const { getMock, alertMock, routeQuery, openEventMock, calendarSelection } =
+  vi.hoisted(() => ({
+    getMock: vi.fn(),
+    alertMock: vi.fn(),
+    routeQuery: { value: {} },
+    openEventMock: vi.fn(),
+    calendarSelection: { count: 0 },
+  }));
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -56,6 +58,7 @@ vi.mock('dashboard/components-next/button/Button.vue', () => ({
 vi.mock('dashboard/components-next/select/Select.vue', () => ({
   default: defineComponent({
     props: {
+      id: { type: String, default: '' },
       modelValue: { type: String, default: '' },
       options: { type: Array, default: () => [] },
     },
@@ -65,6 +68,7 @@ vi.mock('dashboard/components-next/select/Select.vue', () => ({
         h(
           'select',
           {
+            id: props.id,
             value: props.modelValue,
             onChange: event => emit('update:modelValue', event.target.value),
           },
@@ -87,6 +91,7 @@ vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
       return () =>
         h('main', { 'data-total-count': String(props.totalCount) }, [
           slots.search?.(),
+          slots.subHeader?.(),
           props.isEmpty ? slots.emptyState?.() : slots.body?.(),
           h(
             'button',
@@ -113,7 +118,6 @@ vi.mock('dashboard/components/ui/DatePicker/DatePicker.vue', () => ({
     emits: ['dateRangeChanged'],
     setup(props, { emit }) {
       const isOpen = ref(props.forceOpen);
-      const rangeIndex = ref(0);
       const rangeStart = ref(null);
       const ranges = [
         [new Date('2026-08-01T00:00:00Z'), new Date('2026-08-15T23:59:59Z')],
@@ -149,7 +153,7 @@ vi.mock('dashboard/components/ui/DatePicker/DatePicker.vue', () => ({
                     {
                       'data-test-id': 'select-custom-start',
                       onClick: () => {
-                        rangeStart.value = ranges[rangeIndex.value][0];
+                        rangeStart.value = ranges[calendarSelection.count][0];
                       },
                     },
                     'start'
@@ -161,10 +165,10 @@ vi.mock('dashboard/components/ui/DatePicker/DatePicker.vue', () => ({
                       onClick: () => {
                         emit('dateRangeChanged', [
                           rangeStart.value,
-                          ranges[rangeIndex.value][1],
+                          ranges[calendarSelection.count][1],
                           'custom',
                         ]);
-                        rangeIndex.value += 1;
+                        calendarSelection.count += 1;
                         isOpen.value = false;
                       },
                     },
@@ -228,6 +232,10 @@ const response = {
 
 const buttonByLabel = (wrapper, label) =>
   wrapper.findAll('button').find(button => button.text() === label);
+const openFilters = wrapper =>
+  buttonByLabel(wrapper, 'CAPTAIN.OBSERVABILITY.ACTIONS.FILTERS').trigger(
+    'click'
+  );
 
 describe('AI Agent logs', () => {
   beforeEach(() => {
@@ -235,7 +243,65 @@ describe('AI Agent logs', () => {
     getMock.mockResolvedValue(response);
     alertMock.mockReset();
     openEventMock.mockReset();
+    calendarSelection.count = 0;
     routeQuery.value = {};
+  });
+
+  it('keeps the header compact and labels the period and optional filters', async () => {
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.get('label[for="observability-range"]').text()).toBe(
+      'CAPTAIN.OBSERVABILITY.FILTERS.PERIOD'
+    );
+    expect(wrapper.get('#observability-range').element.value).toBe('30d');
+    expect(wrapper.find('#observability-status').exists()).toBe(false);
+
+    await openFilters(wrapper);
+    expect(wrapper.get('label[for="observability-status"]').text()).toBe(
+      'CAPTAIN.OBSERVABILITY.FILTERS.STATUS'
+    );
+    expect(wrapper.get('#observability-status').element.value).toBe('');
+  });
+
+  it('applies and clears the supported status filter', async () => {
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+    await openFilters(wrapper);
+
+    await wrapper.get('#observability-status').setValue('error');
+    await buttonByLabel(
+      wrapper,
+      'CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS'
+    ).trigger('click');
+    await flushPromises();
+    expect(getMock.mock.calls.at(-1)[0].status).toBe('error');
+
+    await buttonByLabel(
+      wrapper,
+      'CAPTAIN.OBSERVABILITY.ACTIONS.RESET_FILTERS'
+    ).trigger('click');
+    await flushPromises();
+    expect(getMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
+  });
+
+  it('shows filters from a shared link and keeps them in the request', async () => {
+    routeQuery.value = {
+      assistant_id: '42',
+      status: 'error',
+    };
+
+    const wrapper = mount(ObservabilityIndex);
+    await flushPromises();
+
+    expect(wrapper.get('#observability-status').element.value).toBe('error');
+    const assistantInput = wrapper.get(
+      'input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]'
+    );
+    expect(assistantInput.element.value).toBe('42');
+    expect(getMock.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ assistant_id: '42', status: 'error' })
+    );
   });
 
   it('requests Captain agent completions in both supported feature families', async () => {
@@ -475,6 +541,7 @@ describe('AI Agent logs', () => {
   it('filters by agent ID while retaining both supported feature families', async () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
+    await openFilters(wrapper);
 
     await wrapper
       .get('input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]')
@@ -498,6 +565,7 @@ describe('AI Agent logs', () => {
   it('filters a conversation and requests all of its events', async () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
+    await openFilters(wrapper);
 
     await wrapper
       .get(
@@ -524,6 +592,7 @@ describe('AI Agent logs', () => {
   it('keeps the active filter when moving to another page', async () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
+    await openFilters(wrapper);
 
     await wrapper
       .get('input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]')
@@ -597,22 +666,17 @@ describe('AI Agent logs', () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
 
-    await wrapper.find('select').setValue('custom');
+    await wrapper.get('#observability-range').setValue('custom');
     await flushPromises();
     expect(getMock).toHaveBeenCalledTimes(1);
 
     const picker = wrapper.get('[data-calendar-only]');
-    expect(picker.attributes('data-force-open')).toBe('false');
-    expect(picker.attributes('data-hide-trigger')).toBe('false');
-    const trigger = wrapper.get(
-      '[data-test-id="custom-range-calendar-trigger"]'
-    );
-    expect(trigger.exists()).toBe(true);
+    expect(picker.attributes('data-force-open')).toBe('true');
+    expect(picker.attributes('data-hide-trigger')).toBe('true');
     expect(
       wrapper.find('[data-test-id="custom-range-calendar"]').exists()
-    ).toBe(false);
+    ).toBe(true);
 
-    await trigger.trigger('click');
     await wrapper.get('[data-test-id="select-custom-start"]').trigger('click');
     await wrapper.get('[data-test-id="select-custom-end"]').trigger('click');
     await flushPromises();
@@ -629,10 +693,6 @@ describe('AI Agent logs', () => {
       })
     );
 
-    expect(
-      wrapper.find('[data-test-id="custom-range-calendar"]').exists()
-    ).toBe(false);
-    await trigger.trigger('click');
     expect(
       wrapper.find('[data-test-id="custom-range-calendar"]').exists()
     ).toBe(true);
