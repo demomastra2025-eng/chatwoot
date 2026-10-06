@@ -77,7 +77,7 @@ module Api::V1::Accounts::Crm::Concerns::DealsBoarding
   end
 
   def pagination_meta(scope, records)
-    stage_counts = scope.reorder(nil).group(:stage_id).count.transform_keys(&:to_s)
+    stage_counts, stage_amounts_minor, pipeline_amounts_minor = aggregate_deal_totals(scope)
     total_count = stage_counts.values.sum
     paginated_count = board_mode? ? stage_counts.values.max.to_i : total_count
     total_pages = (paginated_count.to_f / per_page_param).ceil
@@ -88,8 +88,35 @@ module Api::V1::Accounts::Crm::Concerns::DealsBoarding
       page: page_param,
       per_page: per_page_param,
       stage_counts: stage_counts,
+      stage_amounts_minor: stage_amounts_minor,
+      pipeline_amounts_minor: pipeline_amounts_minor,
       total_count: total_count,
       total_pages: total_pages
     }
+  end
+
+  def aggregate_deal_totals(scope)
+    totals = deal_total_rows(scope)
+    stage_counts = Hash.new(0)
+    stage_amounts_minor = Hash.new { |hash, key| hash[key] = {} }
+    pipeline_amounts_minor = Hash.new(0)
+    totals.each do |stage_id, currency, count, amount_minor|
+      stage_key = stage_id.to_s
+      stage_counts[stage_key] += count
+      next if currency.blank?
+
+      stage_amounts_minor[stage_key][currency] = amount_minor.to_i
+      pipeline_amounts_minor[currency] += amount_minor.to_i
+    end
+    [stage_counts, stage_amounts_minor, pipeline_amounts_minor]
+  end
+
+  def deal_total_rows(scope)
+    # The filtered scope can join contacts and use DISTINCT. Aggregate the deal
+    # IDs once so joins cannot duplicate amounts, regardless of the page size.
+    filtered_ids = scope.reselect(:id).reorder(nil)
+    ::Crm::Deal.where(id: filtered_ids)
+               .group(:stage_id, :currency)
+               .pluck(:stage_id, :currency, Arel.sql('COUNT(*)'), Arel.sql('COALESCE(SUM(amount_minor), 0)'))
   end
 end

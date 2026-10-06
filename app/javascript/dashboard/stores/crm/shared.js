@@ -11,8 +11,18 @@ const normalizeRecord = payload => {
 
 export const normalizePayload = data => normalizeRecord(data?.payload || []);
 
-export const normalizeMeta = data =>
-  camelcaseKeys(data?.meta || {}, { deep: true });
+export const normalizeMeta = data => {
+  const rawMeta = data?.meta || {};
+  const meta = camelcaseKeys(rawMeta, { deep: true });
+  // ISO currency codes are identifiers; camelcaseKeys would turn KZT into kzt.
+  if (rawMeta.stage_amounts_minor) {
+    meta.stageAmountsMinor = rawMeta.stage_amounts_minor;
+  }
+  if (rawMeta.pipeline_amounts_minor) {
+    meta.pipelineAmountsMinor = rawMeta.pipeline_amounts_minor;
+  }
+  return meta;
+};
 
 const normalizeErrorMessage = (value, fallback = '') => {
   if (typeof value === 'string') return value;

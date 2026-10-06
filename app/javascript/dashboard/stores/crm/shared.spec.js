@@ -1,6 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { formatCrmErrorMessage } from './shared';
+import { formatCrmErrorMessage, normalizeMeta } from './shared';
+
+describe('normalizeMeta', () => {
+  it('keeps ISO currency codes in aggregate keys', () => {
+    expect(
+      normalizeMeta({
+        meta: {
+          pipeline_amounts_minor: { KZT: 40000, USD: 10000 },
+          stage_amounts_minor: { 12: { KZT: 40000 } },
+          total_count: 3,
+        },
+      })
+    ).toEqual({
+      pipelineAmountsMinor: { KZT: 40000, USD: 10000 },
+      stageAmountsMinor: { 12: { KZT: 40000 } },
+      totalCount: 3,
+    });
+  });
+});
 
 describe('formatCrmErrorMessage', () => {
   it.each([

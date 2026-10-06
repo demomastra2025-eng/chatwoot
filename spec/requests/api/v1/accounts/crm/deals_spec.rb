@@ -687,6 +687,45 @@ RSpec.describe 'CRM Deals API', type: :request do
     )
   end
 
+  it 'aggregates all filtered deals by stage and currency beyond the current board page' do
+    pipeline = create(:crm_pipeline, account: account)
+    first_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    second_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    other_pipeline = create(:crm_pipeline, account: account)
+    other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+    owner = create(:user, account: account)
+    other_owner = create(:user, account: account)
+
+    create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage,
+                      owner: owner, amount_minor: 125_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage,
+                      owner: owner, amount_minor: 275_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: second_stage,
+                      owner: owner, amount_minor: 100_00, currency: 'USD')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: second_stage,
+                      owner: owner, amount_minor: nil, currency: nil)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage,
+                      owner: other_owner, amount_minor: 999_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: other_pipeline, stage: other_stage,
+                      owner: owner, amount_minor: 999_00, currency: 'KZT')
+
+    get path,
+        params: { board: true, page: 1, per_page: 1, pipeline_id: pipeline.id, owner_id: owner.id },
+        headers: headers,
+        as: :json
+
+    meta = response.parsed_body.fetch('meta')
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload').size).to eq(2)
+    expect(meta.fetch('total_count')).to eq(4)
+    expect(meta.fetch('stage_counts')).to include(first_stage.id.to_s => 2, second_stage.id.to_s => 2)
+    expect(meta.fetch('stage_amounts_minor')).to include(
+      first_stage.id.to_s => { 'KZT' => 400_00 },
+      second_stage.id.to_s => { 'USD' => 100_00 }
+    )
+    expect(meta.fetch('pipeline_amounts_minor')).to eq('KZT' => 400_00, 'USD' => 100_00)
+  end
+
   it 'searches and sorts list pages on the server with a stable id tie-breaker' do
     pipeline = create(:crm_pipeline, account: account, name: 'Enterprise Sales')
     stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified')
