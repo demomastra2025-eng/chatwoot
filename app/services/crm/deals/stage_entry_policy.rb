@@ -134,7 +134,7 @@ class Crm::Deals::StageEntryPolicy
     labels = missing_fields.pluck(:label).join(', ')
     Crm::Error.new(
       code: 'DEAL_STAGE_REQUIRES_FIELDS',
-      message: "Fill required fields before moving the deal: #{labels}",
+      message: "Заполните обязательные поля этапа: #{labels}.",
       status: :unprocessable_content,
       details: details
     )

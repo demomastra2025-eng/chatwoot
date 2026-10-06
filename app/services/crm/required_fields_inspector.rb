@@ -1,15 +1,15 @@
 class Crm::RequiredFieldsInspector
   BUILT_IN_DEAL_FIELDS = {
-    'title' => { label: 'Title', field_type: 'text' },
-    'description' => { label: 'Description', field_type: 'textarea' },
-    'owner_id' => { label: 'Owner', field_type: 'user' },
-    'team_id' => { label: 'Team', field_type: 'team' },
-    'company_id' => { label: 'Company', field_type: 'company' },
-    'primary_contact_id' => { label: 'Primary contact', field_type: 'contact' },
-    'amount_minor' => { label: 'Amount', field_type: 'currency' },
-    'currency' => { label: 'Currency', field_type: 'select' },
-    'expected_close_on' => { label: 'Expected close date', field_type: 'date' },
-    'win_probability' => { label: 'Win probability', field_type: 'percent' }
+    'title' => { label: 'Название', field_type: 'text' },
+    'description' => { label: 'Описание', field_type: 'textarea' },
+    'owner_id' => { label: 'Ответственный', field_type: 'user' },
+    'team_id' => { label: 'Команда', field_type: 'team' },
+    'company_id' => { label: 'Компания', field_type: 'company' },
+    'primary_contact_id' => { label: 'Основной контакт', field_type: 'contact' },
+    'amount_minor' => { label: 'Сумма', field_type: 'currency' },
+    'currency' => { label: 'Валюта', field_type: 'select' },
+    'expected_close_on' => { label: 'Ожидаемая дата закрытия', field_type: 'date' },
+    'win_probability' => { label: 'Вероятность выигрыша', field_type: 'percent' }
   }.freeze
 
   def initialize(account:, entity_kind:, custom_attributes:, context: nil, **options)

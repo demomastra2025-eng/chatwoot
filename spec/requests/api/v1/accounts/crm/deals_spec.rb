@@ -563,6 +563,29 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.stage_id).to eq(target_stage.id)
   end
 
+  it 'requires stage fields when editing a deal already in that stage' do
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, description: nil)
+    create(:crm_stage_field_requirement, stage: stage, field_key: 'description')
+
+    patch "#{path}/#{deal.id}",
+          params: { title: 'Edited deal', lock_version: deal.lock_version },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_FIELDS')
+    expect(response.parsed_body['error']).to include('Описание')
+    expect(deal.reload.title).not_to eq('Edited deal')
+
+    patch "#{path}/#{deal.id}",
+          params: { description: 'Details supplied', lock_version: deal.lock_version },
+          headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(deal.reload.description).to eq('Details supplied')
+  end
+
   it 'blocks stage skipping when the pipeline rule is enabled' do
     pipeline = create(:crm_pipeline, account: account, restrict_stage_skipping: true)
     source_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 1)

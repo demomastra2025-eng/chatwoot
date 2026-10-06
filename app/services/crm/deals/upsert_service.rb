@@ -39,7 +39,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     resolve_deal_context!
     initialize_existing_stage_visit!
     assign_deal_attributes!
-    enforce_initial_stage_requirements! if @new_record
+    enforce_stage_requirements!
     deal.save!
     finalize_deal!
   end
@@ -113,7 +113,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     )
   end
 
-  def enforce_initial_stage_requirements!
+  def enforce_stage_requirements!
     @stage_rule_override = Crm::Deals::StageEntryPolicy.new(
       deal: deal,
       target_stage: @stage,
