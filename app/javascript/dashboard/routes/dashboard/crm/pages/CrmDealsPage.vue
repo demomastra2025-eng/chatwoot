@@ -1539,7 +1539,10 @@ const activeFilterChips = computed(() => {
       field => field.key === key
     );
     if (!definition) return;
-    const summary = customFilterLabel(definition, customFieldFilters.value[key]);
+    const summary = customFilterLabel(
+      definition,
+      customFieldFilters.value[key]
+    );
     add(`custom:${key}`, `${definition.label}: ${summary}`);
   });
   return chips;
@@ -3838,7 +3841,10 @@ watch(
         :title="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
       >
         <template #title>
-          <div v-if="!isPipelineSelectionPending" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div
+            v-if="!isPipelineSelectionPending"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1"
+          >
             <SelectMenu
               :model-value="
                 String(filters.pipelineId || selectedPipeline?.id || '')
@@ -3876,7 +3882,10 @@ watch(
           />
         </template>
         <template #center>
-          <div ref="filterSearchTriggerRef" class="flex min-w-64 flex-1 items-center gap-2">
+          <div
+            ref="filterSearchTriggerRef"
+            class="flex min-w-64 flex-1 items-center gap-2"
+          >
             <Input
               size="sm"
               type="search"

@@ -15,9 +15,6 @@ import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
-// Card fields can later be driven by user preferences.
-const SHOW_CUSTOM_FIELDS_ON_CARD = false;
-
 const props = defineProps({
   canManage: {
     type: Boolean,
@@ -94,6 +91,10 @@ const emit = defineEmits([
   'selectDeal',
   'toggleSortDirection',
 ]);
+
+// Card fields can later be driven by user preferences.
+const SHOW_CUSTOM_FIELDS_ON_CARD = false;
+
 const { locale, t } = useI18n();
 
 const boardColumns = ref({});

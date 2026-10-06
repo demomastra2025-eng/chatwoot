@@ -64,9 +64,7 @@ describe('CrmDealBoard', () => {
     });
 
     expect(
-      wrapper
-        .findAll('[data-test="stage-deal-count"]')
-        .map(item => item.text())
+      wrapper.findAll('[data-test="stage-deal-count"]').map(item => item.text())
     ).toEqual(['12', '0']);
     expect(wrapper.find('[data-test="stage-amounts"]').text()).toContain(
       '4,250 KZT'
@@ -74,9 +72,7 @@ describe('CrmDealBoard', () => {
     expect(wrapper.find('[data-test="stage-amounts"]').text()).toContain(
       '100 USD'
     );
-    expect(wrapper.find('[data-test="empty-deal-stage"]').exists()).toBe(
-      false
-    );
+    expect(wrapper.find('[data-test="empty-deal-stage"]').exists()).toBe(false);
   });
 
   it('shows an incremental busy state before a manual retry state', () => {
