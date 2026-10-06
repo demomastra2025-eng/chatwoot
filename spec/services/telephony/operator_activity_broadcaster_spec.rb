@@ -39,6 +39,39 @@ RSpec.describe Telephony::OperatorActivityBroadcaster do
     expect(broadcasts.map(&:first)).not_to include(operator.pubsub_token, outsider.pubsub_token, foreign_user.pubsub_token)
   end
 
+  context 'when a member has a custom role that restricts the conversations he may see' do
+    let(:restricted) { create(:user, account: account, role: :agent) }
+    let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_participating_manage']) }
+
+    before do
+      create(:inbox_member, inbox: inbox, user: restricted)
+      restricted.account_users.find_by(account: account).update!(role: :agent, custom_role: custom_role)
+    end
+
+    it 'does not tell a member who is neither assignee nor participant of the conversation' do
+      described_class.new(call_session: call_session).perform
+
+      expect(broadcasts.map(&:first)).to contain_exactly(colleague.pubsub_token, administrator.pubsub_token)
+      expect(broadcasts.map(&:first)).not_to include(restricted.pubsub_token)
+    end
+
+    it 'tells the member once he is the assignee of the conversation' do
+      conversation.update!(assignee: restricted)
+
+      described_class.new(call_session: call_session).perform
+
+      expect(broadcasts.map(&:first)).to include(restricted.pubsub_token)
+    end
+
+    it 'tells the member once he is a participant of the conversation' do
+      create(:conversation_participant, conversation: conversation, user: restricted, account: account)
+
+      described_class.new(call_session: call_session).perform
+
+      expect(broadcasts.map(&:first)).to include(restricted.pubsub_token)
+    end
+  end
+
   it 'sends the operator name, the state and the conversation, without any phone number' do
     described_class.new(call_session: call_session).perform
 
