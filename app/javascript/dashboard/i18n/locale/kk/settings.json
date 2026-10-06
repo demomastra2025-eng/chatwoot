@@ -882,7 +882,9 @@
         "CHUNK_SIZE_DESCRIPTION": "Only OpenRouter embedding models that fit this size are shown.",
         "CHUNK_SIZE_OPTION": "{chars} chars (~{tokens} tokens) · {count} models",
         "CHUNK_SIZE_OPTION_DISABLED": "{chars} chars (~{tokens} tokens) · no compatible models"
-      }
+      },
+      "CURRENT_MODEL": "ағымдағы модель",
+      "MANAGED_GLOBALLY": "Модельді платформа таңдайды: мұнда тек қосу және өшіру бапталады."
     },
     "FEATURES": {
       "TITLE": "Features",

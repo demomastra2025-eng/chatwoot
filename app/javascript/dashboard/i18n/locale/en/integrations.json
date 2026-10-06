@@ -1774,7 +1774,8 @@
         },
         "MODEL": {
           "LABEL": "Response model",
-          "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator."
+          "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator.",
+          "CURRENT_MODEL": "current model"
         }
       },
       "EDIT": {

@@ -332,6 +332,8 @@
       "COPILOT": "Copilot"
     },
     "VOICE_WIDGET": {
+      "BUSY_ON_CALL": "Сіз қоңыраудасыз: басқасын әзірге қабылдау мүмкін емес",
+      "CALL_ALREADY_TAKEN": "Қоңырауды басқа оператор қабылдап алды",
       "INCOMING_CALL": "Кіріс қоңырау",
       "OUTGOING_CALL": "Шығыс қоңырау",
       "OUTGOING_CONNECTING_OPERATOR": "Телефонды қосып жатырмыз",

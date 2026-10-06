@@ -371,6 +371,8 @@
       "COPILOT": "Assistant"
     },
     "VOICE_WIDGET": {
+      "BUSY_ON_CALL": "You are on a call: another one cannot be taken yet",
+      "CALL_ALREADY_TAKEN": "The call has already been taken by another operator",
       "INCOMING_CALL": "Incoming call",
       "OUTGOING_CALL": "Outgoing call",
       "OUTGOING_CONNECTING_OPERATOR": "Connecting the phone",

@@ -926,7 +926,9 @@
         "CHUNK_SIZE_DESCRIPTION": "Only OpenRouter embedding models that fit this size are shown.",
         "CHUNK_SIZE_OPTION": "{chars} chars (~{tokens} tokens) · {count} models",
         "CHUNK_SIZE_OPTION_DISABLED": "{chars} chars (~{tokens} tokens) · no compatible models"
-      }
+      },
+      "CURRENT_MODEL": "current model",
+      "MANAGED_GLOBALLY": "The platform chooses the model: only switching it on or off is configured here."
     },
     "FEATURES": {
       "TITLE": "Features",
