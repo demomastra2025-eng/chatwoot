@@ -58,7 +58,7 @@ module BulkActionsJob::StatusAndLabels
   def ensure_full_thread_accessible!(communication_thread, accessible_links)
     return if accessible_links.count == communication_thread.communication_thread_conversations.count
 
-    raise BulkActionsJob::SkippedRecord, 'Cannot update communication thread without access to all linked channels'
+    raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
 
   def bulk_add_thread_labels(accessible_links)
