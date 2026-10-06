@@ -465,7 +465,7 @@ class Telephony::SipProfile < ApplicationRecord
       if browser_instance_id.present?
         # Serialize different users' profile rows until the displaced phone is released.
         lock_key = Digest::SHA256.digest("telephony:browser:#{browser_instance_id}").unpack1('q>')
-        self.class.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
+        self.class.connection.select_value(self.class.sanitize_sql_array(['SELECT pg_advisory_xact_lock(?)', lock_key]))
       end
       yield
     end

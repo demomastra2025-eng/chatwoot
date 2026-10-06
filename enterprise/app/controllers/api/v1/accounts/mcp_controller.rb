@@ -15,7 +15,7 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
   before_action :ensure_mcp_user_access_token!
 
   def handle
-    if request.get?
+    unless request.post?
       response.set_header('Allow', 'POST')
       return head :method_not_allowed
     end
