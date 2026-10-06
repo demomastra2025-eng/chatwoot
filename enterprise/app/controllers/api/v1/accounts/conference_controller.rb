@@ -1,6 +1,10 @@
 class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseController
   before_action :set_voice_inbox_for_conference
 
+  rescue_from Voice::Provider::Twilio::ConferenceService::NotCallOwner do |error|
+    render json: { error: error.message }, status: :forbidden
+  end
+
   def token
     if twilio_conference_inbox?
       render json: Voice::Provider::Twilio::TokenService.new(
@@ -44,9 +48,8 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     end
 
     conversation = fetch_conversation_by_display_id
-    return render json: { error: 'Call joined by another agent' }, status: :forbidden if joined_by_another_agent?(conversation)
 
-    Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference
+    Voice::Provider::Twilio::ConferenceService.new(conversation: conversation).end_conference(user: current_user)
     render json: { status: 'success', id: conversation.display_id }
   end
 
@@ -77,14 +80,6 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     conversation = @voice_inbox.conversations.find_by!(display_id: cid)
     authorize conversation, :show?
     conversation
-  end
-
-  # The agent who joined the conference owns the call; a colleague with access
-  # to the conversation cannot end it.
-  def joined_by_another_agent?(conversation)
-    joined_by = conversation.additional_attributes&.dig('joined_by')
-    joined_agent_id = joined_by.is_a?(Hash) ? joined_by['id'] : nil
-    joined_agent_id.present? && joined_agent_id.to_i != Current.user.id
   end
 
   def native_voice_provider

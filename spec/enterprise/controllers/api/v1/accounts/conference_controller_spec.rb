@@ -264,6 +264,70 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       end
     end
 
+    context 'when a colleague tries to take over a live Twilio call' do
+      let(:colleague) { create(:user, account: account, role: :agent) }
+      let(:conference_path) { "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference" }
+
+      # One login per user: a second token would replace the first session.
+      def auth_headers(user)
+        (@auth_headers ||= {})[user.id] ||= user.create_new_auth_token
+      end
+
+      def join_as(user)
+        post conference_path, headers: auth_headers(user),
+                              params: { conversation_id: conversation.display_id, call_sid: 'CALL123' }
+      end
+
+      def owner_id
+        conversation.reload.additional_attributes.dig('joined_by', 'id')
+      end
+
+      before do
+        allow(Voice::Provider::Twilio::ConferenceService).to receive(:new).and_call_original
+        [agent, colleague].each { |user| create(:inbox_member, inbox: voice_inbox, user: user) }
+        conversation.update!(additional_attributes: { 'call_status' => 'in_progress' })
+        join_as(agent)
+      end
+
+      it 'refuses the join of the colleague and the following end, the call stays with the owner' do
+        expect(Twilio::REST::Client).not_to receive(:new)
+
+        join_as(colleague)
+        expect(response).to have_http_status(:forbidden)
+        expect(response.parsed_body['error']).to eq('Call joined by another agent')
+
+        delete conference_path, headers: auth_headers(colleague), params: { conversation_id: conversation.display_id }
+        expect(response).to have_http_status(:forbidden)
+        expect(owner_id).to eq(agent.id)
+      end
+
+      it 'lets the owner join again' do
+        join_as(agent)
+
+        expect(response).to have_http_status(:ok)
+        expect(owner_id).to eq(agent.id)
+      end
+
+      it 'lets a colleague join once the call of the previous owner is over' do
+        conversation.update!(additional_attributes: conversation.additional_attributes.merge('call_status' => 'completed'))
+
+        join_as(colleague)
+
+        expect(response).to have_http_status(:ok)
+        expect(owner_id).to eq(colleague.id)
+      end
+
+      it 'lets a colleague join a new call of the same conversation that the previous owner never joined' do
+        attrs = conversation.reload.additional_attributes
+        conversation.update!(additional_attributes: attrs.merge('call_status' => 'ringing', 'meta' => { 'initiated_at' => attrs['joined_at'] + 60 }))
+
+        join_as(colleague)
+
+        expect(response).to have_http_status(:ok)
+        expect(owner_id).to eq(colleague.id)
+      end
+    end
+
     context 'when the voice inbox uses native Janus SIP' do
       let(:voice_channel) { create(:channel_voice, :sipuni, account: account) }
 
@@ -309,6 +373,8 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
       end
 
       it 'does not let an agent end a conference another agent joined' do
+        allow(Voice::Provider::Twilio::ConferenceService).to receive(:new).and_call_original
+        expect(Twilio::REST::Client).not_to receive(:new)
         colleague = create(:user, account: account, role: :agent)
         conversation.update!(additional_attributes: { 'agent_joined' => true, 'joined_by' => { 'id' => colleague.id, 'name' => colleague.name } })
 
@@ -317,7 +383,6 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
                params: { conversation_id: conversation.display_id }
 
         expect(response).to have_http_status(:forbidden)
-        expect(conference_service).not_to have_received(:end_conference)
       end
 
       it 'lets the agent who joined the conference end it' do

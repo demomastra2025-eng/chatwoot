@@ -41,6 +41,68 @@ describe Voice::Provider::Twilio::ConferenceService do
     end
   end
 
+  describe '#mark_agent_joined with an owner' do
+    let(:owner) { create(:user, account: account) }
+    let(:colleague) { create(:user, account: account) }
+
+    before do
+      conversation.update!(additional_attributes: { 'call_status' => 'in_progress', 'joined_by' => { 'id' => owner.id, 'name' => owner.name } })
+    end
+
+    it 'refuses to replace the owner of a live call' do
+      expect { service.mark_agent_joined(user: colleague) }.to raise_error(described_class::NotCallOwner)
+
+      expect(conversation.reload.additional_attributes.dig('joined_by', 'id')).to eq(owner.id)
+    end
+
+    it 'decides on the freshly locked row, not on the object it was built with' do
+      unowned = create(:conversation, account: account, inbox: channel.inbox)
+      stale_service = described_class.new(conversation: Conversation.find(unowned.id))
+      unowned.update!(additional_attributes: { 'call_status' => 'in_progress', 'joined_by' => { 'id' => owner.id, 'name' => owner.name } })
+
+      expect { stale_service.mark_agent_joined(user: colleague) }.to raise_error(described_class::NotCallOwner)
+      expect(unowned.reload.additional_attributes.dig('joined_by', 'id')).to eq(owner.id)
+    end
+
+    it 'lets the owner join again and lets anybody join once the call is over' do
+      service.mark_agent_joined(user: owner)
+      conversation.update!(additional_attributes: conversation.additional_attributes.merge('call_status' => 'completed'))
+      service.mark_agent_joined(user: colleague)
+
+      expect(conversation.reload.additional_attributes.dig('joined_by', 'id')).to eq(colleague.id)
+    end
+  end
+
+  describe '#end_conference with a user' do
+    let(:owner) { create(:user, account: account) }
+    let(:colleague) { create(:user, account: account) }
+
+    before do
+      conversation.update!(additional_attributes: { 'joined_by' => { 'id' => owner.id, 'name' => owner.name } })
+    end
+
+    it 'refuses a user that is not the owner without calling Twilio' do
+      expect(twilio_client).not_to receive(:conferences)
+
+      expect { service.end_conference(user: colleague) }.to raise_error(described_class::NotCallOwner)
+    end
+
+    it 'checks the owner on the freshly locked row' do
+      stale_service = described_class.new(conversation: Conversation.find(conversation.id), twilio_client: twilio_client)
+      conversation.update!(additional_attributes: { 'joined_by' => { 'id' => colleague.id, 'name' => colleague.name } })
+      expect(twilio_client).not_to receive(:conferences)
+
+      expect { stale_service.end_conference(user: owner) }.to raise_error(described_class::NotCallOwner)
+    end
+
+    it 'lets the owner end the conference' do
+      conferences_proxy = instance_double(Twilio::REST::Api::V2010::AccountContext::ConferenceList, list: [])
+      allow(twilio_client).to receive(:conferences).with(no_args).and_return(conferences_proxy)
+
+      expect { service.end_conference(user: owner) }.not_to raise_error
+    end
+  end
+
   describe '#end_conference' do
     it 'completes in-progress conferences' do
       conferences_proxy = instance_double(Twilio::REST::Api::V2010::AccountContext::ConferenceList)
