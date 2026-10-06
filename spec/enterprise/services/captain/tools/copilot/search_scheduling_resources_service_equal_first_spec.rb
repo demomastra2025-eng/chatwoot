@@ -1,8 +1,7 @@
 require 'rails_helper'
 
-# When a resource search reports the confident "candidate" status among several results, the resource whose name (or
-# stored specialty) is equal to the request must be the first row and must be marked, whatever the alphabetical order of
-# the other names is. All data is synthetic.
+# A full name match leads and may be confident. An equal specialty leads other partial matches but still needs the name
+# confirmed. All data is synthetic.
 RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
@@ -29,13 +28,15 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
     let!(:surgeon) { create_resource('Яковлев Тест', 'Хирург') }
 
     %w[all specialty].each do |search_by|
-      it "puts the equal resource first and marks only it (search_by #{search_by})" do
+      it "puts the equal specialty first without treating it as a name (search_by #{search_by})" do
         payload = search(query: 'хирург', search_by: search_by)
 
         expect(payload['total_count']).to eq(3)
         expect(payload['resources'].pluck('id')).to eq([surgeon.id, orthopedist.id, children.id])
-        expect(payload).to include('search_status' => 'candidate', 'ambiguous' => false, 'exact_name_matches' => 1)
-        expect(marked_ids(payload)).to eq([surgeon.id])
+        expect(payload).to include('search_status' => 'ambiguous', 'ambiguous' => true, 'exact_name_matches' => 0)
+        expect(payload['instruction']).to include('exact name')
+        expect(marked_ids(payload)).to be_empty
+        expect(payload['resources'].select { |row| row['best_match'] }.pluck('id')).to eq([surgeon.id])
       end
     end
 
@@ -46,6 +47,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
 
       expect(payload).to include('search_status' => 'ambiguous', 'exact_name_matches' => 0)
       expect(marked_ids(payload)).to be_empty
+      expect(payload['resources'].none? { |row| row['best_match'] }).to be(true)
     end
 
     it 'keeps the alphabetical order of the pages after the equal resource' do

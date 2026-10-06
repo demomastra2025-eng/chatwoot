@@ -22,8 +22,8 @@ class Scheduling::ResourceSearchService
     scope = filter_by_query(scope)
 
     total_count = scope.count
-    equal = equal_name_rows(scope)
-    resources = equal_first(scope, equal[:ids]).offset(@offset).limit(@limit).map { |resource| resource_row(resource, equal[:ids]) }
+    equal = equal_rows(scope)
+    resources = equal_first(scope, equal).offset(@offset).limit(@limit).map { |resource| resource_row(resource, equal) }
     next_offset = @offset + resources.length
     has_more = next_offset < total_count
 
@@ -59,31 +59,42 @@ class Scheduling::ResourceSearchService
     end
   end
 
-  # Only the resource name can be a confident match. A specialty is searchable context, not a specialist's name.
-  def equal_name_rows(scope)
-    return { ids: [], truncated: false } if @query.blank? || @query_truncated
+  # A specialty can rank a resource first, but only its name can establish a confident match.
+  def equal_rows(scope)
+    return { ids: [], specialty_ids: [], truncated: false } if @query.blank? || @query_truncated
 
-    rows = scope.reorder(:id).limit(EXACT_CANDIDATE_LIMIT + 1).pluck(:id, :name)
-    ids = rows.first(EXACT_CANDIDATE_LIMIT).filter_map { |id, name| id if equal_text?(name) }
-    { ids: ids, truncated: rows.size > EXACT_CANDIDATE_LIMIT }
+    rows = scope.reorder(:id).limit(EXACT_CANDIDATE_LIMIT + 1).pluck(:id, :name, :specialty)
+    candidates = rows.first(EXACT_CANDIDATE_LIMIT)
+    ids = candidates.filter_map { |id, name, _specialty| id if equal_text?(name) }
+    { ids: ids, specialty_ids: equal_specialty_ids(candidates), truncated: rows.size > EXACT_CANDIDATE_LIMIT }
+  end
+
+  def equal_specialty_ids(candidates)
+    return [] if @search_by == 'name'
+
+    candidates.filter_map { |id, _name, specialty| id if equal_text?(specialty) }
   end
 
   def equal_text?(name)
     Scheduling::SearchText.same_words?(@query, Scheduling::SearchText.normalize(name, max_length: nil))
   end
 
-  # The equal resource is listed before the longer or partial names, so that the confident match is the first row of
-  # the answer whatever the alphabetical order is; the rest keeps the name order.
-  def equal_first(scope, equal_ids)
-    return scope.ordered if equal_ids.empty?
+  # Full name matches lead; equal specialties follow before partial matches. Each group keeps name order.
+  def equal_first(scope, equal)
+    name_ids = equal[:ids]
+    specialty_ids = equal[:specialty_ids]
+    return scope.ordered if name_ids.empty? && specialty_ids.empty?
 
-    equal_rank = Arel::Nodes::Case.new.when(Scheduling::Resource.arel_table[:id].in(equal_ids)).then(0).else(1)
+    resource_id = Scheduling::Resource.arel_table[:id]
+    equal_rank = Arel::Nodes::Case.new.when(resource_id.in(name_ids)).then(0)
+    equal_rank = equal_rank.when(resource_id.in(specialty_ids)).then(1).else(2)
     scope.order(equal_rank.asc, :name, :id)
   end
 
-  def resource_row(resource, equal_ids)
+  def resource_row(resource, equal)
     row = Scheduling::PayloadBuilder.resource(resource)
-    row[:exact_name_match] = true if equal_ids.include?(resource.id)
+    row[:exact_name_match] = true if equal[:ids].include?(resource.id)
+    row[:best_match] = true if equal[:ids].include?(resource.id) || equal[:specialty_ids].include?(resource.id)
     row
   end
 
