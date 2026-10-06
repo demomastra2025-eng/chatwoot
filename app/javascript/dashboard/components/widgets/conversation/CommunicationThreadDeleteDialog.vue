@@ -137,6 +137,17 @@ defineExpose({ open, close });
         {{ $t('CONVERSATION.DELETE_COMMUNICATION_THREAD_CHANNELS.EMPTY') }}
       </p>
 
+      <p v-else class="mb-0 text-sm font-medium text-n-slate-12">
+        {{
+          $t(
+            'CONVERSATION.DELETE_COMMUNICATION_THREAD_CHANNELS.SELECTED_COUNT',
+            {
+              count: selectedCount,
+            }
+          )
+        }}
+      </p>
+
       <label
         v-for="channel in deletableChannels"
         :key="channel.conversation_id"

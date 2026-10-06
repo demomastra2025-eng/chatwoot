@@ -1,6 +1,18 @@
 {
   "BULK_ACTION": {
     "CONVERSATIONS_SELECTED": "{conversationCount} conversations selected",
+    "SELECT_ALL_MATCHING": "Сүзгіге сәйкес диалогтарды таңдау ({count})",
+    "SELECT_ALL": {
+      "LIMIT": "Бір әрекетте ең көбі {count} диалог таңдауға болады.",
+      "EMPTY": "Ағымдағы сүзгілерге сәйкес диалог табылмады.",
+      "EXPIRED": "Бұл таңдау мерзімі аяқталған немесе қолжетімсіз. Диалогтарды қайта таңдаңыз.",
+      "FAILED": "Ағымдағы сүзгілер бойынша диалогтарды таңдау мүмкін болмады. Тізімді жаңартып, қайталап көріңіз."
+    },
+    "CLOSE_CONFIRMATION": {
+      "TITLE": "Таңдалған диалогтар жабылсын ба?",
+      "DESCRIPTION": "Жабылатын диалог саны: {count}.",
+      "CONFIRM": "Жабу"
+    },
     "AGENT_SELECT_LABEL": "Select agent",
     "ASSIGN_CONFIRMATION_LABEL": "Are you sure to assign {conversationCount} {conversationLabel} to",
     "UNASSIGN_CONFIRMATION_LABEL": "Are you sure to unassign {conversationCount} {conversationLabel}?",
@@ -16,12 +28,17 @@
     "RESOLVE_FAILED": "Диалогтарды жабу сәтсіз аяқталды. Қайта көріңіз.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Conversations visible on this page are only selected.",
     "COMPLETED_WITH_ERRORS": "Орындалды, қателер саны: {count}",
+    "COMPLETED_WITH_DETAILS": "Әрекет аяқталды: {skippedCount} өткізіліп, {failedCount} қатемен аяқталды.",
     "AGENT_LIST_LOADING": "Loading agents",
     "UPDATE": {
       "CHANGE_STATUS": "Change status",
       "SNOOZE_UNTIL": "Snooze",
       "UPDATE_SUCCESFUL": "Conversation status updated successfully.",
       "UPDATE_FAILED": "Диалогтарды жаңарту сәтсіз аяқталды. Қайта көріңіз."
+    },
+    "PROGRESS": {
+      "STATUS_UNAVAILABLE": "Әрекет нәтижесін тексеру мүмкін болмады. Қайта әрекет жасамас бұрын тізімді жаңартыңыз.",
+      "SKIPPED": "Өткізілді: {count}"
     },
     "RESOLVE": {
       "ALL_MISSING_ATTRIBUTES": "Cannot resolve conversations due to missing required attributes",

@@ -1,10 +1,13 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
+import { emitter } from 'shared/helpers/mitt';
+import { CMD_BULK_ACTION_SNOOZE_CONVERSATION } from 'dashboard/helper/commandbar/events';
 
 import Index from './Index.vue';
 
 let isUpdating = false;
+let emitterHandlers = {};
 
 vi.mock('dashboard/composables/store', () => ({
   useMapGetter: vi.fn(key => {
@@ -140,23 +143,40 @@ const NextButtonStub = {
   template: '<button :disabled="disabled" @click="$emit(\'click\')" />',
 };
 
+const statusReasonCancelled = Symbol('cancelled');
 const ConversationStatusReasonDialogStub = {
   name: 'ConversationStatusReasonDialog',
+  data: () => ({ CANCELLED: statusReasonCancelled, pendingResolver: null }),
   methods: {
     open: vi.fn(async () => null),
+    cancel: vi.fn(),
   },
   template: '<div />',
 };
 
-function mountComponent() {
+const DialogStub = {
+  name: 'Dialog',
+  props: ['type', 'title', 'description', 'confirmButtonLabel'],
+  emits: ['confirm', 'close'],
+  methods: {
+    open: vi.fn(),
+    close: vi.fn(),
+  },
+  template: '<div />',
+};
+
+function mountComponent(props = {}) {
   return shallowMount(Index, {
     props: {
-      conversations: [{ id: 1 }, { id: 2 }],
+      selectedCount: 2,
+      selectionVersion: 1,
+      selectionContextKey: 'account-1:open',
       selectedInboxes: [10],
       allConversationsSelected: false,
       showOpenAction: false,
       showResolvedAction: false,
       showSnoozedAction: false,
+      ...props,
     },
     global: {
       stubs: {
@@ -170,17 +190,29 @@ function mountComponent() {
         BulkTeamActions: BulkTeamActionsStub,
         BulkUpdateActions: BulkUpdateActionsStub,
         ConversationStatusReasonDialog: ConversationStatusReasonDialogStub,
+        Dialog: DialogStub,
         CustomSnoozeModal: true,
         'woot-modal': true,
       },
       mocks: {
-        $t: key => key,
+        $t: (key, values = {}) =>
+          `${key}${Object.keys(values).length ? JSON.stringify(values) : ''}`,
       },
     },
   });
 }
 
 describe('ConversationBulkActions Index', () => {
+  beforeEach(() => {
+    emitterHandlers = {};
+    emitter.on.mockImplementation((event, handler) => {
+      emitterHandlers[event] = handler;
+    });
+    ConversationStatusReasonDialogStub.methods.open.mockReset();
+    ConversationStatusReasonDialogStub.methods.open.mockResolvedValue(null);
+    ConversationStatusReasonDialogStub.methods.cancel.mockReset();
+  });
+
   it('passes disabled state to every bulk action control while a run is updating', () => {
     isUpdating = true;
 
@@ -211,7 +243,7 @@ describe('ConversationBulkActions Index', () => {
 
   it('emits bulk actions to the parent owner instead of invoking a local composable instance', async () => {
     isUpdating = false;
-    const wrapper = mountComponent();
+    const wrapper = mountComponent({ selectedCount: 1 });
 
     wrapper.findComponent(BulkLabelActionsStub).vm.$emit('assign', ['sales']);
     wrapper
@@ -259,5 +291,106 @@ describe('ConversationBulkActions Index', () => {
     expect(
       wrapper.findComponent(ConversationStatusReasonDialogStub).exists()
     ).toBe(true);
+  });
+
+  it('routes the command bar snooze event through the bulk update callback', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 3 });
+
+    emitterHandlers[CMD_BULK_ACTION_SNOOZE_CONVERSATION](12345);
+    await flushPromises();
+
+    expect(wrapper.emitted('updateConversations')).toEqual([
+      ['snoozed', 12345, null],
+    ]);
+  });
+
+  it('shows the exact all-matching count before confirming a multi-close', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 37 });
+
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+
+    const confirmation = wrapper.findComponent(DialogStub);
+    expect(confirmation.props('description')).toBe(
+      'BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION{"count":37}'
+    );
+  });
+
+  it('does not submit a close after the user cancels the count confirmation', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 37 });
+
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+    wrapper.findComponent(DialogStub).vm.$emit('close');
+    await flushPromises();
+
+    expect(
+      ConversationStatusReasonDialogStub.methods.open
+    ).not.toHaveBeenCalled();
+    expect(wrapper.emitted('updateConversations')).toBeUndefined();
+  });
+
+  it('cancels a count confirmation when selection context changes while it is open', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 37 });
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+
+    await wrapper.setProps({
+      selectionVersion: 2,
+      selectionContextKey: 'account-1:pending',
+    });
+    await flushPromises();
+
+    expect(
+      ConversationStatusReasonDialogStub.methods.open
+    ).not.toHaveBeenCalled();
+    expect(wrapper.emitted('updateConversations')).toBeUndefined();
+  });
+
+  it('cancels a status reason request when its selection context changes', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 37 });
+    const confirmation = wrapper.findComponent(DialogStub);
+    let resolveReason;
+    ConversationStatusReasonDialogStub.methods.open.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveReason = resolve;
+        })
+    );
+    ConversationStatusReasonDialogStub.methods.cancel.mockImplementationOnce(
+      () => resolveReason(statusReasonCancelled)
+    );
+
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+    confirmation.vm.$emit('confirm');
+    await flushPromises();
+    expect(
+      ConversationStatusReasonDialogStub.methods.open
+    ).toHaveBeenCalledWith({ status: 'resolved' });
+
+    await wrapper.setProps({
+      selectionVersion: 2,
+      selectionContextKey: 'account-1:pending',
+    });
+    await flushPromises();
+
+    expect(
+      ConversationStatusReasonDialogStub.methods.cancel
+    ).toHaveBeenCalled();
+    expect(wrapper.emitted('updateConversations')).toBeUndefined();
   });
 });

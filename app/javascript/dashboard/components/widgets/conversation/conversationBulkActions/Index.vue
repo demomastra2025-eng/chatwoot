@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, useAttrs } from 'vue';
+import { ref, computed, onMounted, onUnmounted, useAttrs, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getUnixTime } from 'date-fns';
 import { findSnoozeTime } from 'dashboard/helper/snoozeHelpers';
@@ -19,12 +19,33 @@ import BulkUpdateActions from './BulkUpdateActions.vue';
 import BulkLabelActions from './BulkLabelActions.vue';
 import BulkTeamActions from './BulkTeamActions.vue';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 
 const props = defineProps({
-  conversations: {
-    type: Array,
-    default: () => [],
+  selectedCount: {
+    type: Number,
+    default: 0,
+  },
+  selectionVersion: {
+    type: Number,
+    default: 0,
+  },
+  selectionContextKey: {
+    type: String,
+    default: '',
+  },
+  selectableConversationsCount: {
+    type: Number,
+    default: 0,
+  },
+  canSelectAllMatching: {
+    type: Boolean,
+    default: false,
+  },
+  isSelectingAll: {
+    type: Boolean,
+    default: false,
   },
   allConversationsSelected: {
     type: Boolean,
@@ -50,6 +71,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'selectAllConversations',
+  'selectAllMatching',
   'assignAgent',
   'assignLabels',
   'assignTeam',
@@ -68,6 +90,8 @@ const bulkActionRun = useMapGetter('bulkActions/getCurrentBulkActionRun');
 const bulkActionUiFlags = useMapGetter('bulkActions/getUIFlags');
 const showCustomTimeSnoozeModal = ref(false);
 const statusReasonDialogRef = ref(null);
+const closeConfirmationDialogRef = ref(null);
+const closeConfirmationResolver = ref(null);
 
 const allSelected = computed({
   get: () => props.allConversationsSelected,
@@ -104,12 +128,47 @@ const progressLabel = computed(() => {
 });
 
 const progressMetaLabel = computed(() => {
-  if (!bulkActionRun.value?.failed_count) return '';
-
-  return t('BULK_ACTION.PROGRESS.FAILED', {
-    count: bulkActionRun.value.failed_count,
-  });
+  const labels = [];
+  if (bulkActionRun.value?.failed_count) {
+    labels.push(
+      t('BULK_ACTION.PROGRESS.FAILED', {
+        count: bulkActionRun.value.failed_count,
+      })
+    );
+  }
+  if (bulkActionRun.value?.skipped_count) {
+    labels.push(
+      t('BULK_ACTION.PROGRESS.SKIPPED', {
+        count: bulkActionRun.value.skipped_count,
+      })
+    );
+  }
+  return labels.join(' · ');
 });
+
+function confirmCloseSelection() {
+  if (props.selectedCount <= 1) return Promise.resolve(true);
+
+  return new Promise(resolve => {
+    closeConfirmationResolver.value = resolve;
+    closeConfirmationDialogRef.value?.open();
+  });
+}
+
+function resolveCloseConfirmation(confirmed) {
+  const resolver = closeConfirmationResolver.value;
+  closeConfirmationResolver.value = null;
+  resolver?.(confirmed);
+}
+
+function confirmClose() {
+  resolveCloseConfirmation(true);
+  closeConfirmationDialogRef.value?.close();
+}
+
+function cancelClose() {
+  resolveCloseConfirmation(false);
+}
 
 async function resolveStatusReason(status) {
   const result = await statusReasonDialogRef.value?.open({ status });
@@ -122,12 +181,43 @@ async function resolveStatusReason(status) {
 
 async function updateConversations(status, snoozedUntil = null) {
   if (bulkActionUiFlags.value.isUpdating) return;
+  const versionAtStart = props.selectionVersion;
+  const contextAtStart = props.selectionContextKey;
+
+  if (
+    status === wootConstants.STATUS_TYPE.RESOLVED &&
+    props.selectedCount > 1
+  ) {
+    const confirmed = await confirmCloseSelection();
+    if (
+      !confirmed ||
+      versionAtStart !== props.selectionVersion ||
+      contextAtStart !== props.selectionContextKey
+    ) {
+      return;
+    }
+  }
 
   const { cancelled, statusReason } = await resolveStatusReason(status);
-  if (cancelled) return;
+  if (
+    cancelled ||
+    versionAtStart !== props.selectionVersion ||
+    contextAtStart !== props.selectionContextKey
+  ) {
+    return;
+  }
 
   emit('updateConversations', status, snoozedUntil, statusReason);
 }
+
+watch(
+  () => [props.selectionVersion, props.selectionContextKey],
+  () => {
+    resolveCloseConfirmation(false);
+    closeConfirmationDialogRef.value?.close();
+    statusReasonDialogRef.value?.cancel();
+  }
+);
 
 function assignAgent(agent) {
   if (bulkActionUiFlags.value.isUpdating) return;
@@ -185,6 +275,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  resolveCloseConfirmation(false);
+  statusReasonDialogRef.value?.cancel();
   emitter.off(CMD_BULK_ACTION_SNOOZE_CONVERSATION, onCmdSnoozeConversation);
   emitter.off(CMD_BULK_ACTION_REOPEN_CONVERSATION, onCmdReopenConversation);
   emitter.off(CMD_BULK_ACTION_RESOLVE_CONVERSATION, onCmdResolveConversation);
@@ -203,18 +295,12 @@ onUnmounted(() => {
     <!-- The panel sits in the list flow above the conversations so it never
          covers the last cards or the list footer. -->
     <div
-      v-if="conversations.length > 0"
+      v-if="selectedCount > 0"
       v-bind="attrs"
       data-test-id="conversation-bulk-actions-panel"
       class="relative z-30 w-full shrink-0 origin-top px-2 pb-2"
     >
       <div class="mx-auto max-w-4xl">
-        <div
-          v-if="allConversationsSelected"
-          class="bg-n-amber-2 outline -outline-offset-1 outline-1 outline-n-amber-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-amber-text"
-        >
-          {{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}
-        </div>
         <div
           class="flex items-center justify-between p-2 bg-n-button-color outline outline-1 -outline-offset-1 rounded-[10px] outline-n-weak shadow-[0_0_12px_0_rgba(27,40,59,0.08)]"
         >
@@ -228,11 +314,25 @@ onUnmounted(() => {
               <span class="cursor-pointer text-sm text-n-slate-12">
                 {{
                   $t('BULK_ACTION.CONVERSATIONS_SELECTED', {
-                    conversationCount: conversations.length,
+                    conversationCount: selectedCount,
                   })
                 }}
               </span>
             </label>
+            <NextButton
+              v-if="canSelectAllMatching"
+              :label="
+                $t('BULK_ACTION.SELECT_ALL_MATCHING', {
+                  count: selectableConversationsCount,
+                })
+              "
+              ghost
+              class="!text-n-blue-11 !px-1 !h-6"
+              sm
+              :disabled="bulkActionUiFlags.isUpdating || isSelectingAll"
+              :is-loading="isSelectingAll"
+              @click="emit('selectAllMatching')"
+            />
             <div class="w-px h-3 bg-n-weak rounded-lg ltr:ml-1 rtl:mr-1" />
             <NextButton
               :label="$t('BULK_ACTION.CLEAR_SELECTION')"
@@ -266,12 +366,12 @@ onUnmounted(() => {
             />
             <BulkAgentActions
               :selected-inboxes="selectedInboxes"
-              :conversation-count="conversations.length"
+              :conversation-count="selectedCount"
               :disabled="bulkActionUiFlags.isUpdating"
               @select="assignAgent"
             />
             <BulkTeamActions
-              :conversation-count="conversations.length"
+              :conversation-count="selectedCount"
               :disabled="bulkActionUiFlags.isUpdating"
               @select="assignTeam"
             />
@@ -313,4 +413,17 @@ onUnmounted(() => {
     />
   </woot-modal>
   <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
+  <Dialog
+    ref="closeConfirmationDialogRef"
+    type="alert"
+    :title="$t('BULK_ACTION.CLOSE_CONFIRMATION.TITLE')"
+    :description="
+      $t('BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION', {
+        count: selectedCount,
+      })
+    "
+    :confirm-button-label="$t('BULK_ACTION.CLOSE_CONFIRMATION.CONFIRM')"
+    @confirm="confirmClose"
+    @close="cancelClose"
+  />
 </template>

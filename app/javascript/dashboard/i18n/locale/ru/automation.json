@@ -210,7 +210,7 @@
       "SEND_EMAIL_TRANSCRIPT": "Отправить историю переписки на email",
       "MUTE_CONVERSATION": "Заглушить диалог",
       "SNOOZE_CONVERSATION": "Включить звук диалога",
-      "RESOLVE_CONVERSATION": "Решить диалог",
+      "RESOLVE_CONVERSATION": "Закрыть диалог",
       "CHANGE_APPOINTMENT_STATUS": "Изменить статус записи",
       "CANCEL_APPOINTMENT_PAYMENT": "Отменить оплату записи",
       "CHANGE_DEAL_STAGE": "Изменить этап сделки",
