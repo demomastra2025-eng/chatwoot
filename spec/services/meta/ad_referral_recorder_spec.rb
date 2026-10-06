@@ -58,6 +58,46 @@ RSpec.describe Meta::AdReferralRecorder do
     expect(MetaAdReferral.where(provider: 'whatsapp', inbox: message.inbox, provider_message_id: 'wamid.meta-referral-1').count).to eq(1)
   end
 
+  it 'recovers from a real referral unique-index collision inside an outer transaction' do
+    winner = described_class.new(message: message, payload: payload).perform
+    lookup_calls = 0
+    database_collision = false
+    allow(MetaAdReferral).to receive(:find_or_initialize_by).and_wrap_original do |original, *args|
+      lookup_calls += 1
+      if lookup_calls == 1
+        # Model a concurrent read that missed the row another request already inserted.
+        stale_referral = MetaAdReferral.new(args.first)
+        allow(stale_referral).to receive(:valid?).and_return(true)
+        allow(stale_referral).to receive(:save!).and_wrap_original do |save_original, *save_args|
+          begin
+            save_original.call(*save_args)
+          rescue ActiveRecord::RecordNotUnique
+            database_collision = true
+            raise
+          end
+        end
+        stale_referral
+      else
+        original.call(*args)
+      end
+    end
+
+    referral = nil
+    ActiveRecord::Base.transaction do
+      referral = described_class.new(message: message, payload: payload).perform
+
+      expect(database_collision).to be(true)
+      referral_count = MetaAdReferral.where(
+        provider: 'whatsapp', inbox: message.inbox, provider_message_id: 'wamid.meta-referral-1'
+      ).count
+      expect(referral_count).to eq(1)
+      expect(ActiveRecord::Base.connection.select_value('SELECT 1')).to eq(1)
+    end
+
+    expect(lookup_calls).to eq(2)
+    expect(referral).to have_attributes(id: winner.id, provider_message_id: winner.provider_message_id)
+  end
+
   it 'keeps the outer transaction usable when the optional thread refresh loses a unique-index race' do
     account.enable_features!('communication_threads')
     conversation.refresh_communication_thread!
