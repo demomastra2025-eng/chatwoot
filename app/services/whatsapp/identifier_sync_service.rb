@@ -17,7 +17,8 @@ class Whatsapp::IdentifierSyncService
       end
     rescue ActiveRecord::RecordNotUnique
       # A concurrent webhook/status update inserted the same inbox/source_id row.
-      # The identity already exists, so this sync can safely continue.
+      # Only that identity makes the collision safe to ignore.
+      raise unless inbox.contact_inboxes.exists?(source_id: source_id)
     end
   end
 

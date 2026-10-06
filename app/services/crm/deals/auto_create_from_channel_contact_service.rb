@@ -41,7 +41,11 @@ class Crm::Deals::AutoCreateFromChannelContactService
         actor: nil
       ).perform
     end
-  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+  rescue ActiveRecord::RecordNotUnique
+    raise unless existing_deal_for_pipeline?(pipeline)
+
+    nil
+  rescue ActiveRecord::RecordInvalid
     nil
   end
 

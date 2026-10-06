@@ -5,29 +5,27 @@ RSpec.describe Meta::ChannelCredentialHealthRecorder do
     create(:channel_instagram, access_token: 'ig-token', expires_at: 20.days.from_now, updated_at: 1.day.ago)
   end
 
-  it 'uses Rails create_or_find_by! recovery for a real collision inside the channel lock transaction' do
+  it 'recovers a real collision inside the channel lock transaction' do
     health = Meta::ChannelCredentialHealth.create!(account: channel.account, channel: channel, status: 'unknown')
+    scope = Meta::ChannelCredentialHealth.where(channel: channel)
     stale_health_lookup = true
     database_collision = false
 
-    allow_any_instance_of(Meta::ChannelCredentialHealth).to receive(:valid?).and_return(true)
-    allow_any_instance_of(ActiveRecord::Relation).to receive(:find_by).and_wrap_original do |original, *args, **kwargs|
-      relation = original.receiver
-      if relation.klass == Meta::ChannelCredentialHealth && stale_health_lookup
+    allow(Meta::ChannelCredentialHealth).to receive(:where).and_call_original
+    allow(Meta::ChannelCredentialHealth).to receive(:where).with(channel: channel).and_return(scope)
+    allow(scope).to receive(:first).and_wrap_original do |original|
+      if stale_health_lookup
         stale_health_lookup = false
         nil
       else
-        original.call(*args, **kwargs)
+        original.call
       end
     end
-    allow_any_instance_of(ActiveRecord::Relation).to receive(:create!).and_wrap_original do |original, *args, **kwargs, &block|
-      relation = original.receiver
-      begin
-        original.call(*args, **kwargs, &block)
-      rescue ActiveRecord::RecordNotUnique
-        database_collision = true if relation.klass == Meta::ChannelCredentialHealth
-        raise
-      end
+    allow(scope).to receive(:create!) do |attributes|
+      scope.new(attributes).save!(validate: false)
+    rescue ActiveRecord::RecordNotUnique
+      database_collision = true
+      raise
     end
 
     result = Meta::AuthorizationHealthCheckService::Result.new(status: :healthy, reason: 'healthy')

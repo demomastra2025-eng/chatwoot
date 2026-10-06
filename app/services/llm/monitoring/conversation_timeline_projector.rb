@@ -19,7 +19,7 @@ class Llm::Monitoring::ConversationTimelineProjector
 
     Message.transaction(requires_new: true) { conversation.messages.create!(message_attributes) }
   rescue ActiveRecord::RecordNotUnique
-    existing_message
+    existing_message || raise
   end
 
   private

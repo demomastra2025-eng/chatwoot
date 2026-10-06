@@ -60,7 +60,9 @@ class Whatsapp::IncomingMessageBaseService
       yield
     rescue ActiveRecord::RecordNotUnique
       @message = Message.find_by(source_id: messages_data.first[:id].to_s, inbox_id: inbox.id)
-      after_message_persisted(@message) if @message.present?
+      raise if @message.blank?
+
+      after_message_persisted(@message)
     ensure
       dedup_lock.release!
     end

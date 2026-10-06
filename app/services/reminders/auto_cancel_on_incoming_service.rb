@@ -72,10 +72,7 @@ class Reminders::AutoCancelOnIncomingService
         schedule.pending_steps.each do |step|
           next unless Reminders::BooleanParam.truthy?(step.definition.to_h['auto_cancel_on_incoming'])
 
-          create_skipped_claim!(enrollment, step)
-          skipped_count += 1
-        rescue ActiveRecord::RecordNotUnique
-          next
+          skipped_count += 1 if create_skipped_claim_if_absent!(enrollment, step)
         end
         schedule.refresh_next_due!
       end
@@ -120,6 +117,15 @@ class Reminders::AutoCancelOnIncomingService
         metadata: { 'incoming_message_id' => message.id }
       )
     end
+  end
+
+  def create_skipped_claim_if_absent!(enrollment, step)
+    create_skipped_claim!(enrollment, step)
+    true
+  rescue ActiveRecord::RecordNotUnique
+    raise unless enrollment.touch_occurrence_claims.exists?(occurrence_key: step.occurrence_key)
+
+    false
   end
 
   def deferred_enrollment_scope
