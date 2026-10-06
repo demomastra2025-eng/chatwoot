@@ -2018,4 +2018,89 @@ describe('webphoneClient', () => {
       expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
     });
   });
+
+  describe('waiting for the phone and incoming calls', () => {
+    const scope = {
+      provider: 'sipuni',
+      inboxId: 4083,
+      sessionKey: 'sip_profile:777',
+    };
+    const phoneSession = registered => ({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:777',
+      inboxId: 4083,
+      sipProfileId: 777,
+      callingSupported: true,
+      registered,
+      reason: registered ? null : 'outbound_sip_handle_reset',
+    });
+
+    afterEach(() => {
+      delete WebphoneClient.sessions['sip_profile:777'];
+      delete WebphoneClient.providerSessions.sipuni;
+      delete WebphoneClient.nativeSipClients['sip_profile:777'];
+      Cookies.remove('cw_d_session_info');
+      WebphoneClient.loadedUserUid = '';
+      vi.useRealTimers();
+    });
+
+    it('resolves with the session as soon as the phone registered again', async () => {
+      WebphoneClient.rememberSession(phoneSession(false));
+
+      const waiting = WebphoneClient.waitForRegistration(scope);
+      WebphoneClient.rememberSession(phoneSession(true));
+
+      await expect(waiting).resolves.toMatchObject({ registered: true });
+    });
+
+    it('resolves at once when the phone is already registered', async () => {
+      WebphoneClient.rememberSession(phoneSession(true));
+
+      await expect(
+        WebphoneClient.waitForRegistration(scope)
+      ).resolves.toMatchObject({ registered: true });
+    });
+
+    it('gives up with null when the phone stays unregistered', async () => {
+      vi.useFakeTimers();
+      WebphoneClient.rememberSession(phoneSession(false));
+      let result;
+      WebphoneClient.waitForRegistration(scope, 3_000).then(value => {
+        result = value;
+      });
+
+      await vi.advanceTimersByTimeAsync(2_900);
+      expect(result).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(result).toBeNull();
+    });
+
+    it('knows when an incoming call rings in the phone of this browser', () => {
+      expect(WebphoneClient.hasIncomingCallRinging()).toBe(false);
+
+      WebphoneClient.nativeSipClients['sip_profile:777'] = {
+        pendingIncomingCall: { callId: 'ringing-1' },
+      };
+      expect(WebphoneClient.hasIncomingCallRinging()).toBe(true);
+
+      WebphoneClient.nativeSipClients['sip_profile:777'] = {
+        pendingIncomingCall: null,
+      };
+      expect(WebphoneClient.hasIncomingCallRinging()).toBe(false);
+    });
+
+    it('does not retry the phone of a user who was replaced in this browser', async () => {
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        'cw_d_session_info',
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+
+      await expect(
+        WebphoneClient.retryNativeSession('sip_profile:777')
+      ).resolves.toBeNull();
+
+      expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
+    });
+  });
 });

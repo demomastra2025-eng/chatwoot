@@ -2392,6 +2392,14 @@ export class JanusSipVoiceClient extends EventTarget {
     const nextCallRef = callRef || this.currentCallRef;
     const nextCallDirection = callDirection || this.currentCallDirection;
     if (callDirection === 'outbound') {
+      // One SIP handle carries one call: a call-back started while an incoming
+      // INVITE rings here can only fail, and the failure would rebuild the
+      // handle together with the ringing call.
+      if (this.pendingIncomingCall) {
+        throw this.outboundAttemptError('sip_outbound_incoming_call_pending', {
+          sipCallSent: false,
+        });
+      }
       const pendingJoin = this.beginPendingOutboundJoin();
       this.currentCallRef = nextCallRef;
       this.currentCallDirection = nextCallDirection;

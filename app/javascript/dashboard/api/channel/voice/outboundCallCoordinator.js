@@ -19,6 +19,7 @@ const outboundFailureReason = error => {
     'sip_outbound_call_failed',
     'sip_outbound_call_in_progress',
     'sip_outbound_calling_timeout',
+    'sip_outbound_incoming_call_pending',
     'sip_outbound_offer_failed',
     'sip_outbound_offer_timeout',
     'sip_registration_timeout',

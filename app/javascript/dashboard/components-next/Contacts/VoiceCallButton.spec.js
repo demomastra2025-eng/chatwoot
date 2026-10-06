@@ -19,6 +19,8 @@ const {
   startOutboundBrowserCallMock,
   stopMicrophonePrewarmMock,
   storeMock,
+  waitForRegistrationMock,
+  hasIncomingCallRingingMock,
 } = vi.hoisted(() => ({
   alertMock: vi.fn(),
   contactSearchMock: vi.fn(),
@@ -30,6 +32,8 @@ const {
   routerPushMock: vi.fn(),
   startOutboundBrowserCallMock: vi.fn(),
   stopMicrophonePrewarmMock: vi.fn(),
+  waitForRegistrationMock: vi.fn(),
+  hasIncomingCallRingingMock: vi.fn(),
   storeMock: {
     getters: {},
     dispatch: vi.fn(),
@@ -66,6 +70,8 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     initializeDevice: initializeDeviceMock,
     prewarmMicrophone: prewarmMicrophoneMock,
     stopMicrophonePrewarm: stopMicrophonePrewarmMock,
+    waitForRegistration: waitForRegistrationMock,
+    hasIncomingCallRinging: hasIncomingCallRingingMock,
   },
 }));
 
@@ -142,6 +148,8 @@ describe('VoiceCallButton', () => {
     routeParamsMock.accountId = 530;
     routeMock.name = undefined;
     routeMock.params = routeParamsMock;
+    waitForRegistrationMock.mockResolvedValue(null);
+    hasIncomingCallRingingMock.mockReturnValue(false);
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
       callingSupported: true,
@@ -480,7 +488,91 @@ describe('VoiceCallButton', () => {
       expect.objectContaining({ provider: 'sipuni', inboxId: 4593 })
     );
     expect(alertMock).toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_MICROPHONE_UNAVAILABLE'
+    );
+  });
+
+  it('keeps the generic message when the phone itself is not ready, even if the microphone is also blocked', async () => {
+    const { dispatchMock, wrapper } = mountComponent();
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: false,
+    });
+    prewarmMicrophoneMock.mockResolvedValue({
+      provider: 'sipuni',
+      prewarmed: false,
+      reason: 'NotAllowedError',
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
       'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
+    );
+  });
+
+  it('waits for the phone to register again before giving up on a call-back', async () => {
+    const { dispatchMock, wrapper } = mountComponent();
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: false,
+      sessionKey: 'sip_profile:77',
+    });
+    waitForRegistrationMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+      sessionKey: 'sip_profile:77',
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(waitForRegistrationMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4593,
+        sessionKey: 'sip_profile:77',
+      })
+    );
+    expect(dispatchMock).toHaveBeenCalledWith(
+      'contacts/initiateCall',
+      expect.objectContaining({ contactId: 2179 })
+    );
+    expect(alertMock).not.toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'
+    );
+  });
+
+  it('does not wait for a phone that cannot call at all', async () => {
+    const { wrapper } = mountComponent();
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: false,
+      registered: false,
+    });
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(waitForRegistrationMock).not.toHaveBeenCalled();
+  });
+
+  it('does not start a call-back while an incoming call rings in this browser', async () => {
+    const { dispatchMock, wrapper } = mountComponent();
+    hasIncomingCallRingingMock.mockReturnValue(true);
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(initializeDeviceMock).not.toHaveBeenCalled();
+    expect(dispatchMock).not.toHaveBeenCalled();
+    expect(alertMock).toHaveBeenCalledWith(
+      'CONVERSATION.VOICE_WIDGET.BROWSER_INCOMING_CALL_RINGING'
     );
   });
 

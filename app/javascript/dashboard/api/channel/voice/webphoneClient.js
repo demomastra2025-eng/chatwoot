@@ -31,6 +31,9 @@ const WEBPHONE_LOGOUT_DESTROY_OPTIONS = {
   awaitPresenceRelease: true,
 };
 const WEBPHONE_LOGOUT_OWNER_WAIT_MS = 2_000;
+// A phone that is re-registering after a failed call or a network drop is
+// usually back within a few seconds.
+const WEBPHONE_REGISTRATION_WAIT_MS = 6_000;
 
 const FORWARDED_EVENTS = [
   'call:connected',
@@ -238,6 +241,42 @@ class WebphoneClient extends EventTarget {
       tabLeadership.addEventListener('message', handleMessage);
       tabLeadership.post({ type: 'logout-release', requestId });
     });
+  }
+
+  // Resolves with the session once it is registered, null when it is not
+  // within the timeout.
+  waitForRegistration(scope = {}, timeoutMs = WEBPHONE_REGISTRATION_WAIT_MS) {
+    const registeredSession = () => {
+      const session = this.getSession(scope.provider, scope);
+      return session?.registered === true ? session : null;
+    };
+    const current = registeredSession();
+    if (current) return Promise.resolve(current);
+
+    return new Promise(resolve => {
+      let timer = null;
+      const handleChange = () => {
+        const session = registeredSession();
+        if (!session) return;
+
+        window.clearTimeout(timer);
+        this.removeEventListener('call:sessions-changed', handleChange);
+        resolve(session);
+      };
+      timer = window.setTimeout(() => {
+        this.removeEventListener('call:sessions-changed', handleChange);
+        resolve(null);
+      }, timeoutMs);
+      this.addEventListener('call:sessions-changed', handleChange);
+    });
+  }
+
+  // An incoming call rings in this browser's phone: it has to be answered or
+  // rejected first, one SIP handle carries one call.
+  hasIncomingCallRinging() {
+    return Object.values(this.nativeSipClients).some(client =>
+      Boolean(client?.pendingIncomingCall)
+    );
   }
 
   // The app can load before the router settles on an account (or before

@@ -233,10 +233,20 @@ const prepareBrowserSipWebphone = async inbox => {
     WebphoneClient.stopMicrophonePrewarm(scope);
 
   try {
-    const session = await WebphoneClient.initializeDevice(inbox.id, {
+    let session = await WebphoneClient.initializeDevice(inbox.id, {
       native: true,
       claimOwnership: true,
     });
+    if (session?.registered === false && session?.callingSupported !== false) {
+      // After a failed call or a network drop the phone registers again within
+      // a few seconds: wait for that instead of giving up at once.
+      session =
+        (await WebphoneClient.waitForRegistration({
+          provider,
+          inboxId: inbox.id,
+          sessionKey: session.sessionKey,
+        })) || session;
+    }
     const sessionScope = {
       provider,
       inboxId: inbox.id,
@@ -253,13 +263,20 @@ const prepareBrowserSipWebphone = async inbox => {
 
     if (!microphone) microphone = await prewarmMicrophone(sessionScope);
 
-    const ready =
+    const phoneReady =
       session?.provider === provider &&
       session?.callingSupported !== false &&
-      session?.registered !== false &&
-      microphone?.prewarmed !== false;
+      session?.registered !== false;
+    const microphoneReady = microphone?.prewarmed !== false;
+    const ready = phoneReady && microphoneReady;
     if (!ready) stopMicrophonePrewarm(sessionScope);
-    return { ready, browserJoinSupported: true, sessionScope };
+    return {
+      ready,
+      // The phone is fine, only the microphone is not usable.
+      microphoneBlocked: phoneReady && !microphoneReady,
+      browserJoinSupported: true,
+      sessionScope,
+    };
   } catch (error) {
     stopMicrophonePrewarm(webphoneScope);
     // eslint-disable-next-line no-console
@@ -270,6 +287,11 @@ const prepareBrowserSipWebphone = async inbox => {
 
 const startCall = async inbox => {
   if (isCallButtonBusy.value) return;
+  // One SIP handle carries one call: a call-back now would only fail.
+  if (isBrowserSipInbox(inbox) && WebphoneClient.hasIncomingCallRinging()) {
+    useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_INCOMING_CALL_RINGING'));
+    return;
+  }
 
   isPreparingCall.value = true;
   // Shows the phone widget while the call is prepared, even if it is hidden.
@@ -279,7 +301,11 @@ const startCall = async inbox => {
     const contactId = props.contactId || (await resolveDialContactId());
     const webphonePreparation = await prepareBrowserSipWebphone(inbox);
     if (!webphonePreparation.ready) {
-      useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
+      useAlert(
+        webphonePreparation.microphoneBlocked
+          ? t('CONVERSATION.VOICE_WIDGET.BROWSER_MICROPHONE_UNAVAILABLE')
+          : t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE')
+      );
       return;
     }
 

@@ -2319,6 +2319,109 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it.each([
+    ['a remote BYE', { code: 200, reason: 'SIP BYE' }],
+    ['a busy line', { code: 486, reason: 'Busy Here' }],
+    ['a declined call', { code: 603, reason: 'Decline' }],
+  ])(
+    'keeps the SIP registration for an immediate call-back after %s ended an outbound call',
+    async (_outcome, hangup) => {
+      const unregisteredHandler = vi.fn();
+      JanusSipVoiceClient.addEventListener(
+        'call:unregistered',
+        unregisteredHandler
+      );
+      await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+        inboxId: 4769,
+      });
+      await JanusSipVoiceClient.joinClientCall({
+        callDirection: 'outbound',
+        callRef: 'sipuni:local:callee-side-first',
+        toNumber: '+77015558623',
+      });
+      pluginState.options?.onmessage?.({
+        result: { event: 'hangup', ...hangup },
+      });
+      pluginSendMock.mockClear();
+      attachMock.mockClear();
+      // Janus numbers every call itself; the first call id is retired.
+      pluginSendMock.mockImplementation(({ message } = {}) => {
+        if (message?.request === 'call') {
+          window.setTimeout(() => {
+            pluginState.options?.onmessage?.({
+              result: { event: 'calling', call_id: 'outbound-call-id-second' },
+            });
+          }, 0);
+        }
+      });
+
+      const callBack = await JanusSipVoiceClient.joinClientCall({
+        callDirection: 'outbound',
+        callRef: 'sipuni:local:callee-side-second',
+        toNumber: '+77015558623',
+      });
+      JanusSipVoiceClient.removeEventListener(
+        'call:unregistered',
+        unregisteredHandler
+      );
+
+      expect(unregisteredHandler).not.toHaveBeenCalled();
+      expect(JanusSipVoiceClient.registered).toBe(true);
+      expect(callBack).not.toBeNull();
+      expect(attachMock).not.toHaveBeenCalled();
+      expect(pluginSendMock).not.toHaveBeenCalledWith({
+        message: { request: 'unregister' },
+      });
+      expect(pluginSendMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({ request: 'call' }),
+        })
+      );
+    }
+  );
+
+  it('refuses a call-back while an incoming call rings on the handle and leaves that call alone', async () => {
+    const unregisteredHandler = vi.fn();
+    JanusSipVoiceClient.addEventListener(
+      'call:unregistered',
+      unregisteredHandler
+    );
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    const ringing = { callId: 'ringing-1', offerless: false, result: {} };
+    JanusSipVoiceClient.pendingIncomingCall = ringing;
+    JanusSipVoiceClient.currentCallRef = 'sipuni:janus:ringing-1';
+    JanusSipVoiceClient.currentCallDirection = 'inbound';
+    pluginSendMock.mockClear();
+    pluginDetachMock.mockClear();
+    janusDestroyMock.mockClear();
+
+    await expect(
+      JanusSipVoiceClient.joinClientCall({
+        callDirection: 'outbound',
+        callRef: 'sipuni:local:call-back-while-ringing',
+        toNumber: '+77015558623',
+      })
+    ).rejects.toMatchObject({
+      reason: 'sip_outbound_incoming_call_pending',
+      sipCallSent: false,
+    });
+    JanusSipVoiceClient.removeEventListener(
+      'call:unregistered',
+      unregisteredHandler
+    );
+
+    expect(JanusSipVoiceClient.pendingIncomingCall).toBe(ringing);
+    expect(JanusSipVoiceClient.currentCallRef).toBe('sipuni:janus:ringing-1');
+    expect(JanusSipVoiceClient.currentCallDirection).toBe('inbound');
+    expect(JanusSipVoiceClient.registered).toBe(true);
+    expect(unregisteredHandler).not.toHaveBeenCalled();
+    expect(pluginSendMock).not.toHaveBeenCalled();
+    expect(pluginDetachMock).not.toHaveBeenCalled();
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+  });
+
   it('marks AI bridge browser calls so operator UI does not claim their media events', () => {
     const client = createJanusSipVoiceClient();
     client.sessionConfig = sipuniSession;
