@@ -23,7 +23,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
 
     conversation.with_lock(requires_new: true) { schedule_reminder!(payload) }
   rescue ActiveRecord::RecordNotUnique
-    Reminder.find_by(account: conversation.account, idempotency_key: payload[:idempotency_key])
+    Reminder.find_by(account: conversation.account, idempotency_key: payload[:idempotency_key]) || raise
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.warn("[CAPTAIN][FollowUpJob] Follow-up scheduling rejected: #{e.record.errors.full_messages.join(', ')}")
     nil
