@@ -223,6 +223,16 @@ describe('Captain prompts page', () => {
     }));
   });
 
+  it('uses the assistant loaded by the route guard without another show request', () => {
+    const wrapper = buildWrapper();
+
+    expect(wrapper.text()).toContain('basic-form');
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'captainAssistants/show',
+      58
+    );
+  });
+
   it('saves rules together with the instruction when the rules tab is active', async () => {
     const wrapper = buildWrapper();
 

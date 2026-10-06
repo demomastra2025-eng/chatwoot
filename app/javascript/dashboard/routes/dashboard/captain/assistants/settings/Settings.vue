@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -11,11 +11,14 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
-import VoiceAgentPreview from 'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue';
 import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
 
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
+
+const VoiceAgentPreview = defineAsyncComponent(() =>
+  import('dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue')
+);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -113,7 +116,9 @@ watch(
       return;
     }
 
-    store.dispatch('captainAssistants/show', currentAssistantId);
+    if (!store.getters['captainAssistants/getRecord'](currentAssistantId)?.id) {
+      store.dispatch('captainAssistants/show', currentAssistantId);
+    }
   },
   { immediate: true }
 );
@@ -297,7 +302,7 @@ const handleDeleteSuccess = () => {
 <template>
   <PageLayout
     :header-title="t('CAPTAIN.ASSISTANTS.SETTINGS.HEADER')"
-    :is-fetching="isFetching"
+    :is-fetching="isFetching && !assistant?.id"
     :show-pagination-footer="false"
     :show-know-more="false"
   >

@@ -88,6 +88,8 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     },
 
     async fetch() {
+      if (this.uiFlags.isFetching) return;
+
       this.uiFlags.isFetching = true;
       try {
         const response = await CaptainPreferencesAPI.get();

@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, computed, watch } from 'vue';
+import { reactive, computed, defineAsyncComponent, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { minLength, required } from '@vuelidate/validators';
@@ -9,8 +9,11 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
-import FishVoiceManager from './FishVoiceManager.vue';
 import SettingsInfoDialog from './SettingsInfoDialog.vue';
+
+const FishVoiceManager = defineAsyncComponent(() =>
+  import('./FishVoiceManager.vue')
+);
 
 const props = defineProps({
   assistant: {

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
@@ -9,9 +9,12 @@ import { useMapGetter } from 'dashboard/composables/store';
 import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantRulesManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantRulesManager.vue';
-import AssistantScenariosManager from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue';
 import PromptInspector from 'dashboard/components-next/captain/pageComponents/assistant/PromptInspector.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
+
+const AssistantScenariosManager = defineAsyncComponent(() =>
+  import('dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue')
+);
 
 const { t } = useI18n();
 const route = useRoute();
@@ -49,7 +52,9 @@ watch(
       return;
     }
 
-    store.dispatch('captainAssistants/show', currentAssistantId);
+    if (!store.getters['captainAssistants/getRecord'](currentAssistantId)?.id) {
+      store.dispatch('captainAssistants/show', currentAssistantId);
+    }
   },
   { immediate: true }
 );
@@ -138,7 +143,7 @@ watch(
 
 <template>
   <PageLayout
-    :is-fetching="isFetching"
+    :is-fetching="isFetching && !assistant?.id"
     :show-pagination-footer="false"
     :show-know-more="false"
     :button-label="t('CAPTAIN.ASSISTANTS.FORM.SAVE')"

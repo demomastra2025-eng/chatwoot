@@ -238,6 +238,16 @@ describe('Captain assistant settings page', () => {
     });
   });
 
+  it('uses the assistant loaded by the route guard without another show request', () => {
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('basic-form');
+    expect(dispatchMock).not.toHaveBeenCalledWith(
+      'captainAssistants/show',
+      57
+    );
+  });
+
   it('saves the general tab from its sections without changing the kind of the assistant', async () => {
     const wrapper = mountComponent();
 
@@ -344,6 +354,7 @@ describe('Captain assistant settings page', () => {
       false
     );
     await voiceTab.trigger('click');
+    await flushPromises();
 
     expect(wrapper.find('[data-test-id="voice-agent-preview"]').exists()).toBe(
       true
