@@ -7,14 +7,26 @@ class BulkActionsJob < ApplicationJob
   MODEL_TYPE = %w[Conversation CommunicationThread].freeze
   PROGRESS_FLUSH_EVERY = 5
 
-  def perform(account:, params:, user:, bulk_action_run_id: nil)
+  def perform(account:, params:, user:, bulk_action_run_id: nil, selection_count: nil)
     @account = account
     @user = user
     Current.user = user
     @params = params.deep_symbolize_keys
     @bulk_action_run = account.bulk_action_runs.find_by(id: bulk_action_run_id) if bulk_action_run_id.present?
-    @records = records_to_updated(@params[:ids])
-    @bulk_action_run&.start!(total_count: records.count)
+    @selection_count = selection_count&.to_i
+    @account_member_at_start = account_member?
+    if @selection_count
+      @record_ids = Array(@params[:record_ids]).map(&:to_i)
+      raise ArgumentError, 'Bulk selection identities do not match its count' unless
+        @record_ids.size == @selection_count && @record_ids.uniq == @record_ids
+    else
+      candidate_records = records_to_updated(@params[:ids])
+      @record_ids = @account_member_at_start ? candidate_records.distinct.pluck(:id) : []
+    end
+
+    total_count = @selection_count || @record_ids.size
+    @records = records_for_execution(@record_ids)
+    @bulk_action_run&.start!(total_count: total_count)
     bulk_update
     @bulk_action_run&.complete!
   rescue StandardError => e
@@ -25,24 +37,32 @@ class BulkActionsJob < ApplicationJob
   end
 
   def bulk_update
-    processed_since_flush = 0
-    failed_since_flush = 0
+    @record_ids.each_slice(PROGRESS_FLUSH_EVERY) do |record_ids|
+      records_by_id = records.where(id: record_ids).index_by(&:id)
+      failed_count = 0
+      skipped_count = 0
 
-    records.find_each do |record|
-      process_record(record)
-    rescue StandardError => e
-      failed_since_flush += 1
-      Rails.logger.error("[BULK ACTIONS] #{record.class.name}=#{record.id} failed: #{e.class}: #{e.message}")
-    ensure
-      processed_since_flush += 1
-      if processed_since_flush >= PROGRESS_FLUSH_EVERY
-        flush_progress(processed_since_flush, failed_since_flush)
-        processed_since_flush = 0
-        failed_since_flush = 0
+      record_ids.each do |record_id|
+        record = records_by_id[record_id]
+        if record.nil?
+          skipped_count += 1
+          Rails.logger.info("[BULK ACTIONS] selected record id=#{record_id} is no longer available; skipped")
+          next
+        end
+
+        begin
+          process_record(record)
+        rescue SkippedRecord => e
+          skipped_count += 1
+          Rails.logger.info("[BULK ACTIONS] #{record.class.name}=#{record.id} skipped: #{e.message}")
+        rescue StandardError => e
+          failed_count += 1
+          Rails.logger.error("[BULK ACTIONS] #{record.class.name}=#{record.id} failed: #{e.class}: #{e.message}")
+        end
       end
-    end
 
-    flush_progress(processed_since_flush, failed_since_flush) if processed_since_flush.positive?
+      flush_progress(record_ids.size, failed_count, skipped_count)
+    end
   end
 
   def available_params(params)
@@ -90,13 +110,22 @@ class BulkActionsJob < ApplicationJob
 
   def process_communication_thread(communication_thread)
     accessible_links = accessible_links_for(communication_thread)
-
-    bulk_remove_thread_labels(accessible_links)
-    bulk_add_thread_labels(accessible_links)
+    raise SkippedRecord, 'No accessible channels remain' if accessible_links.empty?
 
     params = communication_thread_update_params
     if params.present?
       ensure_full_thread_accessible!(communication_thread, accessible_links)
+      if params[:status].to_s == 'resolved'
+        accessible_links.each do |link|
+          skip_for_missing_required_attributes!(link.conversation)
+        end
+      end
+    end
+
+    bulk_remove_thread_labels(accessible_links)
+    bulk_add_thread_labels(accessible_links)
+
+    if params.present?
       CommunicationThreads::UpdateService.new(
         communication_thread: communication_thread,
         params: params,
@@ -117,6 +146,19 @@ class BulkActionsJob < ApplicationJob
   end
 
   def process_record(record)
+    raise SkippedRecord, 'User is no longer a member of the account' unless account_member?
+
+    if record.is_a?(Conversation)
+      accessible = Conversations::PermissionFilterService.new(
+        Conversation.where(id: record.id, account_id: @account.id),
+        @user,
+        @account
+      ).perform.exists?
+      raise SkippedRecord, 'Conversation access was revoked' unless accessible
+
+      skip_for_missing_required_attributes!(record) if resolved_status_requested?
+    end
+
     if record.is_a?(CommunicationThread)
       process_communication_thread(record)
     else
@@ -138,6 +180,17 @@ class BulkActionsJob < ApplicationJob
     Conversations::PermissionFilterService.new(scope, @user, @account).perform
   end
 
+  def records_for_execution(ids)
+    case @params[:type].to_s.camelcase
+    when 'Conversation'
+      @account.conversations.where(id: ids)
+    when 'CommunicationThread'
+      @account.communication_threads.where(id: ids)
+    else
+      Conversation.none
+    end
+  end
+
   def communication_threads_to_updated(ids)
     CommunicationThread
       .where(account_id: @account.id, display_id: ids)
@@ -147,7 +200,7 @@ class BulkActionsJob < ApplicationJob
   end
 
   def accessible_conversations
-    @accessible_conversations ||= Conversations::PermissionFilterService.new(
+    Conversations::PermissionFilterService.new(
       @account.conversations,
       @user,
       @account
@@ -159,6 +212,38 @@ class BulkActionsJob < ApplicationJob
       .where(account_id: @account.id, communication_thread_id: communication_thread.id)
       .where(conversation_id: accessible_conversations.select(:id))
       .includes(:conversation)
+  end
+
+  class SkippedRecord < StandardError; end
+
+  def account_member?
+    @account.account_users.exists?(user_id: @user.id)
+  end
+
+  def resolved_status_requested?
+    Array(@params.dig(:fields, :status)).first.to_s == 'resolved'
+  end
+
+  def skip_for_missing_required_attributes!(conversation)
+    return unless @account.feature_enabled?('conversation_required_attributes')
+
+    required_keys = Array(@account.settings&.fetch('conversation_required_attributes', nil)).map(&:to_s)
+    return if required_keys.empty?
+
+    definitions = @account.custom_attribute_definitions
+                          .conversation_attribute
+                          .where(attribute_key: required_keys)
+                          .select(:attribute_key, :attribute_display_type)
+    custom_attributes = conversation.custom_attributes || {}
+    missing = definitions.any? do |definition|
+      key = definition.attribute_key
+      value_present = custom_attributes.key?(key) || custom_attributes.key?(key.to_sym)
+      value = custom_attributes.key?(key) ? custom_attributes[key] : custom_attributes[key.to_sym]
+      next !value_present if definition.attribute_display_type == 'checkbox'
+
+      value.nil? || value.to_s.strip.empty?
+    end
+    raise SkippedRecord, 'Required conversation attributes are missing' if missing
   end
 
   def communication_thread_update_params
@@ -207,12 +292,14 @@ class BulkActionsJob < ApplicationJob
     end
   end
 
-  def flush_progress(processed_count, failed_count)
+  def flush_progress(processed_count, failed_count, skipped_count)
     return unless @bulk_action_run
 
     @bulk_action_run.advance!(
       processed_increment: processed_count,
-      failed_increment: failed_count
+      failed_increment: failed_count,
+      skipped_increment: skipped_count
     )
   end
+
 end

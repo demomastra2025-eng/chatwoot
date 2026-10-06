@@ -29,6 +29,21 @@ RSpec.describe BulkActionsJob do
     end
   end
 
+  def create_accessible_thread(account:, user:)
+    contact = create(:contact, account: account)
+    thread = create(:communication_thread, account: account, contact: contact)
+    conversation = create(:conversation, account: account, contact: contact)
+    CommunicationThreadConversation.where(account_id: account.id, conversation_id: conversation.id).delete_all
+    conversation.association(:communication_thread_conversation).reset
+    conversation.association(:communication_thread).reset
+    account.enable_features!('communication_threads')
+    create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+    unless InboxMember.exists?(inbox_id: conversation.inbox_id, user_id: user.id)
+      create(:inbox_member, inbox: conversation.inbox, user: user)
+    end
+    [thread, conversation]
+  end
+
   it 'enqueues the job' do
     expect { job }.to have_enqueued_job(described_class)
       .with(account: account, params: params, user: agent)
@@ -124,6 +139,185 @@ RSpec.describe BulkActionsJob do
       expect(bulk_action_run.failed_count).to eq(0)
     end
 
+    it 'resets skipped accounting when the same run is retried' do
+      run = account.bulk_action_runs.create!(
+        user: agent,
+        resource_type: 'Conversation',
+        action_name: 'update_status'
+      )
+      InboxMember.where(inbox_id: conversation_1.inbox_id, user_id: agent.id).delete_all
+      params = {
+        type: 'Conversation',
+        fields: { status: 'resolved' },
+        ids: [conversation_1.display_id],
+        record_ids: [conversation_1.id]
+      }
+      bulk_job = described_class.new
+      attempts = 0
+      allow(bulk_job).to receive(:bulk_update).and_wrap_original do |original|
+        attempts += 1
+        result = original.call
+        raise 'one-time completion failure' if attempts == 1
+
+        result
+      end
+
+      expect do
+        bulk_job.perform(
+          account: account,
+          params: params,
+          user: agent,
+          bulk_action_run_id: run.id,
+          selection_count: 1
+        )
+      end.to raise_error('one-time completion failure')
+      expect(run.reload.as_progress_json[:skipped_count]).to eq(1)
+
+      bulk_job.perform(
+        account: account,
+        params: params,
+        user: agent,
+        bulk_action_run_id: run.id,
+        selection_count: 1
+      )
+
+      expect(run.reload).to be_completed
+      expect(run.total_count).to eq(1)
+      expect(run.processed_count).to eq(1)
+      expect(run.as_progress_json[:skipped_count]).to eq(1)
+    end
+
+    it 'rechecks access revoked after run start and reports the frozen selection as skipped' do
+      run = account.bulk_action_runs.create!(
+        user: agent,
+        resource_type: 'Conversation',
+        action_name: 'update_status'
+      )
+      allow_any_instance_of(BulkActionRun).to receive(:start!).and_wrap_original do |original, **kwargs|
+        result = original.call(**kwargs)
+        InboxMember.where(inbox_id: conversation_1.inbox_id, user_id: agent.id).delete_all
+        result
+      end
+
+      described_class.perform_now(
+        account: account,
+        user: agent,
+        params: {
+          type: 'Conversation',
+          fields: { status: 'resolved' },
+          ids: [conversation_1.display_id],
+          record_ids: [conversation_1.id]
+        },
+        bulk_action_run_id: run.id,
+        selection_count: 1
+      )
+
+      expect(conversation_1.reload.status).to eq('open')
+      expect(run.reload).to be_completed
+      expect(run.total_count).to eq(1)
+      expect(run.processed_count).to eq(1)
+      expect(run.failed_count).to eq(0)
+      expect(run.as_progress_json[:skipped_count]).to eq(1)
+    end
+
+    it 'rechecks account membership and reports the complete snapshot as skipped' do
+      run = account.bulk_action_runs.create!(
+        user: agent,
+        resource_type: 'Conversation',
+        action_name: 'update_status'
+      )
+      allow_any_instance_of(BulkActionRun).to receive(:start!).and_wrap_original do |original, **kwargs|
+        result = original.call(**kwargs)
+        account.account_users.where(user_id: agent.id).delete_all
+        result
+      end
+
+      described_class.perform_now(
+        account: account,
+        params: {
+          type: 'Conversation',
+          fields: { status: 'resolved' },
+          ids: [conversation_1.display_id],
+          record_ids: [conversation_1.id]
+        },
+        user: agent,
+        bulk_action_run_id: run.id,
+        selection_count: 1
+      )
+
+      expect(conversation_1.reload.status).to eq('open')
+      expect(run.reload).to be_completed
+      expect(run.total_count).to eq(1)
+      expect(run.processed_count).to eq(1)
+      expect(run.failed_count).to eq(0)
+      expect(run.as_progress_json[:skipped_count]).to eq(1)
+    end
+
+    it 'enforces required attributes on the server and accepts a present false checkbox value' do
+      account.enable_features!('conversation_required_attributes')
+      account.update!(
+        settings: account.settings.merge(
+          'conversation_required_attributes' => ['needs_review']
+        )
+      )
+      create(
+        :custom_attribute_definition,
+        account: account,
+        attribute_key: 'needs_review',
+        attribute_model: :conversation_attribute,
+        attribute_display_type: :checkbox
+      )
+      conversation_1.update!(custom_attributes: {})
+      conversation_2.update!(custom_attributes: { 'needs_review' => false })
+      run = account.bulk_action_runs.create!(
+        user: agent,
+        resource_type: 'Conversation',
+        action_name: 'update_status'
+      )
+
+      described_class.perform_now(
+        account: account,
+        params: {
+          type: 'Conversation',
+          fields: { status: 'resolved' },
+          ids: [conversation_1.display_id, conversation_2.display_id],
+          record_ids: [conversation_1.id, conversation_2.id]
+        },
+        user: agent,
+        bulk_action_run_id: run.id,
+        selection_count: 2
+      )
+
+      expect(conversation_1.reload.status).to eq('open')
+      expect(conversation_2.reload.status).to eq('resolved')
+      expect(run.reload).to be_completed
+      expect(run.total_count).to eq(2)
+      expect(run.processed_count).to eq(2)
+      expect(run.failed_count).to eq(0)
+      expect(run.as_progress_json[:skipped_count]).to eq(1)
+    end
+
+    it 'preserves the status reason when closing a conversation in the job' do
+      account.update!(
+        conversation_status_reason_config: {
+          'resolved' => { options: ['Resolved by request'], required: true }
+        }
+      )
+
+      described_class.perform_now(
+        account: account,
+        params: {
+          type: 'Conversation',
+          fields: { status: 'resolved', status_reason: 'Resolved by request' },
+          ids: [conversation_1.display_id]
+        },
+        user: agent
+      )
+
+      expect(conversation_1.reload.status).to eq('resolved')
+      expect(conversation_1.status_transitions.last.reason).to eq('Resolved by request')
+    end
+
     context 'with communication threads' do
       let(:contact) { create(:contact, account: account) }
       let(:thread) { create(:communication_thread, account: account, contact: contact) }
@@ -158,6 +352,65 @@ RSpec.describe BulkActionsJob do
         create(:communication_thread_conversation, communication_thread: thread, conversation: thread_conversation_2)
         create(:inbox_member, inbox: thread_conversation_1.inbox, user: agent)
         create(:inbox_member, inbox: thread_conversation_2.inbox, user: agent)
+      end
+
+      it 'does not update a replacement thread that reused a selected display ID' do
+        snapshot = BulkActions::SelectionSnapshot.new(
+          account: account,
+          user: agent,
+          resource_type: 'CommunicationThread',
+          filters: { mode: 'basic', status: 'all', inbox_id: thread_conversation_1.inbox_id }
+        ).perform
+        selected_record_id = thread.id
+        selected_display_id = thread.display_id
+        thread.destroy!
+
+        replacement_contact = create(:contact, account: account)
+        replacement = create(:communication_thread, account: account, contact: replacement_contact)
+        replacement_conversation = create(
+          :conversation,
+          account: account,
+          contact: replacement_contact,
+          inbox: thread_conversation_1.inbox
+        )
+        CommunicationThreadConversation.where(
+          account_id: account.id,
+          conversation_id: replacement_conversation.id
+        ).delete_all
+        replacement_conversation.association(:communication_thread_conversation).reset
+        replacement_conversation.association(:communication_thread).reset
+        create(
+          :communication_thread_conversation,
+          communication_thread: replacement,
+          conversation: replacement_conversation
+        )
+        expect(replacement.display_id).to eq(selected_display_id)
+        expect(replacement.id).not_to eq(selected_record_id)
+        run = account.bulk_action_runs.create!(
+          user: agent,
+          resource_type: 'CommunicationThread',
+          action_name: 'update_status'
+        )
+
+        described_class.perform_now(
+          account: account,
+          user: agent,
+          params: {
+            type: 'CommunicationThread',
+            fields: { status: 'resolved' },
+            ids: snapshot.ids,
+            record_ids: snapshot.record_ids
+          },
+          bulk_action_run_id: run.id,
+          selection_count: snapshot.count
+        )
+
+        expect(replacement.reload.status).to eq('open')
+        expect(replacement_conversation.reload.status).to eq('open')
+        expect(run.reload).to be_completed
+        expect(run.total_count).to eq(1)
+        expect(run.processed_count).to eq(1)
+        expect(run.as_progress_json[:skipped_count]).to eq(1)
       end
 
       it 'bulk updates the thread status through linked conversations' do
@@ -199,6 +452,36 @@ RSpec.describe BulkActionsJob do
         expect(thread_conversation_1.reload.unread_incoming_messages_count).to eq(0)
         expect(thread_conversation_2.reload.unread_incoming_messages_count).to eq(0)
         expect(thread.reload.unread_count).to eq(0)
+      end
+
+      it 'fails a whole-thread update when one linked inbox is no longer accessible' do
+        run = account.bulk_action_runs.create!(
+          user: agent,
+          resource_type: 'CommunicationThread',
+          action_name: 'update_status'
+        )
+        InboxMember.where(inbox_id: thread_conversation_2.inbox_id, user_id: agent.id).delete_all
+
+        described_class.perform_now(
+          account: account,
+          params: {
+            type: 'CommunicationThread',
+            fields: { status: 'resolved' },
+            ids: [thread.display_id],
+            record_ids: [thread.id]
+          },
+          user: agent,
+          bulk_action_run_id: run.id,
+          selection_count: 1
+        )
+
+        expect(thread_conversation_1.reload.status).to eq('open')
+        expect(thread_conversation_2.reload.status).to eq('open')
+        expect(run.reload).to be_completed
+        expect(run.total_count).to eq(1)
+        expect(run.processed_count).to eq(1)
+        expect(run.failed_count).to eq(1)
+        expect(run.as_progress_json[:skipped_count]).to eq(0)
       end
     end
   end

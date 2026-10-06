@@ -48,6 +48,7 @@ class BulkActionRun < ApplicationRecord
     update!(
       status: :processing,
       total_count: total_count,
+      metadata: (metadata || {}).merge('skipped_count' => 0),
       started_at: Time.current,
       completed_at: nil,
       error_message: nil,
@@ -56,7 +57,7 @@ class BulkActionRun < ApplicationRecord
     )
   end
 
-  def advance!(processed_increment: 1, failed_increment: 0)
+  def advance!(processed_increment: 1, failed_increment: 0, skipped_increment: 0)
     self.class.where(id: id).update_all(
       [
         'processed_count = processed_count + ?, failed_count = failed_count + ?, updated_at = ?',
@@ -66,6 +67,10 @@ class BulkActionRun < ApplicationRecord
       ]
     )
     reload
+    return if skipped_increment.zero?
+
+    skipped_count = (metadata || {}).fetch('skipped_count', 0).to_i + skipped_increment
+    update!(metadata: (metadata || {}).merge('skipped_count' => skipped_count))
   end
 
   def complete!
@@ -99,6 +104,7 @@ class BulkActionRun < ApplicationRecord
       total_count: total_count,
       processed_count: processed_count,
       failed_count: failed_count,
+      skipped_count: (metadata || {}).fetch('skipped_count', 0).to_i,
       progress_percentage: progress_percentage,
       error_message: error_message,
       metadata: metadata || {},
