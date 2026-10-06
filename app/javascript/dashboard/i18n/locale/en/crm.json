@@ -616,7 +616,8 @@
         "LABEL": "Reminder plan",
         "NOTE": "Only plans that support this entity type are shown here.",
         "PLACEHOLDER": "No default reminder plan",
-        "SAVE": "Save default plan"
+        "SAVE": "Save default plan",
+        "ADMIN_ONLY": "The default plan applies to the whole account, so only an administrator can change it."
       },
       "LOADING": "Loading CRM settings...",
       "PIPELINES": {

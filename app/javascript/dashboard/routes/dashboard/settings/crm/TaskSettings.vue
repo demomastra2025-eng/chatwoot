@@ -6,6 +6,7 @@ import Draggable from 'vuedraggable';
 
 import { useAlert } from 'dashboard/composables';
 import { useAccount } from 'dashboard/composables/useAccount';
+import { useAdmin } from 'dashboard/composables/useAdmin';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { useTouchPlans } from 'dashboard/composables/useTouchPlans';
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -38,6 +39,7 @@ const referencesStore = useCrmReferencesStore();
 const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
+const { isAdmin } = useAdmin();
 const { currentAccount, updateAccount } = useAccount();
 const { isLoadingTouchPlans, loadTouchPlans, touchPlanOptionsForEntityKind } =
   useTouchPlans();
@@ -61,6 +63,16 @@ const taskTouchPlanOptions = computed(() =>
 
 const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
+);
+
+// The default plan is an account setting: AccountPolicy#update? accepts administrators only, so a custom role with
+// crm_settings_manage sees it read-only instead of a Save that is always rejected.
+const canEditDefaultPlan = computed(() => isAdmin.value);
+const defaultTaskTouchPlanName = computed(
+  () =>
+    taskTouchPlanOptions.value.find(
+      option => String(option.id) === String(defaultTaskTouchPlanId.value)
+    )?.name || ''
 );
 
 const taskStatusForm = reactive({
@@ -435,22 +447,38 @@ onMounted(async () => {
           <div
             class="mt-3 grid gap-4 rounded-2xl bg-n-solid-2 p-5 outline outline-1 outline-n-container shadow-sm"
           >
-            <TouchPlanSelectField
-              v-model="defaultTaskTouchPlanId"
-              :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL')"
-              :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.NOTE')"
-              :options="taskTouchPlanOptions"
-              :placeholder="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')"
-              :disabled="!canManage || isLoadingTouchPlans"
-            />
-
-            <div>
-              <Button
-                :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE')"
-                size="sm"
-                :disabled="!canManage || isLoadingTouchPlans"
-                @click="saveDefaultTaskTouchPlan"
+            <template v-if="canEditDefaultPlan">
+              <TouchPlanSelectField
+                v-model="defaultTaskTouchPlanId"
+                :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL')"
+                :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.NOTE')"
+                :options="taskTouchPlanOptions"
+                :placeholder="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')"
+                :disabled="isLoadingTouchPlans"
               />
+
+              <div>
+                <Button
+                  :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE')"
+                  size="sm"
+                  :disabled="isLoadingTouchPlans"
+                  @click="saveDefaultTaskTouchPlan"
+                />
+              </div>
+            </template>
+            <div v-else class="grid gap-1" data-testid="default-plan-readonly">
+              <p class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL') }}
+              </p>
+              <p class="text-sm text-n-slate-12">
+                {{
+                  defaultTaskTouchPlanName ||
+                  $t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')
+                }}
+              </p>
+              <p class="text-sm text-n-slate-11">
+                {{ $t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.ADMIN_ONLY') }}
+              </p>
             </div>
           </div>
         </SchedulingFormFieldGroup>

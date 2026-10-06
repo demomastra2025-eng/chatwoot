@@ -13,6 +13,7 @@ const testState = vi.hoisted(() => ({
   useAlert: vi.fn(),
   route: { query: {} },
   router: { replace: vi.fn(() => Promise.resolve()), push: vi.fn() },
+  isAdmin: { value: true },
 }));
 
 vi.mock('vue-i18n', () => ({
@@ -28,8 +29,13 @@ vi.mock('dashboard/composables', () => ({
   useAlert: testState.useAlert,
 }));
 
+// The CRM permission check passes for both users below; only the administrator check tells them apart.
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({ checkPermissions: () => true }),
+}));
+
+vi.mock('dashboard/composables/useAdmin', () => ({
+  useAdmin: () => ({ isAdmin: testState.isAdmin }),
 }));
 
 vi.mock('dashboard/composables/useAccount', () => ({
@@ -144,6 +150,7 @@ describe('TaskSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     testState.route.query = {};
+    testState.isAdmin.value = true;
   });
 
   it('loads statuses, task types and reminder plans on mount', async () => {
@@ -192,6 +199,30 @@ describe('TaskSettings', () => {
     expect(testState.useAlert).toHaveBeenCalledWith(
       'GENERAL_SETTINGS.UPDATE.SUCCESS'
     );
+  });
+
+  it('shows the default reminder plan read-only to a CRM manager who is not an administrator', async () => {
+    // AccountPolicy#update? rejects every account update from this user, so no editor and no Save may be offered.
+    testState.isAdmin.value = false;
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="plan-select"]').exists()).toBe(false);
+    expect(
+      wrapper
+        .findAll('button')
+        .some(
+          button => button.text() === 'CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE'
+        )
+    ).toBe(false);
+    const readOnly = wrapper.get('[data-testid="default-plan-readonly"]');
+    expect(readOnly.text()).toContain('Plan');
+    expect(readOnly.text()).toContain(
+      'CRM.SETTINGS.DEFAULT_TOUCH_PLAN.ADMIN_ONLY'
+    );
+    expect(testState.updateAccount).not.toHaveBeenCalled();
+    // The task catalog stays editable with the CRM permission.
+    expect(wrapper.find('[data-testid="task-catalog"]').exists()).toBe(true);
   });
 
   it('opens the status drawer for the create-task-status link and clears the query', async () => {
