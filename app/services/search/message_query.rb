@@ -96,7 +96,7 @@ class Search::MessageQuery
   def recent_rows(base, match, needed)
     table = Message.arel_table
     recent = base.reorder(table[:created_at].desc, table[:id].desc).limit(RECENT_ROWS)
-                 .select(:id, :account_id, :conversation_id, :content, :content_attributes, :created_at)
+                 .select(:id, :account_id, :conversation_id, :content, :processed_message_content, :content_attributes, :created_at)
     ordered(Message.unscoped.from(recent, :messages).where(match), needed)
   end
 

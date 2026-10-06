@@ -116,6 +116,12 @@ RSpec.describe Conversations::ListSearchService do
       expect(ids_for('справка по записи')).to eq([resolved_conversation.id])
     end
 
+    it 'finds the text fields of a message shown by the old local list search' do
+      message_in(resolved_conversation, '', content_attributes: { email: { subject: 'Вопрос по приёму' } })
+
+      expect(ids_for('вопрос по приему')).to eq([resolved_conversation.id])
+    end
+
     it 'finds a conversation by the text of a message exactly as typed, without word forms' do
       message_in(resolved_conversation, 'Хочу записаться на приём')
       other = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account, name: 'Мария'))
