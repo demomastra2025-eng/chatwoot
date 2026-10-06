@@ -4556,6 +4556,67 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.metadata.dig('metadata', 'sipuni_status')).to eq('ANSWER')
     end
 
+    it 'keeps a Sipuni Janus operator leg an operator leg when the external leg of the call is reported' do
+      janus_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'ringing',
+        external_call_ref: 'sipuni:janus:104:raw-invite@sipuni-host:8201',
+        metadata: {
+          'metadata' => {
+            'source' => 'browser_janus_sip',
+            'route_action' => 'operator',
+            'route_reason' => 'operator_route',
+            'operator_candidate_user_ids' => [137]
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'sipuni:janus-leg-1:1:ringing',
+          call_ref: janus_session.external_call_ref,
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          metadata: { sipuni_operator_leg: false, sipuni_leg_kind: 'external', sipuni_event: '1' }
+        )
+      ).perform
+
+      expect(result.reload.metadata.dig('metadata', 'sipuni_operator_leg')).to be(true)
+      expect(result.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('operator')
+      expect(result.metadata.dig('metadata', 'sipuni_event')).to eq('1')
+      expect(result.metadata.dig('metadata', 'operator_candidate_user_ids')).to eq([137])
+    end
+
+    it 'stores an external leg report on a Sipuni session that did not come through the browser' do
+      provider_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'ringing',
+        external_call_ref: 'sipuni:provider-external-leg-1',
+        metadata: { 'metadata' => { 'route_action' => 'operator' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'sipuni:provider-external-leg-1:1:ringing',
+          call_ref: provider_session.external_call_ref,
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          metadata: { sipuni_operator_leg: false, sipuni_leg_kind: 'external' }
+        )
+      ).perform
+
+      expect(result.reload.metadata.dig('metadata', 'sipuni_operator_leg')).to be(false)
+      expect(result.metadata.dig('metadata', 'sipuni_leg_kind')).to eq('external')
+    end
+
     it 'reuses a local outbound Sipuni call session when provider call id arrives later' do
       local_call_session = create(
         :telephony_call_session,

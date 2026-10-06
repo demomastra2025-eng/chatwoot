@@ -2751,7 +2751,7 @@ class Telephony::EventsIngestionService
   def metadata_for_merge(call_session, existing_metadata)
     incoming_metadata = metadata.deep_stringify_keys
     existing_metadata = existing_metadata.deep_stringify_keys
-    incoming_metadata = preserve_sipuni_operator_leg_metadata(existing_metadata, incoming_metadata)
+    incoming_metadata = preserve_sipuni_operator_leg_metadata(call_session, existing_metadata, incoming_metadata)
     preserve_browser_janus_sip_logical_metadata(call_session, existing_metadata, incoming_metadata)
   end
 
@@ -2771,8 +2771,9 @@ class Telephony::EventsIngestionService
     ).compact
   end
 
-  def preserve_sipuni_operator_leg_metadata(existing_metadata, incoming_metadata)
-    return incoming_metadata unless sipuni_operator_leg_value?(existing_metadata, true)
+  def preserve_sipuni_operator_leg_metadata(call_session, existing_metadata, incoming_metadata)
+    return incoming_metadata unless sipuni_operator_leg_value?(existing_metadata, true) ||
+                                    sipuni_janus_operator_leg?(call_session, existing_metadata)
     return incoming_metadata unless sipuni_operator_leg_value?(incoming_metadata, false) ||
                                     incoming_metadata['sipuni_leg_kind'].to_s == 'external'
 
@@ -2780,6 +2781,16 @@ class Telephony::EventsIngestionService
       'sipuni_operator_leg' => true,
       'sipuni_leg_kind' => 'operator'
     )
+  end
+
+  # The browser's own INVITE (reported through webphone/incoming) is an operator
+  # leg by construction. The external leg the PBX rings next to it (a mobile
+  # phone) reports leg kind external and joins the same session: that report
+  # must not turn the operator's leg into one he cannot answer.
+  def sipuni_janus_operator_leg?(call_session, existing_metadata)
+    call_session.provider == 'sipuni' && call_session.direction == 'inbound' &&
+      call_session.external_call_ref.to_s.start_with?('sipuni:janus:') &&
+      existing_metadata['route_action'].to_s == 'operator'
   end
 
   def sipuni_operator_leg_value?(metadata, expected)
