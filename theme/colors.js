@@ -12,7 +12,6 @@ const {
   violet,
   violetDark,
 } = require('@radix-ui/colors');
-const tailwindColors = require('tailwindcss/colors');
 
 export const colors = {
   woot: {
@@ -281,35 +280,5 @@ export const colors = {
       color: 'rgb(var(--label-background) / <alpha-value>)',
       border: 'rgba(var(--label-border))',
     },
-    // Status colours for the existing Ds* components.
-    status: {
-      good: 'rgb(var(--status-good) / <alpha-value>)',
-      warn: 'rgb(var(--status-warn) / <alpha-value>)',
-      bad: 'rgb(var(--status-bad) / <alpha-value>)',
-    },
-    // Ordinal chart ramp for the existing Ds* components.
-    chart: {
-      1: 'rgb(var(--chart-1) / <alpha-value>)',
-      2: 'rgb(var(--chart-2) / <alpha-value>)',
-      3: 'rgb(var(--chart-3) / <alpha-value>)',
-      4: 'rgb(var(--chart-4) / <alpha-value>)',
-      5: 'rgb(var(--chart-5) / <alpha-value>)',
-    },
   },
-};
-
-// Existing palette entries above keep their production values. These names
-// were missing from the replaced Tailwind palette; use their stock hues so
-// legacy utility classes resolve with their familiar hues.
-export const compatColors = {
-  amber: tailwindColors.amber,
-  emerald: tailwindColors.emerald,
-  rose: tailwindColors.rose,
-  blue: tailwindColors.blue,
-  indigo: tailwindColors.indigo,
-  cyan: tailwindColors.cyan,
-  gray: tailwindColors.gray,
-  red: { 950: tailwindColors.red[950] },
-  black: { DEFAULT: tailwindColors.black },
-  inherit: 'inherit',
 };

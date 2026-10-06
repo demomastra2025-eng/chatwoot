@@ -1,5 +1,5 @@
 const { slateDark } = require('@radix-ui/colors');
-import { colors, compatColors } from './theme/colors';
+import { colors } from './theme/colors';
 import { icons } from './theme/icons';
 const defaultTheme = require('tailwindcss/defaultTheme');
 const {
@@ -31,7 +31,6 @@ const tailwindConfig = {
     './app/javascript/portal/**/*.vue',
     './app/javascript/shared/**/*.vue',
     './app/javascript/survey/**/*.vue',
-    './app/javascript/superadmin_pages/**/*.vue',
     './app/javascript/dashboard/components-next/**/*.vue',
     './app/javascript/dashboard/helper/**/*.js',
     './app/javascript/dashboard/composables/**/*.js',
@@ -41,19 +40,6 @@ const tailwindConfig = {
   ],
   theme: {
     extend: {
-      colors: compatColors,
-      // Retained for the existing Ds* components.
-      borderRadius: {
-        'ds-card': '10px',
-        'ds-control': '7px',
-      },
-      fontSize: {
-        'ds-caption': ['12.5px', '1.4'],
-        'ds-figure': [
-          '30px',
-          { lineHeight: '1.15', letterSpacing: '-0.03em', fontWeight: '600' },
-        ],
-      },
       fontFamily: {
         sans: brandSansFonts,
         inter: brandSansFonts,
