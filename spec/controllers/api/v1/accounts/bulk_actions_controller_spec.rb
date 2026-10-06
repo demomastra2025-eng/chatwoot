@@ -18,6 +18,21 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
     end
   end
 
+  def create_accessible_thread(account:, user:)
+    account.enable_features!('communication_threads')
+    contact = create(:contact, account: account)
+    thread = create(:communication_thread, account: account, contact: contact)
+    conversation = create(:conversation, account: account, contact: contact)
+    CommunicationThreadConversation.where(account_id: account.id, conversation_id: conversation.id).delete_all
+    conversation.association(:communication_thread_conversation).reset
+    conversation.association(:communication_thread).reset
+    create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
+    unless InboxMember.exists?(inbox_id: conversation.inbox_id, user_id: user.id)
+      create(:inbox_member, inbox: conversation.inbox, user: user)
+    end
+    [thread, conversation]
+  end
+
   describe 'POST /api/v1/accounts/{account.id}/bulk_action' do
     context 'when it is an unauthenticated user' do
       let!(:agent) { create(:user) }
@@ -37,6 +52,39 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
       before do
         Conversation.all.find_each do |conversation|
           create(:inbox_member, inbox: conversation.inbox, user: agent)
+        end
+      end
+
+      describe 'POST /api/v1/accounts/{account.id}/bulk_actions/selection' do
+        it 'returns only a bounded signed snapshot for the matching list' do
+          post "/api/v1/accounts/#{account.id}/bulk_actions/selection",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'Conversation',
+                 filters: { mode: 'basic', status: 'all' }
+               }
+
+          expect(response).to have_http_status(:success)
+          payload = response.parsed_body.fetch('payload')
+          expect(payload.fetch('count')).to eq(4)
+          expect(payload.fetch('ids')).to match_array(account.conversations.pluck(:display_id))
+          expect(payload.fetch('token')).to be_present
+          expect(payload.fetch('inbox_ids')).to match_array(account.inboxes.pluck(:id))
+          expect(payload.fetch('inbox_ids_by_id').keys).to match_array(payload.fetch('ids').map(&:to_s))
+          expect(payload).not_to have_key('conversations')
+          expect(payload).not_to have_key('record_ids')
+        end
+
+        it 'rejects local-search text instead of widening it into a server search' do
+          post "/api/v1/accounts/#{account.id}/bulk_actions/selection",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'Conversation',
+                 filters: { mode: 'basic', status: 'all', q: 'loaded local search' }
+               }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body.dig('error', 'code')).to eq('selection_filters_invalid')
         end
       end
 
@@ -85,6 +133,156 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('payload', 'resource_type')).to eq('CommunicationThread')
         expect(response.parsed_body.dig('payload', 'action_name')).to eq('update_status')
+      end
+
+      it 'does not apply a pre-enqueue snapshot to a replacement thread with a reused display ID' do
+        original, original_conversation = create_accessible_thread(account: account, user: agent)
+        filters = { mode: 'basic', status: 'all', inbox_id: original_conversation.inbox_id }
+        post "/api/v1/accounts/#{account.id}/bulk_actions/selection",
+             headers: agent.create_new_auth_token,
+             params: { type: 'CommunicationThread', filters: filters }
+        expect(response).to have_http_status(:success)
+        token = response.parsed_body.dig('payload', 'token')
+
+        original_id = original.id
+        original_display_id = original.display_id
+        original.destroy!
+        replacement, replacement_conversation = create_accessible_thread(account: account, user: agent)
+        expect(replacement.display_id).to eq(original_display_id)
+
+        queued_arguments = nil
+        expect(BulkActionsJob).to receive(:perform_later) do |**arguments|
+          queued_arguments = arguments
+        end
+        post "/api/v1/accounts/#{account.id}/bulk_actions",
+             headers: agent.create_new_auth_token,
+             params: {
+               type: 'CommunicationThread',
+               selection_token: token,
+               fields: { status: 'resolved' }
+             }
+
+        expect(response).to have_http_status(:success)
+        expect(queued_arguments.fetch(:params)[:record_ids]).to eq([original_id])
+        BulkActionsJob.perform_now(**queued_arguments)
+
+        expect(replacement.reload.status).to eq('open')
+        expect(replacement_conversation.reload.status).to eq('open')
+        run = account.bulk_action_runs.find(queued_arguments.fetch(:bulk_action_run_id))
+        expect(run.as_progress_json[:skipped_count]).to eq(1)
+      end
+
+      it 'does not apply an enqueued snapshot to a replacement thread with a reused display ID' do
+        original, original_conversation = create_accessible_thread(account: account, user: agent)
+        post "/api/v1/accounts/#{account.id}/bulk_actions/selection",
+             headers: agent.create_new_auth_token,
+             params: {
+               type: 'CommunicationThread',
+               filters: { mode: 'basic', status: 'all', inbox_id: original_conversation.inbox_id }
+             }
+        expect(response).to have_http_status(:success)
+        token = response.parsed_body.dig('payload', 'token')
+
+        original_id = original.id
+        original_display_id = original.display_id
+        queued_arguments = nil
+        expect(BulkActionsJob).to receive(:perform_later) do |**arguments|
+          queued_arguments = arguments
+        end
+        post "/api/v1/accounts/#{account.id}/bulk_actions",
+             headers: agent.create_new_auth_token,
+             params: {
+               type: 'CommunicationThread',
+               selection_token: token,
+               fields: { status: 'resolved' }
+             }
+
+        expect(response).to have_http_status(:success)
+        expect(queued_arguments.fetch(:params)[:record_ids]).to eq([original_id])
+
+        original.destroy!
+        replacement, replacement_conversation = create_accessible_thread(account: account, user: agent)
+        expect(replacement.display_id).to eq(original_display_id)
+        BulkActionsJob.perform_now(**queued_arguments)
+
+        expect(replacement.reload.status).to eq('open')
+        expect(replacement_conversation.reload.status).to eq('open')
+        run = account.bulk_action_runs.find(queued_arguments.fetch(:bulk_action_run_id))
+        expect(run.as_progress_json[:skipped_count]).to eq(1)
+      end
+
+      it 'uses only IDs from the signed snapshot and honors explicit exclusions' do
+        snapshot = BulkActions::SelectionSnapshot.new(
+          account: account,
+          user: agent,
+          resource_type: 'Conversation',
+          filters: { mode: 'basic', status: 'all' }
+        ).perform
+        excluded_id = snapshot.ids.first
+        included_ids = snapshot.ids - [excluded_id]
+
+        perform_enqueued_jobs do
+          post "/api/v1/accounts/#{account.id}/bulk_actions",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'Conversation',
+                 selection_token: snapshot.token,
+                 excluded_ids: [excluded_id],
+                 fields: { status: 'snoozed' }
+               }
+
+          expect(response).to have_http_status(:success)
+          expect(response.parsed_body.dig('payload', 'metadata', 'selected_count')).to eq(included_ids.size)
+        end
+
+        expect(account.conversations.find_by!(display_id: excluded_id).status).to eq('open')
+        expect(account.conversations.where(display_id: included_ids).pluck(:status).uniq).to eq(['snoozed'])
+      end
+
+      it 'rejects an expired snapshot with a stable selection error code' do
+        snapshot = BulkActions::SelectionSnapshot.new(
+          account: account,
+          user: agent,
+          resource_type: 'Conversation',
+          filters: { mode: 'basic', status: 'all' }
+        ).perform
+
+        travel 6.minutes do
+          post "/api/v1/accounts/#{account.id}/bulk_actions",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'Conversation',
+                 selection_token: snapshot.token,
+                 fields: { status: 'snoozed' }
+               }
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body.dig('error', 'code')).to eq('selection_invalid')
+        end
+      end
+
+      it 'preserves the configured close reason through the controller and background job' do
+        account.update!(
+          conversation_status_reason_config: {
+            'resolved' => { options: ['Resolved by request'], required: true }
+          }
+        )
+        conversation = account.conversations.first
+
+        perform_enqueued_jobs do
+          post "/api/v1/accounts/#{account.id}/bulk_actions",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'Conversation',
+                 ids: [conversation.display_id],
+                 fields: { status: 'resolved', status_reason: 'Resolved by request' }
+               }
+
+          expect(response).to have_http_status(:success)
+        end
+
+        expect(conversation.reload.status).to eq('resolved')
+        expect(conversation.status_transitions.last.reason).to eq('Resolved by request')
       end
 
       it 'returns the bulk action run status for the current user' do
