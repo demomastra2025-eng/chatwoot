@@ -11,6 +11,14 @@ require 'digest'
 # logical call key and group ref, which are what Telephony::CallSession::
 # LogicalGrouping already reads. Callers hold Telephony::CallIntakeLock while
 # they ask, so two legs arriving at the same instant end with the same key.
+#
+# Known limitation: Beeline gives the legs no identifier they share (call ids,
+# provider sids and every event payload differ in all of them), so the caller
+# number and the window are the whole correlation. Two live calls of the same
+# caller number to the same channel within the window (two devices behind one
+# caller ID) are one logical call until one of them ends; taking either one
+# closes the legs of the other. A narrower rule would split the N legs of one
+# call, which is the case that matters; see webphone_same_caller_calls_spec.
 class Telephony::SiblingLegGrouping
   SIBLING_LEG_WINDOW = 20.seconds
   # Providers whose legs are per-operator browser registrations.
