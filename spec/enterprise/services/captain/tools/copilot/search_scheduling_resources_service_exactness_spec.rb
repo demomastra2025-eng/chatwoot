@@ -88,10 +88,10 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
     expect_name_confirmation(search(query: 'МРТ кабинет 1'))
   end
 
-  it 'reports the candidate for a specialty equal to the request and asks to confirm a longer or shorter one' do
+  it 'asks to confirm the name when only the specialty equals the request' do
     surgeon = create_resource('Асланов Мурад Тестович', 'Хирург')
 
-    expect(search(query: 'хирург', search_by: 'specialty')).to include('search_status' => 'candidate', 'exact_name_matches' => 1)
+    expect_name_confirmation(search(query: 'хирург', search_by: 'specialty'))
     expect(search(query: 'хирург', search_by: 'specialty')['resources'].pluck('id')).to eq([surgeon.id])
 
     surgeon.update!(specialty: 'Нейрохирург')

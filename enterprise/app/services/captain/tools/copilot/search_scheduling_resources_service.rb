@@ -71,8 +71,7 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     'no_name_or_specialty_match'
   end
 
-  # candidate: exactly one resource whose name (or specialty) has exactly the words of the request; ambiguous: every other
-  # text match, including a single resource whose name differs from the request.
+  # candidate: exactly one resource whose name has exactly the words of the request; ambiguous: every other text match.
   def matched_status(result, filters)
     return 'candidates' if filters[:query].blank?
 

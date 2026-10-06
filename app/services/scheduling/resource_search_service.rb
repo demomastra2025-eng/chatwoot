@@ -59,26 +59,17 @@ class Scheduling::ResourceSearchService
     end
   end
 
-  # The resources whose name, or stored specialty, has exactly the words of the query (any order, every word counts, no
-  # word forms: Асланов and Асланова are two names; a name with a number is read in order). Only such a resource may be
-  # presented as the one confident match; a part of a name or a longer specialty is not an equal name.
+  # Only the resource name can be a confident match. A specialty is searchable context, not a specialist's name.
   def equal_name_rows(scope)
     return { ids: [], truncated: false } if @query.blank? || @query_truncated
 
-    rows = scope.reorder(:id).limit(EXACT_CANDIDATE_LIMIT + 1).pluck(:id, :name, :specialty)
-    ids = rows.first(EXACT_CANDIDATE_LIMIT).filter_map { |id, name, specialty| id if equal_text?(name, specialty) }
+    rows = scope.reorder(:id).limit(EXACT_CANDIDATE_LIMIT + 1).pluck(:id, :name)
+    ids = rows.first(EXACT_CANDIDATE_LIMIT).filter_map { |id, name| id if equal_text?(name) }
     { ids: ids, truncated: rows.size > EXACT_CANDIDATE_LIMIT }
   end
 
-  def equal_text?(name, specialty)
-    texts = case @search_by
-            when 'name' then [name]
-            when 'specialty' then [specialty]
-            else [name, specialty]
-            end
-    texts.compact_blank.any? do |text|
-      Scheduling::SearchText.same_words?(@query, Scheduling::SearchText.normalize(text, max_length: nil), stemmed: false)
-    end
+  def equal_text?(name)
+    Scheduling::SearchText.same_words?(@query, Scheduling::SearchText.normalize(name, max_length: nil))
   end
 
   # The equal resource is listed before the longer or partial names, so that the confident match is the first row of
