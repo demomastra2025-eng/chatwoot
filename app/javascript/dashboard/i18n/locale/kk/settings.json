@@ -666,6 +666,25 @@
     "LOADING": "Loading Captain configuration...",
     "LINK_TEXT": "Learn more about AI credits",
     "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",
+    "WEB_ACCESS": {
+      "TITLE": "Web access",
+      "DESCRIPTION": "Control web search, page reading, and document parsing.",
+      "SEARCH": {
+        "TITLE": "Web search",
+        "DESCRIPTION": "Find public sources and short excerpts.",
+        "LIMIT": "up to {count} results"
+      },
+      "SCRAPE": {
+        "TITLE": "Page reading",
+        "DESCRIPTION": "Read a public page from its URL.",
+        "LIMIT": "up to {count} characters"
+      },
+      "DOCUMENTS": {
+        "TITLE": "Document reading",
+        "DESCRIPTION": "Read supported files from incoming messages.",
+        "LIMIT": "up to {count} characters, file up to {size}"
+      }
+    },
     "MODEL_CONFIG": {
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
