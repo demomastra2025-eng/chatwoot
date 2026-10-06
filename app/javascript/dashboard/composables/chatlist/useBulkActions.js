@@ -1,9 +1,10 @@
-import { ref, unref } from 'vue';
+import { computed, ref, unref } from 'vue';
 import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store.js';
 import { useConversationRequiredAttributes } from 'dashboard/composables/useConversationRequiredAttributes';
+import BulkActionsAPI from 'dashboard/api/bulkActions';
 import wootConstants from 'dashboard/constants/globals';
 import mutationTypes from 'dashboard/store/mutation-types';
 
@@ -16,12 +17,77 @@ export function useBulkActions() {
     'bulkActions/getSelectedConversationIds'
   );
   const selectedInboxes = ref([]);
+  const allMatchingSelection = ref(null);
+  const isSelectingAll = ref(false);
+  const selectionContextKey = ref('');
+  const selectionVersion = ref(0);
+  let selectionRequestId = 0;
+
+  function resetBulkActions() {
+    selectionRequestId += 1;
+    selectionVersion.value += 1;
+    allMatchingSelection.value = null;
+    isSelectingAll.value = false;
+    store.dispatch('bulkActions/clearSelectedConversationIds');
+    selectedInboxes.value = [];
+  }
+
+  function updateMatchingSelectionInboxes() {
+    const selection = allMatchingSelection.value;
+    if (!selection) return;
+
+    const excluded = new Set(selection.excludedIds);
+    selectedInboxes.value = [
+      ...new Set(
+        selection.ids
+          .filter(id => !excluded.has(id))
+          .flatMap(id => selection.inboxIdsById[String(id)] || [])
+          .map(Number)
+      ),
+    ];
+  }
+
+  function isConversationSelected(id) {
+    if (allMatchingSelection.value) {
+      const snapshotId = Number(id);
+      return (
+        allMatchingSelection.value.ids.includes(snapshotId) &&
+        !allMatchingSelection.value.excludedIds.includes(snapshotId)
+      );
+    }
+    return selectedConversations.value.includes(id);
+  }
+
+  const selectedCount = computed(() =>
+    allMatchingSelection.value
+      ? allMatchingSelection.value.count -
+        allMatchingSelection.value.excludedIds.length
+      : selectedConversations.value.length
+  );
+
+  function syncAllMatchingSelectionCount() {
+    store.dispatch(
+      'bulkActions/setAllMatchingSelectionCount',
+      allMatchingSelection.value ? selectedCount.value : 0
+    );
+  }
 
   const failedCountOf = value =>
     Number(value?.failedCount ?? value?.failed_count ?? 0);
+  const skippedCountOf = value =>
+    Number(value?.skippedCount ?? value?.skipped_count ?? 0);
 
   // A failed run reports how many conversations could not be updated.
   const bulkActionFailureMessage = (error, fallbackMessage) => {
+    if (error?.code === 'bulk_action_status_unknown') {
+      return t('BULK_ACTION.PROGRESS.STATUS_UNAVAILABLE');
+    }
+
+    if (error?.response?.data?.error?.code === 'selection_invalid') {
+      resetBulkActions();
+      return t('BULK_ACTION.SELECT_ALL.EXPIRED');
+    }
+
     const failedCount = failedCountOf(error);
     return failedCount > 0
       ? t('BULK_ACTION.PROGRESS.FAILED', { count: failedCount })
@@ -32,6 +98,13 @@ export function useBulkActions() {
   // as a full success.
   const bulkActionResultMessage = (bulkActionRun, successMessage) => {
     const failedCount = failedCountOf(bulkActionRun);
+    const skippedCount = skippedCountOf(bulkActionRun);
+    if (skippedCount > 0) {
+      return t('BULK_ACTION.COMPLETED_WITH_DETAILS', {
+        failedCount,
+        skippedCount,
+      });
+    }
     return failedCount > 0
       ? t('BULK_ACTION.COMPLETED_WITH_ERRORS', { count: failedCount })
       : successMessage;
@@ -43,7 +116,26 @@ export function useBulkActions() {
   };
 
   function selectConversation(conversationId, inboxIds) {
+    if (allMatchingSelection.value) {
+      const snapshotId = Number(conversationId);
+      if (allMatchingSelection.value.ids.includes(snapshotId)) {
+        allMatchingSelection.value.excludedIds =
+          allMatchingSelection.value.excludedIds.filter(
+            id => id !== snapshotId
+          );
+        syncAllMatchingSelectionCount();
+        selectionVersion.value += 1;
+        updateMatchingSelectionInboxes();
+        return;
+      }
+
+      const wasSelected = isConversationSelected(conversationId);
+      resetBulkActions();
+      if (wasSelected) return;
+    }
+
     store.dispatch('bulkActions/setSelectedConversationIds', conversationId);
+    selectionVersion.value += 1;
     selectedInboxes.value = [
       ...selectedInboxes.value,
       ...normalizeInboxIds(inboxIds),
@@ -51,7 +143,31 @@ export function useBulkActions() {
   }
 
   function deSelectConversation(conversationId, inboxIds) {
+    if (allMatchingSelection.value) {
+      const snapshotId = Number(conversationId);
+      if (allMatchingSelection.value.ids.includes(snapshotId)) {
+        if (!isConversationSelected(snapshotId)) return;
+
+        allMatchingSelection.value.excludedIds = [
+          ...allMatchingSelection.value.excludedIds,
+          snapshotId,
+        ];
+        if (selectedCount.value === 0) {
+          resetBulkActions();
+        } else {
+          syncAllMatchingSelectionCount();
+          selectionVersion.value += 1;
+          updateMatchingSelectionInboxes();
+        }
+        return;
+      }
+
+      resetBulkActions();
+      return;
+    }
+
     store.dispatch('bulkActions/removeSelectedConversationIds', conversationId);
+    selectionVersion.value += 1;
     normalizeInboxIds(inboxIds).forEach(inboxId => {
       const index = selectedInboxes.value.indexOf(inboxId);
 
@@ -64,13 +180,92 @@ export function useBulkActions() {
     });
   }
 
-  function resetBulkActions() {
-    store.dispatch('bulkActions/clearSelectedConversationIds');
-    selectedInboxes.value = [];
+  function setSelectionContext(contextKey) {
+    const nextContextKey = String(contextKey ?? '');
+    if (selectionContextKey.value === nextContextKey) return;
+
+    selectionContextKey.value = nextContextKey;
+    resetBulkActions();
+  }
+
+  async function selectAllMatching(filters, type, expectedContextKey) {
+    const requestContext = String(
+      expectedContextKey ?? selectionContextKey.value
+    );
+    if (requestContext !== selectionContextKey.value) {
+      setSelectionContext(requestContext);
+    }
+    selectionRequestId += 1;
+    const requestId = selectionRequestId;
+    isSelectingAll.value = true;
+
+    try {
+      const {
+        data: { payload },
+      } = await BulkActionsAPI.selectAll(type, filters);
+
+      if (
+        requestId !== selectionRequestId ||
+        requestContext !== selectionContextKey.value
+      ) {
+        return null;
+      }
+
+      allMatchingSelection.value = {
+        token: payload.token,
+        count: Number(payload.count),
+        ids: (payload.ids || []).map(Number),
+        excludedIds: [],
+        inboxIdsById: payload.inbox_ids_by_id || payload.inboxIdsById || {},
+      };
+      selectionVersion.value += 1;
+      store.dispatch('bulkActions/clearSelectedConversationIds');
+      syncAllMatchingSelectionCount();
+      updateMatchingSelectionInboxes();
+      return allMatchingSelection.value;
+    } catch (error) {
+      if (requestId !== selectionRequestId) return null;
+
+      const responseError = error?.response?.data?.error || {};
+      if (responseError.code === 'selection_limit_exceeded') {
+        useAlert(
+          t('BULK_ACTION.SELECT_ALL.LIMIT', {
+            count: responseError.limit || 1000,
+          })
+        );
+      } else if (responseError.code === 'selection_empty') {
+        useAlert(t('BULK_ACTION.SELECT_ALL.EMPTY'));
+      } else {
+        useAlert(t('BULK_ACTION.SELECT_ALL.FAILED'));
+      }
+      return null;
+    } finally {
+      if (requestId === selectionRequestId) isSelectingAll.value = false;
+    }
+  }
+
+  function selectionActionPayload(
+    type,
+    actionPayload = {},
+    idsOverride = null
+  ) {
+    if (idsOverride !== null) {
+      return { type, ids: idsOverride, ...actionPayload };
+    }
+    if (allMatchingSelection.value) {
+      return {
+        type,
+        selection_token: allMatchingSelection.value.token,
+        excluded_ids: allMatchingSelection.value.excludedIds,
+        ...actionPayload,
+      };
+    }
+    return { type, ids: selectedConversations.value, ...actionPayload };
   }
 
   function selectAllConversations(check, conversationList) {
     const availableConversations = unref(conversationList);
+    if (allMatchingSelection.value) resetBulkActions();
     if (check) {
       store.dispatch(
         'bulkActions/setSelectedConversationIds',
@@ -83,13 +278,10 @@ export function useBulkActions() {
               .filter(Boolean)
           : [item.inbox_id].filter(Boolean)
       );
+      selectionVersion.value += 1;
     } else {
       resetBulkActions();
     }
-  }
-
-  function isConversationSelected(id) {
-    return selectedConversations.value.includes(id);
   }
 
   // Same method used in context menu, conversationId being passed from there.
@@ -108,13 +300,13 @@ export function useBulkActions() {
   ) {
     try {
       const bulkActionRun = await store.dispatch('bulkActions/process', {
-        type: bulkType(isCommunicationThreadMode),
-        ids: conversationId || selectedConversations.value,
-        fields: {
-          assignee_id: agent.id,
-        },
+        ...selectionActionPayload(
+          bulkType(isCommunicationThreadMode),
+          { fields: { assignee_id: agent.id } },
+          conversationId ? [conversationId] : null
+        ),
       });
-      store.dispatch('bulkActions/clearSelectedConversationIds');
+      if (!conversationId) resetBulkActions();
       if (conversationId) {
         useAlert(
           t('CONVERSATION.CARD_CONTEXT_MENU.API.AGENT_ASSIGNMENT.SUCCESFUL', {
@@ -143,13 +335,13 @@ export function useBulkActions() {
   ) {
     try {
       const bulkActionRun = await store.dispatch('bulkActions/process', {
-        type: bulkType(isCommunicationThreadMode),
-        ids: conversationId || selectedConversations.value,
-        labels: {
-          add: newLabels,
-        },
+        ...selectionActionPayload(
+          bulkType(isCommunicationThreadMode),
+          { labels: { add: newLabels } },
+          conversationId ? [conversationId] : null
+        ),
       });
-      store.dispatch('bulkActions/clearSelectedConversationIds');
+      if (!conversationId) resetBulkActions();
       if (conversationId) {
         useAlert(
           t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_ASSIGNMENT.SUCCESFUL', {
@@ -176,11 +368,11 @@ export function useBulkActions() {
   async function onRemoveLabels(labelsToRemove, conversationId = null) {
     try {
       await store.dispatch('bulkActions/process', {
-        type: 'Conversation',
-        ids: conversationId || selectedConversations.value,
-        labels: {
-          remove: labelsToRemove,
-        },
+        ...selectionActionPayload(
+          'Conversation',
+          { labels: { remove: labelsToRemove } },
+          conversationId ? [conversationId] : null
+        ),
       });
 
       useAlert(
@@ -202,13 +394,11 @@ export function useBulkActions() {
   async function onAssignTeamsForBulk(team, isCommunicationThreadMode = false) {
     try {
       const bulkActionRun = await store.dispatch('bulkActions/process', {
-        type: bulkType(isCommunicationThreadMode),
-        ids: selectedConversations.value,
-        fields: {
-          team_id: team.id,
-        },
+        ...selectionActionPayload(bulkType(isCommunicationThreadMode), {
+          fields: { team_id: team.id },
+        }),
       });
-      store.dispatch('bulkActions/clearSelectedConversationIds');
+      resetBulkActions();
       useAlert(
         bulkActionResultMessage(
           bulkActionRun,
@@ -228,13 +418,16 @@ export function useBulkActions() {
     isCommunicationThreadMode = false,
     statusReason = null
   ) {
-    if (selectedConversations.value.length === 0) return;
+    if (selectedCount.value === 0) return;
 
     let conversationIds = selectedConversations.value;
     let skippedCount = 0;
 
     // If resolving, check for required attributes
-    if (status === wootConstants.STATUS_TYPE.RESOLVED) {
+    if (
+      status === wootConstants.STATUS_TYPE.RESOLVED &&
+      !allMatchingSelection.value
+    ) {
       const { validIds, skippedIds } = selectedConversations.value.reduce(
         (acc, id) => {
           const conversation = store.getters.getConversationById(
@@ -271,15 +464,16 @@ export function useBulkActions() {
 
     try {
       let bulkActionRun = null;
-      if (conversationIds.length > 0) {
+      if (conversationIds.length > 0 || allMatchingSelection.value) {
         const fields = { status };
         if (statusReason) fields.status_reason = statusReason;
 
         bulkActionRun = await store.dispatch('bulkActions/process', {
-          type: bulkType(isCommunicationThreadMode),
-          ids: conversationIds,
-          fields,
-          snoozed_until: snoozedUntil,
+          ...selectionActionPayload(
+            bulkType(isCommunicationThreadMode),
+            { fields, snoozed_until: snoozedUntil },
+            allMatchingSelection.value ? null : conversationIds
+          ),
         });
 
         conversationIds.forEach(conversationId => {
@@ -292,14 +486,19 @@ export function useBulkActions() {
         });
       }
 
-      store.dispatch('bulkActions/clearSelectedConversationIds');
+      resetBulkActions();
 
-      if (skippedCount > 0) {
+      if (skippedCount > 0 && !bulkActionRun) {
         useAlert(t('BULK_ACTION.RESOLVE.PARTIAL_SUCCESS'));
       } else {
         useAlert(
           bulkActionResultMessage(
-            bulkActionRun,
+            skippedCount > 0
+              ? {
+                  ...bulkActionRun,
+                  skipped_count: skippedCount + skippedCountOf(bulkActionRun),
+                }
+              : bulkActionRun,
             t('BULK_ACTION.UPDATE.UPDATE_SUCCESFUL')
           )
         );
@@ -314,9 +513,9 @@ export function useBulkActions() {
   async function onMarkConversationsRead(isCommunicationThreadMode = false) {
     try {
       const bulkActionRun = await store.dispatch('bulkActions/process', {
-        type: bulkType(isCommunicationThreadMode),
-        ids: selectedConversations.value,
-        action_name: 'mark_read',
+        ...selectionActionPayload(bulkType(isCommunicationThreadMode), {
+          action_name: 'mark_read',
+        }),
       });
       selectedConversations.value.forEach(id => {
         store.commit('UPDATE_MESSAGE_UNREAD_COUNT', {
@@ -342,10 +541,17 @@ export function useBulkActions() {
 
   return {
     selectedConversations,
+    selectedCount,
     selectedInboxes,
+    allMatchingSelection,
+    isSelectingAll,
+    selectionVersion,
+    selectionContextKey,
     selectConversation,
     deSelectConversation,
     selectAllConversations,
+    selectAllMatching,
+    setSelectionContext,
     resetBulkActions,
     isConversationSelected,
     onAssignAgent,
