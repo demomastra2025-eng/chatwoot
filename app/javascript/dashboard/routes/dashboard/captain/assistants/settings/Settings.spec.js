@@ -351,11 +351,13 @@ describe('Captain assistant settings page', () => {
       false
     );
     await voiceTab.trigger('click');
+    // The preview is an async component: its chunk loads outside the microtask queue.
+    await vi.waitFor(() => {
+      expect(
+        wrapper.find('[data-test-id="voice-agent-preview"]').exists()
+      ).toBe(true);
+    });
     await flushPromises();
-
-    expect(wrapper.find('[data-test-id="voice-agent-preview"]').exists()).toBe(
-      true
-    );
     expect(wrapper.text()).toContain('Gemini Live');
   });
 });
