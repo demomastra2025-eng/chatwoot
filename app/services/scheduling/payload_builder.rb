@@ -261,7 +261,7 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def service(service)
+  def service(service, prices: nil)
     {
       id: service.id,
       account_id: service.account_id,
@@ -274,7 +274,7 @@ module Scheduling::PayloadBuilder
       description: service.description,
       active: service.active,
       custom_attributes: service.custom_attributes,
-      prices: Array(service.try(:prices)).map { |item| service_price(item) },
+      prices: Array(prices || service.try(:prices)).map { |item| service_price(item) },
       created_at: service.created_at&.iso8601,
       updated_at: service.updated_at&.iso8601
     }

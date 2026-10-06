@@ -34,6 +34,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
 
     expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false, 'provider_required' => false,
                                'service_link_status' => 'local_configured', 'customer_offer_eligible' => true)
+    expect(payload.dig('service', 'prices')).to eq([])
   end
 
   it 'never calls the provider and never claims a provider answer, also for a MedElement resource' do
@@ -61,5 +62,14 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     foreign = create(:scheduling_resource, account: create(:account), name: 'Local')
 
     expect(tool.execute(resource_id: foreign.id, from: from_time.iso8601, to: to_time.iso8601)).to start_with('ERROR:')
+  end
+
+  it 'rejects a recorded link whose price row belongs to another account' do
+    resource = create_resource('Local')
+    link(resource).update_columns(account_id: create(:account).id) # rubocop:disable Rails/SkipsModelValidations
+
+    result = tool.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601,
+                          service_id: service_record.id)
+    expect(result).to start_with('ERROR:')
   end
 end

@@ -29,7 +29,7 @@ class Scheduling::AvailableSlotSearchService
         from: @from.iso8601,
         to: @to.iso8601
       },
-      service: service.present? ? Scheduling::PayloadBuilder.service(service) : nil,
+      service: service.present? ? Scheduling::PayloadBuilder.service(service, prices: []) : nil,
       duration_min: top_level_duration_min,
       resources: resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
       slots: normalized_slots,
@@ -50,6 +50,7 @@ class Scheduling::AvailableSlotSearchService
     @resources ||= begin
       scope = @account.scheduling_resources.available_for_scheduling
       scope = scope.where(id: @resource_ids) if @resource_ids.present?
+      scope = scope.where(id: active_price_links.select(:resource_id)) if service.present? && @resource_ids.blank?
       resolved = scope.ordered.to_a
 
       if @resource_ids.present?
@@ -57,19 +58,19 @@ class Scheduling::AvailableSlotSearchService
         raise ActiveRecord::RecordNotFound, "Specialists not found: #{missing_ids.join(', ')}" if missing_ids.present?
       end
 
-      if service.present?
-        eligible_resource_ids = Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: service.id).distinct.pluck(:resource_id)
-
-        if @resource_ids.present?
-          unsupported_ids = resolved.map(&:id) - eligible_resource_ids
-          raise MissingServiceLinkError, MISSING_LINK_ERROR if unsupported_ids.present?
-        end
-
-        resolved = resolved.select { |resource| eligible_resource_ids.include?(resource.id) }
-      end
+      verify_requested_links!(resolved) if service.present? && @resource_ids.present?
 
       resolved
     end
+  end
+
+  def active_price_links
+    Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: service.id)
+  end
+
+  def verify_requested_links!(resolved)
+    linked_ids = active_price_links.where(resource_id: resolved.map(&:id)).distinct.pluck(:resource_id)
+    raise MissingServiceLinkError, MISSING_LINK_ERROR if (resolved.map(&:id) - linked_ids).present?
   end
 
   def normalized_slots

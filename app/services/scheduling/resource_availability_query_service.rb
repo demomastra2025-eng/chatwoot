@@ -19,7 +19,7 @@ class Scheduling::ResourceAvailabilityQueryService
 
     {
       resource: Scheduling::PayloadBuilder.resource(@resource),
-      service: @service.present? ? Scheduling::PayloadBuilder.service(@service) : nil,
+      service: @service.present? ? Scheduling::PayloadBuilder.service(@service, prices: []) : nil,
       timezone: time_zone.tzinfo.name,
       range: {
         from: @from.iso8601,

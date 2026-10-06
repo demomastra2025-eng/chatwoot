@@ -60,6 +60,19 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
 
     expect(payload[:resources].pluck(:id)).to eq([resource.id])
     expect(payload[:resources].pluck(:id)).not_to include(other_resource.id, external_resource.id)
+    expect(payload[:service][:prices]).to eq([])
+  end
+
+  it 'does not use a price row assigned to another account' do
+    foreign_service = create(:scheduling_service, account: account, name: 'Unverified service')
+    link = create(:scheduling_service_price, account: account, service: foreign_service, resource: other_resource)
+    link.update_columns(account_id: other_account.id) # rubocop:disable Rails/SkipsModelValidations
+
+    payload = perform(service_id: foreign_service.id, limit: 1)
+
+    expect(payload[:resources]).to eq([])
+    expect(payload[:slots]).to eq([])
+    expect(payload[:customer_offer_eligible]).to be(false)
   end
 
   it 'marks service availability as unconfirmed when no specialist offers the service' do

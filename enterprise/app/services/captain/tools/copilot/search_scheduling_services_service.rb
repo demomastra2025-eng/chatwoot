@@ -46,7 +46,9 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
 
   def result_page(services, offset, limit)
     total_count = services.count
-    records = services.preload(:prices).offset(offset).limit(limit).map { |service| service_payload(service) }
+    page_services = services.offset(offset).limit(limit).to_a
+    prices_by_service = price_rows_by_service(page_services)
+    records = page_services.map { |service| service_payload(service, prices_by_service.fetch(service.id, [])) }
     next_offset = offset + records.length
     has_more = next_offset < total_count
     reachable = has_more && page_reachable?(next_offset, limit)
@@ -57,13 +59,20 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
 
   # A price row is a recorded link between a service and a resource, never proof that the resource may perform the
   # service. Only the active rows of the service's own account are listed, each one labelled as unverified.
-  def service_payload(service)
-    Scheduling::PayloadBuilder.service(service).merge(prices: price_rows(service))
+  def service_payload(service, prices)
+    Scheduling::PayloadBuilder.service(service, prices: []).merge(prices: prices)
   end
 
-  def price_rows(service)
-    service.prices.select { |price| price.active && price.account_id == service.account_id }.map do |price|
-      Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified')
+  def price_rows_by_service(services)
+    return {} if services.empty?
+
+    Scheduling::ServicePrice.active.joins(:resource)
+                            .where(account_id: account.id, service_id: services.map(&:id))
+                            .where(scheduling_resources: { account_id: account.id, active: true })
+                            .order(:id).group_by(&:service_id).transform_values do |prices|
+      prices.map do |price|
+        Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified')
+      end
     end
   end
 

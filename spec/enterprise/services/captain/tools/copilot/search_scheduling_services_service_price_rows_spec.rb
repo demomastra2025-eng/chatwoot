@@ -30,6 +30,12 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
       foreign_resource = create(:scheduling_resource, account: account)
       foreign = create(:scheduling_service_price, account: account, service: service_record, resource: foreign_resource, active: true)
       foreign.update_columns(account_id: other_account.id) # rubocop:disable Rails/SkipsModelValidations
+      disabled_resource = create(:scheduling_resource, account: account, active: false)
+      create(:scheduling_service_price, account: account, service: service_record, resource: disabled_resource, active: true)
+      mismatched_resource = create(:scheduling_resource, account: other_account)
+      local_resource = create(:scheduling_resource, account: account)
+      bad_link = create(:scheduling_service_price, account: account, service: service_record, resource: local_resource, active: true)
+      bad_link.update_columns(resource_id: mismatched_resource.id) # rubocop:disable Rails/SkipsModelValidations
 
       payload = search(query: 'УЗИ почек')
       prices = payload['services'].first['prices']

@@ -69,7 +69,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
     service_record = account.scheduling_services.active.find_by(id: service_id)
     raise ActiveRecord::RecordNotFound, 'Service not found' if service_record.blank?
 
-    active_price = resource.service_prices.active.find_by(service_id: service_record.id)
+    active_price = resource.service_prices.active.find_by(account_id: account.id, service_id: service_record.id)
     raise ArgumentError, 'No recorded service-price link for this resource; provider eligibility is unverified' if active_price.blank?
 
     service_record
