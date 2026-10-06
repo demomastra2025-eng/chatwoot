@@ -139,47 +139,5 @@ describe('AssistantsIndexPage', () => {
     });
   });
 
-  it('routes the old outbound touch plans target to assistant follow-up scenarios', async () => {
-    mocks.route.params = {
-      accountId: '1',
-      navigationPath: 'outbound_touch_plans_index',
-    };
 
-    await mountPage();
-
-    expect(mocks.replace).toHaveBeenCalledWith({
-      name: 'captain_assistants_follow_ups_index',
-      params: {
-        accountId: '1',
-        assistantId: 2,
-      },
-      replace: true,
-    });
-  });
-
-  it('preserves query context when routing legacy touch plans to follow-up scenarios', async () => {
-    mocks.route.params = {
-      accountId: '1',
-      navigationPath: 'outbound_touch_plans_index',
-    };
-    mocks.route.query = {
-      remindable_id: '7',
-      remindable_type: 'conversation',
-    };
-
-    await mountPage();
-
-    expect(mocks.replace).toHaveBeenCalledWith({
-      name: 'captain_assistants_follow_ups_index',
-      params: {
-        accountId: '1',
-        assistantId: 2,
-      },
-      query: {
-        remindable_id: '7',
-        remindable_type: 'conversation',
-      },
-      replace: true,
-    });
-  });
 });

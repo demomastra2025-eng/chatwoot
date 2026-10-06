@@ -56,7 +56,7 @@ describe('reminder wording in the dashboard locales', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('names the reminder type and plan "Reminder" / «Еске салу» like PROD', () => {
+  it('names the reminder type consistently in each locale', () => {
     const crm = locale =>
       JSON.parse(readFileSync(resolve(LOCALE_DIR, locale, 'crm.json'), 'utf8'))
         .CRM;
@@ -64,10 +64,6 @@ describe('reminder wording in the dashboard locales', () => {
     expect(crm('en').TASKS.ACTIVITY_TYPE.touch).toBe('Reminder');
     expect(crm('kk').TASKS.ACTIVITY_TYPE.touch).toBe('Еске салу');
     expect(crm('ru').TASKS.ACTIVITY_TYPE.touch).toBe('Напоминание');
-    expect(crm('en').SETTINGS.DEFAULT_TOUCH_PLAN.LABEL).toBe('Reminder plan');
-    expect(crm('kk').SETTINGS.DEFAULT_TOUCH_PLAN.LABEL).toBe(
-      'Еске салу жоспары'
-    );
   });
 });
 

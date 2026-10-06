@@ -3,8 +3,6 @@ import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions
 
 const OutboundPageRouteView = () => import('./pages/OutboundPageRouteView.vue');
 const OutboundCampaignsPage = () => import('./pages/OutboundCampaignsPage.vue');
-const OutboundTouchPlansPage = () =>
-  import('./pages/OutboundTouchPlansPage.vue');
 const OutboundTemplatesPage = () => import('./pages/OutboundTemplatesPage.vue');
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
@@ -102,12 +100,6 @@ const campaignsRoutes = {
           props: {
             mode: 'touches',
           },
-        },
-        {
-          path: 'touch-plans',
-          name: 'outbound_touch_plans_index',
-          meta: touchesMeta,
-          component: OutboundTouchPlansPage,
         },
         {
           path: 'templates',

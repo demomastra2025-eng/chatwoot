@@ -81,6 +81,18 @@ export default {
         this.$emit('input', { ...payload, action_params: value });
       },
     },
+    isLegacyPlanAction() {
+      return this.action_name === 'apply_touch_plan';
+    },
+    legacyActionLabel() {
+      const action = this.actionTypes.find(
+        item => item.key === 'apply_touch_plan'
+      );
+      return action?.label;
+    },
+    createTouchLabel() {
+      return this.actionTypes.find(action => action.key === 'create_touch')?.label;
+    },
     inputType() {
       const actionType = this.actionTypes.find(
         action => action.key === this.action_name
@@ -99,7 +111,7 @@ export default {
     },
     actionTypesAsOptions() {
       return this.actionTypes
-        .filter(a => !a.legacyOnly || a.key === this.action_name)
+        .filter(a => !a.legacyOnly)
         .map(a => ({ id: a.key, name: a.label }));
     },
     isVerticalLayout() {
@@ -139,7 +151,19 @@ export default {
       :class="{ 'animate-wiggle': errorMessage }"
     >
       <div class="flex items-center gap-2">
+        <template v-if="isLegacyPlanAction">
+          <span data-testid="legacy-plan-action" class="text-sm text-n-slate-11">
+            {{ legacyActionLabel }}
+          </span>
+          <NextButton
+            sm
+            slate
+            :label="createTouchLabel"
+            @click="onActionNameChange({ id: 'create_touch' })"
+          />
+        </template>
         <SingleSelect
+          v-else
           :model-value="actionNameAsSelectModel"
           :options="actionTypesAsOptions"
           :dropdown-max-height="dropdownMaxHeight"

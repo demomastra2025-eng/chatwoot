@@ -14,7 +14,6 @@ const testState = vi.hoisted(() => ({
   deleteStage: vi.fn(() => Promise.resolve()),
   loadPipelines: vi.fn(() => Promise.resolve()),
   loadFieldDefinitions: vi.fn(() => Promise.resolve()),
-  loadTouchPlans: vi.fn(() => Promise.resolve()),
   reorderStages: vi.fn(() => Promise.resolve()),
   savePipeline: vi.fn(payload => Promise.resolve(payload)),
   saveStage: vi.fn(() =>
@@ -63,21 +62,6 @@ vi.mock('dashboard/composables/store', () => ({
 
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({ checkPermissions: () => true }),
-}));
-
-vi.mock('dashboard/composables/useAccount', () => ({
-  useAccount: () => ({
-    currentAccount: ref({ settings: { default_deal_touch_plan_id: null } }),
-    updateAccount: vi.fn(() => Promise.resolve()),
-  }),
-}));
-
-vi.mock('dashboard/composables/useTouchPlans', () => ({
-  useTouchPlans: () => ({
-    isLoadingTouchPlans: ref(false),
-    loadTouchPlans: testState.loadTouchPlans,
-    touchPlanOptionsForEntityKind: () => [],
-  }),
 }));
 
 const pipeline = {
@@ -261,7 +245,6 @@ const mountComponent = () =>
         Spinner: true,
         Switch: true,
         TagInput: true,
-        TouchPlanSelectField: true,
       },
     },
   });

@@ -48,14 +48,6 @@ const catalogPayload = () => ({
       group_key: 'captain:Outbound',
     },
     {
-      id: 'archive_touch_plan',
-      name: 'archive_touch_plan',
-      title: 'Archive Touch Plan',
-      source: 'captain',
-      group_name: 'Outbound',
-      group_key: 'captain:Outbound',
-    },
-    {
       id: 'api__list_inboxes',
       operation_id: 'api__list_inboxes',
       title: 'List inboxes',
@@ -116,11 +108,6 @@ describe('McpConfiguration AI tool catalog', () => {
       expect(text).toContain(
         i18n.global.t(
           'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.create_touch.TITLE'
-        )
-      );
-      expect(text).toContain(
-        i18n.global.t(
-          'CAPTAIN.ASSISTANTS.FORM.TOOL_ACCESS.TOOLS.archive_touch_plan.TITLE'
         )
       );
       // API tools keep their own titles and groups.

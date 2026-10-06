@@ -11,9 +11,7 @@ import Draggable from 'vuedraggable';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
-import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
-import { useTouchPlans } from 'dashboard/composables/useTouchPlans';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -26,7 +24,6 @@ import SchedulingColorPicker from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import TouchPlanSelectField from 'dashboard/components-next/Outbound/TouchPlanSelectField.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
@@ -45,9 +42,6 @@ const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
 const { t } = useI18n();
-const { currentAccount, updateAccount } = useAccount();
-const { isLoadingTouchPlans, loadTouchPlans, touchPlanOptionsForEntityKind } =
-  useTouchPlans();
 
 const accountId = useMapGetter('getCurrentAccountId');
 const isFeatureEnabledonAccount = useMapGetter(
@@ -69,7 +63,6 @@ const stagePendingDelete = ref(null);
 const stageDeletionChecking = ref(false);
 const unsavedChangesDialogRef = ref(null);
 const pipelineSaving = ref(false);
-const defaultDealTouchPlanId = ref(null);
 const newPipelineDefault = ref(false);
 const newPipelineAutoCreate = ref(false);
 const settingsSaving = ref(false);
@@ -164,9 +157,6 @@ const autoCreateStageOptions = computed(() =>
         !isTechnicalStage(stage)
     )
     .map(stage => ({ label: stage.name, value: String(stage.id) }))
-);
-const dealTouchPlanOptions = computed(() =>
-  touchPlanOptionsForEntityKind('deal')
 );
 const selectedPipelineIndex = computed(() =>
   orderedActivePipelines.value.findIndex(
@@ -316,17 +306,10 @@ const syncSelectedPipelineState = () => {
   stageDraftBaseline.value = JSON.stringify(buildStageDraftState());
 };
 
-const syncAccountSettings = () => {
-  defaultDealTouchPlanId.value =
-    currentAccount.value?.settings?.default_deal_touch_plan_id || null;
-};
-watch(currentAccount, syncAccountSettings, { deep: true, immediate: true });
-
 const loadSettings = async () => {
   await Promise.all([
     referencesStore.loadPipelines({ include_inactive_stages: true }),
     referencesStore.loadFieldDefinitions('deal'),
-    loadTouchPlans(),
   ]);
   await syncSelectedPipelineRoute();
   syncSelectedPipelineState();
@@ -499,18 +482,6 @@ const moveSelectedPipeline = async direction => {
     useAlert(formatErrorMessage(error));
   } finally {
     pipelineSaving.value = false;
-  }
-};
-
-const saveDefaultDealTouchPlan = async () => {
-  try {
-    await updateAccount({
-      default_deal_touch_plan_id: defaultDealTouchPlanId.value,
-    });
-    useAlert(t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
-  } catch (error) {
-    syncAccountSettings();
-    useAlert(formatErrorMessage(error) || t('GENERAL_SETTINGS.UPDATE.ERROR'));
   }
 };
 
@@ -1097,25 +1068,6 @@ onMounted(async () => {
                 </div>
 
                 <div class="grid divide-y divide-n-weak">
-                  <div class="grid gap-3 px-5 py-4">
-                    <TouchPlanSelectField
-                      v-model="defaultDealTouchPlanId"
-                      :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL')"
-                      :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.NOTE')"
-                      :options="dealTouchPlanOptions"
-                      :placeholder="
-                        $t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')
-                      "
-                      :disabled="!canManage || isLoadingTouchPlans"
-                    />
-                    <Button
-                      size="sm"
-                      :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE')"
-                      :disabled="!canManage || isLoadingTouchPlans"
-                      @click="saveDefaultDealTouchPlan"
-                    />
-                  </div>
-
                   <div class="grid gap-3 px-5 py-4">
                     <div class="flex items-center justify-between gap-3">
                       <div
