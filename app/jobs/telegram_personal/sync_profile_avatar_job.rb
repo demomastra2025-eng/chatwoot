@@ -49,6 +49,8 @@ class TelegramPersonal::SyncProfileAvatarJob < ApplicationJob
   end
 
   def attach_avatar(profile, payload, avatar_fingerprint)
+    # A customer's Telegram avatar arrives automatically: the storage limit never blocks inbound traffic.
+    profile.skip_storage_limit_validation!
     profile.avatar.attach(
       io: StringIO.new(payload[:body]),
       filename: avatar_filename(profile, payload[:content_type]),
@@ -77,22 +79,7 @@ class TelegramPersonal::SyncProfileAvatarJob < ApplicationJob
     profile.avatar.blob&.metadata&.[](AVATAR_FINGERPRINT_METADATA_KEY) == avatar_fingerprint
   end
 
-  def storage_limit_exceeded_error?(error)
-    limit_message = AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE
-
-    Array.wrap(error.record&.errors&.[](:avatar)).any? { |message| message.to_s.include?(limit_message) } ||
-      error.message.to_s.include?(limit_message)
-  end
-
   def handle_record_invalid(contact_channel_profile_id, avatar_fingerprint, error)
-    if storage_limit_exceeded_error?(error)
-      Rails.logger.warn(
-        "[TELEGRAM PERSONAL] Profile avatar sync skipped for profile=#{contact_channel_profile_id} " \
-        "fingerprint=#{avatar_fingerprint}: storage limit exceeded"
-      )
-      return
-    end
-
     Rails.logger.error(
       "[TELEGRAM PERSONAL] Profile avatar sync failed for profile=#{contact_channel_profile_id} " \
       "fingerprint=#{avatar_fingerprint}: #{error.class}: #{error.message}"

@@ -50,11 +50,14 @@ class Avatar::AvatarFromUrlJob < ApplicationJob
   def attach_avatar(avatarable, avatar_file)
     raise SafeFetch::FetchError, 'Invalid file' unless valid_file?(avatar_file)
 
-    avatarable.avatar.attach(
+    # A customer's avatar is fetched automatically and the storage limit never blocks inbound traffic.
+    avatarable.skip_storage_limit_validation! if avatarable.is_a?(Contact)
+    # ActiveStorage answers nil when the record could not be saved; the URL hash must not claim a sync that failed.
+    @avatar_persisted = avatarable.avatar.attach(
       io: avatar_file.tempfile,
       filename: avatar_file.original_filename,
       content_type: avatar_file.content_type
-    )
+    ).present?
   end
 
   def log_http_error(avatar_url, error)
@@ -100,7 +103,8 @@ class Avatar::AvatarFromUrlJob < ApplicationJob
 
     additional_attributes = avatarable.additional_attributes || {}
     additional_attributes['last_avatar_sync_at'] = Time.current.iso8601
-    additional_attributes['avatar_url_hash'] = generate_url_hash(avatar_url)
+    # The hash only suppresses the same URL once; a failed attach keeps it fetchable after the cause is fixed.
+    additional_attributes['avatar_url_hash'] = generate_url_hash(avatar_url) unless @avatar_persisted == false
 
     # Persist without triggering validations that may fail due to avatar file checks
     avatarable.update_columns(additional_attributes: additional_attributes) # rubocop:disable Rails/SkipsModelValidations

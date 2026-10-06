@@ -36,6 +36,42 @@ RSpec.describe Avatar::AvatarFromUrlJob do
       expect(avatarable.additional_attributes['last_avatar_sync_at']).to be_present
     end
 
+    it 'attaches the avatar of an inbound customer when the account is over its storage limit' do
+      avatarable.account.update!(limits: { 'storage_bytes' => 1 })
+      allow(SafeFetch).to receive(:fetch).and_yield(safe_fetch_result)
+
+      described_class.perform_now(avatarable, valid_url)
+
+      avatarable.reload
+      expect(avatarable.avatar).to be_attached
+      expect(avatarable.additional_attributes['avatar_url_hash']).to eq(Digest::SHA256.hexdigest(valid_url))
+    end
+
+    it 'keeps the storage limit for an avatar a staff member uploads for the same contact' do
+      avatarable.account.update!(limits: { 'storage_bytes' => 1 })
+
+      expect(avatarable.avatar.attach(io: file.tempfile, filename: 'avatar.png', content_type: 'image/png')).to be_nil
+      expect(avatarable.reload.avatar).not_to be_attached
+    end
+
+    it 'does not record the URL hash when the avatar could not be saved, so the same URL is fetched again later' do
+      # ActiveStorage identifies the type from the content, so the fetched file has to be a real PDF to be refused.
+      pdf = Tempfile.new(['avatar', '.pdf'])
+      pdf.write("%PDF-1.4\n%%EOF\n")
+      pdf.rewind
+      unsupported = SafeFetch::Result.new(tempfile: pdf, filename: 'avatar.pdf', content_type: 'application/pdf')
+      allow(SafeFetch).to receive(:fetch).and_yield(unsupported)
+
+      described_class.perform_now(avatarable, valid_url)
+
+      avatarable.reload
+      expect(avatarable.avatar).not_to be_attached
+      expect(avatarable.additional_attributes['last_avatar_sync_at']).to be_present
+      expect(avatarable.additional_attributes['avatar_url_hash']).to be_nil
+    ensure
+      pdf&.close!
+    end
+
     it 'returns early when rate limited' do
       ts = 30.seconds.ago.iso8601
       avatarable.update(additional_attributes: { 'last_avatar_sync_at' => ts })

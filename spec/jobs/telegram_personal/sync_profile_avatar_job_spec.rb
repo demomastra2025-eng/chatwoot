@@ -104,7 +104,7 @@ RSpec.describe TelegramPersonal::SyncProfileAvatarJob do
     expect(profile.reload.avatar.blob.metadata[described_class::AVATAR_FINGERPRINT_METADATA_KEY]).to eq('telegram-photo-99')
   end
 
-  it 'skips avatar sync without raising when the account storage limit is exceeded' do
+  it 'attaches the avatar of an inbound customer even when the account is over its storage limit' do
     profile.update!(last_synced_at: 2.days.ago)
     account.update!(limits: account.limits.merge('storage_bytes' => 1))
 
@@ -123,7 +123,15 @@ RSpec.describe TelegramPersonal::SyncProfileAvatarJob do
     end.not_to raise_error
 
     profile.reload
-    expect(profile.avatar).not_to be_attached
-    expect(profile.last_synced_at).to be_within(1.second).of(2.days.ago)
+    expect(profile.avatar).to be_attached
+    expect(profile.avatar.blob.metadata[described_class::AVATAR_FINGERPRINT_METADATA_KEY]).to eq('telegram-photo-23')
+    expect(profile.last_synced_at).to be > 1.minute.ago
+  end
+
+  it 'keeps the storage limit for an avatar a staff member picks for the same profile' do
+    account.update!(limits: account.limits.merge('storage_bytes' => 1))
+
+    expect(profile.avatar.attach(io: StringIO.new('ab'), filename: 'avatar.png', content_type: 'image/png')).to be_nil
+    expect(profile.reload.avatar).not_to be_attached
   end
 end
