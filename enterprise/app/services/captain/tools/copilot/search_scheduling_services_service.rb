@@ -1,4 +1,9 @@
 class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools::Copilot::BaseAccountTool
+  NAME_DIFFERS_INSTRUCTION = 'The service name differs from the request. Tell the patient the exact name of the service and ask ' \
+                             'to confirm it; never book on a non-exact name.'.freeze
+  SAME_NAME_INSTRUCTION = 'Several services have exactly this name. Ask the patient which one is meant (category, direction); ' \
+                          'never book on a guess.'.freeze
+
   def self.name
     'search_scheduling_services'
   end
@@ -45,21 +50,30 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
       page_status: records.empty? && total_count.positive? ? 'offset_out_of_range' : 'returned' }
   end
 
-  # no_match: nothing found; partial_candidates: only some query words matched; candidate: one clear match
-  # (or exactly one exact name); ambiguous: several equally plausible matches.
+  # no_match: nothing found; partial_candidates: only some query words matched; candidate: exactly one service whose name
+  # (or alias) has exactly the words of the request; ambiguous: everything else that matched all words, including a
+  # single service whose name differs from the request.
   def match_status(search, total_count, exact_name_matches)
     return 'catalog_listing' if search.nil? || search.match_kind == 'listing'
     return 'no_match' if total_count.zero?
     return 'partial_candidates' if search.match_kind == 'partial'
-    return 'candidate' if total_count == 1 || exact_name_matches == 1
+    return 'candidate' if exact_name_matches == 1 && !search.exact_name_truncated?
 
     'ambiguous'
+  end
+
+  def confirmation_needed?(status)
+    %w[ambiguous partial_candidates].include?(status)
+  end
+
+  def instruction_for(exact_name_matches)
+    exact_name_matches > 1 ? SAME_NAME_INSTRUCTION : NAME_DIFFERS_INSTRUCTION
   end
 
   def formatted_search_payload(page, search, query:, include_inactive:, offset:)
     exact_name_matches = search&.exact_name_count.to_i
     status = match_status(search, page[:total_count], exact_name_matches)
-    formatted_payload(
+    payload = {
       filters: { query: query, include_inactive: include_inactive, offset: offset },
       total_count: page[:total_count],
       returned_count: page[:records].length,
@@ -67,10 +81,12 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
       next_offset: page[:next_offset],
       page_status: page[:page_status],
       match_status: status,
-      ambiguous: %w[ambiguous partial_candidates].include?(status),
+      ambiguous: confirmation_needed?(status),
       exact_name_matches: exact_name_matches,
       eligibility_status: 'unverified',
       services: page[:records]
-    )
+    }
+    payload[:instruction] = instruction_for(exact_name_matches) if confirmation_needed?(status)
+    formatted_payload(payload)
   end
 end
