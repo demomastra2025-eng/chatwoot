@@ -31,6 +31,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::Scenarios', type: :request do
     end
 
     context 'when it is an admin' do
+      it 'loads assistant names for the list without a query per scenario' do
+        create_list(:captain_scenario, 5, assistant: assistant, account: account)
+        assistant_queries = []
+        track_queries = lambda do |_name, _start, _finish, _id, payload|
+          assistant_queries << payload[:sql] if payload[:sql].match?(/\ASELECT\b.*\bcaptain_assistants\b/i)
+        end
+
+        ActiveSupport::Notifications.subscribed(track_queries, 'sql.active_record') do
+          get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/scenarios",
+              headers: admin.create_new_auth_token,
+              as: :json
+        end
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:payload].map { |scenario| scenario.dig(:assistant, :name) }).to all(eq(assistant.name))
+        expect(assistant_queries.length).to be <= 3
+      end
+
       it 'returns success status and scenarios' do
         create_list(:captain_scenario, 5, assistant: assistant, account: account)
         get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/scenarios",
