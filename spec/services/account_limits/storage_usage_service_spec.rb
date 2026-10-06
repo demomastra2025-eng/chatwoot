@@ -119,6 +119,50 @@ RSpec.describe AccountLimits::StorageUsageService do
         expect(described_class.new(account: account).within_limit?(extra_bytes: 905)).to be(false)
       end
     end
+
+    context 'when the scan meets trouble' do
+      let(:cache) { ActiveSupport::Cache::MemoryStore.new }
+
+      before do
+        allow(Rails).to receive(:cache).and_return(cache)
+        File.write(recordings_dir.join('second.wav'), 'y' * 1000)
+      end
+
+      it 'skips a file that vanished during the scan instead of dropping the whole total' do
+        allow(File).to receive(:size).and_wrap_original do |original, path, *rest|
+          raise Errno::ENOENT, path.to_s if path.to_s.end_with?('second.wav')
+
+          original.call(path, *rest)
+        end
+
+        with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          expect(described_class.new(account: account).usage_bytes).to eq(4096)
+        end
+      end
+
+      it 'does not cache a failed scan as zero usage' do
+        allow(Storage::RecordingPaths).to receive(:files_for_account).and_raise(Errno::EIO)
+
+        with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          expect(account.local_recordings_bytes).to eq(0)
+          expect(cache.read(account.local_recordings_bytes_cache_key)).to be_nil
+
+          allow(Storage::RecordingPaths).to receive(:files_for_account).and_call_original
+          expect(account.local_recordings_bytes).to eq(5096)
+        end
+      end
+
+      it 'falls back to the last good total while a scan keeps failing' do
+        with_modified_env('STORAGE_QUOTA_INCLUDE_RECORDINGS' => 'true') do
+          expect(account.local_recordings_bytes).to eq(5096)
+          cache.delete(account.local_recordings_bytes_cache_key)
+          allow(Storage::RecordingPaths).to receive(:files_for_account).and_raise(Errno::EIO)
+
+          expect(account.local_recordings_bytes).to eq(5096)
+          expect(cache.read(account.local_recordings_bytes_cache_key)).to be_nil
+        end
+      end
+    end
   end
 
   describe 'call recordings stored in ActiveStorage' do

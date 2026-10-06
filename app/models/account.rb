@@ -347,20 +347,41 @@ class Account < ApplicationRecord
   # Walking the recordings folder is expensive, so the result is cached for a short while. Everything that
   # changes the recordings on disk refreshes it through #storage_breakdown(force_refresh: true).
   def local_recordings_bytes
-    Rails.cache.fetch(local_recordings_bytes_cache_key, expires_in: 10.minutes) { scan_local_recordings_bytes }
+    cached = Rails.cache.read(local_recordings_bytes_cache_key)
+    return cached unless cached.nil?
+
+    scanned = scan_local_recordings_bytes
+    # A failed scan is not "no recordings": it is never cached (the next call scans again) and the last good total
+    # stands in for it, so one bad scan cannot switch the opt-in quota off for ten minutes.
+    return Rails.cache.read(local_recordings_last_good_cache_key).to_i if scanned.nil?
+
+    Rails.cache.write(local_recordings_bytes_cache_key, scanned, expires_in: 10.minutes)
+    Rails.cache.write(local_recordings_last_good_cache_key, scanned, expires_in: 1.day)
+    scanned
   end
 
+  # nil when the scan itself failed; a file that vanished while it ran (another worker purged it) is skipped.
   def scan_local_recordings_bytes
     return 0 unless defined?(Storage::RecordingPaths)
 
-    Storage::RecordingPaths.files_for_account(id).sum { |path| File.size(path) }
+    Storage::RecordingPaths.files_for_account(id).sum { |path| local_recording_size(path) }
   rescue SystemCallError => e
     Rails.logger.warn("[AccountStorage] Could not scan local recordings for account #{id}: #{e.class.name}")
+    nil
+  end
+
+  def local_recording_size(path)
+    File.size(path)
+  rescue Errno::ENOENT
     0
   end
 
   def local_recordings_bytes_cache_key
     "account:#{id}:local_recordings_bytes"
+  end
+
+  def local_recordings_last_good_cache_key
+    "account:#{id}:local_recordings_bytes_last_good"
   end
 
   def storage_breakdown(force_refresh: false)
@@ -416,7 +437,7 @@ class Account < ApplicationRecord
 
     storage_service = AccountLimits::StorageUsageService.new(account: self)
     rec_bytes = local_recordings_bytes
-    active_recordings_bytes = Storage::RecordingPaths.files_for_account(id, include_trash: false).sum { |path| File.size(path) }
+    active_recordings_bytes = Storage::RecordingPaths.files_for_account(id, include_trash: false).sum { |path| local_recording_size(path) }
     trashed_recordings_bytes = [rec_bytes - active_recordings_bytes, 0].max
     active_bytes = storage_service.active_storage_bytes
     total_bytes = active_bytes + rec_bytes
