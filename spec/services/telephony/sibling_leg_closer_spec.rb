@@ -141,6 +141,14 @@ RSpec.describe Telephony::SiblingLegCloser do
       expect(second_leg.reload.status).to eq('in_progress')
     end
 
+    it 'takes the intake lock of the caller before it looks for open legs' do
+      allow(Telephony::CallIntakeLock).to receive(:with_lock).and_call_original
+
+      described_class.new(call_session: winner_leg).perform
+
+      expect(Telephony::CallIntakeLock).to have_received(:with_lock).with(account_id: account.id, phone_number: '+70000000001')
+    end
+
     it 'keeps going when one leg cannot be closed' do
       allow(Telephony::EventsIngestionService).to receive(:new).and_wrap_original do |original, payload:|
         raise StandardError, 'simulated failure' if payload[:call_ref] == second_leg.external_call_ref
@@ -152,6 +160,59 @@ RSpec.describe Telephony::SiblingLegCloser do
 
       expect(closed).to eq([third_leg])
       expect(second_leg.reload.status).to eq('ringing')
+    end
+  end
+
+  describe '.close_late_leg' do
+    before { allow(ActionCable.server).to receive(:broadcast) }
+
+    it 'closes a leg that was reported after another operator took the call' do
+      expect(described_class.close_late_leg(second_leg)).to have_attributes(status: 'no_answer', end_reason: 'answered_by_other_operator')
+
+      expect(winner_leg.reload).to have_attributes(status: 'in_progress', end_reason: nil)
+    end
+
+    it 'tells the operator of the late leg that the call was taken' do
+      described_class.close_late_leg(second_leg)
+
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        second_user.pubsub_token,
+        hash_including(event: 'voice_call.claimed', data: hash_including(call_sid: second_leg.external_call_ref, claimed_by_user_id: winner_user.id))
+      )
+    end
+
+    it 'closes a leg the claim moved to connecting as well' do
+      winner_leg.update!(status: 'connecting', answered_at: nil)
+
+      expect(described_class.close_late_leg(second_leg).status).to eq('no_answer')
+    end
+
+    it 'changes nothing when nobody owns the call yet' do
+      winner_leg.update!(status: 'ringing')
+
+      expect(described_class.close_late_leg(second_leg).status).to eq('ringing')
+    end
+
+    it 'changes nothing when the leg that owned the call is over' do
+      winner_leg.update!(status: 'completed', ended_at: Time.current)
+
+      expect(described_class.close_late_leg(second_leg).status).to eq('ringing')
+    end
+
+    it 'never closes the leg of the owner itself' do
+      expect(described_class.close_late_leg(winner_leg).status).to eq('in_progress')
+    end
+
+    it 'does not reopen or touch a leg that is over' do
+      second_leg.update!(status: 'no_answer', ended_at: Time.current, end_reason: 'caller_hangup')
+
+      expect(described_class.close_late_leg(second_leg)).to have_attributes(status: 'no_answer', end_reason: 'caller_hangup')
+    end
+
+    it 'does not change the behaviour of other providers' do
+      [winner_leg, second_leg].each { |leg| leg.update!(provider: 'sipuni') }
+
+      expect(described_class.close_late_leg(second_leg).status).to eq('ringing')
     end
   end
 end

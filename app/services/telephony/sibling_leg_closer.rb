@@ -14,14 +14,33 @@ class Telephony::SiblingLegCloser
   # group (the claim fence), which is not the leg that answered.
   OPEN_STATUSES = %w[created ringing connecting].freeze
 
+  # An operator browser may report its leg after another operator took the
+  # call (the claim closes only the legs that exist at that instant). Such a leg
+  # is closed as soon as it is admitted, before it rings. Nothing changes for a
+  # call nobody owns, or whose owner is over: that is a call that rings.
+  def self.close_late_leg(leg)
+    return leg unless Telephony::SiblingLegGrouping.applies?(provider: leg.provider, direction: leg.direction)
+    return leg if leg.terminal?
+
+    owner = Telephony::SiblingLegGrouping.owner_leg(leg, except: leg)
+    return leg if owner.blank?
+
+    new(call_session: owner).perform
+    leg.reload
+  end
+
   def initialize(call_session:)
     @call_session = call_session
   end
 
+  # Under the caller's intake lock: a leg that is being admitted at this very
+  # moment is either visible here or sees the claim and closes itself.
   def perform
     return [] unless answered_leg?
 
-    open_sibling_legs.filter_map { |sibling| close_leg!(sibling) }
+    Telephony::CallIntakeLock.with_lock(account_id: call_session.account_id, phone_number: call_session.from_number) do
+      open_sibling_legs.filter_map { |sibling| close_leg!(sibling) }
+    end
   end
 
   private
@@ -45,7 +64,10 @@ class Telephony::SiblingLegCloser
   end
 
   def close_leg!(sibling)
-    Telephony::EventsIngestionService.new(payload: close_event_payload(sibling)).perform
+    # A savepoint: a failed leg must not poison the transaction of the others.
+    Telephony::CallSession.transaction(requires_new: true) do
+      Telephony::EventsIngestionService.new(payload: close_event_payload(sibling)).perform
+    end
     sibling.reload
     broadcast_claimed!(sibling)
     sibling

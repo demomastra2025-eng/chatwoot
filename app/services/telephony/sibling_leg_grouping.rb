@@ -16,6 +16,8 @@ class Telephony::SiblingLegGrouping
   # Providers whose legs are per-operator browser registrations.
   PER_OPERATOR_LEG_PROVIDERS = %w[beeline].freeze
   KEY_PREFIX = 'native-sip-group'.freeze
+  # A claim moves its leg to connecting, the answer to in_progress.
+  OWNING_STATUSES = %w[connecting in_progress].freeze
 
   class << self
     def applies?(provider:, direction: 'inbound')
@@ -33,6 +35,13 @@ class Telephony::SiblingLegGrouping
       end
       root = legs.min_by { |leg| [leg.created_at, leg.id] }
       root unless root&.external_call_ref == call_ref
+    end
+
+    # The open leg of the group that owns the call (its operator claimed or
+    # answered it), nil while the call still rings for everybody. A leg that is
+    # over owns nothing. `except` is a leg that is being admitted right now.
+    def owner_leg(leg, except: nil)
+      leg.logical_group_sessions.find { |candidate| candidate.id != except&.id && owning_leg?(candidate) }
     end
 
     def group_key(root_leg)
@@ -59,6 +68,10 @@ class Telephony::SiblingLegGrouping
                             .where(created_at: (now - SIBLING_LEG_WINDOW)..)
                             .where.not('external_call_ref LIKE ?', '%:janus-server:%')
                             .to_a
+    end
+
+    def owning_leg?(leg)
+      !leg.terminal? && OWNING_STATUSES.include?(leg.canonical_status)
     end
 
     # A leg that is over never counts: a caller who hangs up and dials again

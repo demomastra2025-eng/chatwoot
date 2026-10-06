@@ -869,7 +869,7 @@ class Telephony::WebphoneService
       with_browser_sip_incoming_group_lock(context) do
         decision = perform_browser_sip_incoming_route(context)
         session = ensure_browser_sip_incoming_call_session!(context, decision)
-        session = persist_browser_sip_incoming_metadata!(session, context, decision)
+        session = admit_browser_sip_incoming_leg!(session, context, decision)
         session = attach_browser_sip_ai_voice!(session, decision, context[:profile], params)
         [decision, session]
       end
@@ -886,6 +886,16 @@ class Telephony::WebphoneService
       sleep(0.05 * retries) unless Rails.env.test?
       retry
     end
+  end
+
+  # The leg joins its logical call. When another operator already claimed or
+  # answered that call before this browser reported its leg, the leg is over
+  # before it rings.
+  def admit_browser_sip_incoming_leg!(call_session, context, decision)
+    call_session = persist_browser_sip_incoming_metadata!(call_session, context, decision)
+    return call_session unless (decision[:action] || decision['action']).to_s == 'operator'
+
+    Telephony::SiblingLegCloser.close_late_leg(call_session)
   end
 
   def browser_sip_incoming_profile!(user, inbox, params)

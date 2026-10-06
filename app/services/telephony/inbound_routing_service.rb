@@ -72,8 +72,10 @@ class Telephony::InboundRoutingService
                  routed_decision
                end
 
-    broadcast_fast_incoming_call!(decision)
-    enqueue_route_lifecycle!(decision)
+    unless sibling_group_owned?(decision)
+      broadcast_fast_incoming_call!(decision)
+      enqueue_route_lifecycle!(decision)
+    end
     decision
   end
 
@@ -573,6 +575,16 @@ class Telephony::InboundRoutingService
     return unless Telephony::SiblingLegGrouping.applies?(provider: number_binding.provider)
 
     Telephony::SiblingLegGrouping.root_leg(number_binding: number_binding, caller_number: caller_number, call_ref: call_ref)
+  end
+
+  # Another operator already claimed or answered this call: the leg that is
+  # reported now must not ring (the report closes it, see
+  # Telephony::SiblingLegCloser.close_late_leg).
+  def sibling_group_owned?(decision)
+    return @sibling_group_owned if defined?(@sibling_group_owned)
+
+    @sibling_group_owned = operator_decision?(decision) && sibling_root_leg.present? &&
+                           Telephony::SiblingLegGrouping.owner_leg(sibling_root_leg).present?
   end
 
   def useful_explicit_logical_group_ref?(value)

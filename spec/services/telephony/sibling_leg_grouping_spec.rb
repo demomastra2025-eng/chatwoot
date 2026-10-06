@@ -122,4 +122,51 @@ RSpec.describe Telephony::SiblingLegGrouping do
       expect(described_class.group_ref(root)).to eq('beeline:janus:1:a')
     end
   end
+
+  describe '.owner_leg' do
+    let(:group_metadata) { { 'metadata' => { 'logical_call_key' => 'janus-inbound:one-call', 'logical_call_group_ref' => 'beeline:janus:1:a' } } }
+    let!(:first) { create_leg('beeline:janus:1:a', created_at: now - 3.seconds, metadata: group_metadata) }
+    let!(:second) { create_leg('beeline:janus:2:b', created_at: now - 2.seconds, metadata: group_metadata) }
+
+    it 'is nil while the call rings for everybody' do
+      expect(described_class.owner_leg(first)).to be_nil
+    end
+
+    it 'is the leg an operator claimed' do
+      second.update!(status: 'connecting')
+
+      expect(described_class.owner_leg(first)).to eq(second)
+    end
+
+    it 'is the leg an operator answered' do
+      second.update!(status: 'in_progress', answered_at: Time.current)
+
+      expect(described_class.owner_leg(first)).to eq(second)
+    end
+
+    it 'counts the leg that is asked about' do
+      first.update!(status: 'connecting')
+
+      expect(described_class.owner_leg(first)).to eq(first)
+    end
+
+    it 'skips the leg that is being admitted' do
+      first.update!(status: 'connecting')
+
+      expect(described_class.owner_leg(first, except: first)).to be_nil
+    end
+
+    it 'is nil when the leg that owned the call is over' do
+      second.update!(status: 'completed', answered_at: Time.current, ended_at: Time.current)
+
+      expect(described_class.owner_leg(first)).to be_nil
+    end
+
+    it 'ignores a claim on a call of another group' do
+      other_group = { 'logical_call_key' => 'janus-inbound:other', 'logical_call_group_ref' => 'beeline:janus:3:c' }
+      create_leg('beeline:janus:3:c', created_at: now - 1.second, status: 'connecting', metadata: { 'metadata' => other_group })
+
+      expect(described_class.owner_leg(first)).to be_nil
+    end
+  end
 end
