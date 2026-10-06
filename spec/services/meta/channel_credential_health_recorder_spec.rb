@@ -5,7 +5,7 @@ RSpec.describe Meta::ChannelCredentialHealthRecorder do
     create(:channel_instagram, access_token: 'ig-token', expires_at: 20.days.from_now, updated_at: 1.day.ago)
   end
 
-  it 'recovers from a channel health uniqueness collision inside the channel lock transaction' do
+  it 'uses Rails create_or_find_by! recovery for a real collision inside the channel lock transaction' do
     health = Meta::ChannelCredentialHealth.create!(account: channel.account, channel: channel, status: 'unknown')
     stale_health_lookup = true
     database_collision = false
