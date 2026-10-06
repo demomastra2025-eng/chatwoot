@@ -542,7 +542,9 @@ describe SearchService do
     end
 
     it 'uses SQL and keeps the sender and time filters without consulting Searchkick' do
-      expect(Message).not_to receive(:search)
+      # Searchkick is declared on Message only when advanced search is allowed at class load, so the test class has no
+      # `search` method to verify a partial double against.
+      without_partial_double_verification { expect(Message).not_to receive(:search) }
       params = { q: 'справка', from: "contact:#{contact.id}", since: 2.days.ago.to_i }
       service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 
