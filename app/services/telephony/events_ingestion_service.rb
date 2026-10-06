@@ -2752,7 +2752,24 @@ class Telephony::EventsIngestionService
     incoming_metadata = metadata.deep_stringify_keys
     existing_metadata = existing_metadata.deep_stringify_keys
     incoming_metadata = preserve_sipuni_operator_leg_metadata(call_session, existing_metadata, incoming_metadata)
+    incoming_metadata = preserve_browser_janus_operator_route_metadata(call_session, existing_metadata, incoming_metadata)
     preserve_browser_janus_sip_logical_metadata(call_session, existing_metadata, incoming_metadata)
+  end
+
+  # The browser route (webphone/incoming) decides which operator a Janus leg
+  # belongs to. The Sipuni webhook reports the PBX leg of one extension: when
+  # it reaches the Janus session of another operator (deep_merge replaces the
+  # arrays) it must not replace that operator's target and candidate list, or
+  # he can no longer claim his own call.
+  def preserve_browser_janus_operator_route_metadata(call_session, existing_metadata, incoming_metadata)
+    return incoming_metadata unless incoming_metadata['source'].to_s == 'sipuni_http_api' &&
+                                    sipuni_janus_operator_leg?(call_session, existing_metadata)
+
+    incoming_metadata.reject { |key, _value| browser_route_operator_key?(key) }
+  end
+
+  def browser_route_operator_key?(key)
+    key.to_s.start_with?('target_', 'operator_candidate', 'operator_pool') || key.to_s == 'operator_internal_extension'
   end
 
   def preserve_browser_janus_sip_logical_metadata(call_session, existing_metadata, incoming_metadata)
