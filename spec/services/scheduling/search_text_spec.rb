@@ -30,10 +30,9 @@ RSpec.describe Scheduling::SearchText do
       described_class.same_words?(normalized(left), normalized(right), **)
     end
 
-    it 'is true for the same words in any order, any case, with ё as е and with other forms of the same word' do
+    it 'is true for the same words in any order, any case, and with ё as е' do
       expect(same?('УЗИ малого таза', 'малого таза УЗИ')).to be(true)
       expect(same?('Приём терапевта', 'прием ТЕРАПЕВТА')).to be(true)
-      expect(same?('МРТ кисти левой', 'МРТ кисть левая')).to be(true)
     end
 
     it 'keeps the order of the words when a preposition, a number or a code takes part in the name' do
@@ -50,11 +49,24 @@ RSpec.describe Scheduling::SearchText do
       expect(same?('Приём врача для детей без родителей', 'Приём врача без детей для родителей')).to be(false)
     end
 
-    it 'is true for the same words in the same order, whatever the case or the word form' do
+    it 'is true for the same words in the same order, whatever the case' do
       expect(same?('МРТ с контрастом', 'мрт С КОНТРАСТОМ')).to be(true)
-      expect(same?('МРТ кисти левой с контрастом', 'МРТ кисть левая с контрастом')).to be(true)
       expect(same?('Массаж 10 сеансов по 30 минут', 'массаж 10 сеансов по 30 минут')).to be(true)
       expect(same?('МРТ 1.5 Тл', 'МРТ 1,5 Тл')).to be(true)
+    end
+
+    it 'does not merge medical word forms or words with the same stem into a confident name' do
+      expect(same?('МРТ кисти', 'МРТ кисты')).to be(false)
+      expect(same?('МРТ кисти', 'МРТ кисть')).to be(false)
+      expect(same?('УЗИ почки', 'УЗИ почек')).to be(false)
+      expect(same?('Биопсия лимфоузла', 'Биопсия лимфоузлов')).to be(false)
+    end
+
+    it 'keeps a meaning-bearing word beyond the eight retrieval tokens' do
+      prefix = 'МРТ головного мозга сосудов шеи позвоночника суставов кисти'
+
+      expect(same?("#{prefix} с контрастом", "#{prefix} без контраста")).to be(false)
+      expect(same?("#{prefix} 3 Тл", "#{prefix} 1.5 Тл")).to be(false)
     end
 
     it 'keeps the free order for a name of content words only' do

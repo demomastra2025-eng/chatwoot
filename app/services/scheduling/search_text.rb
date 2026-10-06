@@ -63,28 +63,23 @@ module Scheduling::SearchText
     ending ? word.delete_suffix(ending) : word
   end
 
-  # Two normalised texts have the same words. A name of plain content words is compared in any order; once a
-  # preposition, a number, a roman numeral or a one-letter code takes part in it, the words must come in the same order
-  # as well. With stemmed: false the words must be letter for letter equal (a person's name: Асланов and Асланова are two
-  # different names) and only a digit makes the order matter (two numbered rooms), because a person's name is said in
-  # any order.
-  def same_words?(left, right, stemmed: true)
+  # Confidence uses complete normalized words, never stems: кисть and киста, or two medical word forms, can name
+  # different services. Word order matters when a qualifier, code or number attaches to a following word.
+  def same_words?(left, right, stemmed: false)
     left_sequence = word_sequence(left, stemmed)
     right_sequence = word_sequence(right, stemmed)
     return left.to_s == right.to_s if left_sequence.empty? && right_sequence.empty?
     return false unless left_sequence.to_set == right_sequence.to_set
 
-    !order_matters?([left, right], stemmed) || left_sequence == right_sequence
+    !order_matters?([left, right]) || left_sequence == right_sequence
   end
 
   def word_sequence(normalized_text, stemmed)
     normalized_text.to_s.scan(WORD_PATTERN).map { |word| word.tr(',', '.') }.map { |word| stemmed ? stem(word) : word }
   end
 
-  def order_matters?(normalized_texts, stemmed)
-    normalized_texts.any? do |text|
-      words(text).any? { |word| stemmed ? order_word?(word) : word.match?(/\d/) }
-    end
+  def order_matters?(normalized_texts)
+    normalized_texts.any? { |text| words(text).any? { |word| order_word?(word) } }
   end
 
   def order_word?(word)

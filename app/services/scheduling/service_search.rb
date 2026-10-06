@@ -154,24 +154,23 @@ class Scheduling::ServiceSearch
   # The alternatives of one concept match as a substring or, through the Russian dictionary, as another form of the
   # same word.
   def alternatives_condition(alternatives, text_sql, vector_sql)
-    connection = scope.connection
     return whole_word_condition(alternatives.first, text_sql) if alternatives.size == 1 && WHOLE_WORDS.include?(alternatives.first)
 
-    patterns = alternatives.map { |value| "#{text_sql} ILIKE #{connection.quote("%#{escaped(value)}%")}" }
-    tsquery = alternatives.map { |value| "plainto_tsquery('russian', #{connection.quote(value)})" }.join(' || ')
+    patterns = alternatives.map { |value| bound_sql("#{text_sql} ILIKE ?", "%#{escaped(value)}%") }
+    tsquery = alternatives.map { |value| bound_sql("plainto_tsquery('russian', ?)", value) }.join(' || ')
     "(#{patterns.join(' OR ')} OR #{vector_sql} @@ (#{tsquery}))"
   end
 
   def whole_word_condition(word, text_sql)
-    "#{text_sql} ~* #{scope.connection.quote("(^|#{NOT_LETTER})#{word}(#{NOT_LETTER}|$)")}"
+    bound_sql("#{text_sql} ~* ?", "(^|#{NOT_LETTER})#{word}(#{NOT_LETTER}|$)")
   end
 
   def exact_name_condition
-    "#{name_sql} = #{scope.connection.quote(normalized_query)}"
+    bound_sql("#{name_sql} = ?", normalized_query)
   end
 
   def phrase_condition(text_sql)
-    "#{text_sql} ILIKE #{scope.connection.quote("%#{escaped(normalized_query)}%")}"
+    bound_sql("#{text_sql} ILIKE ?", "%#{escaped(normalized_query)}%")
   end
 
   # The ids of the services of the scope whose name or alias has exactly the words of the query. The database only
@@ -205,7 +204,7 @@ class Scheduling::ServiceSearch
     fragments = Scheduling::SearchText.words(normalized_query).flat_map { |word| word_fragments(word) }.uniq
     return exact_name_condition if fragments.empty?
 
-    fragments.map { |fragment| "#{haystack} ILIKE #{scope.connection.quote("%#{escaped(fragment)}%")}" }.join(' AND ')
+    fragments.map { |fragment| bound_sql("#{haystack} ILIKE ?", "%#{escaped(fragment)}%") }.join(' AND ')
   end
 
   # A decimal number is found as its two parts (the stored text may hold "1,5" for "1.5"); a word as its stem.
@@ -223,5 +222,9 @@ class Scheduling::ServiceSearch
 
   def escaped(value)
     ActiveRecord::Base.sanitize_sql_like(value.to_s.downcase)
+  end
+
+  def bound_sql(template, value)
+    Scheduling::Service.send(:sanitize_sql_array, [template, value])
   end
 end

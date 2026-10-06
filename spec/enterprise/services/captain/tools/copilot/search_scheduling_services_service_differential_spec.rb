@@ -107,7 +107,15 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
     ['Анализ крови', 'Анализ крови биохимический'],
     ['Консультация терапевта', 'Консультация терапевта онлайн'],
     ['Рентген', 'Рентген черепа'],
-    ['Гепатит', 'Гепатит В']
+    ['Гепатит', 'Гепатит В'],
+    ['МРТ кисти', 'МРТ кисты'],
+    ['МРТ кистей', 'МРТ стопы'],
+    ['МРТ ладони', 'МРТ ладони и предплечья'],
+    ['УЗИ почки', 'УЗИ почек'],
+    ['Биопсия лимфоузла', 'Биопсия лимфоузлов'],
+    ['Рентген ребра', 'Рентген ребер'],
+    ['УЗИ яичника', 'УЗИ яичников'],
+    ['Пункция сустава', 'Пункция суставов']
   ]
 
   let(:account) { create(:account) }
@@ -124,6 +132,17 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingServicesService do
   it 'covers at least sixty pairs' do
     expect(pairs.size).to be >= 60
     expect(pairs.flatten.uniq.size).to eq(pairs.flatten.size)
+  end
+
+  it 'does not confidently offer another body part or a broader service for МРТ кисти' do
+    create(:scheduling_service, account: account, name: 'МРТ стопы')
+    create(:scheduling_service, account: account, name: 'МРТ кисти и предплечья')
+
+    payload = search('МРТ кисти')
+
+    expect(payload['match_status']).not_to eq('candidate')
+    expect(payload['exact_name_matches']).to eq(0)
+    expect(payload['instruction']).to include('exact name') if payload['total_count'].positive?
   end
 
   pairs.each do |name_a, name_b|
