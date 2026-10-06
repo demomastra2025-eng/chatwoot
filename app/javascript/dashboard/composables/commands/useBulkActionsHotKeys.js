@@ -59,8 +59,8 @@ const OPEN_CONVERSATION_BULK_ACTIONS = [
 export function useBulkActionsHotKeys() {
   const { t } = useI18n();
 
-  const selectedConversations = useMapGetter(
-    'bulkActions/getSelectedConversationIds'
+  const selectedConversationCount = useMapGetter(
+    'bulkActions/getSelectedConversationCount'
   );
 
   const prepareActions = actions => {
@@ -73,7 +73,7 @@ export function useBulkActionsHotKeys() {
 
   const bulkActionsHotKeys = computed(() => {
     let actions = [];
-    if (selectedConversations.value.length > 0) {
+    if (selectedConversationCount.value > 0) {
       actions = [
         ...SNOOZE_CONVERSATION_BULK_ACTIONS,
         ...RESOLVED_CONVERSATION_BULK_ACTIONS,
