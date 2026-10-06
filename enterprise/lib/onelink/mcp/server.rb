@@ -3,7 +3,9 @@
 module Onelink
   module Mcp
     class Server
-      PROTOCOL_VERSION = '2025-06-18'
+      SUPPORTED_PROTOCOL_VERSIONS = %w[2024-11-05 2025-03-26 2025-06-18].freeze
+      OLDEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.first
+      PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS.last
       SERVER_NAME = 'onelink-mcp'
       JSONRPC_VERSION = '2.0'
 
@@ -28,8 +30,12 @@ module Onelink
         )
       end
 
-      def call(envelope)
-        return handle_batch(envelope) if envelope.is_a?(Array)
+      def call(envelope, protocol_version: OLDEST_PROTOCOL_VERSION)
+        if envelope.is_a?(Array)
+          return error_response(nil, -32_600, 'JSON-RPC batches are not supported') if protocol_version.to_s >= PROTOCOL_VERSION
+
+          return handle_batch(envelope)
+        end
 
         handle_request(envelope)
       end
@@ -119,7 +125,7 @@ module Onelink
       def initialize_result(params)
         requested_protocol = params[:protocolVersion].presence
         {
-          protocolVersion: requested_protocol || PROTOCOL_VERSION,
+          protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.include?(requested_protocol) ? requested_protocol : PROTOCOL_VERSION,
           capabilities: {
             tools: {
               listChanged: false

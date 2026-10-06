@@ -44,16 +44,12 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/mcp' do
-    it 'returns endpoint metadata for user API tokens' do
+    it 'returns method not allowed with POST in the Allow header for user API tokens' do
       get "/api/v1/accounts/#{account.id}/mcp", headers: mcp_headers(admin)
 
-      expect(response).to have_http_status(:success)
-      expect(json_response).to include(
-        name: 'onelink-mcp',
-        account_id: account.id,
-        user_id: admin.id,
-        assistant_id: assistant.id
-      )
+      expect(response).to have_http_status(:method_not_allowed)
+      expect(response.headers['Allow']).to eq('POST')
+      expect(response.body).to be_blank
     end
 
     it 'rejects session auth without a user API token' do
@@ -215,6 +211,35 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       expect(json_response.dig(:result, :capabilities, :tools)).to include(listChanged: false)
     end
 
+    it 'negotiates each supported protocol version' do
+      Onelink::Mcp::Server::SUPPORTED_PROTOCOL_VERSIONS.each do |version|
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: mcp_request(id: 'init-supported', method: 'initialize', params: { protocolVersion: version }).to_json,
+             headers: mcp_headers(admin)
+
+        expect(response).to have_http_status(:success)
+        expect(json_response.dig(:result, :protocolVersion)).to eq(version)
+      end
+    end
+
+    it 'uses the latest supported version when the client requests an unsupported version' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'init-unsupported', method: 'initialize', params: { protocolVersion: '2099-01-01' }).to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :protocolVersion)).to eq('2025-06-18')
+    end
+
+    it 'uses the latest supported version when the client omits a version' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: mcp_request(id: 'init-missing', method: 'initialize').to_json,
+           headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:success)
+      expect(json_response.dig(:result, :protocolVersion)).to eq('2025-06-18')
+    end
+
     it 'rejects malformed JSON-RPC envelopes without a version' do
       post "/api/v1/accounts/#{account.id}/mcp",
            params: { id: 'bad-1', method: 'ping' }.to_json,
@@ -239,6 +264,30 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
 
       expect(response).to have_http_status(:accepted)
       expect(response.body).to be_blank
+    end
+
+    it 'keeps JSON-RPC batches for older protocol versions and clients without a version header' do
+      [nil, '2024-11-05', '2025-03-26'].each do |version|
+        headers = mcp_headers(admin)
+        headers['MCP-Protocol-Version'] = version if version
+
+        post "/api/v1/accounts/#{account.id}/mcp",
+             params: [mcp_request(id: 'batch-ping', method: 'ping')].to_json,
+             headers: headers
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to eq([{ jsonrpc: '2.0', id: 'batch-ping', result: {} }])
+      end
+    end
+
+    it 'rejects JSON-RPC batches for the latest protocol version' do
+      post "/api/v1/accounts/#{account.id}/mcp",
+           params: [mcp_request(id: 'batch-ping', method: 'ping')].to_json,
+           headers: mcp_headers(admin).merge('MCP-Protocol-Version' => '2025-06-18')
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to include(jsonrpc: '2.0', id: nil)
+      expect(json_response.dig(:error, :code)).to eq(-32_600)
     end
 
     it 'lists account-scoped Captain tools visible to the token' do

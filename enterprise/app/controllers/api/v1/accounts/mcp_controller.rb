@@ -15,10 +15,13 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
   before_action :ensure_mcp_user_access_token!
 
   def handle
-    return render_endpoint_metadata if request.get?
+    if request.get?
+      response.set_header('Allow', 'POST')
+      return head :method_not_allowed
+    end
 
     payload = parsed_jsonrpc_payload
-    response_payload = mcp_server.call(payload)
+    response_payload = mcp_server.call(payload, protocol_version: mcp_protocol_version)
     return head :accepted if response_payload.nil?
 
     render_mcp_payload(response_payload)
@@ -72,24 +75,16 @@ class Api::V1::Accounts::McpController < Api::V1::Accounts::BaseController
     JSON.parse(raw_body)
   end
 
+  def mcp_protocol_version
+    request.headers['MCP-Protocol-Version'].presence || Onelink::Mcp::Server::OLDEST_PROTOCOL_VERSION
+  end
+
   def mcp_server
     @mcp_server ||= Onelink::Mcp::Server.new(auth_context: mcp_auth_context)
   end
 
   def mcp_auth_context
     @mcp_auth_context ||= Onelink::Mcp::AuthContext.from_controller(self)
-  end
-
-  def render_endpoint_metadata
-    render json: {
-      name: Onelink::Mcp::Server::SERVER_NAME,
-      protocol_version: Onelink::Mcp::Server::PROTOCOL_VERSION,
-      endpoint: request.path,
-      account_id: Current.account.id,
-      user_id: Current.user.id,
-      assistant_id: mcp_auth_context.assistant.persisted? ? mcp_auth_context.assistant.id : nil,
-      methods: %w[initialize ping tools/list tools/call resources/list resources/read]
-    }
   end
 
   def render_mcp_payload(payload)
