@@ -287,7 +287,11 @@ watch(
   () => route.query,
   query => {
     applyRouteFilters(query);
-    if (filters.assistantId || filters.conversationDisplayId || filters.status) {
+    if (
+      filters.assistantId ||
+      filters.conversationDisplayId ||
+      filters.status
+    ) {
       showFilters.value = true;
     }
     const nextTraceContextKey = traceContextKey(query);
