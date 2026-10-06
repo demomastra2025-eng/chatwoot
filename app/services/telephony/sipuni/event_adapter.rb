@@ -381,8 +381,23 @@ class Telephony::Sipuni::EventAdapter
     binding = number_binding
     @correlated_native_webphone_session = if inbound? && binding.present?
                                             sessions = native_webphone_session_scope(binding).limit(3).to_a
-                                            unique_record(sessions)
+                                            session = unique_record(sessions)
+                                            session if session.present? && session_of_reported_operator?(session)
                                           end
+  end
+
+  # Every operator browser reports a Janus session of its own. The report of the
+  # PBX leg that rang one operator extension belongs to the session of that
+  # extension only: attached to the session of another operator it would turn
+  # his call into the call of somebody else. Without such a session the report
+  # stays unmatched (reconciliation only).
+  def session_of_reported_operator?(session)
+    extension = internal_extension_for_candidates if operator_leg?
+    return true if extension.blank?
+
+    route_metadata = session.metadata.to_h['metadata'].to_h
+    session_extension = route_metadata['target_extension'].presence || route_metadata['operator_internal_extension'].presence
+    session_extension.blank? || session_extension.to_s == extension
   end
 
   def native_webphone_session_scope(binding)
