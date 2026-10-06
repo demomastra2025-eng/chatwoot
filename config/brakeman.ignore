@@ -575,29 +575,6 @@
       "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
     },
     {
-      "warning_type": "Remote Code Execution",
-      "warning_code": 24,
-      "fingerprint": "41f61f511c2ab0265cdbe9a5d980d21911e0aa3e780912632b8cb440fc1225fb",
-      "check_name": "UnsafeReflection",
-      "message": "Unsafe reflection method `safe_constantize` called on parameter value",
-      "file": "app/controllers/api/v1/accounts/touch_plans_controller.rb",
-      "line": 82,
-      "link": "https://brakemanscanner.org/docs/warning_types/remote_code_execution/",
-      "code": "params.require(:remindable_type).to_s.safe_constantize",
-      "render_path": null,
-      "location": {
-        "type": "method",
-        "class": "Api::V1::Accounts::TouchPlansController",
-        "method": "load_remindable!"
-      },
-      "user_input": "params.require(:remindable_type).to_s",
-      "confidence": "High",
-      "cwe_id": [
-        470
-      ],
-      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
-    },
-    {
       "warning_type": "SQL Injection",
       "warning_code": 0,
       "fingerprint": "458dcbec591afe9b9bc540ceff2beca62a55f142f9c7fa5bdcd71e4b54970554",
@@ -732,29 +709,6 @@
       "confidence": "Medium",
       "cwe_id": [
         915
-      ],
-      "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
-    },
-    {
-      "warning_type": "HTTP Verb Confusion",
-      "warning_code": 118,
-      "fingerprint": "66e1f9b4a5ed5a8f04fb147d2431cee97a9702a2e47f554b981abafc3371aeb2",
-      "check_name": "VerbConfusion",
-      "message": "Potential HTTP verb confusion. `HEAD` is routed like `GET` but `request.get?` will return `false`",
-      "file": "enterprise/app/controllers/api/v1/accounts/mcp_controller.rb",
-      "line": 18,
-      "link": "https://brakemanscanner.org/docs/warning_types/http_verb_confusion/",
-      "code": "return render_endpoint_metadata if request.get?",
-      "render_path": null,
-      "location": {
-        "type": "method",
-        "class": "Api::V1::Accounts::McpController",
-        "method": "handle"
-      },
-      "user_input": "request.get?",
-      "confidence": "Weak",
-      "cwe_id": [
-        352
       ],
       "note": "Existing finding baseline captured during the Rails 7.2 security upgrade; new or changed findings must fail CI."
     },
