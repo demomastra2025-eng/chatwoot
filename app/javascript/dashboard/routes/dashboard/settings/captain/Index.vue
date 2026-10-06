@@ -1,5 +1,12 @@
 <script setup>
-import { computed, defineAsyncComponent, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  defineAsyncComponent,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import { storeToRefs } from 'pinia';
 import { useAlert } from 'dashboard/composables';
@@ -25,10 +32,6 @@ import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
 
-const ModelSelector = defineAsyncComponent(
-  () => import('./components/ModelSelector.vue')
-);
-
 // «Расходы» in the AI menu opens this page with only the usage section; the
 // full «Настройки ИИ» page keeps every section, usage included.
 const props = defineProps({
@@ -37,6 +40,10 @@ const props = defineProps({
     default: 'settings',
   },
 });
+
+const ModelSelector = defineAsyncComponent(
+  () => import('./components/ModelSelector.vue')
+);
 
 const { t } = useI18n();
 const { captainEnabled } = useCaptain();

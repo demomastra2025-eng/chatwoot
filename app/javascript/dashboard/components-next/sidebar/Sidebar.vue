@@ -159,13 +159,6 @@ const hasCrmTasks = computed(() => {
   );
 });
 
-const hasCaptain = computed(() => {
-  return isFeatureEnabledonAccount.value(
-    accountId.value,
-    FEATURE_FLAGS.CAPTAIN
-  );
-});
-
 const hasSLA = computed(() => canAccessSLASettings(shouldShow));
 
 const hasAutomationRules = computed(() => {

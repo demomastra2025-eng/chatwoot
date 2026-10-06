@@ -292,9 +292,9 @@ describe('Sidebar', () => {
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'AI expenses', active: true },
       ]);
-      expect(navigationChildNames(sidebarGroup(wrapper, 'Settings'))).not.toContain(
-        'Settings Captain'
-      );
+      expect(
+        navigationChildNames(sidebarGroup(wrapper, 'Settings'))
+      ).not.toContain('Settings Captain');
     });
 
     it('highlights only «Площадка» while the sandbox page is open', async () => {
@@ -489,7 +489,6 @@ describe('Sidebar', () => {
         'Settings Section Automation',
         'Settings Section Team',
         'Settings Section Data',
-        'Settings Section AI',
       ]);
       // SLA needs a Cloud or Enterprise installation, which this suite is not.
       expect(navigationChildNames(settings)).toEqual([
