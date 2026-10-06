@@ -4401,7 +4401,7 @@ watch(
           color="slate"
           variant="ghost"
           icon="i-lucide-arrow-left"
-          :label="$t('INBOX.BACK')"
+          :label="$t('CRM.GENERAL.BACK')"
           @click="returnToDeals"
         />
       </header>
@@ -4455,7 +4455,7 @@ watch(
                 color="slate"
                 variant="ghost"
                 icon="i-lucide-arrow-left"
-                :label="$t('INBOX.BACK')"
+                :label="$t('CRM.GENERAL.BACK')"
                 @click="returnToDeals"
               />
               <input

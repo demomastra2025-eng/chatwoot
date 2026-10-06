@@ -1,6 +1,7 @@
 {
   "CRM": {
     "GENERAL": {
+      "BACK": "Назад",
       "ACTIVE": "Активно",
       "ARCHIVE": "Архивировать",
       "ARCHIVED": "В архиве",

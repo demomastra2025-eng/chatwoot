@@ -1,6 +1,7 @@
 {
   "CRM": {
     "GENERAL": {
+      "BACK": "Back",
       "ACTIVE": "Active",
       "ARCHIVE": "Archive",
       "ARCHIVED": "Archived",
