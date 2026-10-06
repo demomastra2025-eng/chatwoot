@@ -62,16 +62,26 @@ export const useMessageFormatter = () => {
    * @param {string} [content=''] - The content in which to search.
    * @param {string} [searchTerm=''] - The term to search for.
    * @param {string} [highlightClass=''] - The CSS class to apply to the highlighted term.
-   * @param {Object} [options] - { yoInsensitive } highlights "е" and "ё" as the same letter.
+   * @param {Object} [options] - { yoInsensitive, phoneFragments } controls search matching.
    * @returns {string} - The content with highlighted terms.
    */
   const highlightContent = (
     content = '',
     searchTerm = '',
     highlightClass = '',
-    { yoInsensitive = false } = {}
+    { yoInsensitive = false, phoneFragments = [] } = {}
   ) => {
     const plainTextContent = getPlainText(content);
+
+    if (phoneFragments.length) {
+      const pattern = phoneFragments
+        .map(digits => digits.split('').join('[^\\p{L}\\p{N}]*'))
+        .join('|');
+      return plainTextContent.replace(
+        new RegExp(`(${pattern})`, 'iug'),
+        `<span class="${highlightClass}">$1</span>`
+      );
+    }
 
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions#escaping
     const escapedSearchTerm = searchTerm.replace(ESCAPE_CHARS, '\\$&');

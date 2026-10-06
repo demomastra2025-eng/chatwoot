@@ -113,6 +113,17 @@ describe('useMessageFormatter', () => {
       ).toBe('Нужен <span class="highlight">ПРИЕМ</span> врача');
     });
 
+    it('highlights the stored phone format that matched a differently formatted query', () => {
+      const result = messageFormatter.highlightContent(
+        'Позвоните на +7 (707) 281-70-60',
+        '87072817060',
+        'highlight',
+        { yoInsensitive: true, phoneFragments: ['7072817060'] }
+      );
+
+      expect(result).toContain('<span class="highlight">707) 281-70-60</span>');
+    });
+
     it('highlights words typed with a space also where the message has a comma, a line break or more spaces', () => {
       const options = { yoInsensitive: true };
 

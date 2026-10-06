@@ -16,18 +16,13 @@ const INVISIBLE_CHARS =
 // Digits with the usual separators (spaces of any kind, dots, dashes of every kind, brackets, one leading plus).
 const PHONE_INPUT = /^\+?[\s\d().\-\u2010-\u2015\u2212]+$/;
 
-// Full-width ASCII (＋７ ７０７) becomes plain ASCII, exotic spaces become plain ones, invisible marks disappear. NFKC is
-// not used on purpose: it rewrites "№", "…", "²" and "™" into "No", "...", "2" and "TM", which stay as typed in the
-// stored text (the same rule as app/services/search/query_text.rb).
-const FULL_WIDTH_ASCII = /[\uFF01-\uFF5E]/g;
+// Full-width digits and plus are normalized only when reading a phone. Text search keeps every visible character typed.
+const FULL_WIDTH_PHONE = /[\uFF0B\uFF10-\uFF19]/g;
 const FULL_WIDTH_OFFSET = 0xfee0;
 
 export const cleanSearchText = value =>
   String(value ?? '')
     .normalize('NFC')
-    .replace(FULL_WIDTH_ASCII, char =>
-      String.fromCharCode(char.charCodeAt(0) - FULL_WIDTH_OFFSET)
-    )
     .replace(INVISIBLE_CHARS, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -36,7 +31,9 @@ const digitsOf = value => String(value ?? '').replace(/\D/g, '');
 
 // The digits of the typed text, or null when it is not a phone number.
 export const parsePhoneQuery = text => {
-  const cleaned = cleanSearchText(text);
+  const cleaned = cleanSearchText(text).replace(FULL_WIDTH_PHONE, char =>
+    String.fromCharCode(char.charCodeAt(0) - FULL_WIDTH_OFFSET)
+  );
   if (!PHONE_INPUT.test(cleaned)) return null;
 
   const digits = digitsOf(cleaned);

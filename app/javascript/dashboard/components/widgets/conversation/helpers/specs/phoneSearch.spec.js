@@ -14,7 +14,7 @@ describe('phoneSearch', () => {
       expect(cleanSearchText('\u200E+7 707\u200F 281\u202A 70\u202C 60')).toBe(
         '+7 707 281 70 60'
       );
-      expect(cleanSearchText('＋７ ７０７')).toBe('+7 707');
+      expect(cleanSearchText('＋７ ７０７')).toBe('＋７ ７０７');
       expect(cleanSearchText(null)).toBe('');
     });
 
@@ -25,8 +25,8 @@ describe('phoneSearch', () => {
       expect(cleanSearchText('Brand™')).toBe('Brand™');
     });
 
-    it('turns full-width ASCII into plain ASCII and composes decomposed letters', () => {
-      expect(cleanSearchText('ＡＢｃ！（１）')).toBe('ABc!(1)');
+    it('keeps full-width text as typed and composes decomposed letters', () => {
+      expect(cleanSearchText('ＡＢｃ！（１）')).toBe('ＡＢｃ！（１）');
       expect(cleanSearchText('\u0418\u0306сай')).toBe('\u0419сай');
     });
   });

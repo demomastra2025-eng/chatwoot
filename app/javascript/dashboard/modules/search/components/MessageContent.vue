@@ -3,7 +3,11 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMessageFormatter } from 'shared/composables/useMessageFormatter';
 import { useExpandableContent } from 'shared/composables/useExpandableContent';
-import { cleanSearchText } from 'dashboard/components/widgets/conversation/helpers/phoneSearch';
+import {
+  cleanSearchText,
+  parsePhoneQuery,
+  phoneFragments,
+} from 'dashboard/components/widgets/conversation/helpers/phoneSearch';
 
 const props = defineProps({
   author: {
@@ -53,12 +57,17 @@ const escapeHtml = html => {
 const highlightedContent = computed(() => {
   const content = messageContent.value || '';
   const escapedText = escapeHtml(content);
+  const phone = parsePhoneQuery(props.searchTerm);
+  let fragments = [];
+  if (phone) {
+    fragments = phone.length >= 10 ? [phone.slice(-10)] : phoneFragments(phone);
+  }
   // The server finds the typed text literally, with exotic spaces cleaned and "е"/"ё" interchangeable: the same is highlighted.
   return highlightContent(
     escapedText,
     cleanSearchText(props.searchTerm),
     'searchkey--highlight',
-    { yoInsensitive: true }
+    { yoInsensitive: true, phoneFragments: fragments }
   );
 });
 
