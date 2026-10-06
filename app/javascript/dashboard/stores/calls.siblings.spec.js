@@ -281,6 +281,45 @@ describe('useCallsStore sibling legs of one physical call', () => {
       expect(store.calls).toEqual([]);
     });
 
+    it('still removes a stale card after the browser slept longer than the history is kept', () => {
+      const store = useCallsStore();
+      store.addCall(ownLeg());
+
+      // A laptop that was suspended for an hour: every clock is far older than
+      // the retention of the history.
+      vi.advanceTimersByTime(60 * 60 * 1000);
+      const removed = store.expireStaleIncomingCalls();
+
+      expect(removed.map(call => call.callSid)).toEqual([
+        'beeline:janus:101:call-id-a',
+      ]);
+      expect(store.calls).toEqual([]);
+    });
+
+    it('keeps the clock of a card that is still shown when it prunes the history', () => {
+      const store = useCallsStore();
+      store.addCall(ownLeg());
+      vi.advanceTimersByTime(60 * 60 * 1000);
+
+      store.expireStaleIncomingCalls({ isLocalSessionLive: () => true });
+      expect(store.calls).toHaveLength(1);
+
+      // The SIP session is gone: the card has to go, which needs its clock.
+      const removed = store.expireStaleIncomingCalls();
+      expect(removed).toHaveLength(1);
+      expect(store.calls).toEqual([]);
+    });
+
+    it('drops the history of cards that are gone', () => {
+      const store = useCallsStore();
+      store.addCall(ownLeg());
+      vi.advanceTimersByTime(60 * 60 * 1000);
+
+      store.expireStaleIncomingCalls();
+
+      expect(store.callSeenAt).toEqual({});
+    });
+
     it('never removes the ringing leg of this browser while its SIP session is live', () => {
       const store = useCallsStore();
       store.addCall(ownLeg());

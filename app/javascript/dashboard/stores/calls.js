@@ -1048,11 +1048,10 @@ export const useCallsStore = defineStore('calls', {
       ttlMs = STALE_INCOMING_CALL_TTL_MS,
       isLocalSessionLive = () => false,
     } = {}) {
-      this.callSeenAt = Object.fromEntries(
-        Object.entries(this.callSeenAt).filter(
-          ([, seen]) => now - seen.lastEventAt <= CALL_SEEN_RETENTION_MS
-        )
-      );
+      // Expiry is decided first, from the clocks of every card that is still
+      // shown: after a long suspend of the browser they are all older than the
+      // retention, and pruning them first would leave the card without a clock
+      // and show it forever.
       const staleCalls = this.calls.filter(call => {
         if (!isRingingIncomingCall(call)) return false;
         const lastEventAt = this.callSeenAt[callSeenKey(call)]?.lastEventAt;
@@ -1060,10 +1059,19 @@ export const useCallsStore = defineStore('calls', {
 
         return !isLocalSessionLive(call);
       });
-      if (!staleCalls.length) return [];
-
-      staleCalls.forEach(call => this.rememberTerminalCall(call));
-      this.calls = this.calls.filter(call => !staleCalls.includes(call));
+      if (staleCalls.length) {
+        staleCalls.forEach(call => this.rememberTerminalCall(call));
+        this.calls = this.calls.filter(call => !staleCalls.includes(call));
+      }
+      // Only the history no card needs any more is dropped.
+      const shownKeys = new Set(this.calls.map(callSeenKey));
+      this.callSeenAt = Object.fromEntries(
+        Object.entries(this.callSeenAt).filter(
+          ([key, seen]) =>
+            shownKeys.has(key) ||
+            now - seen.lastEventAt <= CALL_SEEN_RETENTION_MS
+        )
+      );
       return staleCalls;
     },
 
