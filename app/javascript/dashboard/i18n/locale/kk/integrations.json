@@ -978,7 +978,9 @@
         "MODEL": {
           "LABEL": "Жауап беру моделі",
           "DESCRIPTION": "OneLink әкімшісі рұқсат еткен каталогтан модельді таңдаңыз.",
-          "CURRENT_MODEL": "ағымдағы модель"
+          "CURRENT_MODEL": "ағымдағы модель",
+          "PLATFORM_DEFAULT": "Платформаның әдепкі моделі",
+          "PLATFORM_DEFAULT_WITH_MODEL": "Платформаның әдепкі моделі ({model})"
         }
       },
       "SKILLS": {

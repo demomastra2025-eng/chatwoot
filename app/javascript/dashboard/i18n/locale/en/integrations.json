@@ -1775,7 +1775,9 @@
         "MODEL": {
           "LABEL": "Response model",
           "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator.",
-          "CURRENT_MODEL": "current model"
+          "CURRENT_MODEL": "current model",
+          "PLATFORM_DEFAULT": "Platform default model",
+          "PLATFORM_DEFAULT_WITH_MODEL": "Platform default model ({model})"
         }
       },
       "EDIT": {

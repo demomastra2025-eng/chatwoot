@@ -111,10 +111,24 @@ const state = reactive({ ...initialState });
 const instructionEditorRef = ref(null);
 const captainConfigStore = useCaptainConfigStore();
 // Only the short list curated by the platform. A model the agent already has stays selectable and is marked as
-// the current one; it is not offered to agents that do not use it.
+// the current one; it is not offered to agents that do not use it. The first option is empty: the agent has no model
+// of its own and follows the platform default, so the Super Admin default (and its rollback) reaches it.
 const assistantModelOptions = computed(() => {
   const currentLabel = name =>
     `${name} (${t('CAPTAIN.ASSISTANTS.FORM.MODEL.CURRENT_MODEL')})`;
+  const platformModelId =
+    captainConfigStore.getSelectedModelForFeature('assistant') || '';
+  const platformModel = captainConfigStore
+    .getModelsForFeature('assistant')
+    .find(model => model.id === platformModelId && !model.current_only);
+  const platformDefault = {
+    value: '',
+    label: platformModel
+      ? t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT_WITH_MODEL', {
+          model: platformModel.display_name || platformModel.id,
+        })
+      : t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT'),
+  };
   const options = captainConfigStore
     .getModelsForFeature('assistant')
     .filter(model => !model.current_only || model.id === state.model)
@@ -133,7 +147,7 @@ const assistantModelOptions = computed(() => {
     });
   }
 
-  return options;
+  return [platformDefault, ...options];
 });
 // Web search, page and document reading need the web provider that the platform administrator connects.
 // An option that is already on stays switchable, so that it can still be turned off.
@@ -422,16 +436,9 @@ const handleBasicInfoUpdate = async () => {
 };
 
 onMounted(async () => {
+  // The workspace model is only shown in the label of the empty option. It is never copied into the agent: an agent
+  // that saved it would stop following the platform default.
   await captainConfigStore.fetch();
-  if (!state.model) {
-    // A workspace model outside the curated list is not copied into the agent: choosing it anew is not allowed.
-    const selectedModelId =
-      captainConfigStore.getSelectedModelForFeature('assistant') || '';
-    const isCurrentOnly = captainConfigStore
-      .getModelsForFeature('assistant')
-      .some(model => model.id === selectedModelId && model.current_only);
-    state.model = isCurrentOnly ? '' : selectedModelId;
-  }
 });
 
 watch(
