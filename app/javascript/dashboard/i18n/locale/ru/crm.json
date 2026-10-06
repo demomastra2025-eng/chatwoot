@@ -29,6 +29,8 @@
     "FILTERS": {
       "APPLY": "Применить фильтры",
       "RESET": "Сбросить фильтры",
+      "RESET_SHORT": "Сбросить",
+      "REMOVE": "Убрать фильтр",
       "CLEAR_DATE_RANGE": "Очистить диапазон дат",
       "CREATED_AT_RANGE": "Дата создания",
       "DUE_AT_RANGE": "Срок задачи",
@@ -184,6 +186,7 @@
       "EDIT_TITLE": "Редактировать сделку",
       "AI_BADGE": "AI",
       "AI_ONLY": "Только AI",
+      "PIPELINE_SUMMARY": "Сделок: {count} · {amount}",
       "EMPTY_DESCRIPTION": "Создайте первую сделку, чтобы начать отслеживать движение по воронке.",
       "EMPTY_TITLE": "Пока нет сделок",
       "BOARD": {

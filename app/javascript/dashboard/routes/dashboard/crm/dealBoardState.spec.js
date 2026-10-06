@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  amountsAfterDealUpdate,
   canRollbackOptimisticDeal,
   dealMatchesCreatedRange,
   isDealVersionNewer,
@@ -43,6 +44,25 @@ describe('dealBoardState', () => {
       stageCountsAfterDealMove(counts, { stageId: 10 }, { stageId: 20 })
     ).toEqual({ 10: 2, 20: 5 });
     expect(counts).toEqual({ 10: 3, 20: 4 });
+  });
+
+  it('moves an amount between stages while preserving the pipeline total', () => {
+    const previousDeal = {
+      amountMinor: 12500,
+      currency: 'KZT',
+      stageId: 10,
+    };
+    const nextDeal = { ...previousDeal, stageId: 20 };
+    const stageAmounts = { 10: { KZT: 22500 }, 20: { USD: 5000 } };
+    const pipelineAmounts = { KZT: 22500, USD: 5000 };
+
+    expect(
+      amountsAfterDealUpdate(stageAmounts, previousDeal, nextDeal, true)
+    ).toEqual({ 10: { KZT: 10000 }, 20: { KZT: 12500, USD: 5000 } });
+    expect(
+      amountsAfterDealUpdate(pipelineAmounts, previousDeal, nextDeal)
+    ).toEqual(pipelineAmounts);
+    expect(stageAmounts[10].KZT).toBe(22500);
   });
 
   it('matches inclusive created-at ranges', () => {

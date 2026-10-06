@@ -15,6 +15,9 @@ import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
+// Card fields can later be driven by user preferences.
+const SHOW_CUSTOM_FIELDS_ON_CARD = false;
+
 const props = defineProps({
   canManage: {
     type: Boolean,
@@ -28,13 +31,13 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  defaultCurrency: {
+    type: String,
+    default: 'KZT',
+  },
   fieldDefinitions: {
     type: Array,
     default: () => [],
-  },
-  filtered: {
-    type: Boolean,
-    default: false,
   },
   hasMore: {
     type: Boolean,
@@ -51,10 +54,6 @@ const props = defineProps({
   owners: {
     type: Array,
     default: () => [],
-  },
-  pendingDealIds: {
-    type: Set,
-    default: () => new Set(),
   },
   showSortToggle: {
     type: Boolean,
@@ -80,6 +79,10 @@ const props = defineProps({
     default: () => [],
   },
   stageCounts: {
+    type: Object,
+    default: () => ({}),
+  },
+  stageAmountsMinor: {
     type: Object,
     default: () => ({}),
   },
@@ -172,7 +175,24 @@ const kanbanColumns = computed(() =>
 );
 
 const columnDealCount = column =>
-  Number(props.stageCounts?.[String(column.stageId)]) || column.deals.length;
+  props.stageCounts?.[String(column.stageId)] ?? column.deals.length;
+
+const columnAmountLabels = column => {
+  const entries = Object.entries(
+    props.stageAmountsMinor?.[String(column.stageId)] || {}
+  );
+  if (!entries.length) entries.push([props.defaultCurrency, 0]);
+
+  return entries
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([currency, amountMinor]) =>
+      formatDealAmount({
+        amount: Number(amountMinor) / 100,
+        currency,
+        locale: localeCode.value,
+      })
+    );
+};
 
 let lastBoardScrollTop = 0;
 let lastAutoFillSignature = null;
@@ -332,12 +352,6 @@ const handleColumnChange = (event, stageId) => {
   const deal = boardColumns.value[Number(stageId)][event.added.newIndex];
   emitStageChange(deal, stageId, resolveBoardPosition(event.added.newIndex));
 };
-
-const handleStageSelect = (event, deal) => {
-  const stageId = Number(event.target.value);
-  event.target.value = String(deal.stageId);
-  emitStageChange(deal, stageId, null);
-};
 </script>
 
 <template>
@@ -363,7 +377,8 @@ const handleStageSelect = (event, deal) => {
             </div>
             <div class="flex items-center gap-2">
               <span
-                class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-medium text-n-slate-11"
+                class="rounded-full bg-n-alpha-black2 px-2 py-0.5 text-xs font-semibold tabular-nums text-n-slate-12"
+                data-test="stage-deal-count"
               >
                 {{ columnDealCount(column) }}
               </span>
@@ -382,6 +397,12 @@ const handleStageSelect = (event, deal) => {
                 />
               </button>
             </div>
+          </div>
+          <div
+            class="mt-1 min-h-4 text-[11px] font-medium text-n-slate-11"
+            data-test="stage-amounts"
+          >
+            {{ columnAmountLabels(column).join(' · ') }}
           </div>
           <div
             class="crm-deal-board-stage-color mt-3 h-1 overflow-hidden rounded-full"
@@ -441,12 +462,20 @@ const handleStageSelect = (event, deal) => {
               <div class="mt-2 flex items-start justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
                   <span
-                    class="max-w-[8.5rem] truncate rounded-md bg-n-alpha-black2 px-1.5 py-1 text-[9px] font-medium text-n-slate-12"
+                    class="inline-flex min-w-0 items-center gap-0.5 text-xxs font-medium leading-3 text-n-slate-11"
+                    data-test="deal-owner"
                   >
-                    {{
-                      ownerNameById[element.ownerId] ||
-                      $t('CRM.GENERAL.EMPTY_VALUE')
-                    }}
+                    <fluent-icon
+                      icon="person"
+                      size="10"
+                      class="flex-shrink-0 text-n-slate-11"
+                    />
+                    <span class="min-w-0 truncate">
+                      {{
+                        ownerNameById[element.ownerId] ||
+                        $t('CRM.GENERAL.EMPTY_VALUE')
+                      }}
+                    </span>
                   </span>
                   <span
                     v-if="element.archivedAt"
@@ -471,28 +500,8 @@ const handleStageSelect = (event, deal) => {
                 {{ nextActionLabel(element) }}
               </p>
 
-              <select
-                v-if="canManage && stages.length > 1"
-                data-test="move-deal-stage"
-                class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
-                :aria-label="
-                  t('CRM.DEALS.BOARD.MOVE_TO_STAGE', { title: element.title })
-                "
-                :disabled="pendingDealIds.has(Number(element.id))"
-                :value="String(element.stageId)"
-                @click.stop
-                @change.stop="handleStageSelect($event, element)"
-              >
-                <option
-                  v-for="stage in stages"
-                  :key="stage.id"
-                  :value="String(stage.id)"
-                >
-                  {{ stage.name }}
-                </option>
-              </select>
-
               <CrmCustomFieldsSummary
+                v-if="SHOW_CUSTOM_FIELDS_ON_CARD"
                 class="mt-2"
                 :definitions="fieldDefinitions"
                 :values="element.customAttributes"
@@ -500,17 +509,6 @@ const handleStageSelect = (event, deal) => {
             </article>
           </template>
         </Draggable>
-        <p
-          v-if="columnDealCount(column) === 0"
-          class="mx-3 mb-3 rounded-md border border-dashed border-n-weak px-3 py-4 text-center text-xs text-n-slate-10"
-          data-test="empty-deal-stage"
-        >
-          {{
-            filtered
-              ? $t('CRM.DEALS.LIST.EMPTY_FILTERED')
-              : $t('CRM.DEALS.BOARD.EMPTY_COLUMN')
-          }}
-        </p>
       </section>
     </div>
     <div

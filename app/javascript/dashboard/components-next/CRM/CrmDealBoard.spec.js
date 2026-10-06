@@ -57,22 +57,26 @@ describe('CrmDealBoard', () => {
     expect(wrapper.find('.crm-deal-board-add-button').exists()).toBe(false);
   });
 
-  it('distinguishes confirmed empty stages from filtered empty stages', () => {
-    const emptyBoard = mountBoard();
-    const filteredBoard = mountBoard({ filtered: true });
+  it('shows server counts and currency totals without an empty caption', () => {
+    const wrapper = mountBoard({
+      stageAmountsMinor: { 1: { KZT: 425000, USD: 10000 } },
+      stageCounts: { 1: 12, 2: 0 },
+    });
 
-    expect(emptyBoard.text()).toContain('No deals in this stage');
-    expect(filteredBoard.text()).toContain(
-      'No deals match the current quick filters.'
+    expect(
+      wrapper
+        .findAll('[data-test="stage-deal-count"]')
+        .map(item => item.text())
+    ).toEqual(['12', '0']);
+    expect(wrapper.find('[data-test="stage-amounts"]').text()).toContain(
+      '4,250 KZT'
     );
-  });
-
-  it('does not claim a stage is empty while unloaded deals remain', () => {
-    const wrapper = mountBoard({ stageCounts: { 1: 3 } });
-    const emptyStages = wrapper.findAll('[data-test="empty-deal-stage"]');
-
-    expect(emptyStages).toHaveLength(1);
-    expect(emptyStages[0].text()).toBe('No deals in this stage');
+    expect(wrapper.find('[data-test="stage-amounts"]').text()).toContain(
+      '100 USD'
+    );
+    expect(wrapper.find('[data-test="empty-deal-stage"]').exists()).toBe(
+      false
+    );
   });
 
   it('shows an incremental busy state before a manual retry state', () => {
@@ -112,42 +116,13 @@ describe('CrmDealBoard', () => {
     ]);
   });
 
-  it('moves a deal with a native keyboard and touch stage selector', async () => {
+  it('omits stage selectors and custom fields from the kanban card', () => {
     const deal = { id: 1, stageId: 1, title: 'First deal' };
-    const wrapper = mountBoard(
-      { canManage: true, canReorder: false, deals: [deal] },
-      {
-        Draggable: {
-          props: ['list'],
-          template:
-            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
-        },
-      }
-    );
-
-    const selector = wrapper.find('[data-test="move-deal-stage"]');
-    expect(selector.element.tagName).toBe('SELECT');
-    expect(selector.attributes('aria-label')).toBe(
-      'CRM.DEALS.BOARD.MOVE_TO_STAGE'
-    );
-
-    await selector.setValue('2');
-
-    expect(wrapper.emitted('changeStage')).toEqual([
-      [{ deal, position: null, stageId: 2 }],
-    ]);
-    expect(wrapper.emitted('selectDeal')).toBeUndefined();
-  });
-
-  it('disables only the selector for a deal with a pending stage mutation', () => {
     const wrapper = mountBoard(
       {
         canManage: true,
-        deals: [
-          { id: 1, stageId: 1, title: 'Pending deal' },
-          { id: 2, stageId: 1, title: 'Ready deal' },
-        ],
-        pendingDealIds: new Set([1]),
+        deals: [{ ...deal, customAttributes: { category: 'common' } }],
+        fieldDefinitions: [{ key: 'category', label: 'Category' }],
       },
       {
         Draggable: {
@@ -158,9 +133,9 @@ describe('CrmDealBoard', () => {
       }
     );
 
-    const selectors = wrapper.findAll('[data-test="move-deal-stage"]');
-    expect(selectors[0].attributes('disabled')).toBeDefined();
-    expect(selectors[1].attributes('disabled')).toBeUndefined();
+    expect(wrapper.find('[data-test="move-deal-stage"]').exists()).toBe(false);
+    expect(wrapper.find('crm-custom-fields-summary-stub').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('common');
   });
 
   it('truncates long company names and renders the owner as read-only text', () => {
@@ -195,6 +170,9 @@ describe('CrmDealBoard', () => {
     expect(company.classes()).toContain('truncate');
     expect(company.text()).toContain('A company name');
     expect(wrapper.text()).toContain('Alex Owner');
+    const owner = wrapper.find('[data-test="deal-owner"]');
+    expect(owner.classes()).not.toContain('rounded-md');
+    expect(owner.html()).toContain('icon="person"');
     expect(wrapper.emitted('changeOwner')).toBeUndefined();
   });
 

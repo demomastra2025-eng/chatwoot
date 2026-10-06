@@ -35,6 +35,7 @@ import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReas
 import CrmConflictNotice from 'dashboard/components-next/CRM/CrmConflictNotice.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
+import CrmDealFilterChips from 'dashboard/components-next/CRM/CrmDealFilterChips.vue';
 import CrmDealLifecycleActions from 'dashboard/components-next/CRM/CrmDealLifecycleActions.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
 import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
@@ -98,6 +99,7 @@ import {
   filterVisibleBoardStages,
 } from 'dashboard/routes/dashboard/crm/boardVisibility';
 import {
+  amountsAfterDealUpdate,
   canRollbackOptimisticDeal,
   isDealVersionNewer,
   sortDealsForBoard,
@@ -219,6 +221,7 @@ const persistedPreferencesByAccount = useLocalStorage(
 
 const LIST_PAGE_SIZE = 25;
 const BOARD_DEALS_PER_STAGE = 8;
+const defaultDealCurrency = 'KZT';
 
 const filters = reactive({
   aiOnly: false,
@@ -833,24 +836,6 @@ const advancedDealFieldDefinitions = computed(() =>
 );
 
 const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
-const hasActiveDealFilters = computed(
-  () =>
-    hasListSearchQuery.value ||
-    Boolean(
-      filters.aiOnly ||
-        filters.archived ||
-        filters.companyId ||
-        filters.contactId ||
-        filters.dateRange.from ||
-        filters.dateRange.to ||
-        filters.nextAction ||
-        filters.ownerId ||
-        filters.stageId ||
-        filters.teamId ||
-        filters.showInactive ||
-        Object.keys(customFieldFilters.value).length
-    )
-);
 
 const normalizeFilterText = value =>
   String(value || '')
@@ -1109,6 +1094,31 @@ const shouldShowListPagination = computed(
 );
 const hasMoreDeals = computed(() => Boolean(dealsMeta.value.hasMore));
 const stageCounts = computed(() => dealsMeta.value.stageCounts || {});
+const stageAmountsMinor = computed(
+  () => dealsMeta.value.stageAmountsMinor || {}
+);
+const formatAggregateAmounts = amounts => {
+  const entries = Object.entries(amounts || {}).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  if (!entries.length) entries.push([defaultDealCurrency, 0]);
+
+  return entries
+    .map(([currency, amountMinor]) =>
+      formatDealAmount({
+        amount: Number(amountMinor) / 100,
+        currency,
+        locale: localeCode.value,
+      })
+    )
+    .join(' · ');
+};
+const pipelineSummary = computed(() =>
+  t('CRM.DEALS.PIPELINE_SUMMARY', {
+    amount: formatAggregateAmounts(dealsMeta.value.pipelineAmountsMinor),
+    count: Number(dealsMeta.value.totalCount || 0),
+  })
+);
 
 const dealListRowClass = row => [
   row.archivedAt ? 'opacity-75' : '',
@@ -1128,7 +1138,6 @@ const currentUserId = computed(() => {
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
 
-const defaultDealCurrency = 'KZT';
 const dealCurrencyOptions = ['KZT', 'USD', 'EUR', 'RUB'];
 
 const contactHref = contactId => {
@@ -1473,6 +1482,69 @@ const nextActionFilterOptions = computed(() => [
   },
 ]);
 
+const filterOptionLabel = (options, value) =>
+  options.find(option => String(option.value) === String(value))?.label ||
+  `#${value}`;
+
+const customFilterLabel = (definition, values) => {
+  if (isAdvancedFilterableCustomFieldDefinition(definition)) {
+    return buildCustomFieldFilterSummary(
+      definition,
+      values,
+      customFieldFilterLabels.value
+    );
+  }
+
+  const options = buildCustomFieldFilterOptions(
+    definition,
+    customFieldFilterLabels.value
+  );
+  return (Array.isArray(values) ? values : [values])
+    .map(value => filterOptionLabel(options, value))
+    .join(', ');
+};
+
+const activeFilterChips = computed(() => {
+  const chips = [];
+  const add = (key, label) => chips.push({ key, label });
+  if (hasListSearchQuery.value) {
+    add('q', `${t('CRM.FILTERS.SEARCH')}: ${listQuickFilters.q.trim()}`);
+  }
+  if (filters.aiOnly) add('aiOnly', t('CRM.DEALS.AI_ONLY'));
+  if (filters.archived) add('archived', t('CRM.FILTERS.INCLUDE_ARCHIVED'));
+  if (filters.showInactive) {
+    add('showInactive', t('CRM.FILTERS.SHOW_INACTIVE'));
+  }
+  if (filters.dateRange.from || filters.dateRange.to) {
+    const range = [filters.dateRange.from, filters.dateRange.to]
+      .filter(Boolean)
+      .join(' — ');
+    add('dateRange', `${t('CRM.FILTERS.CREATED_AT_RANGE')}: ${range}`);
+  }
+  const choices = [
+    ['nextAction', t('CRM.FILTERS.NEXT_ACTION'), nextActionFilterOptions.value],
+    ['ownerId', t('CRM.DEALS.FORM.OWNER'), ownerOptions.value],
+    ['stageId', t('CRM.DEALS.FORM.STAGE'), filterStageOptions.value],
+    ['contactId', t('CRM.DEALS.FORM.PRIMARY_CONTACT'), contactOptions.value],
+    ['companyId', t('CRM.DEALS.FORM.COMPANY'), companyOptions.value],
+    ['teamId', t('CRM.DEALS.FORM.TEAM'), teamOptions.value],
+  ];
+  choices.forEach(([key, label, options]) => {
+    if (filters[key]) {
+      add(key, `${label}: ${filterOptionLabel(options, filters[key])}`);
+    }
+  });
+  Object.keys(customFieldFilters.value).forEach(key => {
+    const definition = filterableDealFieldDefinitions.value.find(
+      field => field.key === key
+    );
+    if (!definition) return;
+    const summary = customFilterLabel(definition, customFieldFilters.value[key]);
+    add(`custom:${key}`, `${definition.label}: ${summary}`);
+  });
+  return chips;
+});
+
 const crmPrefillKeys = [
   'action',
   'amount',
@@ -1571,6 +1643,22 @@ const upsertDeal = deal => {
     dealsMeta.value = {
       ...dealsMeta.value,
       stageCounts: nextStageCounts,
+    };
+  }
+  if (existingDeal !== nextDeal) {
+    dealsMeta.value = {
+      ...dealsMeta.value,
+      stageAmountsMinor: amountsAfterDealUpdate(
+        dealsMeta.value.stageAmountsMinor,
+        existingDeal,
+        nextDeal,
+        true
+      ),
+      pipelineAmountsMinor: amountsAfterDealUpdate(
+        dealsMeta.value.pipelineAmountsMinor,
+        existingDeal,
+        nextDeal
+      ),
     };
   }
 
@@ -2396,6 +2484,12 @@ const saveDeal = async () => {
     // eslint-disable-next-line no-use-before-define
     deal = await applyDealMutation(deal, { syncSelected: isCurrentEditor });
     if (!isCurrentEditor()) return;
+    if (!wasEditingDeal && currentPresentation.value === 'board') {
+      // The new deal may not match active filters; refresh server totals.
+      // eslint-disable-next-line no-use-before-define
+      await loadDeals({ syncSelected: isCurrentEditor });
+      if (!isCurrentEditor()) return;
+    }
 
     if (isDealVersionNewer(deal, mutationDeal)) {
       dealEditSnapshot.value = rebaseSnapshotLockVersion(
@@ -2872,7 +2966,7 @@ const resetFilters = async () => {
   Object.assign(filters, {
     ...defaults.filters,
     dateRange: { ...defaults.filters.dateRange },
-    pipelineId: resolvePipelineFilterId(defaults.filters.pipelineId),
+    pipelineId: filters.pipelineId,
   });
   customFieldFilters.value = {};
   customFieldFilterDraft.value = {};
@@ -2880,6 +2974,25 @@ const resetFilters = async () => {
   listCurrentPage.value = 1;
   syncFilterDraft();
   closeFilterPopover();
+  await loadDeals();
+};
+
+const removeActiveFilter = async key => {
+  scheduleDealsReload.cancel?.();
+  if (key === 'q') {
+    suppressNextListSearchReload = true;
+    listQuickFilters.q = '';
+  } else if (key.startsWith('custom:')) {
+    const next = { ...customFieldFilters.value };
+    delete next[key.slice(7)];
+    customFieldFilters.value = next;
+  } else if (key === 'dateRange') {
+    filters.dateRange = { from: '', to: '', type: '' };
+  } else if (Object.hasOwn(filters, key)) {
+    filters[key] = typeof filters[key] === 'boolean' ? false : '';
+  }
+  listCurrentPage.value = 1;
+  syncFilterDraft();
   await loadDeals();
 };
 
@@ -3725,21 +3838,29 @@ watch(
         :title="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
       >
         <template #title>
-          <SelectMenu
-            v-if="!isPipelineSelectionPending"
-            :model-value="
-              String(filters.pipelineId || selectedPipeline?.id || '')
-            "
-            :options="pipelineFilterOptions"
-            :label="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
-            size="lg"
-            variant="ghost"
-            trigger-class="!min-w-28 !max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
-            :highlight-trigger="false"
-            sub-menu-align="start"
-            sub-menu-position="bottom"
-            @update:model-value="selectPipelineFilter"
-          />
+          <div v-if="!isPipelineSelectionPending" class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <SelectMenu
+              :model-value="
+                String(filters.pipelineId || selectedPipeline?.id || '')
+              "
+              :options="pipelineFilterOptions"
+              :label="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
+              size="lg"
+              variant="ghost"
+              trigger-class="!min-w-28 !max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
+              :highlight-trigger="false"
+              sub-menu-align="start"
+              sub-menu-position="bottom"
+              @update:model-value="selectPipelineFilter"
+            />
+            <span
+              v-if="!ui.isLoading && !ui.error"
+              class="text-xs font-medium text-n-slate-11"
+              data-test="pipeline-summary"
+            >
+              {{ pipelineSummary }}
+            </span>
+          </div>
           <span
             v-else
             data-test="pipeline-title-loading"
@@ -3755,7 +3876,7 @@ watch(
           />
         </template>
         <template #center>
-          <div ref="filterSearchTriggerRef" class="min-w-64 flex-1">
+          <div ref="filterSearchTriggerRef" class="flex min-w-64 flex-1 items-center gap-2">
             <Input
               size="sm"
               type="search"
@@ -3775,6 +3896,26 @@ watch(
                 />
               </template>
             </Input>
+            <button
+              type="button"
+              class="inline-flex shrink-0 items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium"
+              :class="
+                activeFilterChips.length
+                  ? 'border-n-brand bg-n-brand/10 text-n-brand'
+                  : 'border-n-weak text-n-slate-11'
+              "
+              data-test="deal-filter-button"
+              @click="openFilterDialog"
+            >
+              {{ $t('CRM.FILTERS.TITLE') }}
+              <span
+                v-if="activeFilterChips.length"
+                class="rounded-full bg-n-brand px-1.5 text-[10px] text-white"
+                data-test="active-filter-count"
+              >
+                {{ activeFilterChips.length }}
+              </span>
+            </button>
           </div>
         </template>
         <template #actions>
@@ -3807,6 +3948,13 @@ watch(
           />
         </template>
       </SchedulingPageHeader>
+
+      <CrmDealFilterChips
+        v-if="activeFilterChips.length"
+        :chips="activeFilterChips"
+        @remove="removeActiveFilter"
+        @reset="resetFilters"
+      />
 
       <div
         class="flex-1"
@@ -3853,14 +4001,14 @@ watch(
             :can-manage="canManageDeals"
             :can-reorder="!hasListSearchQuery"
             :deals="boardDeals"
+            :default-currency="defaultDealCurrency"
             :field-definitions="dealFieldDefinitions"
-            :filtered="hasActiveDealFilters"
             :has-more="hasMoreDeals"
             :is-loading-more="ui.isLoadingMore"
             :load-more-failed="ui.isLoadMoreFailed"
             :owners="ownerOptions"
-            :pending-deal-ids="pendingDealStageIds"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
+            :stage-amounts-minor="stageAmountsMinor"
             :stage-counts="stageCounts"
             :stages="visibleBoardStages"
             :sort-direction-labels="boardSortDirectionLabels"

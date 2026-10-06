@@ -29,6 +29,8 @@
     "FILTERS": {
       "APPLY": "Сүзгілерді қолдану",
       "RESET": "Сүзгілерді қалпына келтіру",
+      "RESET_SHORT": "Қалпына келтіру",
+      "REMOVE": "Сүзгіні алып тастау",
       "CLEAR_DATE_RANGE": "Күн аралығын тазарту",
       "CREATED_AT_RANGE": "Құрылған күні",
       "DUE_AT_RANGE": "Тапсырма мерзімі",
@@ -184,6 +186,7 @@
       "EDIT_TITLE": "Мәмілені өңдеу",
       "AI_BADGE": "AI",
       "AI_ONLY": "Тек AI",
+      "PIPELINE_SUMMARY": "Мәмілелер: {count} · {amount}",
       "EMPTY_DESCRIPTION": "Құбырдағы қозғалысты бақылау үшін алғашқы мәмілені құрыңыз.",
       "EMPTY_TITLE": "Әзірге мәмілелер жоқ",
       "BOARD": {

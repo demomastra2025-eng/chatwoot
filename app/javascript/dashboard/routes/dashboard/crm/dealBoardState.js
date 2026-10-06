@@ -101,6 +101,42 @@ export const stageCountsAfterDealMove = (
   return nextCounts;
 };
 
+const dealAmountMinor = deal => {
+  if (!deal?.currency || deal.amountMinor == null) return null;
+  const amount = Number(deal.amountMinor);
+  return Number.isFinite(amount) ? amount : null;
+};
+
+export const amountsAfterDealUpdate = (
+  amounts,
+  previousDeal,
+  nextDeal,
+  byStage = false
+) => {
+  const nextAmounts = Object.fromEntries(
+    Object.entries(amounts || {}).map(([key, value]) => [
+      key,
+      byStage ? { ...value } : value,
+    ])
+  );
+  [
+    [previousDeal, -1],
+    [nextDeal, 1],
+  ].forEach(([deal, direction]) => {
+    const amount = dealAmountMinor(deal);
+    if (amount === null) return;
+    const bucket = byStage
+      ? (nextAmounts[String(deal.stageId)] ||= {})
+      : nextAmounts;
+    bucket[deal.currency] =
+      Number(bucket[deal.currency] || 0) + direction * amount;
+    if (direction < 0 && bucket[deal.currency] === 0) {
+      delete bucket[deal.currency];
+    }
+  });
+  return nextAmounts;
+};
+
 export const dealMatchesCreatedRange = (deal, dateRange = {}) => {
   const createdAt = timestampOrNull(deal?.createdAt);
   if (createdAt === null) return !dateRange.from && !dateRange.to;

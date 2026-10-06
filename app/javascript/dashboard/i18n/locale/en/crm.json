@@ -29,6 +29,8 @@
     "FILTERS": {
       "APPLY": "Apply filters",
       "RESET": "Reset filters",
+      "RESET_SHORT": "Reset",
+      "REMOVE": "Remove filter",
       "CLEAR_DATE_RANGE": "Clear date range",
       "CREATED_AT_RANGE": "Created date",
       "DUE_AT_RANGE": "Due date",
@@ -184,6 +186,7 @@
       "EDIT_TITLE": "Edit deal",
       "AI_BADGE": "AI",
       "AI_ONLY": "Only AI",
+      "PIPELINE_SUMMARY": "Deals: {count} · {amount}",
       "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
       "EMPTY_TITLE": "No deals yet",
       "BOARD": {
