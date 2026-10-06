@@ -405,7 +405,9 @@ RSpec.describe 'CRM Pipelines API', type: :request do
       end
     end
 
-    context 'when the history references are still NOT NULL (schema as created by 20261004120000)' do
+    context 'when the history references are still NOT NULL (a database that created the table before them)' do
+      include_context 'with required crm stage visit references'
+
       it 'answers 422 PIPELINE_HAS_HISTORY instead of a database error and keeps everything' do
         delete "#{path}/#{pipeline.id}", headers: headers, as: :json
 

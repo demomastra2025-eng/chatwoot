@@ -458,7 +458,9 @@ RSpec.describe 'CRM Stages API', type: :request do
       end
     end
 
-    context 'when the history references are still NOT NULL (schema as created by 20261004120000)' do
+    context 'when the history references are still NOT NULL (a database that created the table before them)' do
+      include_context 'with required crm stage visit references'
+
       it 'answers 422 STAGE_HAS_HISTORY instead of a database error and keeps the stage and its history' do
         delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
                headers: headers,

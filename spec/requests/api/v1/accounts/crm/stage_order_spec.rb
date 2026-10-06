@@ -379,23 +379,27 @@ RSpec.describe 'CRM stage draft API', type: :request do
     expect(renamed_stage.reload.name).to eq(original_name)
   end
 
-  it 'rejects the draft with STAGE_HAS_HISTORY when the history references are still NOT NULL' do
-    open_stages = pipeline.stages.where(outcome: 'open').where.not(code: Crm::Stage::TECHNICAL_STAGE_CODES)
-    history_stage = open_stages.where(default: false).first
-    other_stage = open_stages.where.not(id: history_stage.id).first
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: history_stage)
-    create(:crm_stage_visit, deal: deal, stage: history_stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
-    deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
-    draft = stage_draft(pipeline)
-    draft[:deleted_stage_ids] = [history_stage.id]
-    draft[:stages].reject! { |row| row[:id] == history_stage.id }
+  context 'when the history references are still NOT NULL (a database that created the table before them)' do
+    include_context 'with required crm stage visit references'
 
-    submit_stage_draft(draft)
+    it 'rejects the draft with STAGE_HAS_HISTORY' do
+      open_stages = pipeline.stages.where(outcome: 'open').where.not(code: Crm::Stage::TECHNICAL_STAGE_CODES)
+      history_stage = open_stages.where(default: false).first
+      other_stage = open_stages.where.not(id: history_stage.id).first
+      deal = create(:crm_deal, account: account, pipeline: pipeline, stage: history_stage)
+      create(:crm_stage_visit, deal: deal, stage: history_stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
+      deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+      draft = stage_draft(pipeline)
+      draft[:deleted_stage_ids] = [history_stage.id]
+      draft[:stages].reject! { |row| row[:id] == history_stage.id }
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
-    expect(response.parsed_body['error']).to end_with('Изменения не сохранены.')
-    expect(Crm::Stage.exists?(history_stage.id)).to be(true)
+      submit_stage_draft(draft)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
+      expect(response.parsed_body['error']).to end_with('Изменения не сохранены.')
+      expect(Crm::Stage.exists?(history_stage.id)).to be(true)
+    end
   end
 
   context 'when the history references can be detached' do
