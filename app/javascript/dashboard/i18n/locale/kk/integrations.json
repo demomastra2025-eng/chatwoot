@@ -571,7 +571,7 @@
           "TITLE": "Дауыстық AI-агент баптаулары",
           "DESCRIPTION": "Телефон қоңырауларын өңдейтін дауыстық AI-агенттің платформасын, моделін, дауысын және сөйлеу мәнерін баптаңыз.",
           "ACTIVE_RUNTIME": "Белсенді дауыстық платформа",
-          "RUNTIME_NOTE": "Қоңырауларда чаттағыдай агент нұсқаулары, құралдар, білім базасы және операторға аудару ережелері қолданылады. Gemini Live, OpenAI Realtime, ElevenLabs және OpenRouter арқылы Cartesia қолжетімді.",
+          "RUNTIME_NOTE": "Қоңырауларда чаттағыдай агент нұсқаулары, құралдар, білім базасы және операторға аудару ережелері қолданылады. Gemini Live, OpenAI Realtime, ElevenLabs және AI provider арқылы Cartesia қолжетімді.",
           "PROVIDER": "Провайдер",
           "MODEL": "Модель",
           "VOICE": "Дауыс",
@@ -2182,7 +2182,7 @@
         "ZERO_COMPLETION": "Answer recoveries",
         "CONTEXT_TRANSFORMS": "Context transforms",
         "EVENTS_TITLE": "Tool event types",
-        "EVENTS_DESCRIPTION": "Persisted OpenRouter and Captain events related to tool execution.",
+        "EVENTS_DESCRIPTION": "Persisted AI provider and Captain events related to tool execution.",
         "EMPTY": "No tool telemetry for this scope."
       },
       "MODELS_ROUTING": {
@@ -2191,9 +2191,9 @@
         "PROVIDER_FAILURES": "Provider failures",
         "RETRIES": "Retries",
         "MODELS_TITLE": "Models",
-        "MODELS_DESCRIPTION": "Most used OpenRouter models for the current filters.",
+        "MODELS_DESCRIPTION": "Most used AI provider models for the current filters.",
         "PROVIDERS_TITLE": "Providers",
-        "PROVIDERS_DESCRIPTION": "Provider endpoints selected by OpenRouter routing.",
+        "PROVIDERS_DESCRIPTION": "Provider endpoints selected by AI provider routing.",
         "EMPTY": "No model routing data yet."
       },
       "GUARDRAILS": {

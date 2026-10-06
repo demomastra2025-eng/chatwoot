@@ -31,7 +31,7 @@ const PROVIDER_DISPLAY_NAMES = {
   mistralai: 'Mistral',
   gemini: 'Gemini',
   google: 'Google',
-  openrouter: 'OpenRouter',
+  openrouter: 'Поставщик моделей',
   'meta-llama': 'Meta Llama',
   deepseek: 'DeepSeek',
   qwen: 'Qwen',

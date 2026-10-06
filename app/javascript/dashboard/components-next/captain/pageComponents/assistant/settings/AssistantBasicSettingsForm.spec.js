@@ -281,7 +281,6 @@ describe('AssistantBasicSettingsForm', () => {
       'FEATURES.ALLOW_CONVERSATION_FAQS',
       'FEATURES.ALLOW_MEMORIES',
       'FEATURES.ALLOW_NOTES',
-      'FEATURES.ALLOW_CITATIONS',
       'FEATURES.ALLOW_FAQ_LOOKUP',
       'FEATURES.ALLOW_HUMAN_HANDOFF',
     ].forEach(key => {
@@ -373,7 +372,7 @@ describe('AssistantBasicSettingsForm', () => {
     expect(wrapper.emitted('handoffCapabilityChange').at(-1)).toEqual([false]);
   });
 
-  it('keeps a web option that is already on switchable, but not a new one, without a web provider', () => {
+  it('disables both web switches and shows availability beside each without a provider', () => {
     const wrapper = buildWrapper({
       assistant: {
         usage_mode: 'external_agent',
@@ -393,10 +392,9 @@ describe('AssistantBasicSettingsForm', () => {
     const switches = wrapper.findAllComponents({ name: 'Switch' });
     const disabled = switches.map(item => item.props('disabled'));
 
-    // web search is on (stays enabled), page reading is off (disabled until a provider exists)
-    expect(disabled.filter(Boolean)).toHaveLength(1);
-    expect(wrapper.text()).toContain(
-      'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED'
+    expect(disabled.filter(Boolean)).toHaveLength(2);
+    expect(wrapper.text().match(/FEATURES.WEB_PROVIDER_REQUIRED/g)).toHaveLength(
+      2
     );
   });
   it('persists an explicit empty agent scope when all default capability checkboxes are disabled', async () => {

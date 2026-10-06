@@ -603,7 +603,7 @@
           "DESCRIPTION": "Adaptive attacks against the real Captain runtime with judge and trace artifacts."
         },
         "OPENROUTER_CONTRACTS": {
-          "LABEL": "OpenRouter contract",
+          "LABEL": "model provider contract",
           "DESCRIPTION": "Checks tools, structured output, reasoning, routing, privacy, and multimodal requests."
         },
         "RED_TEAM": {
@@ -793,7 +793,7 @@
           "TITLE": "Voice settings",
           "DESCRIPTION": "Configure the realtime voice transport used when this Captain handles phone calls. Secrets stay in runtime environment variables.",
           "ACTIVE_RUNTIME": "Active voice runtime",
-          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Choose Gemini Live, OpenAI Realtime, ElevenLabs, or Cartesia with OpenRouter.",
+          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Choose Gemini Live, OpenAI Realtime, ElevenLabs, or Cartesia through a model provider.",
           "PROVIDER": "Realtime provider",
           "MODEL": "Realtime model",
           "VOICE": "Voice",
@@ -3161,7 +3161,7 @@
         "MODELS_TITLE": "Models",
         "MODELS_DESCRIPTION": "Models actually used in the current filtered window.",
         "PROVIDERS_TITLE": "Providers",
-        "PROVIDERS_DESCRIPTION": "OpenRouter/provider endpoint distribution across events.",
+        "PROVIDERS_DESCRIPTION": "Model provider endpoint distribution across events.",
         "EMPTY": "No model or provider data for the selected scope."
       },
       "GUARDRAILS": {

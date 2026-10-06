@@ -92,9 +92,9 @@ const VOICE_PROVIDER_OPTIONS = Object.freeze([
   { value: 'gemini-live', label: 'Gemini Live' },
   { value: 'openai-live', label: 'OpenAI GPT Live' },
   { value: 'openai-realtime', label: 'OpenAI Realtime' },
-  { value: 'elevenlabs', label: 'ElevenLabs + OpenRouter' },
-  { value: 'cartesia', label: 'Cartesia + OpenRouter' },
-  { value: 'fish', label: 'Fish Audio + OpenRouter' },
+  { value: 'elevenlabs', label: 'ElevenLabs' },
+  { value: 'cartesia', label: 'Cartesia' },
+  { value: 'fish', label: 'Fish Audio' },
 ]);
 
 const VOICE_PROVIDER_PRESETS = Object.freeze({
@@ -153,8 +153,8 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
     voice: 'Xb7hH8MSUJpSbSDYk0k2',
     language: 'ru-KZ',
     models: [
-      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
-      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
     ],
     voices: [{ value: 'Xb7hH8MSUJpSbSDYk0k2', label: 'ElevenLabs default' }],
   },
@@ -163,8 +163,8 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
     voice: '71a7ad14-091c-4e8e-a314-022ece01c121',
     language: 'ru-KZ',
     models: [
-      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
-      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
     ],
     voices: [
       {
@@ -179,9 +179,9 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
     voice: '31f936a9333f4f5a99dcaaf6df091b84',
     language: 'auto',
     models: [
-      { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna (OpenRouter)' },
-      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
-      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+      { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' },
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4' },
     ],
     voices: [],
   },

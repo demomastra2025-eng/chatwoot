@@ -1791,7 +1791,7 @@ export const LOBE_PROVIDER_ICONS = {
     ],
   },
   OpenRouter: {
-    title: 'OpenRouter',
+    title: 'Поставщик моделей',
     viewBox: '0 0 24 24',
     elements: [
       {
@@ -2831,11 +2831,11 @@ export const LOBE_PROVIDER_ALIASES = {
   ollama: 'Ollama',
   'open-ai': 'OpenAI',
   'open-chat': 'OpenChat',
-  'open-router': 'OpenRouter',
+  'open-router': 'Поставщик моделей',
   openai: 'OpenAI',
   'openai-chatgpt': 'OpenAI',
   openchat: 'OpenChat',
-  openrouter: 'OpenRouter',
+  openrouter: 'Поставщик моделей',
   'pa-lm': 'PaLM',
   palm: 'PaLM',
   'palm-google': 'PaLM',

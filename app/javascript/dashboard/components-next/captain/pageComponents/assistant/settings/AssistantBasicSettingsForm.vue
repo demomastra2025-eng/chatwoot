@@ -150,7 +150,7 @@ const assistantModelOptions = computed(() => {
   return [platformDefault, ...options];
 });
 // Web search, page and document reading need the web provider that the platform administrator connects.
-// An option that is already on stays switchable, so that it can still be turned off.
+// Unavailable web capabilities remain disabled until the provider is configured.
 const isWebProviderConfigured = computed(
   () => captainConfigStore.runtimeMetadata?.web_access?.configured === true
 );
@@ -663,20 +663,20 @@ defineExpose({
         </label>
         <label class="flex items-center justify-between gap-3 py-3">
           <span class="text-sm text-n-slate-12">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
-          </span>
-          <Switch v-model="state.features.citations" />
-        </label>
-        <label class="flex items-center justify-between gap-3 py-3">
-          <span class="text-sm text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
             <span class="block text-xs text-n-slate-11">
               {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH_DESCRIPTION') }}
             </span>
+            <span
+              v-if="!isWebProviderConfigured"
+              class="block text-xs text-n-slate-11"
+            >
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
+            </span>
           </span>
           <Switch
             v-model="webSearchEnabled"
-            :disabled="!isWebProviderConfigured && !webSearchEnabled"
+            :disabled="!isWebProviderConfigured"
           />
         </label>
         <label class="flex items-center justify-between gap-3 py-3">
@@ -689,10 +689,16 @@ defineExpose({
                 )
               }}
             </span>
+            <span
+              v-if="!isWebProviderConfigured"
+              class="block text-xs text-n-slate-11"
+            >
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
+            </span>
           </span>
           <Switch
             v-model="webPageReadingEnabled"
-            :disabled="!isWebProviderConfigured && !webPageReadingEnabled"
+            :disabled="!isWebProviderConfigured"
           />
         </label>
         <label class="flex items-center justify-between gap-3 py-3">
@@ -726,12 +732,6 @@ defineExpose({
           </span>
           <Switch v-model="state.features.imageUnderstanding" />
         </label>
-        <p
-          v-if="!isWebProviderConfigured"
-          class="m-0 py-3 text-xs text-n-slate-11"
-        >
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
-        </p>
         <label class="flex items-center justify-between gap-3 py-3">
           <span class="text-sm text-n-slate-12">
             {{ audioTranscriptionsLabel }}
