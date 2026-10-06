@@ -110,6 +110,46 @@ RSpec.describe Telephony::PurgeRetainedRecordingsJob do
     expect(session.recording_ref).to eq(current_key)
   end
 
+  context 'when something fails around the move' do
+    let!(:session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        recording_ref: current_key,
+        metadata: { 'recording' => { 'retained_original' => { 'storage_key' => original_key, 'expires_at' => 1.hour.ago.iso8601 } } }
+      )
+    end
+
+    it 'keeps the trash manifest when only the storage breakdown refresh fails' do
+      allow_any_instance_of(Account).to receive(:storage_breakdown).and_raise(ActiveRecord::StatementInvalid, 'refresh failed') # rubocop:disable RSpec/AnyInstance
+
+      expect(described_class.perform_now).to include(trashed: 1, failed: 0)
+
+      trash = session.reload.metadata.dig('recording', 'retained_original', 'trash')
+      expect(File.read(trash['trash_path'])).to eq('original audio')
+      expect(File.exist?(storage_dir.join('original.wav'))).to be(false)
+      items = Storage::TrashService.new(account: account).list_trash[:items]
+      expect(items).to contain_exactly(include(id: session.id, item_type: 'original_recording'))
+    end
+
+    it 'puts the original back when the transaction does not commit after the move' do
+      allow(Storage::TrashService).to receive(:new).and_wrap_original do |original, **options|
+        original.call(**options).tap do |service|
+          allow(service).to receive(:trash_retained_original!).and_wrap_original do |move, *args|
+            move.call(*args)
+            raise ActiveRecord::StatementInvalid, 'commit failed'
+          end
+        end
+      end
+
+      expect(described_class.perform_now).to include(trashed: 0, failed: 1)
+
+      expect(File.read(storage_dir.join('original.wav'))).to eq('original audio')
+      expect(session.reload.metadata.dig('recording', 'retained_original', 'trash')).to be_nil
+      expect(Storage::TrashService.new(account: account).list_trash[:items]).to be_empty
+    end
+  end
+
   it 'keeps the expired original when the compressed recording is missing' do
     File.delete(storage_dir.join('compressed.mp3'))
     session = create(

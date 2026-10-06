@@ -207,8 +207,7 @@ class Storage::TrashService
   # RETENTION_DAYS and notes it in the call metadata so an administrator can restore it. The caller holds the
   # recording lock and the call session row lock. Returns the moved byte size.
   def trash_retained_original!(session, path)
-    trash_dir = Storage::RecordingPaths.prepare_trash_directory(@account.id)
-    trash_path = trash_dir.join("#{session.id}_retained_#{File.basename(path)}").to_s
+    trash_path = retained_original_trash_path(session, path)
     unless Storage::RecordingPaths.within_account?(trash_path, account_id: @account.id, include_trash: true)
       raise InvalidParams, I18n.t('storage_management.errors.trash_path_rejected')
     end
@@ -222,6 +221,15 @@ class Storage::TrashService
       raise
     end
     byte_size
+  end
+
+  def retained_original_trash_path(session, path)
+    Storage::RecordingPaths.prepare_trash_directory(@account.id).join("#{session.id}_retained_#{File.basename(path)}").to_s
+  end
+
+  # Puts a moved original back when the transaction that publishes its trash manifest did not commit.
+  def undo_retained_original_move(path, trash_path)
+    move_file_exclusively(trash_path, path.to_s) if File.exist?(trash_path) && !File.exist?(path.to_s)
   end
 
   private

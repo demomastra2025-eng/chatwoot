@@ -42,6 +42,7 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
     return :skipped if expected_key.blank?
 
     result = :skipped
+    moved = nil
     Storage::RecordingLock.synchronize(account_id: session.account_id, storage_keys: [expected_key]) do
       session.with_lock do
         session.reload
@@ -60,14 +61,31 @@ class Telephony::PurgeRetainedRecordingsJob < ApplicationJob
         next if Storage::RecordingPaths.same_physical_file?(key, session.recording_ref, account_id: session.account_id)
         next if retained_original_referenced?(session, key, path)
 
-        Storage::TrashService.new(account: session.account).trash_retained_original!(session, path)
-        session.account.storage_breakdown(force_refresh: true)
+        trash_service = Storage::TrashService.new(account: session.account)
+        moved = { service: trash_service, original_path: path.to_s, trash_path: trash_service.retained_original_trash_path(session, path) }
+        trash_service.trash_retained_original!(session, path)
         result = :trashed
       end
     end
+    refresh_storage_breakdown(session) if result == :trashed
     result
   rescue ActiveRecord::RecordNotFound
     :skipped
+  rescue StandardError
+    # The file moved before the transaction that publishes its trash manifest ended: when that transaction did not
+    # commit, put the original back so it is not orphaned in the trash without a way to restore it.
+    if moved && session.reload.metadata.to_h.dig('recording', 'retained_original', 'trash').blank?
+      moved[:service].undo_retained_original_move(moved[:original_path], moved[:trash_path])
+    end
+    raise
+  end
+
+  # The breakdown is a cache that only follows the trash move. It runs after the commit, so a failing refresh can
+  # neither roll the manifest back nor leave the file moved without one.
+  def refresh_storage_breakdown(session)
+    session.account.storage_breakdown(force_refresh: true)
+  rescue StandardError => e
+    Rails.logger.warn("[PurgeRetainedRecordingsJob] Storage breakdown refresh failed: #{e.class.name}")
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
