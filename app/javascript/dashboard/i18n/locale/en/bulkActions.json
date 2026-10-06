@@ -11,6 +11,7 @@
       "FAILED": "Could not select conversations with the current filters. Refresh the list and try again."
     },
     "CLOSE_CONFIRMATION": {
+      "SEARCH_CAPPED": "Найдено больше, чем показано: будут выбраны первые {count}.",
       "TITLE": "Close selected conversations?",
       "DESCRIPTION": "Conversations to close: {count}.",
       "CONFIRM": "Close"

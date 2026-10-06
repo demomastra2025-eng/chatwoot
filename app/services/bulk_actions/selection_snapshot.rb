@@ -91,12 +91,29 @@ class BulkActions::SelectionSnapshot
   private
 
   def selected_records
-    records = matching_scope.except(:order, :limit, :offset).reorder(nil).distinct
-                            .limit(MAX_SELECTION_SIZE + 1).pluck(:id, :display_id)
+    records = if @filters[:q].present?
+                search_records
+              else
+                matching_scope.except(:order, :limit, :offset).reorder(nil).distinct
+                              .limit(MAX_SELECTION_SIZE + 1).pluck(:id, :display_id)
+              end
     raise TooManyRecords, MAX_SELECTION_SIZE if records.size > MAX_SELECTION_SIZE
     raise EmptySelection if records.empty?
 
     records
+  end
+
+  def search_records
+    validate_filter_keys!
+    validate_search_filters!
+    service = if @resource_type == 'Conversation'
+                Conversations::ListSearchService
+              else
+                CommunicationThreads::ListSearchService
+              end
+    ids = service.new(user: @user, account: @account, params: { q: @filters[:q] }).matching_ids
+    scope = @resource_type == 'Conversation' ? @account.conversations : CommunicationThread.where(account_id: @account.id)
+    scope.where(id: ids).limit(MAX_SELECTION_SIZE + 1).pluck(:id, :display_id)
   end
 
   def build_selection(records)
@@ -134,7 +151,7 @@ class BulkActions::SelectionSnapshot
 
     raise InvalidFilters unless @filters[:q].is_a?(String)
     raise InvalidFilters if @filters[:mode] == 'advanced'
-    raise InvalidFilters if @resource_type == 'CommunicationThread'
+    raise InvalidFilters if Search::QueryText.clean(@filters[:q]).length < Search::ConversationLookup::MIN_TEXT_LENGTH
   end
 
   def validate_filter_keys!

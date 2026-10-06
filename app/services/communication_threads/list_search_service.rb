@@ -29,11 +29,16 @@ class CommunicationThreads::ListSearchService
   end
 
   def perform
-    page = CommunicationThread.where(account_id: @account.id, id: thread_ids).includes(*LIST_INCLUDES)
+    page = CommunicationThread.where(account_id: @account.id, id: matching_ids).includes(*LIST_INCLUDES)
                               .order(CommunicationThread.arel_table[:last_activity_at].desc.nulls_last, id: :desc)
                               .page(current_page).per(PER_PAGE)
 
     { communication_threads: page, count: count_for(page) }
+  end
+
+  # Keep snapshot selection on the same bounded set as the list endpoint.
+  def matching_ids
+    @matching_ids ||= thread_ids
   end
 
   private

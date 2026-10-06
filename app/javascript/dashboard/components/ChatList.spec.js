@@ -4,6 +4,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ChatList from './ChatList.vue';
 import { SERVER_SEARCH_DELAY } from 'dashboard/composables/chatlist/useConversationListSearch';
 
+const ConversationBulkActionsStub = {
+  name: 'ConversationBulkActions',
+  props: [
+    'canSelectAllMatching',
+    'selectedCount',
+    'selectionVersion',
+    'selectionContextKey',
+    'allConversationsSelected',
+    'selectableConversationsCount',
+    'selectedInboxes',
+    'isSelectingAll',
+    'isSearchCapped',
+    'showOpenAction',
+    'showResolvedAction',
+    'showSnoozedAction',
+  ],
+  emits: ['selectAllMatching'],
+  template: '<div />',
+};
+
 const ACCOUNT_ID = 1;
 
 const mocks = vi.hoisted(() => ({
@@ -17,6 +37,14 @@ const mocks = vi.hoisted(() => ({
     pipelines: [],
     ui: { isLoadingPipelines: false },
     loadPipelines: vi.fn(() => Promise.resolve()),
+  },
+  appliedFilters: [],
+  savedFolders: [],
+  bulkMatchingSelectionRef: null,
+  conversationStats: { allCount: 30, mineCount: 0, unAssignedCount: 0 },
+  bulkSelectionIds: [],
+  bulkActionMethods: {
+    selectAllMatching: vi.fn(),
   },
 }));
 
@@ -45,14 +73,24 @@ vi.mock('dashboard/composables/chatlist/useChatListKeyboardEvents', () => ({
 }));
 
 vi.mock('dashboard/composables/chatlist/useBulkActions', async () => {
-  const { ref } = await import('vue');
+  const { computed, ref } = await import('vue');
+  const selectedConversations = ref([...mocks.bulkSelectionIds]);
+  const allMatchingSelection = ref(null);
+  mocks.bulkSelectedRef = selectedConversations;
+  mocks.bulkMatchingSelectionRef = allMatchingSelection;
   return {
     useBulkActions: () => ({
-      selectedConversations: ref([]),
+      selectedConversations,
+      selectedCount: computed(() => selectedConversations.value.length),
       selectedInboxes: ref([]),
+      allMatchingSelection,
+      isSelectingAll: ref(false),
+      selectionVersion: ref(0),
       selectConversation: vi.fn(),
       deSelectConversation: vi.fn(),
       selectAllConversations: vi.fn(),
+      selectAllMatching: mocks.bulkActionMethods.selectAllMatching,
+      setSelectionContext: vi.fn(),
       resetBulkActions: vi.fn(),
       isConversationSelected: vi.fn(() => false),
       onAssignAgent: vi.fn(),
@@ -128,10 +166,10 @@ const buildStore = () => ({
     getChatListLoadingStatus: false,
     getChatListLoadingError: null,
     getSelectedInbox: null,
-    'conversationStats/getStats': {},
+    'conversationStats/getStats': mocks.conversationStats,
     getConversationSidebarUnreadCounts: {},
-    getAppliedConversationFiltersV2: [],
-    'customViews/getConversationCustomViews': [],
+    getAppliedConversationFiltersV2: mocks.appliedFilters,
+    'customViews/getConversationCustomViews': mocks.savedFolders,
     'agents/getAgents': [],
     'teams/getTeams': [],
     'inboxes/getInboxes': [],
@@ -163,17 +201,27 @@ const storePlugin = store => ({
   },
 });
 
-const mountChatList = async query => {
+const mountChatList = async (query, componentProps = {}) => {
   mocks.route = {
     name: 'home',
     path: `/app/accounts/${ACCOUNT_ID}/dashboard`,
     params: { accountId: String(ACCOUNT_ID) },
     query,
   };
+  if (mocks.bulkSelectedRef) {
+    mocks.bulkSelectedRef.value = [...mocks.bulkSelectionIds];
+  }
+  if (mocks.bulkMatchingSelectionRef) {
+    mocks.bulkMatchingSelectionRef.value = null;
+  }
   const store = buildStore();
   const wrapper = shallowMount(ChatList, {
+    props: componentProps,
     global: {
       plugins: [storePlugin(store)],
+      stubs: {
+        ConversationBulkActions: ConversationBulkActionsStub,
+      },
     },
   });
   await flushPromises();
@@ -199,6 +247,18 @@ describe('ChatList', () => {
     mocks.crmStore.pipelines = [];
     mocks.crmStore.ui.isLoadingPipelines = false;
     mocks.crmStore.loadPipelines = vi.fn(() => Promise.resolve());
+    mocks.appliedFilters = [];
+    mocks.savedFolders = [];
+    if (mocks.bulkMatchingSelectionRef) {
+      mocks.bulkMatchingSelectionRef.value = null;
+    }
+    mocks.conversationStats = {
+      allCount: 30,
+      mineCount: 0,
+      unAssignedCount: 0,
+    };
+    mocks.bulkSelectionIds = [];
+    mocks.bulkActionMethods.selectAllMatching.mockClear();
   });
 
   describe('assignee list', () => {
@@ -628,6 +688,60 @@ describe('ChatList', () => {
         listRequestsBefore
       );
       expect(lastListFilters(store)).toEqual(filtersBefore);
+    });
+
+    it('shows select all for the server count only after search returns', async () => {
+      mocks.bulkSelectionIds = [12];
+      const { wrapper } = await mountForSearch();
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+
+      wrapper
+        .findComponent({ name: 'ChatListHeader' })
+        .vm.$emit('update:localSearchQuery', 'пациент');
+      await flushPromises();
+      expect(bulkActions.props('canSelectAllMatching')).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(SERVER_SEARCH_DELAY);
+      await flushPromises();
+      expect(bulkActions.props('canSelectAllMatching')).toBe(true);
+      expect(bulkActions.props('selectableConversationsCount')).toBe(2);
+
+      bulkActions.vm.$emit('selectAllMatching');
+      expect(mocks.bulkActionMethods.selectAllMatching).toHaveBeenCalledWith(
+        { mode: 'basic', q: 'пациент' },
+        'Conversation',
+        expect.any(String)
+      );
+    });
+
+    it('shows the capped server count for a thread search', async () => {
+      mocks.bulkSelectionIds = [12];
+      const { wrapper, store } = await mountChatList(
+        { status: 'open' },
+        { communicationThreadMode: true }
+      );
+      store.dispatch.mockImplementation(name =>
+        Promise.resolve(
+          name === 'fetchListSearchResults'
+            ? searchResponse([4], { total_count: 2, capped: true })
+            : undefined
+        )
+      );
+
+      await typeSearch(wrapper, 'пациент');
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+      expect(bulkActions.props('canSelectAllMatching')).toBe(true);
+      expect(bulkActions.props('selectableConversationsCount')).toBe(2);
+      bulkActions.vm.$emit('selectAllMatching');
+      expect(mocks.bulkActionMethods.selectAllMatching).toHaveBeenCalledWith(
+        { mode: 'basic', q: 'пациент' },
+        'CommunicationThread',
+        expect.any(String)
+      );
     });
 
     it('marks the count as approximate when the search was cut at its limit', async () => {

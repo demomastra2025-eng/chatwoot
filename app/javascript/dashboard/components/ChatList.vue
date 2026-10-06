@@ -301,6 +301,7 @@ const {
   isActive: isServerSearch,
   results: serverSearchResults,
   total: serverSearchTotal,
+  hasCount: hasServerSearchCount,
   isCapped: isServerSearchCapped,
   isPartial: isServerSearchPartial,
   hasMore: serverSearchHasMore,
@@ -895,7 +896,7 @@ const totalConversationCount = computed(() => {
 });
 
 const bulkSelectionFilters = computed(() => {
-  if (hasLocalSearch.value) {
+  if (isServerSearch.value) {
     return { mode: 'basic', q: localSearchQuery.value.trim() };
   }
 
@@ -959,10 +960,13 @@ const bulkSelectionContextKey = computed(() =>
 
 const canSelectAllMatching = computed(
   () =>
-    !hasLocalSearch.value &&
+    (!hasLocalSearch.value ||
+      (isServerSearch.value && hasServerSearchCount.value)) &&
     !allMatchingSelection.value &&
     selectedConversations.value.length > 0 &&
-    totalConversationCount.value > selectedConversations.value.length
+    (isServerSearch.value
+      ? serverSearchTotal.value
+      : totalConversationCount.value) > selectedConversations.value.length
 );
 
 const isInitialListLoading = computed(() =>
@@ -2234,7 +2238,12 @@ watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
       :selection-version="selectionVersion"
       :selection-context-key="bulkSelectionContextKey"
       :all-conversations-selected="allConversationsSelected"
-      :selectable-conversations-count="totalConversationCount"
+      :selectable-conversations-count="
+        isServerSearch ? serverSearchTotal : totalConversationCount
+      "
+      :is-search-capped="
+        isServerSearch && isServerSearchCapped && !!allMatchingSelection
+      "
       :selected-inboxes="uniqueInboxes"
       :can-select-all-matching="canSelectAllMatching"
       :is-selecting-all="isSelectingAll"

@@ -3,7 +3,7 @@
     "CONVERSATIONS_SELECTED": "Выбрано: {conversationCount}",
     "NONE": "Ничего",
     "CLEAR_SELECTION": "Очистить",
-    "SELECT_ALL_MATCHING": "Выбрать все совпавшие диалоги: {count}",
+    "SELECT_ALL_MATCHING": "Выбрать все {count} совпавших диалогов",
     "SELECT_ALL": {
       "LIMIT": "За одно действие можно выбрать не более {count} диалогов.",
       "EMPTY": "Нет диалогов, подходящих под текущие фильтры.",
@@ -13,6 +13,7 @@
     "CLOSE_CONFIRMATION": {
       "TITLE": "Закрыть выбранные диалоги?",
       "DESCRIPTION": "Будет закрыто диалогов: {count}.",
+      "SEARCH_CAPPED": "Найдено больше, чем показано: будут выбраны первые {count}.",
       "CONFIRM": "Закрыть"
     },
     "AGENT_SELECT_LABEL": "Выбрать сотрудника",

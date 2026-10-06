@@ -19,11 +19,15 @@ class Conversations::ListSearchService
   end
 
   def perform
-    ids = lookup.conversation_ids
-    page = access.conversations.where(id: ids).includes(*LIST_INCLUDES)
+    page = access.conversations.where(id: matching_ids).includes(*LIST_INCLUDES)
                  .sort_on_last_activity_at(:desc).order(id: :desc).page(current_page).per(PER_PAGE)
 
     { conversations: page, meta: meta_for(page) }
+  end
+
+  # The selection snapshot uses these same bounded, permission-scoped matches.
+  def matching_ids
+    @matching_ids ||= lookup.conversation_ids
   end
 
   private

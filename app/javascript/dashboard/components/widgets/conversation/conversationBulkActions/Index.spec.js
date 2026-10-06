@@ -320,6 +320,21 @@ describe('ConversationBulkActions Index', () => {
     );
   });
 
+  it('explains the cap alongside the exact close count for a search snapshot', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 2, isSearchCapped: true });
+
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+
+    expect(wrapper.findComponent(DialogStub).props('description')).toBe(
+      'BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION{"count":2} BULK_ACTION.CLOSE_CONFIRMATION.SEARCH_CAPPED{"count":2}'
+    );
+    expect(wrapper.emitted('updateConversations')).toBeUndefined();
+  });
+
   it('requires confirmation when closing one selected conversation', async () => {
     isUpdating = false;
     const wrapper = mountComponent({ selectedCount: 1 });

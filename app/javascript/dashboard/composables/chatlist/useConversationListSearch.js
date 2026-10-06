@@ -12,6 +12,7 @@ export function useConversationListSearch({ query, communicationThreadMode }) {
   const store = useStore();
   const found = ref([]);
   const total = ref(0);
+  const hasCount = ref(false);
   const isCapped = ref(false);
   // The search of the message text ran out of time: the contacts and numbers are found, the text is incomplete.
   const isPartial = ref(false);
@@ -41,6 +42,7 @@ export function useConversationListSearch({ query, communicationThreadMode }) {
     requestId += 1;
     found.value = [];
     total.value = 0;
+    hasCount.value = false;
     isCapped.value = false;
     isPartial.value = false;
     hasMore.value = false;
@@ -71,6 +73,7 @@ export function useConversationListSearch({ query, communicationThreadMode }) {
         ? conversations
         : [...found.value, ...conversations];
       total.value = Number(meta.total_count || 0);
+      hasCount.value = true;
       isCapped.value = Boolean(meta.capped);
       isPartial.value = Boolean(meta.partial);
       const perPage = Number(meta.per_page || conversations.length || 1);
@@ -124,6 +127,7 @@ export function useConversationListSearch({ query, communicationThreadMode }) {
     isActive,
     results,
     total,
+    hasCount,
     isCapped,
     isPartial,
     hasMore,

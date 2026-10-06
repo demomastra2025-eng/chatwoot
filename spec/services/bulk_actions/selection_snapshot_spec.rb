@@ -303,6 +303,52 @@ RSpec.describe BulkActions::SelectionSnapshot do
     expect(selection.ids).to eq([matching.display_id])
   end
 
+  it 'uses the same capped search set and excludes inaccessible inboxes and accounts' do
+    stub_const('Search::ConversationLookup::CONVERSATION_LIMIT', 1)
+    contact = create(:contact, account: account, name: 'Пациент Проверка')
+    first = create(:conversation, account: account, inbox: inbox, contact: contact, status: :open)
+    second = create(:conversation, account: account, inbox: inbox, contact: contact, status: :resolved)
+    create(:conversation, account: account, inbox: create(:inbox, account: account), contact: contact)
+    foreign_account = create(:account)
+    create(:conversation, account: foreign_account, inbox: create(:inbox, account: foreign_account),
+                          contact: create(:contact, account: foreign_account, name: 'Пациент Проверка'))
+
+    search = Conversations::ListSearchService.new(user: user, account: account, params: { q: 'Пациент Проверка' }).perform
+    selection = create_snapshot(filters: { mode: 'basic', q: 'Пациент Проверка' })
+
+    expect(search[:meta]).to include(total_count: 1, capped: true)
+    expect(selection.record_ids).to eq(search[:conversations].map(&:id))
+    expect(selection.record_ids).to all(be_in([first.id, second.id]))
+    expect(selection.count).to eq(1)
+  end
+
+  it 'uses the thread list search scope for a thread snapshot' do
+    account.enable_features!('communication_threads')
+    visible = create_thread_in(inbox)
+    hidden = create_thread_in(create(:inbox, account: account))
+    visible.contact.update!(name: 'Пациент Проверка')
+    hidden.contact.update!(name: 'Пациент Проверка')
+
+    selection = create_snapshot(resource_type: 'CommunicationThread', filters: { mode: 'basic', q: 'Пациент Проверка' })
+
+    expect(selection.record_ids).to eq([visible.id])
+  end
+
+  it 'keeps custom-role restrictions in the search snapshot' do
+    role = create(:custom_role, account: account, permissions: ['conversation_participating_manage'])
+    user.account_users.find_by(account: account).update!(custom_role: role)
+    visible = create(:conversation, account: account, inbox: inbox, assignee: user)
+    hidden = create(:conversation, account: account, inbox: inbox)
+    [visible, hidden].each do |conversation|
+      create(:message, account: account, inbox: inbox, conversation: conversation,
+                       message_type: :incoming, content: 'Проверка доступа к выбору')
+    end
+
+    selection = create_snapshot(filters: { mode: 'basic', q: 'Проверка доступа к выбору' })
+
+    expect(selection.record_ids).to eq([visible.id])
+  end
+
   it 'rejects an unsupported search key instead of widening the selection' do
     expect do
       create_snapshot(filters: { mode: 'basic', query: 'needle' })

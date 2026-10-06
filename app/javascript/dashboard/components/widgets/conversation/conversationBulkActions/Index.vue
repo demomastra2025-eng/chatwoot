@@ -43,6 +43,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isSearchCapped: {
+    type: Boolean,
+    default: false,
+  },
   isSelectingAll: {
     type: Boolean,
     default: false,
@@ -415,7 +419,10 @@ onUnmounted(() => {
     :description="
       $t('BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION', {
         count: selectedCount,
-      })
+      }) +
+      (isSearchCapped
+        ? ` ${$t('BULK_ACTION.CLOSE_CONFIRMATION.SEARCH_CAPPED', { count: selectedCount })}`
+        : '')
     "
     :confirm-button-label="$t('BULK_ACTION.CLOSE_CONFIRMATION.CONFIRM')"
     @confirm="confirmClose"
