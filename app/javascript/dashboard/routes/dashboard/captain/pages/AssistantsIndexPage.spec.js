@@ -138,6 +138,4 @@ describe('AssistantsIndexPage', () => {
       replace: true,
     });
   });
-
-
 });

@@ -91,7 +91,8 @@ export default {
       return action?.label;
     },
     createTouchLabel() {
-      return this.actionTypes.find(action => action.key === 'create_touch')?.label;
+      return this.actionTypes.find(action => action.key === 'create_touch')
+        ?.label;
     },
     inputType() {
       const actionType = this.actionTypes.find(
@@ -152,7 +153,10 @@ export default {
     >
       <div class="flex items-center gap-2">
         <template v-if="isLegacyPlanAction">
-          <span data-testid="legacy-plan-action" class="text-sm text-n-slate-11">
+          <span
+            data-testid="legacy-plan-action"
+            class="text-sm text-n-slate-11"
+          >
             {{ legacyActionLabel }}
           </span>
           <NextButton

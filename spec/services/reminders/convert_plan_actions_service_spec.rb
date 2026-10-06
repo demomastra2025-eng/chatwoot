@@ -38,7 +38,7 @@ RSpec.describe Reminders::ConvertPlanActionsService do
     expect(actions.pluck('action_name')).to eq(%w[create_touch create_touch add_label])
     expect(actions.first(2).map { |action| action['action_params'].first['body'] }).to eq(steps.pluck(:body))
     expect(actions.first(2).map { |action| action['action_params'].first['delay_minutes'] }).to eq([10, 60])
-    expect(actions.first(2).map { |action| action['action_params'].first }).to all(exclude('step_id'))
+    expect(actions.first(2).map { |action| action['action_params'].first }).to all(satisfy { |step| !step.key?('step_id') })
     expect(actions.last['action_id']).to eq('other-action')
 
     task.reenable

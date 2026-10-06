@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { h, ref } from 'vue';
+import { h } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import TaskSettings from './TaskSettings.vue';

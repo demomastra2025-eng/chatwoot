@@ -39,7 +39,9 @@ describe('AutomationActionInput', () => {
     expect(wrapper.find('[data-testid="legacy-plan-action"]').text()).toBe(
       'Legacy touch plan'
     );
-    expect(wrapper.findComponent({ name: 'SingleSelect' }).exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'SingleSelect' }).exists()).toBe(
+      false
+    );
 
     wrapper.vm.onActionNameChange({ id: 'create_touch' });
     expect(wrapper.emitted('update:modelValue')[0][0].action_name).toBe(
@@ -52,14 +54,20 @@ describe('AutomationActionInput', () => {
     expect(optionsFor('apply_touch_plan')).toEqual([
       { id: 'create_touch', name: 'Create touch' },
     ]);
-    expect(AutomationActionInput.computed.isLegacyPlanAction.call({
-      action_name: 'apply_touch_plan',
-    })).toBe(true);
-    expect(AutomationActionInput.computed.legacyActionLabel.call({
-      actionTypes,
-    })).toBe('Legacy touch plan');
-    expect(AutomationActionInput.computed.createTouchLabel.call({
-      actionTypes,
-    })).toBe('Create touch');
+    expect(
+      AutomationActionInput.computed.isLegacyPlanAction.call({
+        action_name: 'apply_touch_plan',
+      })
+    ).toBe(true);
+    expect(
+      AutomationActionInput.computed.legacyActionLabel.call({
+        actionTypes,
+      })
+    ).toBe('Legacy touch plan');
+    expect(
+      AutomationActionInput.computed.createTouchLabel.call({
+        actionTypes,
+      })
+    ).toBe('Create touch');
   });
 });

@@ -92,7 +92,6 @@ const saveSchedulingSettings = async () => {
               </div>
               <Switch v-model="schedulingCompanyEnabled" />
             </div>
-
           </div>
 
           <div>
