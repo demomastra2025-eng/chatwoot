@@ -27,12 +27,12 @@ Object.entries(fixture).forEach(([selector, expected]) => {
   }
 
   const declarations = new Map();
-  for (const match of block[2].matchAll(/^    (--[\w-]+): ([^;]+);$/gm)) {
+  [...block[2].matchAll(/^    (--[\w-]+): ([^;]+);$/gm)].forEach(match => {
     if (declarations.has(match[1])) {
       errors.push(`Duplicate ${selector} ${match[1]}`);
     }
     declarations.set(match[1], match[2]);
-  }
+  });
   Object.entries(expected).forEach(([name, value]) => {
     if (declarations.get(name) !== value) {
       errors.push(
