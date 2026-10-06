@@ -92,7 +92,6 @@ class Scheduling::Appointments::UpsertService
       appointment.save!
       capture_provider_receipt_service!(new_record)
       notify_assignment!(new_record: new_record)
-      auto_apply_default_touch_plan! if new_record
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
@@ -782,14 +781,6 @@ class Scheduling::Appointments::UpsertService
     return current.to_i unless params.key?(key)
 
     Scheduling::IntegerNumericNormalizer.normalize_or_zero(params[key], field_name: key)
-  end
-
-  def auto_apply_default_touch_plan!
-    Reminders::DefaultPlanService.new(
-      account: account,
-      remindable: appointment,
-      actor: actor
-    ).perform
   end
 
   def notify_assignment!(new_record:)

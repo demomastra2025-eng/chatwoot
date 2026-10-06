@@ -20,19 +20,6 @@ class Captain::Tools::Copilot::UpdateWorkspaceProfileService < Captain::Tools::C
   param :auto_resolve_label, type: :string, desc: 'Optional label to apply when auto-resolving. Empty string clears the value', required: false
   param :scheduling_contact_required, type: :boolean, desc: 'Optional scheduling setting: require contact on appointment records', required: false
   param :scheduling_company_enabled, type: :boolean, desc: 'Optional scheduling setting: enable company on appointment records', required: false
-  param :default_appointment_touch_plan_id,
-        type: :number,
-        desc: 'Optional default touch-plan ID for appointments. Empty value clears the setting',
-        required: false
-  param :default_deal_touch_plan_id,
-        type: :number,
-        desc: 'Optional default touch-plan ID for deals. Empty value clears the setting',
-        required: false
-  param :default_task_touch_plan_id,
-        type: :number,
-        desc: 'Optional default touch-plan ID for tasks. Empty value clears the setting',
-        required: false
-
   def execute(**kwargs)
     ensure_account_administrator!
 

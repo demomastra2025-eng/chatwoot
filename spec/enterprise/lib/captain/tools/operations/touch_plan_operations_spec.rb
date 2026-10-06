@@ -136,46 +136,5 @@ RSpec.describe Captain::Tools::Operations::TouchOperations do
       expect(pending_touch.metadata['cancelled_reason']).to eq('отменен капитаном')
     end
   end
-
-  describe '#create_touch_plan' do
-    it 'creates a reusable touch plan with normalized touch definitions' do
-      touch_plan = operation.create_touch_plan(
-        name: 'Conversation nurture',
-        entity_kinds: ['conversation'],
-        touches: [conversation_touch_definition]
-      )
-
-      expect(touch_plan).to be_persisted
-      expect(touch_plan.creator).to eq(user)
-      expect(touch_plan.entity_kinds).to eq(['conversation'])
-      expect(touch_plan.touches.first).to include('body' => 'Plan follow-up', 'relative_anchor' => 'conversation.created_at')
-    end
-  end
-
-  describe '#apply_touch_plan' do
-    it 'applies an existing touch plan to the current conversation by name' do
-      touch_plan = create(:reminder_group, account: account, name: 'Conversation nurture', entity_kinds: ['conversation'],
-                                           touches: [conversation_touch_definition])
-
-      result = operation.apply_touch_plan(touch_plan_name: 'conversation nurture')
-      touches = result.touches
-
-      expect(touches.size).to eq(1)
-      expect(touches.first.remindable).to eq(conversation)
-      expect(touches.first.reminder_group).to eq(touch_plan)
-      expect(touches.first.metadata).to include('touch_source' => 'captain', 'captain_touch_plan_id' => touch_plan.id)
-    end
-  end
-
-  describe '#archive_touch_plan' do
-    it 'soft archives an existing touch plan' do
-      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'], touches: [conversation_touch_definition])
-
-      result = operation.archive_touch_plan(touch_plan_id: touch_plan.id)
-
-      expect(result.reload).not_to be_active
-      expect(result.archived_at).to be_present
-    end
-  end
 end
 # rubocop:enable RSpec/SpecFilePathFormat

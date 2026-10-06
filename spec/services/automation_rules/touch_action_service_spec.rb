@@ -9,6 +9,23 @@ RSpec.describe AutomationRules::TouchActionService do
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox) }
   let(:service) { described_class.new(rule: rule, account: account, record: conversation, entity_kind: 'conversation') }
 
+  describe '#apply_touch_plan' do
+    it 'still enrolls an existing legacy automation action' do
+      account.enable_features!('deferred_touch_materialization', 'scheduling')
+      appointment = create(:scheduling_appointment, account: account, starts_at: 1.day.from_now)
+      group = create(:reminder_group, account: account)
+      legacy_rule = build(:automation_rule, account: account, event_name: 'appointment_created',
+                                            conditions: [], actions: [{ action_name: 'apply_touch_plan',
+                                                                        action_params: [group.id] }])
+      legacy_rule.save!(validate: false)
+      action_service = described_class.new(rule: legacy_rule, account: account, record: appointment,
+                                           entity_kind: 'appointment')
+
+      expect(action_service.apply_touch_plan([group.id])).to eq([])
+      expect(account.touch_plan_enrollments.find_by(remindable: appointment, reminder_group: group)).to be_present
+    end
+  end
+
   describe '#create_touch' do
     it 'routes an explicit cross-inbox touch without inheriting source delivery associations' do
       target_inbox = create(:inbox, account: account)

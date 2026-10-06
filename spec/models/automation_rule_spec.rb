@@ -197,6 +197,19 @@ RSpec.describe AutomationRule do
       expect(rule.reload.actions.pluck('action_name')).to eq(%w[create_touch create_touch])
     end
 
+    it 'allows removing a plan action while retaining an unchanged legacy cancellation' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      legacy_actions = [
+        { action_name: 'apply_touch_plan', action_params: [touch_plan.id] },
+        { action_name: 'cancel_touches', action_params: [{ reminder_group_id: touch_plan.id }] }
+      ]
+      rule = FactoryBot.build(:automation_rule, params.merge(actions: legacy_actions))
+      rule.save!(validate: false)
+
+      expect(rule.update(actions: [rule.actions.last])).to be(true)
+      expect(rule.reload.actions.pluck('action_name')).to eq(['cancel_touches'])
+    end
+
     it 'allows explicit migration from plan-scoped to plan-independent cancellation' do
       touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
       params[:actions] = [

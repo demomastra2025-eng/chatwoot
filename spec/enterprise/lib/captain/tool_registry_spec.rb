@@ -7,6 +7,7 @@ RSpec.describe Captain::ToolRegistry do
       assistant_tool_ids = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
 
       expect(agent_tool_ids - assistant_tool_ids).to be_empty
+      expect(assistant_tool_ids).not_to include('create_touch_plan', 'apply_touch_plan', 'archive_touch_plan')
       expect(assistant_tool_ids).to include(
         'list_captain_assistants',
         'get_captain_assistant',
@@ -43,9 +44,6 @@ RSpec.describe Captain::ToolRegistry do
         'cancel_touch',
         'delete_touch',
         'cancel_touches',
-        'create_touch_plan',
-        'apply_touch_plan',
-        'archive_touch_plan',
         'list_channel_templates',
         'list_scheduling_resources',
         'search_scheduling_resources',

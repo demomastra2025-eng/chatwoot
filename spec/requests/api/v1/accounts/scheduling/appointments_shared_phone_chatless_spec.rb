@@ -55,22 +55,36 @@ RSpec.describe 'Chatless appointments of a family number', type: :request do
     [contact_inbox, conversation]
   end
 
-  def book!(owner, phone: family)
+  def book!(owner, phone: family, reminder_body: nil)
     post path, params: { resource_id: resource.id, contact_id: owner.id, service_id: service.id, starts_at: booking_day.iso8601,
                          ends_at: (booking_day + 30.minutes).iso8601, client_first_name: 'Child', client_last_name: 'Patient',
                          client_name: 'Child Patient', client_phone: phone, service_amount: 20_000, client_identifier: child_iin,
                          custom_attributes: { medelement_cabinet_code: 'cabinet-1' } }, headers: headers, as: :json
     expect(response).to have_http_status(:created)
-    Scheduling::Appointment.find(response.parsed_body.dig('payload', 'id'))
+    appointment = Scheduling::Appointment.find(response.parsed_body.dig('payload', 'id'))
+    schedule_reminder!(appointment, reminder_body) if reminder_body.present?
+    appointment
   end
 
-  def default_plan!(body)
-    group = create(:reminder_group, account: account, touches: [{
-                     action_type: 'send_message', content_kind: 'free_text', text_mode: 'static', timing_mode: 'relative',
-                     relative_anchor: 'appointment.starts_at', relative_offset_seconds: -86_400, timezone: 'UTC', body: body,
-                     attachments: [], template_params: {}, metadata: {}
-                   }])
-    account.update!(default_appointment_touch_plan_id: group.id)
+  def schedule_reminder!(appointment, body)
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_created',
+      conditions: [],
+      actions: [{
+        action_name: 'create_touch',
+        action_params: [{
+          action_type: 'send_message', content_kind: 'free_text', text_mode: 'static', timing_mode: 'relative',
+          relative_anchor: 'appointment.starts_at', relative_offset_seconds: -86_400, timezone: 'UTC', body: body,
+          attachments: [], template_params: {}, metadata: {}
+        }]
+      }]
+    )
+    action = rule.actions.first
+    AutomationRules::TouchActionService.new(rule: rule, account: account, record: appointment,
+                                            entity_kind: 'appointment').create_touch(action['action_params'],
+                                                                                     action_id: action['action_id'])
   end
 
   # Runs the due touch like the scheduler does; an undeliverable touch fails visibly (the job discards the error).
@@ -122,10 +136,9 @@ RSpec.describe 'Chatless appointments of a family number', type: :request do
 
   it 'H2c-widget never delivers the child reminder to a widget visitor merged into the mother by email', :aggregate_failures do
     mother = lid_mother('mother.h2c@example.com')
-    default_plan!('Child visit reminder H2CW')
     widget_headers = stranger_widget_session!('mother.h2c@example.com')
 
-    appointment = book!(mother)
+    appointment = book!(mother, reminder_body: 'Child visit reminder H2CW')
 
     expect(Reminders::PatientSubjectGuard.notification_route(appointment.reload)).to be_unroutable
     expect_fail_closed(appointment.reminders.sole)
@@ -134,13 +147,12 @@ RSpec.describe 'Chatless appointments of a family number', type: :request do
 
   it 'H2c-api never delivers the child reminder to a public API contact attached to the mother by email', :aggregate_failures do
     mother = lid_mother('mother.h2a@example.com')
-    default_plan!('Child visit reminder H2CA')
     post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts", params: { email: 'mother.h2a@example.com', name: 'Stranger' }, as: :json
     source_id = response.parsed_body['source_id']
     post "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{source_id}/conversations", as: :json
     stranger_conversation_id = response.parsed_body['id']
 
-    appointment = book!(mother)
+    appointment = book!(mother, reminder_body: 'Child visit reminder H2CA')
 
     expect_fail_closed(appointment.reminders.sole)
     get "/public/api/v1/inboxes/#{api_channel.identifier}/contacts/#{source_id}/conversations/#{stranger_conversation_id}/messages", as: :json
@@ -152,10 +164,9 @@ RSpec.describe 'Chatless appointments of a family number', type: :request do
     mother = create(:contact, account: account, name: 'Mother', phone_number: family, email: 'mother.h2h@example.com')
     _mother_ci, mother_chat = chat(mother, web_inbox, family_digits, at: 3.days.ago)
     father = create(:contact, account: account, name: 'Father', phone_number: '+77000000031')
-    default_plan!('Child visit reminder H2CH')
     widget_headers = stranger_widget_session!('mother.h2h@example.com')
 
-    appointment = book!(father)
+    appointment = book!(father, reminder_body: 'Child visit reminder H2CH')
     route = Reminders::PatientSubjectGuard.notification_route(appointment.reload)
     touch = force_run!(appointment.reminders.sole)
 
@@ -172,13 +183,12 @@ RSpec.describe 'Chatless appointments of a family number', type: :request do
                                                  'secondary_phones' => [family], Contacts::SharedPhone::SHARED_PHONE_KEY => family,
                                                  Contacts::SharedPhone::SHARED_OWNER_KEY => mother.id,
                                                  Contacts::SharedPhone::SHARED_VIA_KEY => Contacts::SharedPhone::VIA_BOOKING_CHAT })
-    default_plan!('Child visit reminder H2CI')
     widget_headers = stranger_widget_session!('mother.h2i@example.com')
     delivery_contact = Integrations::Medelement::PatientContactBinding.delivery_contact(card)
     appointment = create(:scheduling_appointment, account: account, resource: resource, contact: delivery_contact, conversation: nil,
                                                   patient_contact: card, source: 'medelement', starts_at: booking_day,
                                                   ends_at: booking_day + 30.minutes)
-    Reminders::DefaultPlanService.new(account: account, remindable: appointment).perform
+    schedule_reminder!(appointment, 'Child visit reminder H2CI')
 
     expect(delivery_contact).to eq(mother)
     expect_fail_closed(appointment.reload.reminders.sole)

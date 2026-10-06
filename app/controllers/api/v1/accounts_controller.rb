@@ -126,9 +126,6 @@ class Api::V1::AccountsController < Api::BaseController
       :auto_resolve_label,
       :scheduling_contact_required,
       :scheduling_company_enabled,
-      :default_appointment_touch_plan_id,
-      :default_deal_touch_plan_id,
-      :default_task_touch_plan_id,
       *DASHBOARD_NAVIGATION_SETTINGS_PARAMS
     ]
   end

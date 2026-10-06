@@ -80,7 +80,7 @@ class Captain::Assistant < ApplicationRecord
     appointment: %w[get_appointment search_appointments create_appointment update_appointment]
   }.freeze
   DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS = %w[list_captain_documents].freeze
-  DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS = %w[send_message_to_conversation create_touch create_touch_plan].freeze
+  DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS = %w[send_message_to_conversation create_touch].freeze
   SYSTEM_TEMPLATE_SLOT_LABELS = {
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_CONTEXT => 'Assistant system context',
     SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY => 'Assistant identity',
@@ -373,10 +373,6 @@ class Captain::Assistant < ApplicationRecord
   has_many :inboxes,
            through: :captain_inboxes
   has_many :messages, as: :sender, dependent: :nullify
-  has_many :touch_plans,
-           class_name: 'ReminderGroup',
-           inverse_of: :assistant,
-           dependent: :nullify
   has_many :copilot_threads, dependent: :destroy_async
   has_many :scenarios, class_name: 'Captain::Scenario', dependent: :destroy_async
 

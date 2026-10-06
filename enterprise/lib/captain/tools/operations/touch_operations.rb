@@ -121,46 +121,6 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     )
   end
 
-  def create_touch_plan(name:, touches:, description: nil, entity_kinds: nil)
-    normalized_name = name.to_s.strip
-    raise ArgumentError, 'Touch plan name is required' if normalized_name.blank?
-
-    create_params = {
-      name: normalized_name,
-      description: description.presence,
-      entity_kinds: normalized_plan_entity_kinds(entity_kinds),
-      touches: normalized_touch_definitions(touches),
-      assistant_id: assistant.id
-    }.compact
-
-    with_idempotent_creation('create_touch_plan', create_params) do
-      account.reminder_groups.create!(create_params.merge(creator: actor))
-    end
-  end
-
-  def apply_touch_plan(touch_plan_id: nil, touch_plan_name: nil, remindable_kind: nil)
-    normalized_kind = normalized_remindable_kind(remindable_kind)
-    remindable = resolve_remindable!(normalized_kind)
-    touch_plan = find_kept_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
-    ensure_touch_plan_supports!(touch_plan, normalized_kind)
-
-    result = ::Reminders::PlanApplicationService.new(
-      account: account,
-      reminder_group: touch_plan,
-      remindable: remindable,
-      actor: actor,
-      source: 'captain'
-    ).perform
-    tag_created_plan_touches!(result.touches, touch_plan)
-    result
-  end
-
-  def archive_touch_plan(touch_plan_id: nil, touch_plan_name: nil)
-    touch_plan = find_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
-    touch_plan.archive! if touch_plan.archived_at.blank? || touch_plan.active?
-    touch_plan
-  end
-
   private
 
   def normalized_touch_params(
@@ -302,14 +262,6 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     account.reminders.find(touch_id)
   end
 
-  def find_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
-    scope = account.reminder_groups.for_assistant_workspace(assistant.id)
-    touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
-    raise ActiveRecord::RecordNotFound, 'Touch plan not found' if touch_plan.blank?
-
-    touch_plan
-  end
-
   def find_kept_touch_plan!(touch_plan_id: nil, touch_plan_name: nil)
     scope = account.reminder_groups.kept.for_assistant_workspace(assistant.id)
     touch_plan = find_touch_plan_in_scope(scope, touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
@@ -334,48 +286,6 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     return if touch_plan.entity_kind_supported?(entity_kind)
 
     raise ArgumentError, 'Touch plan does not support this entity kind'
-  end
-
-  def normalized_plan_entity_kinds(entity_kinds)
-    values = parsed_array(entity_kinds, field_name: 'entity_kinds')
-    values = ['conversation'] if values.blank?
-    values.map(&:to_s).map(&:strip).reject(&:blank?).uniq
-  end
-
-  def normalized_touch_definitions(touches)
-    definitions = parsed_array(touches, field_name: 'touches')
-    raise ArgumentError, 'Touch plan touches are required' if definitions.blank?
-
-    definitions.map do |definition|
-      raise ArgumentError, 'Each touch plan item must be an object' unless definition.respond_to?(:to_h)
-
-      ::Reminders::DefinitionNormalizer.call(definition.to_h)
-    end
-  end
-
-  def parsed_array(value, field_name:)
-    return [] if value.blank?
-    return value if value.is_a?(Array)
-
-    parsed = JSON.parse(value.to_s)
-    raise ArgumentError, "#{field_name} must be a JSON array" unless parsed.is_a?(Array)
-
-    parsed
-  rescue JSON::ParserError
-    raise ArgumentError, "#{field_name} must be valid JSON"
-  end
-
-  def tag_created_plan_touches!(touches, touch_plan)
-    touches.each do |touch|
-      touch.update!(
-        metadata: touch.metadata.to_h.merge(
-          'touch_source' => 'captain',
-          'captain_assistant_id' => assistant.id,
-          'captain_actor_id' => actor&.id,
-          'captain_touch_plan_id' => touch_plan.id
-        ).compact
-      )
-    end
   end
 
   def cancellation_metadata(cancelled_via:, reason:)

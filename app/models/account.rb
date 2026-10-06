@@ -67,12 +67,7 @@ class Account < ApplicationRecord
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
   store_accessor :settings, :conversation_status_reason_config
-  store_accessor :settings,
-                 :scheduling_contact_required,
-                 :scheduling_company_enabled,
-                 :default_appointment_touch_plan_id,
-                 :default_deal_touch_plan_id,
-                 :default_task_touch_plan_id
+  store_accessor :settings, :scheduling_contact_required, :scheduling_company_enabled
   include AccountCaptainAutoResolve
 
   has_many :account_users, dependent: :destroy_async
@@ -178,17 +173,6 @@ class Account < ApplicationRecord
 
   def agents
     users.where(account_users: { role: :agent })
-  end
-
-  def default_touch_plan_id_for(entity_kind)
-    case entity_kind.to_s
-    when 'appointment'
-      default_appointment_touch_plan_id
-    when 'deal'
-      default_deal_touch_plan_id
-    when 'task'
-      default_task_touch_plan_id
-    end
   end
 
   def administrators

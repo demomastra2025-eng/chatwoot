@@ -325,7 +325,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         output: { 'response' => 'I will explain instead.', 'reasoning' => 'No tool call selected' },
         context: {
           current_agent: 'assistant_agent',
-          captain_v2_bound_tool_ids: %w[list_deal_stages create_touch_plan],
+          captain_v2_bound_tool_ids: %w[list_deal_stages create_touch],
           captain_v2_completed_tool_names: []
         },
         error: nil

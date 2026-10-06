@@ -60,14 +60,6 @@ module Crm::Deals::UpsertEvents
     }
   end
 
-  def auto_apply_default_touch_plan!
-    Reminders::DefaultPlanService.new(
-      account: account,
-      remindable: deal,
-      actor: actor
-    ).perform
-  end
-
   def sync_related_touches!
     Reminders::SyncRemindableService.new(remindable: deal).perform
   end

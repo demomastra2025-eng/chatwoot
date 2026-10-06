@@ -108,7 +108,6 @@ RSpec.describe 'Captain workspace profile copilot tools' do
 
   describe Captain::Tools::Copilot::UpdateWorkspaceProfileService do
     let(:service) { described_class.new(assistant, user: admin) }
-    let(:appointment_touch_plan) { create(:reminder_group, account: account, entity_kinds: ['appointment']) }
     let(:workspace_update_params) do
       {
         name: 'New Company',
@@ -124,8 +123,7 @@ RSpec.describe 'Captain workspace profile copilot tools' do
         auto_resolve_ignore_waiting: true,
         auto_resolve_label: '',
         scheduling_contact_required: false,
-        scheduling_company_enabled: false,
-        default_appointment_touch_plan_id: appointment_touch_plan.id
+        scheduling_company_enabled: false
       }
     end
 
@@ -148,8 +146,7 @@ RSpec.describe 'Captain workspace profile copilot tools' do
         'account.support_email',
         'custom_attributes.industry',
         'settings.auto_resolve_after',
-        'settings.scheduling_company_enabled',
-        'settings.default_appointment_touch_plan_id'
+        'settings.scheduling_company_enabled'
       )
       expect(account).to have_attributes(name: 'New Company', locale: target_locale, domain: '', support_email: 'support.new@example.com')
       expect(account.custom_attributes).to include('industry' => 'Services', 'company_size' => '51-200', 'timezone' => 'Asia/Almaty')
@@ -160,8 +157,7 @@ RSpec.describe 'Captain workspace profile copilot tools' do
         'auto_resolve_ignore_waiting' => true,
         'auto_resolve_label' => '',
         'scheduling_contact_required' => false,
-        'scheduling_company_enabled' => false,
-        'default_appointment_touch_plan_id' => appointment_touch_plan.id
+        'scheduling_company_enabled' => false
       )
     end
 
@@ -177,24 +173,6 @@ RSpec.describe 'Captain workspace profile copilot tools' do
 
       expect(result).to include('Unsupported workspace profile fields: unknown_setting')
       expect(account.reload.name).to eq('Old Company')
-    end
-
-    it 'rejects default touch-plan IDs outside the current account' do
-      other_plan = create(:reminder_group, account: create(:account), entity_kinds: ['appointment'])
-
-      result = service.execute(default_appointment_touch_plan_id: other_plan.id)
-
-      expect(result).to include("Couldn't find ReminderGroup")
-      expect(account.reload.settings['default_appointment_touch_plan_id']).to be_blank
-    end
-
-    it 'rejects default touch-plan IDs for an incompatible entity kind' do
-      deal_plan = create(:reminder_group, account: account, entity_kinds: ['deal'])
-
-      result = service.execute(default_appointment_touch_plan_id: deal_plan.id)
-
-      expect(result).to include('default_appointment_touch_plan_id must reference a touch plan that supports appointment')
-      expect(account.reload.settings['default_appointment_touch_plan_id']).to be_blank
     end
 
     it 'rejects direct non-admin execution as defense in depth' do

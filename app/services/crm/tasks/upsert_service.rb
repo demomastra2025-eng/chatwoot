@@ -132,7 +132,6 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   end
 
   def finalize_task!(new_record)
-    auto_apply_default_touch_plan! if new_record
     sync_related_touches!
     reposition_task!(@requested_position) if @requested_position.present?
     write_event!(new_record: new_record)
@@ -186,14 +185,6 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       record: task,
       user: task.assignee,
       notification_type: 'task_assignment',
-      actor: actor
-    ).perform
-  end
-
-  def auto_apply_default_touch_plan!
-    Reminders::DefaultPlanService.new(
-      account: account,
-      remindable: task,
       actor: actor
     ).perform
   end

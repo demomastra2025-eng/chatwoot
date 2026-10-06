@@ -475,9 +475,14 @@ class AutomationRule < ApplicationRecord
   end
 
   def persisted_legacy_touch_plan_actions_unchanged?(current_actions)
-    persisted? &&
-      event_name == attribute_in_database('event_name') &&
-      current_actions == legacy_touch_plan_actions(attribute_in_database('actions'))
+    return false unless persisted? && event_name == attribute_in_database('event_name')
+
+    persisted_actions = legacy_touch_plan_actions(attribute_in_database('actions')).tally
+    current_actions.all? do |action|
+      remaining = persisted_actions[action].to_i
+      persisted_actions[action] = remaining - 1
+      remaining.positive?
+    end
   end
 
   def legacy_touch_plan_actions(value)

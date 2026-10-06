@@ -360,7 +360,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
           'runtime_mode' => 'captain_chat',
           'reason' => 'pending_confirmation_not_replayed',
           'available_tool_count' => 12,
-          'pending_confirmation_tool_ids' => ['create_touch_plan'],
+          'pending_confirmation_tool_ids' => ['cancel_touches'],
           'model_reasoning_present' => true,
           'model_reasoning_sha256' => 'a' * 64
         }
@@ -376,7 +376,7 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       )
       expect(event.payload).to include(
         'available_tool_count' => 12,
-        'pending_confirmation_tool_ids' => ['create_touch_plan'],
+        'pending_confirmation_tool_ids' => ['cancel_touches'],
         'model_reasoning_present' => true,
         'model_reasoning_sha256' => 'a' * 64
       )

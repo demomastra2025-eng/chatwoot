@@ -13,27 +13,14 @@ class Captain::Tools::Copilot::WorkspaceProfileTool < Captain::Tools::Copilot::B
     auto_resolve_label
     scheduling_contact_required
     scheduling_company_enabled
-    default_appointment_touch_plan_id
-    default_deal_touch_plan_id
-    default_task_touch_plan_id
   ].freeze
   UPDATE_PARAM_KEYS = (ACCOUNT_ATTRIBUTE_KEYS + CUSTOM_ATTRIBUTE_KEYS + SETTING_KEYS).map(&:to_s).freeze
-  TOUCH_PLAN_SETTING_ENTITY_KINDS = {
-    default_appointment_touch_plan_id: 'appointment',
-    default_deal_touch_plan_id: 'deal',
-    default_task_touch_plan_id: 'task'
-  }.freeze
   BOOLEAN_SETTING_KEYS = %i[
     auto_resolve_ignore_waiting
     scheduling_contact_required
     scheduling_company_enabled
   ].freeze
-  INTEGER_SETTING_KEYS = %i[
-    auto_resolve_after
-    default_appointment_touch_plan_id
-    default_deal_touch_plan_id
-    default_task_touch_plan_id
-  ].freeze
+  INTEGER_SETTING_KEYS = %i[auto_resolve_after].freeze
   def active?
     account_administrator?
   end
@@ -140,7 +127,6 @@ class Captain::Tools::Copilot::WorkspaceProfileTool < Captain::Tools::Copilot::B
 
   def setting_value_for(key, value)
     return cast_boolean(value) if BOOLEAN_SETTING_KEYS.include?(key)
-    return normalize_touch_plan_id(value, key: key) if TOUCH_PLAN_SETTING_ENTITY_KINDS.key?(key)
     return normalize_optional_integer(value, field_name: key.to_s) if INTEGER_SETTING_KEYS.include?(key)
 
     normalize_optional_string(value)
@@ -170,17 +156,6 @@ class Captain::Tools::Copilot::WorkspaceProfileTool < Captain::Tools::Copilot::B
     Integer(value)
   rescue ArgumentError, TypeError
     raise ArgumentError, "#{field_name} must be an integer"
-  end
-
-  def normalize_touch_plan_id(value, key:)
-    touch_plan_id = normalize_optional_integer(value, field_name: key.to_s)
-    return nil if touch_plan_id.blank?
-
-    touch_plan = account.reminder_groups.kept.find(touch_plan_id)
-    entity_kind = TOUCH_PLAN_SETTING_ENTITY_KINDS.fetch(key)
-    return touch_plan_id if touch_plan.entity_kind_supported?(entity_kind)
-
-    raise ArgumentError, "#{key} must reference a touch plan that supports #{entity_kind}"
   end
 
   def supported_field_provided?(updates)

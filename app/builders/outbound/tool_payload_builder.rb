@@ -28,39 +28,6 @@ module Outbound::ToolPayloadBuilder
     }.compact
   end
 
-  def touch_plan_payload(action:, touch_plan:)
-    touch_plan_data = Outbound::PayloadBuilder.touch_plan_payload(touch_plan)
-
-    {
-      action: action,
-      touch_plan_id: touch_plan_data[:id],
-      name: touch_plan_data[:name],
-      assistant_id: touch_plan_data[:assistant_id],
-      assistant: touch_plan_data[:assistant],
-      active: touch_plan_data[:active],
-      archived_at: touch_plan_data[:archived_at],
-      entity_kinds: touch_plan_data[:entity_kinds],
-      touch_count: touch_plan_data[:touches].size,
-      touch_plan: touch_plan_data
-    }.compact
-  end
-
-  def apply_touch_plan_payload(result)
-    touch_data = result.touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) }
-    touch_plan = result.touch_plan
-    application_metadata = result.payload_metadata
-
-    {
-      action: 'apply_touch_plan',
-      touch_plan_id: touch_plan&.id,
-      touch_plan_name: touch_plan&.name,
-      created_count: touch_data.size,
-      touch_ids: touch_data.pluck(:id),
-      touches: touch_data,
-      meta: application_metadata.merge(count: touch_data.size)
-    }.merge(application_metadata).compact
-  end
-
   def cancel_touches_payload(result:, reason: nil)
     touch_plan = result[:touch_plan]
 

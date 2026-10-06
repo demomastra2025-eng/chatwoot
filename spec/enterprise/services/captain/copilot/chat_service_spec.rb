@@ -127,10 +127,10 @@ RSpec.describe Captain::Copilot::ChatService do
         copilot_thread: copilot_thread,
         message_type: 'assistant_thinking',
         message: {
-          'content' => 'Confirmation required for create_touch_plan',
+          'content' => 'Confirmation required for create_touch',
           'confirmation_gate' => {
             'status' => 'pending',
-            'tool_id' => 'create_touch_plan',
+            'tool_id' => 'create_touch',
             'arguments_digest' => 'digest-123',
             'arguments_preview' => '{"name":"Follow-up"}',
             'requested_at' => Time.current.iso8601
@@ -144,7 +144,7 @@ RSpec.describe Captain::Copilot::ChatService do
       end
 
       expect(confirmation_context[:content]).to include(
-        'tool=create_touch_plan',
+        'tool=create_touch',
         'digest=digest-123',
         'call that same tool again with the same arguments'
       )

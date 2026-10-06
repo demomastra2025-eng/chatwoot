@@ -167,7 +167,6 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
   def apply_post_save_updates!
     track_stage_visit!(new_record: @new_record, correlation_id: @correlation_id) if @stage_changing
     sync_incomplete_task_teams! if deal.saved_change_to_team_id?
-    auto_apply_default_touch_plan! if @new_record
     reposition_deal!(@requested_position) if @requested_position.present?
   end
 

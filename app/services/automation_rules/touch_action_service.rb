@@ -21,6 +21,7 @@ class AutomationRules::TouchActionService
     @trigger_message = trigger_message
   end
 
+  # Legacy action retained for automation rules saved before plan removal.
   def apply_touch_plan(action_params)
     reminder_group = load_touch_plan!(action_params)
 
