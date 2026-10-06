@@ -1,4 +1,8 @@
 class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools::Copilot::BaseAccountTool
+  NAME_DIFFERS_INSTRUCTION = 'The resource name differs from the request. Tell the patient the exact name of the specialist or room ' \
+                             'and ask to confirm it; never book on a non-exact name.'.freeze
+  SAME_NAME_INSTRUCTION = 'Several resources have exactly this name. Ask the patient which one is meant; never book on a guess.'.freeze
+
   def self.name
     'search_scheduling_resources'
   end
@@ -39,8 +43,8 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   private
 
   def formatted_search_payload(result, filters)
-    status = search_status(result[:total_count], filters)
-    formatted_payload(
+    status = search_status(result, filters)
+    payload = {
       filters: filters,
       total_count: result[:total_count],
       returned_count: result[:returned_count],
@@ -49,13 +53,17 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
       page_status: result[:resources].empty? && result[:total_count].positive? ? 'offset_out_of_range' : 'returned',
       search_status: status,
       ambiguous: status == 'ambiguous',
+      exact_name_matches: result[:exact_name_matches].to_i,
       link_status: link_status(status, filters[:service_id]),
       resources: result[:resources]
-    )
+    }
+    payload[:instruction] = instruction_for(result) if status == 'ambiguous'
+    formatted_payload(payload)
   end
 
-  def search_status(total_count, filters)
-    return matched_status(total_count, filters) if total_count.positive?
+  def search_status(result, filters)
+    total_count = result[:total_count]
+    return matched_status(result, filters) if total_count.positive?
     return 'no_recorded_link' if filters[:service_id].present? && filters[:query].blank?
     return 'no_match_with_recorded_link_filter' if filters[:service_id].present?
     return 'catalog_empty' if filters[:query].blank?
@@ -63,10 +71,16 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
     'no_name_or_specialty_match'
   end
 
-  def matched_status(total_count, filters)
+  # candidate: exactly one resource whose name (or specialty) has exactly the words of the request; ambiguous: every other
+  # text match, including a single resource whose name differs from the request.
+  def matched_status(result, filters)
     return 'candidates' if filters[:query].blank?
 
-    total_count == 1 ? 'candidate' : 'ambiguous'
+    result[:exact_name_matches] == 1 && !result[:exact_name_truncated] ? 'candidate' : 'ambiguous'
+  end
+
+  def instruction_for(result)
+    result[:exact_name_matches].to_i > 1 ? SAME_NAME_INSTRUCTION : NAME_DIFFERS_INSTRUCTION
   end
 
   def link_status(status, service_id)

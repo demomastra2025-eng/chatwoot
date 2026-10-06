@@ -20,7 +20,7 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
   end
 
   it 'finds a person by words in any order and reports one candidate' do
-    payload = search(query: 'Мурад Асланов', search_by: 'name')
+    payload = search(query: 'Мурад Асланов Тестович', search_by: 'name')
 
     expect(payload['resources'].pluck('id')).to eq([specialist.id])
     expect(payload).to include('search_status' => 'candidate', 'ambiguous' => false, 'link_status' => 'not_checked')
