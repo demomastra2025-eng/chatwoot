@@ -76,4 +76,39 @@ RSpec.describe 'Telephony Webphone incoming legs of one Beeline call', type: :re
       expect(second.logical_group_sessions).to contain_exactly(first, second)
     end
   end
+
+  # The caller/time bridge lookup is kept for what is not a browser leg: a leg
+  # reported by the PBX side (janus-server, AI or provider) of the same call is
+  # still part of the logical call, and a claim closes it with the others.
+  describe 'a server-side leg of the same call that was reported first' do
+    let(:server_leg_ref) { 'beeline:janus-server:ai:1' }
+    let!(:server_leg) do
+      # The first report (another caller) is what creates the number binding of the channel.
+      report_leg(profiles.third, 'sip-call-id-other-caller', from: '+70000000009')
+      create(
+        :telephony_call_session,
+        account: account, inbox: channel.inbox, conversation: nil, contact: nil,
+        number_binding: account.telephony_call_sessions.last.number_binding, provider: 'beeline', direction: 'inbound',
+        status: 'ringing', external_call_ref: server_leg_ref, from_number: caller_number, to_number: voice_phone_number,
+        created_at: 5.seconds.ago
+      )
+    end
+
+    it 'bridges a browser leg into the logical call of the server leg' do
+      report_leg(profiles.first, 'sip-call-id-0')
+
+      session = leg_session(profiles.first, 'sip-call-id-0')
+      expect(session.metadata.dig('metadata', 'logical_call_group_ref')).to eq(server_leg_ref)
+      expect(session.logical_group_sessions).to include(server_leg)
+    end
+
+    it 'keeps the legs of the other operators in the same logical call' do
+      report_leg(profiles.first, 'sip-call-id-0')
+      report_leg(profiles.second, 'sip-call-id-1')
+
+      sessions = [leg_session(profiles.first, 'sip-call-id-0'), leg_session(profiles.second, 'sip-call-id-1')]
+      expect(sessions.map { |session| session.metadata.dig('metadata', 'logical_call_group_ref') }.uniq).to eq([server_leg_ref])
+      expect(sessions.first.logical_group_sessions).to include(server_leg, *sessions)
+    end
+  end
 end

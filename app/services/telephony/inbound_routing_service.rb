@@ -555,7 +555,7 @@ class Telephony::InboundRoutingService
       elsif sibling_root_leg.present?
         Telephony::SiblingLegGrouping.group_ref(sibling_root_leg)
       else
-        (logical_bridge_call_ref_for_context unless sibling_leg_grouping?).presence || call_ref
+        logical_bridge_call_ref_for_context.presence || call_ref
       end
     end
   end
@@ -569,8 +569,8 @@ class Telephony::InboundRoutingService
   end
 
   # The legs of a channel with one SIP profile per operator are correlated by
-  # Telephony::SiblingLegGrouping alone; the caller/time bridge lookup would
-  # merge back what that grouping kept apart.
+  # Telephony::SiblingLegGrouping; the caller/time bridge lookup must not merge
+  # back what that grouping kept apart, so it ignores the browser legs.
   def sibling_leg_grouping?
     number_binding.present? &&
       payload_value('direction').to_s == 'inbound' &&
@@ -1122,9 +1122,23 @@ class Telephony::InboundRoutingService
       session = recent_logical_bridge_call_session_scope
                 .where.not(status: Telephony::CallSession::TERMINAL_STATUSES)
                 .order(created_at: :desc, id: :desc)
-                .detect { |candidate| logical_group_ref_for_session(candidate).present? || candidate.external_call_ref.present? }
+                .detect { |candidate| logical_bridge_candidate?(candidate) }
       logical_group_ref_for_session(session).presence || session&.external_call_ref
     end
+  end
+
+  def logical_bridge_candidate?(candidate)
+    return false if sibling_leg_grouping? && browser_leg_session?(candidate)
+
+    logical_group_ref_for_session(candidate).present? || candidate.external_call_ref.present?
+  end
+
+  def browser_leg_session?(session)
+    metadata = session.metadata.to_h.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
+
+    [metadata['source'], route_metadata['source']].include?('browser_janus_sip') ||
+      session.external_call_ref.to_s.include?(':janus:')
   end
 
   def logical_group_ref_for_session(session)
