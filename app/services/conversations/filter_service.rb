@@ -7,6 +7,17 @@ class Conversations::FilterService < FilterService
   end
 
   def perform
+    @conversations = selection_scope
+
+    {
+      conversations: conversations,
+      count: include_meta? ? conversation_counts : {}
+    }
+  end
+
+  # Returns the complete matching scope using the same advanced, CRM,
+  # appointment, sidebar, and permission filters as the paginated list.
+  def selection_scope
     validate_query_operator
     @base_filtered_conversations = query_builder(@filters['conversations'])
     @conversations = apply_sidebar_scopes(
@@ -14,11 +25,6 @@ class Conversations::FilterService < FilterService
         apply_crm_deal_context(@base_filtered_conversations)
       )
     )
-
-    {
-      conversations: conversations,
-      count: include_meta? ? conversation_counts : {}
-    }
   end
 
   def base_relation

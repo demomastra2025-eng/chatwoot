@@ -42,9 +42,10 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   # params
   # assignee_type, inbox_id, :status
 
-  def initialize(current_user, params)
+  def initialize(current_user, params, current_account: current_user.account)
     @current_user = current_user
-    @current_account = current_user.account
+    @current_account = current_account
+    @is_admin = current_account.account_users.find_by(user_id: current_user.id)&.administrator?
     @params = params
   end
 
@@ -65,6 +66,14 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     set_up
 
     { count: conversation_counts }
+  end
+
+  # Returns the full permission-filtered list scope without loading pages or
+  # conversation content. Used by bounded server-side bulk selection.
+  def selection_scope
+    set_up
+    filter_by_assignee_type
+    @conversations
   end
 
   private
