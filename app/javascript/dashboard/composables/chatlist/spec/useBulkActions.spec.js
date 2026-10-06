@@ -220,11 +220,38 @@ describe('useBulkActions', () => {
     expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.MARK_READ.FAILED');
   });
 
+  it('reports completed, skipped, failed, and remaining counts after an interrupted job', async () => {
+    const failure = Object.assign(new Error('interrupted'), {
+      doneCount: 2,
+      skippedCount: 1,
+      failedCount: 1,
+      processedCount: 4,
+      totalCount: 6,
+    });
+    store.dispatch = vi.fn(async type => {
+      if (type === 'bulkActions/process') throw failure;
+      return {};
+    });
+    const { onMarkConversationsRead } = useBulkActions();
+
+    await onMarkConversationsRead();
+
+    expect(useI18n().t).toHaveBeenCalledWith(
+      'BULK_ACTION.PROGRESS.INTERRUPTED',
+      { doneCount: 2, skippedCount: 1, failedCount: 1, remainingCount: 2 }
+    );
+  });
+
   it('does not report a completed run with skipped conversations as a full success', async () => {
     useAlert.mockClear();
     store.dispatch = vi.fn(async type =>
       type === 'bulkActions/process'
-        ? { status: 'completed', failed_count: 0, skipped_count: 2 }
+        ? {
+            status: 'completed',
+            processed_count: 4,
+            failed_count: 0,
+            skipped_count: 2,
+          }
         : {}
     );
     const { onAssignTeamsForBulk } = useBulkActions();
@@ -234,7 +261,7 @@ describe('useBulkActions', () => {
     expect(useAlert).toHaveBeenCalledWith('BULK_ACTION.COMPLETED_WITH_DETAILS');
     expect(useI18n().t).toHaveBeenCalledWith(
       'BULK_ACTION.COMPLETED_WITH_DETAILS',
-      { failedCount: 0, skippedCount: 2 }
+      { doneCount: 2, failedCount: 0, skippedCount: 2 }
     );
   });
 
@@ -242,7 +269,12 @@ describe('useBulkActions', () => {
     useAlert.mockClear();
     store.dispatch = vi.fn(async type =>
       type === 'bulkActions/process'
-        ? { status: 'completed', failed_count: 1, skipped_count: 2 }
+        ? {
+            status: 'completed',
+            processed_count: 5,
+            failed_count: 1,
+            skipped_count: 2,
+          }
         : {}
     );
     const { onAssignTeamsForBulk } = useBulkActions();
@@ -251,7 +283,7 @@ describe('useBulkActions', () => {
 
     expect(useI18n().t).toHaveBeenCalledWith(
       'BULK_ACTION.COMPLETED_WITH_DETAILS',
-      { failedCount: 1, skippedCount: 2 }
+      { doneCount: 2, failedCount: 1, skippedCount: 2 }
     );
   });
 

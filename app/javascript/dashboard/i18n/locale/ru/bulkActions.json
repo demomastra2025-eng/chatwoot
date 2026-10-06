@@ -3,7 +3,7 @@
     "CONVERSATIONS_SELECTED": "Выбрано: {conversationCount}",
     "NONE": "Ничего",
     "CLEAR_SELECTION": "Очистить",
-    "SELECT_ALL_MATCHING": "Выбрать все диалоги ({count})",
+    "SELECT_ALL_MATCHING": "Выбрать все совпавшие диалоги: {count}",
     "SELECT_ALL": {
       "LIMIT": "За одно действие можно выбрать не более {count} диалогов.",
       "EMPTY": "Нет диалогов, подходящих под текущие фильтры.",
@@ -36,12 +36,13 @@
     "ASSIGN_FAILED": "Не удалось назначить диалоги, попробуйте еще раз.",
     "RESOLVE_SUCCESFUL": "Диалоги успешно закрыты.",
     "RESOLVE_FAILED": "Не удалось закрыть диалоги, попробуйте еще раз.",
-    "COMPLETED_WITH_ERRORS": "Выполнено, с ошибками: {count}",
-    "COMPLETED_WITH_DETAILS": "Действие завершено: пропущено — {skippedCount}, с ошибками — {failedCount}.",
+    "COMPLETED_WITH_ERRORS": "Действие завершено: выполнено — {doneCount}, с ошибками — {count}.",
+    "COMPLETED_WITH_DETAILS": "Действие завершено: выполнено — {doneCount}, пропущено — {skippedCount}, с ошибками — {failedCount}.",
     "AGENT_LIST_LOADING": "Загрузка сотрудников",
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",
       "STATUS_UNAVAILABLE": "Не удалось узнать результат операции. Обновите список перед повторным действием.",
+      "INTERRUPTED": "Операция прервана: выполнено — {doneCount}, пропущено — {skippedCount}, с ошибками — {failedCount}, не обработано — {remainingCount}.",
       "FAILED": "С ошибками: {count}",
       "SKIPPED": "Пропущено: {count}",
       "ACTIONS": {

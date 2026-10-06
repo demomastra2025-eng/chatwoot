@@ -121,6 +121,10 @@ export const actions = {
             bulkActionRun.error_message || 'Bulk action failed'
           );
           error.failedCount = Number(bulkActionRun.failed_count || 0);
+          error.skippedCount = Number(bulkActionRun.skipped_count || 0);
+          error.doneCount = Number(bulkActionRun.done_count || 0);
+          error.processedCount = Number(bulkActionRun.processed_count || 0);
+          error.totalCount = Number(bulkActionRun.total_count || 0);
           reject(error);
           return;
         }

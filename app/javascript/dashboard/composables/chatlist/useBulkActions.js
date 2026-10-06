@@ -88,6 +88,18 @@ export function useBulkActions() {
       return t('BULK_ACTION.SELECT_ALL.EXPIRED');
     }
 
+    if (error?.totalCount !== undefined) {
+      return t('BULK_ACTION.PROGRESS.INTERRUPTED', {
+        doneCount: Number(error.doneCount || 0),
+        skippedCount: Number(error.skippedCount || 0),
+        failedCount: Number(error.failedCount || 0),
+        remainingCount: Math.max(
+          0,
+          Number(error.totalCount) - Number(error.processedCount || 0)
+        ),
+      });
+    }
+
     const failedCount = failedCountOf(error);
     return failedCount > 0
       ? t('BULK_ACTION.PROGRESS.FAILED', { count: failedCount })
@@ -99,14 +111,26 @@ export function useBulkActions() {
   const bulkActionResultMessage = (bulkActionRun, successMessage) => {
     const failedCount = failedCountOf(bulkActionRun);
     const skippedCount = skippedCountOf(bulkActionRun);
+    const doneCount = Number(
+      bulkActionRun?.done_count ??
+        bulkActionRun?.doneCount ??
+        Math.max(
+          0,
+          Number(bulkActionRun?.processed_count || 0) - failedCount - skippedCount
+        )
+    );
     if (skippedCount > 0) {
       return t('BULK_ACTION.COMPLETED_WITH_DETAILS', {
+        doneCount,
         failedCount,
         skippedCount,
       });
     }
     return failedCount > 0
-      ? t('BULK_ACTION.COMPLETED_WITH_ERRORS', { count: failedCount })
+      ? t('BULK_ACTION.COMPLETED_WITH_ERRORS', {
+          count: failedCount,
+          doneCount,
+        })
       : successMessage;
   };
 
@@ -230,7 +254,7 @@ export function useBulkActions() {
       if (responseError.code === 'selection_limit_exceeded') {
         useAlert(
           t('BULK_ACTION.SELECT_ALL.LIMIT', {
-            count: responseError.limit || 1000,
+            count: responseError.limit || 10000,
           })
         );
       } else if (responseError.code === 'selection_empty') {

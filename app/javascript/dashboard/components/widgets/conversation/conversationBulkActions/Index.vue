@@ -147,8 +147,6 @@ const progressMetaLabel = computed(() => {
 });
 
 function confirmCloseSelection() {
-  if (props.selectedCount <= 1) return Promise.resolve(true);
-
   return new Promise(resolve => {
     closeConfirmationResolver.value = resolve;
     closeConfirmationDialogRef.value?.open();
@@ -184,10 +182,7 @@ async function updateConversations(status, snoozedUntil = null) {
   const versionAtStart = props.selectionVersion;
   const contextAtStart = props.selectionContextKey;
 
-  if (
-    status === wootConstants.STATUS_TYPE.RESOLVED &&
-    props.selectedCount > 1
-  ) {
+  if (status === wootConstants.STATUS_TYPE.RESOLVED) {
     const confirmed = await confirmCloseSelection();
     if (
       !confirmed ||

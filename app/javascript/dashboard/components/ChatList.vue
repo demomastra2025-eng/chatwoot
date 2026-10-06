@@ -836,6 +836,10 @@ const totalConversationCount = computed(() => {
 });
 
 const bulkSelectionFilters = computed(() => {
+  if (hasLocalSearch.value) {
+    return { mode: 'basic', q: localSearchQuery.value.trim() };
+  }
+
   const contextFilters = {
     crm_pipeline_id: activeCrmPipelineId.value || undefined,
     crm_stage_id: activeCrmStageId.value || undefined,
@@ -859,11 +863,15 @@ const bulkSelectionFilters = computed(() => {
       appliedFilters.value,
       activeStatus.value
     );
-    return {
-      mode: 'advanced',
-      query_data: filterQueryGenerator(useSnakeCase(filters)),
-      ...contextFilters,
-    };
+    // Only the status condition left: the list is the plain list (see
+    // loadMoreConversations), and an empty payload cannot be generated.
+    if (filters.length) {
+      return {
+        mode: 'advanced',
+        query_data: filterQueryGenerator(useSnakeCase(filters)),
+        ...contextFilters,
+      };
+    }
   }
 
   return {

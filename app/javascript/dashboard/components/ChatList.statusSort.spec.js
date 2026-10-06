@@ -172,10 +172,16 @@ describe('ChatList status and sort orchestration', () => {
     });
     mocks.bulkActions = {
       selectedConversations: ref([]),
+      selectedCount: ref(0),
       selectedInboxes: ref([]),
+      allMatchingSelection: ref(null),
+      isSelectingAll: ref(false),
+      selectionVersion: ref(0),
       selectConversation: () => {},
       deSelectConversation: () => {},
       selectAllConversations: () => {},
+      selectAllMatching: () => {},
+      setSelectionContext: vi.fn(),
       resetBulkActions: () => {},
       isConversationSelected: () => false,
       onAssignAgent: () => {},
@@ -209,6 +215,23 @@ describe('ChatList status and sort orchestration', () => {
       expect(lastListFilters(store)).toMatchObject({
         status: 'all',
         communicationThreadMode: true,
+      });
+    });
+
+    it('selects all matching items of the plain list when only the status condition is left', async () => {
+      setRoute({
+        name: 'communication_threads_dashboard',
+        query: { status: 'all' },
+      });
+      const store = buildStore({ appliedFilters: [statusFilter('open')] });
+      mountChatList({ store, props: { communicationThreadMode: true } });
+      await flushPromises();
+
+      const contextKey =
+        mocks.bulkActions.setSelectionContext.mock.calls.at(-1)[0];
+      expect(JSON.parse(contextKey)).toMatchObject({
+        resourceType: 'CommunicationThread',
+        filters: { mode: 'basic', status: 'all' },
       });
     });
 

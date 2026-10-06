@@ -248,7 +248,7 @@ describe('ConversationBulkActions Index', () => {
     wrapper.findComponent(BulkLabelActionsStub).vm.$emit('assign', ['sales']);
     wrapper
       .findComponent(BulkUpdateActionsStub)
-      .vm.$emit('update', 'resolved', null);
+      .vm.$emit('update', 'open', null);
     wrapper
       .findComponent(BulkAgentActionsStub)
       .vm.$emit('select', { id: 1, name: 'Agent' });
@@ -260,7 +260,7 @@ describe('ConversationBulkActions Index', () => {
 
     expect(wrapper.emitted('assignLabels')).toEqual([[['sales']]]);
     expect(wrapper.emitted('updateConversations')).toEqual([
-      ['resolved', null, null],
+      ['open', null, null],
     ]);
     expect(wrapper.emitted('assignAgent')).toEqual([
       [{ id: 1, name: 'Agent' }],
@@ -318,6 +318,21 @@ describe('ConversationBulkActions Index', () => {
     expect(confirmation.props('description')).toBe(
       'BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION{"count":37}'
     );
+  });
+
+  it('requires confirmation when closing one selected conversation', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ selectedCount: 1 });
+
+    wrapper
+      .findComponent(BulkUpdateActionsStub)
+      .vm.$emit('update', 'resolved', null);
+    await flushPromises();
+
+    expect(wrapper.findComponent(DialogStub).props('description')).toBe(
+      'BULK_ACTION.CLOSE_CONFIRMATION.DESCRIPTION{"count":1}'
+    );
+    expect(wrapper.emitted('updateConversations')).toBeUndefined();
   });
 
   it('does not submit a close after the user cancels the count confirmation', async () => {

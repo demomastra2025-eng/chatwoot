@@ -43,6 +43,7 @@
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",
       "STATUS_UNAVAILABLE": "Could not check the action result. Refresh the list before trying again.",
+      "INTERRUPTED": "Action stopped: {doneCount} done, {skippedCount} skipped, {failedCount} failed, {remainingCount} unprocessed.",
       "FAILED": "{count} failed",
       "SKIPPED": "{count} skipped",
       "ACTIONS": {

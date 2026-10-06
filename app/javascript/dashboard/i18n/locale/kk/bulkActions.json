@@ -38,6 +38,7 @@
     },
     "PROGRESS": {
       "STATUS_UNAVAILABLE": "Әрекет нәтижесін тексеру мүмкін болмады. Қайта әрекет жасамас бұрын тізімді жаңартыңыз.",
+      "INTERRUPTED": "Әрекет тоқтады: {doneCount} орындалды, {skippedCount} өткізіліп жіберілді, {failedCount} қате, {remainingCount} өңделмеді.",
       "SKIPPED": "Өткізілді: {count}"
     },
     "RESOLVE": {
