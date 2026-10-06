@@ -466,7 +466,8 @@ RSpec.describe Telephony::SipProfile do
         expect(asel.metadata).to include('registration_state' => 'offline', 'presence' => 'offline', 'registered' => false)
         expect(asel.metadata).not_to have_key('browser_registration_lease')
         expect(asel.metadata['last_browser_release']).to include(
-          'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => marina.user_id
+          'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => marina.user_id,
+          'client_instance_id' => "tab-#{asel.id}", 'browser_instance_id' => 'browser-1'
         )
       end
 
@@ -478,6 +479,52 @@ RSpec.describe Telephony::SipProfile do
         expect(asel.reload).not_to be_registered_for_routing
       end
 
+      it 'keeps a displaced old tab in standby after its conflicting heartbeat' do
+        asel_context = register_browser_phone(asel)
+        expect(acquire_for_user(marina, browser_instance_id: 'browser-1')).to include(acquired: true)
+
+        2.times do
+          expect(asel.reload.update_browser_registration!(registered: true, registration_context: asel_context)).to eq(:conflict)
+          expect(acquire_for_user(asel, browser_instance_id: 'browser-1', client_instance_id: "tab-#{asel.id}"))
+            .to include(acquired: false)
+          expect(asel.reload).not_to be_registered_for_routing
+          expect(marina.reload.metadata).to have_key('browser_registration_lease')
+        end
+      end
+
+      it 'holds the browser lock through the release scan' do
+        lock_held_during_release = false
+        allow(marina).to receive(:release_other_users_in_browser!).and_wrap_original do |release, *args|
+          lock_held_during_release = described_class.connection.select_value(
+            "SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()"
+          ).to_i.positive?
+          release.call(*args)
+        end
+
+        expect(acquire_for_user(marina, browser_instance_id: 'browser-1')).to include(acquired: true)
+        expect(lock_held_during_release).to be(true)
+      end
+
+      it 'accepts a new page load for the previous user' do
+        register_browser_phone(asel)
+        expect(acquire_for_user(marina, browser_instance_id: 'browser-1')).to include(acquired: true)
+
+        result = acquire_for_user(asel, browser_instance_id: 'browser-1', client_instance_id: 'tab-new-page')
+
+        expect(result).to include(acquired: true)
+        expect(marina.reload.metadata).not_to have_key('browser_registration_lease')
+      end
+
+      it 'lets the displaced tab acquire once the other user no longer holds the browser' do
+        register_browser_phone(asel)
+        acquire_for_user(marina, browser_instance_id: 'browser-1')
+        marina.update!(metadata: {})
+
+        result = acquire_for_user(asel, browser_instance_id: 'browser-1', client_instance_id: "tab-#{asel.id}")
+
+        expect(result).to include(acquired: true)
+      end
+
       it 'leaves the other profiles of the user who signs in alone' do
         marina_second_line = create(
           :telephony_sip_profile, availability_mode: 'browser_webphone', account: marina.account, user: marina.user
@@ -487,6 +534,7 @@ RSpec.describe Telephony::SipProfile do
         acquire_for_user(marina, browser_instance_id: 'browser-1')
 
         expect(marina_second_line.reload).to be_registered_for_routing
+        expect(marina.reload.metadata).to have_key('browser_registration_lease')
       end
 
       it 'leaves a phone registered from another browser alone' do

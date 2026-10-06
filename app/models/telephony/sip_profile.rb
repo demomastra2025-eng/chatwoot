@@ -285,33 +285,40 @@ class Telephony::SipProfile < ApplicationRecord
     return { acquired: false, registration_instance_id: nil } if client_instance_id.blank?
 
     result = nil
-    with_lock do
-      reload
-      lease = browser_registration_lease
-      same_browser_takeover = same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
-      if browser_registration_lease_active?(lease, occurred_at) &&
-         lease['client_instance_id'].to_s != client_instance_id.to_s &&
-         !same_browser_takeover
-        result = {
-          acquired: false,
-          registration_instance_id: lease['registration_instance_id'],
-          expires_at: lease['expires_at']
-        }
-        next
-      end
-      if lease.blank? && browser_registered?
-        result = { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }
-        next
+    with_browser_registration_lock(browser_instance_id) do
+      with_lock do
+        reload
+        lease = browser_registration_lease
+        if lease.blank? && released_browser_tab_still_displaced?(client_instance_id, browser_instance_id, user_id, occurred_at)
+          result = { acquired: false, registration_instance_id: nil }
+          next
+        end
+        same_browser_takeover = same_browser_lease_takeover?(lease, browser_instance_id, user_id, client_instance_id)
+        if browser_registration_lease_active?(lease, occurred_at) &&
+           lease['client_instance_id'].to_s != client_instance_id.to_s &&
+           !same_browser_takeover
+          result = {
+            acquired: false,
+            registration_instance_id: lease['registration_instance_id'],
+            expires_at: lease['expires_at']
+          }
+          next
+        end
+        if lease.blank? && browser_registered?
+          result = { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }
+          next
+        end
+
+        lease = next_browser_registration_lease(
+          lease, client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: user_id, occurred_at: occurred_at
+        )
+        store_browser_registration_lease!(lease, release_previous: same_browser_takeover, occurred_at: occurred_at)
+        result = { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
       end
 
-      lease = next_browser_registration_lease(
-        lease, client_instance_id: client_instance_id, browser_instance_id: browser_instance_id, user_id: user_id, occurred_at: occurred_at
-      )
-      store_browser_registration_lease!(lease, release_previous: same_browser_takeover, occurred_at: occurred_at)
-      result = { acquired: true, registration_instance_id: lease['registration_instance_id'], expires_at: lease['expires_at'] }
+      release_other_users_in_browser!(browser_instance_id, user_id, occurred_at) if result[:acquired]
     end
 
-    release_other_users_in_browser!(browser_instance_id, user_id, occurred_at) if result[:acquired]
     result
   end
 
@@ -332,7 +339,8 @@ class Telephony::SipProfile < ApplicationRecord
       release_browser_registration!(registration_metadata, occurred_at)
       registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY)
       registration_metadata['last_browser_release'] = {
-        'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => by_user_id, 'at' => occurred_at.iso8601
+        'reason' => 'browser_taken_over_by_other_user', 'by_user_id' => by_user_id, 'at' => occurred_at.iso8601,
+        'client_instance_id' => lease['client_instance_id'], 'browser_instance_id' => lease['browser_instance_id']
       }
       update!(metadata: registration_metadata)
     end
@@ -452,6 +460,17 @@ class Telephony::SipProfile < ApplicationRecord
     Telephony::OperatorBusyService.new(account: account, user: user).busy?
   end
 
+  def with_browser_registration_lock(browser_instance_id)
+    self.class.transaction do
+      if browser_instance_id.present?
+        # Serialize different users' profile rows until the displaced phone is released.
+        lock_key = Digest::SHA256.digest("telephony:browser:#{browser_instance_id}").unpack1('q>')
+        self.class.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
+      end
+      yield
+    end
+  end
+
   def release_other_users_in_browser!(browser_instance_id, user_id, occurred_at)
     return if browser_instance_id.blank?
 
@@ -462,8 +481,22 @@ class Telephony::SipProfile < ApplicationRecord
         browser_instance_id: browser_instance_id, by_user_id: user_id, occurred_at: occurred_at
       )
     end
-  rescue ActiveRecord::ActiveRecordError => e
-    Rails.logger.warn("[Telephony::SipProfile] releasing other users of a browser failed: #{e.class}")
+  end
+
+  def released_browser_tab_still_displaced?(client_instance_id, browser_instance_id, user_id, occurred_at)
+    return false if browser_instance_id.blank?
+
+    release = metadata.to_h['last_browser_release'].to_h
+    return false unless release['client_instance_id'].to_s == client_instance_id.to_s &&
+                        release['browser_instance_id'].to_s == browser_instance_id.to_s
+
+    self.class.where.not(user_id: user_id)
+        .where("metadata -> 'browser_registration_lease' ->> 'browser_instance_id' = ?", browser_instance_id.to_s)
+        .select(:id, :metadata)
+        .find_each.any? do |profile|
+      lease = profile.metadata.to_h[BROWSER_REGISTRATION_LEASE_KEY].to_h
+      profile.browser_registration_lease_valid?(lease['registration_instance_id'], occurred_at: occurred_at)
+    end
   end
 
   def normalize_values
