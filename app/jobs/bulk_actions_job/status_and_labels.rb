@@ -6,7 +6,7 @@ module BulkActionsJob::StatusAndLabels
   def skip_for_missing_required_attributes!(conversation)
     custom_attributes = conversation.custom_attributes || {}
     missing = required_attribute_definitions.any? { |definition| missing_required_attribute?(definition, custom_attributes) }
-    raise SkippedRecord, 'Required conversation attributes are missing' if missing
+    raise BulkActionsJob::SkippedRecord, 'Required conversation attributes are missing' if missing
   end
 
   def required_attribute_definitions
@@ -58,7 +58,7 @@ module BulkActionsJob::StatusAndLabels
   def ensure_full_thread_accessible!(communication_thread, accessible_links)
     return if accessible_links.count == communication_thread.communication_thread_conversations.count
 
-    raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
+    raise BulkActionsJob::SkippedRecord, 'Cannot update communication thread without access to all linked channels'
   end
 
   def bulk_add_thread_labels(accessible_links)

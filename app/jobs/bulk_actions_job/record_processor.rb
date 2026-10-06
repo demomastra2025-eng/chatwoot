@@ -44,7 +44,7 @@ module BulkActionsJob::RecordProcessor
 
   def process_communication_thread(communication_thread)
     accessible_links = accessible_links_for(communication_thread)
-    raise SkippedRecord, 'No accessible channels remain' if accessible_links.empty?
+    raise BulkActionsJob::SkippedRecord, 'No accessible channels remain' if accessible_links.empty?
 
     params = communication_thread_update_params
     validate_thread_update!(communication_thread, accessible_links, params) if params.present?
@@ -86,7 +86,7 @@ module BulkActionsJob::RecordProcessor
   end
 
   def process_record(record)
-    raise SkippedRecord, 'User is no longer a member of the account' unless account_member?
+    raise BulkActionsJob::SkippedRecord, 'User is no longer a member of the account' unless account_member?
 
     if record.is_a?(Conversation)
       accessible = Conversations::PermissionFilterService.new(
@@ -94,7 +94,7 @@ module BulkActionsJob::RecordProcessor
         @user,
         @account
       ).perform.exists?
-      raise SkippedRecord, 'Conversation access was revoked' unless accessible
+      raise BulkActionsJob::SkippedRecord, 'Conversation access was revoked' unless accessible
 
       skip_for_missing_required_attributes!(record) if resolved_status_requested?
     end
