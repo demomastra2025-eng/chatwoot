@@ -1203,7 +1203,9 @@ onMounted(async () => {
                       :data-stage-id="unsortedStage.id"
                       :style="stageCardStyle(unsortedStage)"
                     >
-                      <div class="flex items-center gap-2 text-sm font-semibold text-n-slate-12">
+                      <div
+                        class="flex items-center gap-2 text-sm font-semibold text-n-slate-12"
+                      >
                         <span class="i-lucide-inbox size-4 text-n-slate-10" />
                         {{ $t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED') }}
                       </div>
@@ -1213,7 +1215,9 @@ onMounted(async () => {
                       <p class="mb-0 mt-2 text-xs leading-5 text-n-slate-10">
                         {{ $t('CRM.SETTINGS.PIPELINES.UNSORTED_HELP') }}
                       </p>
-                      <div class="mt-auto flex items-center justify-between gap-2 pt-3">
+                      <div
+                        class="mt-auto flex items-center justify-between gap-2 pt-3"
+                      >
                         <span class="text-xs font-medium text-n-slate-11">
                           {{ $t('CRM.SETTINGS.STAGES.FORM.ACTIVE') }}
                         </span>
