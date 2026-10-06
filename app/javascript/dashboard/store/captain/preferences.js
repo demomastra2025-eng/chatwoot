@@ -8,12 +8,10 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     features: {},
     runtime: {},
     observability: {},
-    usage: {},
     providerCredentials: {},
     runtimeMetadata: {},
     uiFlags: {
       isFetching: false,
-      isFetchingUsage: false,
     },
   }),
 
@@ -23,7 +21,6 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
     getFeatures: state => state.features,
     getRuntime: state => state.runtime,
     getObservability: state => state.observability,
-    getUsage: state => state.usage,
     getProviderCredentials: state => state.providerCredentials,
     getRuntimeMetadata: state => state.runtimeMetadata,
     getUIFlags: state => state.uiFlags,
@@ -83,18 +80,16 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
       this.features = data.features || {};
       this.runtime = data.runtime || {};
       this.observability = data.observability || {};
-      if (data.usage) this.usage = data.usage;
       this.providerCredentials = data.provider_credentials || {};
       this.runtimeMetadata = data.runtime_metadata || {};
     },
 
-    async fetch({ includeUsage = true, clientMetadataOnly = false } = {}) {
+    async fetch({ clientMetadataOnly = false } = {}) {
       if (this.uiFlags.isFetching) return;
 
       this.uiFlags.isFetching = true;
       try {
         const response = await CaptainPreferencesAPI.get({
-          include_usage: includeUsage,
           client_metadata_only: clientMetadataOnly,
         });
         this.applyPayload(response.data);
@@ -102,19 +97,6 @@ export const useCaptainConfigStore = defineStore('captainConfig', {
         // Ignore error
       } finally {
         this.uiFlags.isFetching = false;
-      }
-    },
-
-    async fetchUsage() {
-      this.uiFlags.isFetchingUsage = true;
-      this.usage = {};
-      try {
-        const response = await CaptainPreferencesAPI.get({ section: 'usage' });
-        this.usage = response.data.usage || {};
-      } catch (error) {
-        // The settings remain usable if the usage summary is unavailable.
-      } finally {
-        this.uiFlags.isFetchingUsage = false;
       }
     },
 

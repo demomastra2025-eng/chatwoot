@@ -259,7 +259,7 @@ describe('Sidebar', () => {
     it('is labelled «AI Агенты» and lists the AI pages without icons', async () => {
       const wrapper = await mountSidebar({
         permissions: ADMINISTRATOR,
-        routeName: 'captain_usage_index',
+        routeName: 'captain_settings_index',
       });
       const captain = sidebarGroup(wrapper, 'Captain');
 
@@ -274,7 +274,6 @@ describe('Sidebar', () => {
         'Observability',
         'Knowledge Base',
         'Settings Captain',
-        'AI expenses',
       ]);
       captain
         .props('children')
@@ -286,11 +285,8 @@ describe('Sidebar', () => {
           params: { navigationPath: 'captain_assistants_playground_index' },
         }
       );
-      expect(
-        children.find(child => child.name === 'AI expenses').to
-      ).toMatchObject({ name: 'captain_usage_index' });
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
-        { name: 'AI expenses', active: true },
+        { name: 'Settings Captain', active: true },
       ]);
       expect(
         navigationChildNames(sidebarGroup(wrapper, 'Settings'))

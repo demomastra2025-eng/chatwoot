@@ -435,7 +435,6 @@
     "CAPTAIN_OBSERVABILITY": "Логи",
     "CAPTAIN_SCENARIOS": "Сценарии",
     "CAPTAIN_PLAYGROUND": "Площадка",
-    "CAPTAIN_USAGE": "Расходы",
     "CAPTAIN_INBOXES": "Каналы",
     "CAPTAIN_SETTINGS": "Настройки ИИ",
     "CAPTAIN_PROMPTS": "Инструкции",
@@ -1175,63 +1174,10 @@
   },
   "CAPTAIN_SETTINGS": {
     "TITLE": "Настройки AI-сотрудников",
-    "DESCRIPTION": "Настройте AI-модели и функции для AI-сотрудников. AI-сотрудники используют оплату по кредитам: кредиты списываются за каждое AI-действие в зависимости от выбранной модели.",
+    "DESCRIPTION": "Настройки функций ИИ для компании.",
     "LOADING": "Загрузка конфигурации AI-сотрудников...",
     "LINK_TEXT": "Подробнее о кредитах AI-сотрудников",
     "NOT_ENABLED": "AI-сотрудники не включены для вашего workspace. Перейдите на более высокий тариф, чтобы получить доступ к функциям AI-сотрудников.",
-    "PROVIDER_KEYS": {
-      "TITLE": "Ключи провайдеров",
-      "DESCRIPTION": "Настройте LLM-ключи на уровне workspace. Секреты хранятся на сервере и никогда не возвращаются в браузер.",
-      "STATUS_LABEL": "Источник ключа: {status}",
-      "HEALTH_LABEL": "Состояние OpenRouter: {status}",
-      "CHECKED_AT": " · проверено {date}",
-      "PLACEHOLDER": "Вставьте API key {provider}, чтобы переопределить глобальный ключ",
-      "SAVE": "Сохранить ключ",
-      "REMOVE_ACCOUNT_KEY": "Удалить ключ workspace",
-      "SECRET_NOTE": "Текущее значение ключа скрыто. Оставьте поле пустым, чтобы ничего не менять.",
-      "SAVE_SUCCESS": "Ключ провайдера для workspace сохранён.",
-      "SAVE_ERROR": "Не удалось сохранить ключ провайдера.",
-      "REMOVE_SUCCESS": "Ключ провайдера для workspace удалён.",
-      "REMOVE_ERROR": "Не удалось удалить ключ провайдера.",
-      "STATUS": {
-        "ACCOUNT": "workspace",
-        "GLOBAL": "глобальный",
-        "MISSING": "отсутствует"
-      },
-      "HEALTH_STATUS": {
-        "VALID": "ключ работает",
-        "NOT_CHECKED": "ещё не проверен",
-        "MISSING": "ключ отсутствует",
-        "INVALID": "ключ невалиден",
-        "EXPIRED": "срок истёк",
-        "UNAVAILABLE": "недоступно",
-        "CREDITS_EXHAUSTED": "кредиты закончились",
-        "CREDITS_UNAVAILABLE": "кредиты недоступны",
-        "KEY_LIMIT_EXHAUSTED": "лимит ключа исчерпан",
-        "MANAGEMENT_KEY_REQUIRED": "нужен management key",
-        "WORKSPACE_KEY_CONFIGURED": "ключ workspace настроен"
-      }
-    },
-    "RELIABILITY": {
-      "TITLE": "Надёжность OpenRouter",
-      "DESCRIPTION": "Системные механизмы включены политикой One Link и не требуют ручной настройки пользователем.",
-      "STRUCTURED_RECOVERY_TITLE": "Восстановление JSON",
-      "STRUCTURED_RECOVERY_DESCRIPTION": "Исправляет структурированный ответ только там, где функция ждёт строгую схему.",
-      "CONTEXT_COMPRESSION_TITLE": "Длинный контекст",
-      "CONTEXT_COMPRESSION_DESCRIPTION": "Сжатие включается только при риске выхода за лимит контекста модели.",
-      "ZERO_COMPLETION_TITLE": "Пустые ответы",
-      "ZERO_COMPLETION_DESCRIPTION": "После выполненного инструмента система добивается финального ответа без повторной мутации.",
-      "SERVER_TIME_TITLE": "Системное время",
-      "SERVER_TIME_DESCRIPTION": "AI-агент и ИИ ассистент получают безопасный read-only инструмент времени.",
-      "BLOCKED_EXTENSIONS_TITLE": "Опасные расширения",
-      "BLOCKED_EXTENSIONS_DESCRIPTION": "Patch, PDF-плагины OpenRouter и генерация изображений заблокированы до отдельного rollout.",
-      "STATUS": {
-        "AUTO": "авто",
-        "OVERFLOW_ONLY": "по лимиту",
-        "SYSTEM": "системно",
-        "PROTECTED": "защищено"
-      }
-    },
     "WEB_ACCESS": {
       "TITLE": "Веб-доступ Firecrawl",
       "DESCRIPTION": "Управляйте доступом AI-агента и ИИ ассистента к публичному вебу через контролируемый слой One Link.",
@@ -1259,57 +1205,6 @@
         "LIMIT": "до {count} символов, файл до {size}"
       }
     },
-    "USAGE": {
-      "TITLE": "Расход и бюджет OpenRouter",
-      "DESCRIPTION": "Контролируйте стоимость, токены, ошибки и лимиты OpenRouter для этого workspace.",
-      "TODAY_SPEND": "Расход сегодня",
-      "MONTH_SPEND": "Расход за месяц",
-      "MONTH_TOKENS": "Токены за месяц",
-      "MONTH_ERRORS": "Ошибки за месяц",
-      "REQUESTS_COUNT": "{count} запросов",
-      "CACHED_TOKENS_COUNT": "кэш: {count}",
-      "REASONING_TOKENS_COUNT": "reasoning: {count}",
-      "BUDGET_TITLE": "Лимиты бюджета",
-      "BUDGET_DESCRIPTION": "Лимиты применяются ко всем AI-функциям workspace через OpenRouter.",
-      "BUDGET_ACTIVE": "Включено",
-      "DAILY_BUDGET": "Дневной лимит",
-      "MONTHLY_BUDGET": "Месячный лимит",
-      "BUDGET_PLACEHOLDER": "Без лимита",
-      "WARNING_THRESHOLD": "Предупреждение, %",
-      "HARD_STOP": "Жёсткая остановка",
-      "HARD_STOP_DESCRIPTION": "Блокировать AI-запросы после превышения лимита.",
-      "SAVE": "Сохранить бюджет",
-      "SAVE_SUCCESS": "Бюджет OpenRouter сохранён.",
-      "SAVE_ERROR": "Не удалось сохранить бюджет OpenRouter.",
-      "UNLIMITED": "Без лимита",
-      "USED_PERCENT": "{percent}% использовано",
-      "REMAINING": "Осталось {amount}",
-      "RUNTIME_HEALTH_TITLE": "Состояние за 24 часа",
-      "RUNTIME_HEALTH_DESCRIPTION": "Короткая диагностика событий OpenRouter runtime.",
-      "RUNTIME_EVENTS": "События",
-      "RUNTIME_RETRIES": "Повторы",
-      "RUNTIME_P95_LATENCY": "P95 задержка",
-      "RUNTIME_ERROR_RATE": "Доля ошибок",
-      "RUNTIME_SCHEMA_ERRORS": "Ошибки схемы",
-      "RUNTIME_TOOL_ERRORS": "Ошибки тулзов",
-      "RUNTIME_ZERO_COMPLETION": "Пустые ответы восстановлены",
-      "RUNTIME_FALLBACKS": "Fallback моделей",
-      "RUNTIME_KEY_HEALTH": "Ключ OpenRouter",
-      "MILLISECONDS": "{count} мс",
-      "LAST_EVENT": "Последнее событие: {date}",
-      "NEVER": "нет данных",
-      "TOP_MODELS": "Топ моделей",
-      "NO_TOP_MODELS": "Расходов по моделям пока нет.",
-      "MODEL_USAGE_META": "{requests} запросов · {tokens} токенов",
-      "RECENT_ERRORS": "Последние ошибки",
-      "NO_RECENT_ERRORS": "Ошибок OpenRouter не было.",
-      "STATUS": {
-        "OK": "норма",
-        "WARNING": "предупреждение",
-        "EXCEEDED": "превышен",
-        "NOT_CONFIGURED": "без лимита"
-      }
-    },
     "MODEL_CONFIG": {
       "TITLE": "Конфигурация моделей",
       "DESCRIPTION": "Выберите AI-модели для разных функций.",
@@ -1322,7 +1217,7 @@
       "CREDITS_PER_MESSAGE": "{credits} кредит/сообщение",
       "COMING_SOON": "Скоро",
       "NOT_AVAILABLE_FOR_FEATURE": "Недоступна для этой функции",
-      "SOURCE_OPENROUTER_API": "OpenRouter API",
+      "SOURCE_OPENROUTER_API": "API поставщика моделей",
       "SOURCE_LOCAL_FALLBACK": "локальный fallback",
       "PROVIDER_ROUTE_LABEL": "через {provider}",
       "CONTEXT_TOKENS": "{count} токенов контекста",
@@ -1358,14 +1253,14 @@
         "EMBEDDINGS": "Векторы"
       },
       "NO_MODELS_MATCH": "По запросу ничего не найдено.",
-      "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ OpenRouter или дождитесь обновления каталога.",
+      "NO_COMPATIBLE_MODELS": "Нет совместимой настроенной модели. Добавьте ключ поставщика моделей или дождитесь обновления каталога.",
       "DIAGNOSTICS": {
         "TITLE": "Выбранная модель {model} сейчас недоступна",
         "SEARCH_TITLE": "{model} нельзя использовать для этой функции",
         "REASONS": {
           "MODEL_NOT_FOUND": "Выбранной модели нет в текущем каталоге.",
-          "PROVIDER_NOT_CONFIGURED": "OpenRouter не настроен для этого аккаунта или инсталляции.",
-          "DIRECT_PROVIDER_DISABLED": "Прямые модели провайдера здесь отключены; выберите OpenRouter-эквивалент.",
+          "PROVIDER_NOT_CONFIGURED": "Поставщик моделей не настроен для этого аккаунта или инсталляции.",
+          "DIRECT_PROVIDER_DISABLED": "Прямые модели провайдера здесь отключены; выберите совместимую модель.",
           "VOICE_ONLY_PROVIDER": "Прямые модели Gemini доступны только в настройках AI Voice.",
           "STRUCTURED_OUTPUT_UNSUPPORTED": "Модель не поддерживает структурированный JSON-вывод.",
           "TOOL_CALLING_UNSUPPORTED": "Модель не поддерживает вызов инструментов.",
@@ -1375,8 +1270,8 @@
           "UNSUPPORTED_TYPE": "Тип модели несовместим с этой функцией.",
           "EMBEDDING_DIMENSION_MISMATCH": "Размерность embeddings не совпадает с индексом знаний One Link.",
           "CONTEXT_TOO_SMALL": "Контекст модели слишком мал для выбранного размера чанка базы знаний.",
-          "ZDR_REQUIRED_UNSUPPORTED": "Ни один обновлённый endpoint OpenRouter для этой модели не заявляет zero data retention.",
-          "PRIVACY_PROFILE_INVALID": "Выбранный privacy profile OpenRouter некорректен.",
+          "ZDR_REQUIRED_UNSUPPORTED": "Ни один обновлённый endpoint поставщика моделей для этой модели не заявляет zero data retention.",
+          "PRIVACY_PROFILE_INVALID": "Выбранный privacy profile поставщика моделей некорректен.",
           "CAPABILITY_DIAGNOSTICS_FAILED": "Диагностика capability не сработала; обновите каталог и попробуйте снова."
         }
       },
@@ -1396,7 +1291,7 @@
       },
       "MODERATION": {
         "TITLE": "Модель модерации",
-        "DESCRIPTION": "Классифицирует небезопасный текст до/после AI-ответов. Модели OpenRouter должны поддерживать структурированный JSON-вывод."
+        "DESCRIPTION": "Классифицирует небезопасный текст до/после AI-ответов. Модели поставщика моделей должны поддерживать структурированный JSON-вывод."
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Модель распознавания аудио",
@@ -1404,15 +1299,15 @@
         "ENABLE_TITLE": "Транскрибация",
         "ENABLE_DESCRIPTION": "Преобразует входящие голосовые сообщения и записи звонков в текст.",
         "PROMPT_TITLE": "Промпт распознавания",
-        "PROMPT_DESCRIPTION": "Дополнительные инструкции для моделей распознавания с промптом. Нативные STT endpoint-модели OpenRouter работают без промпта.",
+        "PROMPT_DESCRIPTION": "Дополнительные инструкции для моделей распознавания с промптом. Нативные STT endpoint-модели поставщика моделей работают без промпта.",
         "PROMPT_PLACEHOLDER": "Например: точно распознавай русский и казахский. Сохраняй имена, номера и названия продуктов.",
         "SAVE_PROMPT": "Сохранить промпт",
         "NATIVE_PROMPT_TITLE": "Нативный STT endpoint",
-        "NATIVE_PROMPT_DESCRIPTION": "Эта модель использует нативный endpoint транскрибации OpenRouter, поэтому промпт не отправляется."
+        "NATIVE_PROMPT_DESCRIPTION": "Эта модель использует нативный endpoint транскрибации поставщика моделей, поэтому промпт не отправляется."
       },
       "IMAGE_RECOGNITION": {
         "TITLE": "Модель распознавания картинок",
-        "DESCRIPTION": "Описывает картинки клиентов до передачи сообщения AI-агенту / ИИ ассистенту. Дефолты выбираются автоматически, если настроен OpenAI или OpenRouter."
+        "DESCRIPTION": "Описывает картинки клиентов до передачи сообщения AI-агенту / ИИ ассистенту. Дефолты выбираются автоматически, если настроен провайдер ИИ."
       },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embedding-модель",
@@ -1420,7 +1315,7 @@
         "INDEXING_TITLE": "Индексация поиска",
         "INDEXING_DESCRIPTION": "Создаёт и обновляет семантический индекс для FAQ lookup.",
         "CHUNK_SIZE_TITLE": "Размер чанка базы знаний",
-        "CHUNK_SIZE_DESCRIPTION": "Показываются только OpenRouter embedding-модели, которым хватает контекста.",
+        "CHUNK_SIZE_DESCRIPTION": "Показываются только совместимые модели для индексации.",
         "CHUNK_SIZE_OPTION": "{chars} символов (~{tokens} токенов) · моделей: {count}",
         "CHUNK_SIZE_OPTION_DISABLED": "{chars} символов (~{tokens} токенов) · нет совместимых моделей"
       }
@@ -1455,8 +1350,8 @@
       "TITLE": "Рантайм и безопасность",
       "DESCRIPTION": "Настройте reasoning и безопасность для AI-агента и ИИ ассистента.",
       "MODERATION": {
-        "TITLE": "Модерация",
-        "DESCRIPTION": "Проверяет вход и ответ AI на безопасность."
+        "TITLE": "Проверка безопасности",
+        "DESCRIPTION": "Проверяет сообщения и ответы ИИ на безопасность."
       },
       "MODERATION_FAILURE_MODE": {
         "TITLE": "Режим отказа модерации",
@@ -1524,20 +1419,20 @@
         "DEFAULT_ENDPOINT": "Стандартный endpoint"
       },
       "OPENROUTER": {
-        "TITLE": "Каталог моделей OpenRouter",
-        "PRIMARY": "Маршрутизация OpenRouter",
+        "TITLE": "Каталог моделей поставщика моделей",
+        "PRIMARY": "Маршрутизация поставщика моделей",
         "PRIMARY_ACTIVE": "Основной / fallback активен",
-        "PRIMARY_INACTIVE": "Нет ключа OpenRouter",
-        "DESCRIPTION": "Модели OpenRouter загружаются через OpenRouter API; до первого успешного обновления используется встроенный каталог.",
-        "REFRESH": "Обновить модели OpenRouter",
-        "REFRESH_SUCCESS": "Модели OpenRouter успешно обновлены.",
-        "REFRESH_ERROR": "Не удалось обновить модели OpenRouter.",
+        "PRIMARY_INACTIVE": "Нет ключа поставщика моделей",
+        "DESCRIPTION": "Модели загружаются через API поставщика моделей; до первого успешного обновления используется встроенный каталог.",
+        "REFRESH": "Обновить модели поставщика моделей",
+        "REFRESH_SUCCESS": "Модели поставщика моделей успешно обновлены.",
+        "REFRESH_ERROR": "Не удалось обновить модели поставщика моделей.",
         "SOURCE": "Источник каталога",
-        "API_SOURCE": "OpenRouter API ({count} моделей)",
+        "API_SOURCE": "API поставщика моделей ({count} моделей)",
         "FALLBACK_SOURCE": "Встроенный fallback ({count} моделей)",
-        "LAST_REFRESH": "Последнее обновление OpenRouter",
-        "MISSING_KEY": "Настройте CAPTAIN_OPENROUTER_API_KEY в Super Admin, чтобы обновлять модели через OpenRouter.",
-        "ERROR": "Ошибка последнего обновления OpenRouter: {error}"
+        "LAST_REFRESH": "Последнее обновление поставщика моделей",
+        "MISSING_KEY": "Обновление каталога доступно после настройки платформы.",
+        "ERROR": "Ошибка последнего обновления поставщика моделей: {error}"
       },
       "FEATURES": {
         "TITLE": "Разрешённые модели по функциям",

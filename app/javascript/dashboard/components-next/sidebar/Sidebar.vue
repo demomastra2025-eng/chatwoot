@@ -1302,13 +1302,6 @@ const menuItems = computed(() => {
                   activeOn: ['captain_settings_index'],
                   to: accountScopedRoute('captain_settings_index'),
                 },
-                {
-                  name: 'AI expenses',
-                  visibilityKey: 'Captain:Usage',
-                  label: t('SIDEBAR.CAPTAIN_USAGE'),
-                  activeOn: ['captain_usage_index'],
-                  to: accountScopedRoute('captain_usage_index'),
-                },
               ]
             : []),
         ],

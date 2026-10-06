@@ -436,7 +436,6 @@
     "CAPTAIN_EVALUATIONS": "Testing",
     "CAPTAIN_SCENARIOS": "Scenarios",
     "CAPTAIN_PLAYGROUND": "Playground",
-    "CAPTAIN_USAGE": "Expenses",
     "CAPTAIN_INBOXES": "Inboxes",
     "CAPTAIN_SETTINGS": "AI Settings",
     "CAPTAIN_PROMPTS": "Prompts",
@@ -684,59 +683,6 @@
     "LOADING": "Loading AI Staff configuration...",
     "LINK_TEXT": "Learn more about AI credits",
     "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",
-    "PROVIDER_KEYS": {
-      "TITLE": "Provider keys",
-      "DESCRIPTION": "Configure workspace-level LLM credentials. Secrets are stored server-side and are never returned to the browser.",
-      "STATUS_LABEL": "Key source: {status}",
-      "HEALTH_LABEL": "OpenRouter status: {status}",
-      "CHECKED_AT": " · checked {date}",
-      "PLACEHOLDER": "Paste {provider} API key to override the global key",
-      "SAVE": "Save key",
-      "REMOVE_ACCOUNT_KEY": "Remove account key",
-      "SECRET_NOTE": "The existing key value is hidden. Leave the input empty to keep it unchanged.",
-      "SAVE_SUCCESS": "Provider account key saved.",
-      "SAVE_ERROR": "Failed to save provider account key.",
-      "REMOVE_SUCCESS": "Provider account key removed.",
-      "REMOVE_ERROR": "Failed to remove provider account key.",
-      "STATUS": {
-        "ACCOUNT": "account",
-        "GLOBAL": "global",
-        "MISSING": "missing"
-      },
-      "HEALTH_STATUS": {
-        "VALID": "valid",
-        "NOT_CHECKED": "not checked",
-        "MISSING": "missing",
-        "INVALID": "invalid key",
-        "EXPIRED": "expired",
-        "UNAVAILABLE": "unavailable",
-        "CREDITS_EXHAUSTED": "credits exhausted",
-        "CREDITS_UNAVAILABLE": "credits unavailable",
-        "KEY_LIMIT_EXHAUSTED": "key limit exhausted",
-        "MANAGEMENT_KEY_REQUIRED": "management key required",
-        "WORKSPACE_KEY_CONFIGURED": "workspace key configured"
-      }
-    },
-    "RELIABILITY": {
-      "TITLE": "OpenRouter reliability",
-      "DESCRIPTION": "System mechanisms are enforced by One Link policy and do not require user-side tuning.",
-      "STRUCTURED_RECOVERY_TITLE": "JSON recovery",
-      "STRUCTURED_RECOVERY_DESCRIPTION": "Repairs structured replies only when the feature expects a strict schema.",
-      "CONTEXT_COMPRESSION_TITLE": "Long context",
-      "CONTEXT_COMPRESSION_DESCRIPTION": "Compression is enabled only when a request approaches the model context limit.",
-      "ZERO_COMPLETION_TITLE": "Blank replies",
-      "ZERO_COMPLETION_DESCRIPTION": "After a completed tool, the system obtains a final answer without repeating mutations.",
-      "SERVER_TIME_TITLE": "System time",
-      "SERVER_TIME_DESCRIPTION": "AI Agent and AI Assistant get a safe read-only datetime tool.",
-      "BLOCKED_EXTENSIONS_TITLE": "Dangerous extensions",
-      "BLOCKED_EXTENSIONS_DESCRIPTION": "OpenRouter patch, PDF plugins, and image generation stay blocked until a separate rollout.",
-      "STATUS": {
-        "AUTO": "auto",
-        "OVERFLOW_ONLY": "overflow",
-        "SYSTEM": "system",
-        "PROTECTED": "protected"
-      }
-    },
     "WEB_ACCESS": {
       "TITLE": "Firecrawl web access",
       "DESCRIPTION": "Control public web access for the AI Agent and AI Assistant through the One Link policy layer.",
@@ -764,57 +710,6 @@
         "LIMIT": "up to {count} chars, file up to {size}"
       }
     },
-    "USAGE": {
-      "TITLE": "OpenRouter usage and budget",
-      "DESCRIPTION": "Track spend, tokens, errors, and OpenRouter limits for this workspace.",
-      "TODAY_SPEND": "Today spend",
-      "MONTH_SPEND": "Month spend",
-      "MONTH_TOKENS": "Month tokens",
-      "MONTH_ERRORS": "Month errors",
-      "REQUESTS_COUNT": "{count} requests",
-      "CACHED_TOKENS_COUNT": "cache: {count}",
-      "REASONING_TOKENS_COUNT": "reasoning: {count}",
-      "BUDGET_TITLE": "Budget limits",
-      "BUDGET_DESCRIPTION": "Limits apply to all workspace AI features routed through OpenRouter.",
-      "BUDGET_ACTIVE": "Enabled",
-      "DAILY_BUDGET": "Daily limit",
-      "MONTHLY_BUDGET": "Monthly limit",
-      "BUDGET_PLACEHOLDER": "No limit",
-      "WARNING_THRESHOLD": "Warning, %",
-      "HARD_STOP": "Hard stop",
-      "HARD_STOP_DESCRIPTION": "Block AI requests after the limit is exceeded.",
-      "SAVE": "Save budget",
-      "SAVE_SUCCESS": "OpenRouter budget saved.",
-      "SAVE_ERROR": "Failed to save OpenRouter budget.",
-      "UNLIMITED": "No limit",
-      "USED_PERCENT": "{percent}% used",
-      "REMAINING": "{amount} left",
-      "RUNTIME_HEALTH_TITLE": "Last 24 hours",
-      "RUNTIME_HEALTH_DESCRIPTION": "Quick diagnostics for OpenRouter runtime events.",
-      "RUNTIME_EVENTS": "Events",
-      "RUNTIME_RETRIES": "Retries",
-      "RUNTIME_P95_LATENCY": "P95 latency",
-      "RUNTIME_ERROR_RATE": "Error rate",
-      "RUNTIME_SCHEMA_ERRORS": "Schema errors",
-      "RUNTIME_TOOL_ERRORS": "Tool errors",
-      "RUNTIME_ZERO_COMPLETION": "Blank replies recovered",
-      "RUNTIME_FALLBACKS": "Model fallbacks",
-      "RUNTIME_KEY_HEALTH": "OpenRouter key",
-      "MILLISECONDS": "{count} ms",
-      "LAST_EVENT": "Last event: {date}",
-      "NEVER": "no data",
-      "TOP_MODELS": "Top models",
-      "NO_TOP_MODELS": "No model spend yet.",
-      "MODEL_USAGE_META": "{requests} requests · {tokens} tokens",
-      "RECENT_ERRORS": "Recent errors",
-      "NO_RECENT_ERRORS": "No OpenRouter errors recorded.",
-      "STATUS": {
-        "OK": "ok",
-        "WARNING": "warning",
-        "EXCEEDED": "exceeded",
-        "NOT_CONFIGURED": "no limit"
-      }
-    },
     "MODEL_CONFIG": {
       "TITLE": "Model Configuration",
       "DESCRIPTION": "Select AI models for different features.",
@@ -825,7 +720,7 @@
       "CREDITS_PER_MESSAGE": "{credits} credit/message",
       "COMING_SOON": "Coming soon",
       "NOT_AVAILABLE_FOR_FEATURE": "Not available for this feature",
-      "SOURCE_OPENROUTER_API": "OpenRouter API",
+      "SOURCE_OPENROUTER_API": "model provider API",
       "SOURCE_LOCAL_FALLBACK": "local fallback",
       "PROVIDER_ROUTE_LABEL": "via {provider}",
       "CONTEXT_TOKENS": "{count} context tokens",
@@ -861,14 +756,14 @@
         "EMBEDDINGS": "Embeddings"
       },
       "NO_MODELS_MATCH": "No models match your search.",
-      "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure an OpenRouter key or wait for the catalog refresh to finish.",
+      "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure a model provider key or wait for the catalog refresh to finish.",
       "DIAGNOSTICS": {
         "TITLE": "Selected model {model} is not available",
         "SEARCH_TITLE": "{model} cannot be used for this feature",
         "REASONS": {
           "MODEL_NOT_FOUND": "The selected model is not in the current catalog.",
-          "PROVIDER_NOT_CONFIGURED": "OpenRouter is not configured for this account or installation.",
-          "DIRECT_PROVIDER_DISABLED": "Direct provider models are disabled here; choose the OpenRouter equivalent.",
+          "PROVIDER_NOT_CONFIGURED": "The model provider is not configured for this account or installation.",
+          "DIRECT_PROVIDER_DISABLED": "Direct provider models are disabled here; choose the model provider equivalent.",
           "VOICE_ONLY_PROVIDER": "Gemini direct models are available only in AI Voice settings.",
           "STRUCTURED_OUTPUT_UNSUPPORTED": "The model does not support structured JSON output.",
           "TOOL_CALLING_UNSUPPORTED": "The model does not support tool calling.",
@@ -878,8 +773,8 @@
           "UNSUPPORTED_TYPE": "The model type is not compatible with this feature.",
           "EMBEDDING_DIMENSION_MISMATCH": "Embedding dimensions do not match the One Link knowledge index.",
           "CONTEXT_TOO_SMALL": "The model context is too small for the configured knowledge chunk size.",
-          "ZDR_REQUIRED_UNSUPPORTED": "No refreshed OpenRouter endpoint for this model advertises zero data retention.",
-          "PRIVACY_PROFILE_INVALID": "The selected OpenRouter privacy profile is invalid.",
+          "ZDR_REQUIRED_UNSUPPORTED": "No refreshed model provider endpoint for this model advertises zero data retention.",
+          "PRIVACY_PROFILE_INVALID": "The selected model provider privacy profile is invalid.",
           "CAPABILITY_DIAGNOSTICS_FAILED": "Model capability diagnostics failed; refresh the catalog and try again."
         }
       },
@@ -899,7 +794,7 @@
       },
       "MODERATION": {
         "TITLE": "Moderation model",
-        "DESCRIPTION": "Classifies unsafe text before/after AI replies. OpenRouter models must support structured JSON output."
+        "DESCRIPTION": "Classifies unsafe text before/after AI replies. Model provider models must support structured JSON output."
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Audio recognition model",
@@ -907,15 +802,15 @@
         "ENABLE_TITLE": "Transcription",
         "ENABLE_DESCRIPTION": "Convert incoming voice messages and call recordings into text.",
         "PROMPT_TITLE": "Recognition prompt",
-        "PROMPT_DESCRIPTION": "Optional instructions for prompt-aware recognition models. Native OpenRouter STT endpoint models work without a prompt.",
+        "PROMPT_DESCRIPTION": "Optional instructions for prompt-aware recognition models. Native model provider STT endpoint models work without a prompt.",
         "PROMPT_PLACEHOLDER": "Example: Transcribe Russian and Kazakh accurately. Preserve names, numbers, and product terms.",
         "SAVE_PROMPT": "Save prompt",
         "NATIVE_PROMPT_TITLE": "Native STT endpoint",
-        "NATIVE_PROMPT_DESCRIPTION": "This model uses OpenRouter's native transcription endpoint, so no prompt is sent."
+        "NATIVE_PROMPT_DESCRIPTION": "This model uses the model provider's native transcription endpoint, so no prompt is sent."
       },
       "IMAGE_RECOGNITION": {
         "TITLE": "Image recognition model",
-        "DESCRIPTION": "Describes customer-shared images before the AI Agent / AI Assistant processes the message. Defaults are selected automatically when OpenAI or OpenRouter is configured."
+        "DESCRIPTION": "Describes customer-shared images before the AI Agent / AI Assistant processes the message. Defaults are selected automatically when a model provider is configured."
       },
       "EMBEDDINGS": {
         "TITLE": "FAQ / embeddings model",
@@ -923,7 +818,7 @@
         "INDEXING_TITLE": "Search indexing",
         "INDEXING_DESCRIPTION": "Build and update the semantic index for FAQ lookup.",
         "CHUNK_SIZE_TITLE": "Knowledge chunk size",
-        "CHUNK_SIZE_DESCRIPTION": "Only OpenRouter embedding models that fit this size are shown.",
+        "CHUNK_SIZE_DESCRIPTION": "Only model provider embedding models that fit this size are shown.",
         "CHUNK_SIZE_OPTION": "{chars} chars (~{tokens} tokens) · {count} models",
         "CHUNK_SIZE_OPTION_DISABLED": "{chars} chars (~{tokens} tokens) · no compatible models"
       },
@@ -1029,20 +924,20 @@
         "DEFAULT_ENDPOINT": "Default endpoint"
       },
       "OPENROUTER": {
-        "TITLE": "OpenRouter model catalog",
-        "PRIMARY": "OpenRouter routing",
+        "TITLE": "Model catalog",
+        "PRIMARY": "Model routing",
         "PRIMARY_ACTIVE": "Primary / fallback active",
-        "PRIMARY_INACTIVE": "Missing OpenRouter key",
-        "DESCRIPTION": "OpenRouter models are fetched from the OpenRouter API and fall back to the bundled catalog until the first successful refresh.",
-        "REFRESH": "Refresh OpenRouter models",
-        "REFRESH_SUCCESS": "OpenRouter models refreshed successfully.",
-        "REFRESH_ERROR": "Failed to refresh OpenRouter models.",
+        "PRIMARY_INACTIVE": "Missing model provider key",
+        "DESCRIPTION": "Models are fetched from the model provider API and fall back to the bundled catalog until the first successful refresh.",
+        "REFRESH": "Refresh model provider models",
+        "REFRESH_SUCCESS": "Model catalog refreshed successfully.",
+        "REFRESH_ERROR": "Failed to refresh model provider models.",
         "SOURCE": "Catalog source",
-        "API_SOURCE": "OpenRouter API ({count} models)",
+        "API_SOURCE": "model provider API ({count} models)",
         "FALLBACK_SOURCE": "Bundled fallback ({count} models)",
-        "LAST_REFRESH": "Last OpenRouter refresh",
-        "MISSING_KEY": "Configure CAPTAIN_OPENROUTER_API_KEY in Super Admin to refresh models from OpenRouter.",
-        "ERROR": "Last OpenRouter refresh error: {error}"
+        "LAST_REFRESH": "Last model provider refresh",
+        "MISSING_KEY": "Catalog refresh is available after platform setup.",
+        "ERROR": "Last model catalog refresh error: {error}"
       },
       "FEATURES": {
         "TITLE": "Resolved feature models",

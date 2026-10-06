@@ -42,35 +42,5 @@ export default {
         hash: to.hash,
       }),
     },
-    // «Расходы» in the AI menu: the usage section of the AI settings page.
-    {
-      path: frontendURL('accounts/:accountId/captain/usage'),
-      component: SettingsWrapper,
-      meta: {
-        permissions: ['administrator'],
-        featureFlag: FEATURE_FLAGS.CAPTAIN,
-      },
-      props: {
-        headerTitle: 'CAPTAIN_SETTINGS.USAGE.TITLE',
-        icon: 'i-lucide-bot',
-        showNewButton: false,
-      },
-      children: [
-        {
-          path: '',
-          name: 'captain_usage_index',
-          component: Index,
-          props: { section: 'usage' },
-          meta: {
-            permissions: ['administrator'],
-            featureFlag: FEATURE_FLAGS.CAPTAIN,
-            installationTypes: [
-              INSTALLATION_TYPES.ENTERPRISE,
-              INSTALLATION_TYPES.CLOUD,
-            ],
-          },
-        },
-      ],
-    },
   ],
 };
