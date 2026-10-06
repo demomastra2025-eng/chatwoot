@@ -9,8 +9,8 @@ RSpec.describe Search::MessageQuery do
     create(:message, account: account, inbox: inbox, content: content, created_at: minutes_ago.minutes.ago, **attributes)
   end
 
-  def found(text, **options)
-    described_class.new(text).newest(base, limit: 15, **options).rows.map(&:first)
+  def found(text, **)
+    described_class.new(text).newest(base, limit: 15, **).rows.map(&:first)
   end
 
   describe 'what is a match' do
@@ -103,10 +103,14 @@ RSpec.describe Search::MessageQuery do
       end
     end
 
-    it 'finds a text typed with full-width characters as its plain ASCII' do
+    it 'keeps full-width message text literal while parsing full-width phone numbers' do
       plain = message('Код ABC-123 принят')
+      full_width = message('Код ＡＢＣ－１２３ принят')
+      phone = message('Телефон +7 707 281 70 60')
 
-      expect(found('ＡＢＣ－１２３')).to eq([plain.id])
+      expect(found('ＡＢＣ－１２３')).to eq([full_width.id])
+      expect(found('ABC-123')).to eq([plain.id])
+      expect(found('＋７７０７２８１７０６０')).to eq([phone.id])
     end
   end
 
