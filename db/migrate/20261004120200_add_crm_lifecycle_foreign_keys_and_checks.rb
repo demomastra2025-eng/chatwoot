@@ -13,17 +13,21 @@ class AddCrmLifecycleForeignKeysAndChecks < ActiveRecord::Migration[7.1]
       (all_day = FALSE AND due_on IS NULL)
     )
   SQL
+  # A CHECK passes when its expression is UNKNOWN, and `LENGTH(BTRIM(NULL)) > 0` or `NULL = 1` is UNKNOWN: the
+  # completeness branches below therefore name every column that must be present with an explicit IS NOT NULL.
   CANCELLATION_STATE = <<~SQL.squish.freeze
     (cancelled_at IS NULL AND cancellation_reason IS NULL) OR
-    (cancelled_at IS NOT NULL AND LENGTH(BTRIM(cancellation_reason)) > 0)
+    (cancelled_at IS NOT NULL AND cancellation_reason IS NOT NULL AND LENGTH(BTRIM(cancellation_reason)) > 0)
   SQL
   WAITING_STATE = <<~SQL.squish.freeze
     (waiting_until IS NULL AND waiting_reason IS NULL AND waiting_started_at IS NULL) OR
-    (waiting_until IS NOT NULL AND LENGTH(BTRIM(waiting_reason)) > 0 AND waiting_started_at IS NOT NULL)
+    (waiting_until IS NOT NULL AND waiting_reason IS NOT NULL AND LENGTH(BTRIM(waiting_reason)) > 0 AND
+     waiting_started_at IS NOT NULL)
   SQL
   TERMINAL_ATTRIBUTION = <<~SQL.squish.freeze
     (terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL)
-    OR (terminal_attribution_version = 1 AND stage_outcome IN ('won', 'lost'))
+    OR (terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND
+        stage_outcome IS NOT NULL AND stage_outcome IN ('won', 'lost'))
   SQL
 
   FOREIGN_KEYS = [

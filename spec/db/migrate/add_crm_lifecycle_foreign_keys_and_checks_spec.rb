@@ -87,6 +87,80 @@ RSpec.describe AddCrmLifecycleForeignKeysAndChecks, :crm_lifecycle_ddl do
     expect(db).to have_received(:add_check_constraint).exactly(described_class::LOCK_ATTEMPTS).times
   end
 
+  # A CHECK accepts a row whose expression is UNKNOWN. These rows are the NULL counterexamples of the completeness
+  # checks: every one is inserted for real and PostgreSQL itself has to refuse it.
+  describe 'completeness checks and NULL' do
+    def insert_copy(table, source_id, overrides)
+      columns = db.columns(table).map(&:name) - ['id']
+      select_list = columns.map { |column| overrides.fetch(column) { db.quote_column_name(column) } }
+      db.execute(<<~SQL.squish)
+        INSERT INTO #{table} (#{columns.map { |column| db.quote_column_name(column) }.join(', ')})
+        SELECT #{select_list.join(', ')} FROM #{table} WHERE id = #{source_id}
+      SQL
+    end
+
+    def insert_stage_visit(deal, overrides = {})
+      values = {
+        'account_id' => deal.account_id, 'deal_id' => deal.id, 'pipeline_id' => deal.pipeline_id,
+        'stage_id' => deal.stage_id, 'entered_at' => 'now()', 'reliable_since' => 'now()',
+        'pipeline_name' => "'Sales'", 'stage_name' => "'Won'", 'stage_outcome' => "'won'",
+        'created_at' => 'now()', 'updated_at' => 'now()'
+      }.merge(overrides)
+      db.execute("INSERT INTO crm_stage_visits (#{values.keys.join(', ')}) VALUES (#{values.values.join(', ')})")
+    end
+
+    def rejected_by(constraint, &)
+      expect { db.transaction(requires_new: true, &) }
+        .to raise_error(ActiveRecord::StatementInvalid, /PG::CheckViolation.*#{constraint}/m)
+    end
+
+    def accepted(&)
+      expect { db.transaction(requires_new: true, &) }.not_to raise_error
+    end
+
+    def expect_null_counterexamples_rejected(task, deal)
+      rejected_by('crm_tasks_cancellation_state_complete') do
+        insert_copy('crm_tasks', task.id, 'cancelled_at' => 'now()', 'cancellation_reason' => 'NULL')
+      end
+      rejected_by('crm_deals_waiting_state_complete') do
+        insert_copy('crm_deals', deal.id, 'waiting_until' => "now() + interval '1 day'",
+                                          'waiting_started_at' => 'now()', 'waiting_reason' => 'NULL')
+      end
+      rejected_by('crm_stage_visits_terminal_attribution_valid') do
+        insert_stage_visit(deal, 'owner_id_at_terminal' => deal.account_id, 'terminal_attribution_version' => 'NULL')
+      end
+    end
+
+    def expect_complete_rows_accepted(task, deal)
+      accepted do
+        insert_copy('crm_tasks', task.id, 'cancelled_at' => 'now()', 'cancellation_reason' => "'Duplicate'")
+      end
+      accepted do
+        insert_copy('crm_deals', deal.id, 'waiting_until' => "now() + interval '1 day'",
+                                          'waiting_started_at' => 'now()', 'waiting_reason' => "'Documents'")
+      end
+      accepted { insert_stage_visit(deal, 'terminal_attribution_version' => '1') }
+    end
+
+    it 'rejects the NULL counterexamples once the migration has added the checks' do
+      task = create(:crm_task)
+      deal = create(:crm_deal)
+      prepare_prod_shape
+      run_migration(:constraints)
+
+      expect_null_counterexamples_rejected(task, deal)
+      expect_complete_rows_accepted(task, deal)
+    end
+
+    it 'rejects the NULL counterexamples on the final schema as well' do
+      task = create(:crm_task)
+      deal = create(:crm_deal)
+
+      expect_null_counterexamples_rejected(task, deal)
+      expect_complete_rows_accepted(task, deal)
+    end
+  end
+
   it 'is irreversible' do
     expect { described_class.new.down }.to raise_error(ActiveRecord::IrreversibleMigration)
   end

@@ -1438,7 +1438,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
     t.index ["stage_id"], name: "index_crm_deals_on_stage_id"
     t.index ["team_id"], name: "index_crm_deals_on_team_id"
     t.index ["waiting_set_by_id"], name: "index_crm_deals_on_waiting_set_by_id"
-    t.check_constraint "waiting_until IS NULL AND waiting_reason IS NULL AND waiting_started_at IS NULL OR waiting_until IS NOT NULL AND length(btrim(waiting_reason)) > 0 AND waiting_started_at IS NOT NULL", name: "crm_deals_waiting_state_complete"
+    t.check_constraint "waiting_until IS NULL AND waiting_reason IS NULL AND waiting_started_at IS NULL OR waiting_until IS NOT NULL AND waiting_reason IS NOT NULL AND length(btrim(waiting_reason)) > 0 AND waiting_started_at IS NOT NULL", name: "crm_deals_waiting_state_complete"
   end
 
   create_table "crm_events", force: :cascade do |t|
@@ -1554,7 +1554,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
     t.index ["pipeline_id"], name: "index_crm_stage_visits_on_pipeline_id"
     t.index ["stage_id"], name: "index_crm_stage_visits_on_stage_id"
     t.check_constraint "exited_at IS NULL OR exited_at >= entered_at", name: "crm_stage_visits_valid_interval"
-    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version = 1 AND (stage_outcome::text = ANY (ARRAY['won'::character varying, 'lost'::character varying]::text[]))", name: "crm_stage_visits_terminal_attribution_valid"
+    t.check_constraint "terminal_attribution_version IS NULL AND owner_id_at_terminal IS NULL AND team_id_at_terminal IS NULL OR terminal_attribution_version IS NOT NULL AND terminal_attribution_version = 1 AND stage_outcome IS NOT NULL AND (stage_outcome::text = ANY (ARRAY['won'::character varying::text, 'lost'::character varying::text]))", name: "crm_stage_visits_terminal_attribution_valid"
   end
 
   create_table "crm_stages", force: :cascade do |t|
@@ -1690,7 +1690,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_04_193200) do
     t.index ["task_type_id"], name: "index_crm_tasks_on_task_type_id"
     t.index ["team_id"], name: "index_crm_tasks_on_team_id"
     t.check_constraint "all_day = true AND due_on IS NOT NULL AND due_at IS NULL AND start_at IS NULL OR all_day = false AND due_on IS NULL", name: "crm_tasks_deadline_shape"
-    t.check_constraint "cancelled_at IS NULL AND cancellation_reason IS NULL OR cancelled_at IS NOT NULL AND length(btrim(cancellation_reason)) > 0", name: "crm_tasks_cancellation_state_complete"
+    t.check_constraint "cancelled_at IS NULL AND cancellation_reason IS NULL OR cancelled_at IS NOT NULL AND cancellation_reason IS NOT NULL AND length(btrim(cancellation_reason)) > 0", name: "crm_tasks_cancellation_state_complete"
     t.check_constraint "reschedule_count >= 0", name: "crm_tasks_reschedule_count_non_negative"
   end
 
