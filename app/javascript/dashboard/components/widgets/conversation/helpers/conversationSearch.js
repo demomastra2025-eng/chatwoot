@@ -31,8 +31,32 @@ const resolveChannelProfiles = entity => {
   return Array.isArray(profiles) ? profiles.filter(Boolean) : [];
 };
 
-const resolveChannelProfileTerms = entity =>
-  resolveChannelProfiles(entity).flatMap(profile => [
+// The list payloads carry the profile of a conversation in meta.contact_inbox.channel_profile (classic lists) and
+// in channels[].channel_profile (communication threads); the contact record only has channel_profiles once its
+// details were loaded earlier in the session.
+const resolveConversationChannelProfiles = (
+  conversation = {},
+  contact = {}
+) => {
+  const sender = conversation?.meta?.sender || {};
+  const contactInbox =
+    conversation?.meta?.contact_inbox || conversation?.meta?.contactInbox || {};
+  const channels = Array.isArray(conversation?.channels)
+    ? conversation.channels
+    : [];
+
+  return [
+    ...resolveChannelProfiles(contact),
+    ...resolveChannelProfiles(sender),
+    contactInbox.channel_profile || contactInbox.channelProfile,
+    ...channels.map(
+      channel => channel?.channel_profile || channel?.channelProfile
+    ),
+  ].filter(Boolean);
+};
+
+const resolveChannelProfileTerms = profiles =>
+  profiles.flatMap(profile => [
     profile.username,
     profile.display_name,
     profile.displayName,
@@ -102,8 +126,9 @@ const resolveConversationSearchTerms = (conversation = {}, contact = {}) => {
     contactAdditionalAttributes.screenName,
     senderAdditionalAttributes.screen_name,
     senderAdditionalAttributes.screenName,
-    resolveChannelProfileTerms(contact),
-    resolveChannelProfileTerms(sender),
+    resolveChannelProfileTerms(
+      resolveConversationChannelProfiles(conversation, contact)
+    ),
     messages.map(resolveMessageSearchTerms),
     lastMessages.map(resolveMessageSearchTerms),
   ]);
@@ -117,10 +142,9 @@ const resolveConversationPhones = (conversation = {}, contact = {}) => {
     contact.phoneNumber,
     sender.phone_number,
     sender.phoneNumber,
-    ...resolveChannelProfiles(contact).flatMap(profile => [
-      profile.phone_number,
-      profile.phoneNumber,
-    ]),
+    ...resolveConversationChannelProfiles(conversation, contact).flatMap(
+      profile => [profile.phone_number, profile.phoneNumber]
+    ),
   ]);
 };
 

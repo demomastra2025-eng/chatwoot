@@ -87,4 +87,21 @@ RSpec.describe 'Communication thread list search API', type: :request do
 
     expect(search(q: 'Иванов')[:data][:payload].pluck(:id)).to eq([thread.display_id])
   end
+  # The browser matches the channel profile (user name, display name, e-mail, phone) of the loaded items itself
+  # (conversationSearch.js); its specs build their fixtures from this shape.
+  def channel_profile_of(conversation)
+    profile = conversation.contact_inbox.channel_profile || create(:contact_channel_profile, contact_inbox: conversation.contact_inbox)
+    profile.update!(username: 'ada_channel_login', display_name: 'Ада в мессенджере', phone_number: '+77075550101', email: 'ada@channel.example')
+  end
+
+  it 'sends the channel profile in channels[].channel_profile and not on the sender' do
+    channel_profile_of(conversation)
+
+    item = search(q: 'Иванов')[:data][:payload].first
+
+    expect(item[:channels].pluck(:channel_profile).compact.first).to include(
+      username: 'ada_channel_login', display_name: 'Ада в мессенджере', phone_number: '+77075550101', email: 'ada@channel.example'
+    )
+    expect(item[:meta][:sender]).not_to include(:channel_profiles)
+  end
 end

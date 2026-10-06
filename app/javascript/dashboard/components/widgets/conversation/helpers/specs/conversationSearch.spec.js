@@ -208,6 +208,78 @@ describe('conversationMatchesLocalSearch', () => {
     });
   });
 
+  // The shapes below are the ones conversations/list_search and communication_threads/list_search send
+  // (pinned by the request specs): the sender carries no channel_profiles there.
+  describe('channel profile as the list payloads carry it', () => {
+    const channelProfile = {
+      id: 3,
+      contact_id: 8,
+      name: 'Ада в мессенджере',
+      display_name: 'Ада в мессенджере',
+      username: 'ada_channel_login',
+      phone_number: '+77075550101',
+      email: 'ada@channel.example',
+    };
+    const sender = { id: 8, name: 'Без имени', phone_number: null };
+    const classicConversation = {
+      id: 12,
+      meta: {
+        sender,
+        contact_inbox: { source_id: 'src-1', channel_profile: channelProfile },
+      },
+    };
+    const threadConversation = {
+      id: 13,
+      meta: { sender },
+      channels: [
+        { conversation_id: 12, channel_profile: null },
+        { conversation_id: 14, channel_profile: channelProfile },
+      ],
+    };
+
+    it.each([
+      ['classic list', classicConversation],
+      ['thread list', threadConversation],
+    ])(
+      'finds a %s item by user name, display name, e-mail and phone',
+      (_, listItem) => {
+        [
+          'ada_channel_login',
+          'в мессенджере',
+          'ada@channel',
+          '8 707 555 01 01',
+          '+7 (707) 555-01-01',
+        ].forEach(query => {
+          expect(conversationMatchesLocalSearch(listItem, sender, query)).toBe(
+            true
+          );
+        });
+      }
+    );
+
+    it('does not match a profile of another conversation', () => {
+      expect(
+        conversationMatchesLocalSearch(
+          { id: 20, meta: { sender } },
+          sender,
+          'ada_channel_login'
+        )
+      ).toBe(false);
+    });
+
+    it('survives a contact inbox or channels without a profile', () => {
+      const bare = {
+        id: 21,
+        meta: { sender, contact_inbox: { source_id: 'x' } },
+        channels: [null, {}],
+      };
+
+      expect(conversationMatchesLocalSearch(bare, sender, 'ada_channel')).toBe(
+        false
+      );
+    });
+  });
+
   describe('text copied from somewhere else', () => {
     it('matches names with е and ё interchanged', () => {
       const yo = { name: 'Семён Киселёв' };
