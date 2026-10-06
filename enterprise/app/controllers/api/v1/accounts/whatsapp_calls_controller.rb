@@ -78,6 +78,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
     call = Whatsapp::CallService.new(call: @call, agent: current_user).reject
     render json: { id: call.id, status: call.status }
+  rescue Whatsapp::CallErrors::NotCallOwner
+    render_call_taken_by_another_agent
   rescue StandardError => e
     Rails.logger.error "[WHATSAPP CALL] reject failed: #{e.message}"
     render json: { error: 'Failed to reject call' }, status: :internal_server_error
@@ -88,6 +90,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
 
     call = Whatsapp::CallService.new(call: @call, agent: current_user).terminate
     render json: { id: call.id, status: call.status }
+  rescue Whatsapp::CallErrors::NotCallOwner
+    render_call_taken_by_another_agent
   rescue StandardError => e
     Rails.logger.error "[WHATSAPP CALL] terminate failed: #{e.message}"
     render json: { error: 'Failed to terminate call' }, status: :internal_server_error

@@ -52,6 +52,59 @@ RSpec.describe Whatsapp::CallService do
       described_class.new(call: call, agent: agent).terminate
     end
 
+    context 'when another agent owns the call' do
+      let(:owner) { create(:user, account: account) }
+
+      it 'refuses a non-owner and leaves the call untouched' do
+        call.update!(accepted_by_agent_id: owner.id)
+        expect(provider).not_to receive(:terminate_call)
+        expect(media_client).not_to receive(:terminate_session)
+
+        expect { described_class.new(call: call, agent: agent).terminate }.to raise_error(Whatsapp::CallErrors::NotCallOwner)
+
+        expect(call.reload.status).to eq('in_progress')
+      end
+
+      it 'checks the owner after the row lock, not on the object loaded before the other agent accepted the call' do
+        call.update!(status: 'ringing', accepted_by_agent_id: nil)
+        stale_call = Call.find(call.id)
+        call.update!(status: 'in_progress', accepted_by_agent_id: owner.id)
+        expect(provider).not_to receive(:terminate_call)
+        expect(media_client).not_to receive(:terminate_session)
+
+        expect { described_class.new(call: stale_call, agent: agent).terminate }.to raise_error(Whatsapp::CallErrors::NotCallOwner)
+
+        expect(call.reload).to have_attributes(status: 'in_progress', accepted_by_agent_id: owner.id)
+      end
+
+      it 'lets the owner terminate the call' do
+        call.update!(accepted_by_agent_id: owner.id)
+        expect(media_client).to receive(:terminate_session).with('session-1')
+
+        described_class.new(call: call, agent: owner).terminate
+
+        expect(call.reload.status).to eq('completed')
+      end
+
+      it 'lets the system (no agent) terminate the call' do
+        call.update!(accepted_by_agent_id: owner.id)
+        expect(media_client).to receive(:terminate_session).with('session-1')
+
+        described_class.new(call: call, agent: nil).terminate
+
+        expect(call.reload.status).to eq('completed')
+      end
+
+      it 'does not let a non-owner decline a ringing call the owner is accepting' do
+        call.update!(status: 'ringing', accepted_by_agent_id: owner.id)
+        expect(provider).not_to receive(:reject_call)
+
+        expect { described_class.new(call: call, agent: agent).reject }.to raise_error(Whatsapp::CallErrors::NotCallOwner)
+
+        expect(call.reload.status).to eq('ringing')
+      end
+    end
+
     it 'releases agent reservation and terminates orphan media session when provider pre-accept fails' do
       call.update!(status: 'ringing', accepted_by_agent_id: nil, meta: { 'sdp_offer' => 'meta-offer', 'ice_servers' => [] })
 

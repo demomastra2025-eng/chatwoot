@@ -47,6 +47,7 @@ class Whatsapp::CallService
     call.with_lock do
       call.reload
       unless call.terminal? || call.in_progress?
+        ensure_agent_owns_call!
         provider_call_id = call.provider_call_id
         call.update!(status: 'failed')
         transitioned = true
@@ -70,6 +71,7 @@ class Whatsapp::CallService
     call.with_lock do
       call.reload
       unless call.terminal?
+        ensure_agent_owns_call!
         prepared_outbound = prepared_outbound_pending?
         provider_call_id = prepared_outbound ? nil : call.provider_call_id
         media_session_id = call.media_session_id
@@ -308,6 +310,17 @@ class Whatsapp::CallService
 
   def ensure_ringing!
     raise Whatsapp::CallErrors::NotRinging, 'Call is not in ringing state' unless call.ringing?
+  end
+
+  # A call an agent accepted (or started) belongs to that agent. Decided on the
+  # row that is locked and reloaded, never on the object the caller loaded
+  # earlier, so a request that was built before the owner accepted cannot end it.
+  # A call without an agent (system, AI) is not subject to this rule.
+  def ensure_agent_owns_call!
+    owner_id = call.accepted_by_agent_id
+    return if agent.blank? || owner_id.blank? || owner_id == agent.id
+
+    raise Whatsapp::CallErrors::NotCallOwner, 'Call accepted by another agent'
   end
 
   def ensure_not_already_taken!

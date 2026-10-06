@@ -372,6 +372,21 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
         expect(call.reload.status).to eq('in_progress')
       end
 
+      it 'does not let another agent terminate a call that was accepted after the request had loaded it' do
+        # The controller's own early check works on the object loaded before the
+        # colleague accepted; the service decides again under the row lock.
+        allow_any_instance_of(Api::V1::Accounts::WhatsappCallsController).to receive(:call_taken_by_another_agent?).and_return(false) # rubocop:disable RSpec/AnyInstance
+        call.update!(accepted_by_agent_id: colleague.id)
+        expect(provider_service).not_to receive(:terminate_call)
+
+        post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{call.id}/terminate",
+             headers: headers,
+             as: :json
+
+        expect(response).to have_http_status(:forbidden)
+        expect(call.reload.status).to eq('in_progress')
+      end
+
       it 'does not let another agent decline it while the colleague is accepting' do
         ringing_call = create(:call, account: account, status: 'ringing', accepted_by_agent_id: colleague.id)
         expect(provider_service).not_to receive(:reject_call)

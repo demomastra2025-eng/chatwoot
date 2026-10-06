@@ -3,4 +3,5 @@ module Whatsapp::CallErrors
   class AlreadyAccepted < StandardError; end
   class CallFailed < StandardError; end
   class NoCallPermission < StandardError; end
+  class NotCallOwner < StandardError; end
 end
