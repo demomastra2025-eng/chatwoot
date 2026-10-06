@@ -246,10 +246,11 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         snapshot = BulkActions::SelectionSnapshot.new(
           account: account, user: agent, resource_type: 'Conversation', filters: { status: 'all' }
         ).perform
+        auth_headers = agent.create_new_auth_token
 
         [{ count: 1 }, { filters: { status: 'resolved' } }, { ids: [snapshot.ids.first] }].each do |change|
           post "/api/v1/accounts/#{account.id}/bulk_actions",
-               headers: agent.create_new_auth_token,
+               headers: auth_headers,
                params: {
                  type: 'Conversation', selection_token: snapshot.token, fields: { status: 'resolved' }
                }.merge(change)
