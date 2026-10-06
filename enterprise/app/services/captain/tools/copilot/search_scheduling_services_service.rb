@@ -43,11 +43,23 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
 
   def result_page(services, offset, limit)
     total_count = services.count
-    records = services.preload(:prices).offset(offset).limit(limit).map { |service| Scheduling::PayloadBuilder.service(service) }
+    records = services.preload(:prices).offset(offset).limit(limit).map { |service| service_payload(service) }
     next_offset = offset + records.length
     has_more = next_offset < total_count
     { total_count: total_count, records: records, has_more: has_more, next_offset: has_more ? next_offset : nil,
       page_status: records.empty? && total_count.positive? ? 'offset_out_of_range' : 'returned' }
+  end
+
+  # A price row is a recorded link between a service and a resource, never proof that the resource may perform the
+  # service. Only the active rows of the service's own account are listed, each one labelled as unverified.
+  def service_payload(service)
+    Scheduling::PayloadBuilder.service(service).merge(prices: price_rows(service))
+  end
+
+  def price_rows(service)
+    service.prices.select { |price| price.active && price.account_id == service.account_id }.map do |price|
+      Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified')
+    end
   end
 
   # no_match: nothing found; partial_candidates: only some query words matched; candidate: exactly one service whose name
