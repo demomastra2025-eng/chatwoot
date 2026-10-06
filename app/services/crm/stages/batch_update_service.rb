@@ -83,6 +83,7 @@ class Crm::Stages::BatchUpdateService
     raise_stage_error!('INVALID_TECHNICAL_STAGE', 'The selected stage is not a technical stage.') unless stage.technical_stage?
 
     active = ActiveModel::Type::Boolean.new.cast(row[:active])
+    Crm::Stages::UnsortedDeactivationGuard.ensure_empty!(stage) if !active && stage.active?
     stage.update!(active: active, default: active ? stage.default : false)
   end
 

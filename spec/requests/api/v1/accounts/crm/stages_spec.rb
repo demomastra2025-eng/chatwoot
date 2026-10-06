@@ -361,6 +361,47 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(fallback_stage.reload).to be_default
   end
 
+  it 'refuses to disable unsorted through the stage endpoint while it holds deals, including archived deals' do
+    stage = account.crm_stages.find_by!(code: 'new')
+    create(:crm_deal, account: account, pipeline: stage.pipeline, stage: stage)
+    create(:crm_deal, account: account, pipeline: stage.pipeline, stage: stage, archived_at: Time.zone.now)
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: { active: false }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('UNSORTED_STAGE_HAS_DEALS')
+    expect(response.parsed_body['error']).to include('Неразобранном', '2')
+    expect(response.parsed_body.dig('details', 'deal_count')).to eq(2)
+    expect(stage.reload).to be_active
+  end
+
+  it 'rolls back the settings draft when unsorted still holds a deal' do
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    unsorted = pipeline.stages.find_by!(code: 'new')
+    qualified = pipeline.stages.find_by!(code: 'qualified')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: unsorted)
+
+    patch "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages/batch_update",
+          params: {
+            stages: pipeline.stages.where(outcome: 'open').where.not(code: 'new').ordered.map do |stage|
+              { id: stage.id, name: stage == qualified ? 'Renamed' : stage.name, color: stage.color }
+            end,
+            technical_stage: { id: unsorted.id, active: false },
+            terminal_stages: pipeline.stages.where(outcome: Crm::Stage::TERMINAL_OUTCOMES).map do |stage|
+              { id: stage.id, name: stage.name }
+            end
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('UNSORTED_STAGE_HAS_DEALS')
+    expect(response.parsed_body.dig('details', 'deal_count')).to eq(1)
+    expect(unsorted.reload).to be_active
+    expect(qualified.reload.name).not_to eq('Renamed')
+  end
+
   it 'allows disabling a custom default stage and assigns another open stage as default' do
     stage = account.crm_stages.find_by!(code: 'qualified')
     fallback_stage = stage.pipeline.stages.find_by!(code: 'proposal')

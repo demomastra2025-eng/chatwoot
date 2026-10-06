@@ -34,6 +34,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
     authorize @stage
 
     ApplicationRecord.transaction do
+      ::Crm::Stages::UnsortedDeactivationGuard.ensure_empty!(@stage) if open_stage_deactivation_requested? && @stage.active?
       ensure_stage_default_before_deactivation!
       @stage.update!(update_stage_params)
     end
