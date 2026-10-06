@@ -42,7 +42,7 @@ namespace :llm do
         restored = Llm::CaptainLunaRollout.rollback!(snapshot)
         puts "\nRolled back: #{restored} accounts restored."
         differences = Llm::CaptainLunaRollout.restored_differences(snapshot)
-        puts(differences.empty? ? 'Installation-level effective models are as in the snapshot.' : "Differences:\n  #{differences.join("\n  ")}")
+        puts(differences.empty? ? 'Installation rows and effective models are as in the snapshot.' : "Differences:\n  #{differences.join("\n  ")}")
       else
         puts "\nDry run, nothing changed. Run again with CONFIRM=yes to roll back."
       end

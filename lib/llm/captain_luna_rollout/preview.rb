@@ -29,9 +29,23 @@ class Llm::CaptainLunaRollout::Preview
   end
 
   def installation_change(row)
+    mode = Llm::CaptainLunaRollout::INSTALLATION_ROWS.fetch(row[:name])
+    mode == :follow_default ? follow_default_change(row) : target_change(row, mode)
+  end
+
+  def target_change(row, mode)
+    return "#{row[:before]} (no change)" if row[:was_present] && row[:before] == target
     return "#{row[:before]} -> #{target}" if row[:was_present]
 
-    row[:name] == Llm::CaptainLunaRollout::INSTALLATION_CONFIG ? 'absent, stays absent' : "absent -> #{target} (row is created)"
+    mode == :target_if_present ? 'absent, stays absent' : "absent -> #{target} (row is created)"
+  end
+
+  # A slot that follows CAPTAIN_DEFAULT_MODEL needs no model of its own after the cut-over.
+  def follow_default_change(row)
+    return 'absent, follows CAPTAIN_DEFAULT_MODEL (no change)' unless row[:was_present]
+    return 'blank, follows CAPTAIN_DEFAULT_MODEL (no change)' if row[:before].blank?
+
+    "#{row[:before]} -> blank, follows CAPTAIN_DEFAULT_MODEL"
   end
 
   def account_lines

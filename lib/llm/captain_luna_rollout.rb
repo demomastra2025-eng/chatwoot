@@ -10,8 +10,10 @@
 # The account-level model choices and the model an agent stores in its own config are cleared rather than set, so an
 # account and an agent follow the platform default (the CAPTAIN_DEFAULT_MODEL row, editable in Super Admin) and one edit
 # of that row moves every account and agent back as well.
-# Both directions accept a state that is already done and refuse anything that is neither the snapshot state nor the
-# done state, so running either twice is harmless. See script/onelink/LUNA_CUTOVER_RUNBOOK.md.
+# Both directions accept a state that is already done and refuse an account, agent or voice choice that is neither the
+# snapshot state nor the done state, so running either twice is harmless. An installation row that somebody changed
+# after the cut-over is left as it is by the rollback (and reported by restored_differences). See
+# script/onelink/LUNA_CUTOVER_RUNBOOK.md.
 class Llm::CaptainLunaRollout
   TARGET_MODEL = 'openai/gpt-6-luna'
   # The model the quick rollback (Super Admin default) goes back to; it must stay selectable.
@@ -20,13 +22,15 @@ class Llm::CaptainLunaRollout
   SNAPSHOT_VERSION = 3
   # The chat features whose account-level choice is cleared.
   FEATURES = %w[assistant editor copilot image_recognition label_suggestion].freeze
-  # name => whether the cut-over creates the row when it is absent. The agent-only default is only moved when it exists:
-  # the general default already covers the agent, and a second row would be a second switch to remember.
+  # name => what the cut-over does with the row (see InstallationRows). The agent-only default is only moved when it
+  # exists: the general default already covers the agent, and a second row would be a second switch to remember. The
+  # image recognition and label hint slots are blanked rather than set to Luna 6: they then follow the general default,
+  # so the one Super Admin edit of CAPTAIN_DEFAULT_MODEL is the quick rollback of every feature.
   INSTALLATION_ROWS = {
-    'CAPTAIN_DEFAULT_MODEL' => true,
-    INSTALLATION_CONFIG => false,
-    'CAPTAIN_IMAGE_RECOGNITION_MODEL' => true,
-    'CAPTAIN_LABEL_SUGGESTION_MODEL' => true
+    'CAPTAIN_DEFAULT_MODEL' => :target,
+    INSTALLATION_CONFIG => :target_if_present,
+    'CAPTAIN_IMAGE_RECOGNITION_MODEL' => :follow_default,
+    'CAPTAIN_LABEL_SUGGESTION_MODEL' => :follow_default
   }.freeze
   DEFAULT_ROWS = ['CAPTAIN_DEFAULT_MODEL', INSTALLATION_CONFIG].freeze
 
@@ -62,6 +66,7 @@ class Llm::CaptainLunaRollout
 
       Account.transaction do
         locked = lock_all(plan, scope.order(:id))
+        installation_rows.verify!(plan[:installation], locked.configs)
         verify_state!(plan, locked)
         agent_models.verify_complete!(locked.accounts.map(&:id), plan[:agents])
         verify_accounts!(locked.accounts)
@@ -84,13 +89,16 @@ class Llm::CaptainLunaRollout
       end
     end
 
-    # What differs from the effective installation-level models the snapshot was taken with; empty when all is as
-    # before. Meant for the check after a rollback: it reports, it does not block.
+    # What differs from the snapshot after a rollback: installation rows that are not as before (a row somebody changed
+    # after the cut-over is left alone by the rollback) and effective installation-level models that differ from the
+    # ones the snapshot was taken with. Empty when all is as before. It reports, it does not block.
     def restored_differences(snapshot)
-      expected = validated_plan(snapshot)[:effective_before].to_h.stringify_keys
-      effective_models.stringify_keys.filter_map do |feature, model|
+      plan = validated_plan(snapshot)
+      expected = plan[:effective_before].to_h.stringify_keys
+      effective = effective_models.stringify_keys.filter_map do |feature, model|
         "#{feature}: #{model.inspect}, the snapshot had #{expected[feature].inspect}" if expected[feature] != model
       end
+      installation_rows.differences(plan[:installation]) + effective
     end
 
     private
@@ -159,8 +167,8 @@ class Llm::CaptainLunaRollout
       )
     end
 
+    # The installation rows are checked separately: the cut-over refuses a changed row, a rollback leaves it alone.
     def verify_state!(plan, locked)
-      installation_rows.verify!(plan[:installation], locked.configs)
       overrides.verify!(locked.accounts, plan[:accounts])
       voice_stores.verify!(plan[:voice], locked.records)
       agent_models.verify!(plan[:agents], locked.agents)
@@ -175,7 +183,8 @@ class Llm::CaptainLunaRollout
     end
 
     def restore_state!(live, locked)
-      installation_rows.restore!(live[:installation], locked.configs)
+      left_alone = installation_rows.restore!(live[:installation], locked.configs)
+      Rails.logger.warn("Luna 6 rollback left installation rows as they are: #{left_alone.join(', ')}") if left_alone.any?
       voice_stores.restore!(live[:voice], locked.records)
       agent_models.restore!(live[:agents], locked.agents)
       overrides.restore!(locked.accounts, live[:accounts])

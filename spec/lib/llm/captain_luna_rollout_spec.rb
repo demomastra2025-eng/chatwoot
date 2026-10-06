@@ -49,9 +49,89 @@ RSpec.describe Llm::CaptainLunaRollout do
         end
       end
       expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(target_model)
-      expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq(target_model)
-      expect(config_value('CAPTAIN_LABEL_SUGGESTION_MODEL')).to eq(target_model)
+      expect(InstallationConfig.where(name: %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL])).to be_empty
       expect(InstallationConfig.find_by(name: 'CAPTAIN_AI_AGENT_DEFAULT_MODEL')).to be_nil
+    end
+
+    it 'finds nothing to move at deploy: the seeded slot rows are blank and follow the default until the cut-over', :aggregate_failures do
+      slots = %w[CAPTAIN_IMAGE_RECOGNITION_MODEL CAPTAIN_LABEL_SUGGESTION_MODEL]
+      InstallationConfig.where(name: slots).destroy_all
+
+      ConfigLoader.new.process
+
+      expect(InstallationConfig.where(name: slots).map(&:value)).to eq([nil, nil])
+      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, fallback: nil)).to eq(old_model) }
+    end
+
+    it 'blanks the image recognition and label slots so they follow the default, and puts them back', :aggregate_failures do
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: 'openai/gpt-5.4-mini')
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL').update!(value: nil)
+      account = create(:account)
+      scope = scope_for(account)
+      plan = JSON.parse(described_class.plan(scope: scope).to_json)
+
+      described_class.apply!(plan, scope: scope)
+
+      expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to be_blank
+      expect(InstallationConfig.exists?(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL')).to be(true)
+      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, account: account)).to eq(target_model) }
+
+      InstallationConfig.find_by!(name: 'CAPTAIN_DEFAULT_MODEL').update!(value: old_model)
+      %i[image_recognition label_suggestion].each { |feature| expect(Llm::Config.model_for(feature: feature, account: account)).to eq(old_model) }
+
+      described_class.rollback!(plan)
+      expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq('openai/gpt-5.4-mini')
+      expect(config_value('CAPTAIN_LABEL_SUGGESTION_MODEL')).to be_blank
+      expect(InstallationConfig.exists?(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL')).to be(true)
+    end
+
+    it 'leaves slot rows that already follow the default as they are' do
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: nil)
+      InstallationConfig.where(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL').destroy_all
+      account = create(:account)
+      scope = scope_for(account)
+      rows_before = installation_rows.call
+      plan = described_class.plan(scope: scope)
+
+      described_class.apply!(plan, scope: scope)
+
+      expect(installation_rows.call.to_h.except('CAPTAIN_DEFAULT_MODEL')).to eq(rows_before.to_h.except('CAPTAIN_DEFAULT_MODEL'))
+    end
+
+    # The Super Admin default flip is the documented quick rollback; the full rollback has to work after it as well.
+    it 'still puts the choices back after the default was set back in Super Admin', :aggregate_failures do
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: target_model)
+      account = create(:account, captain_models: { 'assistant' => old_model, 'copilot' => 'gpt-5.4' })
+      scope = scope_for(account)
+      plan = JSON.parse(described_class.plan(scope: scope).to_json)
+      described_class.apply!(plan, scope: scope)
+      InstallationConfig.find_by!(name: 'CAPTAIN_DEFAULT_MODEL').update!(value: old_model)
+
+      expect(described_class.rollback!(plan)).to eq(1)
+
+      expect(models_of(account)).to eq('assistant' => old_model, 'copilot' => 'gpt-5.4')
+      expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(old_model)
+      expect(described_class.restored_differences(plan)).to be_empty
+    end
+
+    it 'leaves an installation row that somebody changed after the cut-over alone, restores the rest and reports it', :aggregate_failures do
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: target_model)
+      account = create(:account, captain_models: { 'assistant' => old_model })
+      scope = scope_for(account)
+      plan = JSON.parse(described_class.plan(scope: scope).to_json)
+      described_class.apply!(plan, scope: scope)
+      InstallationConfig.find_by!(name: 'CAPTAIN_DEFAULT_MODEL').update!(value: 'openai/gpt-5.4')
+      InstallationConfig.find_by!(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: old_model)
+
+      expect(described_class.rollback!(plan)).to eq(1)
+
+      expect(models_of(account)).to eq('assistant' => old_model)
+      expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq('openai/gpt-5.4')
+      expect(config_value('CAPTAIN_IMAGE_RECOGNITION_MODEL')).to eq(old_model)
+      expect(described_class.restored_differences(plan)).to include(
+        a_string_matching(%r{CAPTAIN_DEFAULT_MODEL: "openai/gpt-5.4", the snapshot had "#{old_model}"}),
+        a_string_matching(/CAPTAIN_IMAGE_RECOGNITION_MODEL: "#{old_model}", the snapshot had "#{target_model}"/)
+      )
     end
 
     it 'also moves the agent-only default when the installation has one' do
@@ -204,6 +284,17 @@ RSpec.describe Llm::CaptainLunaRollout do
       expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /changed since the snapshot/)
       expect(models_of(first)).to eq('assistant' => old_model)
       expect(config_value('CAPTAIN_DEFAULT_MODEL')).to eq(old_model)
+    end
+
+    it 'rejects a plan when an image recognition slot changed after the snapshot' do
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: 'openai/gpt-5.4-mini')
+      account = create(:account, captain_models: { 'assistant' => old_model })
+      scope = scope_for(account)
+      plan = described_class.plan(scope: scope)
+      InstallationConfig.find_by!(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: 'openai/gpt-5.4')
+
+      expect { described_class.apply!(plan, scope: scope) }.to raise_error(described_class::StalePlan, /CAPTAIN_IMAGE_RECOGNITION_MODEL changed/)
+      expect(models_of(account)).to eq('assistant' => old_model)
     end
 
     it 'rejects a plan when an account gained a choice after the snapshot' do
@@ -564,6 +655,8 @@ RSpec.describe Llm::CaptainLunaRollout do
     it 'counts the changes per feature and old model with account ids only, and flags choices outside the allowlist' do
       account = create(:account, name: 'Private Name LLC', captain_models: { 'assistant' => old_model, 'copilot' => 'claude-sonnet-4-6' })
       other = create(:account, captain_models: { 'assistant' => old_model })
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_IMAGE_RECOGNITION_MODEL').update!(value: 'openai/gpt-5.4-mini')
+      InstallationConfig.find_or_initialize_by(name: 'CAPTAIN_LABEL_SUGGESTION_MODEL').update!(value: target_model)
       agent = create(:captain_assistant, account: account)
       agent.update_columns(config: { 'model' => 'openai/gpt-5.4' }) # rubocop:disable Rails/SkipsModelValidations
       plan = Llm::CaptainLunaRollout.plan(scope: Account.where(id: [account.id, other.id]))
@@ -572,6 +665,8 @@ RSpec.describe Llm::CaptainLunaRollout do
       expect(text).to include(%("openai/gpt-5.4" x1 agents #{agent.id}))
 
       expect(text).to include("CAPTAIN_DEFAULT_MODEL: #{old_model} -> #{target_model}")
+      expect(text).to include('CAPTAIN_IMAGE_RECOGNITION_MODEL: openai/gpt-5.4-mini -> blank, follows CAPTAIN_DEFAULT_MODEL')
+      expect(text).to include("CAPTAIN_LABEL_SUGGESTION_MODEL: #{target_model} -> blank, follows CAPTAIN_DEFAULT_MODEL")
       expect(text).to include(%(assistant: "#{old_model}" x2 accounts #{account.id}, #{other.id}))
       expect(text).to match(/copilot: "claude-sonnet-4-6" x1 \[outside the allowlist\] accounts #{account.id}/)
       expect(text).not_to include('Private Name LLC')
