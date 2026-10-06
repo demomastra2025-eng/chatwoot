@@ -61,7 +61,7 @@ class CommunicationThreads::ListSearchService
 
   def lookup
     @lookup ||= Search::ConversationLookup.new(
-      account: @account, raw_query: @params[:q], scope: access.conversations, inbox_ids: access.inbox_ids, restricted: access.restricted?
+      account: @account, raw_query: @params[:q], access: access
     )
   end
 

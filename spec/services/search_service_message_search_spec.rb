@@ -1,11 +1,14 @@
 require 'rails_helper'
 
 # Literal search of message text in the global search, and who may find what. Separate from search_service_spec.rb, whose
-# examples describe the long-standing behaviour (English whole-word matching of Latin text) and are not touched.
+# examples cover other search entry points and filters.
 RSpec.describe SearchService do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, role: :agent) }
   let(:inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
+  let(:unsafe_queries) do
+    ["запис\u0000али", "вас\u00A0на\u2009среду", '50% (скидка) [vip] _x_ \\', 'a & b | (c', 'foo:* bar', "it's", '!!!']
+  end
 
   before do
     Current.account = account
@@ -23,8 +26,8 @@ RSpec.describe SearchService do
     described_class.new(current_user: as, current_account: account, params: { q: text, **extra }, search_type: type)
   end
 
-  def found_ids(text, **options)
-    service(text, **options).perform[:messages].map(&:id)
+  def found_ids(text, **)
+    service(text, **).perform[:messages].map(&:id)
   end
 
   def message(content, minutes_ago = 0, conversation_inbox: inbox, **attributes)
@@ -71,6 +74,13 @@ RSpec.describe SearchService do
           end
         end
 
+        it 'finds phone numbers in message text across separators and the 8/+7 prefix' do
+          number = message('Перезвоните на +7 (707) 281-70-60')
+
+          expect(found_ids('87072817060')).to eq([number.id])
+          expect(found_ids('7 707 281 70 60')).to eq([number.id])
+        end
+
         it 'does not search the messages of another account or of an inbox the user cannot open' do
           create(:message, content: 'Мы записали вас в другом аккаунте')
           create(:message, account: account, inbox: create(:inbox, account: account), content: 'Мы записали вас в чужом ящике')
@@ -90,7 +100,7 @@ RSpec.describe SearchService do
 
         it 'survives a NUL byte, exotic spaces and characters that are operators in SQL or in a full-text query' do
           aggregate_failures do
-            ["запис\u0000али", "вас\u00A0на\u2009среду", "50% (скидка) [vip] _x_ \\", "a & b | (c", 'foo:* bar', "it's", '!!!'].each do |text|
+            unsafe_queries.each do |text|
               expect { service(text).perform[:messages].to_a }.not_to raise_error, "expected #{text.inspect} not to fail"
             end
             expect(found_ids("вас\u00A0на\u2009среду")).to eq([past.id])
@@ -126,20 +136,20 @@ RSpec.describe SearchService do
     end
   end
 
-  describe 'the full-text index (search_with_gin) and a short text' do
+  describe 'short text with search_with_gin enabled' do
     before { enable_gin(true) }
 
-    it 'keeps the English whole-word matching for Latin text of 1-3 characters: "the" does not find "together"' do
+    it 'does not run a broad two-character Latin search' do
       message('wizards study together')
 
-      expect(found_ids('the')).to be_empty
+      expect(found_ids('th')).to be_empty
     end
 
-    it 'finds a whole word of 1-2 Cyrillic letters, which has no literal search' do
-      ok = message('ок, договорились')
+    it 'does not run a broad two-character Cyrillic search' do
+      message('ок, договорились')
       message('окно открыто')
 
-      expect(found_ids('ок')).to eq([ok.id])
+      expect(found_ids('ок')).to be_empty
     end
   end
 
@@ -194,6 +204,11 @@ RSpec.describe SearchService do
 
       expect(result[:messages].map(&:id)).to eq([visible_message.id])
       expect(result[:conversations].map(&:id)).to eq([visible.id])
+    end
+
+    it 'does not expose standalone contacts to a role without contact access' do
+      expect(service('Скрытый', 'Contact').perform[:contacts]).to be_empty
+      expect(service('8 701 555 00 00', 'all').perform[:contacts]).to be_empty
     end
 
     it 'leaves the whole inbox to a user without a custom role' do

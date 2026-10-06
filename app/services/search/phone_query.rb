@@ -22,12 +22,14 @@ class Search::PhoneQuery
   PREFIXES = %w[7 8 0].freeze
   # Digits with the usual separators: spaces, dots, dashes of every kind, brackets and one leading plus.
   PHONE_INPUT = /\A\+?[\s\d().\-\u2010-\u2015\u2212]+\z/
+  FULL_WIDTH_PHONE = '＋０１２３４５６７８９'.freeze
+  ASCII_PHONE = '+0123456789'.freeze
 
   attr_reader :digits
 
   # Returns nil when the text is not a phone number (it has letters or other symbols, or the wrong number of digits).
   def self.parse(raw)
-    text = Search::QueryText.clean(raw)
+    text = Search::QueryText.clean(raw).tr(FULL_WIDTH_PHONE, ASCII_PHONE)
     return unless text.match?(PHONE_INPUT)
 
     digits = text.gsub(/\D/, '')

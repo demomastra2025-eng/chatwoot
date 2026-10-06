@@ -1,12 +1,6 @@
 class SearchService
   MESSAGES_PER_PAGE = 15
   MESSAGES_LOOKBACK = 3.months
-  # The English whole-word matching of the full-text index (search_with_gin) is the long-standing way to search text in
-  # Latin script; it is kept next to the literal search, see #message_matcher.
-  ENGLISH_MESSAGE_SQL = "to_tsvector('english'::regconfig, COALESCE(messages.content, '')) @@ to_tsquery('english'::regconfig, ?)".freeze
-  # Latin text shorter than this keeps ONLY the English whole-word matching ("the" is a stop word and finds nothing, it
-  # does not find "together"); longer Latin text and Cyrillic text of 3 characters or more are also searched literally.
-  LITERAL_LATIN_MIN_LENGTH = 4
 
   pattr_initialize [:current_user!, :current_account!, :params!, :search_type!]
 
@@ -55,9 +49,11 @@ class SearchService
 
   def filter_conversations
     # Only the conversations the user may OPEN (a custom role opens fewer than its inboxes), not just those of his inboxes.
-    conversations_query = access_scope.conversations.where(inbox_id: accessable_inbox_ids)
-                                         .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
-                                         .where(conversation_search_condition)
+    conversations_query = access_scope.conversations
+    conversations_query = conversations_query.where(inbox_id: accessable_inbox_ids) unless should_skip_inbox_filtering?
+    conversations_query = conversations_query.joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
+                                             .where(contacts: { account_id: current_account.id })
+                                             .where(conversation_search_condition)
 
     if current_account.feature_enabled?('advanced_search')
       conversations_query = apply_time_filter(conversations_query,
@@ -70,43 +66,17 @@ class SearchService
   end
 
   def filter_messages
-    @messages = if use_gin_search
-                  filter_messages_with_gin
-                elsif should_run_advanced_search?
-                  advanced_search_with_fallback
-                else
-                  filter_messages_with_like
-                end
+    @messages = filter_messages_with_like
   end
 
-  def advanced_search_with_fallback
-    advanced_search
-  rescue Faraday::ConnectionFailed, Searchkick::Error, Elasticsearch::Transport::Transport::Error => e
-    Rails.logger.warn("Elasticsearch unavailable, falling back to SQL search: #{e.message}")
-    use_gin_search ? filter_messages_with_gin : filter_messages_with_like
-  end
-
-  def should_run_advanced_search?
-    ChatwootApp.advanced_search_allowed? && current_account.feature_enabled?('advanced_search')
-  end
-
-  def advanced_search; end
-
-  def filter_messages_with_gin
-    base_query = apply_message_filters(message_base_query)
-    return base_query.reorder('created_at DESC').page(params[:page]).per(MESSAGES_PER_PAGE) if search_query.blank?
-
-    matcher = message_matcher
-    return base_query.none if matcher.nil?
-    return newest_message_matches(base_query, matcher) if literal_message_search?
-
-    base_query.where(matcher).reorder('created_at DESC').page(params[:page]).per(MESSAGES_PER_PAGE)
-  end
-
-  # Without the full-text index the text is searched literally in every script, from 3 characters.
+  # Message text has one literal SQL path regardless of the account's old search feature flags. Searchkick and
+  # English tsquery alter the typed text and cannot apply the conversation policy before selecting results.
   def filter_messages_with_like
     base_query = apply_message_filters(message_base_query)
-    return base_query.where('messages.content ILIKE ?', '%%').reorder('created_at DESC').page(params[:page]).per(MESSAGES_PER_PAGE) if search_query.blank?
+    if search_query.blank?
+      return base_query.where('messages.content ILIKE ?', '%%')
+                       .reorder('created_at DESC').page(params[:page]).per(MESSAGES_PER_PAGE)
+    end
     return base_query.none unless literal_message_query.searchable?
 
     newest_message_matches(base_query, literal_message_query.condition)
@@ -124,36 +94,6 @@ class SearchService
 
   def literal_message_query
     @literal_message_query ||= Search::MessageQuery.new(search_query)
-  end
-
-  # Text with a letter outside ASCII (Russian, Kazakh ...) is matched literally: the typed text has to occur in the
-  # message, in any case, with е and ё interchangeable, no word forms (see Search::MessageQuery). Latin text keeps the
-  # English whole-word matching of the full-text index and, from LITERAL_LATIN_MIN_LENGTH characters, is also matched
-  # literally. Text of 1-2 non-Latin letters has no literal search (it would match nearly every message), only the whole
-  # word of the full-text index.
-  def literal_message_search?
-    return false unless literal_message_query.searchable?
-
-    !search_query.ascii_only? || search_query.length >= LITERAL_LATIN_MIN_LENGTH
-  end
-
-  def english_message_search?
-    search_query.ascii_only? || !literal_message_search?
-  end
-
-  def message_matcher
-    english = english_message_condition if english_message_search?
-    literal = literal_message_query.condition if literal_message_search?
-    [english, literal].compact.reduce { |combined, condition| Arel::Nodes::Grouping.new(combined).or(condition) }
-  end
-
-  # Only words are put into the tsquery: an operator or a bracket typed by a person would be a syntax error (HTTP 500).
-  def english_message_condition
-    words = search_query.split.map { |word| word.gsub(/[^[:alnum:]_]/, '') }.reject(&:empty?)
-    return if words.empty?
-
-    # This does entire phrase matching using the phrase distance operator, as before.
-    Arel::Nodes::Grouping.new(Arel.sql(ActiveRecord::Base.sanitize_sql_array([ENGLISH_MESSAGE_SQL, words.join(' <-> ')])))
   end
 
   # The newest matches are chosen by Search::MessageQuery, not by the planner; the page is then read by id, so that the
@@ -212,12 +152,12 @@ class SearchService
     accessable_inbox_ids.sort == current_account.inboxes.pluck(:id).sort
   end
 
-  def use_gin_search
-    current_account.feature_enabled?('search_with_gin')
-  end
-
   def filter_contacts
-    contacts_query = contact_query.apply(current_account.contacts)
+    contacts_query = current_account.contacts
+    contacts_query = contacts_query.none unless ContactPolicy.new(
+      { user: current_user, account: current_account, account_user: account_user }, Contact
+    ).search?
+    contacts_query = contact_query.apply(contacts_query)
 
     contacts_query = apply_time_filter(contacts_query, 'last_activity_at') if current_account.feature_enabled?('advanced_search')
 
@@ -269,8 +209,7 @@ class SearchService
 
   def conversation_lookup
     @conversation_lookup ||= Search::ConversationLookup.new(
-      account: current_account, raw_query: search_query, scope: access_scope.conversations,
-      inbox_ids: should_skip_inbox_filtering? ? nil : accessable_inbox_ids, restricted: access_scope.restricted?,
+      account: current_account, raw_query: search_query, access: access_scope,
       message_since: MESSAGES_LOOKBACK.ago
     )
   end

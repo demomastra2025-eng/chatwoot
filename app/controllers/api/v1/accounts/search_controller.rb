@@ -67,11 +67,11 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
   end
 
   def first_messages_by_conversation(conversations)
-    Current.account.messages
-           .where(conversation_id: conversations.map(&:id))
-           .select('DISTINCT ON (messages.conversation_id) messages.*')
-           .reorder(Arel.sql('messages.conversation_id, messages.created_at ASC, messages.id ASC'))
-           .index_by(&:conversation_id)
+    Messages::TimelineVisibility.without_captain_tool_activity(Current.account.messages)
+                                .where(conversation_id: conversations.map(&:id))
+                                .select('DISTINCT ON (messages.conversation_id) messages.*')
+                                .reorder(Arel.sql('messages.conversation_id, messages.created_at ASC, messages.id ASC'))
+                                .index_by(&:conversation_id)
   end
 
   def attach_conversations_to_messages(messages_by_conversation, conversations)

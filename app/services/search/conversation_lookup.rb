@@ -19,12 +19,12 @@ class Search::ConversationLookup
   MIN_TEXT_LENGTH = 3
   DISPLAY_ID = /\A#?(\d{1,9})\z/
 
-  def initialize(account:, raw_query:, scope:, inbox_ids: nil, restricted: false, message_since: Search::MessageQuery.lookback_since)
+  def initialize(account:, raw_query:, access:, message_since: Search::MessageQuery.lookback_since)
     @account = account
     @text = Search::QueryText.clean(raw_query)
-    @scope = scope
-    @inbox_ids = inbox_ids
-    @restricted = restricted
+    @scope = access.conversations
+    @inbox_ids = access.inbox_ids
+    @restricted = access.restricted?
     @message_since = message_since
     @capped = false
     @partial = false
@@ -51,7 +51,7 @@ class Search::ConversationLookup
   def conversation_ids
     return [] unless searchable?
 
-    by_contact | message_conversation_ids | by_display_id
+    by_contact | by_channel_profile | by_social_handle | message_conversation_ids | transcription_conversation_ids | by_display_id
   end
 
   # The conversations whose messages contain the text, newest messages first.
@@ -90,6 +90,76 @@ class Search::ConversationLookup
     return [] if display_id.blank?
 
     @scope.where(display_id: display_id).pluck(:id)
+  end
+
+  # A profile belongs to an inbox as well as a contact. Match both columns so a private channel's handle cannot make a
+  # conversation in another inbox appear in the results.
+  def by_channel_profile
+    return [] unless text_searchable? || Search::PhoneQuery.parse(@text)
+
+    profile = ContactChannelProfile.arel_table
+    pattern = Search::QueryText.like_pattern(@text)
+    fields = %i[username display_name identifier email phone_number]
+    condition = fields.map { |field| profile[field].matches(pattern, nil, false) }
+    phone = Search::PhoneQuery.parse(@text)
+    condition << phone.condition(profile) if phone
+    matches = condition.reduce { |combined, node| combined.or(node) }
+    ids = @scope.joins(<<~SQL.squish).where(contact_channel_profiles: { account_id: @account.id }).where(Arel::Nodes::Grouping.new(matches))
+      INNER JOIN contact_channel_profiles
+        ON contact_channel_profiles.contact_id = conversations.contact_id
+       AND contact_channel_profiles.inbox_id = conversations.inbox_id
+    SQL
+    bounded_ids(ids)
+  end
+
+  def by_social_handle
+    return [] unless text_searchable?
+
+    pattern = Search::QueryText.like_pattern(@text)
+    social_fields = <<~SQL.squish
+      contacts.additional_attributes ->> 'social_telegram_user_name' ILIKE :pattern
+      OR contacts.additional_attributes ->> 'screen_name' ILIKE :pattern
+      OR EXISTS (
+        SELECT 1 FROM jsonb_each_text(
+          CASE WHEN jsonb_typeof(contacts.additional_attributes -> 'social_profiles') = 'object'
+               THEN contacts.additional_attributes -> 'social_profiles' ELSE '{}'::jsonb END
+        ) AS profile(key, value)
+        WHERE profile.value ILIKE :pattern
+      )
+    SQL
+    ids = @scope.joins('INNER JOIN contacts ON contacts.id = conversations.contact_id')
+                .where(contacts: { account_id: @account.id }).where("(#{social_fields})", pattern: pattern)
+    bounded_ids(ids)
+  end
+
+  def transcription_conversation_ids
+    return [] unless text_searchable?
+
+    result = Search::MessageQuery.new(@text).newest(message_scope, match: transcription_match, limit: MESSAGE_LIMIT)
+    @capped ||= result.rows.size >= MESSAGE_LIMIT
+    @partial ||= result.partial
+    @scope.where(id: result.rows.map(&:last).uniq).pluck(:id)
+  end
+
+  def transcription_match
+    regexp = Search::QueryText.yo?(@text) || Search::QueryText.gap?(@text)
+    operator = regexp ? '~*' : 'ILIKE'
+    pattern = regexp ? Search::QueryText.literal_regexp(@text) : Search::QueryText.like_pattern(@text)
+    sql = ActiveRecord::Base.sanitize_sql_array([<<~SQL.squish, pattern, pattern])
+      messages.content_attributes ->> 'transcribed_text' #{operator} ?
+      OR EXISTS (
+        SELECT 1 FROM attachments
+        WHERE attachments.message_id = messages.id AND attachments.account_id = messages.account_id
+          AND attachments.meta ->> 'transcribed_text' #{operator} ?
+      )
+    SQL
+    Arel::Nodes::Grouping.new(Arel.sql(sql))
+  end
+
+  def bounded_ids(scope)
+    ids = scope.reorder(Conversation.arel_table[:last_activity_at].desc).limit(CONVERSATION_LIMIT).pluck(:id)
+    @capped ||= ids.size >= CONVERSATION_LIMIT
+    ids
   end
 
   def message_scope

@@ -46,11 +46,28 @@ class Search::MessageQuery
   # The literal condition, as an Arel node on messages.content. Words typed with a space between them are found with any
   # run of spaces, line breaks or punctuation in between, as the old phrase search did (see Search::QueryText).
   def condition(table = Message.arel_table)
+    literal = literal_condition(table)
+    phone = phone_condition(table)
+    phone ? Arel::Nodes::Grouping.new(literal.or(phone)) : literal
+  end
+
+  def literal_condition(table)
     if Search::QueryText.yo?(text) || Search::QueryText.gap?(text)
       table[:content].matches_regexp(Search::QueryText.literal_regexp(text), false)
     else
       table[:content].matches(Search::QueryText.like_pattern(text), nil, false)
     end
+  end
+
+  def phone_condition(table)
+    phone = Search::PhoneQuery.parse(text)
+    return unless phone
+
+    # The digits can be separated differently in the message and the query. Full KZ/RU numbers use their last ten
+    # digits, so 8 and +7 also agree in message bodies. This arm shares the bounded statement timeout above.
+    fragments = phone.national? ? [phone.national_digits] : phone.fragments
+    patterns = fragments.map { |digits| table[:content].matches_regexp(digits.chars.join('[^[:alnum:]]*'), false) }
+    patterns.reduce { |combined, node| combined.or(node) }
   end
 
   # The newest messages of `base` (messages already limited to an account, inboxes, the look-back and so on) that match
@@ -79,7 +96,7 @@ class Search::MessageQuery
   def recent_rows(base, match, needed)
     table = Message.arel_table
     recent = base.reorder(table[:created_at].desc, table[:id].desc).limit(RECENT_ROWS)
-                 .select(:id, :conversation_id, :content, :created_at)
+                 .select(:id, :account_id, :conversation_id, :content, :content_attributes, :created_at)
     ordered(Message.unscoped.from(recent, :messages).where(match), needed)
   end
 

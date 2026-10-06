@@ -86,6 +86,36 @@ RSpec.describe Conversations::ListSearchService do
       end
     end
 
+    it 'finds a channel handle and a phone number stored on the channel profile' do
+      profile = resolved_conversation.contact_inbox.channel_profile ||
+                create(:contact_channel_profile, contact_inbox: resolved_conversation.contact_inbox)
+      profile.update!(username: 'ada_channel_login', phone_number: '+77075550101')
+
+      expect(ids_for('ada_channel_login')).to eq([resolved_conversation.id])
+      expect(ids_for('8 707 555 01 01')).to eq([resolved_conversation.id])
+    end
+
+    it 'does not find a conversation through a profile from another inbox' do
+      private_channel = create(:contact_inbox, contact: ivan, inbox: other_inbox)
+      create(:contact_channel_profile, contact_inbox: private_channel, username: 'private_handle')
+
+      expect(ids_for('private_handle')).to be_empty
+    end
+
+    it 'finds a social handle stored on the contact' do
+      ivan.update!(additional_attributes: { social_telegram_user_name: 'ada_telegram' })
+
+      expect(ids_for('ada_telegram')).to eq([resolved_conversation.id])
+    end
+
+    it 'finds the transcript of an audio attachment' do
+      recording = message_in(resolved_conversation, '')
+      Attachment.create!(account: account, message: recording, file_type: :audio,
+                         meta: { transcribed_text: 'Нужна справка по записи' })
+
+      expect(ids_for('справка по записи')).to eq([resolved_conversation.id])
+    end
+
     it 'finds a conversation by the text of a message exactly as typed, without word forms' do
       message_in(resolved_conversation, 'Хочу записаться на приём')
       other = create(:conversation, account: account, inbox: inbox, contact: create(:contact, account: account, name: 'Мария'))
@@ -158,6 +188,13 @@ RSpec.describe Conversations::ListSearchService do
         expect(ids_for('секретная')).to be_empty
         expect(ids_for(hidden.display_id.to_s)).to be_empty
       end
+    end
+
+    it 'does not leak a social handle from an inaccessible conversation' do
+      private_contact = create(:contact, account: account, additional_attributes: { screen_name: 'private_screen' })
+      create(:conversation, account: account, inbox: other_inbox, contact: private_contact)
+
+      expect(ids_for('private_screen')).to be_empty
     end
 
     it 'does not let messages of inaccessible inboxes use up the message limit' do

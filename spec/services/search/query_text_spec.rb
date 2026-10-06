@@ -23,9 +23,9 @@ RSpec.describe Search::QueryText do
       expect(described_class.clean("\u0418\u0306сай, Се\u0308мен")).to eq("\u0419сай, С\u0451мен")
     end
 
-    it 'turns full-width ASCII (digits, plus, letters, punctuation) into plain ASCII' do
-      expect(described_class.clean('＋７ ７０７')).to eq('+7 707')
-      expect(described_class.clean('ＡＢｃ！（１）')).to eq('ABc!(1)')
+    it 'keeps full-width characters as typed' do
+      expect(described_class.clean('＋７ ７０７')).to eq('＋７ ７０７')
+      expect(described_class.clean('ＡＢｃ！（１）')).to eq('ＡＢｃ！（１）')
     end
 
     # NFKC would rewrite these: the typed text has to stay as it is stored in the messages.

@@ -126,58 +126,13 @@ describe SearchService do
         let(:params) { { q: 'Harry' } }
         let(:search_type) { 'Message' }
 
-        it 'uses LIKE search when search_with_gin feature is disabled' do
+        it 'uses literal SQL under either search feature setting' do
           allow(account).to receive(:feature_enabled?).and_call_original
-          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(false)
-          search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 
-          expect(search_service).to receive(:filter_messages_with_like).and_call_original
-          expect(search_service).not_to receive(:filter_messages_with_gin)
-
-          search_service.perform
-        end
-
-        it 'uses GIN search when search_with_gin feature is enabled' do
-          allow(account).to receive(:feature_enabled?).and_call_original
-          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
-          search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-          expect(search_service).to receive(:filter_messages_with_gin).and_call_original
-          expect(search_service).not_to receive(:filter_messages_with_like)
-
-          search_service.perform
-        end
-
-        it 'uses the indexed English search-vector expression without changing phrase search' do
-          allow(account).to receive(:feature_enabled?).and_call_original
-          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
-          search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-          sql = search_service.perform[:messages].to_sql
-
-          expect(sql).to include("to_tsvector('english'::regconfig, COALESCE(messages.content, ''))")
-          expect(sql).to include("to_tsquery('english'::regconfig, 'Harry')")
-        end
-
-        it 'returns the same ordered ids as the legacy implicit English vector expression' do
-          allow(account).to receive(:feature_enabled?).and_call_original
-          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
-          create(:message, account: account, inbox: inbox, content: 'wizards study together')
-
-          ['Harry', 'wizard', 'the', 'Harry Potter'].each do |query|
-            tsquery = query.split.join(' <-> ')
-            search_params = params.merge(q: query)
-            search_service = described_class.new(
-              current_user: user,
-              current_account: account,
-              params: search_params,
-              search_type: search_type
-            )
-            legacy_ids = account.messages.where(inbox_id: inbox.id)
-                                .where('content @@ to_tsquery(?)', tsquery)
-                                .reorder(created_at: :desc).limit(15).pluck(:id)
-
-            expect(search_service.perform[:messages].pluck(:id)).to eq(legacy_ids)
+          [true, false].each do |enabled|
+            allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(enabled)
+            search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
+            expect(search_service.perform[:messages].pluck(:id)).to contain_exactly(message.id, message2.id)
           end
         end
 
@@ -569,324 +524,44 @@ describe SearchService do
     end
   end
 
-  describe '#use_gin_search' do
-    let(:params) { { q: 'test' } }
-
-    it 'checks if the account has the search_with_gin feature enabled' do
-      expect(account).to receive(:feature_enabled?).with('search_with_gin')
-      search.send(:use_gin_search)
-    end
-
-    it 'returns true when search_with_gin feature is enabled' do
-      allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
-      expect(search.send(:use_gin_search)).to be true
-    end
-
-    it 'returns false when search_with_gin feature is disabled' do
-      allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(false)
-      expect(search.send(:use_gin_search)).to be false
-    end
-  end
-
-  describe '#advanced_search with filters', if: Message.respond_to?(:search) do
-    let(:params) { { q: 'test' } }
+  describe 'literal message search with advanced features enabled' do
     let(:search_type) { 'Message' }
+    let(:contact) { create(:contact, account: account) }
+    let!(:from_contact) do
+      create(:message, account: account, inbox: inbox, sender: contact, content: 'Нужна справка', created_at: 1.day.ago)
+    end
+    let!(:from_agent) do
+      create(:message, account: account, inbox: inbox, sender: user, content: 'Другая справка', created_at: 5.days.ago)
+    end
 
     before do
-      allow(ChatwootApp).to receive(:advanced_search_allowed?).and_return(true)
       allow(account).to receive(:feature_enabled?).and_call_original
       allow(account).to receive(:feature_enabled?).with('advanced_search').and_return(true)
-      allow(Message).to receive(:search).and_return([])
+      allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
+      allow(ChatwootApp).to receive(:advanced_search_allowed?).and_return(true)
     end
 
-    context 'when advanced_search feature flag is disabled' do
-      it 'ignores filters and falls back to standard search' do
-        allow(ChatwootApp).to receive(:advanced_search_allowed?).and_return(false)
-        contact = create(:contact, account: account)
-        inbox2 = create(:inbox, account: account)
+    it 'uses SQL and keeps the sender and time filters without consulting Searchkick' do
+      expect(Message).not_to receive(:search)
+      params = { q: 'справка', from: "contact:#{contact.id}", since: 2.days.ago.to_i }
+      service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 
-        params = { q: 'test', from: "contact:#{contact.id}", inbox_id: inbox2.id, since: 3.days.ago.to_i }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(search_service).not_to receive(:advanced_search)
-        search_service.perform
-      end
+      expect(service.perform[:messages].pluck(:id)).to eq([from_contact.id])
     end
 
-    context 'when filtering by from parameter' do
-      let(:contact) { create(:contact, account: account) }
-      let(:agent) { create(:user, account: account) }
+    it 'does not match a different word form under the GIN feature flag' do
+      params = { q: 'справку' }
+      service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 
-      it 'filters messages from specific contact' do
-        params = { q: 'test', from: "contact:#{contact.id}" }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              sender_type: 'Contact',
-              sender_id: contact.id
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'filters messages from specific agent' do
-        params = { q: 'test', from: "agent:#{agent.id}" }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              sender_type: 'User',
-              sender_id: agent.id
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'ignores invalid from parameter format' do
-        params = { q: 'test', from: 'invalid:format' }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_not_including(:sender_type, :sender_id)
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
+      expect(service.perform[:messages].pluck(:id)).to be_empty
     end
 
-    context 'when filtering by time range' do
-      it 'defaults to 90 days ago when no since parameter is provided' do
-        params = { q: 'test' }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
+    it 'limits an explicitly selected inbox to one the user can open' do
+      foreign_inbox = create(:inbox, account: account)
+      params = { q: 'справка', inbox_id: foreign_inbox.id }
+      service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
 
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(gte: be_within(1.second).of(Limits::MESSAGE_SEARCH_TIME_RANGE_LIMIT_DAYS.days.ago))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'silently caps since timestamp to 90 day limit when exceeded' do
-        since_timestamp = (Limits::MESSAGE_SEARCH_TIME_RANGE_LIMIT_DAYS * 2).days.ago.to_i
-        params = { q: 'test', since: since_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(gte: be_within(1.second).of(Limits::MESSAGE_SEARCH_TIME_RANGE_LIMIT_DAYS.days.ago))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'filters messages since timestamp when within 90 day limit' do
-        since_timestamp = 3.days.ago.to_i
-        params = { q: 'test', since: since_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(gte: Time.zone.at(since_timestamp))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'filters messages until timestamp' do
-        until_timestamp = 5.days.ago.to_i
-        params = { q: 'test', until: until_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(lte: Time.zone.at(until_timestamp))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'filters messages within time range' do
-        since_timestamp = 5.days.ago.to_i
-        until_timestamp = 12.hours.ago.to_i
-        params = { q: 'test', since: since_timestamp, until: until_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(
-                gte: Time.zone.at(since_timestamp),
-                lte: Time.zone.at(until_timestamp)
-              )
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'silently caps until timestamp to 90 days from now when exceeded' do
-        until_timestamp = 100.days.from_now.to_i
-        params = { q: 'test', until: until_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              created_at: hash_including(lte: be_within(1.second).of(90.days.from_now))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-    end
-
-    context 'when filtering by inbox_id' do
-      let!(:inbox2) { create(:inbox, account: account) }
-
-      before do
-        create(:inbox_member, user: user, inbox: inbox2)
-      end
-
-      it 'filters messages from specific inbox' do
-        params = { q: 'test', inbox_id: inbox2.id }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(inbox_id: inbox2.id)
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-
-      it 'ignores inbox filter when user lacks access' do
-        restricted_inbox = create(:inbox, account: account)
-        params = { q: 'test', inbox_id: restricted_inbox.id }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_not_including(inbox_id: restricted_inbox.id)
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-    end
-
-    context 'when combining multiple filters' do
-      it 'applies all filters together' do
-        test_contact = create(:contact, account: account)
-        test_inbox = create(:inbox, account: account)
-        create(:inbox_member, user: user, inbox: test_inbox)
-
-        since_timestamp = 3.days.ago.to_i
-        params = { q: 'test', from: "contact:#{test_contact.id}", inbox_id: test_inbox.id, since: since_timestamp }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        expect(Message).to receive(:search).with(
-          'test',
-          hash_including(
-            where: hash_including(
-              sender_type: 'Contact',
-              sender_id: test_contact.id,
-              inbox_id: test_inbox.id,
-              created_at: hash_including(gte: Time.zone.at(since_timestamp))
-            )
-          )
-        ).and_return([])
-
-        search_service.perform
-      end
-    end
-  end
-
-  describe '#advanced_search_with_fallback' do
-    let(:params) { { q: 'test' } }
-    let(:search_type) { 'Message' }
-
-    context 'when Elasticsearch is unavailable' do
-      it 'falls back to LIKE search when Elasticsearch connection fails' do
-        allow(account).to receive(:feature_enabled?).and_call_original
-        allow(account).to receive(:feature_enabled?).with('advanced_search').and_return(true)
-        allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(false)
-
-        params = { q: 'test' }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        allow(search_service).to receive(:advanced_search).and_raise(Faraday::ConnectionFailed.new('Connection refused'))
-
-        expect(search_service).to receive(:filter_messages_with_like).and_call_original
-        expect { search_service.perform }.not_to raise_error
-      end
-
-      it 'falls back to GIN search when Elasticsearch is unavailable and GIN is enabled' do
-        allow(account).to receive(:feature_enabled?).and_call_original
-        allow(account).to receive(:feature_enabled?).with('advanced_search').and_return(true)
-        allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
-
-        params = { q: 'test' }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        allow(search_service).to receive(:advanced_search).and_raise(Searchkick::Error.new('Elasticsearch unavailable'))
-
-        expect(search_service).to receive(:filter_messages_with_gin).and_call_original
-        expect { search_service.perform }.not_to raise_error
-      end
-
-      it 'applies filters correctly in SQL fallback when Elasticsearch fails' do
-        allow(account).to receive(:feature_enabled?).and_call_original
-        allow(account).to receive(:feature_enabled?).with('advanced_search').and_return(true)
-        allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(false)
-
-        test_contact = create(:contact, account: account)
-        create(:message, account: account, inbox: inbox, content: 'test message', sender: test_contact, created_at: 1.day.ago)
-
-        params = { q: 'test', from: "contact:#{test_contact.id}", since: 2.days.ago.to_i }
-        search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
-
-        allow(search_service).to receive(:advanced_search).and_raise(Faraday::ConnectionFailed.new('Connection refused'))
-
-        results = search_service.perform[:messages]
-        expect(results).not_to be_empty
-        expect(results.first.sender_id).to eq(test_contact.id)
-      end
+      expect(service.perform[:messages].pluck(:id)).to contain_exactly(from_contact.id, from_agent.id)
     end
   end
 end
