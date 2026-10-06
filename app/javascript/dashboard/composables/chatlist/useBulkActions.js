@@ -116,7 +116,9 @@ export function useBulkActions() {
         bulkActionRun?.doneCount ??
         Math.max(
           0,
-          Number(bulkActionRun?.processed_count || 0) - failedCount - skippedCount
+          Number(bulkActionRun?.processed_count || 0) -
+            failedCount -
+            skippedCount
         )
     );
     if (skippedCount > 0) {
