@@ -46,6 +46,13 @@ RSpec.describe 'Telephony Webphone incoming legs of one Beeline call', type: :re
       expect(logical_key(next_session)).not_to eq(logical_key(leg_session(profiles.first, 'sip-call-id-0')))
     end
 
+    it 'keeps a second call of the same client to the same operator apart' do
+      report_leg(profiles.first, 'sip-call-id-repeat')
+
+      expect(logical_key(leg_session(profiles.first, 'sip-call-id-repeat')))
+        .not_to eq(logical_key(leg_session(profiles.first, 'sip-call-id-0')))
+    end
+
     it 'keeps another client who calls at the same time apart' do
       report_leg(profiles.first, 'sip-call-id-other-client', from: '+70000000002')
 

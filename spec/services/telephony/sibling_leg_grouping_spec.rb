@@ -17,6 +17,10 @@ RSpec.describe Telephony::SiblingLegGrouping do
     )
   end
 
+  def route(profile_id, group_ref: nil)
+    { 'metadata' => { 'target_sip_profile_id' => profile_id, 'logical_call_group_ref' => group_ref }.compact }
+  end
+
   def root_leg(call_ref: 'beeline:janus:new-leg', **overrides)
     described_class.root_leg(number_binding: number_binding, caller_number: caller_number, call_ref: call_ref, now: now, **overrides)
   end
@@ -96,6 +100,65 @@ RSpec.describe Telephony::SiblingLegGrouping do
       create_leg('beeline:janus:3:c', created_at: now - 2.seconds)
 
       expect(root_leg).to eq(open_leg)
+    end
+
+    context 'when the destination of the legs differs' do
+      it 'never groups a leg that was dialled to another number' do
+        create_leg('beeline:janus:1:a', created_at: now - 2.seconds, to_number: '+70000000098')
+
+        expect(root_leg(destination_number: '+70000000099')).to be_nil
+      end
+
+      it 'groups legs of the same destination, whatever its notation' do
+        first = create_leg('beeline:janus:1:a', created_at: now - 2.seconds, to_number: 'sip:+70000000099@pbx.example.test')
+
+        expect(root_leg(destination_number: '70000000099')).to eq(first)
+      end
+
+      it 'never groups a leg that belongs to another number binding of the channel' do
+        other_binding = create(:telephony_number_binding, account: account, inbox: create(:inbox, account: account), provider: 'beeline')
+        create_leg('beeline:janus:1:a', created_at: now - 2.seconds, number_binding: other_binding)
+
+
+        expect(root_leg).to be_nil
+      end
+
+      it 'does not constrain the destination when the new leg does not report one' do
+        first = create_leg('beeline:janus:1:a', created_at: now - 2.seconds, to_number: '+70000000098')
+
+        expect(root_leg).to eq(first)
+      end
+    end
+
+    context 'when the same operator profile already has a leg of the group' do
+      it 'treats a repeated leg of one operator profile as a call of its own' do
+        create_leg('beeline:janus:1:a', created_at: now - 3.seconds, metadata: route(11))
+
+        expect(root_leg(operator_profile_id: 11)).to be_nil
+      end
+
+      it 'still groups legs of different operator profiles (the genuine call to N operators)' do
+        first = create_leg('beeline:janus:1:a', created_at: now - 3.seconds, metadata: route(11))
+        create_leg('beeline:janus:2:b', created_at: now - 2.seconds, metadata: route(12, group_ref: 'beeline:janus:1:a'))
+
+        expect(root_leg(operator_profile_id: 13)).to eq(first)
+      end
+
+      it 'joins the call that does not have the operator profile yet and passes over the one that has' do
+        create_leg('beeline:janus:1:a', created_at: now - 6.seconds, metadata: route(11, group_ref: 'beeline:janus:1:a'))
+        create_leg('beeline:janus:2:b', created_at: now - 5.seconds, metadata: route(12, group_ref: 'beeline:janus:1:a'))
+        second_call = create_leg('beeline:janus:3:c', created_at: now - 2.seconds, metadata: route(11, group_ref: 'beeline:janus:3:c'))
+
+        expect(root_leg(operator_profile_id: 12)).to eq(second_call)
+      end
+
+      it 'keeps the retried report of a leg in its own group' do
+        first = create_leg('beeline:janus:1:a', created_at: now - 3.seconds, metadata: route(11, group_ref: 'beeline:janus:1:a'))
+        create_leg('beeline:janus:2:b', created_at: now - 2.seconds, metadata: route(12, group_ref: 'beeline:janus:1:a'))
+
+        expect(root_leg(call_ref: 'beeline:janus:2:b', operator_profile_id: 12)).to eq(first)
+        expect(root_leg(call_ref: 'beeline:janus:1:a', operator_profile_id: 11)).to be_nil
+      end
     end
 
     it 'keeps an unanswered leg of a long ringing call in the group until the window ends' do

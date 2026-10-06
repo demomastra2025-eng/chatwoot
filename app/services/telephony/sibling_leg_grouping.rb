@@ -6,6 +6,12 @@ require 'digest'
 # legs of one physical call look like unrelated calls: the claim and status
 # broadcasts reach only one of them and the cards of the others stay.
 #
+# Beeline gives no identifier shared by the legs of one physical call, so the
+# window and the caller are the only correlation. Two things keep a different
+# call from being merged into a group: a leg dialled to another number is never
+# a sibling, and a repeated leg of one operator profile (a profile gets one leg
+# per call) starts a call of its own.
+#
 # Legs arrive within a few seconds of each other. A new leg joins the group of
 # the oldest open leg of the same caller on the same channel by taking over its
 # logical call key and group ref, which are what Telephony::CallSession::
@@ -43,13 +49,16 @@ class Telephony::SiblingLegGrouping
 
     # The oldest leg of the physical call this leg belongs to; nil when this
     # leg is the first one. The leg itself may already exist (a retried report).
-    def root_leg(number_binding:, caller_number:, call_ref:, now: Time.current)
+    # The destination and the operator profile of the new leg narrow the
+    # candidates when they are known.
+    def root_leg(number_binding:, caller_number:, call_ref:, destination_number: nil, operator_profile_id: nil, now: Time.current)
       digits = phone_digits(caller_number)
       return if digits.blank?
 
       legs = candidate_legs(number_binding, now).select do |leg|
-        leg.external_call_ref == call_ref || sibling_candidate?(leg, digits)
+        leg.external_call_ref == call_ref || sibling_candidate?(leg, digits, number_binding, destination_number)
       end
+      legs = without_groups_of_profile(legs, call_ref, operator_profile_id)
       root = legs.min_by { |leg| [leg.created_at, leg.id] }
       root unless root&.external_call_ref == call_ref
     end
@@ -93,8 +102,41 @@ class Telephony::SiblingLegGrouping
 
     # A leg that is over never counts: a caller who hangs up and dials again
     # is not the same call, and a finished leg cannot answer for anybody.
-    def sibling_candidate?(leg, digits)
-      phone_digits(leg.from_number) == digits && !leg.terminal?
+    def sibling_candidate?(leg, digits, number_binding, destination_number)
+      phone_digits(leg.from_number) == digits && !leg.terminal? &&
+        same_number_binding?(leg, number_binding) && same_destination?(leg, destination_number)
+    end
+
+    def same_number_binding?(leg, number_binding)
+      leg.number_binding_id.blank? || leg.number_binding_id == number_binding.id
+    end
+
+    # Unknown on either side does not exclude; a different number does.
+    def same_destination?(leg, destination_number)
+      wanted = destination_digits(destination_number)
+      actual = destination_digits(leg.to_number)
+      wanted.blank? || actual.blank? || wanted == actual
+    end
+
+    def destination_digits(value)
+      phone_digits(value).last(10)
+    end
+
+    # A group that already has a leg of this operator profile is a call that
+    # went to the profile already: a new leg of the profile is another call.
+    def without_groups_of_profile(legs, call_ref, profile_id)
+      return legs if profile_id.blank?
+
+      others = legs.reject { |leg| leg.external_call_ref == call_ref }
+      taken_groups = others.select { |leg| leg_profile_id(leg) == profile_id.to_s }.map(&:logical_call_group_ref)
+      legs.reject { |leg| others.include?(leg) && taken_groups.include?(leg.logical_call_group_ref) }
+    end
+
+    def leg_profile_id(leg)
+      route = leg.metadata.to_h['metadata']
+      return unless route.is_a?(Hash)
+
+      (route['target_sip_profile_id'].presence || route['telephony_sip_profile_id'].presence)&.to_s
     end
   end
 end

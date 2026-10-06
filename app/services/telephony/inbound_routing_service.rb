@@ -555,7 +555,7 @@ class Telephony::InboundRoutingService
       elsif sibling_root_leg.present?
         Telephony::SiblingLegGrouping.group_ref(sibling_root_leg)
       else
-        logical_bridge_call_ref_for_context.presence || call_ref
+        (logical_bridge_call_ref_for_context unless sibling_leg_grouping?).presence || call_ref
       end
     end
   end
@@ -568,13 +568,24 @@ class Telephony::InboundRoutingService
     @sibling_root_leg = find_sibling_root_leg
   end
 
-  def find_sibling_root_leg
-    return if number_binding.blank?
-    return unless payload_value('direction').to_s == 'inbound'
-    return unless metadata_value('source').to_s == 'browser_janus_sip'
-    return unless Telephony::SiblingLegGrouping.applies?(provider: number_binding.provider)
+  # The legs of a channel with one SIP profile per operator are correlated by
+  # Telephony::SiblingLegGrouping alone; the caller/time bridge lookup would
+  # merge back what that grouping kept apart.
+  def sibling_leg_grouping?
+    number_binding.present? &&
+      payload_value('direction').to_s == 'inbound' &&
+      metadata_value('source').to_s == 'browser_janus_sip' &&
+      Telephony::SiblingLegGrouping.applies?(provider: number_binding.provider)
+  end
 
-    Telephony::SiblingLegGrouping.root_leg(number_binding: number_binding, caller_number: caller_number, call_ref: call_ref)
+  def find_sibling_root_leg
+    return unless sibling_leg_grouping?
+
+    Telephony::SiblingLegGrouping.root_leg(
+      number_binding: number_binding, caller_number: caller_number, call_ref: call_ref, destination_number: inbound_number,
+      operator_profile_id: payload_value('target_sip_profile_id', 'targetSipProfileId') ||
+                           metadata_value('target_sip_profile_id', 'targetSipProfileId')
+    )
   end
 
   # Another operator already claimed or answered this call: the leg that is
