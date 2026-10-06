@@ -42,6 +42,22 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
     end
   end
 
+  it 'keeps the order of the words when the name holds a number, so that two numbered resources are not mixed up' do
+    resource = create_resource('Кабинет 2 этаж 3')
+
+    payload = search(query: 'Кабинет 2 этаж 3', search_by: 'name')
+
+    expect(payload).to include('search_status' => 'candidate', 'exact_name_matches' => 1)
+
+    ['Кабинет 3 этаж 2', 'этаж 3 Кабинет 2'].each do |query|
+      payload = search(query: query, search_by: 'name')
+
+      expect(payload['resources'].pluck('id')).to eq([resource.id])
+      expect(payload['exact_name_matches']).to eq(0)
+      expect_name_confirmation(payload)
+    end
+  end
+
   it 'lists a person asked for by a part of the name, and asks to confirm the full name' do
     resource = create_resource('Асланов Мурад Тестович', 'Хирург')
 
@@ -67,7 +83,9 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
     create_resource('Кабинет МРТ 1')
 
     expect_name_confirmation(search(query: 'Кабинет МРТ'))
-    expect(search(query: 'МРТ кабинет 1')).to include('search_status' => 'candidate')
+    expect(search(query: 'кабинет мрт 1')).to include('search_status' => 'candidate')
+    # the name holds a number, so its words are read in order
+    expect_name_confirmation(search(query: 'МРТ кабинет 1'))
   end
 
   it 'reports the candidate for a specialty equal to the request and asks to confirm a longer or shorter one' do

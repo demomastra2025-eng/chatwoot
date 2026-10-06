@@ -18,6 +18,15 @@ module Scheduling::SearchText
   MIN_STEM_LENGTH = 3
   # Words whose own letters carry the meaning ("после операции" is the opposite of "до операции").
   UNSTEMMED_WORDS = %w[после перед через между].freeze
+  # Words that tie a qualifier, a time, a place or a target to the word next to them ("с контрастом, без седации",
+  # "до родов, после операции", "для детей"). A name that holds one of them, a number, a roman numeral or a one-letter
+  # code is read in order: the same words in another order can mean the opposite ("с контрастом без седации" and "без
+  # контраста с седацией").
+  ORDER_WORDS = %w[
+    с со без при до после перед для от ото на по под подо над надо из изо про за к ко у о об обо в во не и или
+    через между вне около кроме вместо против вокруг
+  ].freeze
+  ROMAN_NUMERAL = /\A[ivxlcdm]+\z/
 
   module_function
 
@@ -54,18 +63,32 @@ module Scheduling::SearchText
     ending ? word.delete_suffix(ending) : word
   end
 
-  # Two normalised texts have the same words in any order. With stemmed: false the words must be letter for letter equal
-  # (a person's name: Асланов and Асланова are two different names).
+  # Two normalised texts have the same words. A name of plain content words is compared in any order; once a
+  # preposition, a number, a roman numeral or a one-letter code takes part in it, the words must come in the same order
+  # as well. With stemmed: false the words must be letter for letter equal (a person's name: Асланов and Асланова are two
+  # different names) and only a digit makes the order matter (two numbered rooms), because a person's name is said in
+  # any order.
   def same_words?(left, right, stemmed: true)
-    left_words = word_keys(left, stemmed)
-    right_words = word_keys(right, stemmed)
-    return left.to_s == right.to_s if left_words.empty? && right_words.empty?
+    left_sequence = word_sequence(left, stemmed)
+    right_sequence = word_sequence(right, stemmed)
+    return left.to_s == right.to_s if left_sequence.empty? && right_sequence.empty?
+    return false unless left_sequence.to_set == right_sequence.to_set
 
-    left_words == right_words
+    !order_matters?([left, right], stemmed) || left_sequence == right_sequence
   end
 
-  def word_keys(normalized_text, stemmed)
-    words(normalized_text).to_set { |word| stemmed ? stem(word) : word }
+  def word_sequence(normalized_text, stemmed)
+    normalized_text.to_s.scan(WORD_PATTERN).map { |word| word.tr(',', '.') }.map { |word| stemmed ? stem(word) : word }
+  end
+
+  def order_matters?(normalized_texts, stemmed)
+    normalized_texts.any? do |text|
+      words(text).any? { |word| stemmed ? order_word?(word) : word.match?(/\d/) }
+    end
+  end
+
+  def order_word?(word)
+    word.length == 1 || word.match?(/\d/) || word.match?(ROMAN_NUMERAL) || ORDER_WORDS.include?(word)
   end
 
   def fold_sql(expression)

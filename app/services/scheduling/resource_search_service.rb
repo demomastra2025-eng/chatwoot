@@ -61,8 +61,9 @@ class Scheduling::ResourceSearchService
   end
 
   # How many of the found resources have a name, or a stored specialty, with exactly the words of the query (any order,
-  # every word counts, no word forms: Асланов and Асланова are two names). Only such a resource may be presented as the
-  # one confident match; a part of a name or a longer specialty is not an equal name.
+  # every word counts, no word forms: Асланов and Асланова are two names; a name with a number is read in order). Only
+  # such a resource may be presented as the one confident match; a part of a name or a longer specialty is not an equal
+  # name.
   def exact_name_payload(scope)
     return { exact_name_matches: 0, exact_name_truncated: false } if @query.blank? || @query_truncated
 

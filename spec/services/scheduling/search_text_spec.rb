@@ -34,7 +34,38 @@ RSpec.describe Scheduling::SearchText do
       expect(same?('УЗИ малого таза', 'малого таза УЗИ')).to be(true)
       expect(same?('Приём терапевта', 'прием ТЕРАПЕВТА')).to be(true)
       expect(same?('МРТ кисти левой', 'МРТ кисть левая')).to be(true)
-      expect(same?('МРТ с контрастом', 'МРТ контрастом с')).to be(true)
+    end
+
+    it 'keeps the order of the words when a preposition, a number or a code takes part in the name' do
+      expect(same?('МРТ с контрастом', 'МРТ контрастом с')).to be(false)
+      expect(same?('МРТ без контраста с седацией', 'МРТ с контрастом без седации')).to be(false)
+      expect(same?('Массаж 10 сеансов по 30 минут', 'Массаж 30 сеансов по 10 минут')).to be(false)
+      expect(same?('Вакцинация от 1 до 6 лет', 'Вакцинация от 6 до 1 лет')).to be(false)
+      expect(same?('Холтер 24 часа 3 канала', 'Холтер 3 часа 24 канала')).to be(false)
+    end
+
+    it 'keeps the order for roman numerals, one-letter codes and prepositions that follow one another' do
+      expect(same?('Гепатит I B', 'Гепатит B I')).to be(false)
+      expect(same?('Лечение зуба с анестезией без рентгена', 'Лечение зуба без анестезии с рентгеном')).to be(false)
+      expect(same?('Приём врача для детей без родителей', 'Приём врача без детей для родителей')).to be(false)
+    end
+
+    it 'is true for the same words in the same order, whatever the case or the word form' do
+      expect(same?('МРТ с контрастом', 'мрт С КОНТРАСТОМ')).to be(true)
+      expect(same?('МРТ кисти левой с контрастом', 'МРТ кисть левая с контрастом')).to be(true)
+      expect(same?('Массаж 10 сеансов по 30 минут', 'массаж 10 сеансов по 30 минут')).to be(true)
+      expect(same?('МРТ 1.5 Тл', 'МРТ 1,5 Тл')).to be(true)
+    end
+
+    it 'keeps the free order for a name of content words only' do
+      expect(same?('УЗИ малого таза', 'таза малого УЗИ')).to be(true)
+      expect(same?('Приём детского невролога', 'невролога детского приём')).to be(true)
+    end
+
+    it 'orders a person name only when it holds a digit' do
+      expect(same?('Мурад Асланов', 'Асланов Мурад', stemmed: false)).to be(true)
+      expect(same?('Кабинет 2 этаж 3', 'Кабинет 3 этаж 2', stemmed: false)).to be(false)
+      expect(same?('Кабинет 2 этаж 3', 'этаж 3 Кабинет 2', stemmed: false)).to be(false)
     end
 
     it 'is false when a short word, a preposition, a number or a one-letter code differs' do
