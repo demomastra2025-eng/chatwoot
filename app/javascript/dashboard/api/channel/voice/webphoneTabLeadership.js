@@ -19,7 +19,7 @@ const currentAccountId = () => {
   return pathname.split('/')[3] || '';
 };
 
-const currentUserUid = () => {
+export const currentUserUid = () => {
   try {
     const session = Cookies.get(SESSION_COOKIE_NAME);
     return session ? JSON.parse(session).uid || '' : '';

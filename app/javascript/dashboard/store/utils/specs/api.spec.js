@@ -1,10 +1,40 @@
+import Cookies from 'js-cookie';
+import { releaseWebphoneWithoutWaiting } from 'dashboard/api/channel/voice/webphoneLogoutRelease';
 import {
+  clearCookiesOnLogoutTo,
   getLoadingStatus,
   parseAPIErrorResponse,
   setLoadingStatus,
   throwErrorMessage,
   parseLinearAPIErrorResponse,
 } from '../api';
+
+vi.mock('dashboard/api/channel/voice/webphoneLogoutRelease', () => ({
+  releaseWebphoneWithoutWaiting: vi.fn(),
+}));
+
+describe('#clearCookiesOnLogoutTo', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('starts releasing the browser phone before the session cookies are cleared', () => {
+    const order = [];
+    releaseWebphoneWithoutWaiting.mockImplementation(() => {
+      order.push('release phone');
+    });
+    vi.spyOn(Cookies, 'remove').mockImplementation(name => {
+      order.push(`remove ${name}`);
+    });
+    vi.stubGlobal('location', { replace: vi.fn() });
+
+    clearCookiesOnLogoutTo('/app/login', { replace: true });
+
+    expect(order[0]).toBe('release phone');
+    expect(order).toContain('remove cw_d_session_info');
+  });
+});
 
 describe('#getLoadingStatus', () => {
   it('returns correct status', () => {

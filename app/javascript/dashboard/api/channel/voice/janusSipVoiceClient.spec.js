@@ -562,6 +562,40 @@ describe('janusSipVoiceClient', () => {
     expect(updatePresenceMock).not.toHaveBeenCalled();
   });
 
+  it('can wait until the offline presence reached the server before the session ends', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    let resolveRelease;
+    updatePresenceOnUnloadMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveRelease = resolve;
+        })
+    );
+    let settled = false;
+
+    const destruction = JanusSipVoiceClient.destroyDevice({
+      keepalivePresence: true,
+      awaitPresenceRelease: true,
+    }).then(() => {
+      settled = true;
+    });
+    await new Promise(resolve => {
+      window.setTimeout(resolve, 0);
+    });
+
+    expect(updatePresenceOnUnloadMock).toHaveBeenCalledWith(
+      false,
+      expect.objectContaining({ inboxId: 4769 })
+    );
+    expect(settled).toBe(false);
+
+    resolveRelease(null);
+    await destruction;
+    expect(settled).toBe(true);
+  });
+
   it('sends offline presence only after an in-flight online report settles', async () => {
     const client = createJanusSipVoiceClient();
     let resolveOnlinePresence;

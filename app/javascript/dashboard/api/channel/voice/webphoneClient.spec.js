@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import Cookies from 'js-cookie';
 
 const {
   getWebphoneTokenMock,
@@ -1844,5 +1845,177 @@ describe('webphoneClient', () => {
         janusCallRef: 'janus-call-a',
       })
     );
+  });
+
+  describe('sign-out and a browser shared by several users', () => {
+    const SESSION_COOKIE = 'cw_d_session_info';
+    const LOGOUT_OPTIONS = {
+      keepalivePresence: true,
+      awaitPresenceRelease: true,
+    };
+
+    const registerNativeSession = async () => {
+      getNativeWebphoneTokenMock.mockResolvedValue({
+        provider: 'sipuni',
+        calling_supported: true,
+        sip_profile_id: 501,
+        inbox_id: 4083,
+        janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+        sip: {
+          username: 'sip-agent',
+          password: 'sip-secret',
+          host: 'ats01.kz.sipuni.com',
+        },
+      });
+      janusInitializeMock.mockResolvedValue({
+        provider: 'sipuni',
+        sessionKey: 'sip_profile:501',
+        inboxId: 4083,
+        sipProfileId: 501,
+        callingSupported: true,
+        registered: true,
+      });
+      await WebphoneClient.initializeDevice(4083, { native: true });
+    };
+
+    afterEach(() => {
+      Cookies.remove(SESSION_COOKIE);
+      WebphoneClient.loadedUserUid = '';
+      WebphoneClient.staleUserRelease = null;
+      WebphoneClient.tabLeadership.isLeader = true;
+      vi.useRealTimers();
+    });
+
+    it('releases the phone of the owner tab with an awaited keepalive unregister', async () => {
+      await registerNativeSession();
+
+      await WebphoneClient.releaseForLogout();
+
+      expect(janusDestroyMock).toHaveBeenCalledWith(LOGOUT_OPTIONS);
+      expect(WebphoneClient.sessions['sip_profile:501']).toBeUndefined();
+    });
+
+    it('asks the owner tab to release the phone when a follower tab signs out', async () => {
+      const { tabLeadership } = WebphoneClient;
+      const postSpy = vi
+        .spyOn(tabLeadership, 'post')
+        .mockImplementation(() => {});
+      tabLeadership.isLeader = false;
+      try {
+        const release = WebphoneClient.releaseForLogout();
+        const [request] = postSpy.mock.calls
+          .map(([message]) => message)
+          .filter(message => message.type === 'logout-release');
+        expect(request.requestId).toEqual(expect.any(String));
+
+        tabLeadership.dispatchEvent(
+          new CustomEvent('message', {
+            detail: {
+              type: 'logout-release-done',
+              requestId: request.requestId,
+            },
+          })
+        );
+        await release;
+
+        expect(janusDestroyMock).not.toHaveBeenCalled();
+      } finally {
+        postSpy.mockRestore();
+      }
+    });
+
+    it('does not wait for an owner tab that never answers on sign-out', async () => {
+      vi.useFakeTimers();
+      const { tabLeadership } = WebphoneClient;
+      const postSpy = vi
+        .spyOn(tabLeadership, 'post')
+        .mockImplementation(() => {});
+      tabLeadership.isLeader = false;
+      try {
+        let settled = false;
+        WebphoneClient.releaseForLogout().then(() => {
+          settled = true;
+        });
+
+        await vi.advanceTimersByTimeAsync(1_900);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(200);
+        expect(settled).toBe(true);
+      } finally {
+        postSpy.mockRestore();
+      }
+    });
+
+    it('releases the phone when a follower tab of the same user signs out', async () => {
+      await registerNativeSession();
+      const postSpy = vi
+        .spyOn(WebphoneClient.tabLeadership, 'post')
+        .mockImplementation(() => {});
+      try {
+        WebphoneClient.handleTabMessage({
+          type: 'logout-release',
+          requestId: 'request-1',
+          from: 'tab-follower',
+        });
+
+        await vi.waitFor(() => {
+          expect(postSpy).toHaveBeenCalledWith({
+            type: 'logout-release-done',
+            requestId: 'request-1',
+            to: 'tab-follower',
+          });
+        });
+        expect(janusDestroyMock).toHaveBeenCalledWith(LOGOUT_OPTIONS);
+      } finally {
+        postSpy.mockRestore();
+      }
+    });
+
+    it('gives the phone up when another user signed in in this browser', async () => {
+      await registerNativeSession();
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        SESSION_COOKIE,
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+
+      WebphoneClient.resumeNativeSessions();
+
+      await vi.waitFor(() => {
+        expect(janusDestroyMock).toHaveBeenCalledWith({
+          keepalivePresence: true,
+        });
+      });
+      expect(WebphoneClient.sessions['sip_profile:501']).toBeUndefined();
+    });
+
+    it('never registers the phone again for a tab whose user was replaced', async () => {
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(
+        SESSION_COOKIE,
+        JSON.stringify({ uid: 'marina@example.com' })
+      );
+
+      await expect(
+        WebphoneClient.initializeDevice(4083, { native: true })
+      ).resolves.toBeNull();
+      await expect(
+        WebphoneClient.bootstrapIncomingSupport()
+      ).resolves.toBeNull();
+
+      expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
+      expect(getWebphoneTokenMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps the phone while the signed-in user stays the same', async () => {
+      await registerNativeSession();
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(SESSION_COOKIE, JSON.stringify({ uid: 'asel@example.com' }));
+
+      WebphoneClient.resumeNativeSessions();
+
+      expect(janusDestroyMock).not.toHaveBeenCalled();
+      expect(WebphoneClient.sessions['sip_profile:501']).toBeDefined();
+    });
   });
 });

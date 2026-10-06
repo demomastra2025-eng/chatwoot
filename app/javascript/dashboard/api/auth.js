@@ -2,6 +2,7 @@
 
 import Cookies from 'js-cookie';
 import endPoints from './endPoints';
+import { releaseWebphoneBeforeLogout } from './channel/voice/webphoneLogoutRelease';
 import {
   clearCookiesOnLogout,
   deleteIndexedDBOnLogout,
@@ -16,8 +17,10 @@ export default {
   logout() {
     const urlData = endPoints('logout');
     const fetchPromise = new Promise((resolve, reject) => {
-      axios
-        .delete(urlData.url)
+      // The phone goes offline first: its release request needs the session
+      // that the request below revokes.
+      releaseWebphoneBeforeLogout()
+        .then(() => axios.delete(urlData.url))
         .then(response => {
           deleteIndexedDBOnLogout();
           clearCookiesOnLogout();

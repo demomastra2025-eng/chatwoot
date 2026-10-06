@@ -4,8 +4,10 @@ import JanusSipVoiceClient, {
   createJanusSipVoiceClient,
 } from './janusSipVoiceClient';
 import WebphoneTabLeadership, {
+  currentUserUid,
   webphoneTabScope,
 } from './webphoneTabLeadership';
+import { registerWebphoneLogoutRelease } from './webphoneLogoutRelease';
 
 // Capped low on purpose: an operator waiting a minute for the phone to come
 // back after a short network drop misses calls.
@@ -22,6 +24,13 @@ const WEBPHONE_NATIVE_SIP_STANDBY_REASON =
 const WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS = 5_000;
 export const WEBPHONE_OWNER_TAB_REASON = 'webphone_active_in_owner_tab';
 const WEBPHONE_TAB_LEADERSHIP_WAIT_MS = 5_000;
+// Sign-out: the keepalive request is awaited so the server hears about it
+// before the session ends; a follower tab waits for the owner tab this long.
+const WEBPHONE_LOGOUT_DESTROY_OPTIONS = {
+  keepalivePresence: true,
+  awaitPresenceRelease: true,
+};
+const WEBPHONE_LOGOUT_OWNER_WAIT_MS = 2_000;
 
 const FORWARDED_EVENTS = [
   'call:connected',
@@ -129,6 +138,10 @@ class WebphoneClient extends EventTarget {
       );
     }
 
+    // Cookies are shared by all tabs of the browser: a tab serves the user it
+    // was loaded for and gives its phone up when another user signs in.
+    this.loadedUserUid = currentUserUid();
+    this.staleUserRelease = null;
     this.leadershipBootstrapPromise = null;
     this.nativeOwnershipRelease = null;
     this.nativeBootstrapRequested = false;
@@ -144,10 +157,87 @@ class WebphoneClient extends EventTarget {
       this.handleTabMessage(event.detail || {})
     );
     this.tabLeadership.start();
+    registerWebphoneLogoutRelease(() => this.releaseForLogout());
   }
 
   ownsNativeSip() {
     return this.tabLeadership.isLeader;
+  }
+
+  isSignedInUserReplaced() {
+    const uid = currentUserUid();
+    if (!this.loadedUserUid) {
+      this.loadedUserUid = uid;
+      return false;
+    }
+
+    return uid !== this.loadedUserUid;
+  }
+
+  // The browser now belongs to another user (or to nobody): this tab must not
+  // keep, nor register again, the phone of the user it was loaded for.
+  releaseStaleUserPhone() {
+    if (!this.isSignedInUserReplaced()) return false;
+
+    if (!this.staleUserRelease) {
+      this.staleUserRelease = Promise.all(
+        this.nativeSessionKeys().map(sessionKey =>
+          this.destroyNativeSession(sessionKey, {
+            keepalivePresence: true,
+          }).catch(() => null)
+        )
+      ).finally(() => {
+        this.staleUserRelease = null;
+      });
+    }
+    return true;
+  }
+
+  // Sign-out takes the session from every tab of the browser, so the phone
+  // goes offline now: the owner tab unregisters and tells the server to release
+  // the lease, a follower tab asks the owner tab to do it. Never rejects.
+  releaseForLogout() {
+    if (this.ownsNativeSip()) return this.releaseNativeSessionsForLogout();
+
+    return this.requestOwnerLogoutRelease();
+  }
+
+  releaseNativeSessionsForLogout() {
+    return Promise.all(
+      this.nativeSessionKeys().map(sessionKey =>
+        this.destroyNativeSession(
+          sessionKey,
+          WEBPHONE_LOGOUT_DESTROY_OPTIONS
+        ).catch(() => null)
+      )
+    );
+  }
+
+  requestOwnerLogoutRelease() {
+    const { tabLeadership } = this;
+    const requestId = `${tabLeadership.tabId}-${Date.now()}`;
+
+    return new Promise(resolve => {
+      let timer = null;
+      const handleMessage = event => {
+        const message = event.detail || {};
+        if (
+          message.type !== 'logout-release-done' ||
+          message.requestId !== requestId
+        ) {
+          return;
+        }
+        window.clearTimeout(timer);
+        tabLeadership.removeEventListener('message', handleMessage);
+        resolve();
+      };
+      timer = window.setTimeout(() => {
+        tabLeadership.removeEventListener('message', handleMessage);
+        resolve();
+      }, WEBPHONE_LOGOUT_OWNER_WAIT_MS);
+      tabLeadership.addEventListener('message', handleMessage);
+      tabLeadership.post({ type: 'logout-release', requestId });
+    });
   }
 
   // The app can load before the router settles on an account (or before
@@ -269,6 +359,18 @@ class WebphoneClient extends EventTarget {
   handleTabMessage(message) {
     if (message.type === 'hello') {
       this.broadcastNativeSessions();
+      return;
+    }
+    if (message.type === 'logout-release') {
+      if (!this.ownsNativeSip()) return;
+
+      this.releaseNativeSessionsForLogout().finally(() => {
+        this.tabLeadership.post({
+          type: 'logout-release-done',
+          requestId: message.requestId,
+          to: message.from,
+        });
+      });
       return;
     }
     if (message.type !== 'sessions' || this.ownsNativeSip()) return;
@@ -641,6 +743,7 @@ class WebphoneClient extends EventTarget {
   }
 
   async retryNativeSession(sessionKey) {
+    if (this.releaseStaleUserPhone()) return null;
     if (this.nativeSessionRetryPromises[sessionKey]) {
       return this.nativeSessionRetryPromises[sessionKey];
     }
@@ -764,7 +867,7 @@ class WebphoneClient extends EventTarget {
   }
 
   resumeNativeSessions() {
-    if (!this.ownsNativeSip()) return;
+    if (this.releaseStaleUserPhone() || !this.ownsNativeSip()) return;
 
     Object.keys(this.nativeSessionConfigs).forEach(sessionKey => {
       const session = this.sessions[sessionKey];
@@ -1034,6 +1137,7 @@ class WebphoneClient extends EventTarget {
   }
 
   bootstrapIncomingSupport() {
+    if (this.releaseStaleUserPhone()) return Promise.resolve(null);
     this.nativeBootstrapRequested = true;
     this.syncTabLeadershipScope();
     if (this.bootstrapIncomingPromise) return this.bootstrapIncomingPromise;
@@ -1063,6 +1167,7 @@ class WebphoneClient extends EventTarget {
       claimOwnership = false,
     } = {}
   ) {
+    if (this.releaseStaleUserPhone()) return Promise.resolve(null);
     this.nativeBootstrapRequested = true;
     this.syncTabLeadershipScope();
     const initializationKey = [
@@ -1655,12 +1760,14 @@ class WebphoneClient extends EventTarget {
     ];
   }
 
-  async destroyNativeSession(sessionKey) {
+  async destroyNativeSession(sessionKey, destroyOptions = null) {
     const client = this.nativeSipClients[sessionKey];
     const provider = this.nativeSessionDescriptor(sessionKey).provider;
     const hadSession = Boolean(this.sessions[sessionKey]);
     try {
-      await client?.destroyDevice?.();
+      await (destroyOptions
+        ? client?.destroyDevice?.(destroyOptions)
+        : client?.destroyDevice?.());
     } finally {
       if (this.nativeSipClients[sessionKey] === client) {
         delete this.nativeSipClients[sessionKey];

@@ -6,7 +6,12 @@ vi.mock('../../store/utils/api', () => ({
   handleSessionReplaced: vi.fn(),
 }));
 
+vi.mock('../channel/voice/webphoneLogoutRelease', () => ({
+  releaseWebphoneBeforeLogout: vi.fn(() => Promise.resolve(true)),
+}));
+
 import authAPI from '../auth';
+import { releaseWebphoneBeforeLogout } from '../channel/voice/webphoneLogoutRelease';
 import {
   clearCookiesOnLogout,
   deleteIndexedDBOnLogout,
@@ -63,6 +68,22 @@ describe('#authAPI.logout', () => {
 
   afterEach(() => {
     global.axios = originalAxios;
+  });
+
+  it('releases the browser phone before the session token is revoked', async () => {
+    const order = [];
+    releaseWebphoneBeforeLogout.mockImplementationOnce(async () => {
+      order.push('release phone');
+    });
+    axiosMock.delete.mockImplementationOnce(async () => {
+      order.push('revoke session');
+      return { status: 200 };
+    });
+
+    await authAPI.logout();
+
+    expect(order).toEqual(['release phone', 'revoke session']);
+    expect(clearCookiesOnLogout).toHaveBeenCalledTimes(1);
   });
 
   it('forces relogin when the session was replaced elsewhere', async () => {

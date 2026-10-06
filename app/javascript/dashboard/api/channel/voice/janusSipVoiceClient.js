@@ -3428,6 +3428,7 @@ export class JanusSipVoiceClient extends EventTarget {
     preserveMicrophonePrewarm = false,
     preserveSessionConfig = false,
     keepalivePresence = false,
+    awaitPresenceRelease = false,
   } = {}) {
     const destroyError = new Error('device_destroyed');
     const hadCall =
@@ -3454,8 +3455,9 @@ export class JanusSipVoiceClient extends EventTarget {
     this.initialized = false;
     this.registered = false;
     this.presenceHeartbeatFailureCount = 0;
+    let presenceRelease = null;
     if (shouldReportOffline) {
-      this.reportPresence(false, {
+      presenceRelease = this.reportPresence(false, {
         context: offlinePresenceContext,
         keepalive: keepalivePresence,
       }).catch(() => null);
@@ -3499,6 +3501,8 @@ export class JanusSipVoiceClient extends EventTarget {
     } finally {
       this.destroyingDevice = false;
     }
+    // Sign-out waits for the server to learn that the phone is gone.
+    if (awaitPresenceRelease) await presenceRelease;
   }
 }
 

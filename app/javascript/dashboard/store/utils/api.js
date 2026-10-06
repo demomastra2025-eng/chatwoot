@@ -6,6 +6,7 @@ import { SESSION_STORAGE_KEYS } from 'dashboard/constants/sessionStorage';
 import { LocalStorage } from 'shared/helpers/localStorage';
 import SessionStorage from 'shared/helpers/sessionStorage';
 import { emitter } from 'shared/helpers/mitt';
+import { releaseWebphoneWithoutWaiting } from 'dashboard/api/channel/voice/webphoneLogoutRelease';
 import {
   ANALYTICS_IDENTITY,
   ANALYTICS_RESET,
@@ -54,6 +55,8 @@ export const clearSessionStorageOnLogout = () => {
 };
 
 const resetClientState = () => {
+  // Started before the cookies go: the release request carries the session.
+  releaseWebphoneWithoutWaiting();
   emitter.emit(CHATWOOT_RESET);
   emitter.emit(ANALYTICS_RESET);
   clearBrowserSessionCookies();
