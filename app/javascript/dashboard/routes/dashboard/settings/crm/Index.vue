@@ -1125,27 +1125,6 @@ onMounted(async () => {
                     </div>
                   </div>
 
-                  <div class="grid gap-3 px-5 py-4">
-                    <div class="flex items-center justify-between gap-3">
-                      <div
-                        class="flex items-center gap-2 text-sm font-medium text-n-slate-12"
-                      >
-                        <span class="i-lucide-inbox size-4 text-n-slate-10" />
-                        {{ $t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED') }}
-                      </div>
-                      <Switch
-                        :model-value="unsortedActiveDraft"
-                        :disabled="
-                          !canManage || !unsortedStage || settingsSaving
-                        "
-                        @update:model-value="toggleUnsortedStage"
-                      />
-                    </div>
-                    <p class="mb-0 text-xs leading-5 text-n-slate-10">
-                      {{ $t('CRM.SETTINGS.PIPELINES.UNSORTED_HELP') }}
-                    </p>
-                  </div>
-
                   <div class="grid gap-4 px-5 py-4">
                     <div class="text-sm font-semibold text-n-slate-12">
                       {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
@@ -1218,6 +1197,33 @@ onMounted(async () => {
               <section class="w-max">
                 <div class="py-1">
                   <div class="flex min-w-max items-stretch">
+                    <article
+                      v-if="unsortedStage"
+                      class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 p-4 shadow-sm"
+                      :data-stage-id="unsortedStage.id"
+                      :style="stageCardStyle(unsortedStage)"
+                    >
+                      <div class="flex items-center gap-2 text-sm font-semibold text-n-slate-12">
+                        <span class="i-lucide-inbox size-4 text-n-slate-10" />
+                        {{ $t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED') }}
+                      </div>
+                      <span class="mt-1 text-xs text-n-slate-9">
+                        {{ $t('CRM.SETTINGS.STAGES.SYSTEM.POSITION_LOCKED') }}
+                      </span>
+                      <p class="mb-0 mt-2 text-xs leading-5 text-n-slate-10">
+                        {{ $t('CRM.SETTINGS.PIPELINES.UNSORTED_HELP') }}
+                      </p>
+                      <div class="mt-auto flex items-center justify-between gap-2 pt-3">
+                        <span class="text-xs font-medium text-n-slate-11">
+                          {{ $t('CRM.SETTINGS.STAGES.FORM.ACTIVE') }}
+                        </span>
+                        <Switch
+                          :model-value="unsortedActiveDraft"
+                          :disabled="!canManage || settingsSaving"
+                          @update:model-value="toggleUnsortedStage"
+                        />
+                      </div>
+                    </article>
                     <Draggable
                       v-model="movableStageRows"
                       item-key="id"
@@ -1283,6 +1289,18 @@ onMounted(async () => {
                                 @blur="saveInlineStageName(stage)"
                                 @keydown.enter="$event.currentTarget.blur()"
                               />
+                              <Button
+                                v-if="canManage"
+                                size="xs"
+                                color="slate"
+                                variant="ghost"
+                                icon="i-lucide-list-checks"
+                                :label="
+                                  $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
+                                "
+                                :disabled="settingsSaving"
+                                @click="openStageRequirements(stage)"
+                              />
                             </div>
                             <div
                               class="mt-auto flex items-center justify-between gap-2 px-3 pb-3 pt-2"
@@ -1317,21 +1335,6 @@ onMounted(async () => {
                                   settingsSaving || stage.active === false
                                 "
                                 @click="setDefaultStage(stage)"
-                              />
-                              <Button
-                                v-if="canManage"
-                                size="xs"
-                                color="slate"
-                                variant="ghost"
-                                icon="i-lucide-list-checks"
-                                :aria-label="
-                                  $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
-                                "
-                                :title="
-                                  $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
-                                "
-                                :disabled="settingsSaving"
-                                @click="openStageRequirements(stage)"
                               />
                               <Button
                                 v-if="canManage"

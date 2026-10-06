@@ -275,6 +275,22 @@ describe('CRM pipeline settings', () => {
     testState.router.replace.mockClear();
   });
 
+  it('shows unsorted as the fixed first stage with its own switch', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const stages = wrapper.findAll('[data-stage-id]');
+    expect(stages[0].attributes('data-stage-id')).toBe('10');
+    expect(stages[0].find('.stage-drag-handle').exists()).toBe(false);
+    expect(stages[0].find('switch-stub').exists()).toBe(true);
+    expect(stages[0].text()).toContain(
+      'CRM.SETTINGS.STAGES.SYSTEM.POSITION_LOCKED'
+    );
+    expect(stages[1].text()).toContain(
+      'CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS'
+    );
+  });
+
   it('keeps a new stage frontend-only until the global save', async () => {
     const wrapper = mountComponent();
     await flushPromises();
@@ -291,7 +307,7 @@ describe('CRM pipeline settings', () => {
       wrapper
         .findAll('[data-stage-id]')
         .map(card => card.attributes('data-stage-id'))
-    ).toEqual(['11', expect.stringMatching(/^draft-stage-/), '13']);
+    ).toEqual(['10', '11', expect.stringMatching(/^draft-stage-/), '13']);
     expect(testState.saveStage).not.toHaveBeenCalled();
     expect(testState.reorderStages).not.toHaveBeenCalled();
     expect(saveButton.attributes()).not.toHaveProperty('disabled');
