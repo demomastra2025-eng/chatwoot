@@ -1993,6 +1993,29 @@ describe('webphoneClient', () => {
       }
     });
 
+    it('releases the phone after a call ends when its user has signed out', async () => {
+      await registerNativeSession();
+      const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+      const [, onCallDisconnected] = client.addEventListener.mock.calls.find(
+        ([eventName]) => eventName === 'call:disconnected'
+      );
+      client.hasActiveCall = true;
+      WebphoneClient.loadedUserUid = 'asel@example.com';
+      Cookies.set(SESSION_COOKIE, JSON.stringify({ uid: 'asel@example.com' }));
+
+      await WebphoneClient.releaseForLogout();
+      expect(janusDestroyMock).not.toHaveBeenCalled();
+
+      client.hasActiveCall = false;
+      onCallDisconnected({ detail: {} });
+
+      await vi.waitFor(() => {
+        expect(janusDestroyMock).toHaveBeenCalledWith({
+          keepalivePresence: true,
+        });
+      });
+    });
+
     it('keeps the call of the owner tab when a follower tab signs out', async () => {
       await registerNativeSession();
       const client = WebphoneClient.nativeSipClients['sip_profile:501'];

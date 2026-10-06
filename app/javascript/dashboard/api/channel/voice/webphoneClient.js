@@ -183,8 +183,7 @@ class WebphoneClient extends EventTarget {
   // in progress is never hung up silently: the phone is kept until the call
   // ends (releaseDeferredStaleUserPhone) and is not registered again meanwhile.
   releaseStaleUserPhone() {
-    if (!this.isSignedInUserReplaced()) {
-      this.staleUserReleaseDeferred = false;
+    if (!this.isSignedInUserReplaced() && !this.staleUserReleaseDeferred) {
       return false;
     }
 
@@ -229,8 +228,12 @@ class WebphoneClient extends EventTarget {
 
   releaseNativeSessionsForLogout() {
     // A call in progress is never hung up silently: the sign-out goes on and
-    // the beforeunload guard asks the operator before the page is left.
-    if (this.hasNativeCallInProgress()) return Promise.resolve([]);
+    // the beforeunload guard asks the operator before the page is left. Release
+    // after the call ends even if logout has not cleared the cookie yet.
+    if (this.hasNativeCallInProgress()) {
+      this.staleUserReleaseDeferred = true;
+      return Promise.resolve([]);
+    }
 
     return Promise.all(
       this.nativeSessionKeys().map(sessionKey =>
