@@ -650,6 +650,153 @@ describe('useCallSession', () => {
     ]);
   });
 
+  describe('a browser SIP leg the server closed because another operator took the call', () => {
+    const closedLegResponse = {
+      callSid: 'beeline:janus:102:late-leg@sbc',
+      call_ref: 'beeline:janus:102:late-leg@sbc',
+      status: 'no_answer',
+      provider: 'beeline',
+      inbox_id: 5,
+      call_direction: 'inbound',
+      from_number: '+70000000001',
+      logical_call_key: 'native-sip-group:abc',
+      sip_profile_id: 102,
+      route_action: 'operator',
+      operator_candidates: [{ sip_profile_id: 102, user_id: 8 }],
+      operator_internal_extension: '1002',
+    };
+    const claimEvent = {
+      account_id: 1,
+      call_sid: 'beeline:janus:102:late-leg@sbc',
+      call_ref: 'beeline:janus:102:late-leg@sbc',
+      status: 'connecting',
+      provider: 'beeline',
+      call_direction: 'inbound',
+      inbox_id: 5,
+      from_number: '+70000000001',
+      logical_call_key: 'native-sip-group:abc',
+      related_call_sids: [
+        'beeline:janus:101:first@sbc',
+        'beeline:janus:102:late-leg@sbc',
+      ],
+      claimed_by_user_id: 7,
+      operator_claim: { user_id: 7 },
+    };
+    const firstLegCard = {
+      callSid: 'beeline:janus:101:first@sbc',
+      provider: 'beeline',
+      callDirection: 'inbound',
+      status: 'ringing',
+      inboxId: 5,
+      accountId: 1,
+      logicalCallKey: 'native-sip-group:abc',
+      fromNumber: '+70000000001',
+    };
+
+    const reportLateLeg = async () => {
+      const incomingHandler = addEventListenerMock.mock.calls.find(
+        ([eventName]) => eventName === 'call:incoming'
+      )?.[1];
+      await incomingHandler({
+        detail: {
+          provider: 'beeline',
+          inboxId: 5,
+          sipProfileId: 102,
+          sessionKey: 'sip_profile:102',
+          callRef: 'late-leg@sbc',
+          from: 'sip:+70000000001@cloudpbx.beeline.kz',
+        },
+      });
+    };
+
+    beforeEach(() => {
+      reportBrowserSipIncomingMock.mockResolvedValue(closedLegResponse);
+    });
+
+    it('shows no card when the claim event came before the report answer', async () => {
+      mountUseCallSession();
+      await Promise.resolve();
+      const callsStore = useCallsStore();
+      callsStore.addCall(firstLegCard);
+      await callsStore.handleCallClaimed(claimEvent, 8);
+
+      await reportLateLeg();
+
+      expect(callsStore.calls).toEqual([]);
+      expect(callsStore.incomingCalls).toEqual([]);
+    });
+
+    it('shows no card when the claim event never arrives', async () => {
+      mountUseCallSession();
+      await Promise.resolve();
+      const callsStore = useCallsStore();
+
+      await reportLateLeg();
+
+      expect(callsStore.calls).toEqual([]);
+    });
+
+    it('shows no card when the claim event comes after the report answer', async () => {
+      mountUseCallSession();
+      await Promise.resolve();
+      const callsStore = useCallsStore();
+
+      await reportLateLeg();
+      await callsStore.handleCallClaimed(claimEvent, 8);
+
+      expect(callsStore.incomingCalls).toEqual([]);
+    });
+
+    it('stops the INVITE this browser still holds without a second report to the server', async () => {
+      hasPendingIncomingCallMock.mockReturnValue(true);
+      mountUseCallSession();
+      await Promise.resolve();
+
+      await reportLateLeg();
+
+      expect(rejectClientCallMock).toHaveBeenCalledTimes(1);
+      expect(rejectClientCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'beeline',
+          sipProfileId: 102,
+          janusCallRef: 'late-leg@sbc',
+          callRef: null,
+        })
+      );
+      expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    });
+
+    it('does not touch the browser when no INVITE is pending', async () => {
+      hasPendingIncomingCallMock.mockReturnValue(false);
+      mountUseCallSession();
+      await Promise.resolve();
+
+      await reportLateLeg();
+
+      expect(rejectClientCallMock).not.toHaveBeenCalled();
+    });
+
+    it('does not let a later ringing event bring the closed leg back', async () => {
+      mountUseCallSession();
+      await Promise.resolve();
+      const callsStore = useCallsStore();
+
+      await reportLateLeg();
+      callsStore.addCall({
+        callSid: 'beeline:janus:102:late-leg@sbc',
+        provider: 'beeline',
+        callDirection: 'inbound',
+        status: 'ringing',
+        inboxId: 5,
+        sipProfileId: 102,
+        janusSessionKey: 'sip_profile:102',
+        fromNumber: '+70000000001',
+      });
+
+      expect(callsStore.calls).toEqual([]);
+    });
+  });
+
   it('only marks a native incoming call actionable when its local Janus INVITE exists', () => {
     const callSession = mountUseCallSession();
     supportsBrowserCallingMock.mockReturnValue(true);

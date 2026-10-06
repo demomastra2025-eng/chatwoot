@@ -5,6 +5,7 @@ import VoiceAPI from 'dashboard/api/channel/voice/voiceAPIClient';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
+import { TERMINAL_STATUSES } from 'dashboard/helper/voice';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import Timer from 'dashboard/helper/Timer';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
@@ -920,6 +921,48 @@ export function useCallSession() {
     }
   };
 
+  // The server closes a leg that is reported after another operator took the
+  // call (the report answers with a terminal status). It is not a call for this
+  // operator: no card, and the INVITE this browser still holds stops ringing.
+  const dropClosedBrowserSipLeg = async (call, detail) => {
+    const closedLeg = {
+      callSid: call.callSid || call.call_sid || call.call_ref,
+      status: call.status,
+      provider: call.provider || detail.provider,
+      callDirection: call.call_direction || call.direction || 'inbound',
+      inboxId: call.inboxId || call.inbox_id || detail.inboxId,
+      sipProfileId:
+        call.sipProfileId || call.sip_profile_id || detail.sipProfileId,
+      janusSessionKey:
+        call.janusSessionKey ||
+        call.janus_session_key ||
+        detail.sessionKey ||
+        detail.session_key,
+      janusCallRef:
+        call.janusCallRef ||
+        call.janus_call_ref ||
+        detail.janusCallRef ||
+        detail.janus_call_ref ||
+        detail.callRef ||
+        detail.callSid,
+    };
+    // A late ringing event of the same leg must not bring the card back.
+    callsStore.rememberTerminalCall(closedLeg);
+
+    try {
+      const scope = janusWebphoneCallScope(closedLeg);
+      if (WebphoneClient.hasPendingIncomingCall(scope)) {
+        await WebphoneClient.rejectIncomingCall({
+          ...scope,
+          callRef: scope.janusCallRef ? null : scope.callRef,
+        });
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('Failed to stop the closed browser SIP leg:', error);
+    }
+  };
+
   const handleClientIncoming = async event => {
     const detail = event?.detail || {};
     const provider = detail.provider;
@@ -974,6 +1017,11 @@ export function useCallSession() {
           detail.callRef ||
           detail.callSid,
       });
+
+      if (TERMINAL_STATUSES.includes(call.status)) {
+        await dropClosedBrowserSipLeg(call, detail);
+        return;
+      }
 
       callsStore.addCall({
         callSid: canonicalCallRef,
