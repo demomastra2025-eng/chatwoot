@@ -302,6 +302,7 @@ class Telephony::OperatorCallClaimService
 
   def sipuni_operator_leg_claimable?
     return true unless call_session.provider == 'sipuni' && call_session.direction == 'inbound'
+    return true if sipuni_janus_operator_leg?
     return true if route_metadata['sipuni_operator_leg'] == true
     return true if route_metadata['sipuni_operator_leg'].to_s == 'true'
     return true if route_metadata['sipuni_leg_kind'].to_s == 'operator'
@@ -310,6 +311,12 @@ class Telephony::OperatorCallClaimService
     return false if route_metadata['sipuni_leg_kind'].to_s == 'external'
 
     true
+  end
+
+  # The browser's own INVITE is an operator leg by construction; the external
+  # leg the PBX reports for the same call never makes it unclaimable.
+  def sipuni_janus_operator_leg?
+    call_session.external_call_ref.to_s.start_with?('sipuni:janus:') && route_metadata['route_action'].to_s == 'operator'
   end
 
   def registration_details

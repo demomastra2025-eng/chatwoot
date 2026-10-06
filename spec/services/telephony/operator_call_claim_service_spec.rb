@@ -583,6 +583,76 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(call_session.reload.metadata['operator_claim']).to be_blank
   end
 
+  it 'claims a Sipuni Janus operator leg although a report of the external leg marked the session external' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'sipuni',
+      host: 'ats01.kz.sipuni.com',
+      username: '015856'
+    )
+    voice_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'sipuni',
+      phone_number: '+77070001001',
+      provider_config: {
+        provider_kind: 'sipuni',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'sipuni-janus-claim-test-line',
+        routing_mode: 'operator'
+      }
+    )
+    voice_inbox = voice_channel.inbox
+    create(:inbox_member, inbox: voice_inbox, user: winner_user)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: winner_user,
+      provider_connection: provider_connection,
+      internal_extension: '205',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'profile-janus-205',
+      fonoster_agent_ref: nil,
+      agent_aor: 'sip:015856100021@ats01.kz.sipuni.com',
+      last_synced_at: Time.current,
+      metadata: {
+        registration_state: 'registered',
+        presence: 'online',
+        last_presence_event_at: Time.current.iso8601
+      }
+    )
+    mark_browser_profile_registered!(profile)
+    voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+    call_session.update!(
+      provider: 'sipuni',
+      external_call_ref: "sipuni:janus:#{profile.id}:raw-invite@sipuni-host:8201",
+      conversation: voice_conversation,
+      contact: voice_conversation.contact,
+      inbox: voice_inbox,
+      number_binding: voice_inbox.telephony_number_binding,
+      metadata: {
+        'metadata' => {
+          'source' => 'browser_janus_sip',
+          'route_action' => 'operator',
+          'route_reason' => 'operator_route',
+          'sipuni_operator_leg' => false,
+          'sipuni_leg_kind' => 'external',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [winner_user.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        }
+      }
+    )
+
+    payload = described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+
+    expect(payload).to include(claimed: true, sip_profile_id: profile.id, user_id: winner_user.id)
+    expect(call_session.reload.metadata.dig('operator_claim', 'user_id')).to eq(winner_user.id)
+  end
+
   it 'rejects a later claim after first-answer-wins selected another operator' do
     described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
 
