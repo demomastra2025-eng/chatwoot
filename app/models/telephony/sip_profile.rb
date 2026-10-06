@@ -325,6 +325,8 @@ class Telephony::SipProfile < ApplicationRecord
       next unless lease['browser_instance_id'].to_s == browser_instance_id.to_s
       next if lease['user_id'].to_s == by_user_id.to_s
       next unless browser_registration_lease_active?(lease, occurred_at)
+      # A call in progress is never cut: its tab gives the phone up when the call ends.
+      next if browser_call_in_progress?
 
       registration_metadata = (metadata || {}).deep_dup
       release_browser_registration!(registration_metadata, occurred_at)
@@ -442,6 +444,12 @@ class Telephony::SipProfile < ApplicationRecord
     return metadata unless stale_browser_registration?
 
     metadata.to_h.merge(OFFLINE_REGISTRATION_METADATA)
+  end
+
+  def browser_call_in_progress?
+    return false if user.blank?
+
+    Telephony::OperatorBusyService.new(account: account, user: user).busy?
   end
 
   def release_other_users_in_browser!(browser_instance_id, user_id, occurred_at)

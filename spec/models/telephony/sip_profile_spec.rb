@@ -507,6 +507,39 @@ RSpec.describe Telephony::SipProfile do
         expect(asel.reload).to be_registered_for_routing
       end
 
+      it 'does not cut the phone of a user who is on a call' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+        create(
+          :telephony_call_session,
+          account: asel.account,
+          status: 'in_progress',
+          metadata: { 'operator_claim' => { 'user_id' => asel.user_id, 'sip_profile_id' => asel.id } }
+        )
+
+        result = acquire_for_user(marina, browser_instance_id: 'browser-1')
+
+        expect(result).to include(acquired: true)
+        expect(asel.reload).to be_registered_for_routing
+        expect(asel.metadata).to have_key('browser_registration_lease')
+      end
+
+      it 'releases the phone at the next acquisition once the call has ended' do
+        register_browser_phone(asel, browser_instance_id: 'browser-1')
+        call_session = create(
+          :telephony_call_session,
+          account: asel.account,
+          status: 'in_progress',
+          metadata: { 'operator_claim' => { 'user_id' => asel.user_id, 'sip_profile_id' => asel.id } }
+        )
+        acquire_for_user(marina, browser_instance_id: 'browser-1')
+        call_session.update!(status: 'completed')
+
+        acquire_for_user(marina, browser_instance_id: 'browser-1')
+
+        expect(asel.reload).not_to be_registered_for_routing
+        expect(asel.metadata).not_to have_key('browser_registration_lease')
+      end
+
       it 'does nothing for a request that carries no browser identity' do
         register_browser_phone(asel, browser_instance_id: 'browser-1')
 
