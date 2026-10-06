@@ -11,10 +11,6 @@ import Select from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SettingsInfoDialog from './SettingsInfoDialog.vue';
 
-const FishVoiceManager = defineAsyncComponent(() =>
-  import('./FishVoiceManager.vue')
-);
-
 const props = defineProps({
   assistant: {
     type: Object,
@@ -36,6 +32,10 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['submit']);
+
+const FishVoiceManager = defineAsyncComponent(
+  () => import('./FishVoiceManager.vue')
+);
 
 const { t } = useI18n();
 

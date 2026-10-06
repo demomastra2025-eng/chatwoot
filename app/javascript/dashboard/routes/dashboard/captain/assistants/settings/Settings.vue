@@ -16,8 +16,11 @@ import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
-const VoiceAgentPreview = defineAsyncComponent(() =>
-  import('dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue')
+const VoiceAgentPreview = defineAsyncComponent(
+  () =>
+    import(
+      'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue'
+    )
 );
 
 const { t } = useI18n();

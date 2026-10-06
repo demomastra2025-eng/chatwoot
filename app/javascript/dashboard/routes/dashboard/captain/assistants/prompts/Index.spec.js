@@ -227,10 +227,7 @@ describe('Captain prompts page', () => {
     const wrapper = buildWrapper();
 
     expect(wrapper.text()).toContain('basic-form');
-    expect(dispatchMock).not.toHaveBeenCalledWith(
-      'captainAssistants/show',
-      58
-    );
+    expect(dispatchMock).not.toHaveBeenCalledWith('captainAssistants/show', 58);
   });
 
   it('saves rules together with the instruction when the rules tab is active', async () => {

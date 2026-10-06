@@ -242,10 +242,7 @@ describe('Captain assistant settings page', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('basic-form');
-    expect(dispatchMock).not.toHaveBeenCalledWith(
-      'captainAssistants/show',
-      57
-    );
+    expect(dispatchMock).not.toHaveBeenCalledWith('captainAssistants/show', 57);
   });
 
   it('saves the general tab from its sections without changing the kind of the assistant', async () => {

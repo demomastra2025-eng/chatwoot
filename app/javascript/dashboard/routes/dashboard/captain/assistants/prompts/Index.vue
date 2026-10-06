@@ -12,8 +12,11 @@ import AssistantRulesManager from 'dashboard/components-next/captain/pageCompone
 import PromptInspector from 'dashboard/components-next/captain/pageComponents/assistant/PromptInspector.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
-const AssistantScenariosManager = defineAsyncComponent(() =>
-  import('dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue')
+const AssistantScenariosManager = defineAsyncComponent(
+  () =>
+    import(
+      'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantScenariosManager.vue'
+    )
 );
 
 const { t } = useI18n();
