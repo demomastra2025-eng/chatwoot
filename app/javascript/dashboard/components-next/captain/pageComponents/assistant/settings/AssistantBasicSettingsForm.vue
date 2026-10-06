@@ -127,7 +127,9 @@ const assistantModelOptions = computed(() => {
     value: '',
     label: platformModel
       ? t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT_WITH_MODEL', {
-          model: clientModelLabel(platformModel.display_name || platformModel.id),
+          model: clientModelLabel(
+            platformModel.display_name || platformModel.id
+          ),
         })
       : t('CAPTAIN.ASSISTANTS.FORM.MODEL.PLATFORM_DEFAULT'),
   };

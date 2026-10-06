@@ -42,8 +42,10 @@ const webAccessItems = computed(() => {
       title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.TITLE'),
       description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.DESCRIPTION'),
       limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.LIMIT', {
-        count: runtime.value.web_search_max_results ||
-          metadata.search_default_results || 5,
+        count:
+          runtime.value.web_search_max_results ||
+          metadata.search_default_results ||
+          5,
       }),
     },
     {
@@ -51,8 +53,11 @@ const webAccessItems = computed(() => {
       title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.TITLE'),
       description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.DESCRIPTION'),
       limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.LIMIT', {
-        count: numberFormatter.format(runtime.value.web_scrape_max_chars ||
-          metadata.scrape_default_max_chars || 12000),
+        count: numberFormatter.format(
+          runtime.value.web_scrape_max_chars ||
+            metadata.scrape_default_max_chars ||
+            12000
+        ),
       }),
     },
     {
@@ -60,8 +65,11 @@ const webAccessItems = computed(() => {
       title: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.TITLE'),
       description: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.DESCRIPTION'),
       limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.LIMIT', {
-        count: numberFormatter.format(runtime.value.web_document_parse_max_chars ||
-          metadata.document_parse_default_max_chars || 24000),
+        count: numberFormatter.format(
+          runtime.value.web_document_parse_max_chars ||
+            metadata.document_parse_default_max_chars ||
+            24000
+        ),
         size: formatBytes(metadata.document_parse_max_file_bytes || 0, 0),
       }),
     },
@@ -119,8 +127,7 @@ onMounted(() => {
             <div
               v-for="item in webAccessItems"
               :key="item.key"
-              class="flex items-center justify-between gap-4 rounded-xl border border-n-weak
-                bg-n-solid-1 p-4"
+              class="flex items-center justify-between gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
             >
               <div>
                 <div class="text-sm font-medium text-n-slate-12">
@@ -150,7 +157,9 @@ onMounted(() => {
                   {{ t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.TITLE') }}
                 </div>
                 <div class="text-xs text-n-slate-11">
-                  {{ t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.DESCRIPTION') }}
+                  {{
+                    t('CAPTAIN_SETTINGS.FEATURES.TEXT_IMPROVEMENT.DESCRIPTION')
+                  }}
                 </div>
               </div>
               <Switch
@@ -167,12 +176,16 @@ onMounted(() => {
                   {{ t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.TITLE') }}
                 </div>
                 <div class="text-xs text-n-slate-11">
-                  {{ t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.DESCRIPTION') }}
+                  {{
+                    t('CAPTAIN_SETTINGS.FEATURES.LABEL_SUGGESTION.DESCRIPTION')
+                  }}
                 </div>
               </div>
               <Switch
                 :model-value="isLabelSuggestionEnabled"
-                @change="enabled => handleFeatureToggle('label_suggestion', enabled)"
+                @change="
+                  enabled => handleFeatureToggle('label_suggestion', enabled)
+                "
               />
             </div>
             <div class="flex items-center justify-between gap-4">
@@ -186,7 +199,10 @@ onMounted(() => {
               </div>
               <Switch
                 :model-value="runtime.assistant_moderation === true"
-                @change="enabled => handleRuntimeToggle('assistant_moderation', enabled)"
+                @change="
+                  enabled =>
+                    handleRuntimeToggle('assistant_moderation', enabled)
+                "
               />
             </div>
           </div>

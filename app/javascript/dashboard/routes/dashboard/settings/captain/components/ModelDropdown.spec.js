@@ -124,14 +124,16 @@ describe('Captain model dropdown diagnostics', () => {
       features: {
         assistant: {
           selected: 'openai/gpt-5.4',
-          models: [{
-            id: 'openai/gpt-5.4',
-            display_name: 'GPT 5.4 via OpenRouter',
-            provider: 'openrouter',
-            provider_display_name: 'OpenRouter',
-            provider_configured: true,
-            type: 'chat',
-          }],
+          models: [
+            {
+              id: 'openai/gpt-5.4',
+              display_name: 'GPT 5.4 via OpenRouter',
+              provider: 'openrouter',
+              provider_display_name: 'OpenRouter',
+              provider_configured: true,
+              type: 'chat',
+            },
+          ],
         },
       },
     });

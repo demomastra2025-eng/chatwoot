@@ -96,10 +96,12 @@ describe('AssistantBasicSettingsForm', () => {
     });
 
     it('removes provider branding from model option labels', () => {
-      storeState.models = [{
-        id: 'openai/gpt-5.4',
-        display_name: 'GPT 5.4 via OpenRouter',
-      }];
+      storeState.models = [
+        {
+          id: 'openai/gpt-5.4',
+          display_name: 'GPT 5.4 via OpenRouter',
+        },
+      ];
       const wrapper = buildWrapper({
         assistant: { usage_mode: 'external_agent', config: {} },
       });
@@ -407,9 +409,9 @@ describe('AssistantBasicSettingsForm', () => {
     const disabled = switches.map(item => item.props('disabled'));
 
     expect(disabled.filter(Boolean)).toHaveLength(2);
-    expect(wrapper.text().match(/FEATURES.WEB_PROVIDER_REQUIRED/g)).toHaveLength(
-      2
-    );
+    expect(
+      wrapper.text().match(/FEATURES.WEB_PROVIDER_REQUIRED/g)
+    ).toHaveLength(2);
   });
   it('persists an explicit empty agent scope when all default capability checkboxes are disabled', async () => {
     const wrapper = buildWrapper({
