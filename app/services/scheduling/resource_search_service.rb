@@ -20,15 +20,16 @@ class Scheduling::ResourceSearchService
     scope = scope.active unless @include_inactive
     scope = filter_by_service(scope)
     scope = filter_by_query(scope)
-    scope = scope.ordered
 
     total_count = scope.count
-    resources = scope.offset(@offset).limit(@limit).map { |resource| Scheduling::PayloadBuilder.resource(resource) }
+    equal = equal_name_rows(scope)
+    resources = equal_first(scope, equal[:ids]).offset(@offset).limit(@limit).map { |resource| resource_row(resource, equal[:ids]) }
     next_offset = @offset + resources.length
     has_more = next_offset < total_count
 
     { total_count: total_count, resources: resources, returned_count: resources.length, offset: @offset,
-      has_more: has_more, next_offset: has_more ? next_offset : nil }.merge(exact_name_payload(scope))
+      has_more: has_more, next_offset: has_more ? next_offset : nil,
+      exact_name_matches: equal[:ids].size, exact_name_truncated: equal[:truncated] }
   end
 
   private
@@ -36,9 +37,7 @@ class Scheduling::ResourceSearchService
   def filter_by_service(scope)
     return scope if @service_id.blank?
 
-    scope.joins(:service_prices)
-         .merge(Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: @service_id))
-         .distinct
+    scope.where(id: Scheduling::ServicePrice.active.where(account_id: @account.id, service_id: @service_id).select(:resource_id))
   end
 
   # Every query word must appear in the name (and specialty, for the "all" mode) in any order;
@@ -60,16 +59,15 @@ class Scheduling::ResourceSearchService
     end
   end
 
-  # How many of the found resources have a name, or a stored specialty, with exactly the words of the query (any order,
-  # every word counts, no word forms: Асланов and Асланова are two names; a name with a number is read in order). Only
-  # such a resource may be presented as the one confident match; a part of a name or a longer specialty is not an equal
-  # name.
-  def exact_name_payload(scope)
-    return { exact_name_matches: 0, exact_name_truncated: false } if @query.blank? || @query_truncated
+  # The resources whose name, or stored specialty, has exactly the words of the query (any order, every word counts, no
+  # word forms: Асланов and Асланова are two names; a name with a number is read in order). Only such a resource may be
+  # presented as the one confident match; a part of a name or a longer specialty is not an equal name.
+  def equal_name_rows(scope)
+    return { ids: [], truncated: false } if @query.blank? || @query_truncated
 
     rows = scope.reorder(:id).limit(EXACT_CANDIDATE_LIMIT + 1).pluck(:id, :name, :specialty)
-    equal = rows.first(EXACT_CANDIDATE_LIMIT).count { |_id, name, specialty| equal_text?(name, specialty) }
-    { exact_name_matches: equal, exact_name_truncated: rows.size > EXACT_CANDIDATE_LIMIT }
+    ids = rows.first(EXACT_CANDIDATE_LIMIT).filter_map { |id, name, specialty| id if equal_text?(name, specialty) }
+    { ids: ids, truncated: rows.size > EXACT_CANDIDATE_LIMIT }
   end
 
   def equal_text?(name, specialty)
@@ -81,6 +79,20 @@ class Scheduling::ResourceSearchService
     texts.compact_blank.any? do |text|
       Scheduling::SearchText.same_words?(@query, Scheduling::SearchText.normalize(text, max_length: nil), stemmed: false)
     end
+  end
+
+  # The equal resource is listed before the longer or partial names, so that the confident match is the first row of
+  # the answer whatever the alphabetical order is; the rest keeps the name order.
+  def equal_first(scope, equal_ids)
+    return scope.ordered if equal_ids.empty?
+
+    scope.order(Arel.sql("CASE WHEN scheduling_resources.id IN (#{equal_ids.map(&:to_i).join(',')}) THEN 0 ELSE 1 END"), :name, :id)
+  end
+
+  def resource_row(resource, equal_ids)
+    row = Scheduling::PayloadBuilder.resource(resource)
+    row[:exact_name_match] = true if equal_ids.include?(resource.id)
+    row
   end
 
   def normalize_limit(value)
