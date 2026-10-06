@@ -10,7 +10,9 @@ const source = fs.readFileSync(
   path.join(root, 'app/javascript/dashboard/assets/scss/_next-colors.scss'),
   'utf8'
 );
-const blocks = [...source.matchAll(/^  (:root|\.dark) \{\n([\s\S]*?)^  \}/gm)];
+const blocks = [
+  ...source.matchAll(/^ {2}(:root|\.dark) \{\n([\s\S]*?)^ {2}\}/gm),
+];
 const errors = [];
 
 Object.keys(fixture).forEach(selector => {
@@ -27,7 +29,7 @@ Object.entries(fixture).forEach(([selector, expected]) => {
   }
 
   const declarations = new Map();
-  [...block[2].matchAll(/^    (--[\w-]+): ([^;]+);$/gm)].forEach(match => {
+  [...block[2].matchAll(/^ {4}(--[\w-]+): ([^;]+);$/gm)].forEach(match => {
     if (declarations.has(match[1])) {
       errors.push(`Duplicate ${selector} ${match[1]}`);
     }
