@@ -238,10 +238,16 @@ const getConversationById = useMapGetter('getConversationById');
 useChatListKeyboardEvents(conversationListRef);
 const {
   selectedConversations,
+  selectedCount,
   selectedInboxes,
+  allMatchingSelection,
+  isSelectingAll,
+  selectionVersion,
   selectConversation,
   deSelectConversation,
   selectAllConversations,
+  selectAllMatching,
+  setSelectionContext,
   resetBulkActions,
   isConversationSelected,
   onAssignAgent,
@@ -829,6 +835,69 @@ const totalConversationCount = computed(() => {
   return activeAssigneeTabCount.value;
 });
 
+const bulkSelectionFilters = computed(() => {
+  const contextFilters = {
+    crm_pipeline_id: activeCrmPipelineId.value || undefined,
+    crm_stage_id: activeCrmStageId.value || undefined,
+    appointment_status: activeAppointmentStatusFilter.value || undefined,
+    labels_scope: activeLabelsScope.value || undefined,
+    team_scope: activeTeamScope.value || undefined,
+    unread: activeUnreadOnly.value || undefined,
+    sort_by: activeSortBy.value,
+  };
+
+  if (hasActiveFolders.value) {
+    return {
+      mode: 'advanced',
+      query_data: useSnakeCase(activeFolder.value.query),
+      ...contextFilters,
+    };
+  }
+
+  if (hasAppliedFilters.value) {
+    const filters = routeStatusFilters(
+      appliedFilters.value,
+      activeStatus.value
+    );
+    return {
+      mode: 'advanced',
+      query_data: filterQueryGenerator(useSnakeCase(filters)),
+      ...contextFilters,
+    };
+  }
+
+  return {
+    mode: 'basic',
+    inbox_id: props.conversationInbox || undefined,
+    assignee_type: activeAssigneeTab.value,
+    status: activeStatus.value,
+    labels: props.label ? [props.label] : undefined,
+    team_id: props.teamId || undefined,
+    conversation_type: props.conversationType || undefined,
+    ...contextFilters,
+  };
+});
+
+const bulkSelectionContextKey = computed(() =>
+  JSON.stringify({
+    accountId: currentAccountId.value,
+    resourceType: props.communicationThreadMode
+      ? 'CommunicationThread'
+      : 'Conversation',
+    filters: bulkSelectionFilters.value,
+    folderId: props.foldersId,
+    localSearch: localSearchQuery.value.trim(),
+  })
+);
+
+const canSelectAllMatching = computed(
+  () =>
+    !hasLocalSearch.value &&
+    !allMatchingSelection.value &&
+    selectedConversations.value.length > 0 &&
+    totalConversationCount.value > selectedConversations.value.length
+);
+
 const isInitialListLoading = computed(
   () => Boolean(chatListLoading.value) && !conversationList.value.length
 );
@@ -838,12 +907,8 @@ const allConversationsSelected = computed(() => {
     return false;
   }
 
-  return (
-    displayedConversationList.value.length ===
-      selectedConversations.value.length &&
-    displayedConversationList.value.every(el =>
-      selectedConversations.value.includes(el.id)
-    )
+  return displayedConversationList.value.every(el =>
+    isConversationSelected(el.id)
   );
 });
 
@@ -1687,6 +1752,9 @@ function handleResolveWithAttributes({ attributes, context }) {
 }
 
 function allSelectedConversationsStatus(status) {
+  // A complete snapshot does not carry statuses, and some scopes (such as
+  // saved folders) ignore the page status. Keep status actions available.
+  if (allMatchingSelection.value) return false;
   if (!selectedConversations.value.length) return false;
   return selectedConversations.value.every(item => {
     return getConversationById.value(item)?.status === status;
@@ -1699,6 +1767,16 @@ function onContextMenuToggle(state) {
 
 function toggleSelectAll(check) {
   selectAllConversations(check, displayedConversationList);
+}
+
+function selectAllMatchingConversations() {
+  if (!canSelectAllMatching.value || isSelectingAll.value) return;
+
+  selectAllMatching(
+    bulkSelectionFilters.value,
+    props.communicationThreadMode ? 'CommunicationThread' : 'Conversation',
+    bulkSelectionContextKey.value
+  );
 }
 
 useEmitter('fetch_conversation_stats', () => {
@@ -1985,6 +2063,10 @@ watch(conversationFilters, (newVal, oldVal) => {
     store.dispatch('updateChatListFilters', newVal);
   }
 });
+
+watch(bulkSelectionContextKey, contextKey => setSelectionContext(contextKey), {
+  immediate: true,
+});
 </script>
 
 <template>
@@ -2068,15 +2150,20 @@ watch(conversationFilters, (newVal, oldVal) => {
       {{ $t('CHAT_LIST.LIST.404') }}
     </p>
     <ConversationBulkActions
-      v-if="selectedConversations.length"
-      :conversations="selectedConversations"
+      v-if="selectedCount > 0"
+      :selected-count="selectedCount"
+      :selection-version="selectionVersion"
+      :selection-context-key="bulkSelectionContextKey"
       :all-conversations-selected="allConversationsSelected"
-      :selectable-conversations-count="displayedConversationList.length"
+      :selectable-conversations-count="totalConversationCount"
       :selected-inboxes="uniqueInboxes"
+      :can-select-all-matching="canSelectAllMatching"
+      :is-selecting-all="isSelectingAll"
       :show-open-action="allSelectedConversationsStatus('open')"
       :show-resolved-action="allSelectedConversationsStatus('resolved')"
       :show-snoozed-action="allSelectedConversationsStatus('snoozed')"
       @select-all-conversations="toggleSelectAll"
+      @select-all-matching="selectAllMatchingConversations"
       @assign-agent="handleAssignAgent"
       @update-conversations="
         (status, snoozedUntil, statusReason) =>

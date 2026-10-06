@@ -3,6 +3,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import ChatList from './ChatList.vue';
 
+const ConversationBulkActionsStub = {
+  name: 'ConversationBulkActions',
+  props: [
+    'canSelectAllMatching',
+    'selectedCount',
+    'selectionVersion',
+    'selectionContextKey',
+    'allConversationsSelected',
+    'selectableConversationsCount',
+    'selectedInboxes',
+    'isSelectingAll',
+    'showOpenAction',
+    'showResolvedAction',
+    'showSnoozedAction',
+  ],
+  emits: ['selectAllMatching'],
+  template: '<div />',
+};
+
 const ACCOUNT_ID = 1;
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +35,14 @@ const mocks = vi.hoisted(() => ({
     pipelines: [],
     ui: { isLoadingPipelines: false },
     loadPipelines: vi.fn(() => Promise.resolve()),
+  },
+  appliedFilters: [],
+  savedFolders: [],
+  bulkMatchingSelectionRef: null,
+  conversationStats: { allCount: 30, mineCount: 0, unAssignedCount: 0 },
+  bulkSelectionIds: [],
+  bulkActionMethods: {
+    selectAllMatching: vi.fn(),
   },
 }));
 
@@ -44,14 +71,24 @@ vi.mock('dashboard/composables/chatlist/useChatListKeyboardEvents', () => ({
 }));
 
 vi.mock('dashboard/composables/chatlist/useBulkActions', async () => {
-  const { ref } = await import('vue');
+  const { computed, ref } = await import('vue');
+  const selectedConversations = ref([...mocks.bulkSelectionIds]);
+  const allMatchingSelection = ref(null);
+  mocks.bulkSelectedRef = selectedConversations;
+  mocks.bulkMatchingSelectionRef = allMatchingSelection;
   return {
     useBulkActions: () => ({
-      selectedConversations: ref([]),
+      selectedConversations,
+      selectedCount: computed(() => selectedConversations.value.length),
       selectedInboxes: ref([]),
+      allMatchingSelection,
+      isSelectingAll: ref(false),
+      selectionVersion: ref(0),
       selectConversation: vi.fn(),
       deSelectConversation: vi.fn(),
       selectAllConversations: vi.fn(),
+      selectAllMatching: mocks.bulkActionMethods.selectAllMatching,
+      setSelectionContext: vi.fn(),
       resetBulkActions: vi.fn(),
       isConversationSelected: vi.fn(() => false),
       onAssignAgent: vi.fn(),
@@ -127,10 +164,10 @@ const buildStore = () => ({
     getChatListLoadingStatus: false,
     getChatListLoadingError: null,
     getSelectedInbox: null,
-    'conversationStats/getStats': {},
+    'conversationStats/getStats': mocks.conversationStats,
     getConversationSidebarUnreadCounts: {},
-    getAppliedConversationFiltersV2: [],
-    'customViews/getConversationCustomViews': [],
+    getAppliedConversationFiltersV2: mocks.appliedFilters,
+    'customViews/getConversationCustomViews': mocks.savedFolders,
     'agents/getAgents': [],
     'teams/getTeams': [],
     'inboxes/getInboxes': [],
@@ -162,17 +199,27 @@ const storePlugin = store => ({
   },
 });
 
-const mountChatList = async query => {
+const mountChatList = async (query, componentProps = {}) => {
   mocks.route = {
     name: 'home',
     path: `/app/accounts/${ACCOUNT_ID}/dashboard`,
     params: { accountId: String(ACCOUNT_ID) },
     query,
   };
+  if (mocks.bulkSelectedRef) {
+    mocks.bulkSelectedRef.value = [...mocks.bulkSelectionIds];
+  }
+  if (mocks.bulkMatchingSelectionRef) {
+    mocks.bulkMatchingSelectionRef.value = null;
+  }
   const store = buildStore();
   const wrapper = shallowMount(ChatList, {
+    props: componentProps,
     global: {
       plugins: [storePlugin(store)],
+      stubs: {
+        ConversationBulkActions: ConversationBulkActionsStub,
+      },
     },
   });
   await flushPromises();
@@ -198,6 +245,18 @@ describe('ChatList', () => {
     mocks.crmStore.pipelines = [];
     mocks.crmStore.ui.isLoadingPipelines = false;
     mocks.crmStore.loadPipelines = vi.fn(() => Promise.resolve());
+    mocks.appliedFilters = [];
+    mocks.savedFolders = [];
+    if (mocks.bulkMatchingSelectionRef) {
+      mocks.bulkMatchingSelectionRef.value = null;
+    }
+    mocks.conversationStats = {
+      allCount: 30,
+      mineCount: 0,
+      unAssignedCount: 0,
+    };
+    mocks.bulkSelectionIds = [];
+    mocks.bulkActionMethods.selectAllMatching.mockClear();
   });
 
   describe('assignee list', () => {
@@ -337,6 +396,220 @@ describe('ChatList', () => {
 
       expect(mocks.crmStore.loadPipelines).not.toHaveBeenCalled();
       expect(loadErrorBanner(wrapper).exists()).toBe(false);
+    });
+  });
+
+  describe('all matching selection filters', () => {
+    it('passes the complete basic context and conversation resource type to the snapshot request', async () => {
+      mocks.bulkSelectionIds = [12];
+      mocks.conversationStats.allCount = 120;
+      const { wrapper } = await mountChatList(
+        { status: 'open' },
+        {
+          conversationInbox: 4,
+          teamId: 9,
+          label: 'vip',
+          conversationType: 'email',
+        }
+      );
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+
+      expect(bulkActions.props('canSelectAllMatching')).toBe(true);
+      bulkActions.vm.$emit('selectAllMatching');
+
+      expect(mocks.bulkActionMethods.selectAllMatching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'basic',
+          inbox_id: 4,
+          status: 'open',
+          assignee_type: 'all',
+          labels: ['vip'],
+          team_id: 9,
+          conversation_type: 'email',
+        }),
+        'Conversation',
+        expect.any(String)
+      );
+    });
+
+    it('passes advanced filters with the sidebar contexts used by the list', async () => {
+      mocks.bulkSelectionIds = [12];
+      mocks.appliedFilters = [
+        {
+          attributeKey: 'status',
+          filterOperator: 'equal_to',
+          values: ['pending'],
+          queryOperator: null,
+        },
+      ];
+      mocks.conversationStats.allCount = 120;
+
+      const { wrapper } = await mountChatList({
+        status: 'open',
+        crm_pipeline_id: '4',
+        crm_stage_id: '8',
+        appointment_status: 'confirmed',
+        labels_scope: 'any',
+        team_scope: 'any',
+        unread: 'true',
+      });
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+      bulkActions.vm.$emit('selectAllMatching');
+
+      expect(mocks.bulkActionMethods.selectAllMatching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'advanced',
+          query_data: expect.objectContaining({
+            payload: expect.arrayContaining([
+              expect.objectContaining({ attribute_key: 'status' }),
+            ]),
+          }),
+          crm_pipeline_id: '4',
+          crm_stage_id: '8',
+          appointment_status: 'confirmed',
+          labels_scope: 'any',
+          team_scope: 'any',
+          unread: true,
+        }),
+        'Conversation',
+        expect.any(String)
+      );
+    });
+
+    it('passes a saved folder query and its sidebar filters as one advanced snapshot', async () => {
+      mocks.bulkSelectionIds = [12];
+      mocks.savedFolders = [
+        {
+          id: 7,
+          query: {
+            payload: [
+              {
+                attributeKey: 'status',
+                filterOperator: 'equal_to',
+                values: ['pending'],
+                queryOperator: null,
+              },
+            ],
+          },
+        },
+      ];
+      mocks.conversationStats.allCount = 120;
+      const { wrapper } = await mountChatList(
+        {
+          crm_pipeline_id: '4',
+          crm_stage_id: '8',
+          appointment_status: 'confirmed',
+          labels_scope: 'any',
+          team_scope: 'any',
+          unread: 'true',
+        },
+        { foldersId: 7 }
+      );
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+      bulkActions.vm.$emit('selectAllMatching');
+
+      expect(mocks.bulkActionMethods.selectAllMatching).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: 'advanced',
+          query_data: expect.objectContaining({
+            payload: expect.arrayContaining([
+              expect.objectContaining({ attribute_key: 'status' }),
+            ]),
+          }),
+          crm_pipeline_id: '4',
+          crm_stage_id: '8',
+          appointment_status: 'confirmed',
+          labels_scope: 'any',
+          team_scope: 'any',
+          unread: true,
+        }),
+        'Conversation',
+        expect.any(String)
+      );
+    });
+
+    it('keeps status actions available for a resolved saved folder snapshot when the page status is open', async () => {
+      mocks.bulkSelectionIds = [12];
+      mocks.savedFolders = [
+        {
+          id: 7,
+          query: {
+            payload: [
+              {
+                attributeKey: 'status',
+                filterOperator: 'equal_to',
+                values: ['resolved'],
+                queryOperator: null,
+              },
+            ],
+          },
+        },
+      ];
+
+      const { wrapper } = await mountChatList(
+        { status: 'open' },
+        { foldersId: 7 }
+      );
+      mocks.bulkMatchingSelectionRef.value = {
+        token: 'resolved-folder-token',
+        count: 40,
+      };
+      await flushPromises();
+
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+      expect(bulkActions.props('showOpenAction')).toBe(false);
+      expect(bulkActions.props('showResolvedAction')).toBe(false);
+      expect(bulkActions.props('showSnoozedAction')).toBe(false);
+    });
+
+    it('keeps status actions available for mixed-status communication thread snapshots', async () => {
+      mocks.bulkSelectionIds = [12];
+      const { wrapper } = await mountChatList(
+        { status: 'all' },
+        { communicationThreadMode: true }
+      );
+      mocks.bulkMatchingSelectionRef.value = {
+        token: 'mixed-thread-token',
+        count: 40,
+      };
+      await flushPromises();
+
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+      expect(bulkActions.props('showOpenAction')).toBe(false);
+      expect(bulkActions.props('showResolvedAction')).toBe(false);
+      expect(bulkActions.props('showSnoozedAction')).toBe(false);
+    });
+
+    it('sends thread type and suppresses all matching during local loaded-content search', async () => {
+      mocks.bulkSelectionIds = [12];
+      mocks.conversationStats.allCount = 120;
+      const { wrapper } = await mountChatList(
+        { status: 'open' },
+        { communicationThreadMode: true }
+      );
+      const bulkActions = wrapper.findComponent({
+        name: 'ConversationBulkActions',
+      });
+
+      expect(bulkActions.props('canSelectAllMatching')).toBe(true);
+      wrapper
+        .findComponent({ name: 'ChatListHeader' })
+        .vm.$emit('update:localSearchQuery', 'customer');
+      await flushPromises();
+
+      expect(bulkActions.props('canSelectAllMatching')).toBe(false);
+      bulkActions.vm.$emit('selectAllMatching');
+      expect(mocks.bulkActionMethods.selectAllMatching).not.toHaveBeenCalled();
     });
   });
 });

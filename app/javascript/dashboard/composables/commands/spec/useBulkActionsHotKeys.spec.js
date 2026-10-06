@@ -15,6 +15,7 @@ describe('useBulkActionsHotKeys', () => {
     store = {
       getters: {
         'bulkActions/getSelectedConversationIds': [],
+        'bulkActions/getSelectedConversationCount': 0,
       },
     };
 
@@ -29,6 +30,7 @@ describe('useBulkActionsHotKeys', () => {
 
   it('should return bulk actions when conversations are selected', () => {
     store.getters['bulkActions/getSelectedConversationIds'] = [1, 2, 3];
+    store.getters['bulkActions/getSelectedConversationCount'] = 3;
     const { bulkActionsHotKeys } = useBulkActionsHotKeys();
 
     expect(bulkActionsHotKeys.value.length).toBeGreaterThan(0);
@@ -57,6 +59,7 @@ describe('useBulkActionsHotKeys', () => {
 
   it('should include snooze options in bulk actions', () => {
     store.getters['bulkActions/getSelectedConversationIds'] = [1, 2, 3];
+    store.getters['bulkActions/getSelectedConversationCount'] = 3;
     const { bulkActionsHotKeys } = useBulkActionsHotKeys();
 
     const snoozeAction = bulkActionsHotKeys.value.find(
@@ -70,6 +73,7 @@ describe('useBulkActionsHotKeys', () => {
 
   it('should create handlers for reopen and resolve actions', () => {
     store.getters['bulkActions/getSelectedConversationIds'] = [1, 2, 3];
+    store.getters['bulkActions/getSelectedConversationCount'] = 3;
     const { bulkActionsHotKeys } = useBulkActionsHotKeys();
 
     const reopenAction = bulkActionsHotKeys.value.find(
@@ -95,8 +99,41 @@ describe('useBulkActionsHotKeys', () => {
 
   it('should return an empty array when no conversations are selected', () => {
     store.getters['bulkActions/getSelectedConversationIds'] = [];
+    store.getters['bulkActions/getSelectedConversationCount'] = 0;
     const { bulkActionsHotKeys } = useBulkActionsHotKeys();
 
     expect(bulkActionsHotKeys.value).toEqual([]);
+  });
+
+  it('keeps bulk command entries available for a snapshot selection with exclusions', () => {
+    store.getters['bulkActions/getSelectedConversationIds'] = [];
+    store.getters['bulkActions/getSelectedConversationCount'] = 2;
+    const { bulkActionsHotKeys } = useBulkActionsHotKeys();
+
+    const snoozeAction = bulkActionsHotKeys.value.find(
+      action => action.id === 'bulk_action_snooze_conversation'
+    );
+    const snoozeOption = bulkActionsHotKeys.value.find(
+      action => action.parent === 'bulk_action_snooze_conversation'
+    );
+    const reopenAction = bulkActionsHotKeys.value.find(
+      action => action.id === 'bulk_action_reopen_conversation'
+    );
+    const resolveAction = bulkActionsHotKeys.value.find(
+      action => action.id === 'bulk_action_resolve_conversation'
+    );
+
+    expect(snoozeAction).toBeDefined();
+    expect(snoozeAction.children).toEqual(
+      Object.values(wootConstants.SNOOZE_OPTIONS)
+    );
+    expect(snoozeOption).toBeDefined();
+    snoozeOption.handler();
+    expect(emitter.emit).toHaveBeenCalledWith(
+      'CMD_BULK_ACTION_SNOOZE_CONVERSATION',
+      snoozeOption.id
+    );
+    expect(reopenAction).toBeDefined();
+    expect(resolveAction).toBeDefined();
   });
 });
