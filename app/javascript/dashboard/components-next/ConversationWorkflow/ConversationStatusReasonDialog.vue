@@ -122,7 +122,9 @@ const open = ({ status, currentReason = '' } = {}) => {
   });
 };
 
-defineExpose({ CANCELLED, open, shouldAskForReason });
+const cancel = () => dialogRef.value?.close();
+
+defineExpose({ CANCELLED, open, shouldAskForReason, cancel });
 </script>
 
 <template>

@@ -3,6 +3,18 @@
     "CONVERSATIONS_SELECTED": "{conversationCount} selected",
     "NONE": "None",
     "CLEAR_SELECTION": "Clear",
+    "SELECT_ALL_MATCHING": "Select all matching conversations ({count})",
+    "SELECT_ALL": {
+      "LIMIT": "You can select up to {count} conversations in one action.",
+      "EMPTY": "No conversations match the current filters.",
+      "EXPIRED": "This selection has expired or is no longer available. Select the conversations again.",
+      "FAILED": "Could not select conversations with the current filters. Refresh the list and try again."
+    },
+    "CLOSE_CONFIRMATION": {
+      "TITLE": "Close selected conversations?",
+      "DESCRIPTION": "Conversations to close: {count}.",
+      "CONFIRM": "Close"
+    },
     "AGENT_SELECT_LABEL": "Select agent",
     "ASSIGN_CONFIRMATION_LABEL": "Are you sure to assign {conversationCount} {conversationLabel} to",
     "UNASSIGN_CONFIRMATION_LABEL": "Are you sure to unassign {conversationCount} {conversationLabel}?",
@@ -26,10 +38,13 @@
     "RESOLVE_FAILED": "Failed to resolve conversations. Please try again.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Conversations visible on this page are only selected.",
     "COMPLETED_WITH_ERRORS": "Done with errors: {count}",
+    "COMPLETED_WITH_DETAILS": "Action completed: {skippedCount} skipped, {failedCount} failed.",
     "AGENT_LIST_LOADING": "Loading agents",
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",
+      "STATUS_UNAVAILABLE": "Could not check the action result. Refresh the list before trying again.",
       "FAILED": "{count} failed",
+      "SKIPPED": "{count} skipped",
       "ACTIONS": {
         "add_labels": "Assigning tags",
         "remove_labels": "Removing tags",

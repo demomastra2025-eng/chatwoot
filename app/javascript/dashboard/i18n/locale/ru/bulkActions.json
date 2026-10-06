@@ -3,6 +3,18 @@
     "CONVERSATIONS_SELECTED": "Выбрано: {conversationCount}",
     "NONE": "Ничего",
     "CLEAR_SELECTION": "Очистить",
+    "SELECT_ALL_MATCHING": "Выбрать все диалоги ({count})",
+    "SELECT_ALL": {
+      "LIMIT": "За одно действие можно выбрать не более {count} диалогов.",
+      "EMPTY": "Нет диалогов, подходящих под текущие фильтры.",
+      "EXPIRED": "Выбор устарел или больше недоступен. Выберите диалоги заново.",
+      "FAILED": "Не удалось выбрать диалоги по текущим фильтрам. Обновите список и попробуйте снова."
+    },
+    "CLOSE_CONFIRMATION": {
+      "TITLE": "Закрыть выбранные диалоги?",
+      "DESCRIPTION": "Будет закрыто диалогов: {count}.",
+      "CONFIRM": "Закрыть"
+    },
     "AGENT_SELECT_LABEL": "Выбрать сотрудника",
     "ASSIGN_CONFIRMATION_LABEL": "Вы уверены, что хотите назначить {conversationCount} {conversationLabel}",
     "UNASSIGN_CONFIRMATION_LABEL": "Вы уверены, что хотите отменить назначение {conversationCount} {conversationLabel}?",
@@ -22,14 +34,16 @@
     },
     "ASSIGN_SUCCESFUL": "Беседы успешно назначены.",
     "ASSIGN_FAILED": "Не удалось назначить диалоги, попробуйте еще раз.",
-    "RESOLVE_SUCCESFUL": "Беседы успешно завершены.",
-    "RESOLVE_FAILED": "Не удалось завершить диалоги, попробуйте еще раз.",
-    "ALL_CONVERSATIONS_SELECTED_ALERT": "Беседы, видимые на этой странице, выбраны.",
+    "RESOLVE_SUCCESFUL": "Диалоги успешно закрыты.",
+    "RESOLVE_FAILED": "Не удалось закрыть диалоги, попробуйте еще раз.",
     "COMPLETED_WITH_ERRORS": "Выполнено, с ошибками: {count}",
+    "COMPLETED_WITH_DETAILS": "Действие завершено: пропущено — {skippedCount}, с ошибками — {failedCount}.",
     "AGENT_LIST_LOADING": "Загрузка сотрудников",
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",
+      "STATUS_UNAVAILABLE": "Не удалось узнать результат операции. Обновите список перед повторным действием.",
       "FAILED": "С ошибками: {count}",
+      "SKIPPED": "Пропущено: {count}",
       "ACTIONS": {
         "add_labels": "Назначаем теги",
         "remove_labels": "Убираем теги",
@@ -64,8 +78,8 @@
       "ASSIGN_FAILED": "Не удалось назначить команду, попробуйте еще раз."
     },
     "RESOLVE": {
-      "ALL_MISSING_ATTRIBUTES": "Невозможно завершить диалоги из-за отсутствия обязательных атрибутов",
-      "PARTIAL_SUCCESS": "Некоторые диалоги требуют обязательные атрибуты перед завершением и были пропущены"
+      "ALL_MISSING_ATTRIBUTES": "Невозможно закрыть диалоги: заполните обязательные атрибуты",
+      "PARTIAL_SUCCESS": "Некоторые диалоги пропущены, так как в них не заполнены обязательные атрибуты"
     }
   }
 }
