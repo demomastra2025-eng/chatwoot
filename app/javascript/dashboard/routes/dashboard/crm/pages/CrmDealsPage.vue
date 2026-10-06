@@ -2496,7 +2496,9 @@ const createDealConversation = async ({ contactId, inbox }) => {
     if (!isCurrentEditor()) return;
     const contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
     if (!contactLinkIsCurrent || !isCurrentEditor()) return;
-    const createdConversation = normalizePayload({ payload: data?.payload || data });
+    const createdConversation = normalizePayload({
+      payload: data?.payload || data,
+    });
     const conversationId =
       createdConversation?.displayId ||
       createdConversation?.display_id ||
@@ -4177,8 +4179,8 @@ watch(
           />
 
           <CrmDealBoard
-            ref="dealBoardRef"
             v-else-if="currentPresentation === 'board'"
+            ref="dealBoardRef"
             class="min-h-0 flex-1"
             :can-manage="canManageDeals"
             :can-reorder="!hasListSearchQuery"
@@ -4392,10 +4394,7 @@ watch(
       </div>
     </div>
 
-    <div
-      v-if="isDealPage && !drawerOpen"
-      class="flex min-h-0 flex-1 flex-col"
-    >
+    <div v-if="isDealPage && !drawerOpen" class="flex min-h-0 flex-1 flex-col">
       <header class="border-b border-n-weak bg-n-surface-1 px-4 py-2">
         <Button
           size="sm"
@@ -4437,7 +4436,8 @@ watch(
           <aside
             class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2"
             :class="{
-              'md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]': !isDealPage,
+              'md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]':
+                !isDealPage,
               '!h-1/2 md:!h-full':
                 isDealPage &&
                 showLinkedConversationPanel &&
