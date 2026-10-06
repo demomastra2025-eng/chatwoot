@@ -21,7 +21,7 @@ import {
   xPosition,
 } from './chartGeometry';
 
-// Chart card following the dataviz rules of design variant A:
+// Chart card with line and bar views:
 // - kind "line": up to two series on ONE axis (accent line 2px, comparison
 //   series in muted ink), three hairline grid levels, crosshair tooltip.
 //   A metric on a different scale goes to `secondary`: a separate small

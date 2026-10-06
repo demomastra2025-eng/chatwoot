@@ -1,13 +1,12 @@
 // scss-lint:disable PropertySortOrder
 @layer base {
   // NEXT COLORS START
-  // Values follow design variant A "Graphite" (light + dark). Token map:
-  // app/javascript/dashboard/components-next/ds/README.md
+  // Existing theme values match the production baseline.
   :root {
     // slate
-    --slate-1: 250 250 250;
+    --slate-1: 252 252 253;
     --slate-2: 249 249 251;
-    --slate-3: 240 240 242;
+    --slate-3: 240 240 243;
     --slate-4: 232 232 236;
     --slate-5: 224 225 230;
     --slate-6: 217 217 224;
@@ -15,8 +14,8 @@
     --slate-8: 185 187 198;
     --slate-9: 139 141 152;
     --slate-10: 128 131 141;
-    --slate-11: 107 111 118;
-    --slate-12: 17 17 19;
+    --slate-11: 96 100 108;
+    --slate-12: 28 32 36;
 
     --iris-1: 253 253 255;
     --iris-2: 248 248 255;
@@ -39,9 +38,9 @@
     --blue-6: 181 213 255;
     --blue-7: 155 195 252;
     --blue-8: 117 171 247;
-    --blue-9: 58 91 217;
-    --blue-10: 49 76 180;
-    --blue-11: 58 91 217;
+    --blue-9: 39 129 246;
+    --blue-10: 16 115 233;
+    --blue-11: 8 109 224;
     --blue-12: 11 50 101;
 
     --ruby-1: 255 252 253;
@@ -109,20 +108,20 @@
     --violet-11: 101 85 183;
     --violet-12: 47 38 95;
 
-    --background-color: 250 250 250;
-    --brand-color: 58 91 217;
-    --brand-solid: 58 91 217;
+    --background-color: 247 247 247;
+    --brand-color: 37 99 235;
+    --brand-solid: 110 86 207;
     --brand-contrast: 255 255 255;
-    --surface-1: 250 250 250;
+    --surface-1: 254 254 254;
     --surface-2: 255 255 255;
     --surface-active: 255 255 255;
     --background-input-box: 0, 0, 0, 0.03;
     --text-blue: 1 22 44;
     --text-purple: 2 4 49;
     --text-amber: 37 24 1;
-    --border-container: 230 230 232;
-    --border-strong: 220 220 224;
-    --border-weak: 230 230 232;
+    --border-container: 236 236 236;
+    --border-strong: 226 227 231;
+    --border-weak: 234 234 234;
     --border-blue-strong: 18 61 117;
     --solid-1: 255 255 255;
     --solid-2: 255 255 255;
@@ -148,85 +147,84 @@
     --alpha-3: 255, 255, 255, 0.96;
     --black-alpha-1: 0, 0, 0, 0.12;
     --black-alpha-2: 0, 0, 0, 0.04;
-    --border-blue: 58, 91, 217, 0.5;
+    --border-blue: 39, 129, 246, 0.5;
     --white-alpha: 255, 255, 255, 0.8;
 
-    // Variant A "Graphite": status colours (always shown as dot + word)
-    --status-good: 47 143 91;
-    --status-warn: 183 121 31;
-    --status-bad: 197 59 59;
-    // Ordinal chart ramp (funnel / stages): step 1 = earliest = strongest
-    --chart-1: 42 61 138;
-    --chart-2: 50 76 177;
-    --chart-3: 58 91 217;
-    --chart-4: 101 127 225;
-    --chart-5: 137 157 232;
+    // Status colours use the established production palette.
+    --status-good: var(--teal-10);
+    --status-warn: var(--amber-11);
+    --status-bad: var(--ruby-11);
+    // Ordinal chart ramp uses the established production blue scale.
+    --chart-1: var(--blue-11);
+    --chart-2: var(--blue-10);
+    --chart-3: var(--blue-9);
+    --chart-4: var(--blue-8);
+    --chart-5: var(--blue-7);
 
-    // Compatibility ramps for legacy Tailwind palette names (amber, emerald,
-    // blue, rose, gray ...). Theme-invariant on purpose, like stock Tailwind
-    // shades, so existing `dark:` pairs keep working. New code uses n-* tokens.
-    --compat-accent-50: 243 245 253;
-    --compat-accent-100: 231 235 250;
-    --compat-accent-200: 208 216 246;
-    --compat-accent-300: 172 186 239;
-    --compat-accent-400: 129 150 231;
-    --compat-accent-500: 90 117 223;
-    --compat-accent-600: 58 91 217;
-    --compat-accent-700: 49 76 180;
-    --compat-accent-800: 41 62 143;
-    --compat-accent-900: 33 49 110;
-    --compat-accent-950: 24 34 74;
-    --compat-good-50: 243 248 245;
-    --compat-good-100: 230 242 235;
-    --compat-good-200: 205 228 216;
-    --compat-good-300: 168 208 186;
-    --compat-good-400: 122 183 150;
-    --compat-good-500: 80 161 117;
-    --compat-good-600: 47 143 91;
-    --compat-good-700: 40 119 77;
-    --compat-good-800: 34 95 63;
-    --compat-good-900: 28 74 50;
-    --compat-good-950: 21 50 36;
-    --compat-warn-50: 251 247 242;
-    --compat-warn-100: 246 239 228;
-    --compat-warn-200: 238 223 201;
-    --compat-warn-300: 225 199 161;
-    --compat-warn-400: 209 169 112;
-    --compat-warn-500: 195 142 67;
-    --compat-warn-600: 183 121 31;
-    --compat-warn-700: 152 101 28;
-    --compat-warn-800: 121 81 24;
-    --compat-warn-900: 93 63 21;
-    --compat-warn-950: 62 43 18;
-    --compat-bad-50: 252 243 243;
-    --compat-bad-100: 248 231 231;
-    --compat-bad-200: 241 208 208;
-    --compat-bad-300: 231 173 173;
-    --compat-bad-400: 218 130 130;
-    --compat-bad-500: 206 90 90;
-    --compat-bad-600: 197 59 59;
-    --compat-bad-700: 163 50 51;
-    --compat-bad-800: 130 41 42;
-    --compat-bad-900: 100 34 35;
-    --compat-bad-950: 66 25 26;
-    --compat-neutral-50: 250 250 250;
-    --compat-neutral-100: 240 240 242;
-    --compat-neutral-200: 230 230 232;
-    --compat-neutral-300: 209 210 214;
-    --compat-neutral-400: 160 163 170;
-    --compat-neutral-500: 141 144 152;
-    --compat-neutral-600: 107 111 118;
-    --compat-neutral-700: 75 78 84;
-    --compat-neutral-800: 45 46 51;
-    --compat-neutral-900: 29 29 34;
-    --compat-neutral-950: 17 17 19;
+    // Compatibility aliases for consumers of the added tokens. Legacy
+    // Tailwind utilities keep their production palette in tailwind.config.js.
+    --compat-accent-50: var(--blue-1);
+    --compat-accent-100: var(--blue-2);
+    --compat-accent-200: var(--blue-3);
+    --compat-accent-300: var(--blue-4);
+    --compat-accent-400: var(--blue-5);
+    --compat-accent-500: var(--blue-7);
+    --compat-accent-600: var(--blue-9);
+    --compat-accent-700: var(--blue-10);
+    --compat-accent-800: var(--blue-11);
+    --compat-accent-900: var(--blue-12);
+    --compat-accent-950: var(--blue-12);
+    --compat-good-50: var(--teal-1);
+    --compat-good-100: var(--teal-2);
+    --compat-good-200: var(--teal-3);
+    --compat-good-300: var(--teal-4);
+    --compat-good-400: var(--teal-5);
+    --compat-good-500: var(--teal-7);
+    --compat-good-600: var(--teal-9);
+    --compat-good-700: var(--teal-10);
+    --compat-good-800: var(--teal-11);
+    --compat-good-900: var(--teal-12);
+    --compat-good-950: var(--teal-12);
+    --compat-warn-50: var(--amber-1);
+    --compat-warn-100: var(--amber-2);
+    --compat-warn-200: var(--amber-3);
+    --compat-warn-300: var(--amber-4);
+    --compat-warn-400: var(--amber-5);
+    --compat-warn-500: var(--amber-7);
+    --compat-warn-600: var(--amber-9);
+    --compat-warn-700: var(--amber-10);
+    --compat-warn-800: var(--amber-11);
+    --compat-warn-900: var(--amber-12);
+    --compat-warn-950: var(--amber-12);
+    --compat-bad-50: var(--ruby-1);
+    --compat-bad-100: var(--ruby-2);
+    --compat-bad-200: var(--ruby-3);
+    --compat-bad-300: var(--ruby-4);
+    --compat-bad-400: var(--ruby-5);
+    --compat-bad-500: var(--ruby-7);
+    --compat-bad-600: var(--ruby-9);
+    --compat-bad-700: var(--ruby-10);
+    --compat-bad-800: var(--ruby-11);
+    --compat-bad-900: var(--ruby-12);
+    --compat-bad-950: var(--ruby-12);
+    --compat-neutral-50: var(--slate-1);
+    --compat-neutral-100: var(--slate-2);
+    --compat-neutral-200: var(--slate-3);
+    --compat-neutral-300: var(--slate-4);
+    --compat-neutral-400: var(--slate-5);
+    --compat-neutral-500: var(--slate-7);
+    --compat-neutral-600: var(--slate-9);
+    --compat-neutral-700: var(--slate-10);
+    --compat-neutral-800: var(--slate-11);
+    --compat-neutral-900: var(--slate-12);
+    --compat-neutral-950: var(--slate-12);
   }
 
   .dark {
     // slate
-    --slate-1: 14 14 16;
+    --slate-1: 17 17 19;
     --slate-2: 24 25 27;
-    --slate-3: 29 29 34;
+    --slate-3: 33 34 37;
     --slate-4: 39 42 45;
     --slate-5: 46 49 53;
     --slate-6: 54 58 63;
@@ -234,8 +232,8 @@
     --slate-8: 90 97 105;
     --slate-9: 105 110 119;
     --slate-10: 119 123 132;
-    --slate-11: 141 144 152;
-    --slate-12: 237 237 240;
+    --slate-11: 176 180 186;
+    --slate-12: 237 238 240;
 
     --iris-1: 19 19 30;
     --iris-2: 23 22 37;
@@ -258,9 +256,9 @@
     --blue-6: 29 84 134;
     --blue-7: 40 89 156;
     --blue-8: 48 106 186;
-    --blue-9: 58 91 217;
-    --blue-10: 90 117 223;
-    --blue-11: 123 147 245;
+    --blue-9: 39 129 246;
+    --blue-10: 21 116 231;
+    --blue-11: 126 182 255;
     --blue-12: 205 227 255;
 
     --ruby-1: 25 17 19;
@@ -328,24 +326,24 @@
     --violet-11: 169 153 236;
     --violet-12: 226 221 254;
 
-    --background-color: 14 14 16;
-    --brand-color: 123 147 245;
-    --brand-solid: 123 147 245;
-    --brand-contrast: 14 14 16;
-    --surface-1: 14 14 16;
-    --surface-2: 20 20 23;
-    --surface-active: 29 29 34;
+    --background-color: 28 29 32;
+    --brand-color: 37 99 235;
+    --brand-solid: 51 34 119;
+    --brand-contrast: 255 255 255;
+    --surface-1: 20 21 23;
+    --surface-2: 22 23 26;
+    --surface-active: 53 57 66;
     --background-input-box: 255, 255, 255, 0.02;
     --text-blue: 213 234 255;
     --text-purple: 232 233 254;
     --text-amber: 255 247 234;
-    --border-strong: 50 50 56;
-    --border-weak: 38 38 43;
+    --border-strong: 46 45 50;
+    --border-weak: 31 31 37;
     --border-blue-strong: 201 226 255;
-    --solid-1: 20 20 23;
-    --solid-2: 20 20 23;
-    --solid-3: 29 29 34;
-    --solid-active: 29 29 34;
+    --solid-1: 23 23 26;
+    --solid-2: 29 30 36;
+    --solid-3: 44 45 54;
+    --solid-active: 53 57 66;
     --solid-amber: 56 50 41;
     --solid-blue: 15 57 102;
     --solid-blue-2: 26 29 35;
@@ -353,7 +351,7 @@
     --solid-purple: 51 51 107;
     --solid-red: 90 33 34;
     --solid-amber-button: 255 221 141;
-    --card-color: 20 20 23;
+    --card-color: 28 30 34;
     --overlay: 0, 0, 0, 0.4;
     --overlay-avatar: 0, 0, 0, 0.05;
     --button-color: 42 43 51;
@@ -366,18 +364,18 @@
     --alpha-3: 33, 34, 38, 0.95;
     --black-alpha-1: 0, 0, 0, 0.3;
     --black-alpha-2: 0, 0, 0, 0.2;
-    --border-blue: 123, 147, 245, 0.5;
-    --border-container: 38, 38, 43, 1;
+    --border-blue: 39, 129, 246, 0.5;
+    --border-container: 255, 255, 255, 0;
     --white-alpha: 255, 255, 255, 0.1;
 
-    --status-good: 79 184 131;
-    --status-warn: 214 162 74;
-    --status-bad: 224 107 107;
-    --chart-1: 123 147 245;
-    --chart-2: 107 127 209;
-    --chart-3: 90 106 174;
-    --chart-4: 76 89 143;
-    --chart-5: 63 73 116;
+    --status-good: var(--teal-11);
+    --status-warn: var(--amber-11);
+    --status-bad: var(--ruby-11);
+    --chart-1: var(--blue-11);
+    --chart-2: var(--blue-10);
+    --chart-3: var(--blue-9);
+    --chart-4: var(--blue-8);
+    --chart-5: var(--blue-7);
   }
 }
 // NEXT COLORS END

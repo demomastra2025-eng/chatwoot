@@ -12,6 +12,7 @@ const {
   violet,
   violetDark,
 } = require('@radix-ui/colors');
+const tailwindColors = require('tailwindcss/colors');
 
 export const colors = {
   woot: {
@@ -280,13 +281,13 @@ export const colors = {
       color: 'rgb(var(--label-background) / <alpha-value>)',
       border: 'rgba(var(--label-border))',
     },
-    // Variant A status colours: always rendered as dot + word, never alone
+    // Status colours for the existing Ds* components.
     status: {
       good: 'rgb(var(--status-good) / <alpha-value>)',
       warn: 'rgb(var(--status-warn) / <alpha-value>)',
       bad: 'rgb(var(--status-bad) / <alpha-value>)',
     },
-    // Ordinal chart ramp: 1 = earliest stage = strongest step
+    // Ordinal chart ramp for the existing Ds* components.
     chart: {
       1: 'rgb(var(--chart-1) / <alpha-value>)',
       2: 'rgb(var(--chart-2) / <alpha-value>)',
@@ -297,29 +298,18 @@ export const colors = {
   },
 };
 
-const compatScale = name =>
-  [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].reduce(
-    (scale, shade) => ({
-      ...scale,
-      [shade]: `rgb(var(--compat-${name}-${shade}) / <alpha-value>)`,
-    }),
-    {}
-  );
-
-// Legacy Tailwind palette names still used by older screens. They resolve to
-// the variant A hues (one accent, three statuses, neutral) instead of a
-// rainbow, and stay theme-invariant like stock Tailwind shades so that
-// existing `dark:` pairs keep working. New code uses the n-* tokens above.
+// Existing palette entries above keep their production values. These names
+// were missing from the replaced Tailwind palette; use their stock hues so
+// legacy utility classes resolve with their familiar hues.
 export const compatColors = {
-  amber: compatScale('warn'),
-  emerald: compatScale('good'),
-  rose: compatScale('bad'),
-  blue: compatScale('accent'),
-  indigo: compatScale('accent'),
-  cyan: compatScale('accent'),
-  gray: compatScale('neutral'),
-  red: { 950: 'rgb(var(--compat-bad-950) / <alpha-value>)' },
-  // `black` is a shade scale above; plain `bg-black/40` overlays need DEFAULT
-  black: { DEFAULT: 'rgb(0 0 0 / <alpha-value>)' },
+  amber: tailwindColors.amber,
+  emerald: tailwindColors.emerald,
+  rose: tailwindColors.rose,
+  blue: tailwindColors.blue,
+  indigo: tailwindColors.indigo,
+  cyan: tailwindColors.cyan,
+  gray: tailwindColors.gray,
+  red: { 950: tailwindColors.red[950] },
+  black: { DEFAULT: tailwindColors.black },
   inherit: 'inherit',
 };
