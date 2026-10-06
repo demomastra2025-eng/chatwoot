@@ -80,6 +80,19 @@ describe ConversationBuilder do
       end
     end
 
+    it 'raises a database uniqueness collision with no matching idempotency key' do
+      account.enable_features!('crm_deals')
+      pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
+      create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      upsert = instance_double(Crm::Deals::UpsertService)
+      allow(Crm::Deals::UpsertService).to receive(:new).and_return(upsert)
+      allow(upsert).to receive(:perform).and_raise(ActiveRecord::RecordNotUnique)
+
+      expect do
+        Crm::Deals::AutoCreateFromChannelContactService.new(contact_inbox: contact_api_inbox).perform
+      end.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+
     it 'auto-creates a CRM deal for an existing contact that starts a new channel conversation' do
       account.enable_features!('crm_deals')
       pipeline = create(

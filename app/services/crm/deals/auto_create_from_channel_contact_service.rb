@@ -42,7 +42,7 @@ class Crm::Deals::AutoCreateFromChannelContactService
       ).perform
     end
   rescue ActiveRecord::RecordNotUnique
-    raise unless existing_deal_for_pipeline?(pipeline)
+    raise unless account.crm_deals.exists?(idempotency_key: idempotency_key_for(pipeline))
 
     nil
   rescue ActiveRecord::RecordInvalid
