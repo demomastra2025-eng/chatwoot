@@ -129,6 +129,49 @@ describe('DatePicker outside interaction', () => {
     expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
   });
 
+  it('can reopen the calendar-only picker after applying a custom range', async () => {
+    wrapper = mountDatePicker({
+      calendarOnly: true,
+      compact: true,
+      rangeType: 'custom',
+    });
+
+    const trigger = wrapper.get('[data-testid="date-picker-trigger"]');
+    await trigger.trigger('click');
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(true);
+
+    let calendar = wrapper.findComponent(CalendarWeekStub);
+    calendar.vm.$emit('selectDate', new Date(2026, 0, 10, 12));
+    await nextTick();
+    calendar = wrapper.findComponent(CalendarWeekStub);
+    calendar.vm.$emit('selectDate', new Date(2026, 0, 20, 12));
+    await nextTick();
+
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
+    expect(wrapper.emitted('dateRangeChanged')).toHaveLength(1);
+
+    await trigger.trigger('click');
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(true);
+    calendar = wrapper.findComponent(CalendarWeekStub);
+    calendar.vm.$emit('selectDate', new Date(2026, 1, 10, 12));
+    await nextTick();
+    calendar = wrapper.findComponent(CalendarWeekStub);
+    calendar.vm.$emit('selectDate', new Date(2026, 1, 20, 12));
+    await nextTick();
+
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
+    expect(wrapper.emitted('dateRangeChanged')).toHaveLength(2);
+    const [[firstRange], [secondRange]] = wrapper.emitted('dateRangeChanged');
+    const [firstStart, firstEnd, firstType] = firstRange;
+    const [secondStart, secondEnd, secondType] = secondRange;
+    expect(firstStart.getDate()).toBe(10);
+    expect(firstEnd.getDate()).toBe(20);
+    expect(firstType).toBe('custom');
+    expect(secondStart.getMonth()).toBe(1);
+    expect(secondEnd.getMonth()).toBe(1);
+    expect(secondType).toBe('custom');
+  });
+
   it('can center a compact calendar under its trigger', async () => {
     wrapper = mountDatePicker({
       calendarOnly: true,
