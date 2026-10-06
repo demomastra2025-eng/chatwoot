@@ -587,6 +587,4 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   rescue ArgumentError, TypeError
     value
   end
-
-
 end
