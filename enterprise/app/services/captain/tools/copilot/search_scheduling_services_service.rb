@@ -3,6 +3,8 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
                              'to confirm it; never book on a non-exact name.'.freeze
   SAME_NAME_INSTRUCTION = 'Several services have exactly this name. Ask the patient which one is meant (category, direction); ' \
                           'never book on a guess.'.freeze
+  PAGING_INSTRUCTION = 'Further pages are not reachable in this run. Refine the query with more words of the exact service ' \
+                       'name instead of paging.'.freeze
 
   def self.name
     'search_scheduling_services'
@@ -19,8 +21,9 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
   def execute(query: nil, include_inactive: false, limit: nil, offset: nil)
     offset = parse_offset(offset)
     include_inactive = cast_boolean(include_inactive)
+    limit = parse_limit(limit)
     services, search = search_scope(query, include_inactive)
-    page = result_page(services, offset, parse_limit(limit))
+    page = result_page(services, offset, limit)
     formatted_search_payload(page, search, query: query, include_inactive: include_inactive, offset: offset)
   rescue StandardError => e
     tool_failure(e)
@@ -46,7 +49,9 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
     records = services.preload(:prices).offset(offset).limit(limit).map { |service| service_payload(service) }
     next_offset = offset + records.length
     has_more = next_offset < total_count
-    { total_count: total_count, records: records, has_more: has_more, next_offset: has_more ? next_offset : nil,
+    reachable = has_more && page_reachable?(next_offset, limit)
+    { total_count: total_count, records: records, has_more: has_more, next_offset: reachable ? next_offset : nil,
+      paging_unreachable: has_more && !reachable,
       page_status: records.empty? && total_count.positive? ? 'offset_out_of_range' : 'returned' }
   end
 
@@ -60,6 +65,12 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
     service.prices.select { |price| price.active && price.account_id == service.account_id }.map do |price|
       Scheduling::PayloadBuilder.service_price(price).merge(service_eligibility_status: 'price_link_unverified')
     end
+  end
+
+  # The loop guard lets one run call this tool a fixed number of times. A next_offset that needs a call beyond that budget
+  # would only be refused, so it is not offered.
+  def page_reachable?(next_offset, limit)
+    (next_offset / limit) < Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_BY_TOOL.fetch(self.class.name)
   end
 
   # no_match: nothing found; partial_candidates: only some query words matched; candidate: exactly one service whose name
@@ -99,6 +110,7 @@ class Captain::Tools::Copilot::SearchSchedulingServicesService < Captain::Tools:
       services: page[:records]
     }
     payload[:instruction] = instruction_for(exact_name_matches) if confirmation_needed?(status)
+    payload[:paging_instruction] = PAGING_INSTRUCTION if page[:paging_unreachable]
     formatted_payload(payload)
   end
 end
