@@ -175,6 +175,101 @@ RSpec.describe 'Telephony webphone leg reported after the call was taken', type:
     end
   end
 
+  # An operator who is busy on another call gets a reject (target_operator_busy)
+  # as the routing decision for his leg. The leg is as late as any other.
+  describe 'a late leg of an operator who is busy on another call' do
+    let(:busy_leg) { leg_session(profiles[1], 'sip-call-id-1') }
+
+    before do
+      report_leg(profiles[1], 'other-call', from: '+70000000777')
+      claim!(1, leg_session(profiles[1], 'other-call'))
+      report_leg(profiles[0], 'sip-call-id-0')
+      claim!(0, first_leg)
+    end
+
+    shared_examples 'a busy operator whose late leg is closed' do
+      before { report_leg(profiles[1], 'sip-call-id-1') }
+
+      it 'was refused as busy by routing and closed as answered by another operator' do
+        expect(busy_leg.metadata.dig('metadata', 'route_reason')).to eq('target_operator_busy')
+        expect(busy_leg).to have_attributes(status: 'no_answer', end_reason: 'answered_by_other_operator')
+      end
+
+      it 'gives the browser the closed leg and rings nobody' do
+        expect(response.parsed_body['payload']).to include('call_ref' => busy_leg.external_call_ref, 'status' => 'no_answer')
+        expect(ActionCable.server).not_to have_broadcast_incoming(busy_leg)
+        expect(ActionCable.server).to have_broadcast_claimed(busy_leg, to: operators[1].pubsub_token)
+      end
+
+      it 'leaves the owner of the call and the other call of the busy operator alone' do
+        expect(first_leg.reload.status).to eq(owner_status)
+        expect(leg_session(profiles[1], 'other-call').status).to eq('connecting')
+      end
+
+      it 'changes nothing when the browser reports the leg again' do
+        expect { report_leg(profiles[1], 'sip-call-id-1') }.not_to(change { [account.telephony_call_sessions.count, busy_leg.reload.status] })
+        expect(ActionCable.server).to have_broadcast_claimed(busy_leg, to: operators[1].pubsub_token).once
+      end
+    end
+
+    context 'when the other operator claimed the call' do
+      let(:owner_status) { 'connecting' }
+
+      it_behaves_like 'a busy operator whose late leg is closed'
+    end
+
+    context 'when the other operator answered the call' do
+      let(:owner_status) { 'in_progress' }
+
+      before { answer!(0, first_leg) }
+
+      it_behaves_like 'a busy operator whose late leg is closed'
+    end
+  end
+
+  # The routing decision of a report is taken before the claim of the same
+  # operator commits (the claim does not wait for the intake lock). The leg of
+  # the claimer must not be closed by the report that races his claim.
+  context 'when the claimer own report is admitted while his claim commits' do
+    let(:claimer_leg) { leg_session(profiles[1], 'sip-call-id-1') }
+
+    let(:decisions) { [] }
+
+    before do
+      report_leg(profiles[0], 'sip-call-id-0')
+      report_leg(profiles[1], 'sip-call-id-1')
+      allow_any_instance_of(Telephony::OperatorCallClaimService).to receive(:close_sibling_legs!) # rubocop:disable RSpec/AnyInstance
+      claimed = false
+      # rubocop:disable RSpec/AnyInstance
+      allow_any_instance_of(Telephony::WebphoneService).to receive(:perform_browser_sip_incoming_route).and_wrap_original do |original, *args|
+        original.call(*args).tap do |decision|
+          next if claimed
+
+          claimed = true
+          decisions << decision[:action]
+          claim!(1, claimer_leg)
+        end
+      end
+      # rubocop:enable RSpec/AnyInstance
+      report_leg(profiles[1], 'sip-call-id-1')
+    end
+
+    it 'keeps the leg of the claimer open and gives its browser a live status' do
+      expect(decisions).to eq(['operator'])
+      expect(claimer_leg.reload).to have_attributes(status: 'connecting', end_reason: nil)
+      expect(response.parsed_body['payload']['status']).not_to eq('no_answer')
+      expect(claimer_leg.metadata.dig('operator_claim', 'user_id')).to eq(operators[1].id)
+    end
+
+    it 'leaves the claimer able to answer once his own closer has run' do
+      Telephony::SiblingLegCloser.new(call_session: claimer_leg.reload).perform
+
+      expect(leg_session(profiles[0], 'sip-call-id-0').status).to eq('no_answer')
+      expect { answer!(1, claimer_leg) }.not_to raise_error
+      expect(claimer_leg.reload).to have_attributes(status: 'in_progress')
+    end
+  end
+
   context 'when nobody claimed the call yet' do
     it 'still rings every operator who reports' do
       report_leg(profiles[0], 'sip-call-id-0')

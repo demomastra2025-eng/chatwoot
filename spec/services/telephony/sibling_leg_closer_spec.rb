@@ -203,6 +203,31 @@ RSpec.describe Telephony::SiblingLegCloser do
       expect(described_class.close_late_leg(winner_leg).status).to eq('in_progress')
     end
 
+    context 'when the late leg belongs to the operator who took the call' do
+      let!(:claimer_leg) { create_leg('beeline:janus:104:call-id-d@sbc.example.test', winner_user) }
+
+      it 'keeps it open next to a leg that carries his answer' do
+        expect(described_class.close_late_leg(claimer_leg).status).to eq('ringing')
+      end
+
+      it 'keeps it open when the owner found is the claim fence, a leg of another operator with a copy of the claim' do
+        winner_leg.update!(status: 'ringing', answered_at: nil, answered_by: nil, metadata: leg_metadata(winner_user, group_key, root_ref, false))
+        second_leg.update!(status: 'connecting', answered_by: "user:#{winner_user.id}",
+                           metadata: leg_metadata(second_user, group_key, root_ref, false).merge('operator_claim' => { 'user_id' => winner_user.id }))
+
+        expect(described_class.close_late_leg(claimer_leg).status).to eq('ringing')
+        expect(described_class.close_late_leg(third_leg).status).to eq('no_answer')
+      end
+
+      it 'finds the operator through the SIP profile when the report carries no user id' do
+        profile = create(:telephony_sip_profile, account: account, inbox: inbox, user: winner_user)
+        route = claimer_leg.metadata['metadata'].except('target_user_id').merge('telephony_sip_profile_id' => profile.id)
+        claimer_leg.update!(metadata: claimer_leg.metadata.merge('metadata' => route))
+
+        expect(described_class.close_late_leg(claimer_leg).status).to eq('ringing')
+      end
+    end
+
     it 'does not reopen or touch a leg that is over' do
       second_leg.update!(status: 'no_answer', ended_at: Time.current, end_reason: 'caller_hangup')
 

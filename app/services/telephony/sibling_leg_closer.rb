@@ -23,6 +23,8 @@ class Telephony::SiblingLegCloser
   # (the oldest leg, which carries a copy of the claim) and not the leg of the
   # operator who really took the call; closing "every other leg" from it would
   # close the claimer's own leg while the claimer's closer has not run yet.
+  # For the same reason the late leg of the claimer himself is never closed: it
+  # is his own report arriving again, or racing his claim (see close_only!).
   def self.close_late_leg(leg)
     return leg unless Telephony::SiblingLegGrouping.applies?(provider: leg.provider, direction: leg.direction)
     return leg if leg.terminal?
@@ -48,9 +50,12 @@ class Telephony::SiblingLegCloser
     end
   end
 
-  # Closes this one leg of the group and leaves the others alone.
+  # Closes this one leg of the group and leaves the others alone. A leg that
+  # belongs to the operator who took the call stays: its routing decision may
+  # have been taken before the claim committed, and closing it would leave the
+  # call with nobody to talk.
   def close_only!(leg)
-    return unless answered_leg? && closable_leg?(leg)
+    return unless answered_leg? && closable_leg?(leg) && !winner_leg?(leg)
 
     Telephony::CallIntakeLock.with_lock(account_id: call_session.account_id, phone_number: call_session.from_number) do
       close_leg!(leg)
@@ -77,6 +82,20 @@ class Telephony::SiblingLegCloser
       leg.direction == 'inbound' &&
       leg.answered_at.blank? &&
       OPEN_STATUSES.include?(leg.canonical_status)
+  end
+
+  def winner_leg?(leg)
+    winner = winner_user_id
+    winner.present? && leg_operator_id(leg) == winner
+  end
+
+  # The operator a browser leg was reported by (route metadata of the report).
+  def leg_operator_id(leg)
+    route = route_metadata(leg)
+    return route['target_user_id'].to_i if route['target_user_id'].present?
+
+    profile_id = route['telephony_sip_profile_id'].presence || route['target_sip_profile_id'].presence
+    leg.account.telephony_sip_profiles.find_by(id: profile_id)&.user_id if profile_id
   end
 
   def close_leg!(sibling)
