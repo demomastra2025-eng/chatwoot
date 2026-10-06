@@ -273,6 +273,7 @@ describe('Sidebar', () => {
         'Tools',
         'Observability',
         'Knowledge Base',
+        'Settings Captain',
         'AI expenses',
       ]);
       captain
@@ -291,8 +292,7 @@ describe('Sidebar', () => {
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'AI expenses', active: true },
       ]);
-      // The AI settings page stays in the settings hub.
-      expect(navigationChildNames(sidebarGroup(wrapper, 'Settings'))).toContain(
+      expect(navigationChildNames(sidebarGroup(wrapper, 'Settings'))).not.toContain(
         'Settings Captain'
       );
     });
@@ -305,6 +305,17 @@ describe('Sidebar', () => {
 
       expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
         { name: 'Sandbox', active: true },
+      ]);
+    });
+
+    it('highlights AI settings in the AI group', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'captain_settings_index',
+      });
+
+      expect(renderedLeaves(wrapper).filter(leaf => leaf.active)).toEqual([
+        { name: 'Settings Captain', active: true },
       ]);
     });
 
@@ -505,7 +516,6 @@ describe('Sidebar', () => {
         'Storage',
         'Additional Fields',
         'Tags',
-        'Settings Captain',
       ]);
       expect(secondaryColumn(wrapper).props('label')).toBe(
         settings.props('label')

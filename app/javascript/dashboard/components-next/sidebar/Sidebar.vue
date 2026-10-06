@@ -1070,15 +1070,6 @@ const buildSettingsMenuItems = () =>
       activeOn: contactTagSettingsRouteNames,
       to: accountScopedRoute('labels_list'),
     },
-    settingsSection('AI', t('SIDEBAR.SETTINGS_SECTIONS.AI')),
-    onlyIf(hasCaptain.value, {
-      name: 'Settings Captain',
-      visibilityKey: 'Settings:Captain',
-      label: t('SIDEBAR.CAPTAIN_SETTINGS'),
-      icon: 'i-woot-captain',
-      activeOn: ['captain_settings_index'],
-      to: accountScopedRoute('captain_settings_index'),
-    }),
   ].filter(Boolean);
 
 const settingsMenuItems = computed(() => {
@@ -1311,6 +1302,13 @@ const menuItems = computed(() => {
           },
           ...(checkPermissions(['administrator'])
             ? [
+                {
+                  name: 'Settings Captain',
+                  visibilityKey: 'Settings:Captain',
+                  label: t('SIDEBAR.CAPTAIN_SETTINGS'),
+                  activeOn: ['captain_settings_index'],
+                  to: accountScopedRoute('captain_settings_index'),
+                },
                 {
                   name: 'AI expenses',
                   visibilityKey: 'Captain:Usage',

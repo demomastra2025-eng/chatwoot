@@ -6,7 +6,7 @@ const Index = () => import('./Index.vue');
 export default {
   routes: [
     {
-      path: frontendURL('accounts/:accountId/settings/captain'),
+      path: frontendURL('accounts/:accountId/captain/settings'),
       meta: {
         permissions: ['administrator'],
         featureFlag: FEATURE_FLAGS.CAPTAIN,
@@ -32,6 +32,15 @@ export default {
           },
         },
       ],
+    },
+    {
+      path: frontendURL('accounts/:accountId/settings/captain'),
+      redirect: to => ({
+        name: 'captain_settings_index',
+        params: { accountId: to.params.accountId },
+        query: to.query,
+        hash: to.hash,
+      }),
     },
     // «Расходы» in the AI menu: the usage section of the AI settings page.
     {

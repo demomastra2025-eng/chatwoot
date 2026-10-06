@@ -25,10 +25,30 @@ describe('Captain settings routes', () => {
   });
 
   it('opens the full AI settings page without a section filter', () => {
-    const { child } = childRoutes().find(
+    const { parent, child } = childRoutes().find(
       ({ child: route }) => route.name === 'captain_settings_index'
     );
 
     expect(child.props).toBeUndefined();
+    expect(parent.path).toContain('captain/settings');
+  });
+
+  it('redirects the former settings URL to the AI section route', () => {
+    const legacyRoute = captainSettingsRoutes.routes.find(route =>
+      route.path.endsWith('/settings/captain')
+    );
+
+    expect(
+      legacyRoute.redirect({
+        params: { accountId: '7' },
+        query: { tab: 'models' },
+        hash: '#model',
+      })
+    ).toEqual({
+      name: 'captain_settings_index',
+      params: { accountId: '7' },
+      query: { tab: 'models' },
+      hash: '#model',
+    });
   });
 });
