@@ -152,12 +152,23 @@ class Telephony::AiVoice::ContextBuilder
     return unless direction == 'inbound'
     return unless inbox.present? && caller_number.present?
 
-    Voice::InboundCallBuilder.perform!(
+    conversation = Voice::InboundCallBuilder.perform!(
       account: account,
       inbox: inbox,
       from_number: caller_number,
       call_sid: call_ref
     )
+    queue_conversation_for_ai!(conversation)
+  end
+
+  # The AI agent owns the call: the conversation waits as pending (like the one the
+  # provider events create) and remembers it, so no later event of this call
+  # changes the status again.
+  def queue_conversation_for_ai!(conversation)
+    attrs = (conversation.additional_attributes || {}).deep_dup
+    attrs[Telephony::EventsIngestionService::AI_VOICE_PENDING_CALL_REF_KEY] = call_ref
+    conversation.update!(status: :pending, additional_attributes: attrs)
+    conversation
   end
 
   def ensure_call_session_creation_scope!

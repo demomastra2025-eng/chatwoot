@@ -922,6 +922,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       number_binding_id: number_binding.id
     )
     expect(response.parsed_body['conversation_id']).to eq(session.conversation_id)
+    expect(session.conversation).to be_pending
+    expect(session.conversation.additional_attributes).to include('ai_voice_pending_call_ref' => 'ai-context-new-call')
   end
 
   it 'accepts the native SIP contract shared secret alias' do

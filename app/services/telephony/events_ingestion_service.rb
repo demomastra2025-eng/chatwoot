@@ -4,6 +4,8 @@ require 'json'
 class Telephony::EventsIngestionService
   CALL_SESSION_CONFLICT_RETRIES = 2
   SIDE_EFFECT_CONFLICT_RETRIES = 2
+  # additional_attributes key: the call whose AI voice pending status the conversation already carries.
+  AI_VOICE_PENDING_CALL_REF_KEY = 'ai_voice_pending_call_ref'.freeze
   RETRYABLE_DATABASE_ERRORS = [
     ActiveRecord::Deadlocked,
     ActiveRecord::LockWaitTimeout,
@@ -1653,7 +1655,10 @@ class Telephony::EventsIngestionService
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     update_attrs = { additional_attributes: attrs, last_activity_at: Time.current }
-    update_attrs[:status] = native_sip_conversation_status(call_session) if update_status
+    if update_status
+      update_attrs[:status] = native_sip_conversation_status(call_session)
+      attrs[AI_VOICE_PENDING_CALL_REF_KEY] = call_session.external_call_ref if ai_voice_inbound_call?(call_session)
+    end
     conversation.update!(update_attrs)
   end
 
@@ -1661,15 +1666,29 @@ class Telephony::EventsIngestionService
   # or pending for the AI voice agent). The later events of the same call - the
   # recording, a repeated completion - update the call data and leave the status
   # alone: an operator who resolved the chat right after the call must not see it
-  # open again. The one exception is the AI voice agent handing the call over to
-  # an operator, which turns the pending conversation into an open one.
+  # open again. Two exceptions keep the transitions inside one call: the AI voice
+  # agent handing the call over to an operator turns the pending conversation
+  # into an open one, and a call that reaches the AI voice agent after the
+  # conversation was already attached to it (the realtime service asked context
+  # first, or the call started on the operator route) becomes pending once.
   def native_sip_call_updates_conversation_status?(conversation, call_session)
     return false unless native_sip_call_session?(call_session)
 
     attrs = (conversation.additional_attributes || {}).deep_stringify_keys
     return true if native_sip_conversation_call_ref(attrs) != call_session.external_call_ref
+    return true if ai_voice_call_enters_conversation?(conversation, call_session, attrs)
 
     conversation.pending? && !ai_voice_inbound_call?(call_session) && !post_finalize_recording_event?
+  end
+
+  # The conversation remembers the call for which the AI pending status was
+  # applied, so the late events of the AI call (and of an operator who took the
+  # conversation over) never put it back to pending.
+  def ai_voice_call_enters_conversation?(conversation, call_session, attrs)
+    ai_voice_inbound_call?(call_session) &&
+      !post_finalize_recording_event? &&
+      !conversation.resolved? &&
+      attrs[AI_VOICE_PENDING_CALL_REF_KEY] != call_session.external_call_ref
   end
 
   def native_sip_conversation_status(call_session)

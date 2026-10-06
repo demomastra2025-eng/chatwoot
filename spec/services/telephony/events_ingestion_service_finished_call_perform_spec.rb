@@ -189,6 +189,73 @@ RSpec.describe Telephony::EventsIngestionService, '#perform' do
 
       expect(call_conversation).to be_open
     end
+
+    it 'keeps the AI conversation pending while the events of the call arrive' do
+      ingest('session_started', status: 'ringing', occurred_at: started_at, metadata: { route_action: 'ai' })
+      ingest('call_status', status: 'answered', occurred_at: answered_at, answered_at: answered_at.iso8601, answered_by: 'provider',
+                            metadata: { route_action: 'ai' })
+      ingest('session_completed', status: 'completed', occurred_at: ended_at, ended_at: ended_at.iso8601, metadata: { route_action: 'ai' })
+
+      expect(call_conversation).to be_pending
+    end
+
+    it 'keeps an AI conversation resolved on the late recording' do
+      ingest('session_started', status: 'ringing', occurred_at: started_at, metadata: { route_action: 'ai' })
+      ingest('session_completed', status: 'completed', occurred_at: ended_at, ended_at: ended_at.iso8601, metadata: { route_action: 'ai' })
+      resolve_as_operator
+
+      ingest('recording_ready', recording_ref: recording_ref, storage_key: recording_ref, occurred_at: ended_at + 30.seconds,
+                                metadata: { route_action: 'ai' })
+      ingest('call_status', status: 'completed', occurred_at: ended_at + 31.seconds, metadata: { route_action: 'ai' })
+
+      expect(call_conversation).to be_resolved
+    end
+
+    it 'makes the conversation pending when the call turns from the operator route to the AI agent' do
+      ingest('session_started', status: 'ringing', occurred_at: started_at, metadata: { route_action: 'operator' })
+      expect(call_conversation).to be_open
+
+      ingest('call_status', status: 'ringing', occurred_at: started_at + 3.seconds, metadata: { route_action: 'ai' })
+      expect(call_conversation).to be_pending
+
+      ingest('call_status', status: 'answered', occurred_at: answered_at, answered_at: answered_at.iso8601, answered_by: 'provider',
+                            metadata: { route_action: 'ai' })
+      call_conversation.update!(status: :open)
+      ingest('call_status', status: 'ringing', occurred_at: answered_at + 1.second, metadata: { route_action: 'ai' })
+      expect(call_conversation).to be_open
+    end
+
+    context 'when the realtime service asks the context before the first event' do
+      before do
+        Telephony::AiVoice::ContextBuilder.new(
+          params: {
+            call_ref: call_ref, account_id: account.id, number_ref: voice_inbox.telephony_number_binding.number_ref,
+            caller_number: contact.phone_number, ingress_number: voice_channel.phone_number
+          }
+        ).perform
+      end
+
+      it 'creates the conversation pending and keeps it so while the events of the call arrive' do
+        expect(call_conversation).to be_pending
+
+        ingest('session_started', status: 'ringing', occurred_at: started_at, metadata: { route_action: 'ai' })
+        ingest('call_status', status: 'answered', occurred_at: answered_at, answered_at: answered_at.iso8601, answered_by: 'provider',
+                              metadata: { route_action: 'ai' })
+
+        expect(call_conversation).to be_pending
+      end
+
+      it 'keeps the conversation resolved on the late events of the call' do
+        ingest('session_started', status: 'ringing', occurred_at: started_at, metadata: { route_action: 'ai' })
+        ingest('session_completed', status: 'completed', occurred_at: ended_at, ended_at: ended_at.iso8601, metadata: { route_action: 'ai' })
+        resolve_as_operator
+
+        ingest('recording_ready', recording_ref: recording_ref, storage_key: recording_ref, occurred_at: ended_at + 30.seconds,
+                                  metadata: { route_action: 'ai' })
+
+        expect(call_conversation).to be_resolved
+      end
+    end
   end
 
   context 'when a new call comes to the resolved conversation' do
