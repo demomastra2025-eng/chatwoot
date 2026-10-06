@@ -22,8 +22,12 @@ class Api::V1::Accounts::MacrosController < Api::V1::Accounts::BaseController
 
     return render_could_not_create_error(@macro.errors.messages) unless @macro.valid?
 
-    @macro.save!
-    blobs.each { |blob| @macro.files.attach(blob) }
+    ActiveRecord::Base.transaction do
+      @macro.save!
+      attach_blobs!(@macro, blobs)
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    render_could_not_create_error(e.record.errors.messages)
   end
 
   def update
@@ -35,11 +39,11 @@ class Api::V1::Accounts::MacrosController < Api::V1::Accounts::BaseController
       @macro.set_visibility(current_user, permitted_params)
       @macro.actions = actions if params[:actions]
       @macro.save!
-      blobs.each { |blob| @macro.files.attach(blob) }
-    rescue StandardError => e
-      Rails.logger.error e
-      render_could_not_create_error(@macro.errors.messages)
+      attach_blobs!(@macro, blobs)
     end
+  rescue StandardError => e
+    Rails.logger.error e
+    render_could_not_create_error(@macro.errors.messages)
   end
 
   def destroy

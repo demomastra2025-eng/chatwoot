@@ -129,6 +129,19 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
         expect(json_response['payload']['created_by']['id']).to eql(agent.id)
       end
 
+      it 'Saves files that fit together near the storage limit when the macro has several' do
+        blobs = %w[a b].map do |name|
+          ActiveStorage::Blob.create_and_upload!(io: StringIO.new('x' * 400), filename: "#{name}.txt", content_type: 'text/plain')
+        end
+        account.update!(limits: { 'storage_bytes' => 1000 })
+        params[:actions] = blobs.map { |blob| { 'action_name': :send_attachment, 'action_params': [blob.signed_id] } }
+
+        post "/api/v1/accounts/#{account.id}/macros", headers: administrator.create_new_auth_token, params: params
+
+        expect(response).to have_http_status(:success)
+        expect(account.macros.last.files.count).to eq(2)
+      end
+
       it 'Saves file in the macros actions to send an attachments' do
         blob = ActiveStorage::Blob.create_and_upload!(
           io: Rails.root.join('spec/assets/avatar.png').open,
@@ -194,6 +207,20 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
         attachment_action = macro.actions.find { |a| a['action_name'] == 'send_attachment' }
         expect(attachment_action['action_params'].first).to be_a(Integer)
         expect(attachment_action['action_params'].first).to eq(macro.files.first.blob_id)
+      end
+
+      it 'creates nothing and reports the limit error when the files are rejected after the pre-check' do
+        blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new('x' * 1100), filename: 'big.txt', content_type: 'text/plain')
+        account.update!(limits: { 'storage_bytes' => 1000 })
+        allow_any_instance_of(Api::V1::Accounts::MacrosController).to receive(:storage_limit_available?).and_return(true) # rubocop:disable RSpec/AnyInstance
+        params[:actions] = [{ 'action_name': :send_attachment, 'action_params': [blob.signed_id] }]
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/macros", headers: administrator.create_new_auth_token, params: params
+        end.not_to change(Macro, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to include('files' => [AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE])
       end
     end
   end
@@ -278,6 +305,49 @@ RSpec.describe 'Api::V1::Accounts::MacrosController', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(macro.reload.files.count).to eq(1)
+      end
+
+      context 'when the macro already holds a file near the storage limit' do
+        def upload(size, name)
+          ActiveStorage::Blob.create_and_upload!(io: StringIO.new('x' * size), filename: name, content_type: 'text/plain')
+        end
+
+        def put_attachment(blob)
+          put "/api/v1/accounts/#{account.id}/macros/#{macro.id}",
+              params: { actions: [{ 'action_name': :send_attachment, 'action_params': [blob.signed_id] }] },
+              headers: administrator.create_new_auth_token
+        end
+
+        before do
+          macro.files.attach(upload(600, 'held.txt'))
+          account.update!(limits: { 'storage_bytes' => 1000 })
+        end
+
+        it 'adds a small file without charging the file the macro already holds' do
+          put_attachment(upload(100, 'small.txt'))
+
+          expect(response).to have_http_status(:success)
+          expect(macro.reload.files.count).to eq(2)
+        end
+
+        it 'answers with the limit error for a file that goes over the limit' do
+          put_attachment(upload(500, 'over.txt'))
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['error']).to eq(AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE)
+          expect(macro.reload.files.count).to eq(1)
+        end
+
+        it 'does not report success when the attach itself is rejected after the pre-check passed' do
+          # The pre-check and the save are two reads of the usage: a concurrent upload can fill the gap in between.
+          allow_any_instance_of(Api::V1::Accounts::MacrosController).to receive(:storage_limit_available?).and_return(true) # rubocop:disable RSpec/AnyInstance
+
+          put_attachment(upload(500, 'over.txt'))
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['error']).to include('files' => [AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE])
+          expect(macro.reload.files.count).to eq(1)
+        end
       end
     end
   end

@@ -22,6 +22,14 @@ module AttachmentConcern
 
   private
 
+  # ActiveStorage's attach answers nil when the record could not be saved (for instance when the files would exceed
+  # the storage limit): raise instead of reporting success for a file that was silently lost.
+  def attach_blobs!(record, blobs)
+    return if blobs.blank?
+
+    raise ActiveRecord::RecordInvalid, record unless record.files.attach(blobs)
+  end
+
   def process_attachment_action(action, record, blobs)
     blob_id = action[:action_params].first
     blob = ActiveStorage::Blob.find_signed(blob_id.to_s)
@@ -40,7 +48,7 @@ module AttachmentConcern
     account = record&.account || Current.account
     return true if account.blank?
 
-    extra_bytes = blobs.sum(&:byte_size)
-    AccountLimits::StorageUsageService.new(account: account).within_limit?(extra_bytes: extra_bytes)
+    storage_service = AccountLimits::StorageUsageService.new(account: account)
+    storage_service.within_limit?(extra_bytes: storage_service.new_blob_bytes(blobs))
   end
 end

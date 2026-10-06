@@ -15,20 +15,36 @@ module AccountStorageLimitable
     end
   end
 
+  # Automatic writers of customer-facing assets (an avatar fetched from a channel) exempt one record from the check:
+  # the storage limit never blocks inbound traffic. Attachment defines its own flag with the same contract.
+  def skip_storage_limit_validation!
+    @skip_storage_limit_validation = true
+    self
+  end
+
+  def skip_storage_limit_validation?
+    ActiveModel::Type::Boolean.new.cast(@skip_storage_limit_validation)
+  end
+
   private
 
   def validate_storage_limit_for_attachment(attachment_name)
     change = attachment_changes[attachment_name.to_s]
     return if change.blank? || skip_storage_validation?
 
-    extra_bytes = changed_blob_bytes(change)
-    return if extra_bytes <= 0
+    blobs = changed_blobs(change)
+    return if blobs.sum { |blob| blob.byte_size.to_i }.zero?
 
     account = storage_limit_account
     return if account.blank?
 
-    released_bytes = replaced_blob_bytes(change, attachment_name)
     storage_service = AccountLimits::StorageUsageService.new(account: account)
+    # Only blobs the account does not hold yet grow its usage: ActiveStorage carries the files an owner already has
+    # in the change, and a blob that another counted owner holds is not stored a second time.
+    extra_bytes = storage_service.new_blob_bytes(blobs)
+    return if extra_bytes <= 0
+
+    released_bytes = replaced_blob_bytes(change, attachment_name, storage_service, blobs)
     return if storage_service.within_limit?(extra_bytes: extra_bytes, released_bytes: released_bytes)
 
     trigger_storage_alert(account)
@@ -55,7 +71,7 @@ module AccountStorageLimitable
     nil
   end
 
-  def changed_blob_bytes(change)
+  def changed_blobs(change)
     blobs = if change.respond_to?(:blobs)
               change.blobs
             elsif change.respond_to?(:blob)
@@ -64,12 +80,17 @@ module AccountStorageLimitable
               []
             end
 
-    Array(blobs).sum { |blob| blob&.byte_size.to_i }
+    Array(blobs).compact
   end
 
-  def replaced_blob_bytes(change, attachment_name)
+  # A replaced blob frees its bytes only when this attachment was its last counted owner and the new value does not
+  # keep it.
+  def replaced_blob_bytes(change, attachment_name, storage_service, new_blobs)
     return 0 unless change.class.name.end_with?('CreateOne')
 
-    public_send("#{attachment_name}_blob")&.byte_size.to_i
+    old_blob = public_send("#{attachment_name}_blob")
+    return 0 if old_blob.blank? || new_blobs.include?(old_blob)
+
+    storage_service.released_blob_bytes(old_blob, public_send("#{attachment_name}_attachment"))
   end
 end

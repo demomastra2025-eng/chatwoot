@@ -475,6 +475,20 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(automation_rule.files.count).to eq(1)
       end
 
+      it 'creates nothing and reports the limit error when the files are rejected after the pre-check' do
+        blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new('x' * 1100), filename: 'big.txt', content_type: 'text/plain')
+        account.update!(limits: { 'storage_bytes' => 1000 })
+        allow_any_instance_of(Api::V1::Accounts::AutomationRulesController).to receive(:storage_limit_available?).and_return(true) # rubocop:disable RSpec/AnyInstance
+        params[:actions] = [{ 'action_name': :send_attachment, 'action_params': [blob.signed_id] }]
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/automation_rules", headers: administrator.create_new_auth_token, params: params
+        end.not_to change(AutomationRule, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to include('files' => [AccountLimits::StorageUsageService::LIMIT_EXCEEDED_MESSAGE])
+      end
+
       it 'Saves files in the automation actions to send multiple attachments' do
         blob_1 = ActiveStorage::Blob.create_and_upload!(
           io: Rails.root.join('spec/assets/avatar.png').open,

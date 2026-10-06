@@ -20,8 +20,12 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
 
     return render_automation_rule_validation_error(@automation_rule) unless @automation_rule.valid?
 
-    @automation_rule.save!
-    blobs.each { |blob| @automation_rule.files.attach(blob) }
+    ActiveRecord::Base.transaction do
+      @automation_rule.save!
+      attach_blobs!(@automation_rule, blobs)
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    render_automation_rule_validation_error(e.record)
   end
 
   def update
@@ -36,7 +40,7 @@ class Api::V1::Accounts::AutomationRulesController < Api::V1::Accounts::BaseCont
 
     ActiveRecord::Base.transaction do
       @automation_rule.save!
-      blobs.each { |blob| @automation_rule.files.attach(blob) }
+      attach_blobs!(@automation_rule, blobs)
     end
   rescue StandardError => e
     Rails.logger.error e

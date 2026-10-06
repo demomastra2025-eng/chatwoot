@@ -58,6 +58,27 @@ class AccountLimits::StorageUsageService
     quota_active_storage_bytes + recordings_bytes
   end
 
+  # The physical bytes a set of blobs adds to the account: every distinct blob counts once, and a stored blob that a
+  # counted attachment of the account already references adds nothing (re-attaching or reusing it stores no new bytes).
+  def new_blob_bytes(blobs)
+    candidates = Array(blobs).compact.uniq
+    stored_ids = candidates.select(&:persisted?).map(&:id)
+    owned_ids = stored_ids.empty? ? [] : active_storage_blob_scope(include_recordings: count_recordings?).where(id: stored_ids).pluck(:id)
+
+    candidates.reject { |blob| blob.persisted? && owned_ids.include?(blob.id) }.sum { |blob| blob.byte_size.to_i }
+  end
+
+  # The bytes freed when `attachment` stops pointing at `blob`: all of them if it was the only counted owner of the
+  # blob, none if another counted record still holds it.
+  def released_blob_bytes(blob, attachment)
+    return 0 if blob.blank? || !blob.persisted?
+
+    owners = tenant_attachments(include_recordings: count_recordings?)&.where(blob_id: blob.id)&.pluck(:id)
+    return 0 if owners.blank?
+
+    (owners - [attachment&.id]).empty? ? blob.byte_size.to_i : 0
+  end
+
   # Enforced for uploads by staff, imports and Captain documents. Incoming messages and calls never go through
   # this check: inbound attachments carry skip_storage_limit_validation! and inbound recordings are not validated.
   def within_limit?(extra_bytes: 0, released_bytes: 0)
@@ -127,6 +148,10 @@ class AccountLimits::StorageUsageService
   end
 
   def tenant_source_blob_ids(include_recordings: true)
+    tenant_attachments(include_recordings: include_recordings)&.select(:blob_id)&.distinct
+  end
+
+  def tenant_attachments(include_recordings: true)
     predicates = tenant_record_type_scopes(include_recordings).filter_map do |record_type, attachment_names|
       relation = scoped_relation(record_type)
       next if relation.nil?
@@ -139,7 +164,7 @@ class AccountLimits::StorageUsageService
     end
     return if predicates.empty?
 
-    ActiveStorage::Attachment.where(predicates.reduce(&:or)).select(:blob_id).distinct
+    ActiveStorage::Attachment.where(predicates.reduce(&:or))
   end
 
   def tenant_record_type_scopes(include_recordings)
