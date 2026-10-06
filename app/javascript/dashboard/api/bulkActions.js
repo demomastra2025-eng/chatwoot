@@ -6,8 +6,32 @@ class BulkActionsAPI extends ApiClient {
     super('bulk_actions', { accountScoped: true });
   }
 
-  show(id) {
-    return axios.get(`${this.baseUrl()}/bulk_action_runs/${id}`);
+  captureContext() {
+    return {
+      accountId: String(this.accountIdFromRoute || ''),
+      baseUrl: this.baseUrl(),
+    };
+  }
+
+  isContextCurrent(context) {
+    return (
+      !context ||
+      String(this.accountIdFromRoute || '') === String(context.accountId || '')
+    );
+  }
+
+  create(data, context = null) {
+    const baseUrl = context?.baseUrl || this.baseUrl();
+    return axios.post(`${baseUrl}/${this.resource}`, data);
+  }
+
+  show(id, context = null) {
+    const baseUrl = context?.baseUrl || this.baseUrl();
+    return axios.get(`${baseUrl}/bulk_action_runs/${id}`);
+  }
+
+  selectAll(type, filters) {
+    return axios.post(`${this.url}/selection`, { type, filters });
   }
 }
 
