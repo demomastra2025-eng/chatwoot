@@ -432,26 +432,57 @@ RSpec.describe 'CRM Stages API', type: :request do
       deal.update_columns(stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
     end
 
-    it 'deletes an empty stage that deals have passed through and keeps the history rows' do
-      visit = Crm::StageVisit.find_by!(stage_id: stage.id)
+    context 'when the history references can be detached' do
+      include_context 'with detachable crm stage visit references'
 
-      delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
-             headers: headers,
-             as: :json
+      it 'deletes an empty stage that deals have passed through and keeps the history rows' do
+        visit = Crm::StageVisit.find_by!(stage_id: stage.id)
 
-      expect(response).to have_http_status(:no_content)
-      expect(account.crm_stages.exists?(stage.id)).to be(false)
-      expect(visit.reload).to have_attributes(stage_id: nil, stage_name: stage.name, pipeline_id: pipeline.id)
+        delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+               headers: headers,
+               as: :json
+
+        expect(response).to have_http_status(:no_content)
+        expect(account.crm_stages.exists?(stage.id)).to be(false)
+        expect(visit.reload).to have_attributes(stage_id: nil, stage_name: stage.name, pipeline_id: pipeline.id)
+      end
+
+      it 'lets the deletion preflight pass for an empty stage with history' do
+        get "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}/deletion_check",
+            headers: headers,
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body['payload']).to include('can_delete' => true, 'deal_count' => 0)
+        expect(response.parsed_body['payload']).not_to have_key('block_reason')
+      end
     end
 
-    it 'lets the deletion preflight pass for an empty stage with history' do
-      get "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}/deletion_check",
-          headers: headers,
-          as: :json
+    context 'when the history references are still NOT NULL (schema as created by 20261004120000)' do
+      it 'answers 422 STAGE_HAS_HISTORY instead of a database error and keeps the stage and its history' do
+        delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+               headers: headers,
+               as: :json
 
-      expect(response).to have_http_status(:ok)
-      expect(response.parsed_body['payload']).to include('can_delete' => true, 'deal_count' => 0)
-      expect(response.parsed_body['payload']).not_to have_key('block_reason')
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['code']).to eq('STAGE_HAS_HISTORY')
+        expect(account.crm_stages.exists?(stage.id)).to be(true)
+        expect(Crm::StageVisit.where(stage_id: stage.id)).to exist
+      end
+
+      it 'reports the history in the deletion preflight' do
+        get "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}/deletion_check",
+            headers: headers,
+            as: :json
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body['payload']).to include('can_delete' => false, 'block_reason' => 'STAGE_HAS_HISTORY')
+      end
+
+      it 'refuses the destroy at the model level as well' do
+        expect(stage.destroy).to be(false)
+        expect(Crm::Stage.exists?(stage.id)).to be(true)
+      end
     end
 
     it 'answers 422 instead of 500 when a late dependent record blocks the destroy' do

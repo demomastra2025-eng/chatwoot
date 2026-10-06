@@ -7,8 +7,8 @@ class Crm::StageVisit < ApplicationRecord
 
   belongs_to :account, class_name: '::Account'
   belongs_to :deal, class_name: '::Crm::Deal', inverse_of: :stage_visits
-  # Deleting an emptied pipeline or stage keeps the visit (its pipeline_name and
-  # stage_name snapshots) and only clears the link, so the reports keep the history.
+  # Where pipeline_id and stage_id accept NULL, deleting an emptied pipeline or stage keeps the visit (its
+  # pipeline_name and stage_name snapshots) and only clears the link, so the reports keep the history.
   belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stage_visits, optional: true
   belongs_to :stage, class_name: '::Crm::Stage', inverse_of: :stage_visits, optional: true
 
@@ -26,6 +26,11 @@ class Crm::StageVisit < ApplicationRecord
 
   scope :active, -> { where(exited_at: nil) }
   scope :ordered, -> { order(entered_at: :asc, id: :asc) }
+
+  # False on databases where the columns are still NOT NULL: a pipeline or stage with visits cannot be deleted there.
+  def self.references_detachable?
+    columns_hash.values_at('pipeline_id', 'stage_id').all? { |column| column&.null }
+  end
 
   def active?
     exited_at.nil?

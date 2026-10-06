@@ -43,8 +43,16 @@ class Crm::Pipeline < ApplicationRecord
   before_validation :assign_position, on: :create
   before_validation :disable_default_when_inactive
   before_save :clear_other_defaults, if: :reassigning_default?
+  before_destroy :ensure_stage_visits_detachable, prepend: true
 
   private
+
+  def ensure_stage_visits_detachable
+    return if ::Crm::StageVisit.references_detachable? || !stage_visits.exists?
+
+    errors.add(:base, 'deals have passed through this pipeline')
+    throw :abort
+  end
 
   def assign_position
     return if position.present?

@@ -372,27 +372,55 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
   end
 
-  it 'deletes an empty pipeline that deals have passed through and keeps their stage history' do
-    pipeline = create(:crm_pipeline, account: account, active: false, default: false)
-    stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Old negotiation')
-    other_pipeline = create(:crm_pipeline, account: account, active: true, default: false)
-    other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
-    visit = create(:crm_stage_visit, deal: deal, stage: stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
-    deal.update_columns(pipeline_id: other_pipeline.id, stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+  context 'when deals have passed through an emptied pipeline' do
+    let(:pipeline) { create(:crm_pipeline, account: account, active: false, default: false) }
+    let(:stage) { create(:crm_stage, account: account, pipeline: pipeline, name: 'Old negotiation') }
+    let(:deal) { create(:crm_deal, account: account, pipeline: pipeline, stage: stage) }
 
-    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+    before do
+      other_pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+      other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+      create(:crm_stage_visit, deal: deal, stage: stage, entered_at: 2.hours.ago, exited_at: 1.hour.ago)
+      deal.update_columns(pipeline_id: other_pipeline.id, stage_id: other_stage.id) # rubocop:disable Rails/SkipsModelValidations
+    end
 
-    expect(response).to have_http_status(:no_content)
-    expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
-    expect(account.crm_stages.where(id: stage.id)).not_to exist
-    expect(visit.reload).to have_attributes(
-      deal_id: deal.id,
-      pipeline_id: nil,
-      stage_id: nil,
-      pipeline_name: pipeline.name,
-      stage_name: 'Old negotiation'
-    )
+    context 'when the history references can be detached' do
+      include_context 'with detachable crm stage visit references'
+
+      it 'deletes the pipeline and keeps their stage history' do
+        visit = Crm::StageVisit.find_by!(deal_id: deal.id)
+
+        delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+        expect(response).to have_http_status(:no_content)
+        expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
+        expect(account.crm_stages.where(id: stage.id)).not_to exist
+        expect(visit.reload).to have_attributes(
+          deal_id: deal.id,
+          pipeline_id: nil,
+          stage_id: nil,
+          pipeline_name: pipeline.name,
+          stage_name: 'Old negotiation'
+        )
+      end
+    end
+
+    context 'when the history references are still NOT NULL (schema as created by 20261004120000)' do
+      it 'answers 422 PIPELINE_HAS_HISTORY instead of a database error and keeps everything' do
+        delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['code']).to eq('PIPELINE_HAS_HISTORY')
+        expect(account.crm_pipelines.where(id: pipeline.id)).to exist
+        expect(account.crm_stages.where(id: stage.id)).to exist
+        expect(Crm::StageVisit.where(deal_id: deal.id)).to exist
+      end
+
+      it 'refuses the destroy at the model level as well' do
+        expect(pipeline.destroy).to be(false)
+        expect(Crm::Pipeline.exists?(pipeline.id)).to be(true)
+      end
+    end
   end
 
   it 'promotes the next active pipeline after deleting the default pipeline' do
@@ -434,27 +462,32 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_stages.where(id: stage.id)).to exist
   end
 
-  it 'deletes the pipeline once its deals were moved to another pipeline' do
-    pipeline = create(:crm_pipeline, account: account, active: true, default: false)
-    stage = create(:crm_stage, account: account, pipeline: pipeline)
-    other_pipeline = create(:crm_pipeline, account: account, active: true, default: false)
-    other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
+  # Moving a deal leaves stage history behind, so this rule needs the history references to be detachable.
+  context 'when the history references can be detached' do
+    include_context 'with detachable crm stage visit references'
 
-    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
+    it 'deletes the pipeline once its deals were moved to another pipeline' do
+      pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+      stage = create(:crm_stage, account: account, pipeline: pipeline)
+      other_pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+      other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+      deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage)
 
-    post "/api/v1/accounts/#{account.id}/crm/deals/#{deal.id}/transition_stage",
-         params: { stage_id: other_stage.id, lock_version: deal.lock_version },
-         headers: headers, as: :json
-    expect(response).to have_http_status(:ok), response.body
-    expect(deal.reload.pipeline_id).to eq(other_pipeline.id)
+      delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
 
-    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+      post "/api/v1/accounts/#{account.id}/crm/deals/#{deal.id}/transition_stage",
+           params: { stage_id: other_stage.id, lock_version: deal.lock_version },
+           headers: headers, as: :json
+      expect(response).to have_http_status(:ok), response.body
+      expect(deal.reload.pipeline_id).to eq(other_pipeline.id)
 
-    expect(response).to have_http_status(:no_content)
-    expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
-    expect(deal.reload.pipeline_id).to eq(other_pipeline.id)
+      delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
+      expect(deal.reload.pipeline_id).to eq(other_pipeline.id)
+    end
   end
 
   it 'returns forbidden when crm_deals is disabled' do

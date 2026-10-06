@@ -169,6 +169,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   def stage_deletion_blocker
     return 'STANDARD_STAGE_LOCKED' if @stage.system_stage?
     return 'STAGE_HAS_DEALS' if @stage.deals.exists?
+    return 'STAGE_HAS_HISTORY' if ::Crm::DealPresenceGuard.history_blocked?(@stage)
     return 'DEFAULT_STAGE_REQUIRES_FALLBACK' if @stage.outcome_open? && @stage.default? && default_stage_fallback.blank?
 
     nil

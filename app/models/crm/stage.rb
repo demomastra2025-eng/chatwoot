@@ -116,6 +116,7 @@ class Crm::Stage < ApplicationRecord
   before_validation :assign_position, on: :create
   before_save :clear_other_default_stages, if: :default?
   before_create :shift_sibling_positions_for_insert
+  before_destroy :ensure_stage_visits_detachable, prepend: true
 
   def terminal_outcome?
     outcome.in?(TERMINAL_OUTCOMES)
@@ -134,6 +135,13 @@ class Crm::Stage < ApplicationRecord
   end
 
   private
+
+  def ensure_stage_visits_detachable
+    return if ::Crm::StageVisit.references_detachable? || !stage_visits.exists?
+
+    errors.add(:base, 'deals have passed through this stage')
+    throw :abort
+  end
 
   def assign_position
     return if position.present?
