@@ -144,6 +144,37 @@ RSpec.describe 'Telephony webphone leg reported after the call was taken', type:
     end
   end
 
+  context 'when the claim of a non-oldest leg is committed but its own closer has not run yet' do
+    # The claim is copied onto the oldest leg (the fence) as well as the
+    # claimer's leg. A late report that is admitted in this window must close
+    # only itself, whichever of the two it finds as the owner.
+    let(:claimer_leg) { leg_session(profiles[1], 'sip-call-id-1') }
+
+    before do
+      report_leg(profiles[0], 'sip-call-id-0')
+      report_leg(profiles[1], 'sip-call-id-1')
+      allow_any_instance_of(Telephony::OperatorCallClaimService).to receive(:close_sibling_legs!) # rubocop:disable RSpec/AnyInstance
+      claim!(1, claimer_leg)
+      report_leg(profiles[2], 'sip-call-id-2')
+    end
+
+    it 'closes only the late leg and keeps the claimer leg open' do
+      expect(leg_session(profiles[2], 'sip-call-id-2')).to have_attributes(status: 'no_answer', end_reason: 'answered_by_other_operator')
+      expect(claimer_leg.reload.status).to eq('connecting')
+      expect(claimer_leg.end_reason).to be_nil
+    end
+
+    it 'leaves the claimer able to answer once its own closer has run' do
+      Telephony::SiblingLegCloser.new(call_session: claimer_leg.reload).perform
+
+      expect(leg_session(profiles[0], 'sip-call-id-0').status).to eq('no_answer')
+      expect(claimer_leg.reload.status).to eq('connecting')
+      expect { answer!(1, claimer_leg) }.not_to raise_error
+      expect(claimer_leg.reload).to have_attributes(status: 'in_progress')
+      expect(claimer_leg.answered_at).to be_present
+    end
+  end
+
   context 'when nobody claimed the call yet' do
     it 'still rings every operator who reports' do
       report_leg(profiles[0], 'sip-call-id-0')

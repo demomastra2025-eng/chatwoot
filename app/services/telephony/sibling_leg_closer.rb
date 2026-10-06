@@ -18,6 +18,11 @@ class Telephony::SiblingLegCloser
   # call (the claim closes only the legs that exist at that instant). Such a leg
   # is closed as soon as it is admitted, before it rings. Nothing changes for a
   # call nobody owns, or whose owner is over: that is a call that rings.
+  #
+  # Only the late leg is closed. The owner found here may be the claim fence
+  # (the oldest leg, which carries a copy of the claim) and not the leg of the
+  # operator who really took the call; closing "every other leg" from it would
+  # close the claimer's own leg while the claimer's closer has not run yet.
   def self.close_late_leg(leg)
     return leg unless Telephony::SiblingLegGrouping.applies?(provider: leg.provider, direction: leg.direction)
     return leg if leg.terminal?
@@ -25,7 +30,7 @@ class Telephony::SiblingLegCloser
     owner = Telephony::SiblingLegGrouping.owner_leg(leg, except: leg)
     return leg if owner.blank?
 
-    new(call_session: owner).perform
+    new(call_session: owner).close_only!(leg)
     leg.reload
   end
 
@@ -43,6 +48,15 @@ class Telephony::SiblingLegCloser
     end
   end
 
+  # Closes this one leg of the group and leaves the others alone.
+  def close_only!(leg)
+    return unless answered_leg? && closable_leg?(leg)
+
+    Telephony::CallIntakeLock.with_lock(account_id: call_session.account_id, phone_number: call_session.from_number) do
+      close_leg!(leg)
+    end
+  end
+
   private
 
   attr_reader :call_session
@@ -53,14 +67,16 @@ class Telephony::SiblingLegCloser
   end
 
   def open_sibling_legs
-    call_session.logical_group_sessions.select do |leg|
-      leg.id != call_session.id &&
-        leg.account_id == call_session.account_id &&
-        leg.provider == call_session.provider &&
-        leg.direction == 'inbound' &&
-        leg.answered_at.blank? &&
-        OPEN_STATUSES.include?(leg.canonical_status)
-    end
+    call_session.logical_group_sessions.select { |leg| closable_leg?(leg) }
+  end
+
+  def closable_leg?(leg)
+    leg.id != call_session.id &&
+      leg.account_id == call_session.account_id &&
+      leg.provider == call_session.provider &&
+      leg.direction == 'inbound' &&
+      leg.answered_at.blank? &&
+      OPEN_STATUSES.include?(leg.canonical_status)
   end
 
   def close_leg!(sibling)
