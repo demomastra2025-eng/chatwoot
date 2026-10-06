@@ -21,6 +21,7 @@ class Telephony::LogicalCallHistoryQuery
     @limit = limit
     @status = Telephony::CallSession.normalize_status(status) || status.to_s.presence
     @candidate_relation = status.present? ? @relation.where(status: status_values) : @relation
+    @candidate_ids = Set.new
   end
 
   def call
@@ -34,7 +35,7 @@ class Telephony::LogicalCallHistoryQuery
 
   private
 
-  attr_reader :candidate_relation, :relation, :limit, :status
+  attr_reader :candidate_relation, :candidate_ids, :relation, :limit, :status
 
   def scan_groups
     sessions_by_id = {}
@@ -46,7 +47,9 @@ class Telephony::LogicalCallHistoryQuery
       break if batch.empty?
 
       batch.each { |session| sessions_by_id[session.id] = session }
+      candidate_ids.merge(batch.map(&:id))
       load_missing_group_parents(sessions_by_id, batch)
+      load_group_siblings(sessions_by_id, batch)
       groups = build_groups(sessions_by_id.values)
       break if matching_groups(groups).size >= limit
       break if batch.size < batch_size
@@ -76,6 +79,41 @@ class Telephony::LogicalCallHistoryQuery
       candidate if canonical == status
     end
     [status, *aliases]
+  end
+
+  # A status filter loads only the rows that have that status. The group of such
+  # a row must be complete before its representative is chosen: the leg that was
+  # answered (and so has another status) decides what the logical call is, and
+  # without it an answered call would be shown as missed. Legs of one logical
+  # call are created within seconds of each other, so the rows around the
+  # selected ones are loaded and the grouping itself is left to build_groups.
+  def load_group_siblings(sessions_by_id, batch)
+    return if status.blank?
+
+    inbound = batch.select { |session| session.direction == 'inbound' }
+    return if inbound.empty?
+
+    windows = sibling_windows(inbound)
+    siblings = relation.where(direction: 'inbound', provider: inbound.map(&:provider).uniq, inbox_id: inbound.map(&:inbox_id).uniq)
+                       .where(windows.map { 'created_at BETWEEN ? AND ?' }.join(' OR '), *windows.flatten)
+                       .to_a.reject { |session| sessions_by_id.key?(session.id) }
+    return if siblings.empty?
+
+    siblings.each { |session| sessions_by_id[session.id] = session }
+    load_missing_group_parents(sessions_by_id, siblings)
+  end
+
+  def sibling_windows(sessions)
+    window = Telephony::CallSession::LogicalGrouping::LOGICAL_GROUP_WINDOW
+    sessions.map(&:created_at).sort.each_with_object([]) do |created_at, windows|
+      from = created_at - window
+      to = created_at + window
+      if windows.any? && from <= windows.last[1]
+        windows.last[1] = to
+      else
+        windows << [from, to]
+      end
+    end
   end
 
   def load_missing_group_parents(sessions_by_id, initial_sessions)
@@ -196,7 +234,9 @@ class Telephony::LogicalCallHistoryQuery
   def matching_groups(groups)
     return groups if status.blank?
 
-    groups.select { |group| group.fetch(:representative).canonical_status == status }
+    groups.select do |group|
+      group.fetch(:session_ids).intersect?(candidate_ids) && group.fetch(:representative).canonical_status == status
+    end
   end
 
   def group_sort_key(group)

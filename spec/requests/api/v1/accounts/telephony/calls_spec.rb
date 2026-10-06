@@ -178,6 +178,46 @@ RSpec.describe 'Telephony Calls API', type: :request do
       expect(response.parsed_body).to include('payload' => [], 'meta' => { 'count' => 0 })
     end
 
+    it 'does not report a call as missed when it was answered on a leg other than the root' do
+      logical_key = 'janus-inbound:non-root-winner'
+      root_ref = 'sipuni:janus:1:root-leg'
+      create_history_session(
+        call_ref: root_ref, status: 'no_answer', logical_key: logical_key, group_ref: root_ref,
+        created_at: 30.seconds.ago, ended_at: 20.seconds.ago
+      )
+      winner = create_history_session(
+        call_ref: 'sipuni:janus:2:winner-leg', status: 'completed', logical_key: logical_key, group_ref: root_ref,
+        created_at: 29.seconds.ago, answered_at: 25.seconds.ago, ended_at: 5.seconds.ago
+      )
+      create_history_session(
+        call_ref: 'sipuni:janus:3:other-leg', status: 'no_answer', logical_key: logical_key, group_ref: root_ref,
+        created_at: 28.seconds.ago, ended_at: 20.seconds.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { status: 'no_answer' }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('payload' => [], 'meta' => { 'count' => 0 })
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { status: 'completed' }, headers: headers
+
+      expect(response.parsed_body['payload']).to contain_exactly(include('id' => winner.id, 'status' => 'completed'))
+    end
+
+    it 'still returns a logical call that nobody answered when its legs are closed as no answer' do
+      logical_key = 'janus-inbound:nobody-answered'
+      root_ref = 'sipuni:janus:1:unanswered-root'
+      root = create_history_session(call_ref: root_ref, status: 'no_answer', logical_key: logical_key, group_ref: root_ref,
+                                    created_at: 30.seconds.ago)
+      create_history_session(call_ref: 'sipuni:janus:2:unanswered-leg', status: 'no_answer', logical_key: logical_key, group_ref: root_ref,
+                             created_at: 29.seconds.ago)
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { status: 'no_answer' }, headers: headers
+
+      expect(response.parsed_body['payload'].size).to eq(1)
+      expect(response.parsed_body['payload'].first['call_ref']).to be_in([root.external_call_ref, 'sipuni:janus:2:unanswered-leg'])
+    end
+
     it 'applies the limit to distinct logical calls and keeps separate real calls separate' do
       newest_ref = 'sipuni:janus:79:newest-call-id'
       5.times do |index|
