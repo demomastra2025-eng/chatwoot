@@ -1401,7 +1401,7 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.PIPELINES'),
         icon: 'i-lucide-briefcase-business',
         to: accountScopedRoute('crm_deals_index'),
-        activeOn: ['crm_deals_index', 'crm_settings_index'],
+        activeOn: ['crm_deals_index', 'crm_deal_show', 'crm_settings_index'],
       },
       {
         name: 'CRM Tasks',

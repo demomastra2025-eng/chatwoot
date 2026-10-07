@@ -1794,6 +1794,48 @@ it('names the system stage like the board in the list stage menu', async () => {
   }
 });
 
+it('opens a deal even when the scroll position cannot be remembered', async () => {
+  const { state } = await mountPage();
+  state.currentPresentation = 'list';
+  await flushPromises();
+  const setItem = vi
+    .spyOn(Storage.prototype, 'setItem')
+    .mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+
+  try {
+    expect(() => state.openDealPage(deal(11))).not.toThrow();
+  } finally {
+    setItem.mockRestore();
+  }
+
+  expect(runtime.routerPush).toHaveBeenCalledWith(
+    expect.objectContaining({
+      name: 'crm_deal_show',
+      params: { accountId: 1, dealId: 11 },
+    })
+  );
+});
+
+it('returns to the list when the remembered scroll position cannot be read', async () => {
+  const { state } = await mountPage();
+  const getItem = vi
+    .spyOn(Storage.prototype, 'getItem')
+    .mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+
+  try {
+    await expect(state.restoreDealListScroll()).resolves.toBeUndefined();
+  } finally {
+    getItem.mockRestore();
+  }
+
+  sessionStorage.setItem('crm-deals-return-scroll:1', '{not json');
+  await expect(state.restoreDealListScroll()).resolves.toBeUndefined();
+});
+
 it('drops a pending debounced reload when the page unmounts', async () => {
   const { state, wrapper } = await mountPage();
   CrmDealsAPI.get.mockClear();

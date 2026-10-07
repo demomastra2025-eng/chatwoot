@@ -255,6 +255,28 @@ describe('Sidebar', () => {
     });
   });
 
+  describe('CRM group', () => {
+    it('keeps the deals item highlighted on a deal page', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'crm_deal_show',
+      });
+      const crm = sidebarGroup(wrapper, 'CRM');
+
+      expect(crm.props('activeOn')).toContain('crm_deal_show');
+      expect(crm.vm.isActive).toBe(true);
+    });
+
+    it('does not highlight the deals item on other pages', async () => {
+      const wrapper = await mountSidebar({
+        permissions: ADMINISTRATOR,
+        routeName: 'contacts_dashboard_index',
+      });
+
+      expect(sidebarGroup(wrapper, 'CRM').vm.isActive).toBe(false);
+    });
+  });
+
   describe('AI group', () => {
     it('is labelled «AI Агенты» and lists the AI pages without icons', async () => {
       const wrapper = await mountSidebar({

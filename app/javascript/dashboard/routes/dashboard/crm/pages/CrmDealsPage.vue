@@ -2156,15 +2156,20 @@ const openDealPage = deal => {
       ? dealBoardRef.value?.$el
       : dealsListScrollRef.value;
   if (scrollElement) {
-    sessionStorage.setItem(
-      `${DEALS_RETURN_SCROLL_STORAGE_KEY}:${accountId.value}`,
-      JSON.stringify({
-        left: scrollElement.scrollLeft,
-        presentation: currentPresentation.value,
-        query: route.query,
-        top: scrollElement.scrollTop,
-      })
-    );
+    try {
+      sessionStorage.setItem(
+        `${DEALS_RETURN_SCROLL_STORAGE_KEY}:${accountId.value}`,
+        JSON.stringify({
+          left: scrollElement.scrollLeft,
+          presentation: currentPresentation.value,
+          query: route.query,
+          top: scrollElement.scrollTop,
+        })
+      );
+    } catch {
+      // Remembering the scroll position is optional; opening the deal is not
+      // (storage can be blocked or full).
+    }
   }
 
   router.push({
@@ -2176,12 +2181,18 @@ const openDealPage = deal => {
 
 const restoreDealListScroll = async () => {
   const key = `${DEALS_RETURN_SCROLL_STORAGE_KEY}:${accountId.value}`;
-  const saved = sessionStorage.getItem(key);
-  if (!saved) return;
-  sessionStorage.removeItem(key);
-
-  const position = JSON.parse(saved);
+  let position;
+  try {
+    const saved = sessionStorage.getItem(key);
+    if (!saved) return;
+    sessionStorage.removeItem(key);
+    position = JSON.parse(saved);
+  } catch {
+    // Blocked storage or a damaged entry only costs the scroll position.
+    return;
+  }
   if (
+    !position ||
     position.presentation !== currentPresentation.value ||
     JSON.stringify(position.query) !== JSON.stringify(route.query)
   ) {
