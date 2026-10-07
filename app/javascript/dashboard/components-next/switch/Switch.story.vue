@@ -48,8 +48,9 @@ const onChange = value => {
     </Variant>
 
     <Variant title="Disabled">
-      <div class="p-2">
-        <Switch v-model="isEnabled" disabled />
+      <div class="p-2 space-y-4">
+        <Switch v-model="defaultValue" disabled />
+        <Switch v-model="checkedValue" disabled />
       </div>
     </Variant>
   </Story>
