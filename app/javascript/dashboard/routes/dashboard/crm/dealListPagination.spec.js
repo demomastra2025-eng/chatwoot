@@ -42,16 +42,25 @@ vi.mock('vue-i18n', () => ({
     t: key => key,
   }),
 }));
-vi.mock('vue-router', () => ({
-  onBeforeRouteLeave: vi.fn(),
-  useRoute: () => ({ query: runtime.routeQuery, params: runtime.routeParams }),
-  useRouter: () => ({
-    back: runtime.routerBack,
-    push: runtime.routerPush,
-    replace: runtime.routerReplace,
-    resolve: vi.fn(() => ({ href: '/app/accounts/1/contacts/edit' })),
-  }),
-}));
+// A partial mock: a module that is imported lazily after a test has finished
+// (dashboard/routes/index.js) still needs the real createRouter.
+vi.mock('vue-router', async importOriginal => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    onBeforeRouteLeave: vi.fn(),
+    useRoute: () => ({
+      query: runtime.routeQuery,
+      params: runtime.routeParams,
+    }),
+    useRouter: () => ({
+      back: runtime.routerBack,
+      push: runtime.routerPush,
+      replace: runtime.routerReplace,
+      resolve: vi.fn(() => ({ href: '/app/accounts/1/contacts/edit' })),
+    }),
+  };
+});
 vi.mock('dashboard/api/crm/deals', () => ({
   default: new Proxy(
     {
