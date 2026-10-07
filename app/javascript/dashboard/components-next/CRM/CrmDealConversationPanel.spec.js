@@ -13,6 +13,7 @@ vi.mock('vue-i18n', () => ({
 }));
 
 const mountPanel = ({
+  active = true,
   canManage = true,
   communicationThreadDisplayId = '',
   communicationThreadId = '',
@@ -23,9 +24,12 @@ const mountPanel = ({
   conversationDisplayId = 185,
   placeholderI18nPrefix = 'CRM.DEALS.CONVERSATION_PLACEHOLDER',
   selectedContactId = '',
+  showOpenFullScreen = false,
+  inline = false,
 } = {}) =>
   mount(CrmDealConversationPanel, {
     props: {
+      active,
       canManage,
       communicationThreadDisplayId,
       communicationThreadId,
@@ -36,9 +40,12 @@ const mountPanel = ({
       conversationId,
       placeholderI18nPrefix,
       selectedContactId,
+      showOpenFullScreen,
+      inline,
       visible: true,
     },
     global: {
+      mocks: { $t: key => key },
       stubs: {
         Button: {
           props: ['disabled', 'label'],
@@ -173,6 +180,24 @@ describe('CrmDealConversationPanel', () => {
     });
     expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
     expect(wrapper.find('spinner-stub').exists()).toBe(false);
+  });
+
+  it('keeps the inline chat mounted for mobile tabs and exposes the full screen action', async () => {
+    const wrapper = mountPanel({
+      active: false,
+      inline: true,
+      showOpenFullScreen: true,
+    });
+    await flushPromises();
+
+    expect(wrapper.find('[class*="lg:w-[42%]"]').exists()).toBe(true);
+    expect(wrapper.find('[class*="hidden lg:flex"]').exists()).toBe(true);
+    const openButton = wrapper.find('header button');
+    expect(openButton.text()).toBe(
+      'CRM.DEALS.CONVERSATION_PLACEHOLDER.OPEN_FULL_SCREEN'
+    );
+    await openButton.trigger('click');
+    expect(wrapper.emitted('openFullScreen')).toHaveLength(1);
   });
 
   it('loads by display id when internal id is missing/invalid', async () => {

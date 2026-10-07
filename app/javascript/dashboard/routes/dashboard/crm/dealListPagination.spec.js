@@ -68,7 +68,7 @@ vi.mock('dashboard/api/companies', () => ({
   default: { get: vi.fn() },
 }));
 vi.mock('dashboard/api/contacts', () => ({
-  default: { get: vi.fn(), getCommunicationThreads: vi.fn() },
+  default: { get: vi.fn(), getCommunicationThreads: vi.fn(), show: vi.fn() },
 }));
 vi.mock('dashboard/api/conversations', () => ({
   default: { create: vi.fn(), get: vi.fn() },
@@ -170,6 +170,7 @@ beforeEach(() => {
   CrmDealsAPI.timeline.mockReset().mockResolvedValue(response([]));
   CrmDealsAPI.update.mockReset();
   ContactAPI.get.mockResolvedValue(response([]));
+  ContactAPI.show.mockReset();
   CompanyAPI.get.mockResolvedValue(response([]));
   ConversationAPI.create.mockReset();
   ContactAPI.getCommunicationThreads
@@ -341,6 +342,79 @@ it('loads a deep-linked deal without loading the board', async () => {
   expect(state.selectedDeal.id).toBe(11);
   expect(state.drawerOpen).toBe(true);
   expect(wrapper.find('.modal-mask').exists()).toBe(false);
+  expect(wrapper.find('[data-testid="crm-deal-card"]').exists()).toBe(true);
+  expect(wrapper.find('[data-testid="crm-deal-chat"]').exists()).toBe(true);
+});
+
+it('keeps a linked dialog beside the card on the deal URL', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(
+    response({
+      ...deal(11),
+      originatingConversationId: 11963,
+      originatingConversationDisplayId: 185,
+    })
+  );
+
+  const { state, wrapper } = await mountPage();
+  const card = wrapper.find('[data-testid="crm-deal-card"]');
+  const chat = wrapper.find('[data-testid="crm-deal-chat"]');
+
+  expect(card.classes()).toContain('lg:w-[58%]');
+  expect(chat.exists()).toBe(true);
+  expect(state.linkedConversationDisplayId).toBe('185');
+  expect(runtime.routerPush).not.toHaveBeenCalled();
+});
+
+it('switches between card and chat on narrow screens without changing route', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(
+    response({ ...deal(11), originatingConversationDisplayId: 185 })
+  );
+
+  const { state, wrapper } = await mountPage();
+  const tabs = wrapper.findAll('[role="tablist"] [role="tab"]');
+  expect(tabs).toHaveLength(2);
+  expect(tabs[0].attributes('aria-selected')).toBe('true');
+  expect(state.dealPageTab).toBe('deal');
+
+  await tabs[1].trigger('click');
+  expect(tabs[1].attributes('aria-selected')).toBe('true');
+  expect(wrapper.find('[data-testid="crm-deal-card"]').classes()).toContain(
+    'hidden'
+  );
+  expect(state.dealPageTab).toBe('chat');
+  expect(wrapper.find('[data-testid="crm-deal-chat"]').exists()).toBe(true);
+  expect(runtime.routerPush).not.toHaveBeenCalled();
+
+  await tabs[0].trigger('click');
+  expect(tabs[0].attributes('aria-selected')).toBe('true');
+  expect(wrapper.find('[data-testid="crm-deal-card"]').classes()).toContain(
+    'flex'
+  );
+});
+
+it('keeps the deal URL after creating a dialog from its chat panel', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  CrmDealsAPI.update.mockResolvedValueOnce(
+    response({
+      ...deal(11),
+      dealContacts: [{ contactId: 7 }],
+      primaryContactId: 7,
+    })
+  );
+  ContactAPI.show.mockResolvedValue(response({ id: 7, name: 'Test' }));
+  ConversationAPI.create.mockResolvedValueOnce({
+    data: { display_id: 185, id: 11963 },
+  });
+
+  const { state } = await mountPage();
+  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+
+  expect(ConversationAPI.create).toHaveBeenCalled();
+  expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(41);
+  expect(runtime.routerPush).not.toHaveBeenCalled();
 });
 
 it('shows a retryable page error when a deep-linked deal cannot load', async () => {
