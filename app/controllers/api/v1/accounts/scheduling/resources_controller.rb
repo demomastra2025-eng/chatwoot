@@ -11,15 +11,18 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   def index
     resources = Current.account.scheduling_resources.ordered
     resources = resources.active unless parse_boolean(params[:include_inactive])
+    resources = resources.to_a
+    schedules = provider_schedules(resources)
 
     render_payload(
-      resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
+      resources.map { |resource| Scheduling::PayloadBuilder.resource(resource, provider_schedule: schedules[resource]) },
       meta: { count: resources.size }
     )
   end
 
   def show
-    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
+    schedule = provider_schedules([@scheduling_resource])[@scheduling_resource]
+    render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource, provider_schedule: schedule))
   end
 
   def create
@@ -39,6 +42,10 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   private
+
+  def provider_schedules(resources)
+    Integrations::Medelement::ProviderSchedulePresenter.new(account: Current.account, resources: resources).payloads
+  end
 
   def resource_params
     normalize_integer_numeric_params!(

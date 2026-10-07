@@ -1,6 +1,12 @@
 {
   "SCHEDULING": {
     "RESOURCES": {
+      "PROVIDER_SCHEDULE_TITLE": "График из MedElement",
+      "PROVIDER_NOT_LOADED": "График MedElement пока не загружен.",
+      "PROVIDER_UPDATED": "Обновлено {count} минут назад",
+      "PROVIDER_DAY_OFF": "Нет рабочих часов",
+      "PROVIDER_UNVERIFIED": "Данные пока не подтверждены",
+      "PROVIDER_DIFFERS": "График отличается от местных правил расписания.",
       "MEDELEMENT_TEMPLATE_HINT": "типовой шаблон OneLink, не график MedElement"
     },
     "CALENDAR": {

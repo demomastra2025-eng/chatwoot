@@ -38,6 +38,30 @@ RSpec.describe Integrations::Medelement::SyncCoordinatorService do
     expect(services_sync).to have_received(:perform).once
   end
 
+  it 'runs schedules after specialists and skips both when specialist sync is disabled' do
+    specialists_sync = instance_double(Integrations::Medelement::SpecialistsSyncService, perform: {}, returned_codes: [])
+    schedules_sync = instance_double(Integrations::Medelement::SchedulesSyncService, perform: { request_count: 2 })
+    allow(configuration).to receive(:sync_specialists?).and_return(true)
+    allow(Integrations::Medelement::SpecialistsSyncService).to receive(:new).and_return(specialists_sync)
+    allow(Integrations::Medelement::SchedulesSyncService).to receive(:new).and_return(schedules_sync)
+
+    expect(specialists_sync).to receive(:perform).ordered
+    expect(schedules_sync).to receive(:perform).ordered
+    described_class.new(hook: hook).perform(phases: %w[specialists schedules])
+
+    allow(configuration).to receive(:sync_specialists?).and_return(false)
+    described_class.new(hook: hook).perform(phases: %w[specialists schedules])
+  end
+
+  it 'does not call the provider when the hook is disabled' do
+    allow(hook).to receive(:disabled?).and_return(true)
+    allow(client).to receive(:timetable)
+
+    expect { described_class.new(hook: hook).perform(phases: ['schedules']) }
+      .to raise_error(described_class::SyncUnavailableError)
+    expect(client).not_to have_received(:timetable)
+  end
+
   it 'marks an unavailable optional catalog as partial and continues with later phases' do
     sync_run = instance_double(
       Integrations::Medelement::SyncRun,

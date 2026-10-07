@@ -33,7 +33,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
         name: "integrations_medelement_hook_#{hook.id}_operational",
         klass: 'Integrations::Medelement::ScheduledSyncJob',
         cron: '0,15,30,45 * * * * Asia/Almaty',
-        args: [hook.id, %w[specialists]],
+        args: [hook.id, %w[specialists schedules]],
         active_job: true,
         queue: 'scheduled_jobs',
         status: 'enabled'

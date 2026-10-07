@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_05_190100) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_07_000000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2205,6 +2205,27 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_05_190100) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_macros_on_account_id"
+  end
+
+  create_table "medelement_schedule_days", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id", null: false
+    t.bigint "resource_id", null: false
+    t.string "specialist_code", null: false
+    t.date "date", null: false
+    t.jsonb "windows", default: [], null: false
+    t.string "status", default: "unverified", null: false
+    t.integer "consecutive_empty_count", default: 0, null: false
+    t.datetime "source_checked_at"
+    t.datetime "last_attempted_at"
+    t.string "raw_digest"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "resource_id", "date"], name: "idx_medelement_schedule_days_resource_date"
+    t.index ["hook_id", "specialist_code", "date"], name: "idx_medelement_schedule_days_provider_day", unique: true
+    t.index ["account_id"], name: "index_medelement_schedule_days_on_account_id"
+    t.index ["hook_id"], name: "index_medelement_schedule_days_on_hook_id"
+    t.index ["resource_id"], name: "index_medelement_schedule_days_on_resource_id"
   end
 
   create_table "medelement_provider_commands", force: :cascade do |t|

@@ -75,6 +75,14 @@ class Integrations::Medelement::SyncCoordinatorService
     result
   end
 
+  def sync_schedules
+    return :disabled unless configuration.sync_specialists?
+
+    Integrations::Medelement::SchedulesSyncService.new(
+      hook: hook, client: client, configuration: configuration
+    ).perform
+  end
+
   def sync_services
     return :disabled unless configuration.sync_services?
 

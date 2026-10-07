@@ -239,7 +239,7 @@ module Scheduling::PayloadBuilder
     }
   end
 
-  def resource(resource)
+  def resource(resource, provider_schedule: nil)
     {
       id: resource.id,
       account_id: resource.account_id,
@@ -258,7 +258,7 @@ module Scheduling::PayloadBuilder
       custom_attributes: resource.custom_attributes,
       created_at: resource.created_at&.iso8601,
       updated_at: resource.updated_at&.iso8601
-    }
+    }.tap { |payload| payload[:provider_schedule] = provider_schedule if provider_schedule }
   end
 
   def service(service, prices: nil)

@@ -22,6 +22,7 @@ import SchedulingErrorState from 'dashboard/components-next/Scheduling/Schedulin
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import ProviderScheduleCard from './ProviderScheduleCard.vue';
 import { RESOURCE_COLORS, WEEKDAY_VALUES } from '../constants';
 import {
   formatSchedulingErrorMessage,
@@ -660,6 +661,11 @@ onMounted(async () => {
           >
             {{ resource.description }}
           </p>
+
+          <ProviderScheduleCard
+            v-if="resource.providerSchedule"
+            :schedule="resource.providerSchedule"
+          />
 
           <div class="mt-auto flex items-center justify-between gap-3">
             <div class="inline-flex items-center">

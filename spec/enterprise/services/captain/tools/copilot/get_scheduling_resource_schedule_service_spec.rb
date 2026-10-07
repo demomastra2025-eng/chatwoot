@@ -6,7 +6,7 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceScheduleService do
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:service) { described_class.new(assistant, user: user) }
   let(:resource) { create(:scheduling_resource, account: account, name: 'Aigerim', timezone: 'Asia/Almaty') }
-  let(:monday) { Time.zone.parse('2026-04-20 00:00:00') }
+  let(:monday) { Time.find_zone!('Asia/Almaty').parse('2026-04-20 00:00:00') }
   let(:tuesday) { monday + 1.day }
 
   before do
@@ -16,6 +16,21 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceScheduleService do
   end
 
   describe '#execute' do
+    it 'adds a short labelled provider snapshot note without changing local working windows' do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+      hook = create(:integrations_hook, :medelement, account: account)
+      Integrations::Medelement::ScheduleDay.create!(
+        account: account, hook: hook, resource: resource, specialist_code: 'doctor-1',
+        date: Date.new(2026, 4, 20), status: 'confirmed',
+        windows: [{ start_minute: 600, end_minute: 720 }], source_checked_at: monday + 9.hours
+      )
+
+      payload = JSON.parse(service.execute(resource_id: resource.id, from: monday.iso8601, to: tuesday.iso8601))
+
+      expect(payload['provider_schedule_note']).to include('10:00–12:00', 'по данным MedElement на')
+      expect(payload['days'].first['windows'].first['start_at']).to eq('2026-04-20T09:00:00+05:00')
+    end
+
     it 'labels the seeded OneLink hours as a template for a MedElement doctor' do
       doctor = create(:scheduling_resource, account: account,
                                             custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })

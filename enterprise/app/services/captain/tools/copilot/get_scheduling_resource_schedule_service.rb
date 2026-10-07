@@ -28,7 +28,10 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
       include_time_offs: include_time_offs
     ).perform
 
-    formatted_payload(payload.merge(template_note(resource)))
+    note = provider_note(resource, range_from, range_to)
+    payload = payload.merge(template_note(resource))
+    payload[:provider_schedule_note] = note if note
+    formatted_payload(payload)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -44,6 +47,14 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
     return {} unless sync.default_template?(resource)
 
     { schedule_note: 'типовой шаблон OneLink, не график MedElement' }
+  end
+
+  def provider_note(resource, range_from, range_to)
+    from_date = range_from.in_time_zone(resource.timezone).to_date
+    to_date = (range_to - 1.second).in_time_zone(resource.timezone).to_date
+    return unless from_date == to_date
+
+    Integrations::Medelement::ProviderScheduleNote.for(resource: resource, date: from_date)
   end
 
   def find_resource!(resource_id)

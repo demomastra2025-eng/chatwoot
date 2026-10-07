@@ -49,6 +49,21 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
     expect(payload.to_s).not_to include('fresh')
   end
 
+  it 'labels an existing confirmed snapshot while retaining local-only availability' do
+    resource = create_resource('Provider', custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+    hook = create(:integrations_hook, :medelement, account: account)
+    Integrations::Medelement::ScheduleDay.create!(
+      account: account, hook: hook, resource: resource, specialist_code: 'doctor-1',
+      date: Date.new(2026, 4, 20), status: 'confirmed', source_checked_at: from_time,
+      windows: [{ start_minute: 600, end_minute: 720 }]
+    )
+
+    payload = windows(resource)
+
+    expect(payload['provider_schedule_note']).to include('по данным MedElement на', '10:00–12:00')
+    expect(payload).to include('availability_source' => 'local_rules', 'provider_checked' => false)
+  end
+
   it 'marks no service as not requested and an inactive link as an explicit error' do
     resource = create_resource('Local')
     link(resource, active: false)

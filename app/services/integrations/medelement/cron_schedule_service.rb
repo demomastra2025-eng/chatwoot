@@ -3,7 +3,7 @@ require 'sidekiq/cron/job'
 class Integrations::Medelement::CronScheduleService
   JOB_NAME_PREFIX = 'integrations_medelement_hook'.freeze
   LEGACY_DISPATCH_JOB_NAME = 'integrations_medelement_dispatch_job'.freeze
-  OPERATIONAL_PHASES = %w[specialists].freeze
+  OPERATIONAL_PHASES = %w[specialists schedules].freeze
   CATALOG_PHASES = %w[setup services].freeze
   REALTIME_PHASES = %w[receptions].freeze
   CONTACT_PHASES = %w[contacts].freeze

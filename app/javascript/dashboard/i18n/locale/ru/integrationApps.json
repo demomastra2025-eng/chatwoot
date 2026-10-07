@@ -119,6 +119,7 @@
       "SYNC_PHASE": {
         "SETUP": "Подготовка",
         "SPECIALISTS": "Специалисты",
+        "SCHEDULES": "Графики MedElement",
         "SERVICES": "Услуги",
         "CONTACTS": "Связанные контакты",
         "RECEPTIONS": "Записи"
@@ -129,6 +130,8 @@
         "SYNCED_COUNT": "Обновлено",
         "LINKED_COUNT": "Связано",
         "SKIPPED_COUNT": "Пропущено",
+        "UNVERIFIED_COUNT": "Не подтверждено",
+        "REQUEST_COUNT": "Запросов к MedElement",
         "CREATED_COUNT": "Создано",
         "UPDATED_COUNT": "Изменено",
         "DEACTIVATED_COUNT": "Отключено",

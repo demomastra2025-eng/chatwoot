@@ -41,7 +41,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
   InactiveRunError = Class.new(StandardError)
   self.table_name = 'medelement_sync_runs'
 
-  PHASES = %w[setup specialists services contacts receptions].freeze
+  PHASES = %w[setup specialists schedules services contacts receptions].freeze
   STATUSES = %w[queued running retrying succeeded partial failed].freeze
   TERMINAL_STATUSES = %w[succeeded partial failed].freeze
   TRIGGERS = %w[manual scheduled retry].freeze

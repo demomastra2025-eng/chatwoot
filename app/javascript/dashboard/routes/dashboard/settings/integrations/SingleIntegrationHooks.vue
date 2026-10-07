@@ -86,6 +86,7 @@ const showHookSyncPanel = computed(
 const syncPhases = [
   'setup',
   'specialists',
+  'schedules',
   'services',
   'contacts',
   'receptions',
@@ -103,6 +104,7 @@ const syncStatusTranslation = {
 const syncPhaseTranslation = {
   setup: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.SETUP',
   specialists: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.SPECIALISTS',
+  schedules: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.SCHEDULES',
   services: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.SERVICES',
   contacts: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.CONTACTS',
   receptions: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.RECEPTIONS',
@@ -178,6 +180,8 @@ const syncCounterTranslation = {
   synced_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.SYNCED_COUNT',
   linked_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.LINKED_COUNT',
   skipped_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.SKIPPED_COUNT',
+  unverified_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.UNVERIFIED_COUNT',
+  request_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.REQUEST_COUNT',
   created_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.CREATED_COUNT',
   updated_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.UPDATED_COUNT',
   deactivated_count:
