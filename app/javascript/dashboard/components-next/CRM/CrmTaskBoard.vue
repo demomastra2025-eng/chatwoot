@@ -8,7 +8,6 @@ import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import { buildTaskTypeResolver } from './taskTypeMetadata';
 import {
   groupTasksByTime,
-  TASK_TIME_BUCKETS,
   taskDueDate,
   visibleTaskTimeBuckets,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
@@ -49,10 +48,6 @@ const props = defineProps({
   filtered: {
     type: Boolean,
     default: false,
-  },
-  pendingTaskIds: {
-    type: Set,
-    default: () => new Set(),
   },
   tasks: {
     type: Array,
@@ -139,20 +134,6 @@ const handleColumnChange = (event, bucket) => {
   if (!event.added || !props.canManage) return;
 
   const task = groupedTasks.value[bucket][event.added.newIndex];
-  emit('changeDueDate', { bucket, task });
-};
-
-const taskBucket = task =>
-  TASK_TIME_BUCKETS.find(bucket =>
-    groupedTasks.value[bucket].some(item => Number(item.id) === Number(task.id))
-  );
-
-const handleBucketSelect = (event, task) => {
-  const bucket = event.target.value;
-  if (!TASK_TIME_BUCKETS.includes(bucket) || bucket === taskBucket(task)) {
-    return;
-  }
-
   emit('changeDueDate', { bucket, task });
 };
 
@@ -270,27 +251,6 @@ const activityTypeMeta = task =>
                   {{ formatDateLabel(task) }}
                 </span>
               </div>
-
-              <select
-                v-if="canManage"
-                data-test="move-task-bucket"
-                class="mt-2 w-full rounded-md border border-n-weak bg-n-surface-1 px-2 py-1.5 text-xs text-n-slate-12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
-                :aria-label="
-                  t('CRM.TASKS.BOARD.MOVE_TO_BUCKET', { title: task.title })
-                "
-                :disabled="pendingTaskIds.has(Number(task.id))"
-                :value="taskBucket(task)"
-                @click.stop
-                @change.stop="handleBucketSelect($event, task)"
-              >
-                <option
-                  v-for="bucket in TASK_TIME_BUCKETS"
-                  :key="bucket"
-                  :value="bucket"
-                >
-                  {{ bucketDisplayMeta[bucket].label }}
-                </option>
-              </select>
 
               <CrmCustomFieldsSummary
                 class="mt-2"
