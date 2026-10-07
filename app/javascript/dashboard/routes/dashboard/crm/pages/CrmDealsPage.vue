@@ -2880,9 +2880,17 @@ const handleBoardSortChange = async sortKey => {
   await loadDeals();
 };
 
-const scheduleDealsReload = useDebounceFn(() => {
-  loadDeals();
+// VueUse 12 debounced functions have no cancel(), so a pending reload would
+// still fire after unmount or an account switch. A generation token makes the
+// cancel() calls below effective.
+let dealsReloadGeneration = 0;
+const debouncedDealsReload = useDebounceFn(generation => {
+  if (generation === dealsReloadGeneration) loadDeals();
 }, 300);
+const scheduleDealsReload = () => debouncedDealsReload(dealsReloadGeneration);
+scheduleDealsReload.cancel = () => {
+  dealsReloadGeneration += 1;
+};
 
 const handleCrmDealRealtimeEvent = payload => {
   if (!Number(payload?.deal_id)) return;

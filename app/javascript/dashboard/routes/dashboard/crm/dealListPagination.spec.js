@@ -1,6 +1,6 @@
 import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { reactive } from 'vue';
+import { nextTick, reactive } from 'vue';
 
 const { runtime, referencesStore } = vi.hoisted(() => ({
   runtime: {
@@ -1263,4 +1263,20 @@ it('invalidates the old workspace request before loading the new workspace', asy
       per_page: 25,
     })
   );
+});
+
+it('drops a pending debounced reload when the page unmounts', async () => {
+  const { state, wrapper } = await mountPage();
+  CrmDealsAPI.get.mockClear();
+  vi.useFakeTimers();
+  try {
+    state.listQuickFilters.q = 'late search';
+    await nextTick();
+    wrapper.unmount();
+    vi.advanceTimersByTime(400);
+  } finally {
+    vi.useRealTimers();
+  }
+
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
 });
