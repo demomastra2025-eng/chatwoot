@@ -4,7 +4,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   let(:account) { create(:account) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:headers) { agent.create_new_auth_token }
-  let(:inbox) { create(:inbox, account: account) }
+  let(:inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
   let(:contact) { create(:contact, account: account, name: 'Иван Иванов') }
   let!(:first_conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, assignee: agent, status: :resolved) }
   let!(:latest_conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, assignee: agent) }
@@ -13,8 +13,9 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   before do
     account.enable_features!('communication_threads')
     create(:inbox_member, user: agent, inbox: inbox)
-    first_conversation.refresh_communication_thread!
-    latest_conversation.refresh_communication_thread!
+    # The conversations were built before the feature was switched on: reload them so they see the account flag.
+    first_conversation.reload.refresh_communication_thread!
+    latest_conversation.reload.refresh_communication_thread!
     latest_conversation.update!(last_activity_at: 1.minute.from_now)
   end
 
@@ -57,7 +58,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     colleague = create(:user, account: account, role: :agent)
     hidden = create(:conversation, account: account, inbox: inbox, contact: contact, assignee: colleague)
-    hidden.refresh_communication_thread!
+    hidden.reload.refresh_communication_thread!
     create(:message, account: account, inbox: inbox, conversation: hidden, content: 'Секретная справка')
 
     conversations = search('conversations', 'Иванов')
@@ -74,7 +75,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     hidden_contact = create(:contact, account: account, name: 'Скрытый Петров')
     hidden = create(:conversation, account: account, inbox: inbox, contact: hidden_contact)
-    hidden.refresh_communication_thread!
+    hidden.reload.refresh_communication_thread!
 
     expect(search('conversations', 'Скрытый Петров')).to be_empty
     contact_result = search('contacts', 'Скрытый Петров').find { |item| item.fetch('id') == hidden_contact.id }
