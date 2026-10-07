@@ -14,22 +14,45 @@ class Reminders::ConversationResolver
     existing_conversation = contact_inbox.conversations.where.not(status: :resolved).order(created_at: :desc).first
     return existing_conversation if existing_conversation.present?
 
-    create_conversation!(contact_inbox)
+    reusable_closed_conversation(contact_inbox) || create_conversation!(contact_inbox)
   end
 
   private
 
+  # Every conversation of the chat is closed and an automated notification must not reopen any of them. It goes into the
+  # latest closed conversation (its status is left alone) when the inbox keeps one conversation per contact, because the
+  # patient's reply lands there too, or when that conversation is itself an earlier notification carrier. Otherwise
+  # create_conversation! makes a new closed carrier. The highest id is used because the incoming-message services of the
+  # chat channels route a reply to the highest id as well.
+  def reusable_closed_conversation(contact_inbox)
+    latest = contact_inbox.conversations.reorder(id: :desc).first
+    return if latest.blank? || latest.contact_id != contact_inbox.contact_id
+    return unless contact_inbox.inbox.lock_to_single_conversation? || latest.automated_outbound_conversation?
+    return if telegram_inbox? && latest.additional_attributes.to_h['chat_id'].blank?
+
+    latest
+  end
+
+  # A conversation that only carries the notification is created already closed and silent: it never shows up in the open
+  # or pending lists and does not raise "new conversation" notifications, auto-assignment, automation or webhook events
+  # and a CRM deal. A reply of the patient reopens it through the incoming message as for any closed conversation.
+  # skip_runtime_events is set on this one record only: Current.suppress_runtime_events would also stop the delivery of
+  # the message (Message#send_reply). A fresh instance is returned so that the flag does not leak into later updates.
   def create_conversation!(contact_inbox)
-    conversation = Conversation.create!(
+    conversation = Conversation.new(
       account_id: reminder.account_id,
       inbox_id: contact_inbox.inbox_id,
       contact_id: contact_inbox.contact_id,
       contact_inbox_id: contact_inbox.id,
-      status: :open,
-      additional_attributes: base_additional_attributes(contact_inbox)
+      status: :resolved,
+      additional_attributes: base_additional_attributes(contact_inbox).stringify_keys.merge(
+        Conversation::AUTOMATED_OUTBOUND_ATTRIBUTE => true
+      )
     )
+    conversation.skip_runtime_events = true
+    conversation.save!
     conversation.update!(waiting_since: nil)
-    conversation
+    Conversation.find(conversation.id)
   end
 
   def ensure_contact_inbox!
@@ -78,9 +101,13 @@ class Reminders::ConversationResolver
 
   def base_additional_attributes(contact_inbox)
     return { mail_subject: reminder.metadata['mail_subject'].presence || reminder.body.to_s.truncate(80) } if reminder.target_inbox&.email?
-    return telegram_additional_attributes(contact_inbox) if reminder.target_inbox&.channel_type == 'Channel::Telegram'
+    return telegram_additional_attributes(contact_inbox) if telegram_inbox?
 
     {}
+  end
+
+  def telegram_inbox?
+    reminder.target_inbox&.channel_type == 'Channel::Telegram'
   end
 
   def telegram_additional_attributes(contact_inbox)

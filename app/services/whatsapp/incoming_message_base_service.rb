@@ -349,13 +349,15 @@ class Whatsapp::IncomingMessageBaseService
   def existing_contact_conversation
     return contact_identity_conversations.last if @inbox.lock_to_single_conversation
 
-    contact_identity_conversations.where.not(status: :resolved).last || latest_campaign_conversation
+    contact_identity_conversations.where.not(status: :resolved).last || latest_outbound_conversation
   end
 
-  def latest_campaign_conversation
+  # A reply to a closed conversation that only carries outbound messages (a campaign, or an automated notification such as
+  # an appointment reminder) reopens that conversation instead of starting a new one.
+  def latest_outbound_conversation
     latest_conversation = contact_identity_conversations.last
     return unless latest_conversation&.resolved?
-    return if latest_conversation.campaign_id.blank?
+    return unless latest_conversation.campaign_id.present? || latest_conversation.automated_outbound_conversation?
 
     latest_conversation
   end

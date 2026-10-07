@@ -62,6 +62,10 @@ class Conversation < ApplicationRecord
   include PushDataHelper
   include ConversationMuteHelpers
 
+  # additional_attributes key of a conversation that exists only to carry automated outbound messages (appointment
+  # reminders, touches). Reminders::ConversationResolver creates it already resolved; see #automated_outbound_conversation?.
+  AUTOMATED_OUTBOUND_ATTRIBUTE = 'outbound_automated'.freeze
+
   attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
                 :communication_thread_event_id
 
@@ -264,6 +268,16 @@ class Conversation < ApplicationRecord
     Conversations::CommunicationThreadResolver.new(conversation: self).perform
   end
 
+  # True for a conversation that was created closed only to carry automated notifications. Such a conversation is never
+  # moved to pending by an active bot on creation and is reopened only by the contact's reply (see Message#reopen_conversation).
+  def automated_outbound_conversation?
+    return false unless additional_attributes.is_a?(Hash)
+
+    marker = additional_attributes[AUTOMATED_OUTBOUND_ATTRIBUTE]
+    marker = additional_attributes[AUTOMATED_OUTBOUND_ATTRIBUTE.to_sym] if marker.nil?
+    ActiveModel::Type::Boolean.new.cast(marker) == true
+  end
+
   def dispatch_read_state_update(actor: Current.user)
     dispatcher_dispatch(CONVERSATION_READ, nil, performer: actor)
   end
@@ -381,7 +395,7 @@ class Conversation < ApplicationRecord
   def determine_conversation_status
     self.status = :resolved and return if contact.blocked?
 
-    return if outbound_campaign_conversation? && resolved?
+    return if outbound_resolved_conversation?
 
     return handle_campaign_status if campaign.present?
 
@@ -398,6 +412,12 @@ class Conversation < ApplicationRecord
 
   def outbound_campaign_conversation?
     additional_attributes&.dig('outbound_campaign_id').present? || additional_attributes&.dig(:outbound_campaign_id).present?
+  end
+
+  # A conversation created closed on purpose (a campaign or an automated notification) keeps its status on creation, even
+  # in an inbox with an active bot that would otherwise start every new conversation as pending.
+  def outbound_resolved_conversation?
+    resolved? && (outbound_campaign_conversation? || automated_outbound_conversation?)
   end
 
   def notify_conversation_creation
