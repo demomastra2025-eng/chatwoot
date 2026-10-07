@@ -109,7 +109,7 @@ class Integrations::Medelement::ReceptionsDeltaService
   end
 
   def find_cursor
-    Integrations::Medelement::SyncCursor.create_or_find_by!(hook: hook, name: CURSOR_NAME)
+    Integrations::Medelement::SyncCursor.find_or_create_by!(hook: hook, name: CURSOR_NAME)
   end
 
   def reception_code!(entry)

@@ -59,6 +59,17 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
     expect(Integrations::Medelement::SyncCursor.find_by!(hook: hook).current_interval_seconds).to eq(300)
   end
 
+  it 'preserves an existing cursor while the full sync lock is held' do
+    value = 10.minutes.ago
+    cursor = Integrations::Medelement::SyncCursor.create!(hook: hook, name: 'receptions_delta', value: value)
+    allow(full_lock).to receive(:lock).and_return(false)
+
+    described_class.perform_now(hook.id)
+
+    expect(cursor.reload.value).to eq(value)
+    expect(cursor.current_interval_seconds).to eq(300)
+  end
+
   it 'caps repeated retryable failures at five minutes' do
     allow(poller).to receive(:perform).and_raise(
       Integrations::Medelement::Client::ApiError.new('server failure', status: 503)

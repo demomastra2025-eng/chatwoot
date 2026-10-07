@@ -70,7 +70,7 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
   end
 
   def record_error!(hook, configuration, error)
-    cursor = Integrations::Medelement::SyncCursor.create_or_find_by!(hook: hook, name: 'receptions_delta')
+    cursor = Integrations::Medelement::SyncCursor.find_or_create_by!(hook: hook, name: 'receptions_delta')
     interval = cursor.current_interval_seconds || configuration.incremental_receptions_interval_seconds
     interval = [interval * 2, MAX_BACKOFF_SECONDS].min if retryable?(error)
     cursor.update!(current_interval_seconds: interval, last_poll_at: Time.current)
@@ -81,7 +81,7 @@ class Integrations::Medelement::ReceptionsDeltaJob < ApplicationJob
   end
 
   def pause_for_full_sync!(hook)
-    cursor = Integrations::Medelement::SyncCursor.create_or_find_by!(hook: hook, name: 'receptions_delta')
+    cursor = Integrations::Medelement::SyncCursor.find_or_create_by!(hook: hook, name: 'receptions_delta')
     cursor.update!(current_interval_seconds: MAX_BACKOFF_SECONDS, last_poll_at: Time.current)
   end
 
