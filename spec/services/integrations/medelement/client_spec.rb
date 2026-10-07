@@ -298,6 +298,7 @@ RSpec.describe Integrations::Medelement::Client do
 
     it 'maps the provider seven-day error to ApiError' do
       stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+        .with(query: { 'date' => ['27.07.2026', '27.07.2026'], 'specialistCode' => 'specialist-1' })
         .to_return(status: 400, body: { message: 'Расписание можно получить за период не превышающий 7 дней' }.to_json,
                    headers: { 'Content-Type' => 'application/json' })
 
@@ -354,10 +355,11 @@ RSpec.describe Integrations::Medelement::Client do
     it 'splits an arbitrary range into consecutive seven-day windows and merges dates' do
       requests = []
       stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+        .with(query: hash_including('specialistCode' => 'specialist-1'))
         .to_return do |request|
-          query = URI.decode_www_form(request.uri.query).to_h
-          starts_on = Date.strptime(query.fetch('date[0]'), '%d.%m.%Y')
-          ends_on = Date.strptime(query.fetch('date[1]'), '%d.%m.%Y')
+          dates = URI.decode_www_form(request.uri.query)
+                     .filter_map { |key, value| Date.strptime(value, '%d.%m.%Y') if key == 'date[]' }
+          starts_on, ends_on = dates.minmax
           requests << [starts_on, ends_on]
           { status: 200, body: (starts_on..ends_on).to_h do |day|
             [day.strftime('%d.%m.%Y'), { 'timetable' => [] }]
