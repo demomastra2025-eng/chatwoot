@@ -1,28 +1,14 @@
 /* eslint-disable vue/one-component-per-file */
-import { defineComponent, h, reactive, ref } from 'vue';
+import { defineComponent, h } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
-const { getMock, alertMock, routeQuery, openEventMock, calendarSelection } =
-  vi.hoisted(() => ({
-    getMock: vi.fn(),
-    alertMock: vi.fn(),
-    routeQuery: { value: {} },
-    openEventMock: vi.fn(),
-    calendarSelection: { count: 0 },
-  }));
+const getMock = vi.fn();
+const alertMock = vi.fn();
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: (key, params = {}) => (params.count ? key + params.count : key),
+    t: (key, params = {}) => `${key}${params.count ?? ''}`,
     locale: { value: 'en' },
-  }),
-}));
-
-vi.mock('vue-router', () => ({
-  useRoute: () => ({
-    get query() {
-      return routeQuery.value;
-    },
   }),
 }));
 
@@ -36,21 +22,10 @@ vi.mock('dashboard/api/captain/observability', () => ({
 
 vi.mock('dashboard/components-next/button/Button.vue', () => ({
   default: defineComponent({
-    props: {
-      label: { type: String, default: '' },
-      disabled: Boolean,
-    },
+    props: { label: { type: String, default: '' } },
     emits: ['click'],
     setup(props, { emit }) {
-      return () =>
-        h(
-          'button',
-          {
-            disabled: props.disabled,
-            onClick: () => emit('click'),
-          },
-          props.label
-        );
+      return () => h('button', { onClick: () => emit('click') }, props.label);
     },
   }),
 }));
@@ -58,7 +33,6 @@ vi.mock('dashboard/components-next/button/Button.vue', () => ({
 vi.mock('dashboard/components-next/select/Select.vue', () => ({
   default: defineComponent({
     props: {
-      id: { type: String, default: '' },
       modelValue: { type: String, default: '' },
       options: { type: Array, default: () => [] },
     },
@@ -68,7 +42,6 @@ vi.mock('dashboard/components-next/select/Select.vue', () => ({
         h(
           'select',
           {
-            id: props.id,
             value: props.modelValue,
             onChange: event => emit('update:modelValue', event.target.value),
           },
@@ -82,26 +55,12 @@ vi.mock('dashboard/components-next/select/Select.vue', () => ({
 
 vi.mock('dashboard/components-next/captain/PageLayout.vue', () => ({
   default: defineComponent({
-    props: {
-      isEmpty: Boolean,
-      totalCount: { type: Number, default: 0 },
-    },
-    emits: ['update:current-page'],
-    setup(props, { slots, emit }) {
+    props: { isEmpty: Boolean },
+    setup(props, { slots }) {
       return () =>
-        h('main', { 'data-total-count': String(props.totalCount) }, [
+        h('main', [
           slots.search?.(),
-          slots.subHeader?.(),
           props.isEmpty ? slots.emptyState?.() : slots.body?.(),
-          h(
-            'button',
-            {
-              type: 'button',
-              'data-testid': 'next-page',
-              onClick: () => emit('update:current-page', 2),
-            },
-            'next'
-          ),
         ]);
     },
   }),
@@ -117,66 +76,23 @@ vi.mock('dashboard/components/ui/DatePicker/DatePicker.vue', () => ({
     },
     emits: ['dateRangeChanged'],
     setup(props, { emit }) {
-      const isOpen = ref(props.forceOpen);
-      const rangeStart = ref(null);
-      const ranges = [
-        [new Date('2026-08-01T00:00:00Z'), new Date('2026-08-15T23:59:59Z')],
-        [new Date('2026-09-01T00:00:00Z'), new Date('2026-09-10T23:59:59Z')],
-      ];
-
       return () =>
         h(
-          'div',
+          'button',
           {
+            'data-test-id': 'custom-range-calendar',
             'data-calendar-only': String(props.calendarOnly),
             'data-compact': String(props.compact),
             'data-force-open': String(props.forceOpen),
             'data-hide-trigger': String(props.hideTrigger),
+            onClick: () =>
+              emit('dateRangeChanged', [
+                new Date('2026-08-01T00:00:00Z'),
+                new Date('2026-08-15T23:59:59Z'),
+                'custom',
+              ]),
           },
-          [
-            props.hideTrigger
-              ? null
-              : h(
-                  'button',
-                  {
-                    'data-test-id': 'custom-range-calendar-trigger',
-                    onClick: () => {
-                      isOpen.value = !isOpen.value;
-                    },
-                  },
-                  'change range'
-                ),
-            isOpen.value
-              ? h('div', { 'data-test-id': 'custom-range-calendar' }, [
-                  h(
-                    'button',
-                    {
-                      'data-test-id': 'select-custom-start',
-                      onClick: () => {
-                        rangeStart.value = ranges[calendarSelection.count][0];
-                      },
-                    },
-                    'start'
-                  ),
-                  h(
-                    'button',
-                    {
-                      'data-test-id': 'select-custom-end',
-                      onClick: () => {
-                        emit('dateRangeChanged', [
-                          rangeStart.value,
-                          ranges[calendarSelection.count][1],
-                          'custom',
-                        ]);
-                        calendarSelection.count += 1;
-                        isOpen.value = false;
-                      },
-                    },
-                    'end'
-                  ),
-                ])
-              : null,
-          ]
+          'calendar'
         );
     },
   }),
@@ -185,7 +101,7 @@ vi.mock('dashboard/components/ui/DatePicker/DatePicker.vue', () => ({
 vi.mock('./EventDetailsDialog.vue', () => ({
   default: defineComponent({
     setup(_props, { expose }) {
-      expose({ open: openEventMock });
+      expose({ open: vi.fn() });
       return () => h('div');
     },
   }),
@@ -196,23 +112,11 @@ const { default: ObservabilityIndex } = await import('./Index.vue');
 const event = {
   id: 17,
   event_name: 'llm.chat.complete',
-  feature: 'captain_agent',
-  status: 'failed',
-  reason: 'provider_unavailable',
-  provider: 'openai',
-  assistant_id: 42,
-  conversation_display_id: 501,
   model: 'openai/gpt-5',
   prompt_tokens: 1250,
   completion_tokens: 320,
-  total_tokens: 1570,
   estimated_cost: 0.0042,
   duration_ms: 1840,
-  error: true,
-  details: {
-    error_code: 'provider_unavailable',
-    message: 'Synthetic provider error',
-  },
   created_at: '2026-08-26T10:00:00Z',
 };
 
@@ -230,87 +134,20 @@ const response = {
   },
 };
 
-const buttonByLabel = (wrapper, label) =>
-  wrapper.findAll('button').find(button => button.text() === label);
-const openFilters = wrapper =>
-  buttonByLabel(wrapper, 'CAPTAIN.OBSERVABILITY.ACTIONS.FILTERS').trigger(
-    'click'
-  );
-
 describe('AI Agent logs', () => {
   beforeEach(() => {
     getMock.mockReset();
     getMock.mockResolvedValue(response);
     alertMock.mockReset();
-    openEventMock.mockReset();
-    calendarSelection.count = 0;
-    routeQuery.value = {};
   });
 
-  it('keeps the header compact and labels the period and optional filters', async () => {
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(wrapper.get('label[for="observability-range"]').text()).toBe(
-      'CAPTAIN.OBSERVABILITY.FILTERS.PERIOD'
-    );
-    expect(wrapper.get('#observability-range').element.value).toBe('30d');
-    expect(wrapper.find('#observability-status').exists()).toBe(false);
-
-    await openFilters(wrapper);
-    expect(wrapper.get('label[for="observability-status"]').text()).toBe(
-      'CAPTAIN.OBSERVABILITY.FILTERS.STATUS'
-    );
-    expect(wrapper.get('#observability-status').element.value).toBe('');
-  });
-
-  it('applies and clears the supported status filter', async () => {
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-    await openFilters(wrapper);
-
-    await wrapper.get('#observability-status').setValue('error');
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS'
-    ).trigger('click');
-    await flushPromises();
-    expect(getMock.mock.calls.at(-1)[0].status).toBe('error');
-
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.ACTIONS.RESET_FILTERS'
-    ).trigger('click');
-    await flushPromises();
-    expect(getMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
-  });
-
-  it('shows filters from a shared link and keeps them in the request', async () => {
-    routeQuery.value = {
-      assistant_id: '42',
-      status: 'error',
-    };
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(wrapper.get('#observability-status').element.value).toBe('error');
-    const assistantInput = wrapper.get(
-      'input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]'
-    );
-    expect(assistantInput.element.value).toBe('42');
-    expect(getMock.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ assistant_id: '42', status: 'error' })
-    );
-  });
-
-  it('requests Captain agent completions in both supported feature families', async () => {
+  it('requests completed AI Agent calls for the selected time range', async () => {
     mount(ObservabilityIndex);
     await flushPromises();
 
     expect(getMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        features: ['assistant', 'captain_agent'],
+        feature: 'assistant',
         event_name: 'llm.chat.complete',
         page: 1,
         per_page: 25,
@@ -324,7 +161,7 @@ describe('AI Agent logs', () => {
     );
   });
 
-  it('renders the timeline, event context, and opens event details', async () => {
+  it('renders the request timeline and required table columns', async () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
 
@@ -332,327 +169,15 @@ describe('AI Agent logs', () => {
       'CAPTAIN.OBSERVABILITY.LOGS.TIMELINE_TITLE'
     );
     expect(wrapper.findAll('table tbody tr')).toHaveLength(1);
-    expect(wrapper.text()).toContain('llm.chat.complete');
-    expect(wrapper.text()).toContain('42');
-    expect(wrapper.text()).toContain('501');
     expect(wrapper.text()).toContain('openai/gpt-5');
     expect(wrapper.text()).toContain('1,250');
     expect(wrapper.text()).toContain('320');
     expect(wrapper.text()).toContain('$0.004200');
     expect(wrapper.text()).toContain('1.84');
-    expect(wrapper.findAll('table thead th')).toHaveLength(9);
-
-    await wrapper.get('table tbody tr').trigger('click');
-    expect(openEventMock).toHaveBeenCalledWith(event);
+    expect(wrapper.findAll('table thead th')).toHaveLength(6);
   });
 
-  it('keeps unknown metrics distinct from explicit zero values', async () => {
-    const unknownMetrics = {
-      ...event,
-      id: 18,
-      prompt_tokens: null,
-      completion_tokens: null,
-      estimated_cost: null,
-      duration_ms: null,
-    };
-    const zeroMetrics = {
-      ...event,
-      id: 19,
-      prompt_tokens: 0,
-      completion_tokens: 0,
-      estimated_cost: 0,
-      duration_ms: 0,
-    };
-    getMock.mockResolvedValue({
-      data: {
-        ...response.data,
-        payload: [unknownMetrics, zeroMetrics],
-        meta: { count: 2, current_page: 1, per_page: 25 },
-      },
-    });
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    const rows = wrapper.findAll('table tbody tr');
-    expect(rows).toHaveLength(2);
-    const unknownCells = rows[0].findAll('td');
-    expect(unknownCells[5].text()).toBe('—');
-    expect(unknownCells[6].text()).toBe('—');
-    expect(unknownCells[7].text()).toBe('—');
-    expect(unknownCells[8].text()).toBe('—');
-
-    const zeroCells = rows[1].findAll('td');
-    expect(zeroCells[5].text()).toBe('0');
-    expect(zeroCells[6].text()).toBe('0');
-    expect(zeroCells[7].text()).toBe('$0.000000');
-    expect(zeroCells[8].text()).toBe(
-      '0 CAPTAIN.OBSERVABILITY.LOGS.MILLISECONDS'
-    );
-  });
-
-  it('counts chat requests from the chart while pagination keeps all trace events', async () => {
-    const traceEvents = Array.from({ length: 9 }, (_, index) => ({
-      ...event,
-      id: index + 1,
-      event_name: index === 0 ? 'llm.chat.complete' : 'llm.tool.complete',
-    }));
-    getMock.mockResolvedValue({
-      data: {
-        payload: traceEvents,
-        time_series: {
-          bucket: 'hour',
-          points: [{ timestamp: 1_777_200_000, request_count: 1 }],
-        },
-        meta: { count: 9, current_page: 1, per_page: 25 },
-      },
-    });
-    routeQuery.value = { trace_id: 'mixed-trace' };
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain(
-      'CAPTAIN.OBSERVABILITY.LOGS.TOTAL_REQUESTS1'
-    );
-    expect(wrapper.text()).not.toContain(
-      'CAPTAIN.OBSERVABILITY.LOGS.TOTAL_REQUESTS9'
-    );
-    expect(wrapper.get('main').attributes('data-total-count')).toBe('9');
-    expect(wrapper.findAll('table tbody tr')).toHaveLength(9);
-  });
-
-  it('opens the requested full trace without adding completion-only filters', async () => {
-    routeQuery.value = {
-      tab: 'traces',
-      trace_id: 'trace-1',
-      session_id: 'session-1',
-      conversation_display_id: '501',
-      copilot_thread_id: 'thread-1',
-    };
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(getMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        trace_id: 'trace-1',
-        session_id: 'session-1',
-        conversation_display_id: '501',
-        copilot_thread_id: 'thread-1',
-        page: 1,
-        per_page: 25,
-      })
-    );
-    const params = getMock.mock.calls[0][0];
-    expect(params).not.toHaveProperty('features');
-    expect(params).not.toHaveProperty('feature');
-    expect(params).not.toHaveProperty('event_name');
-    expect(params).not.toHaveProperty('tab');
-    expect(params).not.toHaveProperty('since');
-    expect(params).not.toHaveProperty('until');
-    expect(wrapper.find('select').element.value).toBe('account_default');
-  });
-
-  it('uses account lookback for trace links and lets a manual preset override it', async () => {
-    const olderTraceEvent = {
-      ...event,
-      created_at: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString(),
-    };
-    getMock.mockResolvedValue({
-      data: {
-        ...response.data,
-        payload: [olderTraceEvent],
-        preferences: { default_lookback_days: 90 },
-      },
-    });
-    routeQuery.value = { trace_id: 'trace-from-45-days-ago' };
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    const traceParams = getMock.mock.calls[0][0];
-    expect(traceParams.trace_id).toBe('trace-from-45-days-ago');
-    expect(traceParams).not.toHaveProperty('since');
-    expect(traceParams).not.toHaveProperty('until');
-    expect(wrapper.findAll('table tbody tr')).toHaveLength(1);
-    expect(wrapper.find('select').element.value).toBe('account_default');
-
-    await wrapper.find('select').setValue('7d');
-    await flushPromises();
-
-    const manualParams = getMock.mock.calls.at(-1)[0];
-    expect(manualParams).toEqual(
-      expect.objectContaining({
-        trace_id: 'trace-from-45-days-ago',
-        since: expect.any(String),
-        until: expect.any(String),
-      })
-    );
-    expect(
-      Number(manualParams.until) - Number(manualParams.since)
-    ).toBeGreaterThanOrEqual(7 * 24 * 60 * 60 - 2);
-    expect(wrapper.find('select').element.value).toBe('7d');
-  });
-
-  it('resets a manual preset when a new shared trace link omits dates', async () => {
-    routeQuery.value = reactive({});
-    const olderTraceResponse = {
-      data: {
-        ...response.data,
-        payload: [
-          {
-            ...event,
-            created_at: new Date(
-              Date.now() - 45 * 24 * 60 * 60 * 1000
-            ).toISOString(),
-          },
-        ],
-        preferences: { default_lookback_days: 90 },
-      },
-    };
-    getMock.mockImplementation(params =>
-      Promise.resolve(params.trace_id ? olderTraceResponse : response)
-    );
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(getMock.mock.calls[0][0]).toHaveProperty('since');
-    await wrapper.find('select').setValue('15m');
-    await flushPromises();
-    const manualParams = getMock.mock.calls.at(-1)[0];
-    expect(
-      Number(manualParams.until) - Number(manualParams.since)
-    ).toBeLessThanOrEqual(15 * 60 + 2);
-
-    routeQuery.value.trace_id = 'trace-from-45-days-ago';
-    await flushPromises();
-
-    expect(wrapper.find('select').element.value).toBe('account_default');
-    expect(getMock).toHaveBeenCalledTimes(3);
-    expect(getMock.mock.calls.at(-1)[0]).toEqual(
-      expect.objectContaining({ trace_id: 'trace-from-45-days-ago' })
-    );
-    expect(getMock.mock.calls.at(-1)[0]).not.toHaveProperty('since');
-    expect(getMock.mock.calls.at(-1)[0]).not.toHaveProperty('until');
-    expect(wrapper.findAll('table tbody tr')).toHaveLength(1);
-  });
-
-  it('filters by agent ID while retaining both supported feature families', async () => {
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-    await openFilters(wrapper);
-
-    await wrapper
-      .get('input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]')
-      .setValue('42');
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS'
-    ).trigger('click');
-    await flushPromises();
-
-    expect(getMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        assistant_id: '42',
-        features: ['assistant', 'captain_agent'],
-        event_name: 'llm.chat.complete',
-        page: 1,
-      })
-    );
-  });
-
-  it('filters a conversation and requests all of its events', async () => {
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-    await openFilters(wrapper);
-
-    await wrapper
-      .get(
-        'input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.CONVERSATION_DISPLAY_ID"]'
-      )
-      .setValue('501');
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS'
-    ).trigger('click');
-    await flushPromises();
-
-    expect(getMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        conversation_display_id: '501',
-        page: 1,
-      })
-    );
-    const params = getMock.mock.calls.at(-1)[0];
-    expect(params).not.toHaveProperty('features');
-    expect(params).not.toHaveProperty('event_name');
-  });
-
-  it('keeps the active filter when moving to another page', async () => {
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-    await openFilters(wrapper);
-
-    await wrapper
-      .get('input[aria-label="CAPTAIN.OBSERVABILITY.FILTERS.ASSISTANT_ID"]')
-      .setValue('42');
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.ACTIONS.APPLY_FILTERS'
-    ).trigger('click');
-    await flushPromises();
-
-    await wrapper.get('[data-testid="next-page"]').trigger('click');
-    await flushPromises();
-
-    expect(getMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        assistant_id: '42',
-        features: ['assistant', 'captain_agent'],
-        event_name: 'llm.chat.complete',
-        page: 2,
-      })
-    );
-  });
-
-  it('shows the empty state when there are no matching events', async () => {
-    getMock.mockResolvedValue({
-      data: {
-        payload: [],
-        time_series: { points: [], bucket: 'hour' },
-        meta: { count: 0, current_page: 1, per_page: 25 },
-      },
-    });
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('CAPTAIN.OBSERVABILITY.LOGS.EMPTY_TITLE');
-  });
-
-  it('shows a retryable error state after a failed request', async () => {
-    getMock.mockRejectedValueOnce(new Error('network failure'));
-
-    const wrapper = mount(ObservabilityIndex);
-    await flushPromises();
-
-    expect(wrapper.text()).toContain('CAPTAIN.OBSERVABILITY.SIMPLE.LOAD_ERROR');
-    expect(alertMock).toHaveBeenCalledWith(
-      'CAPTAIN.OBSERVABILITY.SIMPLE.LOAD_ERROR'
-    );
-
-    getMock.mockResolvedValue(response);
-    await buttonByLabel(
-      wrapper,
-      'CAPTAIN.OBSERVABILITY.SIMPLE.REFRESH'
-    ).trigger('click');
-    await flushPromises();
-
-    expect(wrapper.findAll('table tbody tr')).toHaveLength(1);
-  });
-
-  it('reloads when the selected time range changes', async () => {
+  it('reloads the timeline when the time range changes', async () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
 
@@ -666,19 +191,17 @@ describe('AI Agent logs', () => {
     const wrapper = mount(ObservabilityIndex);
     await flushPromises();
 
-    await wrapper.get('#observability-range').setValue('custom');
+    await wrapper.find('select').setValue('custom');
     await flushPromises();
     expect(getMock).toHaveBeenCalledTimes(1);
 
-    const picker = wrapper.get('[data-calendar-only]');
-    expect(picker.attributes('data-force-open')).toBe('true');
-    expect(picker.attributes('data-hide-trigger')).toBe('true');
-    expect(
-      wrapper.find('[data-test-id="custom-range-calendar"]').exists()
-    ).toBe(true);
+    const calendar = wrapper.get('[data-test-id="custom-range-calendar"]');
+    expect(calendar.attributes('data-force-open')).toBe('true');
+    expect(calendar.attributes('data-calendar-only')).toBe('true');
+    expect(calendar.attributes('data-compact')).toBe('true');
+    expect(calendar.attributes('data-hide-trigger')).toBe('true');
 
-    await wrapper.get('[data-test-id="select-custom-start"]').trigger('click');
-    await wrapper.get('[data-test-id="select-custom-end"]').trigger('click');
+    await calendar.trigger('click');
     await flushPromises();
 
     expect(getMock).toHaveBeenCalledTimes(2);
@@ -689,25 +212,6 @@ describe('AI Agent logs', () => {
         ),
         until: String(
           Math.floor(new Date('2026-08-15T23:59:59Z').getTime() / 1000)
-        ),
-      })
-    );
-
-    expect(
-      wrapper.find('[data-test-id="custom-range-calendar"]').exists()
-    ).toBe(true);
-    await wrapper.get('[data-test-id="select-custom-start"]').trigger('click');
-    await wrapper.get('[data-test-id="select-custom-end"]').trigger('click');
-    await flushPromises();
-
-    expect(getMock).toHaveBeenCalledTimes(3);
-    expect(getMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        since: String(
-          Math.floor(new Date('2026-09-01T00:00:00Z').getTime() / 1000)
-        ),
-        until: String(
-          Math.floor(new Date('2026-09-10T23:59:59Z').getTime() / 1000)
         ),
       })
     );

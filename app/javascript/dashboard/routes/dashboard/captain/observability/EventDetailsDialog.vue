@@ -47,11 +47,7 @@ const formattedDetails = computed(() => {
 
 const formatDuration = value => {
   if (value === null || value === undefined) return null;
-  const milliseconds = Number(value);
-  if (!Number.isFinite(milliseconds)) return null;
-  return milliseconds < 1000
-    ? `${Math.round(milliseconds)} ${t('CAPTAIN.OBSERVABILITY.LOGS.MILLISECONDS')}`
-    : `${(milliseconds / 1000).toFixed(2)} ${t('CAPTAIN.OBSERVABILITY.LOGS.SECONDS')}`;
+  return `${Number(value).toLocaleString(locale.value)} ms`;
 };
 
 const formatCost = value => {
