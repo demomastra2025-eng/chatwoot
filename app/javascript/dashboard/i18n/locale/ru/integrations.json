@@ -2697,7 +2697,7 @@
         "ASSISTANT_ID": "ID ассистента"
       },
       "LOGS": {
-        "TITLE": "Логи агентов",
+        "TITLE": "Логи",
         "TIMELINE_TITLE": "Запросы AI-агентов",
         "TIMELINE_DESCRIPTION": "Количество запросов за выбранный период",
         "TOTAL_REQUESTS": "Всего запросов: {count}",
