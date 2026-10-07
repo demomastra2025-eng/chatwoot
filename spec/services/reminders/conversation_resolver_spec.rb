@@ -422,6 +422,40 @@ RSpec.describe Reminders::ConversationResolver do
           'outbound_automated' => true
         )
       end
+
+      it 'sends a later touch under its own mail subject when it reuses the notification conversation', :aggregate_failures do
+        create_conversation(:resolved)
+        first = described_class.new(reminder: build_reminder(metadata: { 'mail_subject' => 'Reminder for 12 October' })).perform
+
+        second = nil
+        expect do
+          second = described_class.new(reminder: build_reminder(metadata: { 'mail_subject' => 'Reminder for 20 October' })).perform
+        end.not_to(change(Conversation, :count))
+
+        expect(second).to eq(first)
+        expect(second).to be_resolved
+        expect(second.reload.additional_attributes).to include('mail_subject' => 'Reminder for 20 October', 'outbound_automated' => true)
+      end
+
+      it 'takes the mail subject from the message body when the touch has none' do
+        create_conversation(:resolved)
+        described_class.new(reminder: build_reminder(metadata: { 'mail_subject' => 'Reminder for 12 October' })).perform
+
+        conversation = described_class.new(reminder: build_reminder(body: 'Your visit is tomorrow')).perform
+
+        expect(conversation.reload.additional_attributes).to include('mail_subject' => 'Your visit is tomorrow')
+      end
+
+      it 'keeps the mail subject of a conversation of a person in an inbox that keeps one conversation per contact' do
+        inbox.update!(lock_to_single_conversation: true)
+        person_conversation = create_conversation(:resolved, additional_attributes: { 'mail_subject' => 'Question about the price' })
+
+        conversation = described_class.new(reminder: build_reminder(metadata: { 'mail_subject' => 'Appointment reminder' })).perform
+
+        expect(conversation).to eq(person_conversation)
+        expect(conversation.reload.additional_attributes).to include('mail_subject' => 'Question about the price')
+        expect(conversation.additional_attributes).not_to include('outbound_automated')
+      end
     end
 
     context 'when the inbox has an active agent bot' do

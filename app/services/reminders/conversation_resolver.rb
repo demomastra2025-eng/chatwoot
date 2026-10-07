@@ -30,7 +30,21 @@ class Reminders::ConversationResolver
     return unless contact_inbox.inbox.lock_to_single_conversation? || latest.automated_outbound_conversation?
     return if telegram_inbox? && latest.additional_attributes.to_h['chat_id'].blank?
 
+    refresh_mail_subject(latest)
     latest
+  end
+
+  # An earlier notification conversation is reused for every later touch, but ConversationReplyMailer sends each message under
+  # the conversation's mail_subject, so a later touch must not go out under the subject of the first one. The subject is
+  # written without callbacks: a closed conversation raises no event for it. Only a notification conversation is changed,
+  # never the subject of a conversation of a person.
+  def refresh_mail_subject(conversation)
+    return unless reminder.target_inbox&.email? && conversation.automated_outbound_conversation?
+
+    attributes = conversation.additional_attributes.to_h
+    return if attributes['mail_subject'] == mail_subject
+
+    conversation.update_columns(additional_attributes: attributes.merge('mail_subject' => mail_subject)) # rubocop:disable Rails/SkipsModelValidations
   end
 
   # A conversation that only carries the notification is created already closed and silent: it never shows up in the open
@@ -100,10 +114,14 @@ class Reminders::ConversationResolver
   end
 
   def base_additional_attributes(contact_inbox)
-    return { mail_subject: reminder.metadata['mail_subject'].presence || reminder.body.to_s.truncate(80) } if reminder.target_inbox&.email?
+    return { mail_subject: mail_subject } if reminder.target_inbox&.email?
     return telegram_additional_attributes(contact_inbox) if telegram_inbox?
 
     {}
+  end
+
+  def mail_subject
+    reminder.metadata['mail_subject'].presence || reminder.body.to_s.truncate(80)
   end
 
   def telegram_inbox?
