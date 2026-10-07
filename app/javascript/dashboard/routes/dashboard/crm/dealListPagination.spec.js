@@ -134,7 +134,7 @@ const wrappers = [];
 
 const mountPage = async () => {
   const wrapper = shallowMount(CrmDealsPage, {
-    global: { mocks: { $t: key => key } },
+    global: { mocks: { $t: key => key }, stubs: { transition: false } },
   });
   wrappers.push(wrapper);
   await flushPromises();
@@ -373,7 +373,9 @@ it('switches between card and chat on narrow screens without changing route', as
   );
 
   const { state, wrapper } = await mountPage();
-  const tabs = wrapper.findAll('[role="tablist"] [role="tab"]');
+  const switcher = wrapper.find('[data-testid="crm-deal-page-tabs"]');
+  const tabs = switcher.findAll('[role="tab"]');
+  expect(switcher.attributes('aria-label')).toBe('CRM.DEALS.TABS.PAGE_LABEL');
   expect(tabs).toHaveLength(2);
   expect(tabs[0].attributes('aria-selected')).toBe('true');
   expect(state.dealPageTab).toBe('deal');
