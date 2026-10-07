@@ -354,6 +354,43 @@ describe('conversation actions', () => {
   });
 
   describe('#fetchPreviousMessages', () => {
+    it('asks the thread API to include an explicit search target', async () => {
+      const commit = vi.fn();
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            messages: [],
+            channels: [],
+            meta: {},
+          },
+        ],
+      };
+      vi.spyOn(CommunicationThreadApi, 'messages').mockResolvedValue({
+        data: { meta: { channels: [] }, payload: [{ id: 91 }] },
+      });
+
+      await actions.fetchPreviousMessages(
+        { commit, state },
+        {
+          conversationId: 7,
+          conversationType: 'communication_thread',
+          after: 91,
+          includeTarget: true,
+        }
+      );
+
+      expect(CommunicationThreadApi.messages).toHaveBeenCalledWith(7, {
+        after: 91,
+        before: undefined,
+        include_history: true,
+        include_target: true,
+      });
+    });
+
     it('keeps full communication-thread history available while paginating backwards', async () => {
       const commit = vi.fn();
       const state = {

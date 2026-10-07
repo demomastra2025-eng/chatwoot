@@ -920,7 +920,11 @@ const actions = {
             : {}),
         };
 
-        if (after) {
+        if (
+          after &&
+          (!data.is_communication_thread ||
+            Number(after) < Number(data.messages?.[0]?.id))
+        ) {
           fetchParams.before = data.messages?.[0]?.id;
         }
 

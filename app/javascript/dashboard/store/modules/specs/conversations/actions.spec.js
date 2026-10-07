@@ -1812,6 +1812,49 @@ describe('#addMentions', () => {
       });
     });
 
+    it('includes the target when opening a thread around an older message', async () => {
+      const localDispatch = vi.fn().mockResolvedValue();
+      const data = {
+        id: 8,
+        is_communication_thread: true,
+        messages: [{ id: 100 }],
+      };
+
+      await actions.setActiveChat(
+        { commit: vi.fn(), dispatch: localDispatch },
+        { data, after: 91 }
+      );
+
+      expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        after: 91,
+        before: 100,
+        includeTarget: true,
+        conversationId: 8,
+        conversationType: 'communication_thread',
+      });
+    });
+
+    it('does not bound a newer thread target by its older public preview', async () => {
+      const localDispatch = vi.fn().mockResolvedValue();
+      const data = {
+        id: 8,
+        is_communication_thread: true,
+        messages: [{ id: 100 }],
+      };
+
+      await actions.setActiveChat(
+        { commit: vi.fn(), dispatch: localDispatch },
+        { data, after: 101 }
+      );
+
+      expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        after: 101,
+        includeTarget: true,
+        conversationId: 8,
+        conversationType: 'communication_thread',
+      });
+    });
+
     it('should not dispatch fetchPreviousMessages if dataFetched is already set', async () => {
       const localCommit = vi.fn();
       const localDispatch = vi.fn();
