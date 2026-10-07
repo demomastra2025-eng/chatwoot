@@ -1875,6 +1875,58 @@ describe('#addMentions', () => {
       expect(localDispatch).not.toHaveBeenCalled();
     });
 
+    it('fetches the window of the target message when the chat is loaded but the target message is not', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn().mockResolvedValue();
+      const data = { id: 42, messages: [{ id: 100 }], dataFetched: true };
+      await actions.setActiveChat(
+        { commit: localCommit, dispatch: localDispatch },
+        { data, after: 99 }
+      );
+      expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        after: 99,
+        before: 100,
+        conversationId: 42,
+        conversationType: 'conversation',
+      });
+      expect(localCommit).toHaveBeenCalledWith(types.SET_CHAT_DATA_FETCHED, {
+        id: 42,
+        conversationType: 'conversation',
+      });
+    });
+    it('fetches the target of a loaded thread when its message is missing from the window', async () => {
+      const localDispatch = vi.fn().mockResolvedValue();
+      const data = {
+        id: 8,
+        is_communication_thread: true,
+        messages: [{ id: 100 }],
+        dataFetched: true,
+      };
+      await actions.setActiveChat(
+        { commit: vi.fn(), dispatch: localDispatch },
+        { data, after: '91' }
+      );
+      expect(localDispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        after: '91',
+        before: 100,
+        includeTarget: true,
+        conversationId: 8,
+        conversationType: 'communication_thread',
+      });
+    });
+    it('does not fetch again when the target message is already loaded, whatever the id type', async () => {
+      const localDispatch = vi.fn();
+      const data = {
+        id: 42,
+        messages: [{ id: 99 }, { id: 100 }],
+        dataFetched: true,
+      };
+      await actions.setActiveChat(
+        { commit: vi.fn(), dispatch: localDispatch },
+        { data, after: '99' }
+      );
+      expect(localDispatch).not.toHaveBeenCalled();
+    });
     it('does not reuse the first-unread cursor of an earlier open when no page is fetched', async () => {
       const chat = {
         id: 7,

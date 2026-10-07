@@ -128,6 +128,14 @@ const addMessageToCommunicationThreads = (commit, state, message) => {
   });
 };
 
+// A thread that is already in the store keeps its dataFetched flag, so a search hit that jumps to an older message
+// would find the window without that message. Fetch the window of the target when it is not loaded yet.
+const needsMessageWindow = (data, after) =>
+  data.dataFetched === undefined ||
+  Boolean(
+    after &&
+      !data.messages?.some(message => String(message.id) === String(after))
+  );
 const conversationStoreType = conversation =>
   isCommunicationThread(conversation) ? 'communication_thread' : 'conversation';
 
@@ -906,7 +914,7 @@ const actions = {
         conversationType,
       });
     }
-    if (data.dataFetched === undefined) {
+    if (needsMessageWindow(data, after)) {
       try {
         const fetchParams = {
           after,
