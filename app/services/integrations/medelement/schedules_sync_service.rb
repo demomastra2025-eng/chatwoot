@@ -1,8 +1,9 @@
 class Integrations::Medelement::SchedulesSyncService
-  SCHEDULE_HORIZON_DAYS = 14
-  REQUEST_CAP = 300
+  SCHEDULE_HORIZON_DAYS = 90
+  REQUEST_CAP = 600
   NEAR_REFRESH = 1.hour
   FAR_REFRESH = 12.hours
+  LONG_REFRESH = 24.hours
   LAST_SEEN_MAX_AGE = 1.hour
   SPECIALIST_CODE_KEY = Integrations::Medelement::SpecialistsSyncService::SPECIALIST_CODE_KEY
   LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
@@ -18,10 +19,17 @@ class Integrations::Medelement::SchedulesSyncService
     @today = now.in_time_zone(configuration.time_zone).to_date
     @counters = { created_count: 0, updated_count: 0, unverified_count: 0, skipped_count: 0, request_count: 0 }
     due = due_days
-    by_resource = due.group_by { |resource, _date, _stored| resource.id }
-    selected = by_resource.values.first(REQUEST_CAP)
+    selected = due_windows(due).first(REQUEST_CAP)
     @counters[:skipped_count] = due.size - selected.sum(&:size)
-    selected.each { |days| refresh(days) }
+    first_error = nil
+    selected.each do |days|
+      refresh(days)
+    rescue Integrations::Medelement::Client::ApiError => e
+      first_error ||= e
+    end
+    raise first_error if first_error
+
+    prune_old_days
     @counters
   end
 
@@ -70,7 +78,37 @@ class Integrations::Medelement::SchedulesSyncService
 
   def due?(stored, offset)
     checked_at = stored&.source_checked_at
-    checked_at.nil? || checked_at <= now - (offset < 2 ? NEAR_REFRESH : FAR_REFRESH)
+    refresh_interval = if offset < 2
+                         NEAR_REFRESH
+                       elsif offset < 14
+                         FAR_REFRESH
+                       else
+                         LONG_REFRESH
+                       end
+    checked_at.nil? || checked_at <= now - refresh_interval
+  end
+
+  def due_windows(due)
+    priority = due.each_with_index.to_h { |(resource, date, _stored), index| [[resource.id, date], index] }
+    windows = due.group_by { |resource, _date, _stored| resource.id }.values.flat_map { |days| windows_for_resource(days) }
+    windows.sort_by { |days| days.map { |resource, date, _stored| priority.fetch([resource.id, date]) }.min }
+  end
+
+  def windows_for_resource(days)
+    days.sort_by { |_resource, date, _stored| date }.each_with_object([]) do |day, windows|
+      window = windows.last
+      if window && day[1] == window.last[1] + 1 &&
+         day[1] <= window.first[1] + Integrations::Medelement::Client::MAX_TIMETABLE_DAYS - 1
+        window << day
+      else
+        windows << [day]
+      end
+    end
+  end
+
+  def prune_old_days
+    scope = Integrations::Medelement::ScheduleDay.where(account_id: hook.account_id, hook_id: hook.id)
+    scope.where('date < ?', today - 1).delete_all
   end
 
   def refresh(days)
