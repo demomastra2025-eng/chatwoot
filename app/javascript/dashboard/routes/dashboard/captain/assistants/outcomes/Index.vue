@@ -2,8 +2,14 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
-import Button from 'dashboard/components-next/button/Button.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import OutcomeReasonSection from './OutcomeReasonSection.vue';
+import {
+  SYSTEM_REASON_ID,
+  insertReason,
+  isSystemReason,
+  sortReasons,
+} from './reasonOrder';
 
 const props = defineProps({
   assistant: {
@@ -37,7 +43,7 @@ const defaultReasons = () => ({
     ['question_resolved', 'COMPLETION.QUESTION_RESOLVED'],
     ['customer_declined', 'COMPLETION.CUSTOMER_DECLINED'],
     ['no_response', 'COMPLETION.NO_RESPONSE'],
-    ['other', 'COMMON.OTHER'],
+    [SYSTEM_REASON_ID, 'COMMON.OTHER'],
   ].map(([id, key]) => ({
     id,
     label: t(`CAPTAIN.ASSISTANTS.OUTCOMES.DEFAULTS.${key}`),
@@ -49,7 +55,7 @@ const defaultReasons = () => ({
     ['manual_action_required', 'HANDOFF.MANUAL_ACTION_REQUIRED'],
     ['complaint_or_conflict', 'HANDOFF.COMPLAINT_OR_CONFLICT'],
     ['tool_or_policy_limit', 'HANDOFF.TOOL_OR_POLICY_LIMIT'],
-    ['other', 'COMMON.OTHER'],
+    [SYSTEM_REASON_ID, 'COMMON.OTHER'],
   ].map(([id, key]) => ({
     id,
     label: t(`CAPTAIN.ASSISTANTS.OUTCOMES.DEFAULTS.${key}`),
@@ -65,19 +71,21 @@ const editableReasons = reasons =>
         .map(reason => ({
           id: String(reason.id),
           label: String(reason.label),
-          active: reason.id === 'other' || reason.active !== false,
+          active: isSystemReason(reason) || reason.active !== false,
         }))
     : [];
 
+// Whatever order the API returns, every list is shown with the system reason
+// last (see reasonOrder.js).
 const withOtherFallback = (reasons, fallback) => {
   const normalized = editableReasons(reasons);
-  const other = normalized.find(reason => reason.id === 'other') || fallback;
-  return [
+  const other = normalized.find(isSystemReason) || fallback;
+  return sortReasons([
     ...normalized
-      .filter(reason => reason.id !== 'other')
+      .filter(reason => !isSystemReason(reason))
       .slice(0, MAX_REASONS - 1),
-    { ...other, id: 'other', active: true },
-  ];
+    { ...other, id: SYSTEM_REASON_ID, active: true },
+  ]);
 };
 
 const draftSnapshot = value => JSON.stringify(value);
@@ -92,7 +100,7 @@ const legacyReasonsFor = (status, type, fallback) => {
         .filter(Boolean)
     : [];
   if (!labels.length) return fallback;
-  const other = fallback.find(reason => reason.id === 'other');
+  const other = fallback.find(isSystemReason);
   return [
     ...labels.map((label, index) => ({
       id: `legacy_${type}_${index + 1}`,
@@ -174,21 +182,22 @@ const createCustomReason = type => {
 
 const addReason = type => {
   if (state[type].length >= MAX_REASONS) return;
-  state[type].push(
+  state[type] = insertReason(
+    state[type],
     createCustomReason(type === 'completionReasons' ? 'completion' : 'handoff')
   );
 };
 
-const removeReason = (type, index) => {
-  if (state[type][index]?.id === 'other') return;
-  state[type].splice(index, 1);
+const removeReason = (type, reasonId) => {
+  if (reasonId === SYSTEM_REASON_ID) return;
+  state[type] = state[type].filter(reason => reason.id !== reasonId);
 };
 
 const serializedReasons = reasons =>
   reasons.map(reason => ({
     id: reason.id,
     label: reason.label.trim(),
-    active: reason.id === 'other' || reason.active !== false,
+    active: isSystemReason(reason) || reason.active !== false,
   }));
 
 const buildPayload = async () => {
@@ -222,6 +231,8 @@ const buildPayload = async () => {
 
 defineExpose({ buildPayload });
 
+// The handoff card has no toggle and its title already names the reason list,
+// so it has no separate reasons subheading.
 const sections = computed(() => [
   ...(props.handoffEnabled
     ? [
@@ -230,7 +241,6 @@ const sections = computed(() => [
           icon: 'i-lucide-user-round-forward',
           titleKey: 'CAPTAIN.ASSISTANTS.OUTCOMES.HANDOFF.TITLE',
           descriptionKey: 'CAPTAIN.ASSISTANTS.OUTCOMES.HANDOFF.DESCRIPTION',
-          reasonsTitleKey: 'CAPTAIN.ASSISTANTS.OUTCOMES.HANDOFF.TITLE',
         },
       ]
     : []),
@@ -252,89 +262,26 @@ const sections = computed(() => [
       :description="t('CAPTAIN.ASSISTANTS.OUTCOMES.DESCRIPTION')"
     />
 
-    <section
+    <OutcomeReasonSection
       v-for="section in sections"
       :key="section.type"
-      :data-testid="`outcome-section-${section.type}`"
-      class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
+      v-model:reasons="state[section.type]"
+      :type="section.type"
+      :icon="section.icon"
+      :title="t(section.titleKey)"
+      :description="t(section.descriptionKey)"
+      :reasons-title="section.reasonsTitleKey ? t(section.reasonsTitleKey) : ''"
+      :show-reasons="!section.enabledKey || state[section.enabledKey]"
+      :max-reasons="MAX_REASONS"
+      @add="addReason(section.type)"
+      @remove="reasonId => removeReason(section.type, reasonId)"
     >
-      <div class="flex items-start justify-between gap-4">
-        <div class="flex min-w-0 gap-3">
-          <span
-            :class="section.icon"
-            class="mt-0.5 size-5 shrink-0 text-n-slate-11"
-          />
-          <div>
-            <h4 class="text-sm font-medium text-n-slate-12">
-              {{ t(section.titleKey) }}
-            </h4>
-            <p class="mt-1 text-sm text-n-slate-11">
-              {{ t(section.descriptionKey) }}
-            </p>
-          </div>
-        </div>
+      <template v-if="section.enabledKey" #action>
         <Switch
-          v-if="section.type === 'completionReasons'"
-          v-model="state.autoCompletionEnabled"
+          v-model="state[section.enabledKey]"
           :data-testid="`outcome-toggle-${section.type}`"
         />
-      </div>
-
-      <div
-        v-if="section.type === 'handoffReasons' || state.autoCompletionEnabled"
-        class="mt-5 flex flex-col gap-3"
-      >
-        <div class="flex items-center justify-between gap-3">
-          <h5
-            v-if="section.type === 'completionReasons'"
-            class="text-sm font-medium text-n-slate-12"
-          >
-            {{ t(section.reasonsTitleKey) }}
-          </h5>
-          <Button
-            sm
-            slate
-            faded
-            icon="i-lucide-plus"
-            :label="t('CAPTAIN.ASSISTANTS.OUTCOMES.ADD')"
-            :disabled="state[section.type].length >= MAX_REASONS"
-            :data-testid="`outcome-add-${section.type}`"
-            @click="addReason(section.type)"
-          />
-        </div>
-
-        <div
-          v-for="(reason, index) in state[section.type]"
-          :key="reason.id"
-          data-testid="outcome-reason-row"
-          :data-reason-id="reason.id"
-          class="flex items-center gap-2 rounded-lg border border-n-weak bg-n-alpha-1 px-3 py-2"
-        >
-          <span class="size-1.5 shrink-0 rounded-full bg-n-slate-8" />
-          <input
-            v-model="reason.label"
-            :aria-label="t(section.titleKey)"
-            maxlength="255"
-            class="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm text-n-slate-12 outline-none"
-            :placeholder="t('CAPTAIN.ASSISTANTS.OUTCOMES.PLACEHOLDER')"
-          />
-          <Switch
-            v-model="reason.active"
-            :disabled="reason.id === 'other'"
-            :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.ACTIVE')"
-          />
-          <button
-            v-if="reason.id !== 'other'"
-            type="button"
-            data-testid="outcome-remove"
-            class="flex size-7 shrink-0 items-center justify-center rounded-md text-n-slate-10 hover:bg-n-alpha-2 hover:text-n-slate-12"
-            :aria-label="t('CAPTAIN.ASSISTANTS.OUTCOMES.REMOVE')"
-            @click="removeReason(section.type, index)"
-          >
-            <span class="i-lucide-trash-2 size-4" />
-          </button>
-        </div>
-      </div>
-    </section>
+      </template>
+    </OutcomeReasonSection>
   </div>
 </template>
