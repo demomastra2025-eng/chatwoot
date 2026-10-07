@@ -353,7 +353,8 @@ const companyCreateOptionLabel = computed(() => {
 });
 const linkedConversationId = computed(() => {
   const conversationId = Number(
-    form.originatingConversationId || dealConversationDraft.createdConversationId
+    form.originatingConversationId ||
+      dealConversationDraft.createdConversationId
   );
   return Number.isFinite(conversationId) && conversationId > 0
     ? conversationId
@@ -4487,9 +4488,10 @@ watch(
         <div :class="drawerModalClass">
           <div
             v-if="isDealPage"
+            data-testid="crm-deal-page-tabs"
             class="grid grid-cols-2 border-b border-n-weak bg-n-alpha-black2 p-1 lg:hidden"
             role="tablist"
-            :aria-label="$t('CRM.DEALS.TABS.LABEL')"
+            :aria-label="$t('CRM.DEALS.TABS.PAGE_LABEL')"
           >
             <button
               type="button"
@@ -4528,7 +4530,7 @@ watch(
                 !isDealPage,
               'min-h-0 flex-1 lg:h-full lg:w-[58%] lg:flex-none lg:border-r lg:border-n-weak':
                 isDealPage,
-              'flex': !isDealPage || dealPageTab === 'deal',
+              flex: !isDealPage || dealPageTab === 'deal',
               'hidden lg:flex': isDealPage && dealPageTab === 'chat',
               'md:border-r md:border-n-weak':
                 !isDealPage &&
@@ -5018,12 +5020,12 @@ watch(
           </aside>
 
           <CrmDealConversationPanel
-            data-testid="crm-deal-chat"
             v-if="
               drawerOpen &&
               (isDealPage ||
                 (showLinkedConversationPanel && !canOpenLinkedConversation))
             "
+            data-testid="crm-deal-chat"
             :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
               effectiveLinkedCommunicationThreadDisplayId
