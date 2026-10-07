@@ -46,7 +46,8 @@ class Captain::OutcomeReasonConfig
     other = normalized.find { |reason| reason['id'] == 'other' }
     if other
       other['active'] = true
-      return normalized
+      # "Other" is the catch-all: it closes the list in the prompt, as it does in the settings page.
+      return normalized.reject { |reason| reason['id'] == 'other' } << other
     end
 
     fallback = { 'id' => 'other', 'label' => DEFAULT_OTHER_LABEL, 'active' => true }
