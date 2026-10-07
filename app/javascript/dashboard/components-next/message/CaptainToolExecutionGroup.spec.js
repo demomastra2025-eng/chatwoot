@@ -1,26 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 
-const mocks = vi.hoisted(() => ({
-  push: vi.fn(),
-  route: {
-    params: {
-      accountId: '530',
-      conversation_id: '5',
-    },
-  },
-}));
-
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: key => key,
-  }),
-}));
-
-vi.mock('vue-router', () => ({
-  useRoute: () => mocks.route,
-  useRouter: () => ({
-    push: mocks.push,
   }),
 }));
 
@@ -40,50 +23,31 @@ const { default: CaptainToolExecutionGroup } = await import(
   './CaptainToolExecutionGroup.vue'
 );
 
+const additionalAttributes = {
+  captain_trace: {
+    reasoning: 'Used CRM task tools.',
+    trace_id: 'trace-1',
+    session_id: 'session-1',
+  },
+};
+
 describe('CaptainToolExecutionGroup', () => {
-  it('links visible tool details to the account observability trace page', async () => {
+  it('renders the collapsed tool details of the reply', () => {
     const wrapper = mount(CaptainToolExecutionGroup, {
-      props: {
-        additionalAttributes: {
-          captain_trace: {
-            reasoning: 'Used CRM task tools.',
-            trace_id: 'trace-1',
-            session_id: 'session-1',
-          },
-        },
-      },
+      props: { additionalAttributes },
     });
 
-    expect(wrapper.find('[data-testid="thinking-group"]').exists()).toBe(true);
-    expect(wrapper.find('i').classes()).toContain('i-lucide-file-text');
-    await wrapper.find('button').trigger('click');
-
-    expect(mocks.push).toHaveBeenCalledWith({
-      name: 'captain_observability_index',
-      params: { accountId: '530' },
-      query: {
-        tab: 'traces',
-        trace_id: 'trace-1',
-        session_id: 'session-1',
-        conversation_display_id: '5',
-      },
-    });
+    expect(wrapper.find('[data-testid="thinking-group"]').text()).toBe('1');
   });
 
-  it('can hide the trace page action', () => {
+  it('has no link to the logs page, which only administrators can open and which ignores trace filters', () => {
     const wrapper = mount(CaptainToolExecutionGroup, {
-      props: {
-        showOpenTraceAction: false,
-        additionalAttributes: {
-          captain_trace: {
-            reasoning: 'Used CRM task tools.',
-            trace_id: 'trace-1',
-          },
-        },
-      },
+      props: { additionalAttributes },
     });
 
-    expect(wrapper.find('[data-testid="thinking-group"]').exists()).toBe(true);
     expect(wrapper.find('button').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="captain-trace-logs"]').exists()).toBe(
+      false
+    );
   });
 });

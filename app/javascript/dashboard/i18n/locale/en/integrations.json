@@ -453,7 +453,6 @@
         "OUTPUT": "Output",
         "COPY_INPUT": "Copy input",
         "COPY_OUTPUT": "Copy output",
-        "OPEN_TRACE": "Logs",
         "SCENARIO_HANDOFF": "Scenario handoff: {scenario}",
         "COPY_SUCCESS": "Copied to clipboard",
         "COPY_ERROR": "Unable to copy"
