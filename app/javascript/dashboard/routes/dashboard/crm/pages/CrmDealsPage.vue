@@ -213,6 +213,8 @@ const dealConversationDraft = reactive({
   contactableInboxes: [],
   contextError: null,
   communicationThreadDisplayId: '',
+  createdConversationDisplayId: '',
+  createdConversationId: '',
   isCreating: false,
   isLoadingInboxes: false,
   isLoadingCommunicationThread: false,
@@ -350,13 +352,19 @@ const companyCreateOptionLabel = computed(() => {
   return t('CRM.DEALS.FORM.CREATE_COMPANY_FROM_SEARCH');
 });
 const linkedConversationId = computed(() => {
-  const conversationId = Number(form.originatingConversationId);
+  const conversationId = Number(
+    form.originatingConversationId || dealConversationDraft.createdConversationId
+  );
   return Number.isFinite(conversationId) && conversationId > 0
     ? conversationId
     : 0;
 });
 const linkedConversationDisplayId = computed(() =>
-  String(form.originatingConversationDisplayId || '').replace(/[^\d]/g, '')
+  String(
+    form.originatingConversationDisplayId ||
+      dealConversationDraft.createdConversationDisplayId ||
+      ''
+  ).replace(/[^\d]/g, '')
 );
 const linkedCommunicationThreadId = computed(() => {
   const communicationThreadId = Number(form.originatingCommunicationThreadId);
@@ -1779,6 +1787,8 @@ const resetDealConversationDraft = () => {
   dealConversationDraft.contactableInboxes = [];
   dealConversationDraft.contextError = null;
   dealConversationDraft.communicationThreadDisplayId = '';
+  dealConversationDraft.createdConversationDisplayId = '';
+  dealConversationDraft.createdConversationId = '';
   dealConversationDraft.isCreating = false;
   dealConversationDraft.isLoadingInboxes = false;
   dealConversationDraft.isLoadingCommunicationThread = false;
@@ -1797,6 +1807,11 @@ const isCurrentDealConversationRequest = (contactId, requestId) =>
 
 const setDealConversationContact = contactId => {
   const normalizedContactId = Number(contactId);
+
+  if (Number(dealConversationDraft.contactId) !== normalizedContactId) {
+    dealConversationDraft.createdConversationDisplayId = '';
+    dealConversationDraft.createdConversationId = '';
+  }
 
   dealConversationDraft.contactId =
     Number.isFinite(normalizedContactId) && normalizedContactId > 0
@@ -2521,6 +2536,10 @@ const createDealConversation = async ({ contactId, inbox }) => {
     if (conversationId) {
       useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
       if (isDealPage.value) {
+        dealConversationDraft.contactId = normalizedContactId;
+        dealConversationDraft.createdConversationId =
+          createdConversation?.id || '';
+        dealConversationDraft.createdConversationDisplayId = conversationId;
         await loadDealConversationContextWithRetry(normalizedContactId);
         return;
       }

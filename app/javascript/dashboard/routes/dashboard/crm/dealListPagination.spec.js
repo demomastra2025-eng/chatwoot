@@ -414,6 +414,8 @@ it('keeps the deal URL after creating a dialog from its chat panel', async () =>
 
   expect(ConversationAPI.create).toHaveBeenCalled();
   expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(41);
+  expect(state.linkedConversationId).toBe(11963);
+  expect(state.linkedConversationDisplayId).toBe('185');
   expect(runtime.routerPush).not.toHaveBeenCalled();
 });
 
