@@ -16,7 +16,15 @@ class Integrations::Medelement::SpecialistWorkRulesSyncService
       return
     end
 
+    return if resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY].present?
+
     replace_default_work_rules!(resource)
+  end
+
+  def default_template?(resource)
+    return false if resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY].blank?
+
+    normalized_rule_tuples(resource.work_rules.to_a) == normalized_rule_tuples(desired_default_work_rules)
   end
 
   private

@@ -500,6 +500,57 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
+  it 'reconciles only the queried doctor when inactive and stale doctors share the clinic' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      inactive = create(:scheduling_resource, account: account, active: false,
+                                              custom_attributes: { 'medelement_specialist_code' => 'inactive',
+                                                                   'medelement_cabinets' => [{ 'companyCabinetCode' => 'inactive-room' }] })
+      stale = create(:scheduling_resource, account: account,
+                                           custom_attributes: { 'medelement_specialist_code' => 'stale',
+                                                                'medelement_cabinets' => [{ 'companyCabinetCode' => 'stale-room' }],
+                                                                'medelement_last_seen_at' => 8.days.ago.iso8601 })
+      appointments = [resource, inactive, stale].map.with_index do |doctor, index|
+        create(:scheduling_appointment, account: account, resource: doctor, source: 'medelement',
+                                        external_ref: "medelement:reception:missing-#{index}",
+                                        starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 0, 0),
+                                        ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 20, 0))
+      end
+      allow(client).to receive(:get_receptions).and_return([])
+
+      service.perform
+      expect(appointments.first.reload.custom_attributes['medelement_missing_syncs']).to eq(1)
+      service.perform
+
+      expect(appointments.first.reload.status).to eq('cancelled')
+      expect(appointments.drop(1).map { |appointment| appointment.reload.status }).to eq(%w[scheduled scheduled])
+      expect(appointments.drop(1)).to all(satisfy { |appointment| appointment.custom_attributes['medelement_missing_syncs'].nil? })
+    end
+  end
+
+  it 'protects a doctor absent from the authoritative specialist list while cleaning up a returned doctor' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      absent = create(:scheduling_resource, account: account,
+                                            custom_attributes: { 'medelement_specialist_code' => 'absent',
+                                                                 'medelement_cabinets' => [{ 'companyCabinetCode' => 'absent-room' }] })
+      missing = [resource, absent].map.with_index do |doctor, index|
+        create(:scheduling_appointment, account: account, resource: doctor, source: 'medelement',
+                                        external_ref: "medelement:reception:absent-#{index}",
+                                        starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 0, 0),
+                                        ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 20, 0))
+      end
+      allow(client).to receive(:get_receptions).and_return([])
+      guarded_service = described_class.new(account: account, client: client, configuration: configuration,
+                                            authoritative_specialist_codes: ['27492901726817790'])
+
+      guarded_service.perform
+      guarded_service.perform
+
+      expect(missing.first.reload.status).to eq('cancelled')
+      expect(missing.last.reload.status).to eq('scheduled')
+      expect(missing.last.custom_attributes).not_to include('medelement_missing_syncs')
+    end
+  end
+
   it 'does not clean up imported appointments when no valid provider pair was queried' do
     resource.update!(active: false)
     existing_import = create(

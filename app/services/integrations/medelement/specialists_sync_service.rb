@@ -1,4 +1,6 @@
 class Integrations::Medelement::SpecialistsSyncService
+  attr_reader :returned_codes
+
   LAST_SEEN_AT_KEY = 'medelement_last_seen_at'.freeze
   SPECIALIST_CODE_KEY = 'medelement_specialist_code'.freeze
   MISSING_GRACE_PERIOD = 7.days
@@ -39,6 +41,7 @@ class Integrations::Medelement::SpecialistsSyncService
   def sync_inventory(normalized_rows)
     provider_codes = normalized_rows.filter_map { |payload| payload['specialistCode'].to_s.presence }.uniq
     imported_codes = normalized_rows.filter_map { |payload| sync_specialist!(payload) }
+    @returned_codes = imported_codes
     not_returned_count = record_not_returned_specialists!(provider_codes)
     # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
     deactivate_stale_specialists!(provider_codes) if client.nil?
@@ -58,11 +61,15 @@ class Integrations::Medelement::SpecialistsSyncService
     return log_skipped_specialist('missing_specialist_code', payload: payload) if specialist_code.blank?
     return log_skipped_specialist('missing_name', specialist_code, payload: payload) if specialist_name.blank?
 
-    resource = find_resource(specialist_code) || account.scheduling_resources.new
-    resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
-    resource.save!
-    work_rules_sync_service.perform(resource)
+    Scheduling::Resource.transaction do
+      resource = find_resource(specialist_code) || account.scheduling_resources.new
+      resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
+      resource.save!
+      work_rules_sync_service.perform(resource)
+    end
     specialist_code
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique, ArgumentError => e
+    log_skipped_specialist(e.class.name, specialist_code, payload: payload)
   end
 
   def specialist_attributes(resource, payload, specialist_code, specialist_name)

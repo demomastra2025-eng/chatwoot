@@ -13,6 +13,7 @@ class Integrations::Medelement::SyncCoordinatorService
     raise SyncUnavailableError, 'Scheduling feature is disabled' unless hook.feature_allowed?
 
     @sync_run = sync_run
+    @observed_specialist_codes = []
     @conflict_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: sync_run) if sync_run
     selected_phases(phases).each { |phase| run_phase(phase) }
     sync_run&.finish!
@@ -63,12 +64,15 @@ class Integrations::Medelement::SyncCoordinatorService
   def sync_specialists
     return :disabled unless configuration.sync_specialists?
 
-    Integrations::Medelement::SpecialistsSyncService.new(
+    service = Integrations::Medelement::SpecialistsSyncService.new(
       account: hook.account,
       client: client,
       configuration: configuration,
       **tracking_options
-    ).perform
+    )
+    result = service.perform
+    @observed_specialist_codes = service.returned_codes
+    result
   end
 
   def sync_services
@@ -105,6 +109,7 @@ class Integrations::Medelement::SyncCoordinatorService
       client: client,
       configuration: configuration,
       window_mode: receptions_window_mode,
+      authoritative_specialist_codes: @observed_specialist_codes,
       **tracking_options
     ).perform
   end

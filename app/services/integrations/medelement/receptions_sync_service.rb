@@ -18,30 +18,29 @@ class Integrations::Medelement::ReceptionsSyncService
   PROVIDER_BINDING_GRACE_PERIOD = Integrations::Medelement::SpecialistsSyncService::MISSING_GRACE_PERIOD
   PROVIDER_LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
 
-  def initialize(account:, client:, configuration:, conflict_tracker: nil, window_mode: :full)
+  def initialize(account:, client:, configuration:, **options)
     @account = account
     @client = client
     @configuration = configuration
-    @conflict_tracker = conflict_tracker
-    @window_mode = window_mode.to_sym
-    raise ArgumentError, "Unsupported Medelement receptions window mode: #{window_mode}" unless @window_mode.in?(WINDOW_MODES)
+    @conflict_tracker = options[:conflict_tracker]
+    @window_mode = options.fetch(:window_mode, :full).to_sym
+    @authoritative_specialist_codes = options[:authoritative_specialist_codes]
+    raise ArgumentError, "Unsupported Medelement receptions window mode: #{@window_mode}" unless @window_mode.in?(WINDOW_MODES)
 
     @importer = Integrations::Medelement::AppointmentImporterService.new(
       account: account,
-      conflict_tracker: conflict_tracker
+      conflict_tracker: @conflict_tracker
     )
   end
 
   def perform
-    @snapshot_complete = true
-    @queried_pair_count = 0
+    @complete_resource_ids = Set.new
     @appointment_snapshot_versions = load_appointment_snapshot_versions
     resource_map = medelement_resource_map
     snapshot = build_snapshot(resource_map)
-    @snapshot_complete = false if queried_pair_count.zero?
     contacts_by_patient_code = synced_contacts(snapshot)
     sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
-    cleanup_missing_appointments!(sync_result[:desired_external_refs]) if snapshot_complete?
+    cleanup_missing_appointments!(sync_result[:desired_external_refs]) if @complete_resource_ids.any?
     sync_result[:skipped_pair_count] = skipped_pair_count
     sync_result.merge!(window_metadata)
     log_sync_summary(sync_result)
@@ -63,12 +62,7 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def build_snapshot(resource_map)
-    snapshot = resource_map.values.flat_map do |resource|
-      specialist_code = resource.custom_attributes['medelement_specialist_code']
-      Array(resource.custom_attributes['medelement_cabinets']).flat_map do |cabinet|
-        snapshot_for_cabinet(cabinet, specialist_code)
-      end
-    end
+    snapshot = resource_map.values.flat_map { |resource| snapshot_for_resource(resource) }
 
     listed_receptions = snapshot.uniq { |reception| reception['RECEPTION_CODE'].to_s }
     @appointments_by_external_ref = appointments_by_external_ref(listed_receptions)
@@ -77,6 +71,15 @@ class Integrations::Medelement::ReceptionsSyncService
     listed_receptions
       .sort_by { |reception| detail_priority(reception) }
       .map { |reception| enrich_reception_if_needed(reception) }
+  end
+
+  def snapshot_for_resource(resource)
+    specialist_code = resource.custom_attributes['medelement_specialist_code']
+    cabinets = Array(resource.custom_attributes['medelement_cabinets'])
+    rows = cabinets.map { |cabinet| snapshot_for_cabinet(cabinet, specialist_code) }
+    authoritative = @authoritative_specialist_codes.nil? || @authoritative_specialist_codes.include?(specialist_code.to_s)
+    @complete_resource_ids << resource.id if cabinets.present? && rows.none?(&:nil?) && authoritative
+    rows.compact.flatten
   end
 
   def enrich_reception_if_needed(reception)
@@ -281,7 +284,7 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def cleanup_missing_appointments!(desired_external_refs)
-    provider_backed_appointments_in_window.find_each do |appointment|
+    provider_backed_appointments_in_window.where(resource_id: @complete_resource_ids.to_a).find_each do |appointment|
       # A local-only cancellation still expects the reception in MedElement, so its disappearance is reconciled.
       next if appointment.status == 'cancelled' && !Integrations::Medelement::LocalCancellation.marked?(appointment)
       next if desired_external_refs.include?(appointment.external_ref)
@@ -316,12 +319,8 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def snapshot_for_cabinet(cabinet, specialist_code)
     company_cabinet_code = Integrations::Medelement::CabinetAttributes.code(cabinet)
-    if specialist_code.blank? || company_cabinet_code.blank?
-      @snapshot_complete = false
-      return []
-    end
+    return nil if specialist_code.blank? || company_cabinet_code.blank?
 
-    @queried_pair_count += 1
     fetch_receptions_for_pair(
       specialist_code: specialist_code,
       company_cabinet_code: company_cabinet_code,
@@ -346,7 +345,6 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def skip_stale_provider_bindings!(resource)
-    @snapshot_complete = false
     specialist_code = resource.custom_attributes['medelement_specialist_code']
     Array(resource.custom_attributes['medelement_cabinets']).each do |cabinet|
       skip_stale_provider_binding!(resource, specialist_code, cabinet)
@@ -382,14 +380,6 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def skipped_pair_count
     @skipped_pair_count.to_i
-  end
-
-  def queried_pair_count
-    @queried_pair_count.to_i
-  end
-
-  def snapshot_complete?
-    @snapshot_complete
   end
 
   def split_fetch_receptions_for_pair(specialist_code:, company_cabinet_code:, from:, to:)

@@ -229,6 +229,36 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     end.not_to change(account.scheduling_work_rules, :count)
   end
 
+  it 'keeps an intentionally empty schedule empty after a later specialist sync' do
+    described_class.new(account: account, client: client, configuration: configuration).perform
+    resource = account.scheduling_resources.last
+    resource.work_rules.destroy_all
+
+    described_class.new(account: account, client: client, configuration: configuration).perform
+
+    expect(resource.reload.work_rules).to be_empty
+    expect(resource.custom_attributes['medelement_default_work_rules_seeded_at']).to be_present
+  end
+
+  it 'records one invalid row and imports the remaining specialists' do
+    allow(client).to receive(:specialists).and_return(
+      [
+        { 'specialistCode' => 'invalid-zone', 'userName' => 'Invalid', 'timezone' => 'Mars/Unknown' },
+        { 'specialistCode' => 'valid-zone', 'userName' => 'Valid', 'timezone' => 'Asia/Almaty' }
+      ]
+    )
+    tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: true)
+
+    result = described_class.new(account: account, client: client, configuration: configuration,
+                                 conflict_tracker: tracker).perform
+
+    expect(result).to include(provider_count: 2, imported_count: 1, skipped_count: 1)
+    expect(account.scheduling_resources.pluck(:name)).to contain_exactly('Valid')
+    expect(tracker).to have_received(:record!).with(
+      hash_including(phase: 'specialists', entity_key: 'invalid-zone', conflict_type: 'invalid_specialist')
+    )
+  end
+
   it 'replaces legacy 24/7 Medelement default rules with the new business schedule' do
     resource = create(
       :scheduling_resource,
