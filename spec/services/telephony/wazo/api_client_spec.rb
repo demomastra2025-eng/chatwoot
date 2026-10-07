@@ -27,6 +27,21 @@ RSpec.describe Telephony::Wazo::ApiClient do
     expect(request).to have_been_requested.once
   end
 
+  it 'reads paginated CDRs with the scoped Wazo tenant' do
+    stub_request(:post, 'https://wazo.example.com/api/auth/0.1/token')
+      .to_return(status: 200, body: { data: { token: 'token-value' } }.to_json)
+    request = stub_request(:get, %r{https://wazo\.example\.com/api/call-logd/1\.0/cdr\?})
+              .with(query: hash_including('limit' => '100', 'offset' => '100', 'order' => 'asc'),
+                    headers: { 'X-Auth-Token' => 'token-value', 'Wazo-Tenant' => 'tenant-uuid' })
+              .to_return(status: 200, body: { items: [{ id: 'cdr-one' }] }.to_json)
+
+    result = client.cdr(from: Time.zone.parse('2026-10-06T10:00:00Z'),
+                        until_time: Time.zone.parse('2026-10-06T11:00:00Z'), offset: 100)
+
+    expect(result['items']).to eq([{ 'id' => 'cdr-one' }])
+    expect(request).to have_been_requested.once
+  end
+
   it 'rejects non-HTTPS API URLs' do
     expect do
       described_class.new(base_url: 'http://wazo.example.com', username: 'user', password: 'secret')
