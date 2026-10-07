@@ -3763,11 +3763,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
   add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
-  add_foreign_key "medelement_delta_miss_candidates", "integrations_hooks", column: "hook_id", on_delete: :cascade, validate: false
-  add_foreign_key "medelement_delta_miss_candidates", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify, validate: false
-  add_foreign_key "medelement_delta_misses", "integrations_hooks", column: "hook_id", on_delete: :cascade, validate: false
-  add_foreign_key "medelement_delta_misses", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify, validate: false
-  add_foreign_key "medelement_delta_seen_receptions", "integrations_hooks", column: "hook_id", on_delete: :cascade, validate: false
+  add_foreign_key "medelement_delta_miss_candidates", "integrations_hooks", column: "hook_id", on_delete: :cascade
+  add_foreign_key "medelement_delta_miss_candidates", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
+  add_foreign_key "medelement_delta_misses", "integrations_hooks", column: "hook_id", on_delete: :cascade
+  add_foreign_key "medelement_delta_misses", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
+  add_foreign_key "medelement_delta_seen_receptions", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_provider_commands", "accounts", on_delete: :cascade
   add_foreign_key "medelement_provider_commands", "confirmation_requests", on_delete: :nullify
   add_foreign_key "medelement_provider_commands", "contacts", on_delete: :nullify
@@ -3779,7 +3779,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
   add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "first_sync_run_id", on_delete: :nullify
   add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "last_sync_run_id", on_delete: :nullify
   add_foreign_key "medelement_sync_conflicts", "users", column: "resolved_by_id", on_delete: :nullify
-  add_foreign_key "medelement_sync_cursors", "integrations_hooks", column: "hook_id", on_delete: :cascade, validate: false
+  add_foreign_key "medelement_sync_cursors", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify

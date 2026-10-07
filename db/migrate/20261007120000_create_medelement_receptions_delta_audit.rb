@@ -19,6 +19,11 @@ class CreateMedelementReceptionsDeltaAudit < ActiveRecord::Migration[7.2]
       t.timestamps
     end
     add_foreign_key :medelement_sync_cursors, :integrations_hooks, column: :hook_id, on_delete: :cascade, validate: false
+    reversible do |dir|
+      dir.up do
+        validate_foreign_key :medelement_sync_cursors, column: :hook_id
+      end
+    end
     add_index :medelement_sync_cursors, [:hook_id, :name], unique: true
   end
 
@@ -31,6 +36,11 @@ class CreateMedelementReceptionsDeltaAudit < ActiveRecord::Migration[7.2]
       t.timestamps
     end
     add_foreign_key :medelement_delta_seen_receptions, :integrations_hooks, column: :hook_id, on_delete: :cascade, validate: false
+    reversible do |dir|
+      dir.up do
+        validate_foreign_key :medelement_delta_seen_receptions, column: :hook_id
+      end
+    end
     add_index :medelement_delta_seen_receptions, [:hook_id, :reception_code, :change_marker],
               unique: true, name: 'idx_medelement_delta_seen_identity'
     add_index :medelement_delta_seen_receptions, :processed_at
@@ -50,6 +60,12 @@ class CreateMedelementReceptionsDeltaAudit < ActiveRecord::Migration[7.2]
     end
     add_foreign_key :medelement_delta_miss_candidates, :integrations_hooks, column: :hook_id, on_delete: :cascade, validate: false
     add_foreign_key :medelement_delta_miss_candidates, :medelement_sync_runs, column: :full_sweep_run_id, on_delete: :nullify, validate: false
+    reversible do |dir|
+      dir.up do
+        validate_foreign_key :medelement_delta_miss_candidates, column: :hook_id
+        validate_foreign_key :medelement_delta_miss_candidates, column: :full_sweep_run_id
+      end
+    end
     add_index :medelement_delta_miss_candidates, [:hook_id, :reception_code, :kind, :change_marker],
               unique: true, name: 'idx_medelement_delta_candidate_identity'
   end
@@ -69,6 +85,12 @@ class CreateMedelementReceptionsDeltaAudit < ActiveRecord::Migration[7.2]
     end
     add_foreign_key :medelement_delta_misses, :integrations_hooks, column: :hook_id, on_delete: :cascade, validate: false
     add_foreign_key :medelement_delta_misses, :medelement_sync_runs, column: :full_sweep_run_id, on_delete: :nullify, validate: false
+    reversible do |dir|
+      dir.up do
+        validate_foreign_key :medelement_delta_misses, column: :hook_id
+        validate_foreign_key :medelement_delta_misses, column: :full_sweep_run_id
+      end
+    end
     add_index :medelement_delta_misses, [:hook_id, :reception_code, :kind, :change_marker],
               unique: true, name: 'idx_medelement_delta_miss_identity'
     add_index :medelement_delta_misses, [:hook_id, :detected_at]
