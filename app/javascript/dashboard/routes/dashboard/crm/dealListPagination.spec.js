@@ -1772,6 +1772,28 @@ it('creates a deal without an amount when the amount field is empty', async () =
   expect(payload).not.toHaveProperty('amount_minor');
 });
 
+it('names the system stage like the board in the list stage menu', async () => {
+  const [stage] = referencesStore.pipelines[0].stages;
+  referencesStore.pipelines[0].stages[0] = {
+    ...stage,
+    code: 'new',
+    name: 'Unsorted',
+  };
+  try {
+    const { state } = await mountPage();
+    const options = state.listStageOptionsForDeal({ pipelineId: 10 });
+
+    expect(options.map(option => option.name)).toEqual([
+      'CRM.SETTINGS.STAGES.SYSTEM.UNSORTED',
+      'Qualified',
+    ]);
+    expect(options[0]).toMatchObject({ code: 'new', id: 100 });
+    expect(state.listStageOptionsForDeal({ pipelineId: 404 })).toEqual([]);
+  } finally {
+    referencesStore.pipelines[0].stages[0] = stage;
+  }
+});
+
 it('drops a pending debounced reload when the page unmounts', async () => {
   const { state, wrapper } = await mountPage();
   CrmDealsAPI.get.mockClear();

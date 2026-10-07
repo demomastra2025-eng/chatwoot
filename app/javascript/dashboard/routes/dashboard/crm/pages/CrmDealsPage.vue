@@ -580,13 +580,20 @@ const visibleBoardStages = computed(() =>
 
 const hasBoardStages = computed(() => boardStages.value.length > 0);
 
-const listStageOptionsForDeal = deal => {
-  return (
-    activePipelines.value.find(
-      pipeline => Number(pipeline.id) === Number(deal.pipelineId)
-    )?.stages || []
-  );
-};
+// The list stage menu shows the same names as the board and filters (the
+// system "new" stage is «Неразобранное», not the raw stage name).
+const listStageOptionsByPipelineId = computed(() =>
+  activePipelines.value.reduce((result, pipeline) => {
+    result[Number(pipeline.id)] = (pipeline.stages || []).map(stage => ({
+      ...stage,
+      name: stageDisplayName(stage),
+    }));
+    return result;
+  }, {})
+);
+
+const listStageOptionsForDeal = deal =>
+  listStageOptionsByPipelineId.value[Number(deal.pipelineId)] || [];
 
 const normalizedTextValues = values => [
   ...new Set(
