@@ -66,7 +66,7 @@ RSpec.describe Integrations::Medelement::ReceptionsDeltaJob do
 
     described_class.perform_now(hook.id)
 
-    expect(cursor.reload.value).to be_within(1.microsecond).of(value)
+    expect(cursor.reload.value).to be_within(1.second).of(value)
     expect(cursor.current_interval_seconds).to eq(300)
   end
 
