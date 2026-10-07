@@ -227,8 +227,8 @@ const updateFormActivityType = value => {
   form.outcomeNote = '';
 };
 
-const defaultStatus = computed(
-  () => props.statuses.find(status => status.default && status.active !== false)
+const defaultStatus = computed(() =>
+  props.statuses.find(status => status.default && status.active !== false)
 );
 
 const doneStatus = computed(() =>

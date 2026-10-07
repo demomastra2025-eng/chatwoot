@@ -35,7 +35,10 @@ vi.mock('vue-i18n', () => ({
 }));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: runtime.routeQuery, params: { accountId: 1 } }),
-  useRouter: () => ({ push: runtime.routerPush, replace: runtime.routerReplace }),
+  useRouter: () => ({
+    push: runtime.routerPush,
+    replace: runtime.routerReplace,
+  }),
 }));
 vi.mock('dashboard/api/crm/tasks', () => ({
   default: Object.fromEntries(
@@ -58,9 +61,7 @@ vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({
     checkPermissions: permissions =>
-      permissions.includes('crm_settings_view')
-        ? runtime.settingsAccess
-        : true,
+      permissions.includes('crm_settings_view') ? runtime.settingsAccess : true,
   }),
 }));
 vi.mock('dashboard/composables/store', () => ({
@@ -315,9 +316,9 @@ it('hides the Tasks gear without CRM settings access', async () => {
   const header = wrapper.findComponent({ name: 'SchedulingPageHeader' });
   const buttons = header.vm.$slots.actions().filter(node => node.props?.icon);
 
-  expect(buttons.some(button => button.props.icon === 'i-lucide-settings')).toBe(
-    false
-  );
+  expect(
+    buttons.some(button => button.props.icon === 'i-lucide-settings')
+  ).toBe(false);
 });
 
 it.each(['page', 'panel'])(
