@@ -280,14 +280,17 @@ RSpec.describe Integrations::Medelement::Client do
         :get,
         "#{described_class::BASE_URL}/v1/timetable/get_timetable"
       )
-                .with do |web_request|
-                  URI.decode_www_form(URI(web_request.uri.to_s).query).to_h == {
-                    'date[0]' => '27.07.2026', 'date[1]' => '28.07.2026',
-                    'specialistCode' => '9007199254740993'
-                  }
-                end
+                .with(query: {
+                        'date' => ['27.07.2026', '28.07.2026'],
+                        'specialistCode' => '9007199254740993'
+                      })
                 .to_return(status: 200, body: '{"27.07.2026":{"timetable":[]},"28.07.2026":[]}',
                            headers: { 'Content-Type' => 'application/json' })
+      expect(HTTParty).to receive(:get).with(
+        "#{described_class::BASE_URL}/v1/timetable/get_timetable?" \
+        'date%5B0%5D=27.07.2026&date%5B1%5D=28.07.2026&specialistCode=9007199254740993',
+        anything
+      ).and_call_original
 
       result = client.timetable(
         specialist_code: 9_007_199_254_740_993,
@@ -303,11 +306,7 @@ RSpec.describe Integrations::Medelement::Client do
 
     it 'keeps strict day validation for live availability and booking callers' do
       stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
-        .with do |web_request|
-          URI.decode_www_form(URI(web_request.uri.to_s).query).to_h == {
-            'date[0]' => '27.07.2026', 'date[1]' => '27.07.2026', 'specialistCode' => 'specialist-1'
-          }
-        end
+        .with(query: { 'date' => ['27.07.2026', '27.07.2026'], 'specialistCode' => 'specialist-1' })
         .to_return(status: 200, body: '{"27.07.2026":[]}', headers: { 'Content-Type' => 'application/json' })
       allow(Rails.logger).to receive(:warn)
 
