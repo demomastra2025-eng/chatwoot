@@ -69,12 +69,13 @@ describe('SidebarVisibilitySettings', () => {
     useAlert.mockReset();
   });
 
-  it('shows the top-level sections with notifications pinned first', () => {
+  it('shows configurable sections without a notification row', () => {
     const wrapper = mountComponent();
 
-    expect(wrapper.find('[data-test="sidebar-order-pinned"]').text()).toContain(
-      'SIDEBAR.INBOX'
+    expect(wrapper.find('[data-test="sidebar-order-pinned"]').exists()).toBe(
+      false
     );
+    expect(wrapper.text()).not.toContain('SIDEBAR.INBOX');
     expect(wrapper.text()).toContain('SIDEBAR.CONVERSATIONS');
     expect(wrapper.text()).toContain('SIDEBAR.MASS_BROADCASTS');
     expect(wrapper.text()).not.toContain('SIDEBAR.OUTBOUND');

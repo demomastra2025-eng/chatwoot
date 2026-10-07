@@ -118,22 +118,6 @@ watch(
         <p class="m-0 text-sm text-n-slate-11">
           {{ t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.ORDER_HINT') }}
         </p>
-        <div
-          data-test="sidebar-order-pinned"
-          class="flex items-center gap-2 rounded-xl border border-dashed border-n-weak p-3"
-        >
-          <span
-            class="inline-flex size-7 shrink-0 items-center justify-center text-n-slate-9"
-          >
-            <span class="i-lucide-pin size-4" />
-          </span>
-          <span class="flex-1 text-sm font-medium leading-5 text-n-slate-12">
-            {{ t('SIDEBAR.INBOX') }}
-          </span>
-          <span class="text-xs text-n-slate-11">
-            {{ t('GENERAL_SETTINGS.SIDEBAR_VISIBILITY.PINNED_FIRST') }}
-          </span>
-        </div>
         <Draggable
           v-model="sidebarItemsDraft"
           item-key="key"
