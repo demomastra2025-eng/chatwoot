@@ -327,9 +327,7 @@ export default {
   <div class="flex flex-col w-full">
     <BaseSettingsHeader :title="$t('GENERAL_SETTINGS.TITLE')" />
     <div class="w-full max-w-[45rem] mt-5">
-      <main
-        class="min-w-0 rounded-xl border border-n-weak bg-n-background px-5 md:px-7 shadow-sm"
-      >
+      <main class="min-w-0">
         <div
           v-if="isWorkspaceReadOnly"
           class="mt-6 flex items-start gap-2 rounded-lg bg-n-amber-3 px-4 py-3 text-sm text-n-amber-11"
@@ -436,7 +434,10 @@ export default {
 
         <woot-loading-state v-if="uiFlags.isFetchingItem" />
         <SamlPaywall v-if="accountRecord?.id && showSamlPaywall" />
-        <SamlSettings v-else-if="accountRecord?.id && shouldShowSaml" />
+        <SamlSettings
+          v-else-if="accountRecord?.id && shouldShowSaml"
+          class="border-t border-n-weak"
+        />
 
         <details v-if="accountRecord?.id" class="border-t border-n-weak py-6">
           <summary class="cursor-pointer text-sm text-n-slate-11">
