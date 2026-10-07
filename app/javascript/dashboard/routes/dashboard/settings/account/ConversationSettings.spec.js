@@ -9,6 +9,7 @@ const { storeDispatch, alertMock } = vi.hoisted(() => ({
   storeDispatch: vi.fn(() => Promise.resolve()),
   alertMock: vi.fn(),
 }));
+let canManageWorkspace = true;
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
@@ -22,6 +23,12 @@ vi.mock('dashboard/composables/store', () => ({
   useStore: () => ({ dispatch: storeDispatch }),
 }));
 
+vi.mock('dashboard/composables/usePolicy', () => ({
+  usePolicy: () => ({
+    checkPermissions: () => canManageWorkspace,
+  }),
+}));
+
 const mountComponent = () =>
   shallowMount(ConversationSettings, {
     global: {
@@ -30,6 +37,11 @@ const mountComponent = () =>
           template: '<main><slot name="header" /><slot name="body" /></main>',
         },
         BaseSettingsHeader: true,
+        MediaTranscription: {
+          props: ['disabled'],
+          template:
+            '<div data-test="media-transcription" :data-disabled="String(disabled)" />',
+        },
         Switch: {
           name: 'Switch',
           props: ['modelValue'],
@@ -53,6 +65,25 @@ describe('ConversationSettings', () => {
     });
     storeDispatch.mockClear();
     alertMock.mockClear();
+    canManageWorkspace = true;
+  });
+
+  it('loads account settings and shows transcription disabled for non-managers', () => {
+    canManageWorkspace = false;
+    const wrapper = mountComponent();
+
+    expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
+    expect(
+      wrapper.get('[data-test="media-transcription"]').attributes('data-disabled')
+    ).toBe('true');
+  });
+
+  it('enables transcription for workspace managers', () => {
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.get('[data-test="media-transcription"]').attributes('data-disabled')
+    ).toBe('false');
   });
 
   it('saves text improvement under its own key and refreshes the account', async () => {
@@ -60,6 +91,7 @@ describe('ConversationSettings', () => {
       .spyOn(configStore, 'updatePreferences')
       .mockResolvedValue({ data: {} });
     const wrapper = mountComponent();
+    storeDispatch.mockClear();
     const toggle = wrapper.get(
       '[data-test="conversation-settings-text-improvement"]'
     );
@@ -82,6 +114,7 @@ describe('ConversationSettings', () => {
       new Error('boom')
     );
     const wrapper = mountComponent();
+    storeDispatch.mockClear();
 
     await wrapper
       .get('[data-test="conversation-settings-text-improvement"]')

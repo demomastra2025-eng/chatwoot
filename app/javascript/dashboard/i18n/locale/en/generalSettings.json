@@ -9,14 +9,7 @@
     "TITLE": "Profile",
     "SUBMIT": "Save changes",
     "READ_ONLY": "You have view-only access. Only an administrator can edit the workspace.",
-    "SECTIONS": {
-      "NAVIGATION": "Workspace sections",
-      "GENERAL": "General",
-      "COMMUNICATIONS": "Communications",
-      "SECURITY": "Security",
-      "TECHNICAL": "Technical",
-      "DANGER": "Danger zone"
-    },
+    "TECHNICAL_INFORMATION": "Technical information",
     "UNSAVED": {
       "MESSAGE": "You have unsaved changes",
       "DISCARD": "Discard",
@@ -191,8 +184,7 @@
       "TEXT_IMPROVEMENT": "Text improvement",
       "TEXT_IMPROVEMENT_DESCRIPTION": "Allow employees to improve and rephrase a message with AI before sending it.",
       "UPDATE_SUCCESS": "Conversation settings updated",
-      "UPDATE_ERROR": "Could not update conversation settings. Please try again.",
-      "EMPTY": "There are no conversation settings for this workspace yet."
+      "UPDATE_ERROR": "Could not update conversation settings. Please try again."
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",
@@ -203,8 +195,7 @@
       "MOVE_DOWN": "Move down",
       "SAVE": "Save settings",
       "UPDATE_SUCCESS": "Sidebar settings updated",
-      "UPDATE_ERROR": "Could not update sidebar settings. Please try again.",
-      "PINNED_FIRST": "Always first"
+      "UPDATE_ERROR": "Could not update sidebar settings. Please try again."
     }
   },
   "FORMS": {

@@ -3,17 +3,25 @@ import { computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
+import { useStore } from 'dashboard/composables/store';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import { useCaptainFeatureSettings } from 'dashboard/composables/captain/useCaptainFeatureSettings';
 
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import MediaTranscription from './components/MediaTranscription.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
+const store = useStore();
+const { checkPermissions } = usePolicy();
 const { features, uiFlags } = storeToRefs(configStore);
 const { saveTextImprovement } = useCaptainFeatureSettings();
+const isWorkspaceReadOnly = computed(
+  () => !checkPermissions(['administrator'])
+);
 
 // The "Text improvement" switch is the same setting as on the AI settings page
 // (captain_features.text_improvement, shown as features.editor.enabled); it is
@@ -32,7 +40,10 @@ const updateTextImprovement = async enabled => {
   }
 };
 
-onMounted(() => configStore.fetch());
+onMounted(() => {
+  configStore.fetch();
+  store.dispatch('accounts/get');
+});
 </script>
 
 <template>
@@ -72,13 +83,9 @@ onMounted(() => configStore.fetch());
           />
         </div>
       </div>
-      <p
-        v-else
-        data-test="conversation-settings-empty"
-        class="mt-4 text-sm text-n-slate-11"
-      >
-        {{ t('GENERAL_SETTINGS.CONVERSATIONS.EMPTY') }}
-      </p>
+      <div class="mt-4 rounded-xl border border-n-weak bg-n-solid-2 px-4">
+        <MediaTranscription :disabled="isWorkspaceReadOnly" />
+      </div>
     </template>
   </SettingsLayout>
 </template>

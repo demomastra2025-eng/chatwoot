@@ -32,12 +32,14 @@ vi.mock('dashboard/composables/useAccount', () => ({
 }));
 
 let shouldShowSamlFeature = false;
+let shouldShowSamlPaywall = false;
+let canManageWorkspace = true;
 
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({
     shouldShow: vi.fn(() => shouldShowSamlFeature),
-    shouldShowPaywall: vi.fn(() => false),
-    checkPermissions: vi.fn(() => true),
+    shouldShowPaywall: vi.fn(() => shouldShowSamlPaywall),
+    checkPermissions: vi.fn(() => canManageWorkspace),
   }),
 }));
 
@@ -65,19 +67,20 @@ const InvalidNestedSettings = {
   validations: {
     samlUrl: { required },
   },
-  template: '<div />',
+  template: '<div data-test="saml-settings" />',
 };
 
 const buildWrapper = ({
   updateAction = vi.fn(() => Promise.resolve()),
   isOnChatwootCloud = false,
+  accountRecord = account,
 } = {}) => {
   const store = createStore({
     modules: {
       accounts: {
         namespaced: true,
         getters: {
-          getAccount: () => () => account,
+          getAccount: () => () => accountRecord,
           getUIFlags: () => ({ isFetchingItem: false, isUpdating: false }),
         },
         actions: {
@@ -102,15 +105,16 @@ const buildWrapper = ({
       stubs: {
         BaseSettingsHeader: true,
         SectionLayout: {
-          template: '<section><slot /><slot name="headerActions" /></section>',
+          props: ['title'],
+          template:
+            '<section :data-title="title"><slot /><slot name="headerActions" /></section>',
         },
         WorkspaceLogo: true,
-        MediaTranscription: true,
-        AccountId: true,
-        BuildInfo: true,
-        AccountDelete: true,
+        AccountId: { template: '<div data-test="account-id" />' },
+        BuildInfo: { template: '<div data-test="build-info" />' },
+        AccountDelete: { template: '<div data-test="account-delete" />' },
         SamlSettings: InvalidNestedSettings,
-        SamlPaywall: true,
+        SamlPaywall: { template: '<div data-test="saml-paywall" />' },
         NextInput: true,
         NextSelect: true,
         NextButton: true,
@@ -126,6 +130,9 @@ const buildWrapper = ({
 describe('Account settings', () => {
   beforeEach(() => {
     shouldShowSamlFeature = false;
+    shouldShowSamlPaywall = false;
+    canManageWorkspace = true;
+    window.chatwootConfig = { allowedLoginMethods: ['saml'] };
     vi.clearAllMocks();
   });
 
@@ -200,18 +207,59 @@ describe('Account settings', () => {
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
   });
 
-  it('shows compact workspace sections and isolates the cloud danger zone', async () => {
+  it('shows the general form and technical details on one page without the mini-nav or transcription', async () => {
     const { wrapper } = buildWrapper({ isOnChatwootCloud: true });
     await wrapper.vm.hydrateAccountForm();
 
-    expect(wrapper.vm.workspaceSections.map(section => section.id)).toEqual([
-      'general',
-      'communications',
-      'security',
-      'technical',
-      'danger',
-    ]);
-    expect(wrapper.vm.workspaceSections.at(-1)).toMatchObject({ danger: true });
+    expect(wrapper.find('nav').exists()).toBe(false);
+    expect(wrapper.find('form').exists()).toBe(true);
+    expect(wrapper.find('[data-test="account-id"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="build-info"]').exists()).toBe(true);
+    expect(wrapper.find('details').attributes('open')).toBeUndefined();
+    expect(wrapper.find('[data-test="account-delete"]').exists()).toBe(true);
+    expect(wrapper.find('media-transcription-stub').exists()).toBe(false);
+    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="saml-paywall"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('SAML_DISABLED_MESSAGE');
+  });
+
+  it('shows SAML settings or paywall under their existing conditions', () => {
+    shouldShowSamlFeature = true;
+    const { wrapper } = buildWrapper();
+    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(true);
+
+    shouldShowSamlPaywall = true;
+    const { wrapper: paywallWrapper } = buildWrapper();
+    expect(paywallWrapper.find('[data-test="saml-paywall"]').exists()).toBe(
+      true
+    );
+    expect(paywallWrapper.find('[data-test="saml-settings"]').exists()).toBe(
+      false
+    );
+  });
+
+  it('hides the danger zone outside cloud or for a read-only workspace', () => {
+    const { wrapper: nonCloudWrapper } = buildWrapper();
+    expect(
+      nonCloudWrapper.find('[data-test="account-delete"]').exists()
+    ).toBe(false);
+
+    canManageWorkspace = false;
+    const { wrapper } = buildWrapper({ isOnChatwootCloud: true });
+    expect(wrapper.find('[data-test="account-delete"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('GENERAL_SETTINGS.READ_ONLY');
+  });
+
+  it('waits for account data before mounting dependent sections', () => {
+    shouldShowSamlFeature = true;
+    const { wrapper } = buildWrapper({
+      accountRecord: undefined,
+      isOnChatwootCloud: true,
+    });
+
+    expect(wrapper.find('[data-test="saml-settings"]').exists()).toBe(false);
+    expect(wrapper.find('details').exists()).toBe(false);
+    expect(wrapper.find('[data-test="account-delete"]').exists()).toBe(false);
   });
 
   it('detects normalized workspace changes and restores persisted values', async () => {
@@ -265,28 +313,5 @@ describe('Account settings', () => {
 
     expect(context.confirmWorkspaceNavigation).toHaveBeenCalled();
     expect(next).toHaveBeenCalledWith(false);
-  });
-
-  it('does not expose the danger zone in read-only mode', () => {
-    const context = {
-      isOnChatwootCloud: true,
-      isWorkspaceReadOnly: true,
-      $t: key => key,
-    };
-
-    const sections = AccountSettings.computed.workspaceSections.call(context);
-
-    expect(sections.map(section => section.id)).not.toContain('danger');
-  });
-
-  it('returns to the general section when the active section becomes unavailable', () => {
-    const context = {
-      activeWorkspaceSection: 'danger',
-      workspaceSections: [{ id: 'general' }],
-    };
-
-    AccountSettings.methods.ensureActiveWorkspaceSection.call(context);
-
-    expect(context.activeWorkspaceSection).toBe('general');
   });
 });

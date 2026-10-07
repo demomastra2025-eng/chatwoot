@@ -21,7 +21,6 @@ import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
 import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
-import MediaTranscription from './components/MediaTranscription.vue';
 import SamlSettings from '../security/components/SamlSettings.vue';
 import SamlPaywall from '../security/components/SamlPaywall.vue';
 import { setDashboardLocale } from 'dashboard/i18n';
@@ -35,7 +34,6 @@ export default {
     AccountDelete,
     SectionLayout,
     WorkspaceLogo,
-    MediaTranscription,
     WithLabel,
     NextInput,
     NextSelect,
@@ -94,7 +92,6 @@ export default {
   },
   data() {
     return {
-      activeWorkspaceSection: 'general',
       id: '',
       name: '',
       locale: 'ru',
@@ -147,41 +144,6 @@ export default {
     isWorkspaceReadOnly() {
       return !this.canManageWorkspace;
     },
-    workspaceSections() {
-      const sections = [
-        {
-          id: 'general',
-          icon: 'i-lucide-building-2',
-          label: this.$t('GENERAL_SETTINGS.SECTIONS.GENERAL'),
-        },
-        {
-          id: 'communications',
-          icon: 'i-lucide-messages-square',
-          label: this.$t('GENERAL_SETTINGS.SECTIONS.COMMUNICATIONS'),
-        },
-        {
-          id: 'security',
-          icon: 'i-lucide-shield-check',
-          label: this.$t('GENERAL_SETTINGS.SECTIONS.SECURITY'),
-        },
-        {
-          id: 'technical',
-          icon: 'i-lucide-braces',
-          label: this.$t('GENERAL_SETTINGS.SECTIONS.TECHNICAL'),
-        },
-      ];
-
-      if (this.isOnChatwootCloud && !this.isWorkspaceReadOnly) {
-        sections.push({
-          id: 'danger',
-          icon: 'i-lucide-triangle-alert',
-          label: this.$t('GENERAL_SETTINGS.SECTIONS.DANGER'),
-          danger: true,
-        });
-      }
-
-      return sections;
-    },
     hasWorkspaceChanges() {
       const account = this.accountRecord;
       if (!account?.id || Number(this.id) !== Number(account.id)) return false;
@@ -205,12 +167,6 @@ export default {
         await this.hydrateAccountForm();
       },
     },
-    workspaceSections: {
-      immediate: true,
-      handler() {
-        this.ensureActiveWorkspaceSection();
-      },
-    },
   },
   async mounted() {
     await this.hydrateAccountForm();
@@ -220,12 +176,6 @@ export default {
     window.removeEventListener('beforeunload', this.handleBeforeUnload);
   },
   methods: {
-    ensureActiveWorkspaceSection() {
-      const sectionIsAvailable = this.workspaceSections.some(
-        section => section.id === this.activeWorkspaceSection
-      );
-      if (!sectionIsAvailable) this.activeWorkspaceSection = 'general';
-    },
     normalizeTextField(value) {
       return String(value || '').trim();
     },
@@ -376,38 +326,7 @@ export default {
 <template>
   <div class="flex flex-col w-full">
     <BaseSettingsHeader :title="$t('GENERAL_SETTINGS.TITLE')" />
-    <div
-      class="grid grid-cols-1 md:grid-cols-[13rem_minmax(0,45rem)] items-start gap-6 mt-5"
-    >
-      <nav
-        class="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible md:sticky md:top-4"
-        :aria-label="$t('GENERAL_SETTINGS.SECTIONS.NAVIGATION')"
-      >
-        <button
-          v-for="section in workspaceSections"
-          :key="section.id"
-          type="button"
-          class="flex flex-none items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-left transition-colors"
-          :class="{
-            'bg-n-alpha-2 text-n-slate-12':
-              activeWorkspaceSection === section.id && !section.danger,
-            'bg-n-ruby-3 text-n-ruby-11':
-              activeWorkspaceSection === section.id && section.danger,
-            'text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12':
-              activeWorkspaceSection !== section.id && !section.danger,
-            'text-n-ruby-10 hover:bg-n-ruby-3':
-              activeWorkspaceSection !== section.id && section.danger,
-          }"
-          :aria-current="
-            activeWorkspaceSection === section.id ? 'page' : undefined
-          "
-          @click="activeWorkspaceSection = section.id"
-        >
-          <span :class="section.icon" class="text-base" />
-          {{ section.label }}
-        </button>
-      </nav>
-
+    <div class="w-full max-w-[45rem] mt-5">
       <main
         class="min-w-0 rounded-xl border border-n-weak bg-n-background px-5 md:px-7 shadow-sm"
       >
@@ -419,136 +338,117 @@ export default {
           <span>{{ $t('GENERAL_SETTINGS.READ_ONLY') }}</span>
         </div>
 
-        <template v-if="activeWorkspaceSection === 'general'">
-          <SectionLayout
-            :title="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.TITLE')"
-            :description="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.NOTE')"
-            class="!pt-6"
+        <SectionLayout
+          :title="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.TITLE')"
+          :description="$t('GENERAL_SETTINGS.FORM.GENERAL_SECTION.NOTE')"
+          class="!pt-6"
+        >
+          <form
+            v-if="!uiFlags.isFetchingItem"
+            class="grid gap-4"
+            @submit.prevent="updateAccount"
           >
-            <form
-              v-if="!uiFlags.isFetchingItem"
-              class="grid gap-4"
-              @submit.prevent="updateAccount"
+            <WorkspaceLogo
+              :name="name"
+              :src="logoUrl"
+              :disabled="isWorkspaceReadOnly"
+              @change="updateWorkspaceLogo"
+              @delete="deleteWorkspaceLogo"
+            />
+            <WithLabel
+              name="account-name"
+              :has-error="v$.name.$error"
+              :label="$t('GENERAL_SETTINGS.FORM.NAME.LABEL')"
+              :error-message="$t('GENERAL_SETTINGS.FORM.NAME.ERROR')"
             >
-              <WorkspaceLogo
-                :name="name"
-                :src="logoUrl"
+              <NextInput
+                v-model="name"
+                type="text"
+                class="w-full"
                 :disabled="isWorkspaceReadOnly"
-                @change="updateWorkspaceLogo"
-                @delete="deleteWorkspaceLogo"
+                :placeholder="$t('GENERAL_SETTINGS.FORM.NAME.PLACEHOLDER')"
+                @blur="v$.name.$touch"
               />
-              <WithLabel
-                name="account-name"
-                :has-error="v$.name.$error"
-                :label="$t('GENERAL_SETTINGS.FORM.NAME.LABEL')"
-                :error-message="$t('GENERAL_SETTINGS.FORM.NAME.ERROR')"
+            </WithLabel>
+            <WithLabel
+              name="site-language"
+              :has-error="v$.locale.$error"
+              :label="$t('GENERAL_SETTINGS.FORM.LANGUAGE.LABEL')"
+              :error-message="$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR')"
+            >
+              <NextSelect
+                v-model="locale"
+                class="!mb-0 text-sm"
+                :disabled="isWorkspaceReadOnly"
               >
-                <NextInput
-                  v-model="name"
-                  type="text"
-                  class="w-full"
-                  :disabled="isWorkspaceReadOnly"
-                  :placeholder="$t('GENERAL_SETTINGS.FORM.NAME.PLACEHOLDER')"
-                  @blur="v$.name.$touch"
-                />
-              </WithLabel>
-              <WithLabel
-                name="site-language"
-                :has-error="v$.locale.$error"
-                :label="$t('GENERAL_SETTINGS.FORM.LANGUAGE.LABEL')"
-                :error-message="$t('GENERAL_SETTINGS.FORM.LANGUAGE.ERROR')"
-              >
-                <NextSelect
-                  v-model="locale"
-                  class="!mb-0 text-sm"
-                  :disabled="isWorkspaceReadOnly"
+                <option
+                  v-for="lang in languagesSortedByCode"
+                  :key="lang.iso_639_1_code"
+                  :value="lang.iso_639_1_code"
                 >
-                  <option
-                    v-for="lang in languagesSortedByCode"
-                    :key="lang.iso_639_1_code"
-                    :value="lang.iso_639_1_code"
-                  >
-                    {{ lang.name }}
-                  </option>
-                </NextSelect>
-              </WithLabel>
-              <WithLabel
-                v-if="featureCustomReplyDomainEnabled"
-                name="custom-domain"
-                :label="$t('GENERAL_SETTINGS.FORM.DOMAIN.LABEL')"
-              >
-                <NextInput
-                  v-model="domain"
-                  type="text"
-                  class="w-full"
-                  :disabled="isWorkspaceReadOnly"
-                  :placeholder="$t('GENERAL_SETTINGS.FORM.DOMAIN.PLACEHOLDER')"
-                />
-                <template #help>
-                  {{
-                    featureInboundEmailEnabled &&
-                    $t('GENERAL_SETTINGS.FORM.FEATURES.INBOUND_EMAIL_ENABLED')
-                  }}
+                  {{ lang.name }}
+                </option>
+              </NextSelect>
+            </WithLabel>
+            <WithLabel
+              v-if="featureCustomReplyDomainEnabled"
+              name="custom-domain"
+              :label="$t('GENERAL_SETTINGS.FORM.DOMAIN.LABEL')"
+            >
+              <NextInput
+                v-model="domain"
+                type="text"
+                class="w-full"
+                :disabled="isWorkspaceReadOnly"
+                :placeholder="$t('GENERAL_SETTINGS.FORM.DOMAIN.PLACEHOLDER')"
+              />
+              <template #help>
+                {{
+                  featureInboundEmailEnabled &&
+                  $t('GENERAL_SETTINGS.FORM.FEATURES.INBOUND_EMAIL_ENABLED')
+                }}
 
-                  {{
-                    featureCustomReplyDomainEnabled &&
-                    $t(
-                      'GENERAL_SETTINGS.FORM.FEATURES.CUSTOM_EMAIL_DOMAIN_ENABLED'
-                    )
-                  }}
-                </template>
-              </WithLabel>
-              <WithLabel
-                v-if="featureCustomReplyEmailEnabled"
-                name="support-email"
-                :label="$t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.LABEL')"
-              >
-                <NextInput
-                  v-model="supportEmail"
-                  type="text"
-                  class="w-full"
-                  :disabled="isWorkspaceReadOnly"
-                  :placeholder="
-                    $t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.PLACEHOLDER')
-                  "
-                />
-              </WithLabel>
-            </form>
-          </SectionLayout>
+                {{
+                  featureCustomReplyDomainEnabled &&
+                  $t(
+                    'GENERAL_SETTINGS.FORM.FEATURES.CUSTOM_EMAIL_DOMAIN_ENABLED'
+                  )
+                }}
+              </template>
+            </WithLabel>
+            <WithLabel
+              v-if="featureCustomReplyEmailEnabled"
+              name="support-email"
+              :label="$t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.LABEL')"
+            >
+              <NextInput
+                v-model="supportEmail"
+                type="text"
+                class="w-full"
+                :disabled="isWorkspaceReadOnly"
+                :placeholder="
+                  $t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.PLACEHOLDER')
+                "
+              />
+            </WithLabel>
+          </form>
+        </SectionLayout>
 
-          <woot-loading-state v-if="uiFlags.isFetchingItem" />
-        </template>
+        <woot-loading-state v-if="uiFlags.isFetchingItem" />
+        <SamlPaywall v-if="accountRecord?.id && showSamlPaywall" />
+        <SamlSettings v-else-if="accountRecord?.id && shouldShowSaml" />
 
-        <MediaTranscription
-          v-else-if="
-            activeWorkspaceSection === 'communications' &&
-            !uiFlags.isFetchingItem
-          "
-          :disabled="isWorkspaceReadOnly"
-        />
-
-        <template v-else-if="activeWorkspaceSection === 'security'">
-          <SamlPaywall v-if="showSamlPaywall" />
-          <SamlSettings v-else-if="shouldShowSaml" />
-          <SectionLayout
-            v-else
-            :title="$t('SECURITY_SETTINGS.SAML.TITLE')"
-            :description="$t('SECURITY_SETTINGS.SAML.NOTE')"
-          >
-            <div class="text-sm text-n-slate-11">
-              {{ $t('SECURITY_SETTINGS.SAML_DISABLED_MESSAGE') }}
-            </div>
-          </SectionLayout>
-        </template>
-
-        <template v-else-if="activeWorkspaceSection === 'technical'">
+        <details v-if="accountRecord?.id" class="border-t border-n-weak py-6">
+          <summary class="cursor-pointer text-sm text-n-slate-11">
+            {{ $t('GENERAL_SETTINGS.TECHNICAL_INFORMATION') }}
+          </summary>
           <AccountId />
           <BuildInfo />
-        </template>
+        </details>
 
         <div
-          v-else-if="
-            activeWorkspaceSection === 'danger' &&
+          v-if="
+            accountRecord?.id &&
             !uiFlags.isFetchingItem &&
             isOnChatwootCloud &&
             !isWorkspaceReadOnly
