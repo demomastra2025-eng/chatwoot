@@ -1055,7 +1055,7 @@ onBeforeUnmount(() => {
         </p>
         <p>
           {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.MISSES_24H') }}:
-          {{ hookSyncStatus.delta.misses_24h }};
+          {{ hookSyncStatus.delta.misses_24h }}
           {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.UNEXPLAINED_24H') }}:
           {{ hookSyncStatus.delta.unexplained_misses_24h }}
         </p>
