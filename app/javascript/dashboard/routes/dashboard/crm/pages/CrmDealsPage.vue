@@ -2480,18 +2480,21 @@ const saveDealContactLink = async contactId => {
     return false;
   }
 
+  // The deal already has this contact: nothing to save.
+  const isAlreadyLinked = (selectedDeal.value?.dealContacts || []).some(
+    contact => Number(contact.contactId) === normalizedContactId
+  );
+  if (isAlreadyLinked) return true;
+
   const contactIds = [
     ...new Set([...form.contactIds, normalizedContactId].map(Number)),
   ];
   const primaryContactId =
     form.primaryContactId || normalizedContactId || form.contactIds[0];
-  const {
-    closing_reasons: _closingReasons,
-    stage_id: _stageId,
-    ...payload
-  } = buildPayload();
+  // Only the contact link is saved. The rest of the card is an unsaved draft
+  // that may still be incomplete or invalid, and must not be saved (or fail
+  // the link) as a side effect of creating a dialog.
   const response = await CrmDealsAPI.update(editorDealId, {
-    ...payload,
     contact_ids: contactIds,
     lock_version: selectedDeal.value.lockVersion,
     primary_contact_id: primaryContactId ? Number(primaryContactId) : undefined,
@@ -2503,9 +2506,10 @@ const saveDealContactLink = async contactId => {
   });
   if (!isCurrentEditor()) return false;
   selectedDeal.value = updatedDeal;
-  populateFormFromDeal(updatedDeal);
-  captureFormBaseline();
-  dealEditSnapshot.value = buildDealEditSnapshot(updatedDeal);
+  if (!form.contactIds.map(Number).includes(normalizedContactId)) {
+    form.contactIds = contactIds;
+  }
+  rebaseDealEditSnapshot(updatedDeal, ['contact_ids', 'primary_contact_id']);
   await Promise.allSettled([
     ensureSelectedLookups(updatedDeal),
     loadTimeline(updatedDeal.id),
@@ -2538,8 +2542,6 @@ const createDealConversation = async ({ contactId, inbox }) => {
     });
     const { data } = await ConversationAPI.create(conversationPayload);
     if (!isCurrentEditor()) return;
-    const contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
-    if (!contactLinkIsCurrent || !isCurrentEditor()) return;
     const createdConversation = normalizePayload({
       payload: data?.payload || data,
     });
@@ -2547,27 +2549,58 @@ const createDealConversation = async ({ contactId, inbox }) => {
       createdConversation?.displayId ||
       createdConversation?.display_id ||
       createdConversation?.id;
+    // The dialog exists from here on. Record it before the contact link is
+    // saved, so a failed link can neither hide the dialog nor leave a button
+    // that creates one more empty dialog on every retry.
     if (conversationId) {
-      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+      dealConversationDraft.contactId = normalizedContactId;
+      dealConversationDraft.createdConversationId =
+        createdConversation?.id || '';
+      dealConversationDraft.createdConversationDisplayId = conversationId;
+    }
+
+    let contactLinkIsCurrent = true;
+    let linkError = null;
+    try {
+      contactLinkIsCurrent = await saveDealContactLink(normalizedContactId);
+    } catch (error) {
+      linkError = error;
+    }
+    if (!contactLinkIsCurrent || !isCurrentEditor()) return;
+    if (linkError) {
+      useAlert(
+        t('CRM.DEALS.CONVERSATION_PLACEHOLDER.LINK_FAILED', {
+          reason: formatErrorMessage(linkError),
+        })
+      );
+    }
+
+    if (conversationId) {
+      if (!linkError) {
+        useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+      }
       if (isDealPage.value) {
-        dealConversationDraft.contactId = normalizedContactId;
-        dealConversationDraft.createdConversationId =
-          createdConversation?.id || '';
-        dealConversationDraft.createdConversationDisplayId = conversationId;
         await loadDealConversationContextWithRetry(normalizedContactId);
         return;
       }
-      router.push({
-        name: 'inbox_conversation',
-        params: { accountId: accountId.value, conversation_id: conversationId },
-      });
+      if (!linkError) {
+        router.push({
+          name: 'inbox_conversation',
+          params: {
+            accountId: accountId.value,
+            conversation_id: conversationId,
+          },
+        });
+      }
       return;
     }
 
     showLinkedConversationPanel.value = true;
     await loadDealConversationContextWithRetry(normalizedContactId);
     if (!isCurrentEditor()) return;
-    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+    if (!linkError) {
+      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+    }
   } catch (error) {
     if (!isCurrentEditor()) return;
     useAlert(formatErrorMessage(error));

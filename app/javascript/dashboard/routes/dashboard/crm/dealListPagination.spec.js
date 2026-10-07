@@ -49,7 +49,7 @@ vi.mock('vue-router', () => ({
     back: runtime.routerBack,
     push: runtime.routerPush,
     replace: runtime.routerReplace,
-    resolve: vi.fn(),
+    resolve: vi.fn(() => ({ href: '/app/accounts/1/contacts/edit' })),
   }),
 }));
 vi.mock('dashboard/api/crm/deals', () => ({
@@ -441,6 +441,12 @@ it('keeps the deal URL after creating a dialog from its chat panel', async () =>
   await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
 
   expect(ConversationAPI.create).toHaveBeenCalled();
+  // Only the contact link is saved, never the rest of the card.
+  expect(CrmDealsAPI.update).toHaveBeenCalledExactlyOnceWith(11, {
+    contact_ids: [7],
+    lock_version: 1,
+    primary_contact_id: 7,
+  });
   expect(state.dealConversationDraft.communicationThreadDisplayId).toBe(41);
   expect(state.linkedConversationId).toBe(11963);
   expect(state.linkedConversationDisplayId).toBe('185');
@@ -1668,6 +1674,69 @@ it('waits for the way back to refresh a board that changed under a deal page', a
   expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
   expect(state.deals.map(item => item.id)).toEqual([1, 7]);
   expect(state.isDealListLoaded).toBe(true);
+});
+
+it('keeps a created dialog on screen when linking its contact fails', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  CrmDealsAPI.update.mockRejectedValueOnce(new Error('contact link rejected'));
+  ConversationAPI.create.mockResolvedValueOnce({
+    data: { display_id: 185, id: 11963 },
+  });
+  const { state } = await mountPage();
+  state.form.title = 'Unsaved draft title';
+
+  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+
+  expect(ConversationAPI.create).toHaveBeenCalledTimes(1);
+  expect(state.dealConversationDraft.createdConversationId).toBe(11963);
+  expect(state.linkedConversationId).toBe(11963);
+  expect(state.linkedConversationDisplayId).toBe('185');
+  expect(state.dealConversationDraft.isCreating).toBe(false);
+  // The unsaved title is not part of the contact link.
+  expect(CrmDealsAPI.update).toHaveBeenCalledExactlyOnceWith(11, {
+    contact_ids: [7],
+    lock_version: 1,
+    primary_contact_id: 7,
+  });
+  expect(useAlert).toHaveBeenCalledWith(
+    'CRM.DEALS.CONVERSATION_PLACEHOLDER.LINK_FAILED'
+  );
+  expect(useAlert).not.toHaveBeenCalledWith(
+    'CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'
+  );
+  expect(state.form.title).toBe('Unsaved draft title');
+});
+
+it('does not save the deal again when its contact is already linked', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(
+    response({
+      ...deal(11),
+      dealContacts: [{ contactId: 7 }],
+      primaryContactId: 7,
+    })
+  );
+  ContactAPI.show.mockResolvedValue(response({ id: 7, name: 'Test' }));
+  ConversationAPI.create.mockResolvedValueOnce({
+    data: { display_id: 185, id: 11963 },
+  });
+  const { state } = await mountPage();
+  expect(state.selectedDeal.id).toBe(11);
+
+  await state.createDealConversation({ contactId: 7, inbox: { id: 9 } });
+
+  expect(ConversationAPI.create).toHaveBeenCalledTimes(1);
+  expect(CrmDealsAPI.update).not.toHaveBeenCalled();
+  expect(state.dealConversationDraft).toMatchObject({
+    contactId: 7,
+    createdConversationDisplayId: 185,
+    createdConversationId: 11963,
+  });
+  expect(state.linkedConversationId).toBe(11963);
+  expect(useAlert).toHaveBeenCalledWith(
+    'CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'
+  );
 });
 
 it('drops a pending debounced reload when the page unmounts', async () => {
