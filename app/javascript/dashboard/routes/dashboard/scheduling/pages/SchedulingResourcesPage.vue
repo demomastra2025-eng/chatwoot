@@ -68,6 +68,23 @@ const scheduleForm = reactive({
   workRules: [],
 });
 
+const isTemplateSchedule = computed(() => {
+  if (!activeResource.value?.customAttributes?.medelement_default_work_rules_seeded_at) {
+    return false;
+  }
+
+  return (
+    scheduleForm.workRules.length === 7 &&
+    scheduleForm.workRules.every(
+      rule =>
+        timeToMinute(rule.startMinuteText) === 9 * 60 &&
+        timeToMinute(rule.endMinuteText) ===
+          (rule.weekday === 0 || rule.weekday === 6 ? 15 : 18) * 60 &&
+        rule.active === (rule.weekday !== 0)
+    )
+  );
+});
+
 const tabs = computed(() => [
   { label: t('SCHEDULING.RESOURCES.WORK_RULES'), value: 'work' },
   { label: t('SCHEDULING.RESOURCES.BREAK_RULES'), value: 'break' },
@@ -832,6 +849,12 @@ onMounted(async () => {
       @confirm="saveSchedule"
     >
       <div class="flex flex-col gap-6">
+        <p
+          v-if="isTemplateSchedule"
+          class="text-sm text-n-slate-11"
+        >
+          {{ $t('SCHEDULING.RESOURCES.MEDELEMENT_TEMPLATE_HINT') }}
+        </p>
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"

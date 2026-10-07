@@ -28,7 +28,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
       include_time_offs: include_time_offs
     ).perform
 
-    formatted_payload(payload)
+    formatted_payload(payload.merge(template_note(resource)))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -38,6 +38,13 @@ class Captain::Tools::Copilot::GetSchedulingResourceScheduleService < Captain::T
   end
 
   private
+
+  def template_note(resource)
+    sync = Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: account)
+    return {} unless sync.default_template?(resource)
+
+    { schedule_note: 'типовой шаблон OneLink, не график MedElement' }
+  end
 
   def find_resource!(resource_id)
     account.scheduling_resources.not_deleted_from_scheduling.find_by(id: resource_id).tap do |resource|

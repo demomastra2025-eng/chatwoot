@@ -311,6 +311,7 @@
       "DELETE_DESCRIPTION": "This removes {name} only from scheduling. Existing appointments and the linked employee account stay unchanged.",
       "DELETE_TITLE": "Delete specialist from scheduling?",
       "SCHEDULE_TITLE": "{name} schedule",
+      "MEDELEMENT_TEMPLATE_HINT": "типовой шаблон OneLink, не график MedElement",
       "SLOT_DURATION": "Slot duration",
       "SPECIALTY": "Specialty",
       "SUCCESS_DELETE": "Specialist removed from scheduling",

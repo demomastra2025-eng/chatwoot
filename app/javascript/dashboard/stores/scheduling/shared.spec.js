@@ -98,6 +98,25 @@ describe('scheduling shared helpers', () => {
     }
   );
 
+  it.each([
+    'APPOINTMENT_SLOT_UNAVAILABLE',
+    'MEDELEMENT_AVAILABILITY_UNVERIFIED',
+    'MEDELEMENT_PATIENT_PHONE_INVALID',
+    'MEDELEMENT_CABINET_REQUIRED',
+  ])('shows a Russian message for %s', code => {
+    const error = {
+      response: {
+        data: { code, error: 'Provider scheduling request failed' },
+        status: 422,
+      },
+    };
+    const t = key => lookupMessage(ruScheduling, key) ?? key;
+
+    expect(formatSchedulingErrorMessage(error, t)).toBe(
+      ruScheduling.SCHEDULING.ERRORS[code]
+    );
+  });
+
   describe('toIntegerNumeric', () => {
     it('accepts integer values and decimal zero values', () => {
       expect(toIntegerNumeric(1000, 'amount')).toBe(1000);

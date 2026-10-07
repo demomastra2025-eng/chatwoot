@@ -32,7 +32,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
       limit: parse_limit(limit)
     ).perform
 
-    formatted_payload(payload.merge(availability_metadata(resource, service_record, payload)))
+    formatted_payload(payload.merge(availability_metadata(resource, service_record, payload), template_note(resource)))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -42,6 +42,13 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
   end
 
   private
+
+  def template_note(resource)
+    sync = Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: account)
+    return {} unless sync.default_template?(resource)
+
+    { schedule_note: 'типовой шаблон OneLink, не график MedElement' }
+  end
 
   def availability_metadata(resource, service_record, payload)
     provider_required = Scheduling::AvailableSlotSearchService.provider_related?(resource)

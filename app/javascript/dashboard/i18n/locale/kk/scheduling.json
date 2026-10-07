@@ -1,5 +1,8 @@
 {
   "SCHEDULING": {
+    "RESOURCES": {
+      "MEDELEMENT_TEMPLATE_HINT": "типовой шаблон OneLink, не график MedElement"
+    },
     "CALENDAR": {
       "ALL_RESOURCES_UNAVAILABLE": "Барлық мамандар қолжетімсіз",
       "RESOURCES_UNAVAILABLE": "Қолжетімсіз: {names}",

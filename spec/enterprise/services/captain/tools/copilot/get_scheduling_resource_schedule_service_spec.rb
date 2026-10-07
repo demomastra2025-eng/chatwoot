@@ -16,6 +16,16 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceScheduleService do
   end
 
   describe '#execute' do
+    it 'labels the seeded OneLink hours as a template for a MedElement doctor' do
+      doctor = create(:scheduling_resource, account: account,
+                                            custom_attributes: { 'medelement_specialist_code' => 'doctor-1' })
+      Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: account).perform(doctor)
+
+      payload = JSON.parse(service.execute(resource_id: doctor.id, from: monday.iso8601, to: tuesday.iso8601))
+
+      expect(payload['schedule_note']).to eq('типовой шаблон OneLink, не график MedElement')
+    end
+
     it 'returns normalized schedule days with working windows and breaks' do
       payload = JSON.parse(service.execute(resource_id: resource.id, from: monday.iso8601, to: tuesday.iso8601))
 
