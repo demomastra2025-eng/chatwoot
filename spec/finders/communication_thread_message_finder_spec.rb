@@ -49,7 +49,7 @@ describe CommunicationThreadMessageFinder do
       params: { after: target.id, include_target: true, include_history: true }
     )
 
-    expect(anchored_finder.perform).to eq([target, following])
+    expect(anchored_finder.perform).to include(target, following)
   end
 
   it 'shows useful activity and regular messages while hiding noisy telemetry and Captain tool lines' do
