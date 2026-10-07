@@ -1,5 +1,6 @@
 json.id conversation.display_id
 json.account_id conversation.account_id
+json.communication_thread_id conversation.communication_thread&.display_id if Current.account.feature_enabled?('communication_threads')
 json.created_at conversation.created_at.to_i
 message = @conversation_first_messages[conversation.id]
 if message

@@ -31,7 +31,7 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
     result = service.perform
     # The text search of messages was cancelled by its time limit: what is shown may be incomplete.
     @messages_partial = service.messages_partial?
-    preload_message_results(preload_conversation_results(result))
+    preload_contact_results(preload_message_results(preload_conversation_results(result)))
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content
   end
@@ -43,7 +43,7 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
     return result if messages.blank?
 
     result[:messages] = messages
-    preload(messages, [:conversation])
+    preload(messages, [conversation: :communication_thread])
     preload_message_payload(messages)
     result
   end
@@ -55,14 +55,29 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
     result[:conversations] = conversations
     if compact_conversation_results?
       @compact_conversation_results = true
-      preload(conversations, [:contact, :inbox])
+      preload(conversations, [:contact, :inbox, :communication_thread])
       return result
     end
 
-    preload(conversations, [:contact, :inbox, :assignee])
+    preload(conversations, [:contact, :inbox, :assignee, :communication_thread])
     @conversation_first_messages = first_messages_by_conversation(conversations)
     attach_conversations_to_messages(@conversation_first_messages, conversations)
     preload_message_payload(@conversation_first_messages.values)
+    result
+  end
+
+  def preload_contact_results(result)
+    contacts = result[:contacts]&.to_a
+    return result if contacts.blank?
+
+    result[:contacts] = contacts
+    conversations = Search::AccessScope.new(account: Current.account, user: Current.user)
+                                       .conversations.where(contact_id: contacts.map(&:id))
+                                       .includes(:communication_thread)
+                                       .order(last_activity_at: :desc, id: :desc)
+    @contact_latest_conversations = conversations.each_with_object({}) do |conversation, latest|
+      latest[conversation.contact_id] ||= conversation
+    end
     result
   end
 
