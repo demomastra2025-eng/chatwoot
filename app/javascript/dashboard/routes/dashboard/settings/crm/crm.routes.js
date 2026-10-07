@@ -134,7 +134,7 @@ export default {
           path: '',
           name: 'crm_settings_index',
           component: Index,
-          meta: crmSettingsMeta,
+          meta: { ...crmSettingsMeta, pageWidth: 'full' },
           beforeEnter: redirectToCrmLanding,
         },
         {

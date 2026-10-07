@@ -88,6 +88,9 @@ describe('CRM settings routes', () => {
 
     expect(dealParent.props.fullWidth).toBe(true);
     expect(dealParent.props.showBackButton).toBe(false);
+    expect(
+      childByName(dealParent, 'crm_settings_index').meta.pageWidth
+    ).toBe('full');
   });
 
   it('sends the create-task-status link to the task settings page', () => {
