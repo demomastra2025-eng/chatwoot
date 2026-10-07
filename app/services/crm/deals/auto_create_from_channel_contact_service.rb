@@ -47,6 +47,19 @@ class Crm::Deals::AutoCreateFromChannelContactService
     nil
   rescue ActiveRecord::RecordInvalid
     nil
+  rescue ::Crm::Error => e
+    # This runs from Conversation#after_create_commit: the conversation is already saved, so a CRM rule (for example a
+    # required field of the default stage that a brand new deal cannot have yet) may only skip the deal. Letting it
+    # escape would fail the first-message ingestion of the channel. The log carries codes and ids, no customer data.
+    log_skipped_deal(pipeline, e)
+    nil
+  end
+
+  def log_skipped_deal(pipeline, error)
+    Rails.logger.warn(
+      "Crm auto-create deal skipped: account_id=#{account.id} pipeline_id=#{pipeline.id} " \
+      "error=#{error.class.name} code=#{error.code}"
+    )
   end
 
   def existing_deal_for_pipeline?(pipeline)

@@ -80,6 +80,21 @@ describe ConversationBuilder do
       end
     end
 
+    it 'does not fail the conversation when the default stage has a required field the new deal cannot have' do
+      account.enable_features!('crm_deals')
+      pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
+      stage = create(:crm_stage, account: account, pipeline: pipeline, default: true)
+      create(:crm_stage_field_requirement, stage: stage, field_key: 'description')
+      conversation = nil
+
+      expect do
+        conversation = described_class.new(contact_inbox: contact_api_inbox, params: {}).perform
+      end.not_to raise_error
+
+      expect(conversation).to be_persisted
+      expect(account.crm_deals.where(pipeline: pipeline)).not_to exist
+    end
+
     it 'raises a database uniqueness collision with no matching idempotency key' do
       account.enable_features!('crm_deals')
       pipeline = create(:crm_pipeline, account: account, default: true, auto_create_deal_on_channel_contact: true)
