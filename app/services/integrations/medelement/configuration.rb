@@ -6,6 +6,9 @@ class Integrations::Medelement::Configuration
   DEFAULT_SYNC_INTERVAL_HOURS = 0.25
   CATALOG_SYNC_INTERVAL_HOURS = 6
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
+  DELTA_INTERVAL_SECONDS = 60
+  DELTA_INTERVAL_OPTIONS = [10, 30, 60, 120].freeze
+  FULL_SWEEP_INTERVAL_OPTIONS = [2, 15, 60, 1440].freeze
   DEFAULT_RECEPTION_DETAIL_REFRESH_MINUTES = 360
   DEFAULT_RECEPTION_DETAIL_BUDGET = 50
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
@@ -54,6 +57,19 @@ class Integrations::Medelement::Configuration
     boolean_setting('sync_receptions', true)
   end
 
+  def incremental_receptions_enabled?
+    boolean_setting('incremental_receptions_enabled', false)
+  end
+
+  def incremental_receptions_interval_seconds
+    supported_integer_setting('incremental_receptions_interval_seconds', DELTA_INTERVAL_SECONDS, DELTA_INTERVAL_OPTIONS)
+  end
+
+  def receptions_full_sweep_interval_minutes
+    supported_integer_setting('receptions_full_sweep_interval_minutes', RECEPTIONS_SYNC_INTERVAL_MINUTES,
+                              FULL_SWEEP_INTERVAL_OPTIONS)
+  end
+
   def sync_services?
     boolean_setting('sync_services', true)
   end
@@ -78,7 +94,17 @@ class Integrations::Medelement::Configuration
   end
 
   def receptions_sync_cron_expression
-    "*/#{RECEPTIONS_SYNC_INTERVAL_MINUTES} * * * * #{time_zone}"
+    interval = receptions_full_sweep_interval_minutes
+    return "0 */#{interval / 60} * * * #{time_zone}" if interval >= 60
+
+    "*/#{interval} * * * * #{time_zone}"
+  end
+
+  def receptions_delta_cron_expression
+    interval = incremental_receptions_interval_seconds
+    return "*/#{interval / 60} * * * * #{time_zone}" if interval >= 60
+
+    "* * * * * #{time_zone}"
   end
 
   def contacts_sync_cron_expression
@@ -172,6 +198,11 @@ class Integrations::Medelement::Configuration
     return default if value.blank?
 
     value.to_i
+  end
+
+  def supported_integer_setting(key, default, options)
+    value = integer_setting(key, default)
+    options.include?(value) ? value : default
   end
 
   def numeric_setting(key, default)

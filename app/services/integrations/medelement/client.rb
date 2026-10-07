@@ -103,6 +103,22 @@ class Integrations::Medelement::Client
     )
   end
 
+  def receptions_by_update_date(update_date_from:)
+    response = request.call(
+      :get,
+      '/v1/doctor/receptions/by_update_date',
+      operation: 'receptions delta',
+      query: { update_date_from: update_date_from }
+    )
+    raise ApiError, 'Medelement receptions delta response is not an array' unless response.is_a?(Array)
+
+    response
+  rescue ApiError => e
+    raise ApiError.new('Medelement receptions delta date was rejected', status: 400) if e.status == 400
+
+    raise
+  end
+
   def get_reception(reception_code:, version: :v2)
     return reception_detail(reception_code, :v1) if version.to_sym == :v1
 

@@ -93,6 +93,7 @@ class Integrations::Medelement::CronScheduleService
     return true unless self.class.cron_enabled?
 
     Sidekiq::Cron::Job.destroy(legacy_job_name)
+    Sidekiq::Cron::Job.destroy(job_name('receptions_delta')) unless delta_enabled?
     schedules.map { |schedule| Sidekiq::Cron::Job.create(job_attributes(schedule)) }.all?
   end
 
@@ -123,29 +124,35 @@ class Integrations::Medelement::CronScheduleService
   end
 
   def schedules
-    [
+    result = [
       { key: 'realtime', phases: REALTIME_PHASES, cron: configuration.receptions_sync_cron_expression },
       { key: 'operational', phases: OPERATIONAL_PHASES, cron: configuration.sync_cron_expression },
       { key: 'contacts', phases: CONTACT_PHASES, cron: configuration.contacts_sync_cron_expression },
       { key: 'catalog', phases: CATALOG_PHASES, cron: configuration.catalog_sync_cron_expression }
     ]
+    result << { key: 'receptions_delta', phases: [], cron: configuration.receptions_delta_cron_expression } if delta_enabled?
+    result
+  end
+
+  def delta_enabled?
+    configuration.incremental_receptions_enabled? && configuration.sync_receptions?
   end
 
   def job_attributes(schedule)
     {
       name: job_name(schedule.fetch(:key)),
-      klass: 'Integrations::Medelement::ScheduledSyncJob',
+      klass: schedule.fetch(:key) == 'receptions_delta' ? 'Integrations::Medelement::ReceptionsDeltaJob' : 'Integrations::Medelement::ScheduledSyncJob',
       cron: schedule.fetch(:cron),
-      args: [hook.id, schedule.fetch(:phases)],
+      args: schedule.fetch(:key) == 'receptions_delta' ? [hook.id] : [hook.id, schedule.fetch(:phases)],
       active_job: true,
-      queue: 'scheduled_jobs',
+      queue: schedule.fetch(:key) == 'receptions_delta' ? 'default' : 'scheduled_jobs',
       status: hook.enabled? ? 'enabled' : 'disabled',
       description: "Medelement #{schedule.fetch(:key)} sync for account #{hook.account_id}, hook #{hook.id}"
     }
   end
 
   def job_names
-    schedules.map { |schedule| job_name(schedule.fetch(:key)) }
+    (schedules.map { |schedule| job_name(schedule.fetch(:key)) } + [job_name('receptions_delta')]).uniq
   end
 
   def job_name(key)

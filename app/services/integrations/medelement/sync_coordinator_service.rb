@@ -116,6 +116,8 @@ class Integrations::Medelement::SyncCoordinatorService
       account: hook.account,
       client: client,
       configuration: configuration,
+      hook: hook,
+      sync_run: sync_run,
       window_mode: receptions_window_mode,
       authoritative_specialist_codes: @observed_specialist_codes,
       **tracking_options

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_07_000000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_07_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2207,6 +2207,65 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_000000) do
     t.index ["account_id"], name: "index_macros_on_account_id"
   end
 
+  create_table "medelement_delta_miss_candidates", force: :cascade do |t|
+    t.bigint "hook_id", null: false
+    t.bigint "full_sweep_run_id"
+    t.string "reception_code", null: false
+    t.string "kind", null: false
+    t.string "change_marker", null: false
+    t.jsonb "changed_fields", default: [], null: false
+    t.datetime "detected_at", null: false
+    t.integer "delta_cursor_age_seconds"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["full_sweep_run_id"], name: "index_medelement_delta_miss_candidates_on_full_sweep_run_id"
+    t.index ["hook_id", "reception_code", "kind", "change_marker"], name: "idx_medelement_delta_candidate_identity", unique: true
+    t.index ["hook_id"], name: "index_medelement_delta_miss_candidates_on_hook_id"
+  end
+
+  create_table "medelement_delta_misses", force: :cascade do |t|
+    t.bigint "hook_id", null: false
+    t.bigint "full_sweep_run_id"
+    t.string "reception_code", null: false
+    t.string "kind", null: false
+    t.string "change_marker", null: false
+    t.string "classification", null: false
+    t.jsonb "changed_fields", default: [], null: false
+    t.datetime "detected_at", null: false
+    t.integer "delta_cursor_age_seconds"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["full_sweep_run_id"], name: "index_medelement_delta_misses_on_full_sweep_run_id"
+    t.index ["hook_id", "detected_at"], name: "index_medelement_delta_misses_on_hook_id_and_detected_at"
+    t.index ["hook_id", "reception_code", "kind", "change_marker"], name: "idx_medelement_delta_miss_identity", unique: true
+    t.index ["hook_id"], name: "index_medelement_delta_misses_on_hook_id"
+  end
+
+  create_table "medelement_delta_seen_receptions", force: :cascade do |t|
+    t.bigint "hook_id", null: false
+    t.string "reception_code", null: false
+    t.string "change_marker", null: false
+    t.datetime "processed_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["hook_id", "reception_code", "change_marker"], name: "idx_medelement_delta_seen_identity", unique: true
+    t.index ["hook_id"], name: "index_medelement_delta_seen_receptions_on_hook_id"
+    t.index ["processed_at"], name: "index_medelement_delta_seen_receptions_on_processed_at"
+  end
+
+  create_table "medelement_sync_cursors", force: :cascade do |t|
+    t.bigint "hook_id", null: false
+    t.string "name", null: false
+    t.datetime "value"
+    t.datetime "last_poll_at"
+    t.datetime "last_success_at"
+    t.integer "current_interval_seconds"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["hook_id", "name"], name: "index_medelement_sync_cursors_on_hook_id_and_name", unique: true
+    t.index ["hook_id"], name: "index_medelement_sync_cursors_on_hook_id"
+  end
+
   create_table "medelement_schedule_days", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "hook_id", null: false
@@ -3703,6 +3762,11 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_000000) do
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
   add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
+  add_foreign_key "medelement_delta_miss_candidates", "integrations_hooks", column: "hook_id", on_delete: :cascade
+  add_foreign_key "medelement_delta_miss_candidates", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
+  add_foreign_key "medelement_delta_misses", "integrations_hooks", column: "hook_id", on_delete: :cascade
+  add_foreign_key "medelement_delta_misses", "medelement_sync_runs", column: "full_sweep_run_id", on_delete: :nullify
+  add_foreign_key "medelement_delta_seen_receptions", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_provider_commands", "accounts", on_delete: :cascade
   add_foreign_key "medelement_provider_commands", "confirmation_requests", on_delete: :nullify
   add_foreign_key "medelement_provider_commands", "contacts", on_delete: :nullify
@@ -3714,6 +3778,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_000000) do
   add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "first_sync_run_id", on_delete: :nullify
   add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "last_sync_run_id", on_delete: :nullify
   add_foreign_key "medelement_sync_conflicts", "users", column: "resolved_by_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_cursors", "integrations_hooks", column: "hook_id", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify

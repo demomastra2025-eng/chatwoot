@@ -1,6 +1,7 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ReceptionsSyncService
   InvalidReceptionError = Class.new(StandardError)
+  OutOfScopeReception = Class.new(StandardError)
   IncompleteSnapshotError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
   LIST_FINGERPRINT_KEY = 'medelement_list_fingerprint'.freeze
@@ -23,6 +24,8 @@ class Integrations::Medelement::ReceptionsSyncService
     @client = client
     @configuration = configuration
     @conflict_tracker = options[:conflict_tracker]
+    @hook = options[:hook]
+    @sync_run = options[:sync_run]
     @window_mode = options.fetch(:window_mode, :full).to_sym
     @authoritative_specialist_codes = options[:authoritative_specialist_codes]
     raise ArgumentError, "Unsupported Medelement receptions window mode: #{@window_mode}" unless @window_mode.in?(WINDOW_MODES)
@@ -47,9 +50,52 @@ class Integrations::Medelement::ReceptionsSyncService
     sync_result.except(:desired_external_refs)
   end
 
+  # A reported delta code does not authorize absence reconciliation for any other reception.
+  def import_reported_reception!(detail)
+    code = detail.fetch('RECEPTION_CODE').to_s
+    external_ref = importer.external_ref_for(code)
+    appointment = account.scheduling_appointments.find_by(external_ref: external_ref)
+    return reconcile_reported_removal(appointment) if detail['REMOVED'].to_i == 1
+
+    resource = delta_resource!(detail)
+    reception = delta_reception(detail)
+    @appointment_snapshot_versions = { external_ref => appointment&.updated_at }.compact
+    contacts = synced_contacts([reception.merge(DETAIL_STATE_KEY => 'fetched')])
+    sync_reception(reception, resource, contacts)
+  end
+
   private
 
   attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions, :window_mode
+
+  def reconcile_reported_removal(appointment)
+    return :absent unless appointment
+
+    Integrations::Medelement::MissingAppointmentReconciler.new(
+      appointment: appointment, snapshot_version: appointment.updated_at
+    ).perform
+  end
+
+  def delta_resource!(detail)
+    specialist_code = (detail['SPECIALIST_CODE'] || detail['specialistCode']).to_s
+    resource = medelement_resource_map[specialist_code]
+    raise OutOfScopeReception, 'Medelement delta specialist is not mapped' unless resource
+
+    cabinets = Array(resource.custom_attributes['medelement_cabinets'])
+    code = detail['COMPANY_CABINET_CODE'].to_s
+    return resource if cabinets.any? { |cabinet| Integrations::Medelement::CabinetAttributes.code(cabinet).to_s == code }
+
+    raise OutOfScopeReception, 'Medelement delta cabinet is not mapped'
+  end
+
+  def delta_reception(detail)
+    detail.merge(
+      'PATIENT_CODE' => detail['PATIENT_CODE'].presence || detail['PROFILE_CODE'],
+      'specialistCode' => detail['SPECIALIST_CODE'] || detail['specialistCode'],
+      '_MEDELEMENT_LIST_FINGERPRINT' => list_fingerprint(detail),
+      '_MEDELEMENT_DETAIL_SYNCED_AT' => Time.current.iso8601
+    )
+  end
 
   def load_appointment_snapshot_versions
     account.scheduling_appointments
@@ -289,11 +335,42 @@ class Integrations::Medelement::ReceptionsSyncService
       next if appointment.status == 'cancelled' && !Integrations::Medelement::LocalCancellation.marked?(appointment)
       next if desired_external_refs.include?(appointment.external_ref)
 
-      Integrations::Medelement::MissingAppointmentReconciler.new(
-        appointment: appointment,
-        snapshot_version: appointment_snapshot_versions[appointment.external_ref]
-      ).perform
+      ApplicationRecord.transaction do
+        previous_status = appointment.status
+        Integrations::Medelement::MissingAppointmentReconciler.new(
+          appointment: appointment,
+          snapshot_version: appointment_snapshot_versions[appointment.external_ref]
+        ).perform
+        audit_removal!(appointment) if previous_status != 'cancelled' && appointment.status == 'cancelled'
+      end
     end
+  end
+
+  def audit_change!(appointment, reception)
+    return unless @hook && appointment.previous_changes.present?
+
+    changed_fields = appointment.previous_changes.keys - %w[updated_at created_at]
+    return if changed_fields.empty?
+
+    Integrations::Medelement::DeltaMissAudit.new(hook: @hook).record_change!(
+      reception_code: reception['RECEPTION_CODE'].to_s,
+      change_marker: Integrations::Medelement::ReceptionChangeMarker.call(reception),
+      kind: appointment.previous_changes.key?('id') ? 'created' : 'changed',
+      changed_fields: changed_fields, full_sweep_run: @sync_run
+    )
+  rescue ActiveRecord::ActiveRecordError => e
+    raise Integrations::Medelement::DeltaMissAudit::AuditUnavailableError, 'Medelement delta miss audit failed', cause: e
+  end
+
+  def audit_removal!(appointment)
+    return unless @hook
+
+    prefix = Integrations::Medelement::AppointmentImporterService::RECEPTION_EXTERNAL_REF_PREFIX
+    code = appointment.external_ref.to_s.delete_prefix(prefix)
+    Integrations::Medelement::DeltaMissAudit.new(hook: @hook).record_change!(
+      reception_code: code, change_marker: 'removed', kind: 'removed',
+      changed_fields: %w[status payment_status custom_attributes], full_sweep_run: @sync_run
+    )
   end
 
   def medelement_resource_map
@@ -436,7 +513,10 @@ class Integrations::Medelement::ReceptionsSyncService
       return
     end
 
-    sync_reception(reception, resource, contacts_by_patient_code)
+    ApplicationRecord.transaction do
+      appointment = sync_reception(reception, resource, contacts_by_patient_code)
+      audit_change!(appointment, reception)
+    end
     result[:imported_count] += 1
   rescue Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError => e
     result[:skipped_count] += 1
