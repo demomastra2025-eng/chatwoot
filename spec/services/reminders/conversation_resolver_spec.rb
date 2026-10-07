@@ -377,6 +377,62 @@ RSpec.describe Reminders::ConversationResolver do
         expect(Crm::Deals::AutoCreateFromChannelContactService).not_to have_received(:new)
       end
 
+      # Auto-assignment runs from an after_save callback, apart from the event dispatch: with assignment v2 a conversation that
+      # is created resolved enqueues AutoAssignment::AssignmentJob unless runtime events are skipped for the record.
+      context 'when auto assignment v2 is enabled for the inbox' do
+        before do
+          account.enable_features!('assignment_v2')
+          inbox.update!(enable_auto_assignment: true)
+          allow(AutoAssignment::AssignmentJob).to receive(:enqueue)
+        end
+
+        it 'enqueues assignment for an ordinary closed conversation (control)' do
+          create_conversation(:resolved)
+
+          expect(AutoAssignment::AssignmentJob).to have_received(:enqueue).with(inbox_id: inbox.id)
+        end
+
+        it 'does not enqueue assignment for the notification conversation' do
+          reminder = build_reminder
+
+          conversation = described_class.new(reminder: reminder).perform
+
+          expect(conversation).to be_resolved
+          expect(AutoAssignment::AssignmentJob).not_to have_received(:enqueue)
+        end
+      end
+
+      context 'when the contact has an owner who is a member of the inbox' do
+        let(:owner) { create(:user, account: account, role: :agent) }
+
+        before do
+          create(:inbox_member, inbox: inbox, user: owner)
+          contact.update!(owner_id: owner.id)
+        end
+
+        it 'raises events for an ordinary closed conversation (control)' do
+          contact_inbox
+          clear_enqueued_jobs
+
+          create_conversation(:resolved)
+
+          expect(enqueued_jobs.map { |job| job[:job] }).to include(EventDispatcherJob)
+        end
+
+        it 'gives the notification conversation the owner without a notification, an activity message or an event', :aggregate_failures do
+          reminder = build_reminder
+          clear_enqueued_jobs
+          conversation = nil
+
+          expect { perform_enqueued_jobs { conversation = described_class.new(reminder: reminder).perform } }.not_to change(Notification, :count)
+
+          expect(conversation).to be_resolved
+          expect(conversation.assignee_id).to eq(owner.id)
+          expect(conversation.messages.activity).to be_empty
+          expect(performed_jobs.map { |job| job[:job] }).not_to include(EventDispatcherJob, Conversations::ActivityMessageJob)
+        end
+      end
+
       it 'returns a fresh record so that later updates raise their events as usual' do
         conversation = described_class.new(reminder: build_reminder).perform
         allow(Rails.configuration.dispatcher).to receive(:dispatch)
