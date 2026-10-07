@@ -63,6 +63,13 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "DELTA": {
+        "LAST_POLL": "Last change poll",
+        "DELAY": "Change delay",
+        "SECONDS": "sec.",
+        "MISSES_24H": "Missed by change feed in 24 h",
+        "UNEXPLAINED_24H": "unexplained"
+      },
       "SETTINGS": {
         "REMOVE_RECEPTION_ON_CANCEL": {
           "LABEL": "Remove the reception in MedElement when an appointment is cancelled in OneLink",

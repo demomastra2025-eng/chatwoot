@@ -14,6 +14,7 @@ class Integrations::Medelement::SyncStatusPresenter
       run: run&.api_payload,
       phase_statuses: phase_statuses,
       schedules: Integrations::Medelement::CronScheduleService.new(hook: hook).schedule_payload,
+      delta: delta_status,
       conflicts: presented_conflicts(listed_scope),
       conflict_counts: conflict_counts,
       conflict_pagination: conflict_pagination(listed_scope.count)
@@ -55,6 +56,36 @@ class Integrations::Medelement::SyncStatusPresenter
 
   def latest_run
     sync_runs.recent.first
+  end
+
+  def delta_status
+    configuration = Integrations::Medelement::Configuration.new(hook: hook)
+    return { enabled: false } unless delta_enabled?(configuration)
+
+    cursor = Integrations::Medelement::SyncCursor.find_by(hook_id: hook.id, name: 'receptions_delta')
+    cursor_status(cursor, configuration).merge(delta_miss_counts)
+  end
+
+  def delta_enabled?(configuration)
+    configuration.incremental_receptions_enabled? && configuration.sync_receptions? && hook.enabled?
+  end
+
+  def cursor_status(cursor, configuration)
+    {
+      enabled: true,
+      last_poll_at: cursor&.last_poll_at&.iso8601,
+      last_success_at: cursor&.last_success_at&.iso8601,
+      cursor_age_seconds: cursor&.value && (Time.current - cursor.value).to_i,
+      current_interval_seconds: cursor&.current_interval_seconds || configuration.incremental_receptions_interval_seconds
+    }
+  end
+
+  def delta_miss_counts
+    misses = Integrations::Medelement::DeltaMiss.where(hook_id: hook.id, detected_at: 24.hours.ago..)
+    {
+      misses_24h: misses.count,
+      unexplained_misses_24h: misses.where(classification: 'unexplained').count
+    }
   end
 
   def phase_statuses

@@ -59,6 +59,13 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "DELTA": {
+        "LAST_POLL": "Өзгерістердің соңғы тексеруі",
+        "DELAY": "Өзгерістер кешігуі",
+        "SECONDS": "сек.",
+        "MISSES_24H": "24 сағатта өзгерістер тізімі өткізіп алғандар",
+        "UNEXPLAINED_24H": "түсіндірілмегендері"
+      },
       "SETTINGS": {
         "REMOVE_RECEPTION_ON_CANCEL": {
           "LABEL": "OneLink-те болдырмағанда МедЭлементтегі қабылдауды өшіру",

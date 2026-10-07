@@ -56,6 +56,23 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     expect(Sidekiq::Cron::Job).to have_received(:destroy).with("integrations_medelement_hook_#{hook.id}")
   end
 
+  it 'adds a separate delta job without changing the full sweep cron' do
+    hook = create(:integrations_hook, :medelement, account: account)
+    hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true,
+                                               'incremental_receptions_interval_seconds' => 30))
+
+    described_class.new(hook: hook).sync!
+
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/2 * * * * Asia/Almaty')
+    )
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(name: "integrations_medelement_hook_#{hook.id}_receptions_delta",
+                     klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '* * * * * Asia/Almaty',
+                     args: [hook.id], queue: 'default')
+    )
+  end
+
   it 'creates a repeated cron anchored at the chosen time for shorter intervals' do
     hook = build_stubbed(
       :integrations_hook,

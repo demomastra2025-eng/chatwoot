@@ -12,6 +12,25 @@ describe Integrations::Medelement::SyncStatusPresenter do
     allow(Sidekiq::Cron::Job).to receive(:find).and_return(nil)
   end
 
+  it 'reports the last delta poll, cursor delay and unexplained misses for an enabled hook' do
+    hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true))
+    Integrations::Medelement::SyncCursor.create!(
+      hook: hook, name: 'receptions_delta', value: 2.minutes.ago,
+      last_poll_at: 1.minute.ago, last_success_at: 1.minute.ago,
+      current_interval_seconds: 60
+    )
+    Integrations::Medelement::DeltaMiss.create!(
+      hook: hook, reception_code: 'fake-reception', kind: 'changed', change_marker: 'fake-marker',
+      classification: 'unexplained', changed_fields: ['starts_at'], detected_at: Time.current
+    )
+
+    delta = described_class.new(hook: hook).payload[:delta]
+
+    expect(delta).to include(enabled: true, current_interval_seconds: 60, misses_24h: 1, unexplained_misses_24h: 1)
+    expect(delta[:last_poll_at]).to be_present
+    expect(delta[:cursor_age_seconds]).to be_between(100, 140)
+  end
+
   def create_specialist_conflict(sequence)
     resource = create(
       :scheduling_resource,

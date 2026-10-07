@@ -139,13 +139,14 @@ class Integrations::Medelement::CronScheduleService
   end
 
   def job_attributes(schedule)
+    delta = schedule.fetch(:key) == 'receptions_delta'
     {
       name: job_name(schedule.fetch(:key)),
-      klass: schedule.fetch(:key) == 'receptions_delta' ? 'Integrations::Medelement::ReceptionsDeltaJob' : 'Integrations::Medelement::ScheduledSyncJob',
+      klass: delta ? 'Integrations::Medelement::ReceptionsDeltaJob' : 'Integrations::Medelement::ScheduledSyncJob',
       cron: schedule.fetch(:cron),
-      args: schedule.fetch(:key) == 'receptions_delta' ? [hook.id] : [hook.id, schedule.fetch(:phases)],
+      args: delta ? [hook.id] : [hook.id, schedule.fetch(:phases)],
       active_job: true,
-      queue: schedule.fetch(:key) == 'receptions_delta' ? 'default' : 'scheduled_jobs',
+      queue: delta ? 'default' : 'scheduled_jobs',
       status: hook.enabled? ? 'enabled' : 'disabled',
       description: "Medelement #{schedule.fetch(:key)} sync for account #{hook.account_id}, hook #{hook.id}"
     }

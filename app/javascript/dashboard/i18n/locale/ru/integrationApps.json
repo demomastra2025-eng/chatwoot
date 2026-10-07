@@ -63,6 +63,13 @@
       "BUTTON_TEXT": "Отключиться"
     },
     "MEDELEMENT": {
+      "DELTA": {
+        "LAST_POLL": "Последний опрос изменений",
+        "DELAY": "Задержка изменений",
+        "SECONDS": "сек.",
+        "MISSES_24H": "Пропущено выдачей изменений за 24 ч",
+        "UNEXPLAINED_24H": "из них необъяснённых"
+      },
       "SETTINGS": {
         "REMOVE_RECEPTION_ON_CANCEL": {
           "LABEL": "Удалять приём в МедЭлементе при отмене в OneLink",

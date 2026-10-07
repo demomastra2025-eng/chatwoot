@@ -1036,6 +1036,31 @@ onBeforeUnmount(() => {
         {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.DIRECTION_NOTE') }}
       </p>
 
+      <div
+        v-if="hookSyncStatus?.delta?.enabled"
+        class="rounded-lg border border-n-weak bg-n-solid-1 p-3 text-sm text-n-slate-11"
+      >
+        <p>
+          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.LAST_POLL') }}:
+          {{
+            hookSyncStatus.delta.last_poll_at
+              ? formatSyncDate(hookSyncStatus.delta.last_poll_at)
+              : '--'
+          }}
+        </p>
+        <p>
+          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.DELAY') }}:
+          {{ hookSyncStatus.delta.cursor_age_seconds ?? '--' }}
+          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.SECONDS') }}
+        </p>
+        <p>
+          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.MISSES_24H') }}:
+          {{ hookSyncStatus.delta.misses_24h }};
+          {{ $t('INTEGRATION_APPS.MEDELEMENT.DELTA.UNEXPLAINED_24H') }}:
+          {{ hookSyncStatus.delta.unexplained_misses_24h }}
+        </p>
+      </div>
+
       <div v-if="syncRun" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <article
           v-for="row in syncPhaseRows"

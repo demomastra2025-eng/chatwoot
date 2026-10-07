@@ -7,6 +7,7 @@ class Integrations::Medelement::ReceptionsSyncService
   LIST_FINGERPRINT_KEY = 'medelement_list_fingerprint'.freeze
   DETAIL_SYNCED_AT_KEY = 'medelement_detail_synced_at'.freeze
   DETAIL_RETRY_AT_KEY = 'medelement_detail_retry_at'.freeze
+  AUDIT_METADATA_KEYS = [LIST_FINGERPRINT_KEY, DETAIL_SYNCED_AT_KEY, DETAIL_RETRY_AT_KEY].freeze
   DETAIL_STATE_KEY = '_MEDELEMENT_DETAIL_STATE'.freeze
   DETAIL_RETRY_INTERVAL = 15.minutes
   REALTIME_DAYS_BACK = 1
@@ -349,7 +350,7 @@ class Integrations::Medelement::ReceptionsSyncService
   def audit_change!(appointment, reception)
     return unless @hook && appointment.previous_changes.present?
 
-    changed_fields = appointment.previous_changes.keys - %w[updated_at created_at]
+    changed_fields = audit_changed_fields(appointment.previous_changes)
     return if changed_fields.empty?
 
     Integrations::Medelement::DeltaMissAudit.new(hook: @hook).record_change!(
@@ -360,6 +361,15 @@ class Integrations::Medelement::ReceptionsSyncService
     )
   rescue ActiveRecord::ActiveRecordError => e
     raise Integrations::Medelement::DeltaMissAudit::AuditUnavailableError, 'Medelement delta miss audit failed', cause: e
+  end
+
+  def audit_changed_fields(changes)
+    fields = changes.keys - %w[updated_at created_at custom_attributes]
+    return fields unless changes.key?('custom_attributes')
+
+    before, after = changes['custom_attributes'].map(&:to_h)
+    keys = (before.keys | after.keys) - AUDIT_METADATA_KEYS
+    fields + keys.reject { |key| before[key] == after[key] }.map { |key| "custom_attributes.#{key}" }
   end
 
   def audit_removal!(appointment)

@@ -44,6 +44,41 @@ RSpec.describe Integrations::Medelement::Configuration do
 
       expect(configuration.receptions_sync_cron_expression).to eq('*/2 * * * * UTC')
     end
+
+    it 'keeps the default full sweep and accepts the configured longer intervals' do
+      expect(configuration.receptions_full_sweep_interval_minutes).to eq(2)
+      allow(hook).to receive(:settings).and_return('receptions_full_sweep_interval_minutes' => 60)
+
+      expect(configuration.receptions_sync_cron_expression).to eq('0 */1 * * * Asia/Almaty')
+    end
+  end
+
+  describe 'incremental reception settings' do
+    it 'defaults the feature off and the interval to sixty seconds' do
+      expect(configuration.incremental_receptions_enabled?).to be(false)
+      expect(configuration.incremental_receptions_interval_seconds).to eq(60)
+    end
+
+    it 'accepts only the supported intervals and uses minute cron when appropriate' do
+      allow(hook).to receive(:settings).and_return(
+        'incremental_receptions_enabled' => true,
+        'incremental_receptions_interval_seconds' => 120
+      )
+      expect(configuration.receptions_delta_cron_expression).to eq('*/2 * * * * Asia/Almaty')
+
+      allow(hook).to receive(:settings).and_return('incremental_receptions_interval_seconds' => 11)
+      expect(configuration.incremental_receptions_interval_seconds).to eq(60)
+    end
+  end
+
+  describe 'hook setting validation' do
+    let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
+    let(:real_hook) { create(:integrations_hook, :medelement, account: account) }
+
+    it 'rejects unsupported delta and full sweep intervals' do
+      expect(real_hook.update(settings: real_hook.settings.merge('incremental_receptions_interval_seconds' => 11))).to be(false)
+      expect(real_hook.update(settings: real_hook.settings.merge('receptions_full_sweep_interval_minutes' => 3))).to be(false)
+    end
   end
 
   describe '#contacts_sync_cron_expression' do
