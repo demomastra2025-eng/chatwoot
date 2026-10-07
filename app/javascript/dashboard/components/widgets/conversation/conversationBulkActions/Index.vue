@@ -297,20 +297,23 @@ onUnmounted(() => {
       v-if="selectedCount > 0"
       v-bind="attrs"
       data-test-id="conversation-bulk-actions-panel"
-      class="relative z-30 w-full shrink-0 origin-top px-2 pb-2"
+      class="relative z-30 w-full min-w-0 max-w-full shrink-0 origin-top px-3 pb-2"
     >
-      <div class="mx-auto max-w-4xl">
+      <div class="min-w-0 max-w-full">
         <div
-          class="flex items-center justify-between p-2 bg-n-button-color outline outline-1 -outline-offset-1 rounded-[10px] outline-n-weak shadow-[0_0_12px_0_rgba(27,40,59,0.08)]"
+          class="flex min-w-0 max-w-full flex-col gap-1.5 p-2 bg-n-button-color outline outline-1 -outline-offset-1 rounded-[10px] outline-n-weak shadow-[0_0_12px_0_rgba(27,40,59,0.08)]"
         >
-          <div class="ltr:ml-0.5 rtl:mr-0.5 flex items-center gap-1">
-            <label class="cursor-pointer flex items-center gap-1.5">
+          <div
+            data-test-id="bulk-selection-row"
+            class="flex min-w-0 items-center justify-between gap-2"
+          >
+            <label class="flex min-w-0 cursor-pointer items-center gap-1.5">
               <Checkbox
                 v-model="allSelected"
                 :indeterminate="!allConversationsSelected"
                 :disabled="bulkActionUiFlags.isUpdating"
               />
-              <span class="cursor-pointer text-sm text-n-slate-12">
+              <span class="min-w-0 cursor-pointer text-sm text-n-slate-12">
                 {{
                   $t('BULK_ACTION.CONVERSATIONS_SELECTED', {
                     conversationCount: selectedCount,
@@ -319,30 +322,42 @@ onUnmounted(() => {
               </span>
             </label>
             <NextButton
-              v-if="canSelectAllMatching"
-              :label="
-                $t('BULK_ACTION.SELECT_ALL_MATCHING', {
-                  count: selectableConversationsCount,
-                })
-              "
               ghost
-              class="!text-n-blue-11 !px-1 !h-6"
               sm
+              class="shrink-0 !h-6 !px-1 !text-n-blue-11"
+              :disabled="bulkActionUiFlags.isUpdating"
+              @click="allSelected = false"
+            >
+              {{ $t('BULK_ACTION.CLEAR_SELECTION') }}
+            </NextButton>
+          </div>
+          <div
+            v-if="canSelectAllMatching"
+            data-test-id="bulk-select-matching-row"
+            class="min-w-0 max-w-full"
+          >
+            <NextButton
+              link
+              sm
+              start
+              class="max-w-full !text-start !text-n-blue-11"
               :disabled="bulkActionUiFlags.isUpdating || isSelectingAll"
               :is-loading="isSelectingAll"
               @click="emit('selectAllMatching')"
-            />
-            <div class="w-px h-3 bg-n-weak rounded-lg ltr:ml-1 rtl:mr-1" />
-            <NextButton
-              :label="$t('BULK_ACTION.CLEAR_SELECTION')"
-              ghost
-              class="!text-n-blue-11 !px-1 !h-6"
-              sm
-              :disabled="bulkActionUiFlags.isUpdating"
-              @click="allSelected = false"
-            />
+            >
+              <span class="min-w-0 whitespace-normal break-words text-start">
+                {{
+                  $t('BULK_ACTION.SELECT_ALL_MATCHING', {
+                    count: selectableConversationsCount,
+                  })
+                }}
+              </span>
+            </NextButton>
           </div>
-          <div class="flex items-center gap-2">
+          <div
+            data-test-id="bulk-action-buttons-row"
+            class="flex min-w-0 max-w-full flex-wrap items-center justify-between gap-2"
+          >
             <BulkLabelActions
               :disabled="bulkActionUiFlags.isUpdating"
               @assign="assignLabels"

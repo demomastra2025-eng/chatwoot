@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 import { emitter } from 'shared/helpers/mitt';
 import { CMD_BULK_ACTION_SNOOZE_CONVERSATION } from 'dashboard/helper/commandbar/events';
+import bulkActionsRu from 'dashboard/i18n/locale/ru/bulkActions.json';
 
 import Index from './Index.vue';
 
@@ -140,8 +141,23 @@ const NextButtonStub = {
     },
   },
   emits: ['click'],
-  template: '<button :disabled="disabled" @click="$emit(\'click\')" />',
+  template:
+    '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
 };
+
+function translateForTest(key, values = {}) {
+  const translations = bulkActionsRu.BULK_ACTION;
+  const visibleLabels = {
+    'BULK_ACTION.CONVERSATIONS_SELECTED': translations.CONVERSATIONS_SELECTED,
+    'BULK_ACTION.CLEAR_SELECTION': translations.CLEAR_SELECTION,
+    'BULK_ACTION.SELECT_ALL_MATCHING': translations.SELECT_ALL_MATCHING,
+  };
+  const label = visibleLabels[key];
+  if (label) {
+    return label.replace(/\{(\w+)\}/g, (_, name) => values[name]);
+  }
+  return `${key}${Object.keys(values).length ? JSON.stringify(values) : ''}`;
+}
 
 const statusReasonCancelled = Symbol('cancelled');
 const ConversationStatusReasonDialogStub = {
@@ -195,8 +211,7 @@ function mountComponent(props = {}) {
         'woot-modal': true,
       },
       mocks: {
-        $t: (key, values = {}) =>
-          `${key}${Object.keys(values).length ? JSON.stringify(values) : ''}`,
+        $t: translateForTest,
       },
     },
   });
@@ -282,6 +297,91 @@ describe('ConversationBulkActions Index', () => {
     );
     expect(panel.classes()).not.toContain('absolute');
     expect(panel.classes()).not.toContain('bottom-20');
+  });
+
+  it('keeps the complete selection text in three bounded rows', () => {
+    isUpdating = false;
+    const wrapper = mountComponent({
+      selectedCount: 1,
+      selectableConversationsCount: 26,
+      canSelectAllMatching: true,
+    });
+    const panel = wrapper.get(
+      '[data-test-id="conversation-bulk-actions-panel"]'
+    );
+    const selectionRow = wrapper.get('[data-test-id="bulk-selection-row"]');
+    const matchingRow = wrapper.get(
+      '[data-test-id="bulk-select-matching-row"]'
+    );
+    const actionsRow = wrapper.get('[data-test-id="bulk-action-buttons-row"]');
+
+    expect(panel.classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'max-w-full', 'px-3'])
+    );
+    expect(selectionRow.element.parentElement).toBe(
+      matchingRow.element.parentElement
+    );
+    expect(matchingRow.element.parentElement).toBe(
+      actionsRow.element.parentElement
+    );
+    expect([...selectionRow.element.parentElement.children]).toEqual([
+      selectionRow.element,
+      matchingRow.element,
+      actionsRow.element,
+    ]);
+    expect(selectionRow.text()).toContain('Выбрано: 1');
+    expect(selectionRow.text()).toContain('Очистить');
+    expect(matchingRow.text()).toContain('Выбрать все 26 совпавших диалогов');
+    expect(matchingRow.get('span').classes()).toContain('whitespace-normal');
+    expect(matchingRow.get('span').classes()).not.toContain('truncate');
+    expect(actionsRow.classes()).toEqual(
+      expect.arrayContaining(['min-w-0', 'max-w-full', 'flex-wrap'])
+    );
+    expect(actionsRow.findComponent(BulkLabelActionsStub).exists()).toBe(true);
+    expect(actionsRow.findComponent(BulkUpdateActionsStub).exists()).toBe(true);
+    expect(actionsRow.findComponent(BulkAgentActionsStub).exists()).toBe(true);
+    expect(actionsRow.findComponent(BulkTeamActionsStub).exists()).toBe(true);
+    expect(actionsRow.findComponent(NextButtonStub).exists()).toBe(true);
+    expect(
+      panel.findAll('*').some(element => {
+        const classes = element.attributes('class') || '';
+        const style = element.attributes('style') || '';
+        return (
+          /(?:^|\s)(?:min-|max-)?w-\[\d+px\]/.test(classes) ||
+          /(?:^|;)(?:min-|max-)?width:\s*\d+px/.test(style)
+        );
+      })
+    ).toBe(false);
+  });
+
+  it('omits the matching row when it is unavailable', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.find('[data-test-id="bulk-select-matching-row"]').exists()
+    ).toBe(false);
+    expect(wrapper.get('[data-test-id="bulk-selection-row"]').text()).toContain(
+      'Очистить'
+    );
+    expect(
+      wrapper.get('[data-test-id="bulk-action-buttons-row"]').exists()
+    ).toBe(true);
+
+    await wrapper
+      .get('[data-test-id="bulk-selection-row"] button')
+      .trigger('click');
+    expect(wrapper.emitted('selectAllConversations')).toEqual([[false]]);
+  });
+
+  it('keeps the select-all-matching action on its own row', async () => {
+    isUpdating = false;
+    const wrapper = mountComponent({ canSelectAllMatching: true });
+
+    await wrapper
+      .get('[data-test-id="bulk-select-matching-row"] button')
+      .trigger('click');
+    expect(wrapper.emitted('selectAllMatching')).toEqual([[]]);
   });
 
   it('keeps the status reason dialog for bulk status changes', () => {
