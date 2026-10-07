@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_10_07_120000) do
+ActiveRecord::Schema[7.2].define(version: 2026_10_07_130000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2281,6 +2281,7 @@ ActiveRecord::Schema[7.2].define(version: 2026_10_07_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id", "resource_id", "date"], name: "idx_medelement_schedule_days_resource_date"
+    t.index ["hook_id", "resource_id", "date"], name: "idx_medelement_schedule_days_hook_resource_date", unique: true
     t.index ["hook_id", "specialist_code", "date"], name: "idx_medelement_schedule_days_provider_day", unique: true
     t.index ["account_id"], name: "index_medelement_schedule_days_on_account_id"
     t.index ["hook_id"], name: "index_medelement_schedule_days_on_hook_id"
