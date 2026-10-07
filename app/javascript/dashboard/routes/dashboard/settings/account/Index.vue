@@ -461,12 +461,8 @@ export default {
 
     <div
       v-if="hasWorkspaceChanges && !isWorkspaceReadOnly"
-      class="sticky bottom-4 z-20 mt-6 ml-auto flex w-full max-w-[45rem] items-center justify-between gap-4 rounded-xl border border-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
+      class="sticky bottom-4 z-20 mt-6 flex w-full max-w-[45rem] flex-col items-start gap-3 rounded-xl border border-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
     >
-      <div class="flex items-center gap-2 text-sm text-n-slate-11">
-        <span class="i-lucide-circle-alert text-n-amber-10" />
-        {{ $t('GENERAL_SETTINGS.UNSAVED.MESSAGE') }}
-      </div>
       <div class="flex items-center gap-2">
         <NextButton
           faded
@@ -482,6 +478,10 @@ export default {
           :is-loading="isUpdating"
           @click="updateAccount"
         />
+      </div>
+      <div class="flex items-center gap-2 text-sm text-n-slate-11">
+        <span class="i-lucide-circle-alert text-n-amber-10" />
+        {{ $t('GENERAL_SETTINGS.UNSAVED.MESSAGE') }}
       </div>
     </div>
   </div>
