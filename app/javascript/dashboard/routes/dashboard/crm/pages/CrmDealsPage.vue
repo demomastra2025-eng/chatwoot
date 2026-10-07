@@ -2353,9 +2353,16 @@ const syncSelectedDeal = records => {
   }
 };
 
+const isEmptyDealAmount = value =>
+  value === '' || value === null || value === undefined;
+
 const buildPayload = () => {
   const payload = compactPayload({
-    amount_minor: majorAmountToMinor(form.amount),
+    // An empty amount stays empty: sending 0 would count as a filled value for
+    // the required-field checks of stages that need an amount.
+    amount_minor: isEmptyDealAmount(form.amount)
+      ? undefined
+      : majorAmountToMinor(form.amount),
     company_id: form.companyId ? Number(form.companyId) : undefined,
     contact_ids: form.contactIds.map(Number),
     closing_reasons: normalizedTextValues(form.closingReasons),
@@ -2387,10 +2394,9 @@ const buildPayload = () => {
 
   if (selectedDeal.value) {
     Object.assign(payload, {
-      amount_minor:
-        form.amount === '' || form.amount === null
-          ? null
-          : majorAmountToMinor(form.amount),
+      amount_minor: isEmptyDealAmount(form.amount)
+        ? null
+        : majorAmountToMinor(form.amount),
       company_id: form.companyId ? Number(form.companyId) : null,
       contact_ids: form.contactIds.map(Number),
       description: form.description || null,

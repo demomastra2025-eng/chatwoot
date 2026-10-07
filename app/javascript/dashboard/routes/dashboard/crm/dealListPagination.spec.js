@@ -55,6 +55,7 @@ vi.mock('vue-router', () => ({
 vi.mock('dashboard/api/crm/deals', () => ({
   default: new Proxy(
     {
+      create: vi.fn(),
       get: vi.fn(),
       show: vi.fn(),
       timeline: vi.fn(),
@@ -192,6 +193,7 @@ beforeEach(() => {
       total_count: 1,
     })
   );
+  CrmDealsAPI.create.mockReset();
   CrmDealsAPI.show.mockReset();
   CrmDealsAPI.timeline.mockReset().mockResolvedValue(response([]));
   CrmDealsAPI.update.mockReset();
@@ -1737,6 +1739,37 @@ it('does not save the deal again when its contact is already linked', async () =
   expect(useAlert).toHaveBeenCalledWith(
     'CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'
   );
+});
+
+it('builds an empty amount as no amount instead of 0', async () => {
+  const { state } = await mountPage();
+
+  state.form.amount = '';
+  expect(state.buildPayload()).not.toHaveProperty('amount_minor');
+
+  state.form.amount = 0;
+  expect(state.buildPayload().amount_minor).toBe(0);
+  state.form.amount = 15;
+  expect(state.buildPayload().amount_minor).toBe(1500);
+
+  state.selectedDeal = deal(1);
+  state.form.amount = '';
+  expect(state.buildPayload().amount_minor).toBeNull();
+});
+
+it('creates a deal without an amount when the amount field is empty', async () => {
+  CrmDealsAPI.create.mockResolvedValueOnce(response(deal(5)));
+  const { state } = await mountPage();
+  await state.openCreateDrawer();
+  state.form.title = 'No amount yet';
+  state.form.amount = '';
+
+  await state.saveDeal();
+
+  expect(CrmDealsAPI.create).toHaveBeenCalledTimes(1);
+  const payload = CrmDealsAPI.create.mock.calls[0][0];
+  expect(payload).toMatchObject({ title: 'No amount yet', pipeline_id: 10 });
+  expect(payload).not.toHaveProperty('amount_minor');
 });
 
 it('drops a pending debounced reload when the page unmounts', async () => {
