@@ -78,6 +78,23 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     expect(result).to have_attributes(status: 'unavailable', reason: 'provider_unavailable', slots: [])
   end
 
+  it 'accepts numeric and string working flags from the timetable' do
+    allow(client).to receive(:timetable).and_return(
+      '07.09.2026' => {
+        'timetable' => [
+          { 'start' => '07.09.2026 09:00', 'end' => '07.09.2026 10:00', 'working' => 1 },
+          { 'start' => '07.09.2026 10:00', 'end' => '07.09.2026 11:00', 'working' => 'true' }
+        ]
+      }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time, slots: slots, client: client).perform
+
+    expect(result.status).to eq('fresh')
+    expect(result.slots.size).to eq(2)
+  end
+
   it 'does not treat removed receptions as occupied' do
     allow(client).to receive(:get_receptions).and_return(
       [{ 'STARTTIME' => '07.09.2026 09:00:00', 'ENDTIME' => '07.09.2026 11:00:00', 'REMOVED' => 1 }]

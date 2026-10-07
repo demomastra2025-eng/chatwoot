@@ -7,7 +7,8 @@ class Scheduling::AvailabilityService
 
   attr_reader :appointments, :from, :holidays, :ignore_appointment_id, :resource, :time_offs, :to, :workday_overrides
 
-  def initialize(resource:, from:, to:, holidays:, workday_overrides:, time_offs:, appointments:, ignore_appointment_id: nil)
+  def initialize(resource:, from:, to:, holidays:, workday_overrides:, time_offs:, appointments:, ignore_appointment_id: nil,
+                 provider_working_windows: nil, replace_work_rules: false)
     @resource = resource
     @from = from
     @to = to
@@ -16,6 +17,8 @@ class Scheduling::AvailabilityService
     @time_offs = time_offs
     @appointments = appointments
     @ignore_appointment_id = ignore_appointment_id
+    @provider_working_windows = provider_working_windows
+    @replace_work_rules = replace_work_rules
   end
 
   def available?(starts_at:, ends_at:)
@@ -196,11 +199,38 @@ class Scheduling::AvailabilityService
   end
 
   def working_intervals_for_date(date, override)
-    return [[local_time(date, override.start_minute), local_time(date, override.end_minute)]] if override.present?
-    return [] if holiday_blocks_date?(date)
+    return [] if holiday_blocks_date?(date) && override.blank?
 
-    resource.work_rules.active.select { |rule| rule.weekday == date.wday }.map do |rule|
-      [local_time(date, rule.start_minute), local_time(date, rule.end_minute)]
+    local_intervals = if override.present?
+                        [[local_time(date, override.start_minute), local_time(date, override.end_minute)]]
+                      else
+                        resource.work_rules.active.select { |rule| rule.weekday == date.wday }.map do |rule|
+                          [local_time(date, rule.start_minute), local_time(date, rule.end_minute)]
+                        end
+                      end
+    return local_intervals if @provider_working_windows.nil?
+
+    day_start, day_end = day_bounds(date)
+    provider_intervals = @provider_working_windows.filter_map do |interval|
+      Scheduling::IntervalMath.clip(interval, from: day_start, to: day_end)
+    end
+    return merge_intervals(provider_intervals) if @replace_work_rules && override.blank?
+
+    intersections = provider_intervals.flat_map do |provider_interval|
+      local_intervals.filter_map do |local_interval|
+        Scheduling::IntervalMath.clip(provider_interval, from: local_interval.first, to: local_interval.last)
+      end
+    end
+    merge_intervals(intersections)
+  end
+
+  def merge_intervals(intervals)
+    intervals.sort_by(&:first).each_with_object([]) do |interval, merged|
+      if merged.any? && merged.last.last >= interval.first
+        merged.last[1] = [merged.last.last, interval.last].max
+      else
+        merged << interval.dup
+      end
     end
   end
 end

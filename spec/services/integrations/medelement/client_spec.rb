@@ -275,6 +275,20 @@ RSpec.describe Integrations::Medelement::Client do
   end
 
   describe '#timetable' do
+    it 'rejects a non-object day instead of returning a fresh-looking partial schedule' do
+      stub_request(
+        :get,
+        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=27.07.2026&specialistCode=specialist-1"
+      ).to_return(status: 200, body: '{"27.07.2026":[]}', headers: { 'Content-Type' => 'application/json' })
+      allow(Rails.logger).to receive(:warn)
+
+      expect do
+        client.timetable(specialist_code: 'specialist-1', starts_on: Date.new(2026, 7, 27),
+                         ends_on: Date.new(2026, 7, 27))
+      end.to raise_error(described_class::InvalidTimetableError)
+      expect(Rails.logger).to have_received(:warn).with('[MEDELEMENT::TIMETABLE] Invalid day response')
+    end
+
     it 'requests and merges each date because the provider does not treat repeated dates as a range' do
       first_day = stub_request(
         :get,

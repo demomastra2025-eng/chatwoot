@@ -35,7 +35,8 @@ class Scheduling::AvailableSlotSearchService
       slots: normalized_slots,
       total_slots: normalized_slots.length,
       slot_count_scope: 'returned_only',
-      availability: availability_payload
+      availability: availability_payload,
+      availability_note: availability_note
     }.compact
     payload.merge(availability_scope_payload)
   end
@@ -76,39 +77,46 @@ class Scheduling::AvailableSlotSearchService
   def normalized_slots
     @normalized_slots ||= begin
       slots = resources.flat_map do |resource|
-        provider_checked_slots(resource, local_slots(resource))
+        provider_checked_slots(resource)
       end
       slots.sort_by { |slot| Time.zone.parse(slot[:starts_at]) }.first(@limit)
     end
   end
 
-  def local_slots(resource)
+  def local_slots(resource, provider_working_windows: nil, uncapped: false)
+    replace_work_rules = provider_working_windows.present? && default_template?(resource)
     payload = Scheduling::ResourceAvailabilityQueryService.new(
       resource: resource,
       from: @from,
       to: @to,
       service: service,
       duration_min: @requested_duration_min,
-      limit: @limit
+      limit: @limit,
+      provider_working_windows: provider_working_windows,
+      replace_work_rules: replace_work_rules,
+      uncapped: uncapped
     ).perform
     payload.fetch(:slots, []).map do |slot|
       slot.merge(resource_name: resource.name, timezone: resource.timezone, availability_source: 'local')
     end
   end
 
-  def provider_checked_slots(resource, local_slots)
+  def provider_checked_slots(resource)
     return unverified_provider_route_slots(resource) if provider_route_missing?(resource)
 
     unless medelement_resource?(resource)
       record_availability(resource_id: resource.id, status: 'local_only')
-      return label_service_eligibility(local_slots, 'local_configured')
+      return label_service_eligibility(local_slots(resource), 'local_configured')
     end
 
     result = Integrations::Medelement::ResourceAvailabilityService.new(
       resource: resource,
       from: @from,
       to: @to,
-      slots: local_slots
+      slots: [],
+      candidate_slots: lambda do |provider_windows|
+        local_slots(resource, provider_working_windows: provider_windows, uncapped: true)
+      end
     ).perform
     record_availability(
       resource_id: resource.id,
@@ -117,7 +125,11 @@ class Scheduling::AvailableSlotSearchService
       checked_at: result.checked_at.iso8601(6),
       reason: result.reason
     )
-    label_service_eligibility(result.slots, 'price_link_unverified')
+    label_service_eligibility(result.slots.first(@limit), 'price_link_unverified')
+  end
+
+  def default_template?(resource)
+    Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: @account).default_template?(resource)
   end
 
   def label_service_eligibility(slots, status)
@@ -148,6 +160,12 @@ class Scheduling::AvailableSlotSearchService
              end
 
     { status: status, resources: availability_resources }
+  end
+
+  def availability_note
+    return unless availability_payload[:status] == 'degraded'
+
+    'Не удалось проверить график MedElement; наличие свободного времени неизвестно.'
   end
 
   def availability_resources

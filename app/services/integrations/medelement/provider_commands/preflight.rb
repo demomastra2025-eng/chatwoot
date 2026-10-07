@@ -119,7 +119,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
 
   def working_intervals(timetable)
     timetable.to_h.values.flat_map { |day| Array(day['timetable']) }
-             .select { |slot| slot['working'] == true }
+             .select { |slot| Integrations::Medelement::WorkingFlag.working?(slot['working']) }
              .filter_map { |slot| parsed_interval(slot) }
              .sort_by(&:first)
   end

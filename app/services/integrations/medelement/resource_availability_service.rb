@@ -10,6 +10,7 @@ class Integrations::Medelement::ResourceAvailabilityService
     @from = from
     @to = to
     @slots = slots
+    @candidate_slots = options[:candidate_slots]
     @configuration = configuration
     @client = options[:client]
     @cabinet_code = options[:cabinet_code].to_s.presence
@@ -24,18 +25,16 @@ class Integrations::Medelement::ResourceAvailabilityService
     provider_windows = provider_working_windows
     receptions = cabinets.to_h { |cabinet| [cabinet.fetch(:code), provider_receptions(cabinet.fetch(:code))] }
 
+    slots = @candidate_slots ? @candidate_slots.call(provider_windows) : @slots
     Result.new(
       status: 'fresh',
       checked_at: checked_at,
-      slots: provider_slots(provider_windows, receptions, checked_at),
+      slots: provider_slots(provider_windows, receptions, checked_at, slots),
       reason: nil
     )
-  rescue Integrations::Medelement::Client::ApiError => e
-    log_unavailable(e)
-    unavailable(checked_at || Time.current, 'provider_unavailable')
   rescue StandardError => e
     log_unavailable(e)
-    unavailable(checked_at || Time.current, 'provider_response_invalid')
+    unavailable(checked_at || Time.current, unavailable_reason(e))
   end
 
   private
@@ -81,7 +80,7 @@ class Integrations::Medelement::ResourceAvailabilityService
     rows = timetable_rows(payload)
     rows.filter_map do |row|
       attributes = row.to_h.with_indifferent_access
-      next unless ActiveModel::Type::Boolean.new.cast(attributes['working'])
+      next unless Integrations::Medelement::WorkingFlag.working?(attributes['working'])
 
       interval(attributes['start'], attributes['end'])
     end.sort_by(&:first)
@@ -123,8 +122,8 @@ class Integrations::Medelement::ResourceAvailabilityService
     end
   end
 
-  def provider_slots(provider_windows, receptions, checked_at)
-    @slots.filter_map do |slot|
+  def provider_slots(provider_windows, receptions, checked_at, slots)
+    slots.filter_map do |slot|
       starts_at = parse_time(slot.fetch(:starts_at))
       ends_at = parse_time(slot.fetch(:ends_at))
       next unless fully_covered?(starts_at, ends_at, provider_windows)
@@ -183,6 +182,13 @@ class Integrations::Medelement::ResourceAvailabilityService
 
   def unavailable(checked_at, reason)
     Result.new(status: 'unavailable', checked_at: checked_at, slots: [], reason: reason)
+  end
+
+  def unavailable_reason(error)
+    return 'provider_response_invalid' if error.is_a?(Integrations::Medelement::Client::InvalidTimetableError)
+    return 'provider_unavailable' if error.is_a?(Integrations::Medelement::Client::ApiError)
+
+    'provider_response_invalid'
   end
 
   def log_unavailable(error)

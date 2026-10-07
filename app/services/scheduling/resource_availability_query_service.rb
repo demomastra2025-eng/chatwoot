@@ -2,14 +2,17 @@ class Scheduling::ResourceAvailabilityQueryService
   MAX_LIMIT = 50
   MAX_RANGE_DAYS = Scheduling::RangeValidator::MAX_RANGE_DAYS
 
-  def initialize(resource:, from:, to:, service: nil, duration_min: nil, limit: nil)
+  def initialize(resource:, from:, to:, **options)
     @resource = resource
     @account = resource.account
     @from = from
     @to = to
-    @service = service
-    @duration_min = duration_for(service: service, duration_min: duration_min)
-    @limit = normalize_limit(limit)
+    @service = options[:service]
+    @duration_min = duration_for(service: @service, duration_min: options[:duration_min])
+    @limit = normalize_limit(options[:limit])
+    @provider_working_windows = options[:provider_working_windows]
+    @replace_work_rules = options.fetch(:replace_work_rules, false)
+    @uncapped = options.fetch(:uncapped, false)
   end
 
   def perform
@@ -34,14 +37,18 @@ class Scheduling::ResourceAvailabilityQueryService
   private
 
   def available_slots
-    @available_slots ||= availability_service.slots(duration_min: @duration_min).first(@limit).map do |slot|
-      {
-        resource_id: slot[:resource_id],
-        starts_at: Time.zone.parse(slot[:starts_at]).in_time_zone(time_zone).iso8601,
-        ends_at: Time.zone.parse(slot[:ends_at]).in_time_zone(time_zone).iso8601,
-        duration_min: @duration_min,
-        status: slot[:status]
-      }
+    @available_slots ||= begin
+      slots = availability_service.slots(duration_min: @duration_min)
+      slots = slots.first(@limit) unless @uncapped
+      slots.map do |slot|
+        {
+          resource_id: slot[:resource_id],
+          starts_at: Time.zone.parse(slot[:starts_at]).in_time_zone(time_zone).iso8601,
+          ends_at: Time.zone.parse(slot[:ends_at]).in_time_zone(time_zone).iso8601,
+          duration_min: @duration_min,
+          status: slot[:status]
+        }
+      end
     end
   end
 
@@ -54,7 +61,9 @@ class Scheduling::ResourceAvailabilityQueryService
       workday_overrides: @resource.workday_overrides.where(date: local_date_window).ordered.to_a,
       time_offs: @account.scheduling_time_offs.where(resource_id: [nil, @resource.id]).where('starts_at < ? AND ends_at > ?', @to,
                                                                                              @from).ordered.to_a,
-      appointments: @account.scheduling_appointments.where(resource_id: @resource.id).where('starts_at < ? AND ends_at > ?', @to, @from).ordered.to_a
+      appointments: @account.scheduling_appointments.where(resource_id: @resource.id).where('starts_at < ? AND ends_at > ?', @to, @from).ordered.to_a,
+      provider_working_windows: @provider_working_windows,
+      replace_work_rules: @replace_work_rules
     )
   end
 

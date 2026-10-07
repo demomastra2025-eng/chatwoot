@@ -18,6 +18,7 @@ class Integrations::Medelement::Client
   end
 
   class CatalogUnavailableError < ApiError; end
+  class InvalidTimetableError < ApiError; end
 
   BASE_URL = 'https://api3.medelement.com'.freeze
 
@@ -73,7 +74,13 @@ class Integrations::Medelement::Client
         operation: 'timetable',
         query: URI.encode_www_form([['date', provider_date(date)], ['specialistCode', specialist_code]])
       )
-      result.merge!(payload) if payload.is_a?(Hash)
+      day = payload.is_a?(Hash) ? payload[provider_date(date)] : nil
+      unless day.is_a?(Hash) && day['timetable'].is_a?(Array)
+        Rails.logger.warn('[MEDELEMENT::TIMETABLE] Invalid day response')
+        raise InvalidTimetableError, 'Medelement timetable day is invalid'
+      end
+
+      result[provider_date(date)] = day
     end
   end
 
