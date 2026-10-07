@@ -240,9 +240,9 @@ describe('Account settings', () => {
 
   it('hides the danger zone outside cloud or for a read-only workspace', () => {
     const { wrapper: nonCloudWrapper } = buildWrapper();
-    expect(
-      nonCloudWrapper.find('[data-test="account-delete"]').exists()
-    ).toBe(false);
+    expect(nonCloudWrapper.find('[data-test="account-delete"]').exists()).toBe(
+      false
+    );
 
     canManageWorkspace = false;
     const { wrapper } = buildWrapper({ isOnChatwootCloud: true });
@@ -253,7 +253,7 @@ describe('Account settings', () => {
   it('waits for account data before mounting dependent sections', () => {
     shouldShowSamlFeature = true;
     const { wrapper } = buildWrapper({
-      accountRecord: undefined,
+      accountRecord: null,
       isOnChatwootCloud: true,
     });
 

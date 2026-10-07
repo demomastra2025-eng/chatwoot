@@ -74,7 +74,9 @@ describe('ConversationSettings', () => {
 
     expect(storeDispatch).toHaveBeenCalledWith('accounts/get');
     expect(
-      wrapper.get('[data-test="media-transcription"]').attributes('data-disabled')
+      wrapper
+        .get('[data-test="media-transcription"]')
+        .attributes('data-disabled')
     ).toBe('true');
   });
 
@@ -82,7 +84,9 @@ describe('ConversationSettings', () => {
     const wrapper = mountComponent();
 
     expect(
-      wrapper.get('[data-test="media-transcription"]').attributes('data-disabled')
+      wrapper
+        .get('[data-test="media-transcription"]')
+        .attributes('data-disabled')
     ).toBe('false');
   });
 
