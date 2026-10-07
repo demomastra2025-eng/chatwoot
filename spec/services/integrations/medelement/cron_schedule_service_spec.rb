@@ -61,16 +61,16 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     hook.update!(settings: hook.settings.merge('incremental_receptions_enabled' => true,
                                                'incremental_receptions_interval_seconds' => 30))
 
-    described_class.new(hook: hook).sync!
-
-    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+    expect(Sidekiq::Cron::Job).to receive(:create).with(
       hash_including(name: "integrations_medelement_hook_#{hook.id}_realtime", cron: '*/2 * * * * Asia/Almaty')
-    )
-    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+    ).and_return(true)
+    expect(Sidekiq::Cron::Job).to receive(:create).with(
       hash_including(name: "integrations_medelement_hook_#{hook.id}_receptions_delta",
                      klass: 'Integrations::Medelement::ReceptionsDeltaJob', cron: '* * * * * Asia/Almaty',
                      args: [hook.id], queue: 'default')
-    )
+    ).and_return(true)
+
+    described_class.new(hook: hook).sync!
   end
 
   it 'creates a repeated cron anchored at the chosen time for shorter intervals' do

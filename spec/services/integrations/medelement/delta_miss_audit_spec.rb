@@ -24,7 +24,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
   it 'records one unexplained miss after a complete poll and the grace period' do
     record_change
     record_change
-    travel 2.minutes do
+    travel 2.minutes + 1.second do
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
@@ -40,7 +40,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
       provider_reception_code: 'reception-1', idempotency_key: 'fake-command-1'
     )
     record_change
-    travel 2.minutes do
+    travel 2.minutes + 1.second do
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
@@ -52,7 +52,7 @@ RSpec.describe Integrations::Medelement::DeltaMissAudit do
     Integrations::Medelement::DeltaSeenReception.create!(
       hook: hook, reception_code: 'reception-1', change_marker: 'marker-1', processed_at: Time.current
     )
-    travel 2.minutes do
+    travel 2.minutes + 1.second do
       audit.resolve_candidates!(poll_completed_at: Time.current)
     end
 
