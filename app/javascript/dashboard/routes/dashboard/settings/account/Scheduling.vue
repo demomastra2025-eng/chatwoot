@@ -42,7 +42,7 @@ const saveSchedulingSettings = async () => {
 </script>
 
 <template>
-  <div class="flex flex-col w-full max-w-2xl ltr:mr-auto rtl:ml-auto">
+  <div class="flex flex-col w-full max-w-3xl ltr:mr-auto rtl:ml-auto">
     <BaseSettingsHeader
       :title="$t('GENERAL_SETTINGS.FORM.SCHEDULING.PAGE.TITLE')"
       :description="$t('GENERAL_SETTINGS.FORM.SCHEDULING.PAGE.NOTE')"

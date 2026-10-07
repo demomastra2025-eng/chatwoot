@@ -548,7 +548,7 @@ onMounted(() => {
                 v-if="isGroupEnabled(row) && isGroupExpanded(row)"
                 class="pb-2 pl-4 pt-4 md:pl-6"
               >
-                <div v-if="row.key === 'pipeline'" class="grid max-w-2xl gap-5">
+                <div v-if="row.key === 'pipeline'" class="grid max-w-3xl gap-5">
                   <p
                     v-if="crmReferencesStore.ui?.isLoadingPipelines"
                     class="text-body-main text-n-slate-11"

@@ -326,7 +326,7 @@ export default {
 <template>
   <div class="flex flex-col w-full">
     <BaseSettingsHeader :title="$t('GENERAL_SETTINGS.TITLE')" />
-    <div class="w-full max-w-[45rem] mt-5">
+    <div class="w-full max-w-3xl mt-5">
       <main class="min-w-0">
         <div
           v-if="isWorkspaceReadOnly"
@@ -462,7 +462,7 @@ export default {
 
     <div
       v-if="hasWorkspaceChanges && !isWorkspaceReadOnly"
-      class="sticky bottom-4 z-20 mt-6 flex w-full max-w-[45rem] flex-col items-start gap-3 rounded-xl border border-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
+      class="sticky bottom-4 z-20 mt-6 flex w-full max-w-3xl flex-col items-start gap-3 rounded-xl border border-n-weak bg-n-background/95 px-4 py-3 shadow-lg backdrop-blur"
     >
       <div class="flex items-center gap-2">
         <NextButton
