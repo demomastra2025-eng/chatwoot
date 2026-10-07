@@ -433,7 +433,9 @@ watch(
 );
 
 useEventListener(document, 'keydown', event => {
-  if (event.key === 'Escape' && props.visible) {
+  // The inline panel sits beside the deal card instead of covering it, so an
+  // Escape meant for the composer, a menu or a dialog must not leave the page.
+  if (event.key === 'Escape' && props.visible && !props.inline) {
     closePanel();
   }
 });

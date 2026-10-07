@@ -200,6 +200,19 @@ describe('CrmDealConversationPanel', () => {
     expect(wrapper.emitted('openFullScreen')).toHaveLength(1);
   });
 
+  it('closes the floating panel on Escape but keeps the inline one open', async () => {
+    const floating = mountPanel();
+    const inline = mountPanel({ inline: true });
+    await flushPromises();
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(floating.emitted('close')).toHaveLength(1);
+    expect(inline.emitted('close')).toBeUndefined();
+    floating.unmount();
+    inline.unmount();
+  });
+
   it('loads by display id when internal id is missing/invalid', async () => {
     mountPanel({ conversationId: '', conversationDisplayId: 185 });
     await flushPromises();
