@@ -75,7 +75,9 @@ describe('CrmDealTasksPanel waiting controls', () => {
     const wrapper = mountPanel({ canManageDeals: true });
     await flushPromises();
 
-    const waitingDialog = wrapper.findComponent({ name: 'Dialog' });
+    // The task form dialog comes first and the waiting dialog second. A task no longer needs a status to be saved,
+    // so only the second dialog is the one that must stay disabled without a date and reason.
+    const waitingDialog = wrapper.findAllComponents({ name: 'Dialog' })[1];
     expect(waitingDialog.props('disableConfirmButton')).toBe(true);
   });
 });
