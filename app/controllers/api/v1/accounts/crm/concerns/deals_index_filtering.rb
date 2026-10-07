@@ -5,6 +5,13 @@ module Api::V1::Accounts::Crm::Concerns::DealsIndexFiltering
     self.class::DEAL_PRELOADS
   end
 
+  def visible_board_deals(scope)
+    active_pipeline_ids = Current.account.crm_pipelines.active.select(:id)
+    stages = Current.account.crm_stages.active.where(pipeline_id: active_pipeline_ids)
+    stages = stages.where(outcome: 'open') unless parse_boolean(params[:show_closed_stages])
+    scope.where(stage_id: stages.select(:id))
+  end
+
   def filter_by_ai_only(scope)
     return scope unless parse_boolean(params[:ai_only])
 

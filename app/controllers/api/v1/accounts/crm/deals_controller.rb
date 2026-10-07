@@ -23,6 +23,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     authorize ::Crm::Deal
 
     deals = filtered_deals
+    deals = visible_board_deals(deals) if board_mode?
     list_page = ::Crm::Deals::ListOrderService.new(
       scope: deals,
       page: page_param,

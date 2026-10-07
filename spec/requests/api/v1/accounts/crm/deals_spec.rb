@@ -151,6 +151,7 @@ RSpec.describe 'CRM Deals API', type: :request do
       open_thread_deal.id,
       resolved_conversation_deal.id
     )
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(2)
   end
 
   it 'filters deals by creation date range' do
@@ -168,6 +169,7 @@ RSpec.describe 'CRM Deals API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload'].pluck('id')).to eq([matching_deal.id])
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(1)
   end
 
   it 'creates a standalone deal without contacts or company', :aggregate_failures do
@@ -726,6 +728,128 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(meta.fetch('pipeline_amounts_minor')).to eq('KZT' => 400_00, 'USD' => 100_00)
   end
 
+  it 'counts only displayed board stages when closed stages contain most pipeline deals', :aggregate_failures do
+    pipeline = create(:crm_pipeline, account: account)
+    first_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    second_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    closed_stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'won')
+    inactive_stage = create(:crm_stage, account: account, pipeline: pipeline, active: false)
+    other_pipeline = create(:crm_pipeline, account: account)
+    other_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+
+    create_list(:crm_deal, 3, account: account, pipeline: pipeline, stage: first_stage,
+                              amount_minor: 125_50, currency: 'KZT')
+    create_list(:crm_deal, 3, account: account, pipeline: pipeline, stage: second_stage,
+                              amount_minor: 200_25, currency: 'USD')
+    create_list(:crm_deal, 251, account: account, pipeline: pipeline, stage: closed_stage,
+                                amount_minor: 999_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: inactive_stage,
+                      amount_minor: 10_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: pipeline, stage: first_stage,
+                      archived_at: Time.current, amount_minor: 20_00, currency: 'KZT')
+    create(:crm_deal, account: account, pipeline: other_pipeline, stage: other_stage,
+                      amount_minor: 500_00, currency: 'RUB')
+
+    visible_scope = account.crm_deals.kept.where(pipeline_id: pipeline.id, stage_id: [first_stage.id, second_stage.id])
+    expected_counts = visible_scope.group(:stage_id).count.transform_keys(&:to_s)
+    expected_amounts = visible_scope.group(:stage_id, :currency).sum(:amount_minor)
+                                    .each_with_object({}) do |((stage_id, currency), amount), result|
+      (result[stage_id.to_s] ||= {})[currency] = amount
+    end
+    expected_pipeline_amounts = visible_scope.group(:currency).sum(:amount_minor)
+
+    get path, params: { board: true, pipeline_id: pipeline.id, per_page: 2 }, headers: headers, as: :json
+
+    meta = response.parsed_body.fetch('meta')
+    expect(response).to have_http_status(:ok)
+    expect(meta).to include('total_count' => visible_scope.count, 'total_pages' => 2, 'has_more' => true)
+    expect(meta.fetch('stage_counts')).to eq(expected_counts)
+    expect(meta.fetch('stage_amounts_minor')).to eq(expected_amounts)
+    expect(meta.fetch('pipeline_amounts_minor')).to eq(expected_pipeline_amounts)
+    expect(response.parsed_body.fetch('payload').pluck('stage_id').uniq).to contain_exactly(first_stage.id, second_stage.id)
+
+    get path, params: { board: true, pipeline_id: pipeline.id, show_closed_stages: true }, headers: headers, as: :json
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(257)
+    expect(response.parsed_body.dig('meta', 'stage_counts', closed_stage.id.to_s)).to eq(251)
+
+    get path, params: { pipeline_id: pipeline.id }, headers: headers, as: :json
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(258)
+
+    get path, headers: headers, as: :json
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(259)
+
+    get path, params: { board: true }, headers: headers, as: :json
+    expect(response.parsed_body.dig('meta', 'total_count')).to eq(7)
+  end
+
+  it 'uses the same filtered deal IDs for list and board totals' do
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    other_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    owner = create(:user, account: account)
+    team = create(:team, account: account)
+    company = create(:company, account: account)
+    contact = create(:contact, account: account)
+    create(:crm_field_definition, account: account, entity_kind: 'deal', key: 'score',
+                                  label: 'Score', field_type: 'number')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage,
+                             owner: owner, team: team, company: company, title: 'Matching renewal',
+                             amount_minor: 123_45, currency: 'KZT', custom_attributes: { 'score' => 88 })
+    create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: other_stage,
+                      created_at: 10.days.ago, amount_minor: 999_00, currency: 'USD')
+
+    filters = [
+      { owner_id: owner.id },
+      { team_id: team.id },
+      { company_id: company.id },
+      { contact_id: contact.id },
+      { stage_id: stage.id },
+      { q: 'Matching renewal' },
+      { created_from: 1.day.ago.iso8601 },
+      { custom_attribute_filters: { score: { operator: 'greater_than', value: 50 } } }
+    ]
+    expected_scope = account.crm_deals.where(id: deal.id)
+    expected_counts = expected_scope.group(:stage_id).count.transform_keys(&:to_s)
+    expected_amounts = { stage.id.to_s => expected_scope.group(:currency).sum(:amount_minor) }
+    expected_pipeline_amounts = expected_scope.group(:currency).sum(:amount_minor)
+
+    modes = [false, true]
+    filters.each do |filter|
+      modes.each do |board|
+        get path, params: { pipeline_id: pipeline.id, board: board }.merge(filter), headers: headers, as: :json
+
+        meta = response.parsed_body.fetch('meta')
+        expect(response).to have_http_status(:ok)
+        expect(meta).to include('total_count' => expected_scope.count)
+        expect(meta.fetch('stage_counts')).to eq(expected_counts)
+        expect(meta.fetch('stage_amounts_minor')).to eq(expected_amounts)
+        expect(meta.fetch('pipeline_amounts_minor')).to eq(expected_pipeline_amounts)
+      end
+    end
+  end
+
+  it 'keeps board totals within an agent account scope' do
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    agent = create(:user, account: account, role: :agent)
+    create(:crm_deal, account: account, pipeline: pipeline, stage: stage,
+                      amount_minor: 125_50, currency: 'KZT')
+    foreign_account = create(:account)
+    create(:crm_deal, account: foreign_account, amount_minor: 999_00, currency: 'KZT')
+
+    get path, params: { board: true, pipeline_id: pipeline.id },
+              headers: agent.create_new_auth_token, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('meta')).to include(
+      'total_count' => 1,
+      'stage_counts' => { stage.id.to_s => 1 },
+      'stage_amounts_minor' => { stage.id.to_s => { 'KZT' => 125_50 } },
+      'pipeline_amounts_minor' => { 'KZT' => 125_50 }
+    )
+  end
+
   it 'searches and sorts list pages on the server with a stable id tie-breaker' do
     pipeline = create(:crm_pipeline, account: account, name: 'Enterprise Sales')
     stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Qualified')
@@ -1207,6 +1331,7 @@ RSpec.describe 'CRM Deals API', type: :request do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body['payload'].pluck('id')).to include(expected_id)
+      expect(response.parsed_body.dig('meta', 'total_count')).to eq(response.parsed_body.fetch('payload').size)
     end
   end
 
