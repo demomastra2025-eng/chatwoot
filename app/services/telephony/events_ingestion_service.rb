@@ -336,6 +336,7 @@ class Telephony::EventsIngestionService
   end
 
   def terminal_late_terminal_event?(call_session)
+    return false if wazo_cdr_event?
     return false if post_finalize_recording_event?
     return false if terminal_recording_update_event?
     return false if webphone_release_event?
@@ -718,6 +719,9 @@ class Telephony::EventsIngestionService
     existing_call_session = account.telephony_call_sessions.find_by(external_call_ref: call_ref)
     return existing_call_session if existing_call_session.present?
 
+    correlated_session = correlated_wazo_cdr_session(account)
+    return correlated_session if correlated_session.present?
+
     provider = resolved_provider(account)
     if provider.blank?
       raise Telephony::Error.new(
@@ -734,6 +738,25 @@ class Telephony::EventsIngestionService
     raise unless uniqueness_conflict?(e.record, :external_call_ref)
 
     account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+  end
+
+  def correlated_wazo_cdr_session(account)
+    return unless ActiveModel::Type::Boolean.new.cast(ENV.fetch('TELEPHONY_WAZO_CALL_LOG_SYNC_ENABLED', nil))
+    return unless payload_value('provider') == 'wazo'
+    return if metadata_value('wazo_cdr_ref').present?
+
+    inbox = resolve_inbox(account)
+    direction = resolved_direction
+    return unless direction.in?(%w[inbound outbound])
+
+    started_at = resolved_started_at || resolved_occurred_at
+    caller = direction == 'inbound' ? resolved_from_number : resolved_to_number
+    did = direction == 'inbound' ? resolved_to_number : resolved_from_number
+    candidate = Telephony::Wazo::CallLogCorrelator.find(
+      account: account, inbox: inbox, caller: caller, did: did,
+      direction: direction, started_at: started_at
+    )
+    candidate if candidate&.metadata.to_h.dig('metadata', 'wazo_cdr_ref').present?
   end
 
   def uniquely_resolved_call_session
@@ -1316,12 +1339,18 @@ class Telephony::EventsIngestionService
   end
 
   def stale_event?(call_session)
+    return false if wazo_cdr_event?
     occurred_at = resolved_occurred_at
     return false if webphone_terminal_completion_event?(call_session)
     return false if fresh_terminal_event?(call_session, occurred_at)
     return false if repairable_stale_ai_answer_event?(call_session)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def wazo_cdr_event?
+    ActiveModel::Type::Boolean.new.cast(ENV.fetch('TELEPHONY_WAZO_CALL_LOG_SYNC_ENABLED', nil)) &&
+      payload_value('provider') == 'wazo' && metadata_value('wazo_cdr_ref').present?
   end
 
   def repairable_stale_ai_answer_event?(call_session)
@@ -2287,6 +2316,7 @@ class Telephony::EventsIngestionService
       meta['call_group_key'] = logical_key
     end
     meta['operator_claim'] = metadata['operator_claim'] if metadata['operator_claim'].present?
+    meta['reached_voicemail'] = route_metadata['reached_voicemail'] if route_metadata.key?('reached_voicemail')
     latest_leg = latest_call_leg(call_session)
     meta['latest_event_type'] = latest_leg['event_type'] if latest_leg['event_type'].present?
     meta['latest_leg'] = latest_leg['leg'] if latest_leg['leg'].present?

@@ -11,6 +11,7 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
   USERS_PATH = '/api/confd/1.1/users'
   LINES_PATH = '/api/confd/1.1/lines'
   EXTENSIONS_PATH = '/api/confd/1.1/extensions'
+  CDR_PATH = '/api/call-logd/1.0/cdr'
   REQUEST_TIMEOUT = 15
 
   def self.configured?
@@ -39,6 +40,13 @@ class Telephony::Wazo::ApiClient # rubocop:disable Metrics/ClassLength -- explic
   def sip_endpoints
     payload = request(:get, SIP_ENDPOINTS_PATH, params: { limit: 1000 })
     Array.wrap(payload['items'])
+  end
+
+  def cdr(from:, until_time:, limit: 100, offset: 0)
+    request(:get, CDR_PATH, params: {
+              from: from.iso8601, until: until_time.iso8601,
+              limit: limit, offset: offset, order: 'asc'
+            })
   end
 
   def create_sip_endpoint(payload)

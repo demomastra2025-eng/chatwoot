@@ -63,6 +63,11 @@ telephony_call_reconciliation_job:
   class: 'Telephony::ReconcileCallSessionsJob'
   queue: low
 
+telephony_wazo_call_log_sync_job:
+  cron: '*/2 * * * *'
+  class: 'Telephony::Wazo::CallLogSyncJob'
+  queue: low
+
 # executed daily at 2230 UTC
 # which is our lowest traffic time
 remove_stale_contact_inboxes_job.rb:
