@@ -76,12 +76,21 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  active: {
+    type: Boolean,
+    default: true,
+  },
+  showOpenFullScreen: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits([
   'addContact',
   'close',
   'createConversation',
+  'openFullScreen',
   'retryContext',
   'selectContact',
 ]);
@@ -447,17 +456,33 @@ onBeforeUnmount(() => {
   >
     <div
       v-if="visible"
-      class="bg-n-solid-2 md:h-full md:min-w-0 md:flex-1 md:bg-transparent"
+      class="bg-n-solid-2 md:min-w-0 md:bg-transparent"
       :class="
         inline
-          ? 'relative min-h-0 flex-1'
-          : 'fixed inset-0 z-[120] md:static md:inset-auto md:z-auto'
+          ? [
+              'relative min-h-0 flex-1 lg:h-full lg:w-[42%] lg:flex-none',
+              active ? 'flex' : 'hidden lg:flex',
+            ]
+          : 'fixed inset-0 z-[120] md:static md:inset-auto md:z-auto md:h-full md:flex-1'
       "
     >
       <div class="flex h-full w-full justify-end">
         <aside
           class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2 md:min-w-0 md:flex-1 md:bg-transparent"
         >
+          <header
+            v-if="showOpenFullScreen && hasLinkedChat"
+            class="flex justify-end border-b border-n-weak bg-n-surface-1 px-4 py-2"
+          >
+            <Button
+              size="sm"
+              color="slate"
+              variant="ghost"
+              icon="i-lucide-external-link"
+              :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.OPEN_FULL_SCREEN')"
+              @click="emit('openFullScreen')"
+            />
+          </header>
           <SchedulingErrorState
             v-if="!hasLinkedChat && contextLoadError"
             class="m-4"

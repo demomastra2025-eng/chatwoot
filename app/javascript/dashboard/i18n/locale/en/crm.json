@@ -141,6 +141,7 @@
       "CREATE_TITLE": "Create deal",
       "CREATE_TASK": "Create task for deal",
       "TABS": {
+        "DEAL": "Deal",
         "HISTORY": "History",
         "LABEL": "Deal sections",
         "TASKS": "Tasks"
@@ -301,6 +302,7 @@
         "INBOXES_LOAD_ERROR": "Could not load contact channels",
         "NO_CONTACT_DESCRIPTION": "Add a contact to this deal before creating a dialog.",
         "NO_INBOXES": "No channel is available for this contact to create a dialog",
+        "OPEN_FULL_SCREEN": "Open dialog full screen",
         "THREADS_LOAD_ERROR": "Could not load contact dialogs",
         "TITLE": "No dialog created yet"
       },

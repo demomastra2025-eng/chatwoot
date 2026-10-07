@@ -172,6 +172,7 @@ const pendingStageEntry = ref(null);
 const stageRuleOverrideReason = ref('');
 const closingReasonDialogRef = ref(null);
 const dealActivityTab = ref('history');
+const dealPageTab = ref('deal');
 const hasVisitedDealTasksTab = ref(false);
 const filterSearchTriggerRef = ref(null);
 const filterPopoverOpen = ref(false);
@@ -503,7 +504,7 @@ const shouldShowTeamField = computed(
 
 const drawerModalClass = computed(() => {
   if (isDealPage.value) {
-    return 'flex h-full w-full min-h-0 flex-col overflow-hidden bg-n-solid-2 md:flex-row';
+    return 'flex h-full w-full min-h-0 flex-col overflow-hidden bg-n-solid-2 lg:flex-row';
   }
 
   return [
@@ -2087,6 +2088,7 @@ const openEditDrawer = async deal => {
   resetDealConflict();
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedDeal.value = deal;
+  dealPageTab.value = 'deal';
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
   populateFormFromDeal(deal);
@@ -2518,6 +2520,10 @@ const createDealConversation = async ({ contactId, inbox }) => {
       createdConversation?.id;
     if (conversationId) {
       useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATED'));
+      if (isDealPage.value) {
+        await loadDealConversationContextWithRetry(normalizedContactId);
+        return;
+      }
       router.push({
         name: 'inbox_conversation',
         params: { accountId: accountId.value, conversation_id: conversationId },
@@ -4460,17 +4466,55 @@ watch(
         "
       >
         <div :class="drawerModalClass">
+          <div
+            v-if="isDealPage"
+            class="grid grid-cols-2 border-b border-n-weak bg-n-alpha-black2 p-1 lg:hidden"
+            role="tablist"
+            :aria-label="$t('CRM.DEALS.TABS.LABEL')"
+          >
+            <button
+              type="button"
+              class="inline-flex h-8 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors"
+              :class="
+                dealPageTab === 'deal'
+                  ? 'bg-n-solid-1 text-n-slate-12 shadow-sm'
+                  : 'text-n-slate-11 hover:text-n-slate-12'
+              "
+              role="tab"
+              :aria-selected="dealPageTab === 'deal'"
+              @click="dealPageTab = 'deal'"
+            >
+              {{ $t('CRM.DEALS.TABS.DEAL') }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex h-8 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors"
+              :class="
+                dealPageTab === 'chat'
+                  ? 'bg-n-solid-1 text-n-slate-12 shadow-sm'
+                  : 'text-n-slate-11 hover:text-n-slate-12'
+              "
+              role="tab"
+              :aria-selected="dealPageTab === 'chat'"
+              @click="dealPageTab = 'chat'"
+            >
+              {{ $t('CRM.GENERAL.CHAT') }}
+            </button>
+          </div>
           <aside
-            class="flex h-full w-full flex-col overflow-hidden bg-n-solid-2"
+            data-testid="crm-deal-card"
+            class="w-full flex-col overflow-hidden bg-n-solid-2"
             :class="{
-              'md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]':
+              'flex h-full md:w-[28rem] md:min-w-[28rem] xl:w-[30rem] xl:min-w-[30rem]':
                 !isDealPage,
-              '!h-1/2 md:!h-full':
-                isDealPage &&
+              'min-h-0 flex-1 lg:h-full lg:w-[58%] lg:flex-none lg:border-r lg:border-n-weak':
+                isDealPage,
+              'flex': !isDealPage || dealPageTab === 'deal',
+              'hidden lg:flex': isDealPage && dealPageTab === 'chat',
+              'md:border-r md:border-n-weak':
+                !isDealPage &&
                 showLinkedConversationPanel &&
                 !canOpenLinkedConversation,
-              'md:border-r md:border-n-weak':
-                showLinkedConversationPanel && !canOpenLinkedConversation,
             }"
           >
             <header
@@ -4525,7 +4569,7 @@ watch(
                 @click="saveDeal"
               />
               <Button
-                v-if="canOpenLinkedConversation"
+                v-if="!isDealPage && canOpenLinkedConversation"
                 size="sm"
                 color="slate"
                 variant="ghost"
@@ -4955,10 +4999,11 @@ watch(
           </aside>
 
           <CrmDealConversationPanel
+            data-testid="crm-deal-chat"
             v-if="
               drawerOpen &&
-              showLinkedConversationPanel &&
-              !canOpenLinkedConversation
+              (isDealPage ||
+                (showLinkedConversationPanel && !canOpenLinkedConversation))
             "
             :communication-thread-id="effectiveLinkedCommunicationThreadId"
             :communication-thread-display-id="
@@ -4978,9 +5023,12 @@ watch(
             "
             visible
             :inline="isDealPage"
+            :active="!isDealPage || dealPageTab === 'chat'"
+            :show-open-full-screen="isDealPage && canOpenLinkedConversation"
             @add-contact="openCreateNewContactDialog"
             @close="closeDealEditor"
             @create-conversation="createDealConversation"
+            @open-full-screen="openLinkedConversation"
             @retry-context="
               loadDealConversationContext(dealConversationDraft.contactId)
             "
