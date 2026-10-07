@@ -51,7 +51,28 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(resource.work_rules.order(:weekday).pluck(:weekday, :start_minute, :end_minute, :active)).to eq(expected_default_rules)
     expect(resource.custom_attributes['medelement_default_work_rules_seeded_at']).to be_present
     expect(resource.timezone).to eq('Asia/Almaty')
+    expect(resource).to be_active
+    expect(resource.custom_attributes['medelement_specialist_code']).to eq('27492901726817790')
+    expect(resource.custom_attributes['medelement_schedule_published']).to eq(1)
     expect(client).to have_received(:specialists).twice
+  end
+
+  it 'stores a large numeric provider code as a string and accepts numeric and string publication flags' do
+    allow(client).to receive(:specialists).and_return(
+      [
+        { 'specialistCode' => 9_007_199_254_740_993, 'userName' => 'Synthetic One', 'isSchedulePublished' => 1 },
+        { 'specialistCode' => '9007199254740994', 'userName' => 'Synthetic Two', 'isSchedulePublished' => 0 },
+        { 'specialistCode' => '9007199254740995', 'userName' => 'Synthetic Three', 'isSchedulePublished' => '1' }
+      ]
+    )
+
+    expect(described_class.new(account: account, client: client, configuration: configuration).perform)
+      .to include(imported_count: 3)
+    resources = account.scheduling_resources.index_by { |item| item.custom_attributes['medelement_specialist_code'] }
+    expect(resources.keys).to contain_exactly('9007199254740993', '9007199254740994', '9007199254740995')
+    expect(resources['9007199254740993']).to be_active
+    expect(resources['9007199254740994']).not_to be_active
+    expect(resources['9007199254740995']).to be_active
   end
 
   it 'reports provider inventory, local-only resources, and linked specialists missing from the provider response' do

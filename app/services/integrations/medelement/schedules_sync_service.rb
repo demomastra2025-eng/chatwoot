@@ -18,8 +18,10 @@ class Integrations::Medelement::SchedulesSyncService
     @today = now.in_time_zone(configuration.time_zone).to_date
     @counters = { created_count: 0, updated_count: 0, unverified_count: 0, skipped_count: 0, request_count: 0 }
     due = due_days
-    @counters[:skipped_count] = [due.size - REQUEST_CAP, 0].max
-    due.first(REQUEST_CAP).each { |resource, date, stored| refresh(resource, date, stored) }
+    by_resource = due.group_by { |resource, _date, _stored| resource.id }
+    selected = by_resource.values.first(REQUEST_CAP)
+    @counters[:skipped_count] = due.size - selected.sum(&:size)
+    selected.each { |days| refresh(days) }
     @counters
   end
 
@@ -71,23 +73,43 @@ class Integrations::Medelement::SchedulesSyncService
     checked_at.nil? || checked_at <= now - (offset < 2 ? NEAR_REFRESH : FAR_REFRESH)
   end
 
-  def refresh(resource, date, stored)
+  def refresh(days)
+    resource = days.first.first
+    dates = days.map { |_resource, date, _stored| date }
     @counters[:request_count] += 1
-    payload = client.timetable(specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY], starts_on: date, ends_on: date)
-    day = payload[date.strftime('%d.%m.%Y')] if payload.is_a?(Hash)
-    windows = normalized_windows(day, date)
-    return mark_unverified(resource, date, stored) if windows.nil?
-
-    persist_day(resource, date, stored, windows, day)
+    payload = client.timetable(specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY].to_s,
+                               starts_on: dates.min, ends_on: dates.max, allow_partial: true)
+    days.each do |_day_resource, date, stored|
+      day = payload[date.strftime('%d.%m.%Y')] if payload.is_a?(Hash)
+      kind, windows = classify_day(day, date)
+      kind == :unverified ? mark_unverified(resource, date, stored) : persist_day(resource, date, stored, windows, day)
+    end
   rescue Integrations::Medelement::Client::ApiError
-    mark_unverified(resource, date, stored)
+    days.each { |_day_resource, date, stored| mark_unverified(resource, date, stored) }
     raise
   end
 
-  def normalized_windows(day, date)
+  def classify_day(day, date)
     rows = timetable_rows(day)
-    return unless rows
+    return [:unverified, nil] unless rows
+    return [:day_off, []] if rows.empty? && day['specialistWorkingHours'] == 'day off'
+    return [:unverified, nil] if rows.empty? || !valid_working_hours?(day['specialistWorkingHours'], date)
 
+    windows = normalized_windows(rows, date)
+    return [:unverified, nil] if windows.nil? || windows.empty?
+
+    [:working, windows]
+  end
+
+  def valid_working_hours?(hours, date)
+    return false unless hours.is_a?(Hash)
+
+    start_minute = minute_of_day(hours['start'], date)
+    end_minute = minute_of_day(hours['end'], date, allow_next_midnight: true)
+    start_minute && end_minute && end_minute > start_minute
+  end
+
+  def normalized_windows(rows, date)
     windows = rows.filter_map { |row| normalized_window(row, date) }
     return if windows.include?(:invalid)
 
@@ -160,7 +182,7 @@ class Integrations::Medelement::SchedulesSyncService
   def new_day(resource, date)
     Integrations::Medelement::ScheduleDay.new(
       account: hook.account, hook: hook, resource: resource,
-      specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY], date: date
+      specialist_code: resource.custom_attributes[SPECIALIST_CODE_KEY].to_s, date: date
     )
   end
 end

@@ -275,11 +275,40 @@ RSpec.describe Integrations::Medelement::Client do
   end
 
   describe '#timetable' do
-    it 'rejects a non-object day instead of returning a fresh-looking partial schedule' do
-      stub_request(
+    it 'requests one inclusive range and leaves partial days for the sync service to classify' do
+      request = stub_request(
         :get,
-        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=27.07.2026&specialistCode=specialist-1"
-      ).to_return(status: 200, body: '{"27.07.2026":[]}', headers: { 'Content-Type' => 'application/json' })
+        "#{described_class::BASE_URL}/v1/timetable/get_timetable"
+      )
+                .with do |web_request|
+                  URI.decode_www_form(URI(web_request.uri.to_s).query).to_h == {
+                    'date[0]' => '27.07.2026', 'date[1]' => '28.07.2026',
+                    'specialistCode' => '9007199254740993'
+                  }
+                end
+                .to_return(status: 200, body: '{"27.07.2026":{"timetable":[]},"28.07.2026":[]}',
+                           headers: { 'Content-Type' => 'application/json' })
+
+      result = client.timetable(
+        specialist_code: 9_007_199_254_740_993,
+        starts_on: Date.new(2026, 7, 27),
+        ends_on: Date.new(2026, 7, 28),
+        allow_partial: true
+      )
+
+      expect(request).to have_been_requested.once
+      expect(result.keys).to contain_exactly('27.07.2026', '28.07.2026')
+      expect(result['28.07.2026']).to eq([])
+    end
+
+    it 'keeps strict day validation for live availability and booking callers' do
+      stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+        .with do |web_request|
+          URI.decode_www_form(URI(web_request.uri.to_s).query).to_h == {
+            'date[0]' => '27.07.2026', 'date[1]' => '27.07.2026', 'specialistCode' => 'specialist-1'
+          }
+        end
+        .to_return(status: 200, body: '{"27.07.2026":[]}', headers: { 'Content-Type' => 'application/json' })
       allow(Rails.logger).to receive(:warn)
 
       expect do
@@ -288,35 +317,16 @@ RSpec.describe Integrations::Medelement::Client do
       end.to raise_error(described_class::InvalidTimetableError)
       expect(Rails.logger).to have_received(:warn).with('[MEDELEMENT::TIMETABLE] Invalid day response')
     end
+  end
 
-    it 'requests and merges each date because the provider does not treat repeated dates as a range' do
-      first_day = stub_request(
-        :get,
-        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=27.07.2026&specialistCode=specialist-1"
-      )
-                  .to_return(
-                    status: 200,
-                    body: '{"27.07.2026":{"timetable":[]}}',
-                    headers: { 'Content-Type' => 'application/json' }
-                  )
-      second_day = stub_request(
-        :get,
-        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=28.07.2026&specialistCode=specialist-1"
-      )
-                   .to_return(
-                     status: 200,
-                     body: '{"28.07.2026":{"timetable":[]}}',
-                     headers: { 'Content-Type' => 'application/json' }
-                   )
+  describe '#specialists' do
+    it 'preserves a numeric specialist code beyond the JavaScript safe integer as a string' do
+      stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_specialists")
+        .to_return(status: 200,
+                   body: '{"9007199254740993":{"specialistCode":9007199254740993,"isSchedulePublished":1}}',
+                   headers: { 'Content-Type' => 'application/json' })
 
-      result = client.timetable(
-        specialist_code: 'specialist-1',
-        starts_on: Date.new(2026, 7, 27),
-        ends_on: Date.new(2026, 7, 28)
-      )
-
-      expect([first_day, second_day]).to all(have_been_requested.once)
-      expect(result.keys).to contain_exactly('27.07.2026', '28.07.2026')
+      expect(client.specialists).to eq([{ 'specialistCode' => '9007199254740993', 'isSchedulePublished' => 1 }])
     end
   end
 end

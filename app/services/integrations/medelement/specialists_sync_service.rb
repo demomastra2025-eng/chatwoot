@@ -101,7 +101,7 @@ class Integrations::Medelement::SpecialistsSyncService
 
   def deactivate_stale_specialists!(seen_codes)
     medelement_resources.find_each do |resource|
-      next if seen_codes.include?(resource.custom_attributes[SPECIALIST_CODE_KEY])
+      next if seen_codes.include?(resource.custom_attributes[SPECIALIST_CODE_KEY].to_s)
       next unless stale?(resource.custom_attributes[LAST_SEEN_AT_KEY])
 
       resource.update!(active: false)
@@ -167,7 +167,9 @@ class Integrations::Medelement::SpecialistsSyncService
   end
 
   def normalized_payload(payload)
-    payload.to_h.with_indifferent_access
+    row = payload.to_h.with_indifferent_access
+    row['specialistCode'] = row['specialistCode'].to_s if row.key?('specialistCode')
+    row
   end
 
   def schedule_published_value(payload)

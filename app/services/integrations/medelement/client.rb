@@ -53,7 +53,10 @@ class Integrations::Medelement::Client
 
   def specialists
     response = request.call(:get, '/v1/timetable/get_specialists', operation: 'specialists')
-    response.is_a?(Hash) ? response.values : Array(response)
+    rows = response.is_a?(Hash) ? response.values : Array(response)
+    rows.map do |row|
+      row.is_a?(Hash) && row.key?('specialistCode') ? row.merge('specialistCode' => row['specialistCode'].to_s) : row
+    end
   end
 
   def nomenclatures(skip: 0, query: nil)
@@ -66,22 +69,28 @@ class Integrations::Medelement::Client
     raise CatalogUnavailableError.new('Medelement nomenclatures are unavailable', status: e.status)
   end
 
-  def timetable(specialist_code:, starts_on:, ends_on:)
-    (starts_on.to_date..ends_on.to_date).each_with_object({}) do |date, result|
-      payload = request.call(
-        :get,
-        '/v1/timetable/get_timetable',
-        operation: 'timetable',
-        query: URI.encode_www_form([['date', provider_date(date)], ['specialistCode', specialist_code]])
-      )
-      day = payload.is_a?(Hash) ? payload[provider_date(date)] : nil
-      unless day.is_a?(Hash) && day['timetable'].is_a?(Array)
-        Rails.logger.warn('[MEDELEMENT::TIMETABLE] Invalid day response')
-        raise InvalidTimetableError, 'Medelement timetable day is invalid'
-      end
+  def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false)
+    payload = request.call(
+      :get,
+      '/v1/timetable/get_timetable',
+      operation: 'timetable',
+      query: URI.encode_www_form([
+                                   ['date[0]', provider_date(starts_on)],
+                                   ['date[1]', provider_date(ends_on)],
+                                   ['specialistCode', specialist_code.to_s]
+                                 ])
+    )
+    return payload if allow_partial
 
-      result[provider_date(date)] = day
+    dates = (starts_on.to_date..ends_on.to_date).map { |date| provider_date(date) }
+    valid = payload.is_a?(Hash) && dates.all? do |date|
+      day = payload[date]
+      day.is_a?(Hash) && day['timetable'].is_a?(Array)
     end
+    return payload.slice(*dates) if valid
+
+    Rails.logger.warn('[MEDELEMENT::TIMETABLE] Invalid day response')
+    raise InvalidTimetableError, 'Medelement timetable day is invalid'
   end
 
   def get_receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
