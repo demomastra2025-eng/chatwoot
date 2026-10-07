@@ -425,16 +425,11 @@ onUnmounted(() => {
       data-testid="phone-widget-panel"
     >
       <header
-        class="flex shrink-0 touch-none select-none items-center gap-1.5 border-b border-n-weak px-4 py-3 ltr:pl-2 rtl:pr-2"
+        class="flex shrink-0 touch-none select-none items-center gap-1.5 border-b border-n-weak px-4 py-3"
         :class="isDragging ? 'cursor-grabbing' : 'cursor-grab'"
         data-testid="phone-widget-drag-handle"
         @pointerdown="startDrag"
       >
-        <span
-          class="i-lucide-grip-vertical size-4 shrink-0 text-n-slate-10"
-          :title="t('PHONE_WIDGET.DRAG')"
-          aria-hidden="true"
-        />
         <div
           class="flex min-w-0 flex-1 items-center gap-1.5"
           role="status"
@@ -442,9 +437,13 @@ onUnmounted(() => {
           :title="employeeStatusLabel"
           data-testid="phone-widget-employee"
         >
+          <!-- An invisible ring around the dot enlarges the hover area, so the
+               status title shows when the pointer is near the dot. -->
           <span
-            class="size-2 shrink-0 rounded-full"
+            class="relative size-2 shrink-0 rounded-full before:absolute before:-inset-1.5"
             :class="statusColor"
+            :title="employeeStatusLabel"
+            data-testid="phone-widget-status-dot"
             aria-hidden="true"
           />
           <span class="min-w-0 truncate text-sm font-medium">

@@ -1155,6 +1155,14 @@ describe('PhoneWidget', () => {
       expect(placeOf(wrapper)).toEqual({ left: '', top: '' });
     });
 
+    it('shows no drag grip, keeps the header draggable and titles the status dot', async () => {
+      const wrapper = mountComponent();
+      await flushPromises();
+      expect(wrapper.find('.i-lucide-grip-vertical').exists()).toBe(false);
+      expect(dragHandle(wrapper).classes()).toContain('cursor-grab');
+      const dot = wrapper.get('[data-testid="phone-widget-status-dot"]');
+      expect(dot.attributes('title')).toBeTruthy();
+    });
     it('drags by the header, stays inside the window and remembers the place', async () => {
       const wrapper = mountComponent();
       await flushPromises();
