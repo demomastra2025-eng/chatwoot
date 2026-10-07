@@ -110,6 +110,8 @@ import ConversationAPI from 'dashboard/api/conversations';
 import ContactAPI from 'dashboard/api/contacts';
 import CompanyAPI from 'dashboard/api/companies';
 import { useAlert } from 'dashboard/composables';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 import CrmDealsPage from './pages/CrmDealsPage.vue';
 
 const response = (payload, meta = {}) => ({ data: { payload, meta } });
@@ -132,14 +134,38 @@ const deal = (id, title = `Deal ${id}`) => ({
 });
 const wrappers = [];
 
-const mountPage = async () => {
+const mountPage = async (stubs = {}, components = {}) => {
   const wrapper = shallowMount(CrmDealsPage, {
-    global: { mocks: { $t: key => key }, stubs: { transition: false } },
+    global: {
+      components,
+      mocks: { $t: key => key },
+      stubs: { transition: false, ...stubs },
+    },
   });
   wrappers.push(wrapper);
   await flushPromises();
   return { state: wrapper.vm.$.setupState, wrapper };
 };
+
+// The payload the server broadcasts for a deal event (see
+// action_cable_listener.rb), as emitted by helper/actionCable.js.
+const crmDealEvent = (dealPayload, event = 'crm.deal.updated') => ({
+  account_id: 1,
+  deal: { pipeline_id: 10, stage_id: 100, ...dealPayload },
+  event,
+  meta: { event_type: 'deal_updated' },
+});
+const emitCrmDealEvent = (...args) =>
+  emitter.emit(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, crmDealEvent(...args));
+const boardMeta = (overrides = {}) => ({
+  count: 1,
+  has_more: false,
+  page: 1,
+  per_page: 8,
+  stage_counts: { 100: 1 },
+  total_count: 1,
+  ...overrides,
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -428,7 +454,8 @@ it('shows a retryable page error when a deep-linked deal cannot load', async () 
   const { state, wrapper } = await mountPage();
 
   expect(state.drawerOpen).toBe(false);
-  expect(state.ui.error).toBe('deal unavailable');
+  expect(state.dealPageError).toBe('deal unavailable');
+  expect(state.ui.error).toBeNull();
   expect(wrapper.findComponent({ name: 'SchedulingErrorState' }).exists()).toBe(
     true
   );
@@ -1341,6 +1368,306 @@ it('invalidates the old workspace request before loading the new workspace', asy
       per_page: 25,
     })
   );
+});
+
+it('does not page the board while a deal page is open', async () => {
+  CrmDealsAPI.get.mockResolvedValue(
+    response([deal(1)], boardMeta({ has_more: true }))
+  );
+  const { state } = await mountPage();
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(1)));
+  runtime.routeParams.dealId = '1';
+  await flushPromises();
+  CrmDealsAPI.get.mockClear();
+
+  expect(state.hasMoreDeals).toBe(true);
+  expect(await state.loadMoreDeals()).toBe(false);
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+  await state.loadMoreDeals();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ page: 2 })
+  );
+});
+
+it('keeps the real board mounted and idle under a deal page', async () => {
+  // jsdom has no layout, so the board reports a zero size exactly like a board
+  // hidden by display: none. Auto-fill must not read that as "not full".
+  CrmDealsAPI.get.mockResolvedValue(
+    response([deal(1)], boardMeta({ has_more: true }))
+  );
+  const { wrapper } = await mountPage(
+    { CrmDealBoard: false },
+    { 'fluent-icon': { template: '<i />' } }
+  );
+  const board = wrapper.findComponent({ name: 'CrmDealBoard' });
+  expect(board.exists()).toBe(true);
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(1)));
+  runtime.routeParams.dealId = '1';
+  await flushPromises();
+
+  const boardUnderDeal = wrapper.findComponent({ name: 'CrmDealBoard' });
+  expect(boardUnderDeal.vm.$.uid).toBe(board.vm.$.uid);
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+});
+
+it('resets the deal loading flag when Back is pressed before the deal arrives', async () => {
+  const { state, wrapper } = await mountPage();
+  const pendingDeal = deferred();
+  CrmDealsAPI.show.mockReturnValueOnce(pendingDeal.promise);
+  runtime.routeParams.dealId = '11';
+  await flushPromises();
+
+  expect(state.isDealLoading).toBe(true);
+  // The board's own loading state is not used while a deal opens.
+  expect(state.ui.isLoading).toBe(false);
+
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+  pendingDeal.resolve(response(deal(11)));
+  await flushPromises();
+
+  expect(state.isDealLoading).toBe(false);
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.drawerOpen).toBe(false);
+  expect(state.selectedDeal).toBeNull();
+  expect(wrapper.findComponent({ name: 'CrmPageSkeleton' }).exists()).toBe(
+    false
+  );
+  expect(wrapper.findComponent({ name: 'CrmDealBoard' }).exists()).toBe(true);
+});
+
+it('lets only the newest opened deal own the deal loading flag', async () => {
+  runtime.routeParams.dealId = '11';
+  const obsolete = deferred();
+  const current = deferred();
+  CrmDealsAPI.show
+    .mockReturnValueOnce(obsolete.promise)
+    .mockReturnValueOnce(current.promise);
+  const { state } = await mountPage();
+
+  runtime.routeParams.dealId = '22';
+  await flushPromises();
+  obsolete.resolve(response(deal(11)));
+  await flushPromises();
+  expect(state.isDealLoading).toBe(true);
+
+  current.resolve(response(deal(22)));
+  await flushPromises();
+  expect(state.isDealLoading).toBe(false);
+  expect(state.selectedDeal.id).toBe(22);
+});
+
+it('keeps a failed deal load off the board when coming back', async () => {
+  const { state } = await mountPage();
+  CrmDealsAPI.show.mockRejectedValueOnce(new Error('deal unavailable'));
+  runtime.routeParams.dealId = '11';
+  await flushPromises();
+
+  expect(state.dealPageError).toBe('deal unavailable');
+  expect(state.ui.error).toBeNull();
+
+  CrmDealsAPI.get.mockClear();
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+
+  expect(state.dealPageError).toBeNull();
+  expect(state.ui.error).toBeNull();
+  expect(state.deals.map(item => item.id)).toEqual([1]);
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+});
+
+it('loads the board on the way back from a deep-linked deal that was saved', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  const { state } = await mountPage();
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(state.isDealListLoaded).toBe(false);
+
+  state.form.title = 'Edited deal';
+  CrmDealsAPI.update.mockResolvedValueOnce(
+    response({ ...deal(11), lockVersion: 2, title: 'Edited deal' })
+  );
+  await state.saveDeal();
+
+  // No one-card board with totals for a single deal.
+  expect(state.deals).toEqual([]);
+  expect(state.dealsMeta.stageAmountsMinor).toBeUndefined();
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+
+  CrmDealsAPI.get.mockResolvedValueOnce(
+    response([deal(1), deal(11, 'Edited deal')], boardMeta({ count: 2 }))
+  );
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(state.deals.map(item => item.id)).toEqual([1, 11]);
+  expect(state.isDealListLoaded).toBe(true);
+  expect(state.ui.isLoading).toBe(false);
+});
+
+it('reloads the board on the way back when its last load failed', async () => {
+  CrmDealsAPI.get.mockRejectedValueOnce(new Error('board unavailable'));
+  const { state } = await mountPage();
+  expect(state.ui.error).toBe('board unavailable');
+
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  await flushPromises();
+  CrmDealsAPI.get.mockClear();
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(state.ui.error).toBeNull();
+  expect(state.deals.map(item => item.id)).toEqual([1]);
+});
+
+it('merges a realtime deal event with the server payload into the loaded board', async () => {
+  const { state } = await mountPage();
+  CrmDealsAPI.get.mockClear();
+
+  emitCrmDealEvent({
+    id: 1,
+    lock_version: 2,
+    stage_id: 200,
+    title: 'Renamed elsewhere',
+  });
+  await flushPromises();
+
+  expect(state.deals).toHaveLength(1);
+  expect(state.deals[0]).toMatchObject({
+    id: 1,
+    lockVersion: 2,
+    stageId: 200,
+    title: 'Renamed elsewhere',
+  });
+  expect(state.dealsMeta.stageCounts).toMatchObject({ 100: 0, 200: 1 });
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(state.ui.isLoading).toBe(false);
+});
+
+it('ignores a realtime deal event that is older than the loaded deal', async () => {
+  const { state } = await mountPage();
+  state.deals = [{ ...state.deals[0], lockVersion: 5, title: 'Newest' }];
+
+  emitCrmDealEvent({ id: 1, lock_version: 3, title: 'Older' });
+  await flushPromises();
+
+  expect(state.deals[0]).toMatchObject({ lockVersion: 5, title: 'Newest' });
+});
+
+it('refreshes the board quietly when a realtime event brings a deal it does not hold', async () => {
+  const { state } = await mountPage();
+  const loadingDuringRefresh = [];
+  CrmDealsAPI.get.mockReset().mockImplementation(async () => {
+    loadingDuringRefresh.push(state.ui.isLoading);
+    return response(
+      [deal(1), deal(2)],
+      boardMeta({ count: 2, stage_counts: { 100: 2 } })
+    );
+  });
+
+  vi.useFakeTimers();
+  try {
+    emitCrmDealEvent(
+      { id: 2, lock_version: 1, title: 'Deal 2' },
+      'crm.deal.created'
+    );
+    await vi.advanceTimersByTimeAsync(400);
+  } finally {
+    vi.useRealTimers();
+  }
+  await flushPromises();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(loadingDuringRefresh).toEqual([false]);
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.ui.error).toBeNull();
+  expect(state.deals.map(item => item.id)).toEqual([1, 2]);
+});
+
+it('does not reload for a realtime event of another pipeline', async () => {
+  await mountPage();
+  CrmDealsAPI.get.mockClear();
+
+  vi.useFakeTimers();
+  try {
+    emitCrmDealEvent({ id: 90, lock_version: 1, pipeline_id: 99 });
+    await vi.advanceTimersByTimeAsync(400);
+  } finally {
+    vi.useRealTimers();
+  }
+
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+});
+
+it('keeps a failed quiet refresh from turning the board into an error page', async () => {
+  const { state } = await mountPage();
+  CrmDealsAPI.get.mockReset().mockRejectedValue(new Error('refresh failed'));
+
+  vi.useFakeTimers();
+  try {
+    emitCrmDealEvent({ id: 2, lock_version: 1 }, 'crm.deal.created');
+    await vi.advanceTimersByTimeAsync(400);
+  } finally {
+    vi.useRealTimers();
+  }
+  await flushPromises();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(state.ui.error).toBeNull();
+  expect(state.ui.isLoading).toBe(false);
+  expect(state.deals.map(item => item.id)).toEqual([1]);
+});
+
+it('follows a realtime update of the open deal page without loading the board', async () => {
+  runtime.routeParams.dealId = '11';
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(11)));
+  const { state } = await mountPage();
+
+  emitCrmDealEvent({ id: 11, lock_version: 2, title: 'Changed elsewhere' });
+  expect(state.selectedDeal).toMatchObject({
+    lockVersion: 2,
+    title: 'Changed elsewhere',
+  });
+
+  emitCrmDealEvent({ id: 11, lock_version: 1, title: 'Older version' });
+  expect(state.selectedDeal.title).toBe('Changed elsewhere');
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(state.deals).toEqual([]);
+});
+
+it('waits for the way back to refresh a board that changed under a deal page', async () => {
+  const { state } = await mountPage();
+  CrmDealsAPI.show.mockResolvedValueOnce(response(deal(1)));
+  runtime.routeParams.dealId = '1';
+  await flushPromises();
+  CrmDealsAPI.get.mockClear();
+
+  emitCrmDealEvent(
+    { id: 7, lock_version: 1, title: 'New elsewhere' },
+    'crm.deal.created'
+  );
+  await flushPromises();
+  expect(CrmDealsAPI.get).not.toHaveBeenCalled();
+  expect(state.isDealListLoaded).toBe(false);
+
+  CrmDealsAPI.get.mockResolvedValueOnce(
+    response([deal(1), deal(7)], boardMeta({ count: 2 }))
+  );
+  delete runtime.routeParams.dealId;
+  await flushPromises();
+
+  expect(CrmDealsAPI.get).toHaveBeenCalledTimes(1);
+  expect(state.deals.map(item => item.id)).toEqual([1, 7]);
+  expect(state.isDealListLoaded).toBe(true);
 });
 
 it('drops a pending debounced reload when the page unmounts', async () => {

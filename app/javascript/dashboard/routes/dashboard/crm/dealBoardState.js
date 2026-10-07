@@ -119,10 +119,15 @@ export const amountsAfterDealUpdate = (
       byStage ? { ...value } : value,
     ])
   );
-  [
-    [previousDeal, -1],
-    [nextDeal, 1],
-  ].forEach(([deal, direction]) => {
+  // A deal that was not loaded may already be inside the server totals, and
+  // stage counts are not touched for it either, so there is no delta to apply.
+  const changes = previousDeal
+    ? [
+        [previousDeal, -1],
+        [nextDeal, 1],
+      ]
+    : [];
+  changes.forEach(([deal, direction]) => {
     const amount = dealAmountMinor(deal);
     if (amount === null) return;
     const bucket = byStage

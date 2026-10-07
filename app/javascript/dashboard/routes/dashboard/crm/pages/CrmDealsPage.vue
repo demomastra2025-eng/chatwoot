@@ -293,6 +293,15 @@ const ui = reactive({
   isTimelineLoading: false,
   timelineError: null,
 });
+// The deal page keeps its own loading and error state. Opening a deal must
+// neither swap the (hidden) board for a skeleton nor leave an error behind on
+// the board once the user comes back.
+const dealPageError = ref(null);
+const isDealLoading = ref(false);
+// True once a full board/list request has been applied. A deal page opened by
+// its URL starts without it, so there is no board to merge deals into yet.
+const isDealListLoaded = ref(false);
+let dealOpenGeneration = 0;
 let dealsRequestGeneration = 0;
 let dealsPageInitializationGeneration = 0;
 let contactSearchGeneration = 0;
@@ -1657,6 +1666,10 @@ const buildPrefillDealTitle = () => {
 };
 
 const upsertDeal = deal => {
+  // Without a loaded list (deal page opened by URL) one saved deal would turn
+  // into a one-card board with wrong totals. The list loads on the way back.
+  if (!isDealListLoaded.value) return deal;
+
   const existingIndex = deals.value.findIndex(item => item.id === deal.id);
   const existingDeal = existingIndex === -1 ? null : deals.value[existingIndex];
   const nextDeal = isDealVersionNewer(existingDeal, deal) ? existingDeal : deal;
@@ -2789,9 +2802,12 @@ const buildDealsFetchParams = page => {
   });
 };
 
+// `quiet` refreshes the data in place: no skeleton, no remount of the board and
+// no page-level error. Realtime events use it; the data stays on screen.
 async function loadDeals({
   append = false,
   page = null,
+  quiet = false,
   syncSelected = true,
 } = {}) {
   if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return false;
@@ -2811,10 +2827,12 @@ async function loadDeals({
     ui.isLoadMoreFailed = false;
     ui.isLoadingMore = true;
   } else {
-    ui.isLoading = true;
+    if (!quiet) {
+      ui.isLoading = true;
+      ui.error = null;
+    }
     ui.isLoadMoreFailed = false;
     ui.isLoadingMore = false;
-    ui.error = null;
   }
 
   try {
@@ -2830,10 +2848,14 @@ async function loadDeals({
       );
       if (listCurrentPage.value > maxPage) {
         listCurrentPage.value = maxPage;
-        return loadDeals({ syncSelected });
+        return loadDeals({ quiet, syncSelected });
       }
     }
     deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
+    if (!append) {
+      isDealListLoaded.value = true;
+      ui.error = null;
+    }
     if (typeof syncSelected !== 'function' || syncSelected()) {
       syncSelectedDeal(deals.value);
     }
@@ -2844,7 +2866,7 @@ async function loadDeals({
     if (append) {
       ui.isLoadMoreFailed = true;
       useAlert(formatErrorMessage(error));
-    } else {
+    } else if (!quiet) {
       ui.error = formatErrorMessage(error);
     }
     return false;
@@ -2856,7 +2878,10 @@ async function loadDeals({
   }
 }
 
-const loadMoreDeals = () => loadDeals({ append: true });
+// The board stays mounted (hidden) under an open deal page so that coming back
+// is instant; it must not keep paging in more deals in the background.
+const loadMoreDeals = () =>
+  isDealPage.value ? Promise.resolve(false) : loadDeals({ append: true });
 
 const handleListPageChange = async page => {
   if (listCurrentPage.value === page) return;
@@ -2910,18 +2935,92 @@ const handleBoardSortChange = async sortKey => {
 // still fire after unmount or an account switch. A generation token makes the
 // cancel() calls below effective.
 let dealsReloadGeneration = 0;
-const debouncedDealsReload = useDebounceFn(generation => {
-  if (generation === dealsReloadGeneration) loadDeals();
+const debouncedDealsReload = useDebounceFn((generation, quiet) => {
+  if (generation === dealsReloadGeneration) loadDeals({ quiet });
 }, 300);
-const scheduleDealsReload = () => debouncedDealsReload(dealsReloadGeneration);
+const scheduleDealsReload = options =>
+  debouncedDealsReload(dealsReloadGeneration, options?.quiet === true);
 scheduleDealsReload.cancel = () => {
   dealsReloadGeneration += 1;
 };
 
-const handleCrmDealRealtimeEvent = payload => {
-  if (!Number(payload?.deal_id)) return;
+const hasCustomFieldFilters = () =>
+  Object.keys(customFieldFilters.value || {}).length > 0;
 
-  scheduleDealsReload();
+// Whether a deal belongs on the board under the filters in force: true or
+// false when this can be decided here, null when only the server can tell.
+const dealMatchesCurrentFilters = deal => {
+  if (
+    hasCustomFieldFilters() ||
+    listQuickFilters.q ||
+    filters.nextAction ||
+    filters.dateRange?.from ||
+    filters.dateRange?.to
+  ) {
+    return null;
+  }
+  if (Boolean(deal.archivedAt) !== Boolean(filters.archived)) return false;
+  if (filters.aiOnly && deal.dialogStatus !== 'pending') return false;
+
+  const matchesId = (filterValue, dealValue) =>
+    !filterValue || Number(dealValue) === Number(filterValue);
+  if (
+    !matchesId(filters.companyId, deal.companyId) ||
+    !matchesId(filters.ownerId, deal.ownerId) ||
+    !matchesId(filters.pipelineId, deal.pipelineId) ||
+    !matchesId(filters.stageId, deal.stageId) ||
+    !matchesId(filters.teamId, deal.teamId)
+  ) {
+    return false;
+  }
+  if (filters.contactId) {
+    return (deal.dealContacts || []).some(
+      contact => Number(contact.contactId) === Number(filters.contactId)
+    );
+  }
+
+  return true;
+};
+
+// The server sends `{ deal, meta, account_id }` (see action_cable_listener).
+const handleCrmDealRealtimeEvent = payload => {
+  const realtimeDeal = payload?.deal
+    ? normalizePayload({ payload: payload.deal })
+    : null;
+  const dealId = Number(realtimeDeal?.id ?? payload?.deal_id);
+  if (!dealId) return;
+
+  // The open deal follows the newest version, so a stale draft is noticed
+  // before the next save instead of by its rejection.
+  if (
+    realtimeDeal?.id &&
+    Number(selectedDeal.value?.id) === dealId &&
+    !isDealVersionNewer(selectedDeal.value, realtimeDeal)
+  ) {
+    selectedDeal.value = realtimeDeal;
+  }
+  // A deal page opened by its URL has no board yet; it loads on the way back.
+  if (!isDealListLoaded.value) return;
+
+  const isLoadedDeal = deals.value.some(item => Number(item.id) === dealId);
+  const filterMatch = realtimeDeal?.id
+    ? dealMatchesCurrentFilters(realtimeDeal)
+    : null;
+  if (isLoadedDeal && filterMatch === true) {
+    // Same stage totals and ordering rules as any other in-place update.
+    upsertDeal(realtimeDeal);
+    return;
+  }
+  if (!isLoadedDeal && filterMatch === false) return;
+
+  // The deal joined or left this board, or the filters need the server to
+  // decide: refresh the data without the skeleton. Under an open deal page the
+  // refresh waits until the user is back on the board.
+  if (isDealPage.value) {
+    isDealListLoaded.value = false;
+    return;
+  }
+  scheduleDealsReload({ quiet: true });
 };
 
 const startEditingDealTitle = deal => {
@@ -3730,14 +3829,17 @@ const consumeDealOpenQuery = async isCurrent => {
 };
 
 const openDealFromRoute = async isCurrent => {
+  dealOpenGeneration += 1;
+  const generation = dealOpenGeneration;
   const dealId = Number(route.params.dealId);
   if (!Number.isSafeInteger(dealId) || dealId <= 0) {
-    ui.error = t('CRM.ERRORS.LOAD_TITLE');
+    isDealLoading.value = false;
+    dealPageError.value = t('CRM.ERRORS.LOAD_TITLE');
     return;
   }
 
-  ui.error = null;
-  ui.isLoading = true;
+  dealPageError.value = null;
+  isDealLoading.value = true;
   try {
     let deal = deals.value.find(record => Number(record.id) === dealId);
     if (!deal) {
@@ -3750,10 +3852,12 @@ const openDealFromRoute = async isCurrent => {
   } catch (error) {
     if (isCurrent()) {
       closeDrawer();
-      ui.error = formatErrorMessage(error);
+      dealPageError.value = formatErrorMessage(error);
     }
   } finally {
-    if (isCurrent()) ui.isLoading = false;
+    // The flag must also drop when the user left the route while this was
+    // still waiting. Only a newer open of a deal takes it over.
+    if (generation === dealOpenGeneration) isDealLoading.value = false;
   }
 };
 
@@ -3963,6 +4067,14 @@ const initializeDealsPage = async ({ reloadDirectory = false } = {}) => {
   }
 };
 
+// A failed deal shows its own error with a retry for that deal; anything else
+// that is wrong on a deal page is the bootstrap (references, directories).
+const dealPageErrorMessage = computed(() => dealPageError.value || ui.error);
+const retryDealPage = () =>
+  dealPageError.value
+    ? handleDealUiActionQuery()
+    : initializeDealsPage({ reloadDirectory: true });
+
 onMounted(async () => {
   if (!canViewDeals.value) return;
   emitter.on(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, handleCrmDealRealtimeEvent);
@@ -3979,6 +4091,8 @@ watch(accountId, async nextAccountId => {
   companySearchGeneration += 1;
   suppressNextListSearchReload = false;
   hasRestoredPreferences.value = false;
+  isDealListLoaded.value = false;
+  dealPageError.value = null;
   deals.value = [];
   dealsMeta.value = {
     count: 0,
@@ -4008,10 +4122,13 @@ watch(
   async (dealId, previousDealId) => {
     if (!hasRestoredPreferences.value || !canViewDeals.value) return;
     if (previousDealId) closeDrawer();
+    dealPageError.value = null;
     if (dealId) {
       await handleDealUiActionQuery();
     } else if (previousDealId) {
-      if (!deals.value.length) await loadDeals();
+      // Back on the board: load it if it never was (deal page opened by URL),
+      // a request failed, or a deal joined/left it while the page was open.
+      if (!isDealListLoaded.value || ui.error) await loadDeals();
       await restoreDealListScroll();
     }
   }
@@ -4240,7 +4357,7 @@ watch(
             :deals="boardDeals"
             :default-currency="defaultDealCurrency"
             :field-definitions="dealFieldDefinitions"
-            :has-more="hasMoreDeals"
+            :has-more="hasMoreDeals && !isDealPage"
             :is-loading-more="ui.isLoadingMore"
             :load-more-failed="ui.isLoadMoreFailed"
             :owners="ownerOptions"
@@ -4460,10 +4577,10 @@ watch(
       </header>
       <div class="flex min-h-0 flex-1 items-center justify-center">
         <SchedulingErrorState
-          v-if="ui.error"
+          v-if="dealPageErrorMessage"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
-          :description="ui.error"
-          @retry="handleDealUiActionQuery"
+          :description="dealPageErrorMessage"
+          @retry="retryDealPage"
         />
         <CrmPageSkeleton v-else presentation="list" />
       </div>

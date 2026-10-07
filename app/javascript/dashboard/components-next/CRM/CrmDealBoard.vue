@@ -199,6 +199,11 @@ let lastBoardScrollTop = 0;
 let lastAutoFillSignature = null;
 let resizeObserver = null;
 
+// A board hidden by its parent (display: none while a deal page is open) or
+// not laid out yet reports a zero client height. It then looks like "the
+// cards do not fill the board", which would load every remaining page.
+const isBoardLaidOut = element => Boolean(element?.clientHeight);
+
 const loadMoreIfBoardDoesNotOverflow = async () => {
   await nextTick();
   const element = boardScrollContainer.value;
@@ -210,6 +215,7 @@ const loadMoreIfBoardDoesNotOverflow = async () => {
   ) {
     return;
   }
+  if (!isBoardLaidOut(element)) return;
   if (element.scrollHeight > element.clientHeight + 1) return;
 
   const dealSignature = props.deals.map(deal => deal.id).join(',');

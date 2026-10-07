@@ -1,6 +1,6 @@
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 import { ref } from 'vue';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -285,6 +285,62 @@ describe('CrmDealBoard', () => {
     await wrapper.vm.$nextTick();
 
     expect(wrapper.emitted('loadMore')).toHaveLength(2);
+  });
+
+  describe('while the board is hidden', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    const showBoard = element =>
+      Object.defineProperties(element, {
+        clientHeight: { configurable: true, value: 800 },
+        scrollHeight: { configurable: true, value: 600 },
+      });
+
+    it('does not auto-load pages when the container has no size', async () => {
+      // jsdom reports clientHeight 0 and scrollHeight 0, like a board that its
+      // parent hides with display: none while a deal page is open.
+      const wrapper = mountBoard({
+        deals: [{ id: 1, stageId: 1, title: 'First deal' }],
+        hasMore: true,
+      });
+      await flushPromises();
+
+      expect(wrapper.emitted('loadMore')).toBeUndefined();
+
+      await wrapper.setProps({
+        deals: [
+          { id: 1, stageId: 1, title: 'First deal' },
+          { id: 2, stageId: 1, title: 'Second deal' },
+        ],
+      });
+      await flushPromises();
+
+      expect(wrapper.emitted('loadMore')).toBeUndefined();
+    });
+
+    it('ignores resizes of a hidden board and fills the board once it is shown', async () => {
+      const observers = [];
+      vi.stubGlobal('ResizeObserver', function ResizeObserverStub(callback) {
+        const observer = { callback, disconnect() {}, observe() {} };
+        observers.push(observer);
+        return observer;
+      });
+      const wrapper = mountBoard({
+        deals: [{ id: 1, stageId: 1, title: 'First deal' }],
+        hasMore: true,
+      });
+      await flushPromises();
+      expect(observers).toHaveLength(1);
+
+      observers[0].callback();
+      await flushPromises();
+      expect(wrapper.emitted('loadMore')).toBeUndefined();
+
+      showBoard(wrapper.element);
+      observers[0].callback();
+      await flushPromises();
+      expect(wrapper.emitted('loadMore')).toHaveLength(1);
+    });
   });
 
   it('shows a manual retry after an automatic load failure without retrying in a loop', async () => {

@@ -84,6 +84,19 @@ describe('dealBoardState', () => {
     ).toEqual({ 10: {} });
   });
 
+  it('does not add an amount for a deal whose previous version is unknown', () => {
+    const next = { amountMinor: 12550, currency: 'KZT', stageId: 10 };
+    const amounts = { 10: { KZT: 1000 } };
+
+    expect(amountsAfterDealUpdate(amounts, null, next, true)).toEqual(amounts);
+    expect(amountsAfterDealUpdate(amounts, undefined, next, true)).toEqual(
+      amounts
+    );
+    expect(amountsAfterDealUpdate({ KZT: 1000 }, null, next, false)).toEqual({
+      KZT: 1000,
+    });
+  });
+
   it('matches inclusive created-at ranges', () => {
     const deal = { createdAt: '2026-09-04T12:00:00Z' };
 
