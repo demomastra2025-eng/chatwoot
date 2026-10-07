@@ -117,6 +117,48 @@ RSpec.describe Conversation do
       )
     end
 
+    it 'keeps the thread resolved for a notification conversation that is created closed and silent', :aggregate_failures do
+      conversation = build(
+        :conversation,
+        account: account,
+        status: :resolved,
+        additional_attributes: { 'outbound_automated' => true }
+      )
+      conversation.skip_runtime_events = true
+      conversation.save!
+
+      expect(conversation.reload.communication_thread).to be_present
+      expect(conversation.communication_thread).to be_resolved
+      expect(conversation).to be_resolved
+    end
+
+    it 'keeps the thread resolved when an automated message is sent into a closed notification conversation', :aggregate_failures do
+      conversation = create(:conversation, account: account, status: :resolved, additional_attributes: { 'outbound_automated' => true })
+      communication_thread = conversation.reload.communication_thread
+
+      create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        content_attributes: { touch_id: 1, touch_source: 'touch' }
+      )
+
+      expect(conversation.reload).to be_resolved
+      expect(communication_thread.reload).to be_resolved
+    end
+
+    it 'opens the thread when the contact replies to a closed notification conversation', :aggregate_failures do
+      conversation = create(:conversation, account: account, status: :resolved, additional_attributes: { 'outbound_automated' => true })
+      communication_thread = conversation.reload.communication_thread
+
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :incoming)
+
+      expect(conversation.reload).to be_open
+      expect(communication_thread.reload).to be_open
+    end
+
     it 'does not link or expose communication thread metadata when the feature is disabled', :aggregate_failures do
       disabled_account = create(:account)
       conversation = create(:conversation, account: disabled_account)

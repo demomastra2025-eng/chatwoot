@@ -1097,6 +1097,87 @@ RSpec.describe Conversation do
     end
   end
 
+  describe '#automated_outbound_conversation?' do
+    it 'is true when the notification marker is set' do
+      expect(described_class.new(additional_attributes: { 'outbound_automated' => true })).to be_automated_outbound_conversation
+      expect(described_class.new(additional_attributes: { outbound_automated: true })).to be_automated_outbound_conversation
+    end
+
+    it 'is false without the marker or when the marker is not true' do
+      [nil, {}, { 'outbound_automated' => false }, { 'outbound_automated' => 'false' }, { 'outbound_campaign_id' => 1 }].each do |attributes|
+        expect(described_class.new(additional_attributes: attributes)).not_to be_automated_outbound_conversation
+      end
+    end
+  end
+
+  describe 'conversation created as a closed automated notification' do
+    context 'when the inbox has an active agent bot' do
+      let!(:bot_inbox) { create(:agent_bot_inbox) }
+
+      it 'keeps a resolved conversation with the notification marker resolved' do
+        conversation = create(
+          :conversation,
+          inbox: bot_inbox.inbox,
+          status: :resolved,
+          additional_attributes: { 'outbound_automated' => true }
+        )
+
+        expect(conversation.status).to eq('resolved')
+      end
+
+      it 'still starts a resolved conversation without the marker as pending' do
+        conversation = create(:conversation, inbox: bot_inbox.inbox, status: :resolved)
+
+        expect(conversation.status).to eq('pending')
+      end
+    end
+
+    context 'when the contact is blocked' do
+      let(:account) { create(:account) }
+      let(:blocked_contact) { create(:contact, account: account, blocked: true) }
+
+      it 'keeps the conversation resolved' do
+        conversation = create(
+          :conversation,
+          account: account,
+          contact: blocked_contact,
+          status: :resolved,
+          additional_attributes: { 'outbound_automated' => true }
+        )
+
+        expect(conversation.status).to eq('resolved')
+      end
+    end
+
+    context 'when it is saved with skip_runtime_events' do
+      let(:account) { create(:account) }
+
+      before do
+        allow(Rails.configuration.dispatcher).to receive(:dispatch)
+        allow(Crm::Deals::AutoCreateFromChannelContactService).to receive(:new).and_call_original
+      end
+
+      it 'raises no creation or assignment event and creates no automatic CRM deal', :aggregate_failures do
+        conversation = build(:conversation, :with_assignee, account: account, status: :resolved)
+        conversation.skip_runtime_events = true
+        conversation.save!
+
+        expect(conversation).to be_persisted
+        expect(Rails.configuration.dispatcher).not_to have_received(:dispatch).with(described_class::CONVERSATION_CREATED, kind_of(Time), any_args)
+        expect(Rails.configuration.dispatcher).not_to have_received(:dispatch).with(described_class::ASSIGNEE_CHANGED, kind_of(Time), any_args)
+        expect(Crm::Deals::AutoCreateFromChannelContactService).not_to have_received(:new)
+      end
+
+      it 'raises them for an ordinary conversation', :aggregate_failures do
+        create(:conversation, :with_assignee, account: account, status: :resolved)
+
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(described_class::CONVERSATION_CREATED, kind_of(Time), any_args)
+        expect(Rails.configuration.dispatcher).to have_received(:dispatch).with(described_class::ASSIGNEE_CHANGED, kind_of(Time), any_args)
+        expect(Crm::Deals::AutoCreateFromChannelContactService).to have_received(:new)
+      end
+    end
+  end
+
   describe '#delete conversation' do
     include ActiveJob::TestHelper
 

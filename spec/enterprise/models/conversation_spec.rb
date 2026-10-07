@@ -110,4 +110,36 @@ RSpec.describe Conversation, locale: :en, type: :model do
       end
     end
   end
+
+  describe 'conversation created as a closed automated notification in an inbox with an active Captain assistant' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+
+    before do
+      account.update!(limits: account.limits.merge('captain_tokens' => 100, 'captain_responses' => 100))
+      create(:captain_inbox, inbox: inbox, captain_assistant: create(:captain_assistant, account: account))
+    end
+
+    it 'keeps a resolved conversation with the notification marker resolved' do
+      expect(inbox.reload).to be_active_bot
+
+      conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        status: :resolved,
+        additional_attributes: { 'outbound_automated' => true }
+      )
+
+      expect(conversation).to be_resolved
+    end
+
+    it 'still starts a resolved conversation without the marker as pending' do
+      expect(inbox.reload).to be_active_bot
+
+      conversation = create(:conversation, account: account, inbox: inbox, status: :resolved)
+
+      expect(conversation).to be_pending
+    end
+  end
 end

@@ -75,6 +75,36 @@ RSpec.describe AutomationRules::ActionService do
       end
     end
 
+    describe '#perform with send_message and send_attachment actions' do
+      %w[open pending snoozed resolved].each do |status|
+        it "sends the message and leaves a #{status} conversation #{status}" do
+          rule.actions = [{ 'action_name' => 'send_message', 'action_params' => ['Hello'] }]
+          conversation = create(:conversation, account: account, status: status)
+
+          described_class.new(rule, account, conversation).perform
+
+          message = conversation.messages.outgoing.sole
+          expect(message.content).to eq('Hello')
+          expect(message.content_attributes).to include('automation_rule_id' => rule.id)
+          expect(conversation.reload.status).to eq(status)
+          expect(conversation.status_transitions).to be_empty
+        end
+      end
+
+      it 'sends the attachment and leaves a resolved conversation resolved' do
+        rule.files.attach(io: Rails.root.join('spec/assets/avatar.png').open, filename: 'avatar.png', content_type: 'image/png')
+        rule.save!
+        rule.actions = [{ 'action_name' => 'send_attachment', 'action_params' => [rule.files.first.blob_id] }]
+        conversation = create(:conversation, account: account, status: :resolved)
+
+        described_class.new(rule, account, conversation).perform
+
+        expect(conversation.messages.outgoing.sole.attachments.count).to eq(1)
+        expect(conversation.reload).to be_resolved
+        expect(conversation.status_transitions).to be_empty
+      end
+    end
+
     describe '#perform with apply_touch_plan action' do
       let(:touch_plan) do
         create(

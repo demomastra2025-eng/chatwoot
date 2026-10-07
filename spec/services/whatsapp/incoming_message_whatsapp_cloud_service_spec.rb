@@ -592,6 +592,76 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
     end
 
+    context 'when the latest conversation is a closed conversation and the inbox has no single-conversation lock' do
+      let(:reply_params) do
+        {
+          phone_number: whatsapp_channel.phone_number,
+          object: 'whatsapp_business_account',
+          entry: [{
+            changes: [{
+              value: {
+                contacts: [{ profile: { name: 'Pranav' }, wa_id: '16503071063' }],
+                messages: [{
+                  from: '16503071063',
+                  id: 'wamid.NEW_MESSAGE_ID',
+                  timestamp: '1770407829',
+                  text: { body: 'I will come' },
+                  type: 'text'
+                }]
+              }
+            }]
+          }]
+        }.with_indifferent_access
+      end
+      let(:contact) { create(:contact, phone_number: '+16503071063', account: whatsapp_channel.account) }
+      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: '16503071063') }
+
+      before { whatsapp_channel.inbox.update!(lock_to_single_conversation: false) }
+
+      def create_closed_conversation(additional_attributes = {})
+        create(
+          :conversation,
+          status: :resolved,
+          contact: contact,
+          inbox: whatsapp_channel.inbox,
+          contact_inbox: contact_inbox,
+          additional_attributes: additional_attributes
+        )
+      end
+
+      it 'reopens the closed conversation that only carries an automated notification' do
+        conversation = create_closed_conversation('outbound_automated' => true)
+        create(
+          :message,
+          conversation: conversation,
+          message_type: :outgoing,
+          additional_attributes: { touch_id: 1, touch_source: 'touch' },
+          source_id: 'wamid.REMINDER_MESSAGE_ID',
+          content: 'Appointment reminder'
+        )
+
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: reply_params).perform
+        end.not_to(change(whatsapp_channel.inbox.conversations, :count))
+
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
+        expect(reply_message.conversation_id).to eq(conversation.id)
+        expect(conversation.reload).to be_open
+      end
+
+      it 'starts a new conversation for a reply after a closed conversation of a person' do
+        conversation = create_closed_conversation
+
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: reply_params).perform
+        end.to change(whatsapp_channel.inbox.conversations, :count).by(1)
+
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
+        expect(reply_message.conversation_id).not_to eq(conversation.id)
+        expect(conversation.reload).to be_resolved
+      end
+    end
+
     context 'when WhatsApp Cloud delivery status webhooks arrive out of order' do
       it 'normalizes Meta played status to read' do
         message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :delivered, source_id: 'wamid.PLAYED_MESSAGE')

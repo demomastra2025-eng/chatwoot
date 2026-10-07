@@ -42,7 +42,7 @@ RSpec.describe Reminders::ExecuteService do
         expect(patient.contact_inboxes).to be_empty
       end
 
-      it 'sends an already scheduled touch to the patient own primary number once the card gets one' do
+      it 'sends an already scheduled touch to the patient own primary number once the card gets one', :aggregate_failures do
         touch = scheduled_touch
         expect(touch.target_contact_id).to eq(owner.id)
         patient.update!(phone_number: '+77000000002')
@@ -55,6 +55,8 @@ RSpec.describe Reminders::ExecuteService do
         expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: patient.id, target_inbox_id: inbox.id,
                                                 target_contact_inbox_id: own_contact_inbox.id, target_conversation_id: message.conversation_id)
         expect(message.conversation).to have_attributes(contact_id: patient.id, inbox_id: inbox.id, contact_inbox_id: own_contact_inbox.id)
+        expect(message.conversation).to be_resolved
+        expect(message.conversation.additional_attributes).to include('outbound_automated' => true)
         expect(message.content).to include('Relative Patient', visit_time)
         expect(ContactInbox.where(inbox: inbox, contact: patient, source_id: owner_contact_inbox.source_id)).to be_empty
         expect(appointment.reload).to have_attributes(contact_id: owner.id, conversation_id: conversation.id, patient_contact_id: patient.id)
@@ -185,6 +187,8 @@ RSpec.describe Reminders::ExecuteService do
           message = touch_messages(touch).sole
           expect(message).to have_attributes(content: 'Captain wakeup message', sender: assistant)
           expect(message.conversation).to have_attributes(contact_id: patient.id, inbox_id: inbox.id, contact_inbox_id: own_contact_inbox.id)
+          # An AI wakeup is a deliberate takeover: the conversation made for it is moved to pending, never left open.
+          expect(message.conversation).to be_pending
           expect(touch.reload).to have_attributes(status: 'completed', target_contact_id: patient.id, target_contact_inbox_id: own_contact_inbox.id,
                                                   target_conversation_id: message.conversation_id)
           expect(conversation.messages.outgoing).to be_empty

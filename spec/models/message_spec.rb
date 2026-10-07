@@ -548,6 +548,93 @@ RSpec.describe Message do
     end
   end
 
+  describe 'automated outbound messages' do
+    let(:account) { create(:account) }
+    let(:agent) { create(:user, account: account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    def automated_message(kind, conversation)
+      message = build(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :outgoing)
+      case kind
+      when :touch_from_user
+        message.sender = agent
+        message.content_attributes = { touch_id: 1, touch_source: 'touch' }
+      when :touch_from_assistant
+        message.sender = assistant
+        message.content_attributes = { touch_id: 1, touch_source: 'touch' }
+      when :automation_rule
+        message.sender = nil
+        message.content_attributes = { automation_rule_id: 1 }
+      when :campaign
+        message.sender = agent
+        message.additional_attributes = { campaign_id: 1 }
+      end
+      message
+    end
+
+    automated_kinds = %i[touch_from_user touch_from_assistant automation_rule campaign]
+    %i[open pending snoozed resolved].each do |status|
+      automated_kinds.each do |kind|
+        it "leaves a #{status} conversation #{status} for a #{kind} message" do
+          conversation = create(:conversation, account: account, status: status)
+
+          automated_message(kind, conversation).save!
+
+          expect(conversation.reload.status).to eq(status.to_s)
+          expect(conversation.status_transitions).to be_empty
+        end
+      end
+    end
+
+    it 'does not change the status of a resolved conversation for a private note' do
+      conversation = create(:conversation, account: account, status: :resolved)
+
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :outgoing, private: true)
+
+      expect(conversation.reload).to be_resolved
+    end
+  end
+
+  describe 'a contact reply to a closed automated notification conversation' do
+    let(:account) { create(:account) }
+    let(:notification_attributes) { { 'outbound_automated' => true } }
+
+    def reply_to(conversation)
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :incoming)
+    end
+
+    it 'opens the conversation' do
+      conversation = create(:conversation, account: account, status: :resolved, additional_attributes: notification_attributes)
+
+      reply_to(conversation)
+
+      expect(conversation.reload).to be_open
+    end
+
+    it 'moves the conversation to pending when the inbox has an active agent bot' do
+      bot_inbox = create(:agent_bot_inbox)
+      conversation = create(:conversation, inbox: bot_inbox.inbox, status: :resolved, additional_attributes: notification_attributes)
+      expect(conversation).to be_resolved
+
+      create(:message, conversation: conversation, message_type: :incoming)
+
+      expect(conversation.reload).to be_pending
+    end
+
+    it 'opens the conversation and starts a new communication thread session when communication threads are enabled', :aggregate_failures do
+      conversation = create(:conversation, account: account, status: :resolved, additional_attributes: notification_attributes)
+      account.enable_features!('communication_threads')
+      communication_thread = conversation.reload.refresh_communication_thread!
+      expect(communication_thread).to be_resolved
+
+      reply = reply_to(conversation)
+
+      expect(conversation.reload).to be_open
+      expect(communication_thread.reload).to be_open
+      expect(communication_thread.session_started_at).to be_within(0.001.seconds).of(reply.created_at)
+    end
+  end
+
   describe '#waiting since' do
     let(:conversation) { create(:conversation) }
     let(:agent) { create(:user, account: conversation.account) }
