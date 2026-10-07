@@ -99,6 +99,7 @@
       "CALL_IN_PROGRESS": "Call in progress",
       "NO_ANSWER": "No answer",
       "MISSED_CALL": "Missed call",
+      "VOICEMAIL": "Voicemail",
       "CALL_ENDED": "Call ended",
       "NOT_ANSWERED_YET": "Not answered yet",
       "THEY_ANSWERED": "They answered",

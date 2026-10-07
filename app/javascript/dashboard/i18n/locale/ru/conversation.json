@@ -98,6 +98,7 @@
       "CALL_IN_PROGRESS": "Идёт звонок",
       "NO_ANSWER": "Нет ответа",
       "MISSED_CALL": "Пропущенный звонок",
+      "VOICEMAIL": "Голосовая почта",
       "CALL_ENDED": "Звонок завершен",
       "NOT_ANSWERED_YET": "Пока нет ответа",
       "THEY_ANSWERED": "Они ответили",

@@ -733,7 +733,11 @@ const handleJoinCall = async () => {
 
         <div class="flex overflow-hidden flex-col flex-grow gap-0.5">
           <span class="text-sm font-medium truncate text-n-slate-12">
-            {{ $t(labelKey) }}
+            {{
+              meta?.reachedVoicemail
+                ? $t('CONVERSATION.VOICE_CALL.VOICEMAIL')
+                : $t(labelKey)
+            }}
           </span>
           <span v-if="answeredByText" class="text-xs text-n-slate-11">
             {{
