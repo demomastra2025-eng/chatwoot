@@ -128,6 +128,24 @@ describe Twilio::IncomingMessageService do
         expect(twilio_channel.inbox.conversations.last.messages.last.content).to eq('testing3')
       end
 
+      it 'reopens last conversation if it only carries an automated notification and lock to single conversation is disabled' do
+        params = {
+          SmsSid: 'SMxx',
+          From: '+12345',
+          AccountSid: 'ACxxx',
+          To: twilio_channel.phone_number,
+          Body: 'testing3'
+        }
+
+        twilio_channel.inbox.update(lock_to_single_conversation: false)
+        conversation.update(status: 'resolved', additional_attributes: { 'outbound_automated' => true })
+        described_class.new(params: params).perform
+        # the reply reopens the notification conversation instead of starting a new one
+        expect(twilio_channel.inbox.conversations.count).to eq(1)
+        expect(conversation.reload.messages.last.content).to eq('testing3')
+        expect(conversation.status).to eq('open')
+      end
+
       it 'will not create a new conversation if last conversation is not resolved and lock to single conversation is disabled' do
         params = {
           SmsSid: 'SMxx',

@@ -56,6 +56,15 @@ class ContactInbox < ApplicationRecord
     conversations.last
   end
 
+  # The newest conversation of this chat when it is a closed conversation that only carries automated notifications (see
+  # Conversation#automated_outbound_conversation?). The incoming-message services of the channels that start a new
+  # conversation after a closed one (inboxes without lock_to_single_conversation) route the patient's reply here, so the
+  # reply reopens the carrier and its reminders, confirmation requests and auto-cancel targets stay attached to it.
+  def latest_closed_automated_conversation
+    latest = conversations.reorder(id: :desc).first
+    latest if latest&.resolved? && latest.automated_outbound_conversation?
+  end
+
   def push_event_data
     {
       id: id,

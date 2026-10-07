@@ -38,6 +38,49 @@ RSpec.describe ContactInbox do
     end
   end
 
+  describe '#latest_closed_automated_conversation' do
+    let(:inbox) { create(:inbox) }
+    let(:contact_inbox) { create(:contact_inbox, inbox: inbox, contact: create(:contact, account: inbox.account)) }
+
+    def create_conversation(status, additional_attributes = {})
+      create(
+        :conversation,
+        account: inbox.account,
+        inbox: inbox,
+        contact: contact_inbox.contact,
+        contact_inbox: contact_inbox,
+        status: status,
+        additional_attributes: additional_attributes
+      )
+    end
+
+    it 'returns the latest conversation when it is closed and marked as an automated notification' do
+      create_conversation(:resolved)
+      carrier = create_conversation(:resolved, 'outbound_automated' => true)
+
+      expect(contact_inbox.latest_closed_automated_conversation).to eq(carrier)
+    end
+
+    it 'returns nothing when a newer conversation of a person exists' do
+      create_conversation(:resolved, 'outbound_automated' => true)
+      create_conversation(:resolved)
+
+      expect(contact_inbox.latest_closed_automated_conversation).to be_nil
+    end
+
+    %i[open pending snoozed].each do |status|
+      it "returns nothing when the latest marked conversation is #{status}" do
+        create_conversation(status, 'outbound_automated' => true)
+
+        expect(contact_inbox.latest_closed_automated_conversation).to be_nil
+      end
+    end
+
+    it 'returns nothing for a contact inbox without conversations' do
+      expect(contact_inbox.latest_closed_automated_conversation).to be_nil
+    end
+  end
+
   describe 'validations' do
     context 'when source_id' do
       it 'allows source_id longer than 255 characters for channels without format restrictions' do

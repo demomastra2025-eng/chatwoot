@@ -562,6 +562,32 @@ describe Telegram::IncomingMessageService do
       expect(telegram_channel.inbox.conversations.last.status).to eq('open')
     end
 
+    it 'reopens the last conversation if it is closed and only carries an automated notification' do
+      telegram_channel.inbox.update!(lock_to_single_conversation: false)
+      contact_inbox = ContactInbox.find_or_create_by(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|
+        ci.contact = create(:contact)
+      end
+      carrier = create(
+        :conversation,
+        inbox: telegram_channel.inbox,
+        contact_inbox: contact_inbox,
+        contact: contact_inbox.contact,
+        status: :resolved,
+        additional_attributes: { 'outbound_automated' => true }
+      )
+
+      params = {
+        'update_id' => 2_342_342_343_242,
+        'message' => { 'text' => 'test' }.merge(message_params)
+      }.with_indifferent_access
+
+      described_class.new(inbox: telegram_channel.inbox, params: params).perform
+
+      expect(telegram_channel.inbox.conversations.count).to eq(1)
+      expect(carrier.reload.messages.last.content).to eq('test')
+      expect(carrier).to be_open
+    end
+
     it 'appends to last conversation if last conversation is not resolved' do
       telegram_channel.inbox.update!(lock_to_single_conversation: false)
       contact_inbox = ContactInbox.find_or_create_by(inbox: telegram_channel.inbox, source_id: message_params[:from][:id]) do |ci|

@@ -64,8 +64,10 @@ class Messages::Facebook::MessageBuilder < Messages::Messenger::MessageBuilder
   end
 
   def find_or_build_for_multiple_conversations
-    # If lock to single conversation is disabled, we will create a new conversation if previous conversation is resolved
-    last_conversation = Conversation.where(conversation_params).where.not(status: :resolved).order(created_at: :desc).first
+    # If lock to single conversation is disabled, we will create a new conversation if previous conversation is resolved,
+    # unless that conversation only carries an automated notification: the reply reopens it
+    last_conversation = Conversation.where(conversation_params).where.not(status: :resolved).order(created_at: :desc).first ||
+                        @contact_inbox.latest_closed_automated_conversation
     return build_conversation if last_conversation.nil?
 
     last_conversation

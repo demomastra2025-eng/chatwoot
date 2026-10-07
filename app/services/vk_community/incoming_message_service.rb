@@ -55,10 +55,12 @@ class VkCommunity::IncomingMessageService
   end
 
   def set_conversation
+    # without the lock a closed conversation is not reused, unless it only carries an automated notification
     @conversation = if inbox.lock_to_single_conversation
                       @contact_inbox.conversations.last
                     else
-                      @contact_inbox.conversations.where.not(status: :resolved).last
+                      @contact_inbox.conversations.where.not(status: :resolved).last ||
+                        @contact_inbox.latest_closed_automated_conversation
                     end
     return if @conversation.present?
 

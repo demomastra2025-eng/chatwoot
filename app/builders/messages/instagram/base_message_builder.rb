@@ -71,10 +71,16 @@ class Messages::Instagram::BaseMessageBuilder < Messages::Messenger::MessageBuil
   end
 
   def find_or_build_for_multiple_conversations
-    last_conversation = find_conversation_scope.where.not(status: :resolved).order(created_at: :desc).first
+    last_conversation = find_conversation_scope.where.not(status: :resolved).order(created_at: :desc).first ||
+                        latest_closed_automated_conversation
     return build_conversation if last_conversation.nil?
 
     last_conversation
+  end
+
+  # Without the lock a closed conversation is not reused, unless it only carries an automated notification: the reply reopens it
+  def latest_closed_automated_conversation
+    @inbox.contact_inboxes.find_by(source_id: message_source_id)&.latest_closed_automated_conversation
   end
 
   def message_content
