@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
-import { useEventListener } from '@vueuse/core';
+import { useEventListener, useMediaQuery } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 
 import ConversationBox from 'dashboard/components/widgets/conversation/ConversationBox.vue';
@@ -110,6 +110,17 @@ const loadErrorText = computed(() =>
 );
 const placeholderText = key =>
   translateDynamicKey(`${props.placeholderI18nPrefix}.${key}`);
+
+// Same breakpoint as the `lg:` classes of the inline layout below.
+const isWideViewport = useMediaQuery('(min-width: 1024px)');
+// Below `lg` the inline chat is hidden while the Deal tab is open. A hidden
+// chat must not be the selected conversation: with zero-size message metrics
+// it counts as "scrolled to the bottom" and would scroll and mark every new
+// message as read for a tab nobody is looking at. It activates when its tab
+// opens (or the screen is wide enough to show it) and releases when it hides.
+const isChatDisplayed = computed(
+  () => props.visible && (!props.inline || props.active || isWideViewport.value)
+);
 
 const ui = reactive({
   error: null,
@@ -318,7 +329,7 @@ const resetPanelState = () => {
 };
 
 const activateConversation = async () => {
-  if (!props.visible || !chatApiId.value) {
+  if (!isChatDisplayed.value || !chatApiId.value) {
     return;
   }
 
@@ -331,7 +342,7 @@ const activateConversation = async () => {
 
   const isCurrentActivation = () =>
     requestId === activationRequestId.value &&
-    props.visible &&
+    isChatDisplayed.value &&
     chatApiId.value === targetApiId &&
     isCommunicationThreadTarget.value === targetIsCommunicationThread;
 
@@ -412,15 +423,18 @@ watch(
 );
 
 watch(
-  [() => props.visible, chatApiId, isCommunicationThreadTarget],
+  [isChatDisplayed, chatApiId, isCommunicationThreadTarget],
   ([isVisible, apiId, isThread], previousValues = []) => {
+    const [wasVisible, previousApiId, wasThread] = previousValues;
     if (!isVisible || !apiId) {
       invalidateActivation();
       resetPanelState();
+      // A tab switch hides the panel without leaving the page: release the
+      // selected conversation (leaving through the transition clears it too).
+      if (wasVisible && props.visible) clearConversationState();
       return;
     }
 
-    const [wasVisible, previousApiId, wasThread] = previousValues;
     if (wasVisible && (previousApiId !== apiId || wasThread !== isThread)) {
       invalidateActivation();
       resetPanelState();
@@ -572,7 +586,7 @@ onBeforeUnmount(() => {
             <Spinner class="!h-8 !w-8" />
           </div>
 
-          <div v-else class="flex min-h-0 flex-1">
+          <div v-else-if="isChatDisplayed" class="flex min-h-0 flex-1">
             <ConversationBox
               class="flex-1"
               :inbox-id="currentChat.inbox_id"

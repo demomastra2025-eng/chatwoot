@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { ref } from 'vue';
+import { useMediaQuery } from '@vueuse/core';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 
 import CrmDealConversationPanel from './CrmDealConversationPanel.vue';
@@ -10,6 +11,12 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: key => key,
   }),
+}));
+// The breakpoint is driven by the test; VueUse's own ref lives in another copy
+// of Vue here and would not notify the component's computed values.
+vi.mock('@vueuse/core', async importOriginal => ({
+  ...(await importOriginal()),
+  useMediaQuery: vi.fn(),
 }));
 
 const mountPanel = ({
@@ -87,10 +94,13 @@ describe('CrmDealConversationPanel', () => {
   let currentChat;
   let conversations;
   let dispatch;
+  let isWideScreen;
 
   beforeEach(() => {
     currentChat = ref({});
     conversations = ref([]);
+    isWideScreen = ref(false);
+    useMediaQuery.mockReturnValue(isWideScreen);
 
     dispatch = vi.fn(async (action, payload) => {
       if (action === 'getConversation' && payload === 185) {
@@ -118,6 +128,10 @@ describe('CrmDealConversationPanel', () => {
 
       if (action === 'setActiveChat') {
         currentChat.value = payload.data;
+      }
+
+      if (action === 'clearSelectedState') {
+        currentChat.value = {};
       }
 
       return undefined;
@@ -198,6 +212,82 @@ describe('CrmDealConversationPanel', () => {
     );
     await openButton.trigger('click');
     expect(wrapper.emitted('openFullScreen')).toHaveLength(1);
+  });
+
+  describe('inline chat that the Deal tab hides below the lg breakpoint', () => {
+    it('follows the lg breakpoint of the layout', () => {
+      mountPanel({ inline: true });
+
+      expect(useMediaQuery).toHaveBeenCalledWith('(min-width: 1024px)');
+    });
+
+    it('does not select the hidden chat and activates it with its tab', async () => {
+      const wrapper = mountPanel({ active: false, inline: true });
+      await flushPromises();
+
+      expect(dispatch).not.toHaveBeenCalledWith(
+        'getConversation',
+        expect.anything()
+      );
+      expect(dispatch).not.toHaveBeenCalledWith(
+        'setActiveChat',
+        expect.anything()
+      );
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(false);
+
+      await wrapper.setProps({ active: true });
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+        data: expect.objectContaining({ id: 185 }),
+      });
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+
+      dispatch.mockClear();
+      await wrapper.setProps({ active: false });
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('clearSelectedState');
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(false);
+      expect(currentChat.value.id).toBeUndefined();
+
+      await wrapper.setProps({ active: true });
+      await flushPromises();
+
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+    });
+
+    it('keeps the chat active beside the card on wide screens', async () => {
+      isWideScreen.value = true;
+      const wrapper = mountPanel({ active: false, inline: true });
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+        data: expect.objectContaining({ id: 185 }),
+      });
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+
+      isWideScreen.value = false;
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('clearSelectedState');
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(false);
+
+      isWideScreen.value = true;
+      await flushPromises();
+
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+    });
+
+    it('activates the floating panel regardless of the tab state', async () => {
+      const wrapper = mountPanel({ active: false, inline: false });
+      await flushPromises();
+
+      expect(dispatch).toHaveBeenCalledWith('setActiveChat', {
+        data: expect.objectContaining({ id: 185 }),
+      });
+      expect(wrapper.find('conversation-box-stub').exists()).toBe(true);
+    });
   });
 
   it('closes the floating panel on Escape but keeps the inline one open', async () => {
