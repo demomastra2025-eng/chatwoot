@@ -52,6 +52,7 @@ const getName = message => {
       <li v-for="message in messages" :key="message.id">
         <SearchResultMessageItem
           :id="message.conversationId"
+          :communication-thread-id="message.communicationThreadId"
           :account-id="accountId"
           :inbox-id="message.inboxId"
           :created-at="message.createdAt"

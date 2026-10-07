@@ -40,6 +40,18 @@ describe CommunicationThreadMessageFinder do
     conversation
   end
 
+  it 'includes an explicit message target in an after window across conversations' do
+    target = create(:message, account: account, inbox: first_conversation.inbox, conversation: first_conversation, created_at: 2.minutes.ago)
+    following = create(:message, account: account, inbox: second_conversation.inbox, conversation: second_conversation, created_at: 1.minute.ago)
+    anchored_finder = described_class.new(
+      communication_thread: communication_thread,
+      current_user: user,
+      params: { after: target.id, include_target: true, include_history: true }
+    )
+
+    expect(anchored_finder.perform).to eq([target, following])
+  end
+
   it 'shows useful activity and regular messages while hiding noisy telemetry and Captain tool lines' do
     regular_message = create(
       :message,

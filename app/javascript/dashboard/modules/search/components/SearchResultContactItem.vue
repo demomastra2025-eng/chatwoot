@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { frontendURL } from 'dashboard/helper/URLHelper';
+import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import countries from 'shared/constants/countries';
 import { dynamicTime } from 'shared/helpers/timeHelper';
 
@@ -33,6 +33,10 @@ const props = defineProps({
     type: [String, Number],
     default: 0,
   },
+  latestConversation: {
+    type: Object,
+    default: null,
+  },
   additionalAttributes: {
     type: Object,
     default: () => ({}),
@@ -44,6 +48,17 @@ const props = defineProps({
 });
 
 const navigateTo = computed(() => {
+  if (props.latestConversation) {
+    const { id, inboxId, communicationThreadId } = props.latestConversation;
+    return frontendURL(
+      conversationUrl({
+        accountId: props.accountId,
+        activeInbox: inboxId,
+        id: communicationThreadId || id,
+        communicationThread: Boolean(communicationThreadId),
+      })
+    );
+  }
   return frontendURL(`accounts/${props.accountId}/contacts/${props.id}`);
 });
 

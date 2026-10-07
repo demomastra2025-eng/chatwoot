@@ -38,6 +38,7 @@ const accountId = useMapGetter('getCurrentAccountId');
       <li v-for="contact in contacts" :key="contact.id">
         <SearchResultContactItem
           :id="contact.id"
+          :latest-conversation="contact.latestConversation"
           :name="contact.name"
           :email="contact.email"
           :phone="contact.phoneNumber"

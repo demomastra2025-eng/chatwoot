@@ -49,6 +49,7 @@ const conversationsWithSubject = computed(() => {
       >
         <SearchResultConversationItem
           :id="conversation.id"
+          :communication-thread-id="conversation.communicationThreadId"
           :name="conversation.contact.name"
           :email="conversation.contact.email"
           :account-id="accountId"

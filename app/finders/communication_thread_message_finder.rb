@@ -48,9 +48,16 @@ class CommunicationThreadMessageFinder
   def messages_after(after_id)
     after_message = cursor_message(after_id)
     scope = ordered_messages(:asc)
-    return scope.where('messages.id > ?', after_id).limit(MAX_AFTER_LIMIT) if after_message.blank?
+    if after_message.blank?
+      operator = include_target? ? '>=' : '>'
+      return scope.where("messages.id #{operator} ?", after_id).limit(MAX_AFTER_LIMIT)
+    end
 
-    messages_after_cursor(scope, after_message).limit(MAX_AFTER_LIMIT)
+    messages_after_cursor(scope, after_message, inclusive: include_target?).limit(MAX_AFTER_LIMIT)
+  end
+
+  def include_target?
+    ActiveModel::Type::Boolean.new.cast(params[:include_target])
   end
 
   def messages_before(before_id)

@@ -678,6 +678,7 @@ const actions = {
           after: data.after,
           before: data.before,
           include_history: true,
+          ...(data.includeTarget ? { include_target: true } : {}),
         });
         if (!isExpectedRouteCurrent(rootState, data.expectedRouteFullPath))
           return;
@@ -909,6 +910,9 @@ const actions = {
       try {
         const fetchParams = {
           after,
+          ...(after && data.is_communication_thread
+            ? { includeTarget: true }
+            : {}),
           conversationId: data.id,
           conversationType,
           ...(expectedRouteFullPath !== undefined

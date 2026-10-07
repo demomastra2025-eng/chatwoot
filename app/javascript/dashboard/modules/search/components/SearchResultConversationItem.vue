@@ -37,6 +37,10 @@ const props = defineProps({
     type: Number,
     default: 0,
   },
+  communicationThreadId: {
+    type: Number,
+    default: 0,
+  },
   emailSubject: {
     type: String,
     default: '',
@@ -54,7 +58,8 @@ const navigateTo = computed(() => {
     conversationUrl({
       accountId: props.accountId,
       activeInbox: props.inbox?.id,
-      id: props.id,
+      id: props.communicationThreadId || props.id,
+      communicationThread: Boolean(props.communicationThreadId),
     }),
     params
   );
