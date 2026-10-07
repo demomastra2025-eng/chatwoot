@@ -71,14 +71,20 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
     return result if contacts.blank?
 
     result[:contacts] = contacts
-    conversations = Search::AccessScope.new(account: Current.account, user: Current.user)
-                                       .conversations.where(contact_id: contacts.map(&:id))
-                                       .includes(:communication_thread)
-                                       .order(last_activity_at: :desc, id: :desc)
-    @contact_latest_conversations = conversations.each_with_object({}) do |conversation, latest|
-      latest[conversation.contact_id] ||= conversation
-    end
+    @contact_latest_conversations = latest_conversations_by_contact(contacts.map(&:id))
     result
+  end
+
+  # One row per contact is picked in SQL, so a contact with a long history is not loaded whole to find its last
+  # conversation. The access scope is a plain relation, or (custom role) a subquery aliased as "conversations", so the
+  # columns are qualified with that name and both shapes accept DISTINCT ON.
+  def latest_conversations_by_contact(contact_ids)
+    Search::AccessScope.new(account: Current.account, user: Current.user)
+                       .conversations.where(contact_id: contact_ids)
+                       .select('DISTINCT ON (conversations.contact_id) conversations.*')
+                       .reorder(Arel.sql('conversations.contact_id, conversations.last_activity_at DESC, conversations.id DESC'))
+                       .preload(:communication_thread)
+                       .index_by(&:contact_id)
   end
 
   def first_messages_by_conversation(conversations)

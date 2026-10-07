@@ -45,6 +45,42 @@ RSpec.describe 'Global search conversation navigation', type: :request do
     )
   end
 
+  describe 'the latest conversation of each contact' do
+    let(:other_contact) { create(:contact, account: account, name: 'Иван Петров', email: 'ivan.petrov@example.com') }
+    let!(:tied_conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, assignee: agent) }
+    let!(:other_first) { create(:conversation, account: account, inbox: inbox, contact: other_contact, assignee: agent) }
+    let!(:other_second) { create(:conversation, account: account, inbox: inbox, contact: other_contact, assignee: agent) }
+
+    before do
+      # The same last activity as the latest conversation: the newest id wins. For the other contact the oldest
+      # conversation has the newest activity, which wins over the newer ids.
+      tied_conversation.update!(last_activity_at: latest_conversation.reload.last_activity_at)
+      other_second.update!(last_activity_at: 1.day.from_now)
+      other_first.update!(last_activity_at: 2.days.from_now)
+    end
+
+    def latest_conversation_ids
+      search('contacts', 'Иван').to_h { |item| [item.fetch('id'), item.dig('latest_conversation', 'id')] }
+    end
+
+    it 'takes the newest activity first and the newest id second, one conversation per contact' do
+      expect(latest_conversation_ids).to eq(
+        contact.id => tied_conversation.display_id,
+        other_contact.id => other_first.display_id
+      )
+    end
+
+    it 'does the same for an agent whose custom role builds the access scope as a UNION' do
+      custom_role = create(:custom_role, account: account, permissions: %w[conversation_participating_manage contact_manage])
+      agent.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+      expect(latest_conversation_ids).to eq(
+        contact.id => tied_conversation.display_id,
+        other_contact.id => other_first.display_id
+      )
+    end
+  end
+
   it 'keeps conversation targets when the account does not use thread mode' do
     account.disable_features!('communication_threads')
 
