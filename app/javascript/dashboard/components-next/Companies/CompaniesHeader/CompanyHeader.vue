@@ -9,13 +9,12 @@ defineProps({
   searchValue: { type: String, default: '' },
   headerTitle: { type: String, required: true },
   showCreateButton: { type: Boolean, default: true },
-  showSettingsButton: { type: Boolean, default: false },
   createButtonLabel: { type: String, default: '' },
   activeSort: { type: String, default: 'name' },
   activeOrdering: { type: String, default: '' },
 });
 
-const emit = defineEmits(['search', 'update:sort', 'create', 'openSettings']);
+const emit = defineEmits(['search', 'update:sort', 'create']);
 </script>
 
 <template>
@@ -27,17 +26,6 @@ const emit = defineEmits(['search', 'update:sort', 'create', 'openSettings']);
         <span class="text-heading-1 truncate text-n-slate-12">
           {{ headerTitle }}
         </span>
-        <Button
-          v-if="showSettingsButton"
-          size="sm"
-          color="slate"
-          variant="ghost"
-          icon="i-lucide-settings-2"
-          class="!size-7"
-          :aria-label="$t('SIDEBAR.SETTINGS')"
-          :title="$t('SIDEBAR.SETTINGS')"
-          @click="emit('openSettings')"
-        />
       </div>
       <div class="flex items-center flex-row flex-shrink-0 gap-2">
         <div class="flex items-center">
