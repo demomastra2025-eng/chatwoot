@@ -195,6 +195,30 @@ it('exposes a localized string when the initial load fails', async () => {
   expect(state.ui.error).toBe('CRM.ERRORS.STALE_RECORD');
 });
 
+it('keeps the settings gear after create in the Deals header', async () => {
+  const { state, wrapper } = await mountPage();
+  const header = wrapper.findComponent({ name: 'SchedulingPageHeader' });
+  const buttons = header.vm.$slots.actions().filter(node => node.props?.icon);
+  const gear = buttons.at(-1);
+
+  expect(buttons.at(-2).props.icon).toBe('i-lucide-plus');
+  expect(gear.props).toMatchObject({
+    icon: 'i-lucide-settings',
+    size: 'sm',
+    color: 'slate',
+    variant: 'ghost',
+    class: '!size-8 !text-n-slate-11 hover:!text-n-slate-12',
+    'aria-label': 'SIDEBAR.SETTINGS',
+    title: 'SIDEBAR.SETTINGS',
+  });
+  state.openDealSettings();
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'crm_settings_index',
+    params: { accountId: 1 },
+    query: { pipelineId: 10 },
+  });
+});
+
 it('retries the complete page bootstrap after a reference request fails', async () => {
   referencesStore.loadPipelines.mockRejectedValueOnce(
     new Error('pipelines unavailable')

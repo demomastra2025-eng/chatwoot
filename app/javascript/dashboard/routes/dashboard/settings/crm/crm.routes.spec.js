@@ -67,7 +67,7 @@ describe('CRM settings routes', () => {
     });
   });
 
-  it('mounts the task statuses page inside the tabs wrapper with CRM settings permissions', () => {
+  it('mounts task settings inside the tabs wrapper with CRM settings permissions', () => {
     const taskParent = parentByPath('/settings/crm/tasks');
     const taskSettingsRoute = childByName(
       taskParent,

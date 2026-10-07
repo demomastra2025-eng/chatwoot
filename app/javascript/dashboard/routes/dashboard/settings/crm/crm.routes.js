@@ -4,7 +4,7 @@ import store from '../../../../store';
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
-// Task statuses, the default reminder plan and the task type/outcome catalog.
+// Task type and outcome catalog.
 export const TaskSettingsPage = () => import('./TaskSettings.vue');
 
 const hasCrmDealsEnabled = accountId =>

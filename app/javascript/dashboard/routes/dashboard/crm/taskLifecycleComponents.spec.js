@@ -23,7 +23,9 @@ const { referencesStore, runtime, taskFieldDefinitions, actionCableRuntime } =
       accountTimezone: 'Asia/Almaty',
       dispatch: vi.fn(),
       routeQuery: {},
+      routerPush: vi.fn(),
       routerReplace: vi.fn(),
+      settingsAccess: true,
     },
     taskFieldDefinitions: [],
   }));
@@ -33,7 +35,7 @@ vi.mock('vue-i18n', () => ({
 }));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: runtime.routeQuery, params: { accountId: 1 } }),
-  useRouter: () => ({ push: vi.fn(), replace: runtime.routerReplace }),
+  useRouter: () => ({ push: runtime.routerPush, replace: runtime.routerReplace }),
 }));
 vi.mock('dashboard/api/crm/tasks', () => ({
   default: Object.fromEntries(
@@ -54,7 +56,12 @@ vi.mock('dashboard/api/crm/tasks', () => ({
 vi.mock('dashboard/api/crm/deals', () => ({ default: { get: vi.fn() } }));
 vi.mock('dashboard/composables', () => ({ useAlert: vi.fn() }));
 vi.mock('dashboard/composables/usePolicy', () => ({
-  usePolicy: () => ({ checkPermissions: () => true }),
+  usePolicy: () => ({
+    checkPermissions: permissions =>
+      permissions.includes('crm_settings_view')
+        ? runtime.settingsAccess
+        : true,
+  }),
 }));
 vi.mock('dashboard/composables/store', () => ({
   useMapGetter: key => {
@@ -235,6 +242,8 @@ beforeEach(() => {
     key => delete runtime.routeQuery[key]
   );
   runtime.routerReplace.mockReset().mockResolvedValue(undefined);
+  runtime.routerPush.mockReset().mockResolvedValue(undefined);
+  runtime.settingsAccess = true;
   runtime.dispatch.mockReset().mockResolvedValue(undefined);
   taskFieldDefinitions.splice(0);
   referencesStore.taskFieldDefinitions = taskFieldDefinitions;
@@ -276,6 +285,84 @@ beforeEach(() => {
 afterEach(() => {
   wrappers.splice(0).forEach(wrapper => wrapper.unmount());
 });
+
+it('places the Tasks settings gear after create with the Deals gear styling', async () => {
+  const { state, wrapper } = await mountEditor('page');
+  const header = wrapper.findComponent({ name: 'SchedulingPageHeader' });
+  const buttons = header.vm.$slots.actions().filter(node => node.props?.icon);
+  const gear = buttons.at(-1);
+
+  expect(buttons.at(-2).props.icon).toBe('i-lucide-plus');
+  expect(gear.props).toMatchObject({
+    icon: 'i-lucide-settings',
+    size: 'sm',
+    color: 'slate',
+    variant: 'ghost',
+    class: '!size-8 !text-n-slate-11 hover:!text-n-slate-12',
+    'aria-label': 'SIDEBAR.SETTINGS',
+    title: 'SIDEBAR.SETTINGS',
+  });
+  state.openTaskSettings();
+  expect(runtime.routerPush).toHaveBeenCalledWith({
+    name: 'crm_task_settings_index',
+    params: { accountId: 1 },
+  });
+});
+
+it('hides the Tasks gear without CRM settings access', async () => {
+  runtime.settingsAccess = false;
+  const { wrapper } = await mountEditor('page');
+  const header = wrapper.findComponent({ name: 'SchedulingPageHeader' });
+  const buttons = header.vm.$slots.actions().filter(node => node.props?.icon);
+
+  expect(buttons.some(button => button.props.icon === 'i-lucide-settings')).toBe(
+    false
+  );
+});
+
+it.each(['page', 'panel'])(
+  'creates a %s task without a status picker or a loaded default',
+  async kind => {
+    const previousStatuses = referencesStore.taskStatuses;
+    referencesStore.taskStatuses = [];
+    try {
+      const { state } = await mountEditor(kind, { statuses: [] });
+      if (kind === 'panel') {
+        state.openCreateTaskDialog();
+      } else {
+        await state.openCreateDrawer();
+      }
+      state.form.title = 'Follow up';
+
+      expect(state.form.statusId).toBe('');
+      expect(state.isTaskFormDisabled).toBe(false);
+      await state.saveTask();
+      expect(CrmTasksAPI.create).toHaveBeenCalledWith(
+        expect.not.objectContaining({ status_id: expect.anything() })
+      );
+    } finally {
+      referencesStore.taskStatuses = previousStatuses;
+    }
+  }
+);
+
+it.each(['page', 'panel'])(
+  'sends the configured default status for a new %s task',
+  async kind => {
+    const { state } = await mountEditor(kind);
+    if (kind === 'panel') {
+      state.openCreateTaskDialog();
+    } else {
+      await state.openCreateDrawer();
+    }
+    state.form.title = 'Follow up';
+
+    await state.saveTask();
+    expect(CrmTasksAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({ status_id: 1 })
+    );
+  }
+);
 
 it('routes the ActionCable task ID through both realtime consumers', async () => {
   await mountEditor('page');

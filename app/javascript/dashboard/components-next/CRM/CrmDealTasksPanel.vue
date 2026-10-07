@@ -228,10 +228,7 @@ const updateFormActivityType = value => {
 };
 
 const defaultStatus = computed(
-  () =>
-    props.statuses.find(status => status.default) ||
-    props.statuses.find(status => status.category === 'open') ||
-    props.statuses[0]
+  () => props.statuses.find(status => status.default && status.active !== false)
 );
 
 const doneStatus = computed(() =>
@@ -358,7 +355,6 @@ const isTaskFormDisabled = computed(
     isTaskReadOnly.value ||
     (taskConflict.active && !taskConflict.hasAuthoritative) ||
     !form.title.trim() ||
-    !form.statusId ||
     !hasDeal.value ||
     (form.outcome === NOT_DONE_OUTCOME && !form.outcomeNote.trim())
 );

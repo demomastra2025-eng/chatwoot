@@ -286,6 +286,13 @@ const workspaceTimezone = computed(() => {
 const canManageTasks = computed(() =>
   checkPermissions(CRM_TASK_MANAGE_PERMISSIONS)
 );
+const canAccessTaskSettings = computed(() =>
+  checkPermissions([
+    'administrator',
+    'crm_settings_view',
+    'crm_settings_manage',
+  ])
+);
 
 const canViewTasks = computed(() =>
   checkPermissions(CRM_TASK_VIEW_PERMISSIONS)
@@ -297,7 +304,6 @@ const isTaskFormDisabled = computed(
   () =>
     (taskConflict.active && !taskConflict.hasAuthoritative) ||
     !form.title.trim() ||
-    !form.statusId ||
     !form.contextKind ||
     (form.contextKind === 'sales' && !form.dealId)
 );
@@ -926,9 +932,9 @@ const handleListSortChange = sortState => {
 };
 
 const resetForm = () => {
-  const defaultStatus =
-    referencesStore.taskStatuses.find(status => status.default) ||
-    referencesStore.taskStatuses[0];
+  const defaultStatus = referencesStore.taskStatuses.find(
+    status => status.default && status.active !== false
+  );
   const defaultTaskType =
     referencesStore.taskTypes.find(
       taskType => taskType.default && taskType.active
@@ -1074,6 +1080,8 @@ const loadTimeline = async taskId => {
 };
 
 const openTaskSettings = () => {
+  if (!canAccessTaskSettings.value) return;
+
   router.push({
     name: 'crm_task_settings_index',
     params: { accountId: accountId.value },
@@ -2818,6 +2826,13 @@ watch(
         <Button
           v-if="canManageTasks"
           size="sm"
+          icon="i-lucide-plus"
+          :label="$t('CRM.TASKS.NEW_TASK')"
+          @click="openCreateDrawer"
+        />
+        <Button
+          v-if="canAccessTaskSettings"
+          size="sm"
           color="slate"
           variant="ghost"
           icon="i-lucide-settings"
@@ -2825,14 +2840,6 @@ watch(
           :aria-label="$t('SIDEBAR.SETTINGS')"
           :title="$t('SIDEBAR.SETTINGS')"
           @click="openTaskSettings"
-        />
-
-        <Button
-          v-if="canManageTasks"
-          size="sm"
-          icon="i-lucide-plus"
-          :label="$t('CRM.TASKS.NEW_TASK')"
-          @click="openCreateDrawer"
         />
       </template>
     </SchedulingPageHeader>
@@ -3123,7 +3130,6 @@ watch(
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
           :filtered="hasActiveBoardTaskFilters"
-          :pending-task-ids="pendingTaskDeadlineIds"
           :tasks="tasks"
           @change-due-date="updateTaskDeadlineFromBoard"
           @load-more="loadMoreBoardBucket"
