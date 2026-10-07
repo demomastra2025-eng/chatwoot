@@ -5,7 +5,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:headers) { agent.create_new_auth_token }
   let(:inbox) { create(:inbox, account: account, enable_auto_assignment: false) }
-  let(:contact) { create(:contact, account: account, name: 'Иван Иванов') }
+  let(:contact) { create(:contact, account: account, name: 'Иван Иванов', email: 'ivan.ivanov@example.com') }
   let!(:first_conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, assignee: agent, status: :resolved) }
   let!(:latest_conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, assignee: agent) }
   let!(:message) { create(:message, account: account, inbox: inbox, conversation: first_conversation, content: 'Нужна справка') }
@@ -73,7 +73,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   it 'does not return an inaccessible thread identifier' do
     custom_role = create(:custom_role, account: account, permissions: ['conversation_participating_manage'])
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
-    hidden_contact = create(:contact, account: account, name: 'Скрытый Петров')
+    hidden_contact = create(:contact, account: account, name: 'Скрытый Петров', email: 'hidden.petrov@example.com')
     hidden = create(:conversation, account: account, inbox: inbox, contact: hidden_contact)
     hidden.reload.refresh_communication_thread!
 
