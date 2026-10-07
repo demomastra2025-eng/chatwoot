@@ -615,6 +615,11 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       end
       let(:contact) { create(:contact, phone_number: '+16503071063', account: whatsapp_channel.account) }
       let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: whatsapp_channel.inbox, source_id: '16503071063') }
+      let(:quoted_reply_params) do
+        reply_params.deep_dup.tap do |payload|
+          payload.dig(:entry, 0, :changes, 0, :value, :messages, 0)[:context] = { from: '16503071063', id: 'wamid.REMINDER_MESSAGE_ID' }
+        end
+      end
 
       before { whatsapp_channel.inbox.update!(lock_to_single_conversation: false) }
 
@@ -659,6 +664,57 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
         expect(reply_message.conversation_id).not_to eq(conversation.id)
         expect(conversation.reload).to be_resolved
+      end
+
+      it 'reopens the notification conversation for a reply that quotes its message even when a newer closed conversation exists',
+         :aggregate_failures do
+        carrier = create_closed_conversation('outbound_automated' => true)
+        reminder_message = create(
+          :message,
+          conversation: carrier,
+          message_type: :outgoing,
+          additional_attributes: { touch_id: 1, touch_source: 'touch' },
+          source_id: 'wamid.REMINDER_MESSAGE_ID',
+          content: 'Appointment reminder'
+        )
+        person_conversation = create_closed_conversation
+
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: quoted_reply_params).perform
+        end.not_to(change(whatsapp_channel.inbox.conversations, :count))
+
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
+        expect(reply_message.conversation_id).to eq(carrier.id)
+        expect(reply_message.content_attributes['in_reply_to']).to eq(reminder_message.id)
+        expect(carrier.reload).to be_open
+        expect(person_conversation.reload).to be_resolved
+      end
+
+      it 'keeps routing a reply to the latest closed conversation when the inbox keeps one conversation per contact', :aggregate_failures do
+        whatsapp_channel.inbox.update!(lock_to_single_conversation: true)
+        create_closed_conversation
+        carrier = create_closed_conversation('outbound_automated' => true)
+
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: reply_params).perform
+        end.not_to(change(whatsapp_channel.inbox.conversations, :count))
+
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
+        expect(reply_message.conversation_id).to eq(carrier.id)
+        expect(carrier.reload).to be_open
+      end
+
+      it 'keeps reopening the latest closed conversation of a person when the inbox keeps one conversation per contact', :aggregate_failures do
+        whatsapp_channel.inbox.update!(lock_to_single_conversation: true)
+        person_conversation = create_closed_conversation
+
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: reply_params).perform
+        end.not_to(change(whatsapp_channel.inbox.conversations, :count))
+
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
+        expect(reply_message.conversation_id).to eq(person_conversation.id)
+        expect(person_conversation.reload).to be_open
       end
     end
 
@@ -862,6 +918,43 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect(confirmation_request.reload).to be_pending
       ensure
         Current.suppress_runtime_events = previous_value
+      end
+
+      # A confirmation request is bound to the conversation that carries the notification, and a reply is matched to the
+      # request through the conversation it lands in, so the reply has to reach that conversation although it is closed.
+      context 'when the request belongs to a closed notification conversation and the inbox has no single-conversation lock' do
+        let(:conversation) do
+          create(
+            :conversation,
+            account: whatsapp_channel.account,
+            inbox: whatsapp_channel.inbox,
+            contact: contact,
+            contact_inbox: contact_inbox,
+            status: :resolved,
+            additional_attributes: { 'outbound_automated' => true }
+          )
+        end
+
+        before { whatsapp_channel.inbox.update!(lock_to_single_conversation: false) }
+
+        it 'routes a plain text reply into that conversation and resolves the request', :aggregate_failures do
+          text_params = confirmation_reply_params(
+            source_id: confirmation_source_id,
+            message_id: 'wamid.CONFIRM_NOTIFICATION_TEXT',
+            message: { type: 'text', text: { body: 'Да' } }
+          )
+
+          expect do
+            described_class.new(inbox: whatsapp_channel.inbox, params: text_params).perform
+          end.not_to(change(whatsapp_channel.inbox.conversations, :count))
+
+          reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.CONFIRM_NOTIFICATION_TEXT')
+          expect(reply_message.conversation_id).to eq(conversation.id)
+          expect(conversation.reload).to be_open
+          expect(confirmation_request.reload).to be_confirmed
+          expect(confirmation_request.resolution_source).to eq('text')
+          expect(confirmation_request.resolved_message).to eq(reply_message)
+        end
       end
     end
   end

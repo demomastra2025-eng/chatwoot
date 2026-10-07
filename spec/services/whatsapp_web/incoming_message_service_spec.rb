@@ -586,4 +586,57 @@ RSpec.describe WhatsappWeb::IncomingMessageService do
       expect(second_message.conversation.contact.reload.phone_number).to eq('+15551234567')
     end
   end
+
+  # WhatsApp Web inherits the Cloud routing (a closed notification conversation is reopened by a reply) and then keeps the
+  # conversation of the contact with the latest activity, so the notification conversation has to win only when it is that one.
+  describe 'a reply when the inbox keeps no single conversation per contact and every conversation is closed' do
+    let(:channel) { create(:channel_whatsapp_web) }
+    let(:inbox) { channel.inbox }
+    let(:contact) { create(:contact, account: inbox.account, phone_number: '+15551234567') }
+    let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: inbox, source_id: '15551234567') }
+    let(:reply_payload) do
+      {
+        key: { id: 'REPLY_TO_NOTIFICATION', remoteJid: '15551234567@s.whatsapp.net' },
+        pushName: 'Reply Author',
+        message: { conversation: 'I will come' }
+      }.with_indifferent_access
+    end
+
+    before { inbox.update!(lock_to_single_conversation: false) }
+
+    def create_closed_conversation(last_activity_at:, additional_attributes: {})
+      create(
+        :conversation,
+        account: inbox.account,
+        inbox: inbox,
+        contact: contact,
+        contact_inbox: contact_inbox,
+        status: :resolved,
+        additional_attributes: additional_attributes
+      ).tap { |conversation| conversation.update_columns(last_activity_at: last_activity_at) } # rubocop:disable Rails/SkipsModelValidations
+    end
+
+    it 'reopens the notification conversation when it has the latest activity', :aggregate_failures do
+      create_closed_conversation(last_activity_at: 3.hours.ago)
+      carrier = create_closed_conversation(last_activity_at: 1.hour.ago, additional_attributes: { 'outbound_automated' => true })
+
+      expect { described_class.new(inbox: inbox, params: reply_payload).perform }.not_to(change(inbox.conversations, :count))
+
+      reply_message = inbox.messages.find_by!(source_id: 'REPLY_TO_NOTIFICATION')
+      expect(reply_message.conversation_id).to eq(carrier.id)
+      expect(carrier.reload).to be_open
+    end
+
+    it 'replies into a conversation of a person that has more recent activity than the notification conversation', :aggregate_failures do
+      carrier = create_closed_conversation(last_activity_at: 3.hours.ago, additional_attributes: { 'outbound_automated' => true })
+      person_conversation = create_closed_conversation(last_activity_at: 1.hour.ago)
+
+      expect { described_class.new(inbox: inbox, params: reply_payload).perform }.not_to(change(inbox.conversations, :count))
+
+      reply_message = inbox.messages.find_by!(source_id: 'REPLY_TO_NOTIFICATION')
+      expect(reply_message.conversation_id).to eq(person_conversation.id)
+      expect(person_conversation.reload).to be_open
+      expect(carrier.reload).to be_resolved
+    end
+  end
 end
