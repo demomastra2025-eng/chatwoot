@@ -796,10 +796,7 @@ defineExpose({
             />
           </div>
           <div class="flex items-center gap-3">
-            <Switch
-              v-model="state.handoffMessageEnabled"
-              class="data-[state=checked]:!bg-n-violet-9"
-            />
+            <Switch v-model="state.handoffMessageEnabled" />
           </div>
         </div>
 
@@ -841,10 +838,7 @@ defineExpose({
             />
           </div>
           <div class="flex items-center gap-3">
-            <Switch
-              v-model="state.resolutionMessageEnabled"
-              class="data-[state=checked]:!bg-n-violet-9"
-            />
+            <Switch v-model="state.resolutionMessageEnabled" />
           </div>
         </div>
 
@@ -1234,10 +1228,7 @@ defineExpose({
               }}
             </p>
           </div>
-          <Switch
-            v-model="state.voiceSettings.interruptionsEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
-          />
+          <Switch v-model="state.voiceSettings.interruptionsEnabled" />
         </div>
         <details
           data-test-id="assistant-voice-silence-settings"
@@ -1260,10 +1251,7 @@ defineExpose({
                   t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_ENABLED')
                 }}
               </span>
-              <Switch
-                v-model="state.voiceSettings.silencePromptEnabled"
-                class="data-[state=checked]:!bg-n-violet-9"
-              />
+              <Switch v-model="state.voiceSettings.silencePromptEnabled" />
             </div>
             <template v-if="state.voiceSettings.silencePromptEnabled">
               <Input
@@ -1331,10 +1319,7 @@ defineExpose({
                     t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_END_CALL')
                   }}
                 </span>
-                <Switch
-                  v-model="state.voiceSettings.endCallOnSilenceEnabled"
-                  class="data-[state=checked]:!bg-n-violet-9"
-                />
+                <Switch v-model="state.voiceSettings.endCallOnSilenceEnabled" />
               </div>
             </template>
           </div>
@@ -1360,7 +1345,6 @@ defineExpose({
           </div>
           <Switch
             v-model="state.voiceSettings.contextWindowCompressionEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
           />
         </div>
         <div
@@ -1380,10 +1364,7 @@ defineExpose({
               }}
             </p>
           </div>
-          <Switch
-            v-model="state.voiceSettings.proactiveAudioEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
-          />
+          <Switch v-model="state.voiceSettings.proactiveAudioEnabled" />
         </div>
         <div
           v-if="isAffectiveDialogSupported"
@@ -1402,10 +1383,7 @@ defineExpose({
               }}
             </p>
           </div>
-          <Switch
-            v-model="state.voiceSettings.affectiveDialogEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
-          />
+          <Switch v-model="state.voiceSettings.affectiveDialogEnabled" />
         </div>
       </div>
     </details>
