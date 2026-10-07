@@ -68,6 +68,24 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     )
   end
 
+  it 'uses split timetable reads for a live search longer than seven calendar days' do
+    allow(client).to receive(:timetable_range).and_return(
+      '07.09.2026' => { 'timetable' => [
+        { 'start' => '07.09.2026 09:00', 'end' => '07.09.2026 11:00', 'working' => true }
+      ] }
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(resource: resource, from: from_time, to: to_time + 8.days,
+                                 slots: slots, client: client).perform
+
+    expect(result.status).to eq('fresh')
+    expect(client).to have_received(:timetable_range).with(
+      specialist_code: 'specialist-1', starts_on: Date.new(2026, 9, 7), ends_on: Date.new(2026, 9, 15)
+    )
+    expect(client).not_to have_received(:timetable)
+  end
+
   it 'fails closed instead of returning local slots when the provider is unavailable' do
     allow(client).to receive(:timetable).and_raise(
       Integrations::Medelement::Client::ApiError.new('timeout', status: 504)

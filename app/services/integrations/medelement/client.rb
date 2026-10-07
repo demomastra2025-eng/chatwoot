@@ -21,6 +21,8 @@ class Integrations::Medelement::Client
   class InvalidTimetableError < ApiError; end
 
   BASE_URL = 'https://api3.medelement.com'.freeze
+  # The provider accepts at most seven calendar days, including both endpoints.
+  MAX_TIMETABLE_DAYS = 7
 
   def initialize(configuration:)
     @request = Integrations::Medelement::Request.new(configuration: configuration)
@@ -70,6 +72,10 @@ class Integrations::Medelement::Client
   end
 
   def timetable(specialist_code:, starts_on:, ends_on:, allow_partial: false)
+    starts_on = starts_on.to_date
+    ends_on = ends_on.to_date
+    validate_timetable_range!(starts_on, ends_on)
+
     payload = request.call(
       :get,
       '/v1/timetable/get_timetable',
@@ -91,6 +97,17 @@ class Integrations::Medelement::Client
 
     Rails.logger.warn('[MEDELEMENT::TIMETABLE] Invalid day response')
     raise InvalidTimetableError, 'Medelement timetable day is invalid'
+  end
+
+  def timetable_range(specialist_code:, starts_on:, ends_on:, allow_partial: false)
+    starts_on = starts_on.to_date
+    ends_on = ends_on.to_date
+    raise ArgumentError, 'Medelement timetable range must contain at least 1 day' if ends_on < starts_on
+
+    (starts_on..ends_on).each_slice(MAX_TIMETABLE_DAYS).with_object({}) do |dates, merged|
+      merged.merge!(timetable(specialist_code: specialist_code, starts_on: dates.first,
+                              ends_on: dates.last, allow_partial: allow_partial))
+    end
   end
 
   def get_receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
@@ -177,6 +194,12 @@ class Integrations::Medelement::Client
   private
 
   attr_reader :request
+
+  def validate_timetable_range!(starts_on, ends_on)
+    return if (0...MAX_TIMETABLE_DAYS).cover?((ends_on - starts_on).to_i)
+
+    raise ArgumentError, 'Medelement timetable range must contain 1 to 7 days'
+  end
 
   def indexed_patient_search(pairs)
     request.indexed_get(

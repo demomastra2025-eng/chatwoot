@@ -71,11 +71,14 @@ class Integrations::Medelement::ResourceAvailabilityService
   end
 
   def provider_working_windows
-    payload = client.timetable(
-      specialist_code: specialist_code,
-      starts_on: @from.in_time_zone(resource.timezone).to_date,
-      ends_on: @to.in_time_zone(resource.timezone).to_date
-    )
+    starts_on = @from.in_time_zone(resource.timezone).to_date
+    ends_on = @to.in_time_zone(resource.timezone).to_date
+    method = if (ends_on - starts_on).to_i >= Integrations::Medelement::Client::MAX_TIMETABLE_DAYS
+               :timetable_range
+             else
+               :timetable
+             end
+    payload = client.public_send(method, specialist_code: specialist_code, starts_on: starts_on, ends_on: ends_on)
 
     rows = timetable_rows(payload)
     rows.filter_map do |row|

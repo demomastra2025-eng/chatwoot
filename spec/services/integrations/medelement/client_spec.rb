@@ -275,6 +275,38 @@ RSpec.describe Integrations::Medelement::Client do
   end
 
   describe '#timetable' do
+    it 'rejects eight inclusive days before making an HTTP request' do
+      request = stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+
+      expect do
+        client.timetable(specialist_code: 'specialist-1', starts_on: Date.new(2026, 7, 27),
+                         ends_on: Date.new(2026, 8, 3))
+      end.to raise_error(ArgumentError, /1 to 7 days/)
+      expect(request).not_to have_been_requested
+    end
+
+    it 'sends seven inclusive days in one request' do
+      request = stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+                .with(query: { 'date' => ['27.07.2026', '02.08.2026'], 'specialistCode' => 'specialist-1' })
+                .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      client.timetable(specialist_code: 'specialist-1', starts_on: Date.new(2026, 7, 27),
+                       ends_on: Date.new(2026, 8, 2), allow_partial: true)
+
+      expect(request).to have_been_requested.once
+    end
+
+    it 'maps the provider seven-day error to ApiError' do
+      stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+        .to_return(status: 400, body: { message: 'Расписание можно получить за период не превышающий 7 дней' }.to_json,
+                   headers: { 'Content-Type' => 'application/json' })
+
+      expect do
+        client.timetable(specialist_code: 'specialist-1', starts_on: Date.new(2026, 7, 27),
+                         ends_on: Date.new(2026, 7, 27))
+      end.to raise_error(described_class::ApiError) { |error| expect(error.status).to eq(400) }
+    end
+
     it 'requests one inclusive range and leaves partial days for the sync service to classify' do
       request = stub_request(
         :get,
@@ -315,6 +347,30 @@ RSpec.describe Integrations::Medelement::Client do
                          ends_on: Date.new(2026, 7, 27))
       end.to raise_error(described_class::InvalidTimetableError)
       expect(Rails.logger).to have_received(:warn).with('[MEDELEMENT::TIMETABLE] Invalid day response')
+    end
+  end
+
+  describe '#timetable_range' do
+    it 'splits an arbitrary range into consecutive seven-day windows and merges dates' do
+      requests = []
+      stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+        .to_return do |request|
+          query = URI.decode_www_form(request.uri.query).to_h
+          starts_on = Date.strptime(query.fetch('date[0]'), '%d.%m.%Y')
+          ends_on = Date.strptime(query.fetch('date[1]'), '%d.%m.%Y')
+          requests << [starts_on, ends_on]
+          { status: 200, body: (starts_on..ends_on).to_h do |day|
+            [day.strftime('%d.%m.%Y'), { 'timetable' => [] }]
+          end.to_json, headers: { 'Content-Type' => 'application/json' } }
+        end
+
+      result = client.timetable_range(specialist_code: 'specialist-1', starts_on: Date.new(2026, 7, 27),
+                                      ends_on: Date.new(2026, 8, 11))
+
+      expect(requests).to eq([[Date.new(2026, 7, 27), Date.new(2026, 8, 2)],
+                              [Date.new(2026, 8, 3), Date.new(2026, 8, 9)],
+                              [Date.new(2026, 8, 10), Date.new(2026, 8, 11)]])
+      expect(result.keys).to eq((Date.new(2026, 7, 27)..Date.new(2026, 8, 11)).map { |day| day.strftime('%d.%m.%Y') })
     end
   end
 
