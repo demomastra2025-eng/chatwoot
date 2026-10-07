@@ -1,5 +1,5 @@
 class Integrations::Medelement::ProviderSchedulePresenter
-  HORIZON_DAYS = Integrations::Medelement::SchedulesSyncService::SCHEDULE_HORIZON_DAYS
+  DISPLAY_HORIZON_DAYS = 30
 
   def initialize(account:, resources:, now: Time.current)
     @account = account
@@ -32,7 +32,7 @@ class Integrations::Medelement::ProviderSchedulePresenter
     @today = now.in_time_zone(Integrations::Medelement::Configuration.new(hook: hook).time_zone).to_date
     Integrations::Medelement::ScheduleDay.where(
       account_id: account.id, hook_id: hook.id, resource_id: linked_resources.map(&:id),
-      date: @today...(@today + HORIZON_DAYS)
+      date: @today...(@today + DISPLAY_HORIZON_DAYS)
     ).order(:date).group_by(&:resource_id)
   end
 
@@ -44,14 +44,14 @@ class Integrations::Medelement::ProviderSchedulePresenter
     by_date = resource_days.index_by(&:date)
     {
       checked_at: resource_days.filter_map(&:source_checked_at).max&.iso8601,
-      horizon_days: HORIZON_DAYS,
-      days: Array.new(HORIZON_DAYS) { |offset| day_payload(by_date[@today + offset], @today + offset) },
+      horizon_days: DISPLAY_HORIZON_DAYS,
+      days: Array.new(DISPLAY_HORIZON_DAYS) { |offset| day_payload(by_date[@today + offset], @today + offset) },
       differs_from_template: resource_days.any? { |day| differs?(day, rules) }
     }
   end
 
   def empty_payload
-    { checked_at: nil, horizon_days: HORIZON_DAYS, days: [], differs_from_template: false }
+    { checked_at: nil, horizon_days: DISPLAY_HORIZON_DAYS, days: [], differs_from_template: false }
   end
 
   def day_payload(day, date)

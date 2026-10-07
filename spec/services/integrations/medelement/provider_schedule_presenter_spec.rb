@@ -25,11 +25,12 @@ RSpec.describe Integrations::Medelement::ProviderSchedulePresenter do
     presented = described_class.new(account: account, resources: [resource, local], now: now).payloads
     payload = Scheduling::PayloadBuilder.resource(resource, provider_schedule: presented.fetch(resource))
 
-    expect(payload[:provider_schedule]).to include(checked_at: now.iso8601, horizon_days: 14, differs_from_template: true)
+    expect(payload[:provider_schedule]).to include(checked_at: now.iso8601, horizon_days: 30, differs_from_template: true)
     expect(payload.dig(:provider_schedule, :days).first).to eq(
       date: date.iso8601, windows: [{ start: '10:00', end: '12:00' }], status: 'confirmed'
     )
-    expect(payload.dig(:provider_schedule, :days).size).to eq(14)
+    expect(payload.dig(:provider_schedule, :days).size).to eq(30)
+    expect(payload.dig(:provider_schedule, :days).last[:date]).to eq((date + 29).iso8601)
     expect(presented).not_to have_key(local)
     expect(Scheduling::PayloadBuilder.resource(local)).not_to have_key(:provider_schedule)
   end
@@ -39,7 +40,7 @@ RSpec.describe Integrations::Medelement::ProviderSchedulePresenter do
 
     payload = described_class.new(account: account, resources: [resource], now: now).payloads.fetch(resource)
 
-    expect(payload).to include(checked_at: nil, horizon_days: 14, differs_from_template: false)
+    expect(payload).to include(checked_at: nil, horizon_days: 30, differs_from_template: false)
     expect(payload[:days].first).to eq(date: date.iso8601, windows: [], status: 'unverified')
   end
 end
