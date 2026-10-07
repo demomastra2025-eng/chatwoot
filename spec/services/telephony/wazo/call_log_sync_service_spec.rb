@@ -15,9 +15,10 @@ RSpec.describe Telephony::Wazo::CallLogSyncService do
                                               routing_mode: 'operator' })
   end
   let(:inbox) { channel.inbox }
-  let(:binding) { Telephony::NumberBinding.find_by!(inbox: inbox) }
+  let(:binding) { Telephony::NumberBinding.sync_from_voice_channel!(channel) }
   let(:user) { create(:user, account: account, role: :agent) }
   let!(:profile) do
+    binding
     create(:telephony_sip_profile, account: account, inbox: inbox, provider_connection: connection,
                                    user: user, internal_extension: '101', status: 'active')
   end
