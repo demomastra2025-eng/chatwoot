@@ -259,6 +259,27 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     )
   end
 
+  it 'continues after a uniqueness error on one specialist row' do
+    existing = create(:scheduling_resource, account: account,
+                                            custom_attributes: { 'medelement_specialist_code' => 'duplicate-code' })
+    allow(existing).to receive(:save!).and_raise(ActiveRecord::RecordNotUnique, 'synthetic conflict')
+    allow(client).to receive(:specialists).and_return(
+      [
+        { 'specialistCode' => 'duplicate-code', 'userName' => 'Duplicate' },
+        { 'specialistCode' => 'valid-code', 'userName' => 'Valid' }
+      ]
+    )
+    tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: true)
+    sync = described_class.new(account: account, client: client, configuration: configuration,
+                               conflict_tracker: tracker)
+    allow(sync).to receive(:find_resource).and_call_original
+    allow(sync).to receive(:find_resource).with('duplicate-code').and_return(existing)
+
+    expect(sync.perform).to include(imported_count: 1, skipped_count: 1)
+    expect(account.scheduling_resources.find_by("custom_attributes ->> 'medelement_specialist_code' = ?", 'valid-code')).to be_present
+    expect(tracker).to have_received(:record!).with(hash_including(entity_key: 'duplicate-code', conflict_type: 'invalid_specialist'))
+  end
+
   it 'replaces legacy 24/7 Medelement default rules with the new business schedule' do
     resource = create(
       :scheduling_resource,
