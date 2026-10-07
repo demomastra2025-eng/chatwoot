@@ -54,7 +54,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   end
 
   it 'does not expose a hidden conversation or use it as the contact target' do
-    custom_role = create(:custom_role, account: account, permissions: ['conversation_participating_manage'])
+    custom_role = create(:custom_role, account: account, permissions: %w[conversation_participating_manage contact_manage])
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     colleague = create(:user, account: account, role: :agent)
     hidden = create(:conversation, account: account, inbox: inbox, contact: contact, assignee: colleague)
@@ -71,7 +71,7 @@ RSpec.describe 'Global search conversation navigation', type: :request do
   end
 
   it 'does not return an inaccessible thread identifier' do
-    custom_role = create(:custom_role, account: account, permissions: ['conversation_participating_manage'])
+    custom_role = create(:custom_role, account: account, permissions: %w[conversation_participating_manage contact_manage])
     agent.account_users.find_by(account: account).update!(custom_role: custom_role)
     hidden_contact = create(:contact, account: account, name: 'Скрытый Петров', email: 'hidden.petrov@example.com')
     hidden = create(:conversation, account: account, inbox: inbox, contact: hidden_contact)
