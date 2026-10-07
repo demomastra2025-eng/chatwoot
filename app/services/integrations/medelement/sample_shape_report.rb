@@ -6,8 +6,8 @@ class Integrations::Medelement::SampleShapeReport
   end
 
   def render
-    sections = [header, fields('Поля врача', doctor_rows), fields('Поля строки расписания', timetable_rows),
-                day_section, doctor_section, timing_section]
+    sections = [header, observed_contract, fields('Поля врача', doctor_rows),
+                fields('Поля строки расписания', timetable_rows), day_section, doctor_section, timing_section]
     "#{sections.join("\n\n")}\n"
   end
 
@@ -23,6 +23,26 @@ class Integrations::Medelement::SampleShapeReport
       "Врачей в ответе: #{doctor_rows.size}; выбрано: #{doctors.size}; " \
       "кабинетов в ответе: #{cabinet_count}; у выбранных врачей: #{selected_cabinet_count}.",
       'Данные в samples.json уже обезличены. Код кабинета заменён стабильным коротким хешем.'
+    ].join("\n")
+  end
+
+  def observed_contract
+    [
+      '## Подтверждённые формы API (тестовая организация, 07.10.2026)',
+      '- get_specialists: объект с ключами-кодами врачей; specialistCode может быть числом больше точного диапазона JavaScript. ' \
+        'isSchedulePublished наблюдался как число 1; случай 0 не проверен. Нет признака полноты, отключения или пагинации.',
+      '- get_timetable: GET с date[0], date[1] (включительно) и одним specialistCode. Без кода врача получен HTTP 400. ' \
+        'Рабочие интервалы наблюдались на +90 дней.',
+      '- W: timetable содержит рабочие интервалы; specialistWorkingHours — объект со start, end, ' \
+        'start_lunch, end_lunch и time_off. clinicWorkingHours — объект start/end.',
+      '- D: timetable пуст, specialistWorkingHours равен строке "day off". ' \
+        'Синхронизация подтверждает выходной после двух наблюдений подряд.',
+      '- P: timetable пуст, specialistWorkingHours — объект часов. Это непроверенный день, не выходной.',
+      '- Наблюдался end раньше start (08:00–00:00) при clinicWorkingHours 00:00–00:00; ' \
+        'его нельзя трактовать как выходной или отпуск.',
+      '- working=false означает нерабочий интервал, не запись пациента; time_off — интервалы отсутствия, ' \
+        'start_lunch/end_lunch — обед. by_update_date относится к приёмам, не к изменениям расписания.',
+      '- Лимит RPS и Retry-After не задокументированы; единичный HTTP 429 не воспроизведён.'
     ].join("\n")
   end
 
@@ -69,8 +89,9 @@ class Integrations::Medelement::SampleShapeReport
   def day_section
     lines = [
       '## Дни и ответы',
-      'Client возвращает объект по дате с объектом дня; исходный верхний контейнер API через Client не виден.',
-      'Пустой timetable не позволяет отличить выходной от дня вне опубликованного горизонта.'
+      'Client возвращает объект с ключами дат dd.MM.yyyy; каждый ключ содержит объект дня.',
+      'Пустой timetable подтверждает выходной только со строкой specialistWorkingHours="day off"; ' \
+        'при объекте часов день остаётся непроверенным.'
     ]
     lines.concat(Integrations::Medelement::SampleCapture::OFFSETS.map { |offset| day_line(offset) })
     lines.join("\n")

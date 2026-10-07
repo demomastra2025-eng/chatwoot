@@ -68,7 +68,8 @@ RSpec.describe Integrations::Medelement::SampleCapture do
 
       expect(samples).not_to include('Synthetic Doctor', 'synthetic_token_value', '+7 700', 'C-1')
       expect(shapes).to include('Поля врача', 'Поля строки расписания', '2026-10-04', 'опубликован=false')
-      expect(shapes).to include('верхний контейнер API через Client не виден')
+      expect(shapes).to include('объект с ключами дат dd.MM.yyyy')
+      expect(shapes).to include('specialistWorkingHours="day off"', 'date[0]', 'by_update_date')
       expect(capture.summary.size).to eq(10)
     end
   end
