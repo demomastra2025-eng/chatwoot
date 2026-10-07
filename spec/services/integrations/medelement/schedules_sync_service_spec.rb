@@ -107,9 +107,13 @@ RSpec.describe Integrations::Medelement::SchedulesSyncService do
 
     resource.update!(custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => (now + 25.hours).iso8601))
     requested_dates.clear
+    expect(Integrations::Medelement::ScheduleDay.find_by(resource: resource, date: date + 90)).to be_nil
     expect(sync(at: now + 25.hours)).to include(request_count: 13, updated_count: 89, created_count: 1)
-    expect(requested_dates.first).to eq([date + 1, date + 7])
-    expect(requested_dates.last).to eq([date + 85, date + 90])
+    expect(requested_dates).to eq(
+      [[date + 85, date + 90], [date + 8, date + 14]] +
+      (15..78).step(7).map { |offset| [date + offset, date + offset + 6] } +
+      [[date + 1, date + 7]]
+    )
   end
 
   it 'caps HTTP windows and leaves unrefreshed days due for later runs' do
