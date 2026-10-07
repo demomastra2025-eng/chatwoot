@@ -2708,7 +2708,11 @@ const toggleArchived = async deal => {
     // Defined with the board loader below; this handler only runs after setup.
     // eslint-disable-next-line no-use-before-define
     const acceptedDeal = await applyDealMutation(updatedDeal);
-    if (currentPresentation.value === 'board') await loadDeals();
+    if (currentPresentation.value === 'board') {
+      // Declared with the board loader below; this handler runs after setup.
+      // eslint-disable-next-line no-use-before-define
+      await loadDeals();
+    }
     if (
       selectedDeal.value &&
       Number(selectedDeal.value.id) === Number(acceptedDeal.id)

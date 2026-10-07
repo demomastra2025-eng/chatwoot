@@ -37,7 +37,10 @@ describe('filterVisibleBoardStages', () => {
 
   it('never renders inactive stages', () => {
     expect(
-      filterVisibleBoardStages([{ id: 4, active: false, outcome: 'open' }], true)
+      filterVisibleBoardStages(
+        [{ id: 4, active: false, outcome: 'open' }],
+        true
+      )
     ).toEqual([]);
   });
 });
@@ -56,10 +59,12 @@ describe('visibleBoardTotals', () => {
       amounts: { KZT: 37650, USD: 60075 },
       count: 6,
     });
-    expect(visibleBoardTotals([...stages, { id: 3 }], counts, amounts)).toEqual({
-      amounts: { KZT: 25112550, USD: 60075 },
-      count: 257,
-    });
+    expect(visibleBoardTotals([...stages, { id: 3 }], counts, amounts)).toEqual(
+      {
+        amounts: { KZT: 25112550, USD: 60075 },
+        count: 257,
+      }
+    );
   });
 });
 
