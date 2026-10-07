@@ -4,7 +4,9 @@ export const isTerminalStage = stage =>
   TERMINAL_STAGE_OUTCOMES.has(String(stage?.outcome || '').toLowerCase());
 
 export const filterVisibleBoardStages = (stages = [], showInactive = false) =>
-  showInactive ? stages : stages.filter(stage => !isTerminalStage(stage));
+  stages.filter(
+    stage => stage.active !== false && (showInactive || !isTerminalStage(stage))
+  );
 
 export const filterVisibleBoardDeals = (deals = [], stages = []) => {
   const visibleStageIds = new Set(
@@ -14,4 +16,23 @@ export const filterVisibleBoardDeals = (deals = [], stages = []) => {
   );
 
   return deals.filter(deal => visibleStageIds.has(Number(deal.stageId)));
+};
+
+export const visibleBoardTotals = (
+  stages = [],
+  stageCounts = {},
+  stageAmounts = {}
+) => {
+  const amounts = {};
+  const count = stages.reduce((total, stage) => {
+    const stageId = String(stage.id);
+    Object.entries(stageAmounts[stageId] || {}).forEach(
+      ([currency, amount]) => {
+        amounts[currency] = (amounts[currency] || 0) + Number(amount);
+      }
+    );
+    return total + Number(stageCounts[stageId] || 0);
+  }, 0);
+
+  return { amounts, count };
 };

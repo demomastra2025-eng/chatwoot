@@ -97,6 +97,7 @@ import {
 import {
   filterVisibleBoardDeals,
   filterVisibleBoardStages,
+  visibleBoardTotals,
 } from 'dashboard/routes/dashboard/crm/boardVisibility';
 import {
   amountsAfterDealUpdate,
@@ -543,6 +544,7 @@ const boardStages = computed(() => {
   return pipelines.flatMap(pipeline =>
     (pipeline.stages || []).map(stage => ({
       color: resolveStageDisplayColor(stage.color),
+      active: stage.active,
       code: stage.code,
       id: stage.id,
       label: stageDisplayName(stage),
@@ -1124,12 +1126,23 @@ const formatAggregateAmounts = amounts => {
     )
     .join(' · ');
 };
-const pipelineSummary = computed(() =>
-  t('CRM.DEALS.PIPELINE_SUMMARY', {
-    amount: formatAggregateAmounts(dealsMeta.value.pipelineAmountsMinor),
-    count: Number(dealsMeta.value.totalCount || 0),
-  })
-);
+const pipelineSummary = computed(() => {
+  const boardTotals = visibleBoardTotals(
+    visibleBoardStages.value,
+    stageCounts.value,
+    stageAmountsMinor.value
+  );
+  const isBoard = currentPresentation.value === 'board';
+
+  return t('CRM.DEALS.PIPELINE_SUMMARY', {
+    amount: formatAggregateAmounts(
+      isBoard ? boardTotals.amounts : dealsMeta.value.pipelineAmountsMinor
+    ),
+    count: isBoard
+      ? boardTotals.count
+      : Number(dealsMeta.value.totalCount || 0),
+  });
+});
 
 const dealListRowClass = row => [
   row.archivedAt ? 'opacity-75' : '',
@@ -2695,6 +2708,7 @@ const toggleArchived = async deal => {
     // Defined with the board loader below; this handler only runs after setup.
     // eslint-disable-next-line no-use-before-define
     const acceptedDeal = await applyDealMutation(updatedDeal);
+    if (currentPresentation.value === 'board') await loadDeals();
     if (
       selectedDeal.value &&
       Number(selectedDeal.value.id) === Number(acceptedDeal.id)
@@ -2739,6 +2753,7 @@ const buildDealsFetchParams = page => {
     q_numeric_alias: customFieldSearchAliases.value.numericAlias || undefined,
     sort_by: isList ? listSort.value.key || undefined : undefined,
     sort_direction: isList ? listSort.value.direction || undefined : undefined,
+    show_closed_stages: isBoard && filters.showInactive ? true : undefined,
     stage_id: filters.stageId || undefined,
     team_id: filters.teamId || undefined,
   });

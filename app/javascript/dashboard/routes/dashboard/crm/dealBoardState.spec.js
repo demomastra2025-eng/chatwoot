@@ -65,6 +65,25 @@ describe('dealBoardState', () => {
     expect(stageAmounts[10].KZT).toBe(22500);
   });
 
+  it('replaces an edited amount and currency without mutating previous totals', () => {
+    const previous = { amountMinor: 12550, currency: 'KZT', stageId: 10 };
+    const next = { amountMinor: 2075, currency: 'USD', stageId: 10 };
+    const amounts = { 10: { KZT: 12550 } };
+
+    expect(amountsAfterDealUpdate(amounts, previous, next, true)).toEqual({
+      10: { USD: 2075 },
+    });
+    expect(amounts).toEqual({ 10: { KZT: 12550 } });
+  });
+
+  it('removes an archived or deleted deal amount from the visible totals', () => {
+    const previous = { amountMinor: 12550, currency: 'KZT', stageId: 10 };
+
+    expect(
+      amountsAfterDealUpdate({ 10: { KZT: 12550 } }, previous, null, true)
+    ).toEqual({ 10: {} });
+  });
+
   it('matches inclusive created-at ranges', () => {
     const deal = { createdAt: '2026-09-04T12:00:00Z' };
 

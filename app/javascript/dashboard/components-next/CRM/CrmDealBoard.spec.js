@@ -75,6 +75,23 @@ describe('CrmDealBoard', () => {
     expect(wrapper.find('[data-test="empty-deal-stage"]').exists()).toBe(false);
   });
 
+  it('shows only the supplied stage columns with their own counts and amounts', () => {
+    const wrapper = mountBoard({
+      stages: [stages[0]],
+      deals: [{ id: 1, stageId: 1, title: 'Open deal' }],
+      stageCounts: { 1: 6, 2: 251 },
+      stageAmountsMinor: { 1: { KZT: 12550 }, 2: { KZT: 999000 } },
+    });
+
+    expect(
+      wrapper.findAll('[data-test="stage-deal-count"]').map(item => item.text())
+    ).toEqual(['6']);
+    expect(wrapper.find('[data-test="stage-amounts"]').text()).toContain(
+      '125.5 KZT'
+    );
+    expect(wrapper.text()).not.toContain('251');
+  });
+
   it('shows an incremental busy state before a manual retry state', () => {
     const loadingBoard = mountBoard({
       hasMore: true,

@@ -4,6 +4,7 @@ import {
   filterVisibleBoardDeals,
   filterVisibleBoardStages,
   isTerminalStage,
+  visibleBoardTotals,
 } from './boardVisibility';
 
 describe('isTerminalStage', () => {
@@ -32,6 +33,33 @@ describe('filterVisibleBoardStages', () => {
 
   it('includes terminal stages when explicitly requested', () => {
     expect(filterVisibleBoardStages(stages, true)).toEqual(stages);
+  });
+
+  it('never renders inactive stages', () => {
+    expect(
+      filterVisibleBoardStages([{ id: 4, active: false, outcome: 'open' }], true)
+    ).toEqual([]);
+  });
+});
+
+describe('visibleBoardTotals', () => {
+  it('sums only rendered stages and keeps currencies separate', () => {
+    const stages = [{ id: 1 }, { id: 2 }];
+    const counts = { 1: 3, 2: 3, 3: 251 };
+    const amounts = {
+      1: { KZT: 37650 },
+      2: { USD: 60075 },
+      3: { KZT: 25074900 },
+    };
+
+    expect(visibleBoardTotals(stages, counts, amounts)).toEqual({
+      amounts: { KZT: 37650, USD: 60075 },
+      count: 6,
+    });
+    expect(visibleBoardTotals([...stages, { id: 3 }], counts, amounts)).toEqual({
+      amounts: { KZT: 25112550, USD: 60075 },
+      count: 257,
+    });
   });
 });
 
