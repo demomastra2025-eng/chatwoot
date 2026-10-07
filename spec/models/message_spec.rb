@@ -593,6 +593,22 @@ RSpec.describe Message do
 
       expect(conversation.reload).to be_resolved
     end
+
+    it 'recognizes automated outbound messages and not the messages of people', :aggregate_failures do
+      conversation = create(:conversation, account: account)
+
+      %i[touch_from_user touch_from_assistant automation_rule campaign].each do |kind|
+        expect(automated_message(kind, conversation)).to be_automated_outbound_message
+      end
+
+      reply = build(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :outgoing)
+      incoming = build(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :incoming,
+                                 content_attributes: { touch_id: 1 })
+      private_note = automated_message(:touch_from_user, conversation).tap { |message| message.private = true }
+      expect(reply).not_to be_automated_outbound_message
+      expect(incoming).not_to be_automated_outbound_message
+      expect(private_note).not_to be_automated_outbound_message
+    end
   end
 
   describe 'a contact reply to a closed automated notification conversation' do
@@ -632,6 +648,60 @@ RSpec.describe Message do
       expect(conversation.reload).to be_open
       expect(communication_thread.reload).to be_open
       expect(communication_thread.session_started_at).to be_within(0.001.seconds).of(reply.created_at)
+    end
+
+    context 'when communication threads are enabled and the notifications were sent while the thread was closed' do
+      let(:administrator) { create(:user, :administrator, account: account) }
+      let(:conversation) { create(:conversation, account: account, status: :resolved, additional_attributes: notification_attributes) }
+      let!(:communication_thread) do
+        conversation
+        account.enable_features!('communication_threads')
+        conversation.reload.refresh_communication_thread!
+      end
+
+      def send_message(created_at:, automated: true)
+        attributes = automated ? { content_attributes: { touch_id: 1, touch_source: 'touch' } } : {}
+        create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: :outgoing,
+                         created_at: created_at, **attributes)
+      end
+
+      def visible_messages
+        allow(administrator).to receive(:account).and_return(account)
+        CommunicationThreadMessageFinder.new(communication_thread: communication_thread.reload, current_user: administrator).perform
+      end
+
+      it 'starts the thread session at the oldest unanswered notification so that it stays visible', :aggregate_failures do
+        first_notification = send_message(created_at: 3.hours.ago)
+        second_notification = send_message(created_at: 2.hours.ago)
+
+        reply = reply_to(conversation)
+
+        expect(conversation.reload).to be_open
+        expect(communication_thread.reload.session_started_at).to be_within(0.001.seconds).of(first_notification.created_at)
+        expect(visible_messages).to include(first_notification, second_notification, reply)
+      end
+
+      it 'does not reach back before a reply of an agent that answered the earlier notifications' do
+        send_message(created_at: 4.hours.ago)
+        send_message(created_at: 3.hours.ago, automated: false)
+        unanswered_notification = send_message(created_at: 2.hours.ago)
+
+        reply_to(conversation)
+
+        expect(communication_thread.reload.session_started_at).to be_within(0.001.seconds).of(unanswered_notification.created_at)
+      end
+
+      context 'when the conversation is not a notification conversation' do
+        let(:notification_attributes) { {} }
+
+        it 'starts the thread session at the reply' do
+          send_message(created_at: 2.hours.ago)
+
+          reply = reply_to(conversation)
+
+          expect(communication_thread.reload.session_started_at).to be_within(0.001.seconds).of(reply.created_at)
+        end
+      end
     end
   end
 

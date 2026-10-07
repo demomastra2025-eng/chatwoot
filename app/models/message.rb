@@ -41,6 +41,8 @@
 
 class Message < ApplicationRecord
   CONVERSATION_UNREAD_COUNT_UNSET = Object.new.freeze
+  # How many of a notification conversation's latest messages are looked at to find where the unanswered automated messages begin.
+  UNANSWERED_AUTOMATED_LOOKBACK = 100
   NOT_IMPORTED_HISTORY_SQL_TEMPLATE = <<~'SQL'.squish.freeze
     NOT CASE json_typeof(%<table>s.content_attributes)
     WHEN 'object' THEN LOWER(COALESCE(%<table>s.content_attributes ->> 'imported_history', 'false')) = 'true'
@@ -352,6 +354,19 @@ class Message < ApplicationRecord
     content_attributes.to_h.dig('data', 'type') == 'ai_voice_transcript_turn'
   end
 
+  # A public outgoing message the system sends on its own: a touch (reminder, follow-up), an automation rule action or a
+  # campaign message.
+  def automated_outbound_message?
+    return false unless outgoing? && !private?
+
+    content_metadata = message_attributes_hash(content_attributes)
+    additional_metadata = message_attributes_hash(additional_attributes)
+    [
+      content_metadata['touch_id'], content_metadata['automation_rule_id'],
+      additional_metadata['touch_id'], additional_metadata['campaign_id']
+    ].any?(&:present?)
+  end
+
   private
 
   def prevent_message_flooding
@@ -568,8 +583,26 @@ class Message < ApplicationRecord
   def reopen_locked_conversation(communication_thread)
     return unless conversation.resolved?
 
-    communication_thread.update!(session_started_at: created_at) if communication_thread.resolved?
+    communication_thread.update!(session_started_at: communication_session_started_at) if communication_thread.resolved?
     perform_reopen_transition
+  end
+
+  # A reply to a closed notification conversation keeps the notification in view. It was sent while the thread was closed, so
+  # a session that starts at the reply would hide it from the default thread view (the session filter); the session starts
+  # at the oldest automated message that nothing has answered yet instead.
+  def communication_session_started_at
+    return created_at unless conversation.automated_outbound_conversation?
+
+    [unanswered_automated_message_created_at, created_at].compact.min
+  end
+
+  # The conversation's latest public messages, newest first, up to the first one that is not an automated outbound message
+  # (an incoming message, or a reply of an agent or a bot, answers the notifications before it).
+  def unanswered_automated_message_created_at
+    latest_messages = conversation.messages.where.not(id: id)
+                                  .where(message_type: %i[incoming outgoing], private: false)
+                                  .reorder(id: :desc).limit(UNANSWERED_AUTOMATED_LOOKBACK).to_a
+    latest_messages.take_while(&:automated_outbound_message?).last&.created_at
   end
 
   def perform_reopen_transition
