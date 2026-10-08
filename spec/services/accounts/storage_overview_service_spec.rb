@@ -1,0 +1,75 @@
+# frozen_string_literal: true
+
+require 'rails_helper'
+require 'fileutils'
+
+RSpec.describe Accounts::StorageOverviewService do
+  include_context 'with isolated recording storage'
+
+  let(:account) { create(:account) }
+  let(:service) { described_class.new(account: account) }
+  let(:storage_test_cache) { ActiveSupport::Cache::MemoryStore.new }
+
+  before do
+    allow(Rails).to receive(:cache).and_return(storage_test_cache)
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+  end
+
+  after do
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_v1")
+    Redis::Alfred.delete("account:#{account.id}:storage_overview_refresh_v1")
+  end
+
+  it 'refreshes the same category, inbox, and quota numbers as the existing calculation' do
+    inboxes = create_list(:inbox, 2, account: account)
+    [[:image, 'photo.png', 'image/png'], [:file, 'report.pdf', 'application/pdf']].each_with_index do |(type, name, content_type), index|
+      message = create(:message, account: account, inbox: inboxes[index])
+      attachment = message.attachments.new(account_id: account.id, file_type: type)
+      attachment.file.attach(io: StringIO.new('fixture' * (index + 1)), filename: name, content_type: content_type)
+      attachment.save!
+    end
+    recording_path = Storage::RecordingPaths.root.join('voice-recordings', 'fixture', account.id.to_s, 'call.wav')
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.write(recording_path, 'recording fixture')
+    create(:telephony_call_session, account: account, inbox: inboxes.first,
+                                    recording_ref: "voice-recordings/fixture/#{account.id}/call.wav")
+
+    expected_breakdown = account.calculate_storage_breakdown
+    expected_limits = AccountLimits::StorageUsageService.new(account: account).summary
+    Accounts::StorageBreakdownRefreshJob.perform_now(account.id)
+    snapshot = service.snapshot
+
+    expect(snapshot[:breakdown].except(:last_updated_at)).to eq(expected_breakdown.except(:last_updated_at))
+    expect(snapshot[:limits]).to eq(expected_limits)
+    expect(snapshot[:breakdown][:recordings]).to eq(File.size(recording_path))
+    expect(service.snapshot).to eq(snapshot)
+  end
+
+  it 'sets a transaction-local timeout for the aggregate queries' do
+    statements = []
+    subscriber = ->(*, payload) { statements << payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') { service.refresh! }
+
+    expect(statements).to include("SET LOCAL statement_timeout = '10s'")
+  end
+
+  it 'keeps the last good snapshot when an aggregate times out' do
+    previous = service.refresh!
+    allow(account).to receive(:storage_breakdown).with(force_refresh: true)
+                                                 .and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
+
+    expect { service.refresh! }.to raise_error(ActiveRecord::StatementInvalid)
+    expect(service.snapshot).to eq(previous)
+  end
+
+  it 'handles a timed-out refresh job without replacing the last good snapshot' do
+    previous = service.refresh!
+    allow(described_class).to receive(:new).and_return(service)
+    allow(service).to receive(:refresh!).and_raise(ActiveRecord::StatementInvalid, 'statement timeout')
+
+    expect { Accounts::StorageBreakdownRefreshJob.perform_now(account.id) }.not_to raise_error
+    expect(service.snapshot).to eq(previous)
+  end
+end
