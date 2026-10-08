@@ -29,28 +29,48 @@ deploy script.
 2. Deploy this compatible code with both flags off and the existing Vite
    process running. A previous release without `BUILT_ASSETS_CONTRACT = 1`
    cannot support rollback after the runtime switches to built assets.
-3. Set the built-assets env and flag file together. Before restarting any
-   process, prepare this exact SHA through the existing load gate:
+3. Keep both flags off and the flag file absent. The root operator prepares
+   this exact SHA through the existing load gate before enabling the mode:
 
    ```bash
-   /root/work/e-heavy.sh /usr/local/sbin/onelink-dev-prepare-assets <full-sha>
+   /root/work/e-heavy.sh /usr/local/sbin/onelink-dev-prepare-assets --prebuild <full-sha>
    ```
 
-   CI uses the restricted `prepare-assets <full-sha>` SSH verb before its
-   separate `deploy`/`rollback` verb. The gate refuses active deployment
-   processes, so it must never be invoked from inside the deploy script.
+   `--prebuild` permits preparation while built mode is off. It retains the
+   DEV, toolchain, flag consistency, lock and SHA reachability checks. Without
+   that option, preparation still skips building when the mode is off. CI
+   keeps the restricted `prepare-assets <full-sha>` SSH verb before its
+   separate `deploy`/`rollback` verb; it cannot request `--prebuild`. The gate
+   refuses active deployment processes, so it must never be invoked from
+   inside the deploy script.
    Preparation holds the deployment lock, builds an exact Git archive using
    frozen dependencies, and builds both Vite app entrypoints and the widget
    SDK. It seals `/srv/onelink-dev/runtime/built-assets/<full-sha>` with both
    manifests and SHA-256 for every asset. A valid artifact is reused; a
    damaged artifact is rejected and requires operator repair before retry.
-4. Remove `vite:` from the external Foreman Procfile. Keep Rails and worker
+4. With flags still off, acquire the deployment lock, confirm `current` is
+   this exact compatible SHA, then install and verify its sealed assets:
+
+   ```bash
+   /usr/local/sbin/onelink-dev-built-assets install \
+     /srv/onelink-dev/runtime/built-assets/<full-sha> <full-sha> \
+     --release /srv/onelink-dev/releases/onelink-dev-<first-12-sha>
+   /usr/local/sbin/onelink-dev-built-assets verify \
+     /srv/onelink-dev/releases/onelink-dev-<first-12-sha> <full-sha>
+   ```
+
+   Confirm the tracked release tree still matches Git. Under the same lock,
+   set `ONELINK_DEV_BUILT_ASSETS=1`, create `built-assets.enabled`, and enable
+   `ONELINK_DEV_FAST=1` after the isolated eager boot checks pass. Make atomic
+   replacements of the external env and Procfile, preserving their permissions.
+   Remove `vite:` from the external Foreman Procfile. Keep Rails and worker
    lines as they are. Caddy's existing catchall to Rails on port 3002 can
    serve `/vite/*` and `/packs/js/sdk.js`. Preserve those path prefixes;
    `handle_path` stripping would break Rails public serving. The old
    `/vite-dev/*` route is unused in built mode and may be retained for rollback.
-5. Redeploy the same SHA through the reviewed endpoint. It consumes the sealed
-   artifact and validates the previous release before stopping workers. There
+5. Release the operator lock, then redeploy the same SHA through the reviewed
+   endpoint. It consumes the sealed artifact and validates the previous
+   release before stopping workers. There
    is no early same-SHA success return: the endpoint restarts and checks the
    selected mode. The first built-mode redeployment can use itself as the
    compatible previous release after the verified assets have been installed.

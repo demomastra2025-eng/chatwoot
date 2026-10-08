@@ -3,7 +3,13 @@ set -euo pipefail
 
 # Invoke through /root/work/e-heavy.sh BEFORE deploy_dev_release.sh is running.
 [[ ${EUID} -eq 0 ]] || { echo 'must run as root' >&2; exit 77; }
-[[ $# -eq 1 && "$1" =~ ^[0-9a-f]{40}$ ]] || { echo 'usage: prepare_dev_assets.sh <full-sha>' >&2; exit 64; }
+PREBUILD=0
+if [[ $# -eq 2 && "$1" == --prebuild ]]; then
+  PREBUILD=1
+  shift
+fi
+[[ $# -eq 1 && "$1" =~ ^[0-9a-f]{40}$ ]] || { echo 'usage: prepare_dev_assets.sh [--prebuild] <full-sha>' >&2; exit 64; }
+readonly PREBUILD
 readonly SHA="$1"
 readonly ROOT=/srv/onelink-dev
 readonly SOURCE_REPO="${ROOT}/onelink/chatwoot"
@@ -46,7 +52,7 @@ case "${ONELINK_DEV_BUILT_ASSETS:-0}" in 0 | 1) ;; *) echo 'invalid ONELINK_DEV_
 ENABLED=0
 [[ -f "${ROOT}/runtime/built-assets.enabled" ]] && ENABLED=1
 [[ "${ONELINK_DEV_BUILT_ASSETS:-0}" == "${ENABLED}" ]] || { echo 'DEV built-assets settings must match' >&2; exit 65; }
-if ((ENABLED == 0)); then
+if ((ENABLED == 0 && PREBUILD == 0)); then
   echo '[onelink-dev-assets] built mode disabled; no build required'
   exit 0
 fi

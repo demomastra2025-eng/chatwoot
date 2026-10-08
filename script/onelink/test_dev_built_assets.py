@@ -161,19 +161,21 @@ class DeploymentContractTest(unittest.TestCase):
         # Exercise the real env parser against isolated files, ending before any
         # build/git/service command. No production path or root privilege is used.
         source = (ROOT / "script/onelink/prepare_dev_assets.sh").read_text(encoding="utf-8")
+        arguments = source[source.index("PREBUILD=0"):source.index("readonly ROOT=")]
         parser = source[source.index("# Parse the DEV file"):source.index('mkdir -p "${ARTIFACTS}"')]
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "runtime").mkdir()
             env_file = root / ".env.development"
             fixture = root / "parse.sh"
-            fixture.write_text("set -euo pipefail\nROOT=" + shlex.quote(root.as_posix()) +
-                               "\nENV_FILE=\"${ROOT}/.env.development\"\nDEV_TOOLCHAIN_PATH=\"$PATH\"\nconfigure_toolchain() { :; }\n" + parser,
+            fixture.write_text("set -euo pipefail\n" + arguments + "ROOT=" + shlex.quote(root.as_posix()) +
+                               "\nENV_FILE=\"${ROOT}/.env.development\"\nDEV_TOOLCHAIN_PATH=\"$PATH\"\nconfigure_toolchain() { :; }\n" +
+                               parser + '\nprintf "preparation-enabled\\n"\n',
                                encoding="utf-8", newline="\n")
             env = dict(os.environ)
             for key in ("ONELINK_DEV_BUILT_ASSETS", "RAILS_ENV", "NODE_ENV", "POSTGRES_DATABASE"):
                 env.pop(key, None)
-            for flag_file, flag, rails_env, database, expected in (
+            cases = (
                 (False, "", "development", "chatwoot_dev", 0),
                 (False, "0", "development", "chatwoot_dev", 0),
                 (False, "1", "development", "chatwoot_dev", 65),
@@ -181,19 +183,73 @@ class DeploymentContractTest(unittest.TestCase):
                 (False, "true", "development", "chatwoot_dev", 65),
                 (False, "0", "production", "chatwoot_dev", 65),
                 (False, "0", "development", "chatwoot_production", 65),
-            ):
-                with self.subTest(flag_file=flag_file, flag=flag, rails_env=rails_env, database=database):
-                    marker = root / "runtime/built-assets.enabled"
-                    if flag_file:
-                        marker.touch()
-                    else:
-                        marker.unlink(missing_ok=True)
-                    env_file.write_text(f"RAILS_ENV={rails_env}\nPOSTGRES_DATABASE={database}\n" +
-                                        (f"ONELINK_DEV_BUILT_ASSETS={flag}\n" if flag else ""), encoding="utf-8", newline="\n")
-                    result = subprocess.run([self.bash(), str(fixture)], env=env, text=True, capture_output=True)
+            )
+            for prebuild in (False, True):
+                for flag_file, flag, rails_env, database, expected in cases:
+                    with self.subTest(prebuild=prebuild, flag_file=flag_file, flag=flag, rails_env=rails_env, database=database):
+                        marker = root / "runtime/built-assets.enabled"
+                        if flag_file:
+                            marker.touch()
+                        else:
+                            marker.unlink(missing_ok=True)
+                        env_file.write_text(f"RAILS_ENV={rails_env}\nPOSTGRES_DATABASE={database}\n" +
+                                            (f"ONELINK_DEV_BUILT_ASSETS={flag}\n" if flag else ""), encoding="utf-8", newline="\n")
+                        args = ["--prebuild", SHA] if prebuild else [SHA]
+                        result = subprocess.run([self.bash(), str(fixture), *args], env=env, text=True, capture_output=True)
+                        self.assertEqual(result.returncode, expected, result.stderr)
+                        if expected == 0:
+                            self.assertIn("preparation-enabled" if prebuild else "no build required", result.stdout)
+                        else:
+                            self.assertNotIn("preparation-enabled", result.stdout)
+
+    def test_prebuild_requires_an_exact_sha_and_retains_lock_and_reachability_checks(self):
+        source = (ROOT / "script/onelink/prepare_dev_assets.sh").read_text(encoding="utf-8")
+        arguments = source[source.index("PREBUILD=0"):source.index("readonly ROOT=")]
+        parser = source[source.index("# Parse the DEV file"):source.index('mkdir -p "${ARTIFACTS}"')]
+        guards = source[source.index('mkdir -p "${ARTIFACTS}"'):source.index('if [[ -d "${ARTIFACT}" ]]')]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "runtime").mkdir()
+            (root / ".env.development").write_text("RAILS_ENV=development\nPOSTGRES_DATABASE=chatwoot_dev\nONELINK_DEV_BUILT_ASSETS=0\n",
+                                                  encoding="utf-8", newline="\n")
+            fixture = root / "prebuild-guards.sh"
+            fixture.write_text("set -euo pipefail\n" + arguments + "ROOT=" + shlex.quote(root.as_posix()) + r'''
+ENV_FILE="${ROOT}/.env.development"
+ARTIFACTS="${ROOT}/runtime/built-assets"
+SOURCE_REPO="${ROOT}/repo"
+configure_toolchain() { :; }
+flock() {
+  if [[ "$2" == 8 ]]; then return "${ASSET_LOCK_RC:-0}"; fi
+  return "${DEPLOY_LOCK_RC:-0}"
+}
+git() {
+  printf 'git %s\n' "$*" >> "$EVENTS"
+  if [[ "$3" == merge-base ]]; then return "${ANCESTOR_RC:-0}"; fi
+}
+''' + parser + guards + '\nprintf "preparation-enabled\\n"\n', encoding="utf-8", newline="\n")
+            events = root / "events"
+            env = dict(os.environ, EVENTS=events.as_posix())
+            for key in ("ONELINK_DEV_BUILT_ASSETS", "RAILS_ENV", "NODE_ENV", "POSTGRES_DATABASE"):
+                env.pop(key, None)
+            for args in (("--prebuild", "short"), ("--other", SHA), ("--prebuild", SHA, "extra")):
+                result = subprocess.run([self.bash(), str(fixture), *args], env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, 64, result.stderr)
+                self.assertFalse(events.exists())
+            result = subprocess.run([self.bash(), str(fixture), "--prebuild", SHA],
+                                    env=dict(env, NODE_ENV="production"), text=True, capture_output=True)
+            self.assertEqual(result.returncode, 65, result.stderr)
+            self.assertFalse(events.exists())
+            for asset_rc, deploy_rc, ancestor_rc, expected in ((0, 0, 0, 0), (1, 0, 0, 75), (0, 1, 0, 75), (0, 0, 1, 65)):
+                with self.subTest(asset_rc=asset_rc, deploy_rc=deploy_rc, ancestor_rc=ancestor_rc):
+                    events.unlink(missing_ok=True)
+                    case_env = dict(env, ASSET_LOCK_RC=str(asset_rc), DEPLOY_LOCK_RC=str(deploy_rc), ANCESTOR_RC=str(ancestor_rc))
+                    result = subprocess.run([self.bash(), str(fixture), "--prebuild", SHA], env=case_env, text=True, capture_output=True)
                     self.assertEqual(result.returncode, expected, result.stderr)
                     if expected == 0:
-                        self.assertIn("no build required", result.stdout)
+                        self.assertIn("preparation-enabled", result.stdout)
+                    else:
+                        self.assertNotIn("preparation-enabled", result.stdout)
+                    self.assertEqual(events.exists(), asset_rc == 0 and deploy_rc == 0)
 
     def test_preparation_and_deployment_share_the_versioned_toolchain(self):
         contracts = []
@@ -277,7 +333,7 @@ class DeploymentContractTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(), ["--non-interactive", "/root/work/e-heavy.sh",
                                                         "/usr/local/sbin/onelink-dev-prepare-assets", SHA])
-            for command in (f"prepare-assets {SHA}; id", f"prepare-assets {SHA} extra", "prepare-assets short", "bash"):
+            for command in (f"prepare-assets {SHA}; id", f"prepare-assets {SHA} extra", f"prepare-assets --prebuild {SHA}", "prepare-assets short", "bash"):
                 env["SSH_ORIGINAL_COMMAND"] = command
                 result = subprocess.run([bash, str(script)], env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, 64, command)
