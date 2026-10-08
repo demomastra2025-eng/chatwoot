@@ -231,7 +231,7 @@ group :development do
   # Should install the associated chrome extension to view query logs
   gem 'meta_request', '>= 0.8.3'
 
-  gem 'tidewave', '0.2.0'
+  gem 'tidewave', '0.2.0', require: false
 end
 
 group :test do

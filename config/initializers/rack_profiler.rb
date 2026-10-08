@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-if Rails.env.development? && ENV['DISABLE_MINI_PROFILER'].blank?
+if Rails.env.development? && !Onelink::DevRuntime.new.fast? && ENV['DISABLE_MINI_PROFILER'].blank?
   require 'rack'
 
   # rack-mini-profiler 3.2.x still serves its assets through Rack::File.

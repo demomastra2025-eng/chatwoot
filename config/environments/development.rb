@@ -1,4 +1,6 @@
 Rails.application.configure do
+  dev_runtime = Onelink::DevRuntime.new
+
   # Deployment releases are content-addressed and must not be rewritten by DB tasks.
   config.active_record.dump_schema_after_migration = false if ENV['ONELINK_IMMUTABLE_RELEASE'] == '1'
 
@@ -11,6 +13,12 @@ Rails.application.configure do
 
   # Do not eager load code on boot.
   config.eager_load = false
+
+  if dev_runtime.fast?
+    config.enable_reloading = false
+    config.eager_load = true
+    config.action_view.cache_template_loading = true
+  end
 
   # Show full error reports.
   config.consider_all_requests_local = true
@@ -47,11 +55,13 @@ Rails.application.configure do
 
   # Highlight code that triggered database queries in logs.
   config.active_record.verbose_query_logs = ActiveModel::Type::Boolean.new.cast(ENV.fetch('VERBOSE_QUERY_LOGS', 'false'))
+  config.active_record.verbose_query_logs = false if dev_runtime.fast?
 
   # Debug mode disables concatenation and preprocessing of assets.
   # This option may cause significant delays in view rendering with a large
   # number of complex assets.
   config.assets.debug = true
+  config.assets.debug = false if dev_runtime.fast?
 
   # Suppress logger output for asset requests.
   config.assets.quiet = true
@@ -84,7 +94,7 @@ Rails.application.configure do
   end
 
   # customize using the environment variables
-  config.log_level = ENV.fetch('LOG_LEVEL', 'info').to_sym
+  config.log_level = dev_runtime.log_level
 
   config.after_initialize do
     if ActiveJob::Base.respond_to?(:log_arguments=)
