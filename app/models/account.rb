@@ -330,13 +330,10 @@ class Account < ApplicationRecord
 
   # Upload/quota reads use the last background measurement. A cold HTTP read must never traverse recording directories.
   def local_recordings_bytes
-    cached = Rails.cache.read(local_recordings_bytes_cache_key)
-    return cached unless cached.nil?
-
     overview = Accounts::StorageOverviewService.new(account: self)
     overview.schedule_refresh
     measured = overview.snapshot&.dig(:recording_total_bytes)
-    measured.nil? ? Rails.cache.read(local_recordings_last_good_cache_key).to_i : measured.to_i
+    measured.nil? ? Redis::Alfred.get(local_recordings_last_good_cache_key).to_i : measured.to_i
   end
 
   def local_recordings_bytes_cache_key
@@ -356,15 +353,7 @@ class Account < ApplicationRecord
              .index_with { nil }.merge(calculating: true, by_inbox: [])
     end
 
-    cache_key = "account:#{id}:storage_breakdown_v2"
-    if force_refresh
-      Rails.cache.delete(cache_key)
-      Rails.cache.delete(local_recordings_bytes_cache_key)
-    end
-
-    Rails.cache.fetch(cache_key, expires_in: 1.hour) do
-      calculate_storage_breakdown(heavy_recordings: heavy_recordings, recording_usage: recording_usage)
-    end
+    calculate_storage_breakdown(heavy_recordings: heavy_recordings, recording_usage: recording_usage)
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity, Metrics/MethodLength

@@ -185,7 +185,7 @@ RSpec.describe Accounts::HeavyFilesService do
         service = described_class.new(account: account, params: { file_type: 'recordings' })
 
         expect(service.perform).to be_empty
-        expect(service.recordings_pending?).to be(true)
+        expect(service.recordings_pending?).to be(false)
       end
 
       it 'accepts numeric date directories under this account while rejecting a numeric foreign account as provider' do

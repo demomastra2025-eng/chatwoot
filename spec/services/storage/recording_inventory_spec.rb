@@ -28,9 +28,13 @@ RSpec.describe Storage::RecordingInventory do
 
   def calculate_and_publish
     inventory = described_class.new(account: account)
-    usage = inventory.calculate
-    inventory.publish!
+    usage = nil
+    allow(described_class).to receive(:new).and_return(inventory)
+    allow(inventory).to receive(:calculate).and_wrap_original { |method| usage = method.call }
+    Accounts::StorageOverviewService.new(account: account).refresh!
     usage
+  ensure
+    allow(described_class).to receive(:new).and_call_original
   end
 
   it 'includes compressed stereo audio, retained originals and unlinked files once per physical file' do
@@ -70,7 +74,9 @@ RSpec.describe Storage::RecordingInventory do
 
     expect(usage[:total]).to eq(File.size(path))
     expect(transaction_depths).to eq([baseline])
-    expect(legacy.reload.metadata.dig('storage_metrics', 'primary')).to include('ref' => 'legacy.wav', 'byte_size' => 70)
+    expect(legacy.reload.metadata.dig('storage_metrics', 'primary'))
+      .to include('ref' => 'legacy.wav', 'byte_size' => 70, 'account_id' => account.id,
+                  'key' => "voice-recordings/fixture/#{account.id}/legacy.wav")
     expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
     expect(Storage::RecordingPaths).not_to receive(:resolve)
     expect(described_class.new(account: account).calculate[:total]).to eq(70)
@@ -105,6 +111,42 @@ RSpec.describe Storage::RecordingInventory do
     own_key, own_path = recording_file('own.wav', 30)
     call_session(own_key, { 'recording' => { 'byte_size' => 30 } })
     File.symlink(foreign_path, own_path.dirname.join('foreign-link.wav'))
+
+    expect(calculate_and_publish[:total]).to eq(30)
+  end
+
+  it 'does not reuse foreign or remote samples to inflate a cached tenant reconciliation' do
+    own_key, = recording_file('own.wav', 30)
+    call_session(own_key, { 'recording' => { 'byte_size' => 30 } })
+    calculate_and_publish
+    foreign_id = create(:account).id
+    ["voice-recordings/fixture/#{foreign_id}/foreign.wav", 'https://provider.example/remote.wav'].each do |ref|
+      sample = { 'ref' => ref, 'account_id' => account.id, 'key' => own_key, 'declared_size' => nil,
+                 'byte_size' => 9000, 'identity' => "foreign:#{ref}", 'checked_at' => Time.current.to_i }
+      call_session(ref, { 'storage_metrics' => { 'primary' => sample, 'files' => { ref => sample } } })
+    end
+    expect(Storage::RecordingPaths).not_to receive(:each_file_with_stat_for_account)
+
+    expect(described_class.new(account: account).calculate[:total]).to eq(30)
+  end
+
+  it 'reconciles proofless legacy samples once and preserves their measured tenant bytes' do
+    key, = recording_file('legacy-proof.wav', 70)
+    sample = { 'ref' => 'legacy-proof.wav', 'declared_size' => nil, 'byte_size' => 9000,
+               'identity' => 'old:sample', 'checked_at' => Time.current.to_i }
+    legacy = call_session('legacy-proof.wav', { 'storage_metrics' => { 'primary' => sample, 'files' => { 'legacy-proof.wav' => sample } } })
+    Redis::Alfred.set("account:#{account.id}:recording_reconciliation_v1",
+                      JSON.generate(checked_at: Time.current.to_i, identities: {}, unlinked_files: []), ex: 24.hours.to_i)
+    expect(Storage::RecordingPaths).to receive(:each_file_with_stat_for_account).once.and_call_original
+
+    expect(calculate_and_publish[:total]).to eq(70)
+    expect(legacy.reload.metadata.dig('storage_metrics', 'primary')).to include('account_id' => account.id, 'key' => key, 'byte_size' => 70)
+    expect(described_class.new(account: account).calculate[:total]).to eq(70)
+  end
+
+  it 'calculates native tenant files with non-hash legacy storage metrics' do
+    key, = recording_file('legacy-shape.wav', 30)
+    call_session(key, { 'recording' => { 'byte_size' => 30 }, 'storage_metrics' => 'legacy' })
 
     expect(calculate_and_publish[:total]).to eq(30)
   end

@@ -212,6 +212,35 @@ RSpec.describe Storage::TrashService, type: :service do
   end
 
   describe 'cleanup confirmation binding' do
+    it 'redeems the signed Redis manifest in another worker with a different process-local cache' do
+      file = storage_dir.join('shared-preview.mp3')
+      File.write(file, 'reviewed recording')
+      create(:telephony_call_session, account: account,
+                                     recording_ref: "voice-recordings/test_trash/#{account.id}/shared-preview.mp3", created_at: 8.months.ago)
+      first_worker = described_class.new(account: account, actor_id: 101)
+      preview = first_worker.preview(older_than_months: 6)
+      allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::NullStore.new)
+      second_worker = described_class.new(account: account, actor_id: 101)
+
+      result = second_worker.move_to_trash!(older_than_months: 6, preview_token: preview[:confirmation_token], confirmed: true)
+
+      expect(result).to include(success: true, moved_count: 1, moved_bytes: 'reviewed recording'.bytesize)
+      expect(File.exist?(file)).to be(false)
+    end
+
+    it 'rejects missing, corrupted or non-object Redis manifests with a valid signed token' do
+      [nil, '{invalid', '[]'].each do |payload|
+        preview = service.preview(older_than_months: 6)
+        claims = service.send(:cleanup_verifier).verified(preview[:confirmation_token], purpose: 'account-storage-cleanup')
+        key = service.send(:manifest_cache_key, claims['manifest_nonce'])
+        payload.nil? ? Redis::Alfred.delete(key) : Redis::Alfred.set(key, payload, ex: 5.minutes.to_i)
+
+        expect do
+          service.move_to_trash!(older_than_months: 6, preview_token: preview[:confirmation_token], confirmed: true)
+        end.to raise_error(described_class::InvalidParams, I18n.t('storage_management.errors.preview_expired'))
+      end
+    end
+
     it 'rejects a preview token when a different admin attempts to redeem it' do
       admin_preview = described_class.new(account: account, actor_id: 101)
       other_admin = described_class.new(account: account, actor_id: 202)

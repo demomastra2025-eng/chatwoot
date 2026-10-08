@@ -77,11 +77,9 @@ class Accounts::StorageOverviewService
         limits: AccountLimits::StorageUsageService.new(account: account, recordings_bytes: usage[:total]).summary,
         recording_total_bytes: usage[:total], generation: expected_generation, updated_at: Time.current.to_i
       }
-      return unless publish_snapshot(data, heavy_recordings, job_id)
+      return unless publish_snapshot(data, heavy_recordings, inventory, job_id)
 
       inventory.publish!
-      Rails.cache.write(account.local_recordings_bytes_cache_key, usage[:total], expires_in: 10.minutes)
-      Rails.cache.write(account.local_recordings_last_good_cache_key, usage[:total], expires_in: 7.days)
       data
     end
   end
@@ -144,9 +142,12 @@ class Accounts::StorageOverviewService
     end
   end
 
-  def publish_snapshot(data, heavy_recordings, job_id)
-    keys = [generation_key, pending_refresh_key, snapshot_cache_key, heavy_recordings_cache_key]
-    values = [data[:generation].to_s, job_id.to_s, JSON.generate(data), heavy_recordings.payload]
+  def publish_snapshot(data, heavy_recordings, inventory, job_id)
+    reconciliation_key, reconciliation_payload, reconciliation_ttl = inventory.reconciliation_publication
+    keys = [generation_key, pending_refresh_key, snapshot_cache_key, heavy_recordings_cache_key,
+            reconciliation_key, account.local_recordings_last_good_cache_key]
+    values = [data[:generation].to_s, job_id.to_s, JSON.generate(data), heavy_recordings.payload,
+              reconciliation_payload, reconciliation_ttl.to_s, data[:recording_total_bytes].to_s, 7.days.to_i.to_s]
     Redis::Alfred.publish_storage_snapshot(keys, values).to_i.positive?
   end
 

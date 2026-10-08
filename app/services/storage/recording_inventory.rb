@@ -35,13 +35,16 @@ class Storage::RecordingInventory
     result
   end
 
-  # Publish only after the overview's generation check succeeds. A failed/obsolete job must not update caches.
+  # The overview publishes reconciliation with its generation/lease check. These writes compare unchanged metadata.
   def publish!
     @measurement_updates.each do |attributes|
       heartbeat
       Telephony::CallSession.where(attributes[:where]).update_all(metadata: attributes[:metadata]) # rubocop:disable Rails/SkipsModelValidations
     end
-    Redis::Alfred.set(cache_key, JSON.generate(@reconciliation), ex: RECONCILE_INTERVAL.to_i) if @reconciliation
+  end
+
+  def reconciliation_publication
+    [cache_key, @reconciliation ? JSON.generate(@reconciliation) : '', RECONCILE_INTERVAL.to_i]
   end
 
   private
@@ -55,6 +58,7 @@ class Storage::RecordingInventory
 
   def missing_primary_sizes?
     sessions.where("NULLIF(recording_ref, '') IS NOT NULL AND metadata->'trash' IS NULL")
+            .where(Storage::RecordingMetadata.reconcilable_reference_sql(account_id: @account.id))
             .where("(#{Storage::RecordingMetadata.primary_size_sql(account_id: @account.id)}) IS NULL").exists?
   end
 
@@ -77,7 +81,7 @@ class Storage::RecordingInventory
   def collect_session(session)
     metadata = Storage::RecordingMetadata.hash(session.metadata)
     recording = Storage::RecordingMetadata.hash(metadata['recording'])
-    samples = Storage::RecordingMetadata.hash(metadata.dig('storage_metrics', 'files'))
+    samples = Storage::RecordingMetadata.hash(Storage::RecordingMetadata.hash(metadata['storage_metrics'])['files'])
     session_entries = recording_entries(session, metadata, recording).filter_map do |entry|
       resolve_entry(entry, samples)
     end
@@ -127,15 +131,14 @@ class Storage::RecordingInventory
     key = Storage::RecordingMetadata.local_key(entry[:ref], account_id: @account.id)
     if @files
       file = key ? @by_path[key] : unique_basename(entry[:ref])
-      return entry.merge(byte_size: 0, identity: "missing:#{entry[:ref]}", measured: true) unless file
+      return entry.merge(key: key, byte_size: 0, identity: "missing:#{entry[:ref]}", measured: true) unless file
 
       return entry.merge(file.except(:trash), measured: true)
     end
     sample = Storage::RecordingMetadata.hash(samples[entry[:ref]])
-    if sample['declared_size'] == entry[:byte_size] && Storage::RecordingMetadata.recent?(sample['checked_at'])
-      bytes = Storage::RecordingMetadata.size(sample['byte_size'])
-      return entry.merge(byte_size: bytes, identity: sample['identity']) unless bytes.nil?
-    end
+    bytes = Storage::RecordingMetadata.measured_size(sample, reference: entry[:ref], account_id: @account.id,
+                                                           declared_size: entry[:byte_size])
+    return entry.merge(key: sample['key'], byte_size: bytes, identity: sample['identity']) unless bytes.nil?
     if key && !entry[:byte_size].nil?
       old_key = Storage::RecordingMetadata.local_key(entry[:identity_ref], account_id: @account.id)
       return entry.merge(identity: @identities[key] || @identities[old_key] || "path:#{key}")
@@ -148,7 +151,8 @@ class Storage::RecordingInventory
              Storage::RecordingPaths.resolve(entry[:ref], account_id: @account.id)
            end
     stat = File.stat(path) if path
-    entry.merge(byte_size: stat&.size.to_i, identity: stat ? "#{stat.dev}:#{stat.ino}" : "missing:#{entry[:ref]}", measured: true)
+    measured_key = path ? Storage::RecordingMetadata.local_key(path.to_s, account_id: @account.id) : key
+    entry.merge(key: measured_key, byte_size: stat&.size.to_i, identity: stat ? "#{stat.dev}:#{stat.ino}" : "missing:#{entry[:ref]}", measured: true)
   rescue SystemCallError
     entry.merge(byte_size: 0, identity: "missing:#{entry[:ref]}", measured: true)
   end
@@ -175,7 +179,8 @@ class Storage::RecordingInventory
   end
 
   def measurement(entry)
-    { 'ref' => entry[:ref], 'byte_size' => entry[:byte_size], 'declared_size' => entry[:declared_size],
+    { 'account_id' => @account.id, 'key' => entry[:key], 'ref' => entry[:ref],
+      'byte_size' => entry[:byte_size], 'declared_size' => entry[:declared_size],
       'identity' => entry[:identity], 'checked_at' => Time.current.to_i }
   end
 

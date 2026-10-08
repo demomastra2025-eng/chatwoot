@@ -19,7 +19,7 @@ class Storage::TrashService
     result = summarize_selection(selection)
     nonce = SecureRandom.hex(24)
     digest = selection_digest(selection)
-    Rails.cache.write(manifest_cache_key(nonce), selection, expires_in: 5.minutes)
+    Redis::Alfred.set(manifest_cache_key(nonce), JSON.generate(selection), ex: 5.minutes.to_i)
     claims = cleanup_claims(filter, result, nonce, digest)
     result.merge(confirmation_token: cleanup_verifier.generate(claims, expires_in: 5.minutes, purpose: 'account-storage-cleanup'))
   end
@@ -305,7 +305,7 @@ class Storage::TrashService
     raise InvalidParams, I18n.t('storage_management.errors.preview_changed') unless claims['filter'] == filter.deep_stringify_keys
 
     nonce = claims['manifest_nonce'].to_s
-    selection = Rails.cache.read(manifest_cache_key(nonce))
+    selection = stored_cleanup_selection(nonce)
     raise InvalidParams, I18n.t('storage_management.errors.preview_expired') unless selection.is_a?(Hash)
     raise InvalidParams, I18n.t('storage_management.errors.preview_changed') unless selection_digest(selection) == claims['manifest_digest']
 
@@ -324,6 +324,13 @@ class Storage::TrashService
 
   def manifest_cache_key(nonce)
     "account-storage-cleanup:#{@account.id}:#{@actor_id}:#{nonce}"
+  end
+
+  def stored_cleanup_selection(nonce)
+    raw = Redis::Alfred.get(manifest_cache_key(nonce))
+    JSON.parse(raw) if raw.present?
+  rescue JSON::ParserError, TypeError
+    nil
   end
 
   def selection_digest(selection)

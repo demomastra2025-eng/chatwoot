@@ -18,6 +18,7 @@ RSpec.describe Accounts::StorageOverviewService do
     Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
     Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
+    Redis::Alfred.delete(account.local_recordings_last_good_cache_key)
   end
 
   after do
@@ -27,6 +28,7 @@ RSpec.describe Accounts::StorageOverviewService do
     Redis::Alfred.delete("account:#{account.id}:storage_generation_v1")
     Redis::Alfred.delete("account:#{account.id}:recording_reconciliation_v1")
     Redis::Alfred.delete("account:#{account.id}:storage_heavy_recordings_v1")
+    Redis::Alfred.delete(account.local_recordings_last_good_cache_key)
   end
 
   it 'queues one housekeeping refresh while the renewable five-minute pending lease is active' do
@@ -209,5 +211,40 @@ RSpec.describe Accounts::StorageOverviewService do
 
     expect(service.snapshot).to eq(previous)
     expect(account.local_recordings_bytes).to eq(50)
+  end
+
+  it 'cannot overwrite newer reconciliation or quota totals when an orphan-only worker resumes after publication' do
+    path = Storage::RecordingPaths.root.join('voice-recordings', 'fixture', account.id.to_s, 'orphan.wav')
+    FileUtils.mkdir_p(path.dirname)
+    File.write(path, 'r' * 10)
+    pending_key = "account:#{account.id}:storage_overview_pending_v2"
+    reconciliation_key = "account:#{account.id}:recording_reconciliation_v1"
+    Redis::Alfred.set(pending_key, 'old-worker', ex: 5.minutes.to_i)
+    Rails.cache.write(account.local_recordings_bytes_cache_key, 10)
+    Rails.cache.write(account.local_recordings_last_good_cache_key, 10)
+    paused = false
+    allow(Redis::Alfred).to receive(:publish_storage_snapshot).and_wrap_original do |method, keys, values|
+      result = method.call(keys, values)
+      unless paused
+        paused = true
+        expect(JSON.parse(Redis::Alfred.get(reconciliation_key))['unlinked_files'].sum { |file| file['byte_size'] }).to eq(10)
+        travel 25.hours
+        File.write(path, 'r' * 20)
+        Redis::Alfred.set(pending_key, 'new-worker', ex: 5.minutes.to_i)
+        described_class.new(account: account).refresh!(job_id: 'new-worker')
+      end
+      result
+    end
+
+    service.refresh!(job_id: 'old-worker')
+
+    expect(service.snapshot[:recording_total_bytes]).to eq(20)
+    expect(JSON.parse(Redis::Alfred.get(reconciliation_key))['unlinked_files'].sum { |file| file['byte_size'] }).to eq(20)
+    expect(account.local_recordings_bytes).to eq(20)
+    expect(Redis::Alfred.get(account.local_recordings_last_good_cache_key)).to eq('20')
+    described_class.new(account: account).refresh!(job_id: 'new-worker')
+    expect(service.snapshot[:recording_total_bytes]).to eq(20)
+  ensure
+    travel_back
   end
 end

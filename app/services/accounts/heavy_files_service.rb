@@ -163,7 +163,8 @@ class Accounts::HeavyFilesService
     with_statement_timeout do
       size_sql = Storage::RecordingMetadata.primary_size_sql(account_id: account.id)
       scope = filtered_recording_scope
-      @recordings_pending = scope.where("(#{size_sql}) IS NULL").exists?
+      @recordings_pending = scope.where(Storage::RecordingMetadata.reconcilable_reference_sql(account_id: account.id))
+                                 .where("(#{size_sql}) IS NULL").exists?
       if recordings_pending?
         overview = Accounts::StorageOverviewService.new(account: account)
         overview.schedule_refresh(force: true)
