@@ -98,16 +98,18 @@ RSpec.describe 'Inbox Member API', locale: :en, type: :request do
       it 'accepts an already selected default member list repeatedly, including string IDs' do
         params = { inbox_id: inbox.id, user_ids: [old_agent.id.to_s, agent_to_add.id, administrator.id.to_s] }
         existing_member_ids = inbox.inbox_members.ids
+        request_headers = administrator.create_new_auth_token
 
         2.times do
           expect do
             post "/api/v1/accounts/#{account.id}/inbox_members",
-                 headers: administrator.create_new_auth_token,
+                 headers: request_headers,
                  params: params,
                  as: :json
           end.not_to change(InboxMember, :count)
 
           expect(response).to have_http_status(:success)
+          request_headers = request_headers.merge(response.headers.slice('access-token', 'client', 'uid'))
           expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(administrator.id, old_agent.id, agent_to_add.id)
           expect(inbox.reload.inbox_members.ids).to match_array(existing_member_ids)
         end

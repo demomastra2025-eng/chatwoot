@@ -15,7 +15,7 @@ RSpec.describe InboxMember do
 
       expect(duplicate).to be_new_record
       expect { duplicate.save! }.to raise_error(ActiveRecord::RecordInvalid)
-      expect(duplicate.errors.details[:user_id]).to include(error: :taken)
+      expect(duplicate.errors.details[:user_id]).to include(a_hash_including(error: :taken))
       expect(inbox.inbox_members.where(user: user).ids).to eq([existing_member.id])
     end
 
